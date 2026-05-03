@@ -1,4 +1,8 @@
-﻿import { useEffect, useRef, useState } from "react";
+# Run from frontend folder
+# Replaces CameraScanner with ZXing-based scanner that works on all phones
+
+Set-Content -Path "src\components\common\CameraScanner.jsx" -Encoding UTF8 -Value @'
+import { useEffect, useRef, useState } from "react";
 
 export default function CameraScanner({ onScan, onClose, lang }) {
   const videoRef   = useRef(null);
@@ -143,3 +147,7 @@ export default function CameraScanner({ onScan, onClose, lang }) {
     </div>
   );
 }
+'@
+
+Write-Host "Camera scanner fixed with ZXing!" -ForegroundColor Green
+Write-Host "Now push to GitHub" -ForegroundColor Cyan
