@@ -358,3 +358,4 @@ function AdjustModal({ product, lang, onClose, onSuccess }) {
   );
 }
 
+
