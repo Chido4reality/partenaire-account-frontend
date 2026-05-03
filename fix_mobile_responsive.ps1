@@ -1,4 +1,14 @@
-﻿import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
+# Fix mobile responsiveness and add camera barcode scanning
+# Run from frontend folder
+
+# First install the barcode scanner library
+Write-Host "Installing barcode scanner..." -ForegroundColor Yellow
+npm install @zxing/library --save
+Write-Host "Done!" -ForegroundColor Green
+
+# Update Layout.jsx for mobile
+Set-Content -Path "src\components\common\Layout.jsx" -Encoding UTF8 -Value @'
+import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore, useLangStore, useOfflineStore } from "../../store";
@@ -206,3 +216,7 @@ export default function Layout() {
     </div>
   );
 }
+'@
+
+Write-Host "Mobile layout done!" -ForegroundColor Green
+Write-Host "Now run: npm run dev to test locally" -ForegroundColor Cyan
