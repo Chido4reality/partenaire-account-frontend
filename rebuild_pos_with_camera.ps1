@@ -1,4 +1,5 @@
-﻿import { useState, useEffect, useRef } from "react";
+Set-Content -Path "src\pages\POSPage.jsx" -Encoding UTF8 -Value @'
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore } from "../store";
@@ -257,3 +258,7 @@ export default function POSPage() {
     </>
   );
 }
+'@
+
+Write-Host "POS with camera rebuilt!" -ForegroundColor Green
+Write-Host "Now push to GitHub and it will deploy to Vercel" -ForegroundColor Cyan
