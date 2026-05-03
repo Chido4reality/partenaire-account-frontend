@@ -1,0 +1,43 @@
+﻿@import url("https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap");
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --brand:#4f46e5;--brand-light:#818cf8;--brand-dark:#3730a3;
+  --success:#10b981;--warning:#f59e0b;--danger:#ef4444;
+  --bg-base:#0f0e17;--bg-surface:#1a1928;--bg-elevated:#232235;--bg-card:#1e1d2e;
+  --text-primary:#f4f3ff;--text-secondary:#a09fbe;--text-muted:#6b6a8a;
+  --border:rgba(255,255,255,0.08);--border-hover:rgba(255,255,255,0.16);
+  --radius-md:10px;--radius-lg:16px;
+  --font-display:"Syne",sans-serif;--font-body:"DM Sans",sans-serif;
+}
+html,body,#root{height:100%;background:var(--bg-base);color:var(--text-primary);font-family:var(--font-body);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased;}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--border-hover);border-radius:4px}
+.card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 18px;border-radius:var(--radius-md);font-family:var(--font-body);font-size:14px;font-weight:500;cursor:pointer;border:none;transition:all 0.15s;white-space:nowrap}
+.btn-primary{background:var(--brand);color:#fff}.btn-primary:hover{background:var(--brand-dark)}
+.btn-secondary{background:var(--bg-elevated);color:var(--text-primary);border:1px solid var(--border)}
+.btn-success{background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.2)}
+.btn-danger{background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.2)}
+.btn:disabled{opacity:0.4;cursor:not-allowed}.btn-sm{padding:6px 12px;font-size:12px}.btn-lg{padding:12px 24px;font-size:15px}.btn-block{width:100%}
+.input{width:100%;padding:10px 14px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-md);color:var(--text-primary);font-family:var(--font-body);font-size:14px;transition:border-color 0.15s;outline:none}
+.input:focus{border-color:var(--brand)}.input::placeholder{color:var(--text-muted)}
+select.input{cursor:pointer}
+.label{display:block;font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:6px;letter-spacing:0.04em;text-transform:uppercase}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.stat-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px 24px;transition:border-color 0.2s}
+.stat-card:hover{border-color:var(--border-hover)}
+.stat-label{font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px}
+.stat-value{font-family:var(--font-display);font-size:22px;font-weight:700;color:var(--text-primary)}
+.stat-sub{font-size:12px;color:var(--text-secondary);margin-top:4px}
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+.page-title{font-family:var(--font-display);font-size:22px;font-weight:700;color:var(--text-primary)}
+.page-sub{font-size:13px;color:var(--text-secondary);margin-top:2px}
+.table{width:100%;border-collapse:collapse}
+.table th{font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;padding:10px 16px;text-align:left;border-bottom:1px solid var(--border)}
+.table td{padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;color:var(--text-primary)}
+.table tr:last-child td{border-bottom:none}
+.form-group{margin-bottom:16px}
+.empty-state{text-align:center;padding:48px 24px;color:var(--text-muted)}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px;backdrop-filter:blur(4px)}
+.modal{background:var(--bg-card);border:1px solid var(--border);border-radius:20px;padding:28px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.fade-up{animation:fadeUp 0.3s ease both}
