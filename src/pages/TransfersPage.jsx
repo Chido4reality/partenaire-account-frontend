@@ -1,4 +1,5 @@
-﻿import { useState, useEffect, useRef } from "react";
+﻿import BarcodeInput from "../components/common/BarcodeInput";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useLangStore } from "../store";
@@ -393,3 +394,4 @@ export default function TransfersPage() {
     </div>
   );
 }
+

@@ -1,4 +1,5 @@
-﻿import { useState } from "react";
+﻿import BarcodeInput from "../components/common/BarcodeInput";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore } from "../store";
@@ -273,7 +274,7 @@ export default function InventoryPage() {
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 20 }}>{lang === "en" ? "Add New Product" : "Ajouter un produit"}</div>
             <div className="form-group"><label className="label">{lang === "en" ? "Product name" : "Nom du produit"} *</label><input className="input" value={newProduct.name} onChange={e => setNewProduct(p => ({ ...p, name: e.target.value }))} placeholder="Ex: Filtre a huile Honda" /></div>
-            <div className="form-group"><label className="label">{lang === "en" ? "Barcode" : "Code-barres"}</label><input className="input" value={newProduct.barcode} onChange={e => setNewProduct(p => ({ ...p, barcode: e.target.value }))} placeholder="Scan or type barcode" /></div>
+            <div className="form-group"><label className="label">{lang === "en" ? "Barcode" : "Code-barres"}</label><BarcodeInput lang={lang} value={newProduct.barcode} onChange={v => setNewProduct(p => ({ ...p, barcode: v }))} placeholder={lang === "en" ? "Scan or type barcode" : "Scanner ou saisir code-barres"} /></div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div className="form-group"><label className="label">{lang === "en" ? "Cost price (FCFA)" : "Prix achat (FCFA)"}</label><input className="input" type="number" value={newProduct.cost_price} onChange={e => setNewProduct(p => ({ ...p, cost_price: e.target.value }))} placeholder="0" /></div>
               <div className="form-group"><label className="label">{lang === "en" ? "Sell price (FCFA)" : "Prix vente (FCFA)"} *</label><input className="input" type="number" value={newProduct.sell_price} onChange={e => setNewProduct(p => ({ ...p, sell_price: e.target.value }))} placeholder="0" /></div>
@@ -301,7 +302,7 @@ export default function InventoryPage() {
               <div key={idx} style={{ background: "var(--bg-elevated)", borderRadius: 10, padding: 12, marginBottom: 10 }}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
                   <div><label className="label">{lang === "en" ? "Product" : "Produit"}</label><select className="input" value={item.product_id} onChange={e => setItem(idx, "product_id", e.target.value)}><option value="">{lang === "en" ? "Select product" : "Choisir produit"}</option>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
-                  <div><label className="label">{lang === "en" ? "Barcode" : "Code-barres"}</label><input className="input" value={item.barcode} onChange={e => setItem(idx, "barcode", e.target.value)} placeholder="Scan barcode" /></div>
+                  <div><label className="label">{lang === "en" ? "Barcode" : "Code-barres"}</label><BarcodeInput lang={lang} value={item.barcode} onChange={v => setItem(idx, "barcode", v)} placeholder={lang === "en" ? "Scan barcode" : "Scanner code-barres"} /></div>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                   <div><label className="label">{lang === "en" ? "Quantity" : "Quantite"} *</label><input className="input" type="number" value={item.quantity} onChange={e => setItem(idx, "quantity", e.target.value)} placeholder="0" /></div>
@@ -356,3 +357,4 @@ function AdjustModal({ product, lang, onClose, onSuccess }) {
     </div>
   );
 }
+
