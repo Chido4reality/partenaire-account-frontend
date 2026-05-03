@@ -1,4 +1,5 @@
-﻿import { useEffect, useRef, useState } from "react";
+Set-Content -Path "src\components\common\CameraScanner.jsx" -Encoding UTF8 -Value @'
+import { useEffect, useRef, useState } from "react";
 
 export default function CameraScanner({ onScan, onClose, lang }) {
   const videoRef    = useRef(null);
@@ -164,3 +165,6 @@ export default function CameraScanner({ onScan, onClose, lang }) {
     </div>
   );
 }
+'@
+
+Write-Host "iPhone camera scanner fixed!" -ForegroundColor Green
