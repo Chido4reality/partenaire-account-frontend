@@ -1,9 +1,22 @@
-﻿import BarcodeInput from "../components/common/BarcodeInput";
-import { useState } from "react";
+import BarcodeInput from "../components/common/BarcodeInput";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore } from "../store";
 import api, { formatCFA } from "../utils/api";
+
+// Client-side fuzzy match (same as POS)
+function fuzzyMatch(str, pattern) {
+  if (!str || !pattern) return false;
+  const s = str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const p = pattern.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (s.includes(p)) return true;
+  let score = 0;
+  for (let i = 0; i < p.length - 1; i++) {
+    if (s.includes(p.slice(i, i + 2))) score++;
+  }
+  return score >= Math.floor(p.length * 0.4);
+}
 
 export default function InventoryPage() {
   const { lang } = useLangStore();
@@ -12,12 +25,49 @@ export default function InventoryPage() {
 
   const [tab, setTab] = useState("stock");
   const [search, setSearch] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [lastScan, setLastScan] = useState(null);
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [showReceive, setShowReceive] = useState(false);
   const [showAdjust, setShowAdjust] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [newProduct, setNewProduct] = useState({ name: "", barcode: "", category_id: "", unit: "pce", cost_price: "", sell_price: "", description: "" });
   const [receiveForm, setReceiveForm] = useState({ location_id: "", supplier_name: "", invoice_ref: "", notes: "", items: [{ product_id: "", barcode: "", quantity: "", cost_price: "" }] });
+
+  const searchRef = useRef(null);
+  const barcodeBuffer = useRef("");
+  const barcodeTimer = useRef(null);
+
+  // ── USB BARCODE SCANNER ────────────────────────────────────
+  useEffect(() => {
+    const handleKey = (e) => {
+      const active = document.activeElement;
+      const isModal = showAddProduct || showReceive || showAdjust;
+      const isTyping = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT");
+      if (isTyping && active !== searchRef.current) return;
+      if (isModal) return;
+
+      if (e.key === "Enter") {
+        const code = barcodeBuffer.current.trim();
+        barcodeBuffer.current = "";
+        if (code.length >= 3) {
+          setSearch(code);
+          setScanning(true);
+          setLastScan({ name: code, success: true });
+          setTimeout(() => setScanning(false), 800);
+          toast.success(`🔍 ${code}`, { duration: 1200, position: "top-center" });
+        }
+        return;
+      }
+      if (e.key.length === 1 && !e.ctrlKey && !e.altKey) {
+        barcodeBuffer.current += e.key;
+        clearTimeout(barcodeTimer.current);
+        barcodeTimer.current = setTimeout(() => { barcodeBuffer.current = ""; }, 200);
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => { window.removeEventListener("keydown", handleKey); clearTimeout(barcodeTimer.current); };
+  }, [showAddProduct, showReceive, showAdjust]);
 
   const { data: stockData, isLoading: stockLoading } = useQuery({
     queryKey: ["stock", selectedLocation?.id],
@@ -32,9 +82,9 @@ export default function InventoryPage() {
   });
 
   const { data: productsData } = useQuery({
-    queryKey: ["products", search],
-    queryFn: () => api.get("/products?search=" + search + "&limit=50").then(r => r.data),
-    enabled: tab === "products" || tab === "overview"
+    queryKey: ["products-all"],
+    queryFn: () => api.get("/products?limit=200").then(r => r.data),
+    enabled: tab === "products" || tab === "overview" || tab === "stock"
   });
 
   const { data: locationsData } = useQuery({
@@ -51,10 +101,10 @@ export default function InventoryPage() {
   const addProductMutation = useMutation({
     mutationFn: () => api.post("/products", { ...newProduct, category_id: newProduct.category_id || null, cost_price: +newProduct.cost_price || 0, sell_price: +newProduct.sell_price }),
     onSuccess: () => {
-      toast.success(lang === "en" ? "Product added!" : "Produit ajoute!");
+      toast.success(lang === "en" ? "Product added!" : "Produit ajouté!");
       setShowAddProduct(false);
       setNewProduct({ name: "", barcode: "", category_id: "", unit: "pce", cost_price: "", sell_price: "", description: "" });
-      qc.invalidateQueries(["products"]);
+      qc.invalidateQueries(["products-all"]);
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
@@ -62,7 +112,7 @@ export default function InventoryPage() {
   const receiveMutation = useMutation({
     mutationFn: () => api.post("/stock/arrivals", { ...receiveForm, items: receiveForm.items.filter(i => i.product_id && i.quantity).map(i => ({ ...i, quantity: +i.quantity, cost_price: +i.cost_price || 0 })) }),
     onSuccess: () => {
-      toast.success(lang === "en" ? "Stock received!" : "Stock receptionne!");
+      toast.success(lang === "en" ? "Stock received!" : "Stock réceptionné!");
       setShowReceive(false);
       setReceiveForm({ location_id: "", supplier_name: "", invoice_ref: "", notes: "", items: [{ product_id: "", barcode: "", quantity: "", cost_price: "" }] });
       qc.invalidateQueries(["stock"]);
@@ -77,7 +127,22 @@ export default function InventoryPage() {
   const locations = locationsData?.data || [];
   const allStock = allStockData?.data || [];
 
-  const filtered = search ? stock.filter(s => s.pa_products?.name?.toLowerCase().includes(search.toLowerCase()) || s.pa_products?.barcode?.includes(search)) : stock;
+  // Fuzzy filter for stock tab
+  const filtered = search
+    ? stock.filter(s =>
+        fuzzyMatch(s.pa_products?.name, search) ||
+        (s.pa_products?.barcode && s.pa_products.barcode.includes(search))
+      )
+    : stock;
+
+  // Fuzzy filter for products tab
+  const filteredProducts = search
+    ? products.filter(p =>
+        fuzzyMatch(p.name, search) ||
+        fuzzyMatch(p.name_en, search) ||
+        (p.barcode && p.barcode.includes(search))
+      )
+    : products;
 
   const setRP = (k, v) => setReceiveForm(f => ({ ...f, [k]: v }));
   const setItem = (idx, k, v) => setReceiveForm(f => ({ ...f, items: f.items.map((it, i) => i === idx ? { ...it, [k]: v } : it) }));
@@ -87,17 +152,14 @@ export default function InventoryPage() {
     { key: "stock",    en: "Stock Levels",  fr: "Niveaux de stock" },
     { key: "overview", en: "Overview",      fr: "Vue ensemble" },
     { key: "products", en: "Products",      fr: "Produits" },
-    { key: "alerts",   en: "Alerts (" + alerts.length + ")", fr: "Alertes (" + alerts.length + ")" },
+    { key: "alerts",   en: `Alerts (${alerts.length})`, fr: `Alertes (${alerts.length})` },
   ];
 
   // Build overview data
   const byProduct = {};
   allStock.forEach(s => {
     const pid = s.product_id;
-    const pname = s.pa_products?.name || "Unknown";
-    const punit = s.pa_products?.unit || "pce";
-    const pbarcode = s.pa_products?.barcode || "";
-    if (!byProduct[pid]) byProduct[pid] = { name: pname, unit: punit, barcode: pbarcode, locs: {}, total: 0 };
+    if (!byProduct[pid]) byProduct[pid] = { name: s.pa_products?.name || "Unknown", unit: s.pa_products?.unit || "pce", barcode: s.pa_products?.barcode || "", locs: {}, total: 0 };
     byProduct[pid].locs[s.location_id] = s.quantity;
     byProduct[pid].total += +s.quantity;
   });
@@ -111,11 +173,12 @@ export default function InventoryPage() {
           {alerts.length > 0 && <div style={{ marginTop: 4, fontSize: 12, color: "#fbbf24" }}>{alerts.length} {lang === "en" ? "items below minimum" : "articles sous le minimum"}</div>}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn btn-secondary" onClick={() => setShowReceive(true)}>+ {lang === "en" ? "Receive Goods" : "Receptionner"}</button>
+          <button className="btn btn-secondary" onClick={() => setShowReceive(true)}>+ {lang === "en" ? "Receive Goods" : "Réceptionner"}</button>
           <button className="btn btn-primary" onClick={() => setShowAddProduct(true)}>+ {lang === "en" ? "Add Product" : "Ajouter produit"}</button>
         </div>
       </div>
 
+      {/* Tabs */}
       <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: "1px solid var(--border)" }}>
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{ padding: "10px 20px", background: "none", border: "none", borderBottom: tab === t.key ? "2px solid var(--brand)" : "2px solid transparent", color: tab === t.key ? "var(--text-primary)" : "var(--text-muted)", cursor: "pointer", fontSize: 13, fontWeight: tab === t.key ? 600 : 400, marginBottom: -1 }}>
@@ -124,18 +187,41 @@ export default function InventoryPage() {
         ))}
       </div>
 
+      {/* ── SEARCH BAR WITH USB INDICATOR ── */}
       {(tab === "stock" || tab === "products") && (
-        <input className="input" placeholder={lang === "en" ? "Search products or barcode..." : "Chercher produit ou code-barres..."} value={search} onChange={e => setSearch(e.target.value)} style={{ maxWidth: 400, marginBottom: 16 }} />
+        <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16, maxWidth: 600 }}>
+          <div style={{ flex: 1, position: "relative" }}>
+            <input ref={searchRef} className="input"
+              placeholder={lang === "en" ? "Search by name, barcode... (or scan with USB scanner)" : "Chercher par nom, code-barres... (ou scanner USB)"}
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              style={{ paddingLeft: 36, paddingRight: search ? 36 : 12 }} />
+            <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", fontSize: 14, color: scanning ? "#10b981" : "var(--text-muted)", transition: "color 0.3s" }}>
+              {scanning ? "✓" : "🔍"}
+            </span>
+            {search && (
+              <button onClick={() => { setSearch(""); setLastScan(null); }} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14 }}>✕</button>
+            )}
+          </div>
+          {/* USB Scanner indicator */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", background: scanning ? "rgba(16,185,129,0.1)" : "rgba(79,70,229,0.08)", border: `1px solid ${scanning ? "#10b981" : "var(--border)"}`, borderRadius: 8, fontSize: 11, color: scanning ? "#10b981" : "var(--text-muted)", fontWeight: 600, transition: "all 0.3s", whiteSpace: "nowrap" }}>
+            🔌 {scanning ? (lang === "en" ? "Scanned!" : "Scanné!") : "USB"}
+          </div>
+        </div>
       )}
 
+      {/* ── STOCK TAB ── */}
       {tab === "stock" && (
         <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden" }}>
-          {stockLoading ? <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>Loading...</div>
-          : filtered.length === 0 ? (
+          {stockLoading ? (
+            <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>Loading...</div>
+          ) : filtered.length === 0 ? (
             <div className="empty-state">
-              <div style={{ fontSize: 24, marginBottom: 12, opacity: 0.4 }}>[ ]</div>
-              <div style={{ fontWeight: 600, marginBottom: 6 }}>{lang === "en" ? "No stock records yet" : "Aucun stock"}</div>
-              <div style={{ fontSize: 12 }}>{lang === "en" ? "Receive goods to see stock here" : "Receptionnez des marchandises"}</div>
+              <div style={{ fontSize: 24, marginBottom: 12, opacity: 0.4 }}>📦</div>
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                {search ? (lang === "en" ? `No results for "${search}"` : `Aucun résultat pour "${search}"`) : (lang === "en" ? "No stock records yet" : "Aucun stock")}
+              </div>
+              {!search && <div style={{ fontSize: 12 }}>{lang === "en" ? "Receive goods to see stock here" : "Réceptionnez des marchandises"}</div>}
             </div>
           ) : (
             <table className="table">
@@ -143,9 +229,9 @@ export default function InventoryPage() {
                 <th>{lang === "en" ? "Product" : "Produit"}</th>
                 <th>{lang === "en" ? "Barcode" : "Code-barres"}</th>
                 <th>{lang === "en" ? "Location" : "Emplacement"}</th>
-                <th style={{ textAlign: "right" }}>{lang === "en" ? "Quantity" : "Quantite"}</th>
-                <th style={{ textAlign: "right" }}>{lang === "en" ? "Min" : "Min"}</th>
-                <th>{lang === "en" ? "Status" : "Statut"}</th>
+                <th style={{ textAlign: "right" }}>{lang === "en" ? "Quantity" : "Quantité"}</th>
+                <th style={{ textAlign: "right" }}>Min</th>
+                <th>Status</th>
                 <th>{lang === "en" ? "Actions" : "Actions"}</th>
               </tr></thead>
               <tbody>
@@ -169,10 +255,11 @@ export default function InventoryPage() {
         </div>
       )}
 
+      {/* ── OVERVIEW TAB ── */}
       {tab === "overview" && (
         <div>
           <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>
-            {lang === "en" ? "All products with quantities at each location. Use this to plan your transfers." : "Tous les produits avec quantites par emplacement. Utilisez ceci pour planifier vos transferts."}
+            {lang === "en" ? "All products with quantities at each location." : "Tous les produits avec quantités par emplacement."}
           </div>
           {overviewProducts.length === 0 ? (
             <div className="empty-state"><div style={{ fontWeight: 600 }}>{lang === "en" ? "No stock yet" : "Aucun stock"}</div></div>
@@ -182,7 +269,7 @@ export default function InventoryPage() {
                 <thead><tr>
                   <th style={{ minWidth: 160 }}>{lang === "en" ? "Product" : "Produit"}</th>
                   <th>{lang === "en" ? "Barcode" : "Code-barres"}</th>
-                  {locations.map(l => <th key={l.id} style={{ textAlign: "right", minWidth: 110 }}><div>{l.name}</div><div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "none", fontWeight: 400 }}>{l.type}</div></th>)}
+                  {locations.map(l => <th key={l.id} style={{ textAlign: "right", minWidth: 110 }}><div>{l.name}</div><div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 400 }}>{l.type}</div></th>)}
                   <th style={{ textAlign: "right", color: "var(--brand-light)" }}>TOTAL</th>
                 </tr></thead>
                 <tbody>
@@ -201,7 +288,7 @@ export default function InventoryPage() {
                 <tfoot>
                   <tr style={{ borderTop: "2px solid var(--border)" }}>
                     <td colSpan={2} style={{ fontWeight: 600, padding: "12px 16px" }}>{overviewProducts.length} {lang === "en" ? "products" : "produits"}</td>
-                    {locations.map(l => { const t = allStock.filter(s => s.location_id === l.id).reduce((sum, s) => sum + +s.quantity, 0); return <td key={l.id} style={{ textAlign: "right", fontWeight: 600, color: "var(--text-secondary)", padding: "12px 16px" }}>{t}</td>; })}
+                    {locations.map(l => { const t = allStock.filter(s => s.location_id === l.id).reduce((sum, s) => sum + +s.quantity, 0); return <td key={l.id} style={{ textAlign: "right", fontWeight: 600, padding: "12px 16px" }}>{t}</td>; })}
                     <td style={{ textAlign: "right", fontWeight: 700, color: "var(--brand-light)", padding: "12px 16px" }}>{allStock.reduce((sum, s) => sum + +s.quantity, 0)}</td>
                   </tr>
                 </tfoot>
@@ -211,21 +298,27 @@ export default function InventoryPage() {
         </div>
       )}
 
+      {/* ── PRODUCTS TAB ── */}
       {tab === "products" && (
         <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden" }}>
-          {products.length === 0 ? (
-            <div className="empty-state"><div style={{ fontWeight: 600, marginBottom: 6 }}>{lang === "en" ? "No products yet" : "Aucun produit"}</div><button className="btn btn-primary" onClick={() => setShowAddProduct(true)} style={{ marginTop: 12 }}>+ {lang === "en" ? "Add product" : "Ajouter"}</button></div>
+          {filteredProducts.length === 0 ? (
+            <div className="empty-state">
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                {search ? (lang === "en" ? `No products matching "${search}"` : `Aucun produit pour "${search}"`) : (lang === "en" ? "No products yet" : "Aucun produit")}
+              </div>
+              {!search && <button className="btn btn-primary" onClick={() => setShowAddProduct(true)} style={{ marginTop: 12 }}>+ {lang === "en" ? "Add product" : "Ajouter"}</button>}
+            </div>
           ) : (
             <table className="table">
               <thead><tr>
                 <th>{lang === "en" ? "Product" : "Produit"}</th>
                 <th>{lang === "en" ? "Barcode" : "Code-barres"}</th>
-                <th>{lang === "en" ? "Unit" : "Unite"}</th>
+                <th>{lang === "en" ? "Unit" : "Unité"}</th>
                 <th style={{ textAlign: "right" }}>{lang === "en" ? "Cost price" : "Prix achat"}</th>
                 <th style={{ textAlign: "right" }}>{lang === "en" ? "Sell price" : "Prix vente"}</th>
               </tr></thead>
               <tbody>
-                {products.map(p => (
+                {filteredProducts.map(p => (
                   <tr key={p.id}>
                     <td style={{ fontWeight: 500 }}>{p.name}</td>
                     <td style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text-muted)" }}>{p.barcode || "-"}</td>
@@ -240,17 +333,18 @@ export default function InventoryPage() {
         </div>
       )}
 
+      {/* ── ALERTS TAB ── */}
       {tab === "alerts" && (
         <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden" }}>
           {alerts.length === 0 ? (
-            <div className="empty-state"><div style={{ fontWeight: 600, color: "#34d399" }}>{lang === "en" ? "All stock levels OK!" : "Tous les stocks sont OK!"}</div></div>
+            <div className="empty-state"><div style={{ fontWeight: 600, color: "#34d399" }}>{lang === "en" ? "✓ All stock levels OK!" : "✓ Tous les stocks sont OK!"}</div></div>
           ) : (
             <table className="table">
               <thead><tr>
                 <th>{lang === "en" ? "Product" : "Produit"}</th>
                 <th>{lang === "en" ? "Location" : "Emplacement"}</th>
                 <th style={{ textAlign: "right" }}>{lang === "en" ? "Current" : "Actuel"}</th>
-                <th style={{ textAlign: "right" }}>{lang === "en" ? "Minimum" : "Minimum"}</th>
+                <th style={{ textAlign: "right" }}>Min</th>
                 <th style={{ textAlign: "right" }}>{lang === "en" ? "Shortage" : "Manque"}</th>
               </tr></thead>
               <tbody>
@@ -269,6 +363,7 @@ export default function InventoryPage() {
         </div>
       )}
 
+      {/* ── ADD PRODUCT MODAL ── */}
       {showAddProduct && (
         <div className="modal-overlay" onClick={() => setShowAddProduct(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
@@ -279,7 +374,7 @@ export default function InventoryPage() {
               <div className="form-group"><label className="label">{lang === "en" ? "Cost price (FCFA)" : "Prix achat (FCFA)"}</label><input className="input" type="number" value={newProduct.cost_price} onChange={e => setNewProduct(p => ({ ...p, cost_price: e.target.value }))} placeholder="0" /></div>
               <div className="form-group"><label className="label">{lang === "en" ? "Sell price (FCFA)" : "Prix vente (FCFA)"} *</label><input className="input" type="number" value={newProduct.sell_price} onChange={e => setNewProduct(p => ({ ...p, sell_price: e.target.value }))} placeholder="0" /></div>
             </div>
-            <div className="form-group"><label className="label">{lang === "en" ? "Unit" : "Unite"}</label><select className="input" value={newProduct.unit} onChange={e => setNewProduct(p => ({ ...p, unit: e.target.value }))}>{["pce","kg","litre","metre","boite","set","paire"].map(u => <option key={u} value={u}>{u}</option>)}</select></div>
+            <div className="form-group"><label className="label">{lang === "en" ? "Unit" : "Unité"}</label><select className="input" value={newProduct.unit} onChange={e => setNewProduct(p => ({ ...p, unit: e.target.value }))}>{["pce", "kg", "litre", "metre", "boite", "set", "paire"].map(u => <option key={u} value={u}>{u}</option>)}</select></div>
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowAddProduct(false)}>{lang === "en" ? "Cancel" : "Annuler"}</button>
               <button className="btn btn-primary" style={{ flex: 2 }} disabled={!newProduct.name || !newProduct.sell_price || addProductMutation.isPending} onClick={() => addProductMutation.mutate()}>{addProductMutation.isPending ? "..." : (lang === "en" ? "Add Product" : "Ajouter")}</button>
@@ -288,16 +383,17 @@ export default function InventoryPage() {
         </div>
       )}
 
+      {/* ── RECEIVE GOODS MODAL ── */}
       {showReceive && (
         <div className="modal-overlay" onClick={() => setShowReceive(false)}>
           <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 20 }}>{lang === "en" ? "Receive Goods" : "Receptionner des marchandises"}</div>
+            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 20 }}>{lang === "en" ? "Receive Goods" : "Réceptionner des marchandises"}</div>
             <div className="form-group"><label className="label">{lang === "en" ? "Destination" : "Destination"} *</label><select className="input" value={receiveForm.location_id} onChange={e => setRP("location_id", e.target.value)}><option value="">{lang === "en" ? "Select warehouse/shop" : "Choisir magasin/boutique"}</option>{locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}</select></div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div className="form-group"><label className="label">{lang === "en" ? "Supplier" : "Fournisseur"}</label><input className="input" value={receiveForm.supplier_name} onChange={e => setRP("supplier_name", e.target.value)} placeholder="Optional" /></div>
-              <div className="form-group"><label className="label">{lang === "en" ? "Invoice ref" : "Ref facture"}</label><input className="input" value={receiveForm.invoice_ref} onChange={e => setRP("invoice_ref", e.target.value)} placeholder="Optional" /></div>
+              <div className="form-group"><label className="label">{lang === "en" ? "Invoice ref" : "Réf facture"}</label><input className="input" value={receiveForm.invoice_ref} onChange={e => setRP("invoice_ref", e.target.value)} placeholder="Optional" /></div>
             </div>
-            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>{lang === "en" ? "Items received" : "Articles recus"}</div>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>{lang === "en" ? "Items received" : "Articles reçus"}</div>
             {receiveForm.items.map((item, idx) => (
               <div key={idx} style={{ background: "var(--bg-elevated)", borderRadius: 10, padding: 12, marginBottom: 10 }}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
@@ -305,7 +401,7 @@ export default function InventoryPage() {
                   <div><label className="label">{lang === "en" ? "Barcode" : "Code-barres"}</label><BarcodeInput lang={lang} value={item.barcode} onChange={v => setItem(idx, "barcode", v)} placeholder={lang === "en" ? "Scan barcode" : "Scanner code-barres"} /></div>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <div><label className="label">{lang === "en" ? "Quantity" : "Quantite"} *</label><input className="input" type="number" value={item.quantity} onChange={e => setItem(idx, "quantity", e.target.value)} placeholder="0" /></div>
+                  <div><label className="label">{lang === "en" ? "Quantity" : "Quantité"} *</label><input className="input" type="number" value={item.quantity} onChange={e => setItem(idx, "quantity", e.target.value)} placeholder="0" /></div>
                   <div><label className="label">{lang === "en" ? "Cost price" : "Prix achat"}</label><input className="input" type="number" value={item.cost_price} onChange={e => setItem(idx, "cost_price", e.target.value)} placeholder="FCFA" /></div>
                 </div>
               </div>
@@ -313,14 +409,17 @@ export default function InventoryPage() {
             <button className="btn btn-secondary btn-sm" onClick={addItem} style={{ marginBottom: 16 }}>+ {lang === "en" ? "Add another item" : "Ajouter un article"}</button>
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowReceive(false)}>{lang === "en" ? "Cancel" : "Annuler"}</button>
-              <button className="btn btn-primary" style={{ flex: 2 }} disabled={!receiveForm.location_id || receiveMutation.isPending} onClick={() => receiveMutation.mutate()}>{receiveMutation.isPending ? "..." : (lang === "en" ? "Confirm Receipt" : "Confirmer la reception")}</button>
+              <button className="btn btn-primary" style={{ flex: 2 }} disabled={!receiveForm.location_id || receiveMutation.isPending} onClick={() => receiveMutation.mutate()}>{receiveMutation.isPending ? "..." : (lang === "en" ? "Confirm Receipt" : "Confirmer la réception")}</button>
             </div>
           </div>
         </div>
       )}
 
+      {/* ── ADJUST MODAL ── */}
       {showAdjust && selectedProduct && (
-        <AdjustModal product={selectedProduct} lang={lang} onClose={() => { setShowAdjust(false); setSelectedProduct(null); }} onSuccess={() => { setShowAdjust(false); setSelectedProduct(null); qc.invalidateQueries(["stock"]); qc.invalidateQueries(["stock-all"]); }} />
+        <AdjustModal product={selectedProduct} lang={lang}
+          onClose={() => { setShowAdjust(false); setSelectedProduct(null); }}
+          onSuccess={() => { setShowAdjust(false); setSelectedProduct(null); qc.invalidateQueries(["stock"]); qc.invalidateQueries(["stock-all"]); }} />
       )}
     </div>
   );
@@ -335,7 +434,7 @@ function AdjustModal({ product, lang, onClose, onSuccess }) {
     setLoading(true);
     try {
       await api.patch("/stock/adjust", { product_id: product.product_id, location_id: product.location_id, new_quantity: +qty, reason });
-      toast.success(lang === "en" ? "Stock adjusted!" : "Stock ajuste!");
+      toast.success(lang === "en" ? "Stock adjusted!" : "Stock ajusté!");
       onSuccess();
     } catch (err) {
       toast.error(err.response?.data?.message || "Error");
@@ -347,7 +446,7 @@ function AdjustModal({ product, lang, onClose, onSuccess }) {
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 6 }}>{lang === "en" ? "Adjust Stock" : "Ajuster le stock"}</div>
         <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20 }}>{product.pa_products?.name} - {product.pa_locations?.name}</div>
-        <div className="form-group"><label className="label">{lang === "en" ? "New quantity" : "Nouvelle quantite"}</label><input className="input" type="number" value={qty} onChange={e => setQty(e.target.value)} /></div>
+        <div className="form-group"><label className="label">{lang === "en" ? "New quantity" : "Nouvelle quantité"}</label><input className="input" type="number" value={qty} onChange={e => setQty(e.target.value)} /></div>
         <div className="form-group"><label className="label">{lang === "en" ? "Reason" : "Raison"}</label><input className="input" value={reason} onChange={e => setReason(e.target.value)} placeholder={lang === "en" ? "e.g. Stock count correction" : "Ex: Correction inventaire"} /></div>
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onClose}>{lang === "en" ? "Cancel" : "Annuler"}</button>
@@ -357,5 +456,3 @@ function AdjustModal({ product, lang, onClose, onSuccess }) {
     </div>
   );
 }
-
-
