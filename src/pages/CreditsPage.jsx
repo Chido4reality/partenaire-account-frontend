@@ -15,17 +15,23 @@ export default function CreditsPage() {
   const [payForm, setPayForm]   = useState({ amount: "", payment_method: "cash", reference: "", notes: "" });
   const [showPay, setShowPay]   = useState(false);
 
+  // ── Fetch all customers with debt (summary list) ──────────────────────────
   const { data, isLoading } = useQuery({
     queryKey: ["credits"],
     queryFn: () => api.get("/reports/debts").then(r => r.data),
     refetchInterval: 30000
   });
 
-  const { data: saleDetail } = useQuery({
-    queryKey: ["sales-by-customer", selected?.id],
-    queryFn: () => api.get(`/sales?customer_id=${selected.id}&status=partial,credit&limit=20`).then(r => r.data),
-    enabled: !!selected?.id
+  // ── Fetch open invoices for selected customer ─────────────────────────────
+  // Uses /sales/customer-debt/:id which is now correctly ordered in the backend
+  const { data: debtDetail, isLoading: debtLoading } = useQuery({
+    queryKey: ["customer-debt", selected?.id],
+    queryFn: () => api.get(`/sales/customer-debt/${selected.id}`).then(r => r.data),
+    enabled: !!selected?.id,
+    staleTime: 0
   });
+
+  const openInvoices = debtDetail?.data || [];
 
   const payMutation = useMutation({
     mutationFn: ({ saleId }) => api.post(`/sales/${saleId}/payment`, {
@@ -39,20 +45,19 @@ export default function CreditsPage() {
       setShowPay(false);
       setPayForm({ amount: "", payment_method: "cash", reference: "", notes: "" });
       qc.invalidateQueries(["credits"]);
-      qc.invalidateQueries(["sales-by-customer", selected?.id]);
+      qc.invalidateQueries(["customer-debt", selected?.id]);
       qc.invalidateQueries(["daily-summary"]);
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
 
-  // ── WHATSAPP REMINDER ──────────────────────────────────────
-  const sendWhatsAppReminder = (customer, sales) => {
+  // ── WHATSAPP REMINDER ─────────────────────────────────────────────────────
+  const sendWhatsAppReminder = (customer) => {
     if (!customer.phone) {
       toast.error(lang === "en" ? "No phone number for this customer" : "Pas de numéro pour ce client");
       return;
     }
 
-    // Format phone for WhatsApp
     let phone = customer.phone.toString().replace(/\s+/g, "").replace(/^0/, "");
     if (!phone.startsWith("237")) phone = "237" + phone;
 
@@ -64,15 +69,13 @@ export default function CreditsPage() {
       ? `Bonjour ${customer.name},\n\nReminder from ${orgName}.\n\nYour outstanding balance as of ${today}:\n*${totalDebt.toLocaleString()} FCFA*\n`
       : `Bonjour ${customer.name},\n\nRappel de ${orgName}.\n\nVotre solde impayé au ${today}:\n*${totalDebt.toLocaleString()} FCFA*\n`;
 
-    // Add invoice breakdown
-    const openSales = saleDetail?.data || [];
-    if (openSales.length > 0) {
+    if (openInvoices.length > 0) {
       msg += lang === "en" ? "\nInvoice details:\n" : "\nDétails des factures:\n";
-      openSales.slice(0, 3).forEach(s => {
+      openInvoices.slice(0, 3).forEach(s => {
         const date = new Date(s.sale_date || s.created_at).toLocaleDateString("fr-FR");
         msg += `• ${s.sale_number} (${date}): ${(+s.balance_due).toLocaleString()} FCFA\n`;
       });
-      if (openSales.length > 3) msg += `• ...et ${openSales.length - 3} autre(s)\n`;
+      if (openInvoices.length > 3) msg += `• ...et ${openInvoices.length - 3} autre(s)\n`;
     }
 
     msg += lang === "en"
@@ -140,7 +143,8 @@ export default function CreditsPage() {
             { key: "overdue",   en: `Overdue (${overdue})`,       fr: `En retard (${overdue})` },
             { key: "due_today", en: `Due today (${dueToday})`,    fr: `Aujourd'hui (${dueToday})` },
           ].map(tb => (
-            <button key={tb.key} onClick={() => setTab(tb.key)} style={{ padding: "8px 16px", background: "none", border: "none", borderBottom: tab === tb.key ? "2px solid var(--brand)" : "2px solid transparent", color: tab === tb.key ? "var(--text-primary)" : "var(--text-muted)", cursor: "pointer", fontSize: 13, fontWeight: tab === tb.key ? 600 : 400, marginBottom: -1 }}>
+            <button key={tb.key} onClick={() => setTab(tb.key)}
+              style={{ padding: "8px 16px", background: "none", border: "none", borderBottom: tab === tb.key ? "2px solid var(--brand)" : "2px solid transparent", color: tab === tb.key ? "var(--text-primary)" : "var(--text-muted)", cursor: "pointer", fontSize: 13, fontWeight: tab === tb.key ? 600 : 400, marginBottom: -1 }}>
               {lang === "en" ? tb.en : tb.fr}
             </button>
           ))}
@@ -193,10 +197,9 @@ export default function CreditsPage() {
                     </div>
                     <div style={{ textAlign: "right", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
                       <div style={{ color: "#f87171", fontWeight: 700, fontSize: 16 }}>{formatCFA(c.total_debt)}</div>
-                      {/* WhatsApp button */}
                       {c.phone && (
                         <button
-                          onClick={e => { e.stopPropagation(); setSelected(c); setTimeout(() => sendWhatsAppReminder(c, saleDetail?.data), 300); }}
+                          onClick={e => { e.stopPropagation(); setSelected(c); setTimeout(() => sendWhatsAppReminder(c), 300); }}
                           style={{ background: "#25D366", border: "none", color: "#fff", borderRadius: 8, padding: "4px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
                           📱 {lang === "en" ? "Remind" : "Rappel"}
                         </button>
@@ -220,9 +223,8 @@ export default function CreditsPage() {
               {selected.phone && <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>📞 {selected.phone}</div>}
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              {/* WhatsApp Reminder button in detail panel */}
               {selected.phone && (
-                <button onClick={() => sendWhatsAppReminder(selected, saleDetail?.data)}
+                <button onClick={() => sendWhatsAppReminder(selected)}
                   style={{ background: "#25D366", border: "none", color: "#fff", borderRadius: 10, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
                   📱 {lang === "en" ? "Send WhatsApp Reminder" : "Envoyer rappel WhatsApp"}
                 </button>
@@ -235,13 +237,17 @@ export default function CreditsPage() {
             {lang === "en" ? "Open invoices" : "Factures ouvertes"}
           </div>
 
-          {saleDetail?.data?.length === 0 ? (
+          {debtLoading ? (
+            <div style={{ textAlign: "center", padding: 20, color: "var(--text-muted)", fontSize: 13 }}>
+              Loading...
+            </div>
+          ) : openInvoices.length === 0 ? (
             <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: 20 }}>
               {lang === "en" ? "No open invoices" : "Aucune facture ouverte"}
             </div>
           ) : (
             <div style={{ display: "grid", gap: 8 }}>
-              {saleDetail?.data?.map(sale => (
+              {openInvoices.map(sale => (
                 <div key={sale.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                     <div>
@@ -277,14 +283,14 @@ export default function CreditsPage() {
             </div>
           )}
 
-          {/* WhatsApp message preview */}
+          {/* WhatsApp preview */}
           {selected.phone && (
             <div style={{ marginTop: 20, padding: 14, background: "rgba(37,211,102,0.08)", border: "1px solid rgba(37,211,102,0.3)", borderRadius: 12 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: "#25D366", marginBottom: 8 }}>📱 WhatsApp Reminder Preview</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6, whiteSpace: "pre-line" }}>
                 {`Bonjour ${selected.name},\n\nRappel de ${org?.name || "notre boutique"}.\nSolde impayé: *${(selected.total_debt || 0).toLocaleString()} FCFA*\n\nMerci de nous contacter.`}
               </div>
-              <button onClick={() => sendWhatsAppReminder(selected, saleDetail?.data)}
+              <button onClick={() => sendWhatsAppReminder(selected)}
                 style={{ marginTop: 10, width: "100%", padding: "10px", background: "#25D366", border: "none", color: "#fff", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                 📱 {lang === "en" ? "Open WhatsApp" : "Ouvrir WhatsApp"}
               </button>
@@ -321,7 +327,9 @@ export default function CreditsPage() {
 
             <div className="form-group">
               <label className="label">{lang === "en" ? "Amount received (FCFA)" : "Montant reçu (FCFA)"} *</label>
-              <input className="input" type="number" value={payForm.amount} onChange={e => setP("amount", e.target.value)} placeholder={formatCFA(showPay.balance_due)} />
+              <input className="input" type="number" value={payForm.amount}
+                onChange={e => setP("amount", e.target.value)}
+                placeholder={String(showPay.balance_due)} />
             </div>
             <div className="form-group">
               <label className="label">{lang === "en" ? "Payment method" : "Mode de paiement"}</label>
@@ -331,7 +339,8 @@ export default function CreditsPage() {
             </div>
             <div className="form-group">
               <label className="label">{lang === "en" ? "Reference" : "Référence"}</label>
-              <input className="input" value={payForm.reference} onChange={e => setP("reference", e.target.value)} placeholder={lang === "en" ? "Transaction ID..." : "ID transaction..."} />
+              <input className="input" value={payForm.reference} onChange={e => setP("reference", e.target.value)}
+                placeholder={lang === "en" ? "Transaction ID..." : "ID transaction..."} />
             </div>
 
             <div style={{ display: "flex", gap: 8 }}>
