@@ -54,6 +54,7 @@ export default function POSPage() {
   const [showDebtModal, setShowDebtModal]     = useState(false);
   const [debtInvoices, setDebtInvoices]       = useState([]);
   const [selectedDebtIds, setSelectedDebtIds] = useState(new Set());
+  const [debtPayAmt, setDebtPayAmt]           = useState(""); // partial debt payment amount
 
   const searchRef     = useRef(null);
   const custRef       = useRef(null);
@@ -196,10 +197,18 @@ export default function POSPage() {
     mutationFn: async () => {
       const debtItem = cart.find(i => i.product_id === "__DEBT__");
       if (debtItem) {
+        // If partial debt amount entered, split proportionally across invoices
+        const totalDebt = debtItem.debtAmount;
+        const amountToPay = debtPayAmt ? Math.min(parseFloat(debtPayAmt), totalDebt) : totalDebt;
+        let remaining = amountToPay;
         for (const saleId of debtItem.debtSaleIds) {
+          if (remaining <= 0) break;
           const inv = debtInvoices.find(i => i.id === saleId);
           if (!inv) continue;
-          await api.post(`/sales/${saleId}/payment`, { amount: parseFloat(inv.balance_due), payment_method: payMethod, notes: notes || null });
+          const invBalance = parseFloat(inv.balance_due);
+          const payThis = Math.min(remaining, invBalance);
+          await api.post(`/sales/${saleId}/payment`, { amount: payThis, payment_method: payMethod, notes: notes || null });
+          remaining -= payThis;
         }
         return { isDebt: true };
       }
@@ -213,7 +222,7 @@ export default function POSPage() {
       toast.success(data?.isDebt ? (lang === "en" ? "✓ Debt payment recorded!" : "✓ Remboursement enregistré!") : (lang === "en" ? "✓ Sale recorded!" : "✓ Vente enregistrée!"), { duration: 2000 });
       setCart([]); setCustomer(null); setPayMode("paid");
       setPaidAmt(""); setDueDate(""); setNotes(""); setShowPayment(false);
-      setDebtInvoices([]); setSelectedDebtIds(new Set());
+      setDebtInvoices([]); setSelectedDebtIds(new Set()); setDebtPayAmt("");
       qc.invalidateQueries(["recent-sales"]);
       qc.invalidateQueries(["daily-summary"]);
       qc.invalidateQueries(["pos-customers"]);
@@ -546,6 +555,20 @@ export default function POSPage() {
               </button>
             ) : (
               <div>
+                {hasDebt && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>
+                      {lang === "en" ? "Amount to collect (blank = full balance)" : "Montant à encaisser (vide = tout)"}
+                    </div>
+                    <input className="input" type="number"
+                      placeholder={`${lang === "en" ? "Full balance:" : "Solde total:"} ${(cart.find(i => i.product_id === "__DEBT__")?.unit_price || 0).toLocaleString()} FCFA`}
+                      value={debtPayAmt} onChange={e => setDebtPayAmt(e.target.value)}
+                      style={{ marginBottom: 4 }} />
+                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                      {lang === "en" ? "Leave blank to collect full balance" : "Laissez vide pour encaisser le solde total"}
+                    </div>
+                  </div>
+                )}
                 {!hasDebt && (
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 10 }}>
                     {PAYMENT_MODES.map(pm => (
