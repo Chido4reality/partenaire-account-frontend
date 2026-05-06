@@ -558,4 +558,3 @@ export default function POSPage() {
     </>
   );
 }
- 
