@@ -45,8 +45,9 @@ export default function SettingsPage() {
   const saveMutation = useMutation({
     mutationFn: () => api.patch("/settings", form),
     onSuccess: () => {
-      toast.success(lang === "en" ? "✓ Settings saved!" : "✓ Paramètres sauvegardés!");
+      toast.success(lang === "en" ? "✓ Settings saved!" : "✓ Paramètres sauvegardés!", { duration: 3000 });
       qc.invalidateQueries(["org-settings"]);
+      window.scrollTo({ top: 0, behavior: "smooth" });
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
