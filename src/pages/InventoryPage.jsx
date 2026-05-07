@@ -64,7 +64,8 @@ export default function InventoryPage() {
 
   const [newProduct, setNewProduct] = useState({
     name: "", barcode: "", unit: "pce", cost_price: "", sell_price: "",
-    wholesale_price: "", min_price: "", description: ""
+    wholesale_price: "", min_price: "", description: "",
+    initial_location_id: "", initial_quantity: ""
   });
 
   const [editProduct, setEditProduct] = useState(null);
@@ -134,18 +135,34 @@ export default function InventoryPage() {
   });
 
   const addProductMutation = useMutation({
-    mutationFn: () => api.post("/products", {
-      ...newProduct,
-      cost_price: +newProduct.cost_price || 0,
-      sell_price: +newProduct.sell_price,
-      wholesale_price: +newProduct.wholesale_price || 0,
-      min_price: +newProduct.min_price || 0,
-    }),
+    mutationFn: async () => {
+      const res = await api.post("/products", {
+        name: newProduct.name,
+        barcode: newProduct.barcode || null,
+        unit: newProduct.unit,
+        cost_price: +newProduct.cost_price || 0,
+        sell_price: +newProduct.sell_price,
+        wholesale_price: +newProduct.wholesale_price || 0,
+        min_price: +newProduct.min_price || 0,
+        description: newProduct.description || null,
+      });
+      const product = res.data.data;
+      // If initial stock provided, create stock record
+      if (newProduct.initial_location_id && newProduct.initial_quantity) {
+        await api.post("/stock/arrivals", {
+          location_id: newProduct.initial_location_id,
+          items: [{ product_id: product.id, quantity: +newProduct.initial_quantity, cost_price: +newProduct.cost_price || 0 }]
+        });
+      }
+      return res.data;
+    },
     onSuccess: () => {
       toast.success(lang === "en" ? "✓ Product added!" : "✓ Produit ajouté!");
       setShowAddProduct(false);
-      setNewProduct({ name: "", barcode: "", unit: "pce", cost_price: "", sell_price: "", wholesale_price: "", min_price: "", description: "" });
+      setNewProduct({ name: "", barcode: "", unit: "pce", cost_price: "", sell_price: "", wholesale_price: "", min_price: "", description: "", initial_location_id: "", initial_quantity: "" });
       qc.invalidateQueries(["products-all"]);
+      qc.invalidateQueries(["stock"]);
+      qc.invalidateQueries(["stock-all"]);
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
@@ -366,7 +383,7 @@ export default function InventoryPage() {
                             </button>
                             {isOwner && (
                               <button className="btn btn-secondary btn-sm"
-                                onClick={() => { setEditProduct({ ...p }); setShowEditProduct(true); }}
+                                onClick={() => { setEditProduct({ ...p, id: s.product_id }); setShowEditProduct(true); }}
                                 style={{ color: "var(--brand-light)", borderColor: "var(--brand)" }}>
                                 ✏️
                               </button>
@@ -622,6 +639,25 @@ export default function InventoryPage() {
               </div>
             </div>
 
+            <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 12 }}>
+                📦 {lang === "en" ? "Initial Stock (optional)" : "Stock initial (optionnel)"}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div className="form-group">
+                  <label className="label">{lang === "en" ? "Location" : "Emplacement"}</label>
+                  <select className="input" value={newProduct.initial_location_id || ""} onChange={e => setNewProduct(p => ({ ...p, initial_location_id: e.target.value }))}>
+                    <option value="">{lang === "en" ? "Skip (add stock later)" : "Ignorer (ajouter stock plus tard)"}</option>
+                    {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="label">{lang === "en" ? "Initial quantity" : "Quantité initiale"}</label>
+                  <input className="input" type="number" value={newProduct.initial_quantity || ""} onChange={e => setNewProduct(p => ({ ...p, initial_quantity: e.target.value }))} placeholder="0" disabled={!newProduct.initial_location_id} />
+                </div>
+              </div>
+            </div>
+
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowAddProduct(false)}>
                 {lang === "en" ? "Cancel" : "Annuler"}
@@ -730,25 +766,7 @@ export default function InventoryPage() {
             </div>
             <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>{lang === "en" ? "Items received" : "Articles reçus"}</div>
             {receiveForm.items.map((item, idx) => (
-              <div key={idx} style={{ background: "var(--bg-elevated)", borderRadius: 10, padding: 12, marginBottom: 10 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                  <div>
-                    <label className="label">{lang === "en" ? "Product" : "Produit"}</label>
-                    <select className="input" value={item.product_id} onChange={e => setItem(idx, "product_id", e.target.value)}>
-                      <option value="">{lang === "en" ? "Select" : "Choisir"}</option>
-                      {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="label">{lang === "en" ? "Quantity" : "Quantité"} *</label>
-                    <input className="input" type="number" value={item.quantity} onChange={e => setItem(idx, "quantity", e.target.value)} placeholder="0" />
-                  </div>
-                  <div>
-                    <label className="label">{lang === "en" ? "Cost price" : "Prix achat"}</label>
-                    <input className="input" type="number" value={item.cost_price} onChange={e => setItem(idx, "cost_price", e.target.value)} placeholder="FCFA" />
-                  </div>
-                </div>
-              </div>
+              <ReceiveItemRow key={idx} idx={idx} item={item} products={products} lang={lang} setItem={setItem} />
             ))}
             <button className="btn btn-secondary btn-sm" onClick={addItem} style={{ marginBottom: 16 }}>
               + {lang === "en" ? "Add another item" : "Ajouter un article"}
@@ -829,6 +847,77 @@ function AdjustModal({ product, lang, onClose, onSuccess }) {
           <button className="btn btn-primary" style={{ flex: 2 }} disabled={loading} onClick={handleSubmit}>
             {loading ? "..." : (lang === "en" ? "✓ Save" : "✓ Enregistrer")}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReceiveItemRow({ idx, item, products, lang, setItem }) {
+  const [search, setSearch] = useState("");
+  const [showDrop, setShowDrop] = useState(false);
+  const [selectedName, setSelectedName] = useState("");
+
+  function fuzzyMatch(str, pattern) {
+    if (!str || !pattern) return false;
+    const s = str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const p = pattern.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    return s.includes(p);
+  }
+
+  const filtered = search.length >= 1
+    ? products.filter(p => fuzzyMatch(p.name, search) || (p.barcode && p.barcode.includes(search))).slice(0, 6)
+    : [];
+
+  const selectProduct = (p) => {
+    setItem(idx, "product_id", p.id);
+    setSelectedName(p.name);
+    setSearch("");
+    setShowDrop(false);
+  };
+
+  return (
+    <div style={{ background: "var(--bg-elevated)", borderRadius: 10, padding: 12, marginBottom: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 8 }}>
+        <div style={{ position: "relative" }}>
+          <label className="label">{lang === "en" ? "Product" : "Produit"} *</label>
+          {item.product_id && selectedName ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "rgba(79,70,229,0.1)", border: "1px solid var(--brand)", borderRadius: 8, fontSize: 13 }}>
+              <span style={{ flex: 1, fontWeight: 600 }}>{selectedName}</span>
+              <button onClick={() => { setItem(idx, "product_id", ""); setSelectedName(""); }}
+                style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: 14 }}>✕</button>
+            </div>
+          ) : (
+            <>
+              <input className="input"
+                placeholder={lang === "en" ? "Type name or scan barcode..." : "Tapez le nom ou scannez..."}
+                value={search}
+                onChange={e => { setSearch(e.target.value); setShowDrop(true); }}
+                onFocus={() => setShowDrop(true)}
+                onBlur={() => setTimeout(() => setShowDrop(false), 200)} />
+              {showDrop && filtered.length > 0 && (
+                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.4)", marginTop: 2 }}>
+                  {filtered.map(p => (
+                    <div key={p.id} onMouseDown={() => selectProduct(p)}
+                      style={{ padding: "8px 12px", cursor: "pointer", borderBottom: "1px solid var(--border)", fontSize: 13 }}
+                      onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
+                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                      <div style={{ fontWeight: 600 }}>{p.name}</div>
+                      {p.barcode && <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>{p.barcode}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        <div>
+          <label className="label">{lang === "en" ? "Quantity" : "Quantité"} *</label>
+          <input className="input" type="number" value={item.quantity} onChange={e => setItem(idx, "quantity", e.target.value)} placeholder="0" />
+        </div>
+        <div>
+          <label className="label">{lang === "en" ? "Cost price" : "Prix achat"}</label>
+          <input className="input" type="number" value={item.cost_price} onChange={e => setItem(idx, "cost_price", e.target.value)} placeholder="FCFA" />
         </div>
       </div>
     </div>
