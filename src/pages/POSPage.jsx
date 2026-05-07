@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
-import { useLangStore, useSettingsStore } from "../store";
+import { useLangStore, useSettingsStore, useAuthStore } from "../store";
+import OwnerPIN from "../components/common/OwnerPIN";
 import api, { formatCFA } from "../utils/api";
 import CameraScanner from "../components/common/CameraScanner";
 
@@ -34,7 +35,9 @@ function fuzzyMatch(str, pattern) {
 export default function POSPage() {
   const { lang } = useLangStore();
   const { selectedLocation, setLocation } = useSettingsStore();
+  const { user } = useAuthStore();
   const qc = useQueryClient();
+  const isOwner = user?.role === "owner";
 
   const [cart, setCart]                   = useState([]);
   const [search, setSearch]               = useState("");
@@ -52,6 +55,8 @@ export default function POSPage() {
   const [scanning, setScanning]           = useState(false);
   const [lastScan, setLastScan]           = useState(null);
   const [showDebtModal, setShowDebtModal]     = useState(false);
+  const [showPIN, setShowPIN]               = useState(false);
+  const [pinItem, setPinItem]               = useState(null); // {idx, price} pending PIN approval
   const [debtInvoices, setDebtInvoices]       = useState([]);
   const [selectedDebtIds, setSelectedDebtIds] = useState(new Set());
   const [debtPayAmt, setDebtPayAmt]           = useState(""); // partial debt payment amount
@@ -150,9 +155,19 @@ export default function POSPage() {
       ).slice(0, 8)
     : [];
 
+  // ── PRICE TIER: auto-apply based on customer type ───────────────────────────
+  const getPrice = (product) => {
+    const customerType = customer?.customer_type || "retail";
+    if (customerType === "wholesale" && product.wholesale_price > 0) {
+      return product.wholesale_price;
+    }
+    return product.sell_price;
+  };
+
   const addToCart = (product, qty = 1) => {
+    const price = getPrice(product);
     setCart(prev => {
-      const idx = prev.findIndex(i => i.product_id === product.id);
+      const idx = prev.findIndex(i => i.product_id === (product.product_id || product.id));
       if (idx >= 0) {
         const u = [...prev];
         u[idx] = { ...u[idx], quantity: u[idx].quantity + qty };
@@ -161,7 +176,11 @@ export default function POSPage() {
       return [...prev, {
         product_id: product.product_id || product.id,
         name: product.name, unit: product.unit, barcode: product.barcode,
-        quantity: qty, unit_price: product.sell_price, cost_price: product.cost_price,
+        quantity: qty,
+        unit_price: price,
+        original_price: price,
+        min_price: product.min_price || 0,
+        cost_price: product.cost_price,
         stock: product.stock?.quantity
       }];
     });
@@ -185,8 +204,23 @@ export default function POSPage() {
     ? setCart(c => c.filter((_, i) => i !== idx))
     : setCart(c => c.map((it, i) => i === idx ? { ...it, quantity: qty } : it));
 
-  const updatePrice = (idx, price) =>
-    setCart(c => c.map((it, i) => i === idx ? { ...it, unit_price: +price } : it));
+  const updatePrice = (idx, price) => {
+    const item = cart[idx];
+    const newPrice = +price;
+    const minPrice = item.min_price || 0;
+    // Owner can always change price freely
+    if (isOwner) {
+      setCart(c => c.map((it, i) => i === idx ? { ...it, unit_price: newPrice } : it));
+      return;
+    }
+    // Staff: block below min price, require PIN
+    if (minPrice > 0 && newPrice < minPrice) {
+      setPinItem({ idx, price: newPrice });
+      setShowPIN(true);
+      return;
+    }
+    setCart(c => c.map((it, i) => i === idx ? { ...it, unit_price: newPrice } : it));
+  };
 
   const total   = cart.reduce((s, i) => s + i.quantity * i.unit_price, 0);
   const hasDebt = cart.some(i => i.product_id === "__DEBT__");
@@ -341,6 +375,11 @@ export default function POSPage() {
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 600, fontSize: 13 }}>{customer.name}</div>
                   {customer.phone && <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{customer.phone}</div>}
+                  {customer.customer_type === "wholesale" && (
+                    <div style={{ fontSize: 10, background: "rgba(251,191,36,0.15)", color: "#fbbf24", padding: "2px 8px", borderRadius: 10, fontWeight: 700, marginTop: 2, display: "inline-block" }}>
+                      🏭 {lang === "en" ? "Wholesale prices applied" : "Prix gros appliqués"}
+                    </div>
+                  )}
                   {customer.total_debt > 0 && (
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
                       <div style={{ fontSize: 11, color: "#f87171", fontWeight: 600 }}>🧾 Owes {formatCFA(customer.total_debt)}</div>
@@ -478,7 +517,12 @@ export default function POSPage() {
                     </div>
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <div style={{ fontWeight: 700, color: "var(--brand-light)", fontSize: 14 }}>{formatCFA(p.sell_price)}</div>
+                    <div style={{ fontWeight: 700, color: "var(--brand-light)", fontSize: 14 }}>
+                      {formatCFA(customer?.customer_type === "wholesale" && p.wholesale_price > 0 ? p.wholesale_price : p.sell_price)}
+                      {customer?.customer_type === "wholesale" && p.wholesale_price > 0 && (
+                        <span style={{ fontSize: 9, background: "#fbbf24", color: "#000", borderRadius: 4, padding: "1px 4px", marginLeft: 4, fontWeight: 700 }}>GROS</span>
+                      )}
+                    </div>
                     <div style={{ fontSize: 10, color: "var(--text-muted)" }}>/{p.unit}</div>
                   </div>
                 </div>
