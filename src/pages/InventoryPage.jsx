@@ -18,6 +18,14 @@ function fuzzyMatch(str, pattern) {
   return score >= Math.floor(p.length * 0.4);
 }
 
+const UNITS = ["pce", "kg", "litre", "metre", "boite", "set", "paire", "carton", "sac", "fût"];
+
+const EMPTY_PRODUCT = {
+  name: "", barcode: "", unit: "pce",
+  cost_price: "", sell_price: "", wholesale_price: "", min_price: "",
+  description: "", initial_location_id: "", initial_quantity: ""
+};
+
 export default function InventoryPage() {
   const { lang } = useLangStore();
   const { selectedLocation } = useSettingsStore();
@@ -30,7 +38,6 @@ export default function InventoryPage() {
   const isWarehouse = role === "warehouse";
   const isCashier = role === "cashier";
 
-  // Cashier blocked entirely
   if (isCashier) return (
     <div style={{ padding: 40, textAlign: "center" }}>
       <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.3 }}>📦</div>
@@ -47,33 +54,40 @@ export default function InventoryPage() {
   const canAddProduct = isOwner || isManager;
   const canReceiveGoods = isOwner || isManager || isWarehouse;
   const canAdjustStock = isOwner || isManager || isWarehouse;
-  const canEditPrices = isOwner;
-  const canSetMinPrice = isOwner;
 
   const [tab, setTab] = useState("stock");
   const [search, setSearch] = useState("");
   const [scanning, setScanning] = useState(false);
+
+  // Modal states
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [showReceive, setShowReceive] = useState(false);
   const [showAdjust, setShowAdjust] = useState(false);
   const [showEditProduct, setShowEditProduct] = useState(false);
+  const [showRapidEntry, setShowRapidEntry] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [showPIN, setShowPIN] = useState(false);
   const [pinAction, setPinAction] = useState(null);
-  const [selectedProduct, setSelectedProduct] = useState(null);
+
   const [selectedStockRow, setSelectedStockRow] = useState(null);
-
-  const [newProduct, setNewProduct] = useState({
-    name: "", barcode: "", unit: "pce", cost_price: "", sell_price: "",
-    wholesale_price: "", min_price: "", description: "",
-    initial_location_id: "", initial_quantity: ""
-  });
-
   const [editProduct, setEditProduct] = useState(null);
+  const [newProduct, setNewProduct] = useState(EMPTY_PRODUCT);
 
+  // Receive Goods state
   const [receiveForm, setReceiveForm] = useState({
     location_id: "", supplier_name: "", invoice_ref: "", notes: "",
-    items: [{ product_id: "", quantity: "", cost_price: "" }]
+    items: [{ product_id: "", product_name: "", quantity: "", cost_price: "", sell_price: "", wholesale_price: "", min_price: "", currentPrices: null }]
   });
+
+  // Rapid entry state
+  const [rapidItem, setRapidItem] = useState(EMPTY_PRODUCT);
+  const [rapidCount, setRapidCount] = useState(0);
+  const rapidNameRef = useRef(null);
+
+  // Import state
+  const [importFile, setImportFile] = useState(null);
+  const [importPreview, setImportPreview] = useState([]);
+  const [importError, setImportError] = useState("");
 
   const searchRef = useRef(null);
   const barcodeBuffer = useRef("");
@@ -82,18 +96,14 @@ export default function InventoryPage() {
   useEffect(() => {
     const handleKey = (e) => {
       const active = document.activeElement;
-      const isModal = showAddProduct || showReceive || showAdjust || showEditProduct;
+      const isModal = showAddProduct || showReceive || showAdjust || showEditProduct || showRapidEntry || showImport;
       const isTyping = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT");
       if (isTyping && active !== searchRef.current) return;
       if (isModal) return;
       if (e.key === "Enter") {
         const code = barcodeBuffer.current.trim();
         barcodeBuffer.current = "";
-        if (code.length >= 3) {
-          setSearch(code);
-          setScanning(true);
-          setTimeout(() => setScanning(false), 800);
-        }
+        if (code.length >= 3) { setSearch(code); setScanning(true); setTimeout(() => setScanning(false), 800); }
         return;
       }
       if (e.key.length === 1 && !e.ctrlKey && !e.altKey) {
@@ -104,8 +114,9 @@ export default function InventoryPage() {
     };
     window.addEventListener("keydown", handleKey);
     return () => { window.removeEventListener("keydown", handleKey); clearTimeout(barcodeTimer.current); };
-  }, [showAddProduct, showReceive, showAdjust, showEditProduct]);
+  }, [showAddProduct, showReceive, showAdjust, showEditProduct, showRapidEntry, showImport]);
 
+  // ── DATA QUERIES ────────────────────────────────────────────────────────────
   const { data: stockData, isLoading: stockLoading } = useQuery({
     queryKey: ["stock", selectedLocation?.id],
     queryFn: () => api.get("/stock" + (selectedLocation ? "?location_id=" + selectedLocation.id : "")).then(r => r.data),
@@ -120,7 +131,7 @@ export default function InventoryPage() {
 
   const { data: productsData } = useQuery({
     queryKey: ["products-all"],
-    queryFn: () => api.get("/products?limit=200").then(r => r.data),
+    queryFn: () => api.get("/products?limit=500").then(r => r.data),
   });
 
   const { data: locationsData } = useQuery({
@@ -134,6 +145,25 @@ export default function InventoryPage() {
     enabled: tab === "overview"
   });
 
+  const stock = stockData?.data || [];
+  const alerts = alertData?.data || [];
+  const products = productsData?.data || [];
+  const locations = locationsData?.data || [];
+  const allStock = allStockData?.data || [];
+
+  const filtered = search ? stock.filter(s => fuzzyMatch(s.pa_products?.name, search) || (s.pa_products?.barcode && s.pa_products.barcode.includes(search))) : stock;
+  const filteredProducts = search ? products.filter(p => fuzzyMatch(p.name, search) || (p.barcode && p.barcode.includes(search))) : products;
+
+  const totalStockValue = isOwner ? stock.reduce((sum, s) => sum + (+s.quantity * +(s.pa_products?.cost_price || 0)), 0) : 0;
+
+  const invalidateAll = () => {
+    qc.invalidateQueries(["stock"]);
+    qc.invalidateQueries(["stock-all"]);
+    qc.invalidateQueries(["products-all"]);
+    qc.invalidateQueries(["stock-alerts"]);
+  };
+
+  // ── ADD PRODUCT MUTATION ────────────────────────────────────────────────────
   const addProductMutation = useMutation({
     mutationFn: async () => {
       const res = await api.post("/products", {
@@ -147,7 +177,6 @@ export default function InventoryPage() {
         description: newProduct.description || null,
       });
       const product = res.data.data;
-      // If initial stock provided, create stock record
       if (newProduct.initial_location_id && newProduct.initial_quantity) {
         await api.post("/stock/arrivals", {
           location_id: newProduct.initial_location_id,
@@ -159,14 +188,13 @@ export default function InventoryPage() {
     onSuccess: () => {
       toast.success(lang === "en" ? "✓ Product added!" : "✓ Produit ajouté!");
       setShowAddProduct(false);
-      setNewProduct({ name: "", barcode: "", unit: "pce", cost_price: "", sell_price: "", wholesale_price: "", min_price: "", description: "", initial_location_id: "", initial_quantity: "" });
-      qc.invalidateQueries(["products-all"]);
-      qc.invalidateQueries(["stock"]);
-      qc.invalidateQueries(["stock-all"]);
+      setNewProduct(EMPTY_PRODUCT);
+      invalidateAll();
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
 
+  // ── EDIT PRODUCT MUTATION ───────────────────────────────────────────────────
   const editProductMutation = useMutation({
     mutationFn: () => api.patch(`/products/${editProduct.id}`, {
       name: editProduct.name,
@@ -176,57 +204,186 @@ export default function InventoryPage() {
       sell_price: +editProduct.sell_price,
       wholesale_price: +editProduct.wholesale_price || 0,
       min_price: +editProduct.min_price || 0,
-      description: editProduct.description || null,
     }),
     onSuccess: () => {
       toast.success(lang === "en" ? "✓ Product updated!" : "✓ Produit mis à jour!");
-      setShowEditProduct(false);
-      setEditProduct(null);
-      qc.invalidateQueries(["products-all"]);
-      qc.invalidateQueries(["stock"]);
+      setShowEditProduct(false); setEditProduct(null);
+      invalidateAll();
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
 
+  // ── RECEIVE GOODS MUTATION ──────────────────────────────────────────────────
   const receiveMutation = useMutation({
-    mutationFn: () => api.post("/stock/arrivals", {
-      ...receiveForm,
-      items: receiveForm.items.filter(i => i.product_id && i.quantity).map(i => ({
-        ...i, quantity: +i.quantity, cost_price: +i.cost_price || 0
-      }))
-    }),
+    mutationFn: async () => {
+      const validItems = receiveForm.items.filter(i => i.product_id && i.quantity);
+      if (!validItems.length) throw new Error("No valid items");
+
+      // Update prices for each product first
+      for (const item of validItems) {
+        const priceUpdate = {};
+        if (item.cost_price) priceUpdate.cost_price = +item.cost_price;
+        if (item.sell_price) priceUpdate.sell_price = +item.sell_price;
+        if (item.wholesale_price) priceUpdate.wholesale_price = +item.wholesale_price;
+        if (item.min_price) priceUpdate.min_price = +item.min_price;
+        if (Object.keys(priceUpdate).length > 0) {
+          await api.patch(`/products/${item.product_id}`, priceUpdate);
+        }
+      }
+
+      // Then add stock
+      return api.post("/stock/arrivals", {
+        location_id: receiveForm.location_id,
+        supplier_name: receiveForm.supplier_name || null,
+        invoice_ref: receiveForm.invoice_ref || null,
+        notes: receiveForm.notes || null,
+        items: validItems.map(i => ({ product_id: i.product_id, quantity: +i.quantity, cost_price: +i.cost_price || 0 }))
+      });
+    },
     onSuccess: () => {
-      toast.success(lang === "en" ? "✓ Stock received!" : "✓ Stock réceptionné!");
+      toast.success(lang === "en" ? "✓ Stock received & prices updated!" : "✓ Stock reçu et prix mis à jour!");
       setShowReceive(false);
-      setReceiveForm({ location_id: "", supplier_name: "", invoice_ref: "", notes: "", items: [{ product_id: "", quantity: "", cost_price: "" }] });
-      qc.invalidateQueries(["stock"]);
-      qc.invalidateQueries(["stock-all"]);
+      setReceiveForm({ location_id: "", supplier_name: "", invoice_ref: "", notes: "", items: [{ product_id: "", product_name: "", quantity: "", cost_price: "", sell_price: "", wholesale_price: "", min_price: "", currentPrices: null }] });
+      invalidateAll();
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
 
-  const stock = stockData?.data || [];
-  const alerts = alertData?.data || [];
-  const products = productsData?.data || [];
-  const locations = locationsData?.data || [];
-  const allStock = allStockData?.data || [];
+  // ── RAPID ENTRY MUTATION ────────────────────────────────────────────────────
+  const rapidMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post("/products", {
+        name: rapidItem.name, barcode: rapidItem.barcode || null, unit: rapidItem.unit,
+        cost_price: +rapidItem.cost_price || 0, sell_price: +rapidItem.sell_price,
+        wholesale_price: +rapidItem.wholesale_price || 0, min_price: +rapidItem.min_price || 0,
+      });
+      const product = res.data.data;
+      if (rapidItem.initial_location_id && rapidItem.initial_quantity) {
+        await api.post("/stock/arrivals", {
+          location_id: rapidItem.initial_location_id,
+          items: [{ product_id: product.id, quantity: +rapidItem.initial_quantity, cost_price: +rapidItem.cost_price || 0 }]
+        });
+      }
+      return res.data;
+    },
+    onSuccess: () => {
+      setRapidCount(c => c + 1);
+      toast.success(lang === "en" ? `✓ ${rapidItem.name} added!` : `✓ ${rapidItem.name} ajouté!`, { duration: 1500 });
+      setRapidItem(prev => ({ ...EMPTY_PRODUCT, initial_location_id: prev.initial_location_id, unit: prev.unit }));
+      setTimeout(() => rapidNameRef.current?.focus(), 100);
+      invalidateAll();
+    },
+    onError: (err) => toast.error(err.response?.data?.message || "Error")
+  });
 
-  const filtered = search
-    ? stock.filter(s => fuzzyMatch(s.pa_products?.name, search) || (s.pa_products?.barcode && s.pa_products.barcode.includes(search)))
-    : stock;
+  // ── IMPORT MUTATION ─────────────────────────────────────────────────────────
+  const importMutation = useMutation({
+    mutationFn: async () => {
+      const results = [];
+      for (const row of importPreview) {
+        if (!row.name || !row.sell_price) continue;
+        try {
+          const res = await api.post("/products", {
+            name: row.name, barcode: row.barcode || null, unit: row.unit || "pce",
+            cost_price: +row.cost_price || 0, sell_price: +row.sell_price,
+            wholesale_price: +row.wholesale_price || 0, min_price: +row.min_price || 0,
+          });
+          const product = res.data.data;
+          if (row.location_id && row.initial_quantity) {
+            await api.post("/stock/arrivals", {
+              location_id: row.location_id,
+              items: [{ product_id: product.id, quantity: +row.initial_quantity, cost_price: +row.cost_price || 0 }]
+            });
+          }
+          results.push({ name: row.name, success: true });
+        } catch (e) {
+          results.push({ name: row.name, success: false, error: e.response?.data?.message });
+        }
+      }
+      return results;
+    },
+    onSuccess: (results) => {
+      const ok = results.filter(r => r.success).length;
+      const fail = results.filter(r => !r.success).length;
+      toast.success(`✓ ${ok} products imported${fail > 0 ? `, ${fail} failed` : ""}`, { duration: 4000 });
+      setShowImport(false); setImportFile(null); setImportPreview([]);
+      invalidateAll();
+    },
+    onError: (err) => toast.error(err.message || "Import failed")
+  });
 
-  const filteredProducts = search
-    ? products.filter(p => fuzzyMatch(p.name, search) || fuzzyMatch(p.name_en, search) || (p.barcode && p.barcode.includes(search)))
-    : products;
+  // ── CSV PARSER ──────────────────────────────────────────────────────────────
+  const parseCSV = (text) => {
+    const lines = text.trim().split("\n");
+    const headers = lines[0].split(",").map(h => h.trim().toLowerCase().replace(/\s+/g, "_"));
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const vals = lines[i].split(",").map(v => v.trim().replace(/^"|"$/g, ""));
+      const row = {};
+      headers.forEach((h, idx) => { row[h] = vals[idx] || ""; });
+      // Map location name to id
+      const loc = locations.find(l => l.name.toLowerCase() === (row.location || "").toLowerCase());
+      row.location_id = loc?.id || "";
+      row.initial_quantity = row.qty || row.quantity || row.initial_quantity || "";
+      if (row.name) rows.push(row);
+    }
+    return rows;
+  };
 
-  const setRP = (k, v) => setReceiveForm(f => ({ ...f, [k]: v }));
-  const setItem = (idx, k, v) => setReceiveForm(f => ({ ...f, items: f.items.map((it, i) => i === idx ? { ...it, [k]: v } : it) }));
-  const addItem = () => setReceiveForm(f => ({ ...f, items: [...f.items, { product_id: "", quantity: "", cost_price: "" }] }));
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setImportFile(file);
+    setImportError("");
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const rows = parseCSV(ev.target.result);
+        if (rows.length === 0) { setImportError("No valid rows found. Check your file format."); return; }
+        setImportPreview(rows);
+      } catch (err) {
+        setImportError("Could not parse file. Make sure it is a valid CSV.");
+      }
+    };
+    reader.readAsText(file);
+  };
 
-  // Total stock value (owner only)
-  const totalStockValue = isOwner
-    ? stock.reduce((sum, s) => sum + (+s.quantity * +(s.pa_products?.cost_price || 0)), 0)
-    : 0;
+  const downloadTemplate = () => {
+    const headers = "name,barcode,unit,cost_price,sell_price,wholesale_price,min_price,qty,location";
+    const example1 = `Tube,1234567890,pce,2500,4000,3500,2500,100,${locations[0]?.name || "Bonaberri Store"}`;
+    const example2 = `Huile palme,0987654321,litre,1800,3000,2500,1800,50,${locations[0]?.name || "Bonaberri Store"}`;
+    const csv = [headers, example1, example2].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "inventory_import_template.csv";
+    a.click(); URL.revokeObjectURL(url);
+  };
+
+  // ── RECEIVE GOODS HELPERS ───────────────────────────────────────────────────
+  const setReceiveItem = (idx, k, v) => setReceiveForm(f => ({ ...f, items: f.items.map((it, i) => i === idx ? { ...it, [k]: v } : it) }));
+  const addReceiveItem = () => setReceiveForm(f => ({ ...f, items: [...f.items, { product_id: "", product_name: "", quantity: "", cost_price: "", sell_price: "", wholesale_price: "", min_price: "", currentPrices: null }] }));
+  const removeReceiveItem = (idx) => setReceiveForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) }));
+
+  const selectReceiveProduct = (idx, product) => {
+    setReceiveForm(f => ({
+      ...f,
+      items: f.items.map((it, i) => i === idx ? {
+        ...it,
+        product_id: product.id,
+        product_name: product.name,
+        cost_price: product.cost_price || "",
+        sell_price: product.sell_price || "",
+        wholesale_price: product.wholesale_price || "",
+        min_price: product.min_price || "",
+        currentPrices: {
+          cost: product.cost_price,
+          sell: product.sell_price,
+          wholesale: product.wholesale_price,
+          min: product.min_price
+        }
+      } : it)
+    }));
+  };
 
   const TABS = [
     { key: "stock",    en: "Stock Levels",  fr: "Niveaux de stock" },
@@ -238,60 +395,49 @@ export default function InventoryPage() {
   const byProduct = {};
   allStock.forEach(s => {
     const pid = s.product_id;
-    if (!byProduct[pid]) byProduct[pid] = { name: s.pa_products?.name || "Unknown", unit: s.pa_products?.unit || "pce", barcode: s.pa_products?.barcode || "", locs: {}, total: 0 };
+    if (!byProduct[pid]) byProduct[pid] = { name: s.pa_products?.name || "?", unit: s.pa_products?.unit || "pce", barcode: s.pa_products?.barcode || "", locs: {}, total: 0 };
     byProduct[pid].locs[s.location_id] = s.quantity;
     byProduct[pid].total += +s.quantity;
   });
   const overviewProducts = Object.values(byProduct).sort((a, b) => a.name.localeCompare(b.name));
 
-  const requireOwnerPIN = (action) => {
-    setPinAction(() => action);
-    setShowPIN(true);
-  };
-
   return (
     <div style={{ padding: 24, maxWidth: 1200, margin: "0 auto" }}>
 
-      {/* ── OWNER PIN MODAL ── */}
-      <OwnerPIN
-        open={showPIN}
-        onSuccess={() => { setShowPIN(false); pinAction?.(); }}
-        onCancel={() => { setShowPIN(false); setPinAction(null); }}
-        lang={lang}
-        reason={lang === "en" ? "Owner verification required" : "Vérification propriétaire requise"}
-      />
+      <OwnerPIN open={showPIN} onSuccess={() => { setShowPIN(false); pinAction?.(); }} onCancel={() => { setShowPIN(false); setPinAction(null); }} lang={lang} />
 
+      {/* ── HEADER ── */}
       <div className="page-header">
         <div>
           <h1 className="page-title">{lang === "en" ? "Inventory" : "Inventaire"}</h1>
           <div style={{ display: "flex", gap: 16, marginTop: 4, flexWrap: "wrap" }}>
-            {alerts.length > 0 && (
-              <div style={{ fontSize: 12, color: "#fbbf24" }}>
-                ⚠️ {alerts.length} {lang === "en" ? "items below minimum" : "articles sous le minimum"}
-              </div>
-            )}
-            {isOwner && (
-              <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                {lang === "en" ? "Stock value:" : "Valeur stock:"} <strong style={{ color: "var(--brand-light)" }}>{formatCFA(totalStockValue)}</strong>
-              </div>
-            )}
+            {alerts.length > 0 && <div style={{ fontSize: 12, color: "#fbbf24" }}>⚠️ {alerts.length} {lang === "en" ? "items below minimum" : "articles sous le minimum"}</div>}
+            {isOwner && <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{lang === "en" ? "Stock value:" : "Valeur stock:"} <strong style={{ color: "var(--brand-light)" }}>{formatCFA(totalStockValue)}</strong></div>}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {canReceiveGoods && (
             <button className="btn btn-secondary" onClick={() => setShowReceive(true)}>
               📦 {lang === "en" ? "Receive Goods" : "Réceptionner"}
             </button>
           )}
           {canAddProduct && (
-            <button className="btn btn-primary" onClick={() => setShowAddProduct(true)}>
-              + {lang === "en" ? "Add Product" : "Ajouter produit"}
-            </button>
+            <>
+              <button className="btn btn-secondary" onClick={() => setShowRapidEntry(true)} title={lang === "en" ? "Rapid entry mode for multiple products" : "Saisie rapide pour plusieurs produits"}>
+                ⚡ {lang === "en" ? "Rapid Entry" : "Saisie rapide"}
+              </button>
+              <button className="btn btn-secondary" onClick={() => setShowImport(true)} title={lang === "en" ? "Import from Excel/CSV" : "Importer depuis Excel/CSV"}>
+                📊 {lang === "en" ? "Import CSV" : "Importer CSV"}
+              </button>
+              <button className="btn btn-primary" onClick={() => setShowAddProduct(true)}>
+                + {lang === "en" ? "Add Product" : "Ajouter produit"}
+              </button>
+            </>
           )}
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* ── TABS ── */}
       <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: "1px solid var(--border)" }}>
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
@@ -301,21 +447,18 @@ export default function InventoryPage() {
         ))}
       </div>
 
-      {/* Search bar */}
+      {/* Search */}
       {(tab === "stock" || tab === "products") && (
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16, maxWidth: 600 }}>
           <div style={{ flex: 1, position: "relative" }}>
             <input ref={searchRef} className="input"
               placeholder={lang === "en" ? "Search by name or barcode..." : "Chercher par nom ou code-barres..."}
               value={search} onChange={e => setSearch(e.target.value)}
-              style={{ paddingLeft: 36, paddingRight: search ? 36 : 12 }} />
+              style={{ paddingLeft: 36 }} />
             <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", fontSize: 14, color: scanning ? "#10b981" : "var(--text-muted)" }}>
               {scanning ? "✓" : "🔍"}
             </span>
-            {search && (
-              <button onClick={() => setSearch("")}
-                style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14 }}>✕</button>
-            )}
+            {search && <button onClick={() => setSearch("")} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>✕</button>}
           </div>
         </div>
       )}
@@ -323,9 +466,8 @@ export default function InventoryPage() {
       {/* ── STOCK TAB ── */}
       {tab === "stock" && (
         <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden" }}>
-          {stockLoading ? (
-            <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>Loading...</div>
-          ) : filtered.length === 0 ? (
+          {stockLoading ? <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>Loading...</div>
+          : filtered.length === 0 ? (
             <div className="empty-state">
               <div style={{ fontSize: 24, marginBottom: 12, opacity: 0.4 }}>📦</div>
               <div style={{ fontWeight: 600 }}>{search ? `No results for "${search}"` : (lang === "en" ? "No stock records yet" : "Aucun stock")}</div>
@@ -356,38 +498,19 @@ export default function InventoryPage() {
                         <div style={{ fontWeight: 500 }}>{p?.name}</div>
                         {p?.barcode && <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>{p.barcode}</div>}
                       </td>
-                      <td>
-                        <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: s.pa_locations?.type === "warehouse" ? "rgba(79,70,229,0.15)" : "rgba(16,185,129,0.15)", color: s.pa_locations?.type === "warehouse" ? "var(--brand-light)" : "#34d399" }}>
-                          {s.pa_locations?.name}
-                        </span>
-                      </td>
-                      <td style={{ textAlign: "right", fontWeight: 600, color: isLow ? "#f87171" : "var(--text-primary)" }}>
-                        {s.quantity} {p?.unit}
-                      </td>
+                      <td><span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: s.pa_locations?.type === "warehouse" ? "rgba(79,70,229,0.15)" : "rgba(16,185,129,0.15)", color: s.pa_locations?.type === "warehouse" ? "var(--brand-light)" : "#34d399" }}>{s.pa_locations?.name}</span></td>
+                      <td style={{ textAlign: "right", fontWeight: 600, color: isLow ? "#f87171" : "var(--text-primary)" }}>{s.quantity} {p?.unit}</td>
                       <td style={{ textAlign: "right", color: "var(--text-muted)" }}>{s.min_quantity}</td>
                       {canSeePrices && <td style={{ textAlign: "right", color: "var(--text-muted)", fontSize: 12 }}>{formatCFA(p?.cost_price)}</td>}
                       {canSeePrices && <td style={{ textAlign: "right", fontWeight: 600, color: "var(--brand-light)" }}>{formatCFA(p?.sell_price)}</td>}
                       {canSeePrices && <td style={{ textAlign: "right", color: "#fbbf24" }}>{p?.wholesale_price > 0 ? formatCFA(p.wholesale_price) : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>}</td>}
                       {canSeePrices && <td style={{ textAlign: "right", color: "#f87171", fontSize: 12 }}>{p?.min_price > 0 ? formatCFA(p.min_price) : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>}</td>}
-                      <td>
-                        <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: isLow ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.15)", color: isLow ? "#f87171" : "#34d399" }}>
-                          {isLow ? (lang === "en" ? "Low" : "Bas") : "OK"}
-                        </span>
-                      </td>
+                      <td><span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: isLow ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.15)", color: isLow ? "#f87171" : "#34d399" }}>{isLow ? (lang === "en" ? "Low" : "Bas") : "OK"}</span></td>
                       {canAdjustStock && (
                         <td>
                           <div style={{ display: "flex", gap: 6 }}>
-                            <button className="btn btn-secondary btn-sm"
-                              onClick={() => { setSelectedStockRow(s); setShowAdjust(true); }}>
-                              {lang === "en" ? "Adjust" : "Ajuster"}
-                            </button>
-                            {isOwner && (
-                              <button className="btn btn-secondary btn-sm"
-                                onClick={() => { setEditProduct({ ...p, id: s.product_id }); setShowEditProduct(true); }}
-                                style={{ color: "var(--brand-light)", borderColor: "var(--brand)" }}>
-                                ✏️
-                              </button>
-                            )}
+                            <button className="btn btn-secondary btn-sm" onClick={() => { setSelectedStockRow(s); setShowAdjust(true); }}>{lang === "en" ? "Adjust" : "Ajuster"}</button>
+                            {isOwner && <button className="btn btn-secondary btn-sm" onClick={() => { setEditProduct({ ...p, id: s.product_id }); setShowEditProduct(true); }} style={{ color: "var(--brand-light)" }}>✏️</button>}
                           </div>
                         </td>
                       )}
@@ -398,12 +521,8 @@ export default function InventoryPage() {
               {isOwner && (
                 <tfoot>
                   <tr style={{ borderTop: "2px solid var(--border)", background: "var(--bg-elevated)" }}>
-                    <td colSpan={4} style={{ padding: "12px 16px", fontWeight: 600, fontSize: 12, color: "var(--text-muted)" }}>
-                      {lang === "en" ? "Total inventory value (at cost)" : "Valeur totale inventaire (au coût)"}
-                    </td>
-                    <td colSpan={5} style={{ textAlign: "right", padding: "12px 16px", fontWeight: 800, color: "var(--brand-light)", fontSize: 15 }}>
-                      {formatCFA(totalStockValue)}
-                    </td>
+                    <td colSpan={4} style={{ padding: "12px 16px", fontWeight: 600, fontSize: 12, color: "var(--text-muted)" }}>{lang === "en" ? "Total inventory value (at cost)" : "Valeur totale inventaire (au coût)"}</td>
+                    <td colSpan={5} style={{ textAlign: "right", padding: "12px 16px", fontWeight: 800, color: "var(--brand-light)", fontSize: 15 }}>{formatCFA(totalStockValue)}</td>
                   </tr>
                 </tfoot>
               )}
@@ -414,67 +533,42 @@ export default function InventoryPage() {
 
       {/* ── OVERVIEW TAB ── */}
       {tab === "overview" && (
-        <div>
-          {overviewProducts.length === 0 ? (
-            <div className="empty-state"><div style={{ fontWeight: 600 }}>{lang === "en" ? "No stock yet" : "Aucun stock"}</div></div>
-          ) : (
-            <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "auto" }}>
-              <table className="table" style={{ minWidth: 500 }}>
-                <thead>
-                  <tr>
-                    <th style={{ minWidth: 160 }}>{lang === "en" ? "Product" : "Produit"}</th>
-                    <th>{lang === "en" ? "Unit" : "Unité"}</th>
-                    {locations.map(l => (
-                      <th key={l.id} style={{ textAlign: "right", minWidth: 110 }}>
-                        <div>{l.name}</div>
-                        <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 400 }}>{l.type}</div>
-                      </th>
-                    ))}
-                    <th style={{ textAlign: "right", color: "var(--brand-light)" }}>TOTAL</th>
-                    {isOwner && <th style={{ textAlign: "right", color: "#fbbf24" }}>{lang === "en" ? "Value" : "Valeur"}</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {overviewProducts.map((p, i) => {
-                    const product = products.find(pr => pr.name === p.name);
-                    const value = isOwner ? p.total * (product?.cost_price || 0) : 0;
-                    return (
-                      <tr key={i}>
-                        <td style={{ fontWeight: 500 }}>{p.name}</td>
-                        <td style={{ color: "var(--text-muted)", fontSize: 12 }}>{p.unit}</td>
-                        {locations.map(l => {
-                          const qty = p.locs[l.id];
-                          return (
-                            <td key={l.id} style={{ textAlign: "right" }}>
-                              {qty != null ? <span style={{ fontWeight: qty > 0 ? 500 : 400, color: qty > 0 ? "var(--text-primary)" : "var(--text-muted)" }}>{qty}</span> : <span style={{ color: "var(--text-muted)", fontSize: 12 }}>—</span>}
-                            </td>
-                          );
-                        })}
-                        <td style={{ textAlign: "right", fontWeight: 700, color: "var(--brand-light)" }}>{p.total} {p.unit}</td>
-                        {isOwner && <td style={{ textAlign: "right", fontSize: 12, color: "#fbbf24" }}>{formatCFA(value)}</td>}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr style={{ borderTop: "2px solid var(--border)" }}>
-                    <td colSpan={2} style={{ fontWeight: 600, padding: "12px 16px" }}>{overviewProducts.length} {lang === "en" ? "products" : "produits"}</td>
-                    {locations.map(l => {
-                      const t = allStock.filter(s => s.location_id === l.id).reduce((sum, s) => sum + +s.quantity, 0);
-                      return <td key={l.id} style={{ textAlign: "right", fontWeight: 600, padding: "12px 16px" }}>{t}</td>;
-                    })}
-                    <td style={{ textAlign: "right", fontWeight: 700, color: "var(--brand-light)", padding: "12px 16px" }}>
-                      {allStock.reduce((sum, s) => sum + +s.quantity, 0)}
-                    </td>
-                    {isOwner && (
-                      <td style={{ textAlign: "right", fontWeight: 700, color: "#fbbf24", padding: "12px 16px" }}>
-                        {formatCFA(totalStockValue)}
-                      </td>
-                    )}
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
+        <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "auto" }}>
+          {overviewProducts.length === 0 ? <div className="empty-state"><div style={{ fontWeight: 600 }}>No stock yet</div></div> : (
+            <table className="table" style={{ minWidth: 500 }}>
+              <thead>
+                <tr>
+                  <th style={{ minWidth: 160 }}>Product</th>
+                  <th>Unit</th>
+                  {locations.map(l => <th key={l.id} style={{ textAlign: "right", minWidth: 110 }}><div>{l.name}</div><div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 400 }}>{l.type}</div></th>)}
+                  <th style={{ textAlign: "right", color: "var(--brand-light)" }}>TOTAL</th>
+                  {isOwner && <th style={{ textAlign: "right", color: "#fbbf24" }}>Value</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {overviewProducts.map((p, i) => {
+                  const product = products.find(pr => pr.name === p.name);
+                  const value = isOwner ? p.total * (product?.cost_price || 0) : 0;
+                  return (
+                    <tr key={i}>
+                      <td style={{ fontWeight: 500 }}>{p.name}</td>
+                      <td style={{ color: "var(--text-muted)", fontSize: 12 }}>{p.unit}</td>
+                      {locations.map(l => <td key={l.id} style={{ textAlign: "right" }}>{p.locs[l.id] != null ? p.locs[l.id] : <span style={{ color: "var(--text-muted)" }}>—</span>}</td>)}
+                      <td style={{ textAlign: "right", fontWeight: 700, color: "var(--brand-light)" }}>{p.total}</td>
+                      {isOwner && <td style={{ textAlign: "right", fontSize: 12, color: "#fbbf24" }}>{formatCFA(value)}</td>}
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr style={{ borderTop: "2px solid var(--border)" }}>
+                  <td colSpan={2} style={{ fontWeight: 600, padding: "12px 16px" }}>{overviewProducts.length} products</td>
+                  {locations.map(l => { const t = allStock.filter(s => s.location_id === l.id).reduce((sum, s) => sum + +s.quantity, 0); return <td key={l.id} style={{ textAlign: "right", fontWeight: 600, padding: "12px 16px" }}>{t}</td>; })}
+                  <td style={{ textAlign: "right", fontWeight: 700, color: "var(--brand-light)", padding: "12px 16px" }}>{allStock.reduce((sum, s) => sum + +s.quantity, 0)}</td>
+                  {isOwner && <td style={{ textAlign: "right", fontWeight: 700, color: "#fbbf24", padding: "12px 16px" }}>{formatCFA(totalStockValue)}</td>}
+                </tr>
+              </tfoot>
+            </table>
           )}
         </div>
       )}
@@ -484,27 +578,21 @@ export default function InventoryPage() {
         <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden" }}>
           {filteredProducts.length === 0 ? (
             <div className="empty-state">
-              <div style={{ fontWeight: 600, marginBottom: 6 }}>
-                {search ? `No products matching "${search}"` : (lang === "en" ? "No products yet" : "Aucun produit")}
-              </div>
-              {!search && canAddProduct && (
-                <button className="btn btn-primary" onClick={() => setShowAddProduct(true)} style={{ marginTop: 12 }}>
-                  + {lang === "en" ? "Add product" : "Ajouter"}
-                </button>
-              )}
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>{search ? `No products matching "${search}"` : (lang === "en" ? "No products yet" : "Aucun produit")}</div>
+              {!search && canAddProduct && <button className="btn btn-primary" onClick={() => setShowAddProduct(true)} style={{ marginTop: 12 }}>+ {lang === "en" ? "Add product" : "Ajouter"}</button>}
             </div>
           ) : (
             <table className="table">
               <thead>
                 <tr>
-                  <th>{lang === "en" ? "Product" : "Produit"}</th>
-                  <th>{lang === "en" ? "Barcode" : "Code-barres"}</th>
-                  <th>{lang === "en" ? "Unit" : "Unité"}</th>
-                  {canSeePrices && <th style={{ textAlign: "right" }}>{lang === "en" ? "Cost" : "Achat"}</th>}
-                  {canSeePrices && <th style={{ textAlign: "right" }}>{lang === "en" ? "Walk-in" : "Détail"}</th>}
-                  {canSeePrices && <th style={{ textAlign: "right" }}>{lang === "en" ? "Wholesale" : "Gros"}</th>}
-                  {canSeePrices && <th style={{ textAlign: "right" }}>{lang === "en" ? "Min floor" : "Prix min"}</th>}
-                  {isOwner && <th>{lang === "en" ? "Edit" : "Modifier"}</th>}
+                  <th>Product</th>
+                  <th>Barcode</th>
+                  <th>Unit</th>
+                  {canSeePrices && <th style={{ textAlign: "right" }}>Cost</th>}
+                  {canSeePrices && <th style={{ textAlign: "right" }}>Walk-in</th>}
+                  {canSeePrices && <th style={{ textAlign: "right" }}>Wholesale</th>}
+                  {canSeePrices && <th style={{ textAlign: "right" }}>Min floor</th>}
+                  {isOwner && <th>Edit</th>}
                 </tr>
               </thead>
               <tbody>
@@ -517,15 +605,7 @@ export default function InventoryPage() {
                     {canSeePrices && <td style={{ textAlign: "right", fontWeight: 600, color: "var(--brand-light)" }}>{formatCFA(p.sell_price)}</td>}
                     {canSeePrices && <td style={{ textAlign: "right", color: "#fbbf24" }}>{p.wholesale_price > 0 ? formatCFA(p.wholesale_price) : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>}</td>}
                     {canSeePrices && <td style={{ textAlign: "right", color: "#f87171", fontSize: 12 }}>{p.min_price > 0 ? formatCFA(p.min_price) : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>}</td>}
-                    {isOwner && (
-                      <td>
-                        <button className="btn btn-secondary btn-sm"
-                          onClick={() => { setEditProduct({ ...p }); setShowEditProduct(true); }}
-                          style={{ color: "var(--brand-light)" }}>
-                          ✏️ {lang === "en" ? "Edit" : "Modifier"}
-                        </button>
-                      </td>
-                    )}
+                    {isOwner && <td><button className="btn btn-secondary btn-sm" onClick={() => { setEditProduct({ ...p }); setShowEditProduct(true); }} style={{ color: "var(--brand-light)" }}>✏️ Edit</button></td>}
                   </tr>
                 ))}
               </tbody>
@@ -537,22 +617,12 @@ export default function InventoryPage() {
       {/* ── ALERTS TAB ── */}
       {tab === "alerts" && (
         <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden" }}>
-          {alerts.length === 0 ? (
-            <div className="empty-state">
-              <div style={{ fontWeight: 600, color: "#34d399" }}>✓ {lang === "en" ? "All stock levels OK!" : "Tous les stocks sont OK!"}</div>
-            </div>
-          ) : (
+          {alerts.length === 0 ? <div className="empty-state"><div style={{ fontWeight: 600, color: "#34d399" }}>✓ All stock levels OK!</div></div> : (
             <table className="table">
-              <thead>
-                <tr>
-                  <th>{lang === "en" ? "Product" : "Produit"}</th>
-                  <th>{lang === "en" ? "Location" : "Emplacement"}</th>
-                  <th style={{ textAlign: "right" }}>{lang === "en" ? "Current" : "Actuel"}</th>
-                  <th style={{ textAlign: "right" }}>Min</th>
-                  <th style={{ textAlign: "right" }}>{lang === "en" ? "Shortage" : "Manque"}</th>
-                  {isOwner && <th>{lang === "en" ? "WhatsApp Alert" : "Alerte WhatsApp"}</th>}
-                </tr>
-              </thead>
+              <thead><tr>
+                <th>Product</th><th>Location</th>
+                <th style={{ textAlign: "right" }}>Current</th><th style={{ textAlign: "right" }}>Min</th><th style={{ textAlign: "right" }}>Shortage</th>
+              </tr></thead>
               <tbody>
                 {alerts.map((a, i) => (
                   <tr key={i}>
@@ -561,23 +631,6 @@ export default function InventoryPage() {
                     <td style={{ textAlign: "right", color: "#f87171", fontWeight: 600 }}>{a.quantity} {a.unit}</td>
                     <td style={{ textAlign: "right", color: "var(--text-muted)" }}>{a.min_quantity}</td>
                     <td style={{ textAlign: "right", color: "#fbbf24" }}>{a.shortage} {a.unit}</td>
-                    {isOwner && (
-                      <td>
-                        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                            {lang === "en" ? "Alert me" : "M'alerter"}
-                          </span>
-                          <div style={{ position: "relative", width: 36, height: 20 }}>
-                            <input type="checkbox" checked={a.alert_enabled || false}
-                              onChange={() => { /* TODO: toggle alert */ }}
-                              style={{ opacity: 0, width: 0, height: 0 }} />
-                            <span style={{ position: "absolute", inset: 0, borderRadius: 10, background: a.alert_enabled ? "var(--brand)" : "var(--border)", transition: "0.2s" }}>
-                              <span style={{ position: "absolute", width: 14, height: 14, borderRadius: "50%", background: "#fff", top: 3, left: a.alert_enabled ? 19 : 3, transition: "0.2s" }} />
-                            </span>
-                          </div>
-                        </label>
-                      </td>
-                    )}
                   </tr>
                 ))}
               </tbody>
@@ -586,58 +639,33 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {/* ── ADD PRODUCT MODAL ── */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ── MODAL: ADD NEW PRODUCT ── */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
       {showAddProduct && (
         <div className="modal-overlay" onClick={() => setShowAddProduct(false)}>
           <div className="modal" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 20 }}>
-              + {lang === "en" ? "Add New Product" : "Ajouter un produit"}
-            </div>
+            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 4 }}>+ {lang === "en" ? "Add New Product" : "Ajouter un produit"}</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 20 }}>{lang === "en" ? "For products that don't exist yet in the system" : "Pour les produits qui n'existent pas encore"}</div>
 
             <div className="form-group">
               <label className="label">{lang === "en" ? "Product name" : "Nom du produit"} *</label>
-              <input className="input" value={newProduct.name} onChange={e => setNewProduct(p => ({ ...p, name: e.target.value }))} placeholder="Ex: Tube, Huile palme..." />
+              <input className="input" value={newProduct.name} onChange={e => setNewProduct(p => ({ ...p, name: e.target.value }))} placeholder="Ex: Tube, Huile palme..." autoFocus />
             </div>
-
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div className="form-group">
-                <label className="label">{lang === "en" ? "Barcode" : "Code-barres"}</label>
+                <label className="label">Barcode</label>
                 <BarcodeInput lang={lang} value={newProduct.barcode} onChange={v => setNewProduct(p => ({ ...p, barcode: v }))} placeholder="Scan or type" />
               </div>
               <div className="form-group">
-                <label className="label">{lang === "en" ? "Unit" : "Unité"}</label>
+                <label className="label">Unit</label>
                 <select className="input" value={newProduct.unit} onChange={e => setNewProduct(p => ({ ...p, unit: e.target.value }))}>
-                  {["pce", "kg", "litre", "metre", "boite", "set", "paire", "carton"].map(u => <option key={u} value={u}>{u}</option>)}
+                  {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                 </select>
               </div>
             </div>
 
-            <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 14 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 12 }}>
-                💰 {lang === "en" ? "Pricing" : "Tarification"}
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <div className="form-group">
-                  <label className="label">{lang === "en" ? "Cost price (FCFA)" : "Prix achat (FCFA)"}</label>
-                  <input className="input" type="number" value={newProduct.cost_price} onChange={e => setNewProduct(p => ({ ...p, cost_price: e.target.value }))} placeholder="0" />
-                </div>
-                <div className="form-group">
-                  <label className="label" style={{ color: "var(--brand-light)" }}>{lang === "en" ? "Walk-in price (FCFA) *" : "Prix détail (FCFA) *"}</label>
-                  <input className="input" type="number" value={newProduct.sell_price} onChange={e => setNewProduct(p => ({ ...p, sell_price: e.target.value }))} placeholder="0" />
-                </div>
-                <div className="form-group">
-                  <label className="label" style={{ color: "#fbbf24" }}>{lang === "en" ? "Wholesale price (FCFA)" : "Prix gros (FCFA)"}</label>
-                  <input className="input" type="number" value={newProduct.wholesale_price} onChange={e => setNewProduct(p => ({ ...p, wholesale_price: e.target.value }))} placeholder="0" />
-                </div>
-                <div className="form-group">
-                  <label className="label" style={{ color: "#f87171" }}>{lang === "en" ? "Min price floor (FCFA)" : "Prix minimum (FCFA)"}</label>
-                  <input className="input" type="number" value={newProduct.min_price} onChange={e => setNewProduct(p => ({ ...p, min_price: e.target.value }))} placeholder="0" />
-                </div>
-              </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                🔒 {lang === "en" ? "Min price floor: staff cannot sell below this price" : "Prix min: le personnel ne peut pas vendre en dessous"}
-              </div>
-            </div>
+            <PricingSection data={newProduct} onChange={(k, v) => setNewProduct(p => ({ ...p, [k]: v }))} lang={lang} />
 
             <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 14 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 12 }}>
@@ -645,94 +673,120 @@ export default function InventoryPage() {
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div className="form-group">
-                  <label className="label">{lang === "en" ? "Location" : "Emplacement"}</label>
-                  <select className="input" value={newProduct.initial_location_id || ""} onChange={e => setNewProduct(p => ({ ...p, initial_location_id: e.target.value }))}>
-                    <option value="">{lang === "en" ? "Skip (add stock later)" : "Ignorer (ajouter stock plus tard)"}</option>
-                    {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
+                  <label className="label">Location</label>
+                  <select className="input" value={newProduct.initial_location_id} onChange={e => setNewProduct(p => ({ ...p, initial_location_id: e.target.value }))}>
+                    <option value="">{lang === "en" ? "Skip (add later)" : "Ignorer"}</option>
+                    {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                   </select>
                 </div>
                 <div className="form-group">
                   <label className="label">{lang === "en" ? "Initial quantity" : "Quantité initiale"}</label>
-                  <input className="input" type="number" value={newProduct.initial_quantity || ""} onChange={e => setNewProduct(p => ({ ...p, initial_quantity: e.target.value }))} placeholder="0" disabled={!newProduct.initial_location_id} />
+                  <input className="input" type="number" value={newProduct.initial_quantity} onChange={e => setNewProduct(p => ({ ...p, initial_quantity: e.target.value }))} placeholder="0" disabled={!newProduct.initial_location_id} />
                 </div>
               </div>
             </div>
 
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowAddProduct(false)}>
-                {lang === "en" ? "Cancel" : "Annuler"}
-              </button>
-              <button className="btn btn-primary" style={{ flex: 2 }}
-                disabled={!newProduct.name || !newProduct.sell_price || addProductMutation.isPending}
-                onClick={() => addProductMutation.mutate()}>
-                {addProductMutation.isPending ? "..." : (lang === "en" ? "✓ Add Product" : "✓ Ajouter")}
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowAddProduct(false)}>{lang === "en" ? "Cancel" : "Annuler"}</button>
+              <button className="btn btn-primary" style={{ flex: 2 }} disabled={!newProduct.name || !newProduct.sell_price || addProductMutation.isPending} onClick={() => addProductMutation.mutate()}>
+                {addProductMutation.isPending ? "..." : (lang === "en" ? "✓ Create Product" : "✓ Créer le produit")}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── EDIT PRODUCT MODAL (owner only) ── */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ── MODAL: RECEIVE GOODS ── */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {showReceive && (
+        <div className="modal-overlay" onClick={() => setShowReceive(false)}>
+          <div className="modal" style={{ maxWidth: 620, maxHeight: "90vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 4 }}>📦 {lang === "en" ? "Receive Goods" : "Réceptionner des marchandises"}</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 20 }}>{lang === "en" ? "For existing products — updates prices and adds stock" : "Pour produits existants — met à jour les prix et ajoute le stock"}</div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+              <div className="form-group">
+                <label className="label">{lang === "en" ? "Destination *" : "Destination *"}</label>
+                <select className="input" value={receiveForm.location_id} onChange={e => setReceiveForm(f => ({ ...f, location_id: e.target.value }))}>
+                  <option value="">{lang === "en" ? "Select location" : "Choisir emplacement"}</option>
+                  {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="label">Supplier</label>
+                <input className="input" value={receiveForm.supplier_name} onChange={e => setReceiveForm(f => ({ ...f, supplier_name: e.target.value }))} placeholder="Optional" />
+              </div>
+              <div className="form-group">
+                <label className="label">Invoice ref</label>
+                <input className="input" value={receiveForm.invoice_ref} onChange={e => setReceiveForm(f => ({ ...f, invoice_ref: e.target.value }))} placeholder="Optional" />
+              </div>
+            </div>
+
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>
+              {lang === "en" ? "Items received" : "Articles reçus"}
+              <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>
+                {lang === "en" ? "(search existing products — prices will update immediately)" : "(recherchez les produits existants — les prix se mettent à jour immédiatement)"}
+              </span>
+            </div>
+
+            {receiveForm.items.map((item, idx) => (
+              <ReceiveItemRow
+                key={idx} idx={idx} item={item} products={products} lang={lang}
+                onSelect={(product) => selectReceiveProduct(idx, product)}
+                onChange={(k, v) => setReceiveItem(idx, k, v)}
+                onRemove={receiveForm.items.length > 1 ? () => removeReceiveItem(idx) : null}
+                canSeePrices={canSeePrices}
+              />
+            ))}
+
+            <button className="btn btn-secondary btn-sm" onClick={addReceiveItem} style={{ marginBottom: 16 }}>
+              + {lang === "en" ? "Add another item" : "Ajouter un article"}
+            </button>
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowReceive(false)}>{lang === "en" ? "Cancel" : "Annuler"}</button>
+              <button className="btn btn-primary" style={{ flex: 2 }}
+                disabled={!receiveForm.location_id || receiveMutation.isPending || receiveForm.items.every(i => !i.product_id)}
+                onClick={() => receiveMutation.mutate()}>
+                {receiveMutation.isPending ? "..." : (lang === "en" ? "✓ Confirm & Update Prices" : "✓ Confirmer & Mettre à jour prix")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ── MODAL: EDIT PRODUCT ── */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
       {showEditProduct && editProduct && (
         <div className="modal-overlay" onClick={() => setShowEditProduct(false)}>
           <div className="modal" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 4 }}>
-              ✏️ {lang === "en" ? "Edit Product" : "Modifier le produit"}
-            </div>
+            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 4 }}>✏️ {lang === "en" ? "Edit Product" : "Modifier le produit"}</div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 20 }}>{editProduct.name}</div>
 
             <div className="form-group">
-              <label className="label">{lang === "en" ? "Product name" : "Nom du produit"} *</label>
+              <label className="label">Name *</label>
               <input className="input" value={editProduct.name} onChange={e => setEditProduct(p => ({ ...p, name: e.target.value }))} />
             </div>
-
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div className="form-group">
-                <label className="label">{lang === "en" ? "Barcode" : "Code-barres"}</label>
+                <label className="label">Barcode</label>
                 <input className="input" value={editProduct.barcode || ""} onChange={e => setEditProduct(p => ({ ...p, barcode: e.target.value }))} />
               </div>
               <div className="form-group">
-                <label className="label">{lang === "en" ? "Unit" : "Unité"}</label>
+                <label className="label">Unit</label>
                 <select className="input" value={editProduct.unit} onChange={e => setEditProduct(p => ({ ...p, unit: e.target.value }))}>
-                  {["pce", "kg", "litre", "metre", "boite", "set", "paire", "carton"].map(u => <option key={u} value={u}>{u}</option>)}
+                  {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                 </select>
               </div>
             </div>
 
-            <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 14 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 12 }}>
-                💰 {lang === "en" ? "Pricing — update as market changes" : "Tarification — mettez à jour selon le marché"}
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <div className="form-group">
-                  <label className="label">{lang === "en" ? "Cost price (FCFA)" : "Prix achat (FCFA)"}</label>
-                  <input className="input" type="number" value={editProduct.cost_price || ""} onChange={e => setEditProduct(p => ({ ...p, cost_price: e.target.value }))} placeholder="0" />
-                </div>
-                <div className="form-group">
-                  <label className="label" style={{ color: "var(--brand-light)" }}>{lang === "en" ? "Walk-in price (FCFA)" : "Prix détail (FCFA)"}</label>
-                  <input className="input" type="number" value={editProduct.sell_price || ""} onChange={e => setEditProduct(p => ({ ...p, sell_price: e.target.value }))} placeholder="0" />
-                </div>
-                <div className="form-group">
-                  <label className="label" style={{ color: "#fbbf24" }}>{lang === "en" ? "Wholesale price (FCFA)" : "Prix gros (FCFA)"}</label>
-                  <input className="input" type="number" value={editProduct.wholesale_price || ""} onChange={e => setEditProduct(p => ({ ...p, wholesale_price: e.target.value }))} placeholder="0" />
-                </div>
-                <div className="form-group">
-                  <label className="label" style={{ color: "#f87171" }}>{lang === "en" ? "Min price floor (FCFA)" : "Prix minimum (FCFA)"}</label>
-                  <input className="input" type="number" value={editProduct.min_price || ""} onChange={e => setEditProduct(p => ({ ...p, min_price: e.target.value }))} placeholder="0" />
-                </div>
-              </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                🔒 {lang === "en" ? "Min floor: staff cannot sell below this. Owner PIN required to override." : "Prix min: le personnel ne peut pas vendre en dessous. PIN propriétaire requis pour forcer."}
-              </div>
-            </div>
+            <PricingSection data={editProduct} onChange={(k, v) => setEditProduct(p => ({ ...p, [k]: v }))} lang={lang} />
 
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setShowEditProduct(false); setEditProduct(null); }}>
-                {lang === "en" ? "Cancel" : "Annuler"}
-              </button>
-              <button className="btn btn-primary" style={{ flex: 2 }}
-                disabled={!editProduct.name || !editProduct.sell_price || editProductMutation.isPending}
-                onClick={() => editProductMutation.mutate()}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setShowEditProduct(false); setEditProduct(null); }}>{lang === "en" ? "Cancel" : "Annuler"}</button>
+              <button className="btn btn-primary" style={{ flex: 2 }} disabled={!editProduct.name || !editProduct.sell_price || editProductMutation.isPending} onClick={() => editProductMutation.mutate()}>
                 {editProductMutation.isPending ? "..." : (lang === "en" ? "✓ Save Changes" : "✓ Enregistrer")}
               </button>
             </div>
@@ -740,63 +794,324 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {/* ── RECEIVE GOODS MODAL ── */}
-      {showReceive && (
-        <div className="modal-overlay" onClick={() => setShowReceive(false)}>
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ── MODAL: RAPID ENTRY ── */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {showRapidEntry && (
+        <div className="modal-overlay" onClick={() => setShowRapidEntry(false)}>
           <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 20 }}>
-              📦 {lang === "en" ? "Receive Goods" : "Réceptionner des marchandises"}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 17 }}>⚡ {lang === "en" ? "Rapid Entry Mode" : "Saisie rapide"}</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{lang === "en" ? "Add multiple products quickly — form clears after each save" : "Ajoutez plusieurs produits rapidement — le formulaire se vide après chaque sauvegarde"}</div>
+              </div>
+              {rapidCount > 0 && (
+                <div style={{ background: "rgba(16,185,129,0.1)", color: "#10b981", padding: "4px 12px", borderRadius: 20, fontWeight: 700, fontSize: 13 }}>
+                  {rapidCount} {lang === "en" ? "added" : "ajoutés"}
+                </div>
+              )}
             </div>
+
+            <div style={{ background: "rgba(79,70,229,0.08)", borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "var(--text-muted)" }}>
+              💡 {lang === "en" ? "Tip: Fill name, scan barcode, set prices, press Enter or click Add. Form resets automatically." : "Astuce: Remplissez le nom, scannez le code, entrez les prix, appuyez sur Entrée. Le formulaire se réinitialise automatiquement."}
+            </div>
+
             <div className="form-group">
-              <label className="label">{lang === "en" ? "Destination" : "Destination"} *</label>
-              <select className="input" value={receiveForm.location_id} onChange={e => setRP("location_id", e.target.value)}>
-                <option value="">{lang === "en" ? "Select warehouse/shop" : "Choisir magasin/boutique"}</option>
-                {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
-              </select>
+              <label className="label">{lang === "en" ? "Product name" : "Nom du produit"} *</label>
+              <input ref={rapidNameRef} className="input" value={rapidItem.name} onChange={e => setRapidItem(p => ({ ...p, name: e.target.value }))} placeholder="Ex: Tube, Huile palme..." autoFocus
+                onKeyDown={e => { if (e.key === "Enter" && rapidItem.name && rapidItem.sell_price) rapidMutation.mutate(); }} />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div className="form-group">
-                <label className="label">{lang === "en" ? "Supplier" : "Fournisseur"}</label>
-                <input className="input" value={receiveForm.supplier_name} onChange={e => setRP("supplier_name", e.target.value)} placeholder="Optional" />
+                <label className="label">Barcode</label>
+                <BarcodeInput lang={lang} value={rapidItem.barcode} onChange={v => setRapidItem(p => ({ ...p, barcode: v }))} placeholder="Scan or type" />
               </div>
               <div className="form-group">
-                <label className="label">{lang === "en" ? "Invoice ref" : "Réf facture"}</label>
-                <input className="input" value={receiveForm.invoice_ref} onChange={e => setRP("invoice_ref", e.target.value)} placeholder="Optional" />
+                <label className="label">Unit</label>
+                <select className="input" value={rapidItem.unit} onChange={e => setRapidItem(p => ({ ...p, unit: e.target.value }))}>
+                  {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                </select>
               </div>
             </div>
-            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>{lang === "en" ? "Items received" : "Articles reçus"}</div>
-            {receiveForm.items.map((item, idx) => (
-              <ReceiveItemRow key={idx} idx={idx} item={item} products={products} lang={lang} setItem={setItem} />
-            ))}
-            <button className="btn btn-secondary btn-sm" onClick={addItem} style={{ marginBottom: 16 }}>
-              + {lang === "en" ? "Add another item" : "Ajouter un article"}
-            </button>
+
+            <PricingSection data={rapidItem} onChange={(k, v) => setRapidItem(p => ({ ...p, [k]: v }))} lang={lang} />
+
+            <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 10 }}>📦 Initial Stock</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div className="form-group">
+                  <label className="label">Location</label>
+                  <select className="input" value={rapidItem.initial_location_id} onChange={e => setRapidItem(p => ({ ...p, initial_location_id: e.target.value }))}>
+                    <option value="">Skip</option>
+                    {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="label">Quantity</label>
+                  <input className="input" type="number" value={rapidItem.initial_quantity} onChange={e => setRapidItem(p => ({ ...p, initial_quantity: e.target.value }))} placeholder="0"
+                    onKeyDown={e => { if (e.key === "Enter" && rapidItem.name && rapidItem.sell_price) rapidMutation.mutate(); }}
+                    disabled={!rapidItem.initial_location_id} />
+                </div>
+              </div>
+            </div>
+
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowReceive(false)}>
-                {lang === "en" ? "Cancel" : "Annuler"}
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setShowRapidEntry(false); setRapidCount(0); setRapidItem(EMPTY_PRODUCT); }}>
+                {lang === "en" ? "Done" : "Terminer"}
               </button>
-              <button className="btn btn-primary" style={{ flex: 2 }}
-                disabled={!receiveForm.location_id || receiveMutation.isPending}
-                onClick={() => receiveMutation.mutate()}>
-                {receiveMutation.isPending ? "..." : (lang === "en" ? "✓ Confirm Receipt" : "✓ Confirmer")}
+              <button className="btn btn-success" style={{ flex: 2, fontWeight: 700 }}
+                disabled={!rapidItem.name || !rapidItem.sell_price || rapidMutation.isPending}
+                onClick={() => rapidMutation.mutate()}>
+                {rapidMutation.isPending ? "..." : (lang === "en" ? "✓ Add & Next →" : "✓ Ajouter & Suivant →")}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── ADJUST STOCK MODAL ── */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ── MODAL: CSV IMPORT ── */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {showImport && (
+        <div className="modal-overlay" onClick={() => setShowImport(false)}>
+          <div className="modal" style={{ maxWidth: 680, maxHeight: "90vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 4 }}>📊 {lang === "en" ? "Import from CSV/Excel" : "Importer depuis CSV/Excel"}</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 20 }}>{lang === "en" ? "Best for initial setup with 50+ products. Download template, fill it, upload." : "Idéal pour la configuration initiale avec 50+ produits."}</div>
+
+            {/* Step 1: Download template */}
+            <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 16 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>
+                <span style={{ background: "var(--brand)", color: "#fff", borderRadius: "50%", width: 22, height: 22, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, marginRight: 8 }}>1</span>
+                {lang === "en" ? "Download the template" : "Télécharger le modèle"}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>
+                {lang === "en" ? "Fill in your products. Columns: name, barcode, unit, cost_price, sell_price, wholesale_price, min_price, qty, location" : "Remplissez vos produits. Colonnes: name, barcode, unit, cost_price, sell_price, wholesale_price, min_price, qty, location"}
+              </div>
+              <button className="btn btn-secondary" onClick={downloadTemplate}>
+                ⬇️ {lang === "en" ? "Download CSV Template" : "Télécharger le modèle CSV"}
+              </button>
+            </div>
+
+            {/* Step 2: Upload */}
+            <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 16 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>
+                <span style={{ background: "var(--brand)", color: "#fff", borderRadius: "50%", width: 22, height: 22, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, marginRight: 8 }}>2</span>
+                {lang === "en" ? "Upload your filled file" : "Téléverser votre fichier rempli"}
+              </div>
+              <label style={{ display: "block", padding: "20px", border: "2px dashed var(--border)", borderRadius: 10, textAlign: "center", cursor: "pointer", color: "var(--text-muted)", fontSize: 13 }}>
+                {importFile ? <span style={{ color: "#10b981", fontWeight: 600 }}>✓ {importFile.name}</span> : (lang === "en" ? "Click to select CSV file" : "Cliquer pour sélectionner le fichier CSV")}
+                <input type="file" accept=".csv,.txt" onChange={handleFileUpload} style={{ display: "none" }} />
+              </label>
+              {importError && <div style={{ color: "#f87171", fontSize: 12, marginTop: 8 }}>{importError}</div>}
+            </div>
+
+            {/* Step 3: Preview */}
+            {importPreview.length > 0 && (
+              <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 16 }}>
+                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>
+                  <span style={{ background: "var(--brand)", color: "#fff", borderRadius: "50%", width: 22, height: 22, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, marginRight: 8 }}>3</span>
+                  {lang === "en" ? `Preview — ${importPreview.length} products found` : `Aperçu — ${importPreview.length} produits trouvés`}
+                </div>
+                <div style={{ overflowX: "auto", maxHeight: 240, overflowY: "auto" }}>
+                  <table className="table" style={{ fontSize: 11 }}>
+                    <thead><tr>
+                      <th>Name</th><th>Barcode</th><th>Unit</th>
+                      <th>Cost</th><th>Walk-in</th><th>Wholesale</th><th>Min</th>
+                      <th>Qty</th><th>Location</th>
+                    </tr></thead>
+                    <tbody>
+                      {importPreview.slice(0, 20).map((row, i) => (
+                        <tr key={i} style={{ background: !row.sell_price ? "rgba(239,68,68,0.05)" : "transparent" }}>
+                          <td style={{ fontWeight: 500 }}>{row.name}</td>
+                          <td style={{ fontFamily: "monospace" }}>{row.barcode || "—"}</td>
+                          <td>{row.unit || "pce"}</td>
+                          <td>{row.cost_price || "—"}</td>
+                          <td style={{ color: row.sell_price ? "var(--brand-light)" : "#f87171", fontWeight: 600 }}>{row.sell_price || "⚠️ missing"}</td>
+                          <td>{row.wholesale_price || "—"}</td>
+                          <td>{row.min_price || "—"}</td>
+                          <td>{row.initial_quantity || "—"}</td>
+                          <td style={{ fontSize: 10 }}>{row.location_id ? locations.find(l => l.id === row.location_id)?.name : <span style={{ color: "#fbbf24" }}>not matched</span>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {importPreview.length > 20 && <div style={{ textAlign: "center", padding: 8, fontSize: 12, color: "var(--text-muted)" }}>...and {importPreview.length - 20} more</div>}
+                </div>
+                {importPreview.some(r => !r.sell_price) && (
+                  <div style={{ color: "#f87171", fontSize: 12, marginTop: 8 }}>⚠️ {lang === "en" ? "Rows highlighted in red are missing sell_price and will be skipped." : "Les lignes en rouge n'ont pas de sell_price et seront ignorées."}</div>
+                )}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setShowImport(false); setImportFile(null); setImportPreview([]); }}>
+                {lang === "en" ? "Cancel" : "Annuler"}
+              </button>
+              <button className="btn btn-primary" style={{ flex: 2 }}
+                disabled={importPreview.length === 0 || importMutation.isPending}
+                onClick={() => importMutation.mutate()}>
+                {importMutation.isPending ? `⏳ ${lang === "en" ? "Importing..." : "Importation..."}` : (lang === "en" ? `✓ Import ${importPreview.filter(r => r.sell_price).length} Products` : `✓ Importer ${importPreview.filter(r => r.sell_price).length} produits`)}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── ADJUST MODAL ── */}
       {showAdjust && selectedStockRow && (
-        <AdjustModal
-          product={selectedStockRow} lang={lang}
+        <AdjustModal product={selectedStockRow} lang={lang}
           onClose={() => { setShowAdjust(false); setSelectedStockRow(null); }}
-          onSuccess={() => { setShowAdjust(false); setSelectedStockRow(null); qc.invalidateQueries(["stock"]); qc.invalidateQueries(["stock-all"]); }}
-        />
+          onSuccess={() => { setShowAdjust(false); setSelectedStockRow(null); invalidateAll(); }} />
       )}
     </div>
   );
 }
 
+// ── SHARED PRICING SECTION COMPONENT ─────────────────────────────────────────
+function PricingSection({ data, onChange, lang }) {
+  return (
+    <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 14 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 12 }}>
+        💰 {lang === "en" ? "Pricing" : "Tarification"}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div className="form-group">
+          <label className="label">{lang === "en" ? "Cost price (FCFA)" : "Prix achat (FCFA)"}</label>
+          <input className="input" type="number" value={data.cost_price || ""} onChange={e => onChange("cost_price", e.target.value)} placeholder="0" />
+        </div>
+        <div className="form-group">
+          <label className="label" style={{ color: "var(--brand-light)" }}>{lang === "en" ? "Walk-in price (FCFA) *" : "Prix détail (FCFA) *"}</label>
+          <input className="input" type="number" value={data.sell_price || ""} onChange={e => onChange("sell_price", e.target.value)} placeholder="0" />
+        </div>
+        <div className="form-group">
+          <label className="label" style={{ color: "#fbbf24" }}>{lang === "en" ? "Wholesale price (FCFA)" : "Prix gros (FCFA)"}</label>
+          <input className="input" type="number" value={data.wholesale_price || ""} onChange={e => onChange("wholesale_price", e.target.value)} placeholder="0" />
+        </div>
+        <div className="form-group">
+          <label className="label" style={{ color: "#f87171" }}>{lang === "en" ? "Min price floor (FCFA)" : "Prix minimum (FCFA)"}</label>
+          <input className="input" type="number" value={data.min_price || ""} onChange={e => onChange("min_price", e.target.value)} placeholder="0" />
+        </div>
+      </div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+        🔒 {lang === "en" ? "Min floor: staff cannot sell below this price. Owner PIN to override." : "Prix min: le personnel ne peut pas vendre en dessous. PIN propriétaire pour forcer."}
+      </div>
+    </div>
+  );
+}
+
+// ── RECEIVE ITEM ROW COMPONENT ────────────────────────────────────────────────
+function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemove, canSeePrices }) {
+  const [search, setSearch] = useState("");
+  const [showDrop, setShowDrop] = useState(false);
+
+  function fuzzyMatch(str, pattern) {
+    if (!str || !pattern) return false;
+    const s = str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const p = pattern.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    return s.includes(p) || (p.length > 1 && s.includes(p.slice(0, p.length - 1)));
+  }
+
+  const filtered = search.length >= 1
+    ? products.filter(p => fuzzyMatch(p.name, search) || (p.barcode && p.barcode.includes(search))).slice(0, 8)
+    : [];
+
+  return (
+    <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 14, marginBottom: 12, border: "1px solid var(--border)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+        <div style={{ fontWeight: 600, fontSize: 12, color: "var(--text-muted)" }}>
+          {lang === "en" ? `Item ${idx + 1}` : `Article ${idx + 1}`}
+        </div>
+        {onRemove && <button onClick={onRemove} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: 12 }}>✕ Remove</button>}
+      </div>
+
+      {/* Product search */}
+      <div className="form-group" style={{ position: "relative", marginBottom: 12 }}>
+        <label className="label">{lang === "en" ? "Product *" : "Produit *"}</label>
+        {item.product_id ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "rgba(79,70,229,0.1)", border: "1px solid var(--brand)", borderRadius: 8 }}>
+            <span style={{ flex: 1, fontWeight: 600, fontSize: 13 }}>{item.product_name}</span>
+            <button onClick={() => { onSelect({ id: "", name: "" }); onChange("product_id", ""); onChange("product_name", ""); }}
+              style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer" }}>✕</button>
+          </div>
+        ) : (
+          <>
+            <input className="input"
+              placeholder={lang === "en" ? "Type product name or scan barcode..." : "Tapez le nom ou scannez le code-barres..."}
+              value={search}
+              onChange={e => { setSearch(e.target.value); setShowDrop(true); }}
+              onFocus={() => setShowDrop(true)}
+              onBlur={() => setTimeout(() => setShowDrop(false), 200)}
+              autoFocus={idx === 0} />
+            {showDrop && filtered.length > 0 && (
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.4)", marginTop: 2 }}>
+                {filtered.map(p => (
+                  <div key={p.id} onMouseDown={() => { onSelect(p); setSearch(""); setShowDrop(false); }}
+                    style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}
+                    onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</div>
+                      {p.barcode && <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>{p.barcode}</div>}
+                    </div>
+                    {canSeePrices && <div style={{ fontSize: 12, color: "var(--brand-light)", fontWeight: 600 }}>{p.sell_price?.toLocaleString()} F</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {search.length > 0 && filtered.length === 0 && (
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                {lang === "en" ? `No existing product matches "${search}". Use Add Product for new items.` : `Aucun produit trouvé pour "${search}". Utilisez Ajouter produit pour les nouveaux articles.`}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Quantity */}
+      <div className="form-group" style={{ marginBottom: item.product_id ? 12 : 0 }}>
+        <label className="label">{lang === "en" ? "Quantity received *" : "Quantité reçue *"}</label>
+        <input className="input" type="number" value={item.quantity} onChange={e => onChange("quantity", e.target.value)} placeholder="0" disabled={!item.product_id} />
+      </div>
+
+      {/* Prices — only show after product selected */}
+      {item.product_id && (
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8 }}>
+            💰 {lang === "en" ? "Update prices (leave blank to keep current)" : "Mettre à jour les prix (laisser vide pour garder les prix actuels)"}
+          </div>
+          {item.currentPrices && (
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8, display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <span>Current → Cost: <strong>{item.currentPrices.cost?.toLocaleString() || "—"}</strong></span>
+              <span>Walk-in: <strong style={{ color: "var(--brand-light)" }}>{item.currentPrices.sell?.toLocaleString() || "—"}</strong></span>
+              <span>Wholesale: <strong style={{ color: "#fbbf24" }}>{item.currentPrices.wholesale?.toLocaleString() || "—"}</strong></span>
+              <span>Min: <strong style={{ color: "#f87171" }}>{item.currentPrices.min?.toLocaleString() || "—"}</strong></span>
+            </div>
+          )}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
+            <div className="form-group">
+              <label className="label" style={{ fontSize: 10 }}>Cost (FCFA)</label>
+              <input className="input" type="number" value={item.cost_price} onChange={e => onChange("cost_price", e.target.value)} placeholder={item.currentPrices?.cost || "0"} />
+            </div>
+            <div className="form-group">
+              <label className="label" style={{ fontSize: 10, color: "var(--brand-light)" }}>Walk-in</label>
+              <input className="input" type="number" value={item.sell_price} onChange={e => onChange("sell_price", e.target.value)} placeholder={item.currentPrices?.sell || "0"} />
+            </div>
+            <div className="form-group">
+              <label className="label" style={{ fontSize: 10, color: "#fbbf24" }}>Wholesale</label>
+              <input className="input" type="number" value={item.wholesale_price} onChange={e => onChange("wholesale_price", e.target.value)} placeholder={item.currentPrices?.wholesale || "0"} />
+            </div>
+            <div className="form-group">
+              <label className="label" style={{ fontSize: 10, color: "#f87171" }}>Min floor</label>
+              <input className="input" type="number" value={item.min_price} onChange={e => onChange("min_price", e.target.value)} placeholder={item.currentPrices?.min || "0"} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── ADJUST MODAL ──────────────────────────────────────────────────────────────
 function AdjustModal({ product, lang, onClose, onSuccess }) {
   const [qty, setQty] = useState(product.quantity);
   const [reason, setReason] = useState("");
@@ -805,12 +1120,7 @@ function AdjustModal({ product, lang, onClose, onSuccess }) {
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      await api.patch("/stock/adjust", {
-        product_id: product.product_id,
-        location_id: product.location_id,
-        new_quantity: +qty,
-        reason
-      });
+      await api.patch("/stock/adjust", { product_id: product.product_id, location_id: product.location_id, new_quantity: +qty, reason });
       toast.success(lang === "en" ? "✓ Stock adjusted!" : "✓ Stock ajusté!");
       onSuccess();
     } catch (err) {
@@ -821,14 +1131,10 @@ function AdjustModal({ product, lang, onClose, onSuccess }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
-        <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 6 }}>
-          {lang === "en" ? "Adjust Stock" : "Ajuster le stock"}
-        </div>
-        <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20 }}>
-          {product.pa_products?.name} — {product.pa_locations?.name}
-        </div>
+        <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 6 }}>{lang === "en" ? "Adjust Stock" : "Ajuster le stock"}</div>
+        <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20 }}>{product.pa_products?.name} — {product.pa_locations?.name}</div>
         <div style={{ background: "var(--bg-elevated)", borderRadius: 10, padding: "12px 16px", marginBottom: 16, display: "flex", justifyContent: "space-between" }}>
-          <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{lang === "en" ? "Current quantity" : "Quantité actuelle"}</span>
+          <span style={{ color: "var(--text-muted)", fontSize: 13 }}>Current</span>
           <strong>{product.quantity} {product.pa_products?.unit}</strong>
         </div>
         <div className="form-group">
@@ -836,88 +1142,12 @@ function AdjustModal({ product, lang, onClose, onSuccess }) {
           <input className="input" type="number" value={qty} onChange={e => setQty(e.target.value)} />
         </div>
         <div className="form-group">
-          <label className="label">{lang === "en" ? "Reason for adjustment" : "Raison de l'ajustement"}</label>
-          <input className="input" value={reason} onChange={e => setReason(e.target.value)}
-            placeholder={lang === "en" ? "e.g. Stock count, damaged goods..." : "Ex: Comptage, marchandises endommagées..."} />
+          <label className="label">{lang === "en" ? "Reason" : "Raison"}</label>
+          <input className="input" value={reason} onChange={e => setReason(e.target.value)} placeholder={lang === "en" ? "e.g. Stock count, damaged..." : "Ex: Inventaire, endommagé..."} />
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onClose}>
-            {lang === "en" ? "Cancel" : "Annuler"}
-          </button>
-          <button className="btn btn-primary" style={{ flex: 2 }} disabled={loading} onClick={handleSubmit}>
-            {loading ? "..." : (lang === "en" ? "✓ Save" : "✓ Enregistrer")}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ReceiveItemRow({ idx, item, products, lang, setItem }) {
-  const [search, setSearch] = useState("");
-  const [showDrop, setShowDrop] = useState(false);
-  const [selectedName, setSelectedName] = useState("");
-
-  function fuzzyMatch(str, pattern) {
-    if (!str || !pattern) return false;
-    const s = str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const p = pattern.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    return s.includes(p);
-  }
-
-  const filtered = search.length >= 1
-    ? products.filter(p => fuzzyMatch(p.name, search) || (p.barcode && p.barcode.includes(search))).slice(0, 6)
-    : [];
-
-  const selectProduct = (p) => {
-    setItem(idx, "product_id", p.id);
-    setSelectedName(p.name);
-    setSearch("");
-    setShowDrop(false);
-  };
-
-  return (
-    <div style={{ background: "var(--bg-elevated)", borderRadius: 10, padding: 12, marginBottom: 10 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 8 }}>
-        <div style={{ position: "relative" }}>
-          <label className="label">{lang === "en" ? "Product" : "Produit"} *</label>
-          {item.product_id && selectedName ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "rgba(79,70,229,0.1)", border: "1px solid var(--brand)", borderRadius: 8, fontSize: 13 }}>
-              <span style={{ flex: 1, fontWeight: 600 }}>{selectedName}</span>
-              <button onClick={() => { setItem(idx, "product_id", ""); setSelectedName(""); }}
-                style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: 14 }}>✕</button>
-            </div>
-          ) : (
-            <>
-              <input className="input"
-                placeholder={lang === "en" ? "Type name or scan barcode..." : "Tapez le nom ou scannez..."}
-                value={search}
-                onChange={e => { setSearch(e.target.value); setShowDrop(true); }}
-                onFocus={() => setShowDrop(true)}
-                onBlur={() => setTimeout(() => setShowDrop(false), 200)} />
-              {showDrop && filtered.length > 0 && (
-                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.4)", marginTop: 2 }}>
-                  {filtered.map(p => (
-                    <div key={p.id} onMouseDown={() => selectProduct(p)}
-                      style={{ padding: "8px 12px", cursor: "pointer", borderBottom: "1px solid var(--border)", fontSize: 13 }}
-                      onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
-                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                      <div style={{ fontWeight: 600 }}>{p.name}</div>
-                      {p.barcode && <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>{p.barcode}</div>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-        <div>
-          <label className="label">{lang === "en" ? "Quantity" : "Quantité"} *</label>
-          <input className="input" type="number" value={item.quantity} onChange={e => setItem(idx, "quantity", e.target.value)} placeholder="0" />
-        </div>
-        <div>
-          <label className="label">{lang === "en" ? "Cost price" : "Prix achat"}</label>
-          <input className="input" type="number" value={item.cost_price} onChange={e => setItem(idx, "cost_price", e.target.value)} placeholder="FCFA" />
+          <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onClose}>{lang === "en" ? "Cancel" : "Annuler"}</button>
+          <button className="btn btn-primary" style={{ flex: 2 }} disabled={loading} onClick={handleSubmit}>{loading ? "..." : (lang === "en" ? "✓ Save" : "✓ Enregistrer")}</button>
         </div>
       </div>
     </div>
