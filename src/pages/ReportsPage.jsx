@@ -38,6 +38,15 @@ export default function ReportsPage() {
     enabled: tab === "sales"
   });
 
+  const todayStr = new Date().toISOString().split("T")[0];
+
+  const { data: todaySalesData, isLoading: todayLoading } = useQuery({
+    queryKey: ["reports-today-sales"],
+    queryFn: () => api.get(`/reports/sales-detail?date=${todayStr}`).then(r => r.data),
+    enabled: tab === "daily_sales",
+    refetchInterval: 60000
+  });
+
   const { data: topProductsData, isLoading: topLoading } = useQuery({
     queryKey: ["reports-top-products", from, to],
     queryFn: () => api.get(`/reports/top-products?from=${from}&to=${to}`).then(r => r.data),
@@ -48,6 +57,7 @@ export default function ReportsPage() {
   const debts = debtData?.data || [];
   const salesDetail = salesDetailData?.data || [];
   const topProducts = topProductsData?.data || [];
+  const todaySales = todaySalesData?.data || [];
 
   const totals = daily.reduce((acc, d) => ({
     gross_sales:       acc.gross_sales       + (+d.gross_sales || 0),
@@ -109,10 +119,11 @@ export default function ReportsPage() {
   const sortedDates = Object.keys(salesByDate).sort((a, b) => b.localeCompare(a));
 
   const TABS = [
-    { key: "daily",    en: "Daily Summary",   fr: "Résumé journalier" },
-    { key: "sales",    en: "Sales Detail",    fr: "Détail des ventes" },
-    { key: "products", en: "Top Products",    fr: "Meilleurs produits" },
-    { key: "debts",    en: "Debt Report",     fr: "Rapport crédits" },
+    { key: "daily",       en: "Daily Summary",   fr: "Résumé journalier" },
+    { key: "sales",       en: "Sales Detail",    fr: "Détail des ventes" },
+    { key: "daily_sales", en: "Daily Sales",     fr: "Ventes du jour" },
+    { key: "products",    en: "Top Products",    fr: "Meilleurs produits" },
+    { key: "debts",       en: "Debt Report",     fr: "Rapport crédits" },
   ];
 
   const DateFilter = () => (
@@ -260,8 +271,8 @@ export default function ReportsPage() {
                         return (
                           <div key={sale.id} style={{ background: "var(--bg-card)", border: `1px solid ${isExpanded ? "var(--brand)" : "var(--border)"}`, borderRadius: 12, overflow: "hidden", transition: "all 0.15s" }}>
                             {/* Sale header - clickable */}
-                            <div onClick={() => setExpandedSale(isExpanded ? null : sale.id)}
-                              style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", cursor: "pointer" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px" }}>
+                              <div onClick={() => setExpandedSale(isExpanded ? null : sale.id)} style={{ flex: 1, display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
                               <div style={{ flex: 1 }}>
                                 <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 2 }}>
                                   <span style={{ fontWeight: 700, fontSize: 13, fontFamily: "monospace" }}>{sale.sale_number}</span>
@@ -280,7 +291,44 @@ export default function ReportsPage() {
                                 <div style={{ fontWeight: 800, fontSize: 15, color: "var(--brand-light)" }}>{formatCFA(sale.total_amount)}</div>
                                 {sale.balance_due > 0 && <div style={{ fontSize: 11, color: "#f87171" }}>Due: {formatCFA(sale.balance_due)}</div>}
                               </div>
-                              <div style={{ color: "var(--text-muted)", fontSize: 16, transition: "transform 0.15s", transform: isExpanded ? "rotate(90deg)" : "none" }}>›</div>
+                                <div style={{ color: "var(--text-muted)", fontSize: 16, transition: "transform 0.15s", transform: isExpanded ? "rotate(90deg)" : "none" }}>›</div>
+                              </div>
+                              {/* WhatsApp + Print per sale */}
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <button onClick={() => {
+                                  const items = sale.pa_sale_items || [];
+                                  const total = items.reduce((s,i) => s + i.quantity * i.unit_price, 0);
+                                  let msg = `🧾 *Reçu*\n📅 ${sale.sale_date}\nN° ${sale.sale_number}\n─────────────────────\n`;
+                                  items.forEach(i => { msg += `${i.pa_products?.name} × ${i.quantity} ... ${(i.quantity * i.unit_price).toLocaleString()} F\n`; });
+                                  msg += `─────────────────────\n*Total: ${total.toLocaleString()} FCFA*`;
+                                  if (sale.payment_status === "credit") msg += `\n🔴 CRÉDIT: ${total.toLocaleString()} F DÛ`;
+                                  else if (sale.payment_status === "partial") msg += `\n🟡 PARTIEL — Reste: ${sale.balance_due?.toLocaleString()} F`;
+                                  const phone = sale.pa_customers?.phone ? "237" + sale.pa_customers.phone.toString().replace(/^0/,"").replace(/\s/g,"") : "";
+                                  window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
+                                }} style={{ background: "#25D366", border: "none", color: "#fff", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
+                                  📱
+                                </button>
+                                <button onClick={() => {
+                                  const items = sale.pa_sale_items || [];
+                                  const total = items.reduce((s,i) => s + i.quantity * i.unit_price, 0);
+                                  const w = window.open("","_blank","width=350,height=500");
+                                  w.document.write(`<html><head><style>body{font-family:monospace;font-size:12px;width:300px;margin:0 auto}.row{display:flex;justify-content:space-between}.line{border-top:1px dashed #000;margin:6px 0}.bold{font-weight:bold;font-size:14px}</style></head><body>
+                                    <div style="text-align:center;font-weight:bold;font-size:14px;margin-bottom:4px">REÇU</div>
+                                    <div style="text-align:center">${sale.sale_date}</div>
+                                    <div style="text-align:center">${sale.sale_number}</div>
+                                    ${sale.pa_customers?.name ? `<div style="text-align:center">Client: ${sale.pa_customers.name}</div>` : ""}
+                                    <div class="line"></div>
+                                    ${items.map(i => `<div class="row"><span>${i.pa_products?.name} ×${i.quantity}</span><span>${(i.quantity*i.unit_price).toLocaleString()} F</span></div>`).join("")}
+                                    <div class="line"></div>
+                                    <div class="row bold"><span>TOTAL</span><span>${total.toLocaleString()} FCFA</span></div>
+                                    ${sale.payment_status === "credit" ? `<div class="row" style="color:red"><span>🔴 CRÉDIT DÛ</span><span>${total.toLocaleString()} F</span></div>` : ""}
+                                    ${sale.payment_status === "partial" ? `<div class="row" style="color:orange"><span>🟡 RESTE DÛ</span><span>${sale.balance_due?.toLocaleString()} F</span></div>` : ""}
+                                  </body></html>`);
+                                  w.document.close(); w.focus(); setTimeout(() => { w.print(); w.close(); }, 300);
+                                }} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-primary)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11 }}>
+                                  🖨️
+                                </button>
+                              </div>
                             </div>
 
                             {/* Expanded items */}
@@ -314,6 +362,160 @@ export default function ReportsPage() {
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── DAILY SALES ── */}
+      {tab === "daily_sales" && (
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 15 }}>📅 {lang === "en" ? "Today's Sales" : "Ventes du jour"} — {new Date().toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })}</div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{lang === "en" ? "All items sold today combined" : "Tous les articles vendus aujourd'hui"}</div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => {
+                if (!todaySales.length) return;
+                const itemMap = {};
+                todaySales.forEach(sale => {
+                  (sale.pa_sale_items || []).forEach(item => {
+                    const name = item.pa_products?.name || "?";
+                    const unit = item.pa_products?.unit || "pce";
+                    if (!itemMap[name]) itemMap[name] = { name, unit, qty: 0, total: 0 };
+                    itemMap[name].qty += item.quantity;
+                    itemMap[name].total += item.quantity * item.unit_price;
+                  });
+                });
+                const items = Object.values(itemMap);
+                const grandTotal = items.reduce((s, i) => s + i.total, 0);
+                const paid = todaySales.filter(s => s.payment_status === "paid").reduce((s, sale) => s + parseFloat(sale.total_amount), 0);
+                const credit = todaySales.filter(s => s.payment_status === "credit").reduce((s, sale) => s + parseFloat(sale.total_amount), 0);
+                const partial = todaySales.filter(s => s.payment_status === "partial").reduce((s, sale) => s + parseFloat(sale.balance_due || 0), 0);
+                const today = new Date().toLocaleDateString("fr-FR");
+                let msg = `📊 *Ventes du jour — ${today}*
+`;
+                msg += `─────────────────────
+`;
+                items.forEach(i => { msg += `${i.name} × ${i.qty} ${i.unit} ... ${i.total.toLocaleString()} F
+`; });
+                msg += `─────────────────────
+`;
+                msg += `*Total: ${grandTotal.toLocaleString()} FCFA*
+`;
+                msg += `✅ Encaissé: ${paid.toLocaleString()} F
+`;
+                if (credit > 0) msg += `🔴 Crédit: ${credit.toLocaleString()} F
+`;
+                if (partial > 0) msg += `🟡 Restes dus: ${partial.toLocaleString()} F
+`;
+                msg += `📦 ${todaySales.length} ventes`;
+                window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
+              }} style={{ background: "#25D366", border: "none", color: "#fff", borderRadius: 10, padding: "8px 16px", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
+                📱 {lang === "en" ? "Share WhatsApp" : "Partager WhatsApp"}
+              </button>
+              <button onClick={() => {
+                if (!todaySales.length) return;
+                const itemMap = {};
+                todaySales.forEach(sale => {
+                  (sale.pa_sale_items || []).forEach(item => {
+                    const name = item.pa_products?.name || "?";
+                    const unit = item.pa_products?.unit || "pce";
+                    if (!itemMap[name]) itemMap[name] = { name, unit, qty: 0, total: 0 };
+                    itemMap[name].qty += item.quantity;
+                    itemMap[name].total += item.quantity * item.unit_price;
+                  });
+                });
+                const items = Object.values(itemMap);
+                const grandTotal = items.reduce((s, i) => s + i.total, 0);
+                const paid = todaySales.filter(s => s.payment_status === "paid").reduce((s, sale) => s + parseFloat(sale.total_amount), 0);
+                const credit = todaySales.filter(s => s.payment_status === "credit").reduce((s, sale) => s + parseFloat(sale.total_amount), 0);
+                const today = new Date().toLocaleDateString("fr-FR");
+                const w = window.open("","_blank","width=350,height=600");
+                w.document.write(`<html><head><style>body{font-family:monospace;font-size:12px;width:300px;margin:0 auto}.row{display:flex;justify-content:space-between;margin-bottom:4px}.line{border-top:1px dashed #000;margin:8px 0}.center{text-align:center}.bold{font-weight:bold;font-size:14px}</style></head><body>
+                  <div class="center bold">VENTES DU JOUR</div>
+                  <div class="center">${today}</div>
+                  <div class="line"></div>
+                  ${items.map(i => `<div class="row"><span>${i.name} × ${i.qty} ${i.unit}</span><span>${i.total.toLocaleString()} F</span></div>`).join("")}
+                  <div class="line"></div>
+                  <div class="row bold"><span>TOTAL</span><span>${grandTotal.toLocaleString()} FCFA</span></div>
+                  <div class="row"><span>✅ Encaissé</span><span>${paid.toLocaleString()} F</span></div>
+                  ${credit > 0 ? `<div class="row" style="color:red"><span>🔴 Crédit</span><span>${credit.toLocaleString()} F</span></div>` : ""}
+                  <div class="row"><span>📦 Nb ventes</span><span>${todaySales.length}</span></div>
+                </body></html>`);
+                w.document.close(); w.focus(); setTimeout(() => { w.print(); w.close(); }, 300);
+              }} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-primary)", borderRadius: 10, padding: "8px 16px", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
+                🖨️ {lang === "en" ? "Print" : "Imprimer"}
+              </button>
+            </div>
+          </div>
+
+          {todayLoading ? <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>Loading...</div>
+          : todaySales.length === 0 ? (
+            <div className="empty-state">
+              <div style={{ fontSize: 32, marginBottom: 12, opacity: 0.3 }}>📭</div>
+              <div style={{ fontWeight: 600 }}>{lang === "en" ? "No sales today yet" : "Aucune vente aujourd'hui"}</div>
+            </div>
+          ) : (() => {
+            // Aggregate all items sold today
+            const itemMap = {};
+            let totalPaid = 0, totalCredit = 0, totalPartialDue = 0;
+            todaySales.forEach(sale => {
+              if (sale.payment_status === "paid") totalPaid += parseFloat(sale.total_amount);
+              if (sale.payment_status === "credit") totalCredit += parseFloat(sale.total_amount);
+              if (sale.payment_status === "partial") totalPartialDue += parseFloat(sale.balance_due || 0);
+              (sale.pa_sale_items || []).forEach(item => {
+                const name = item.pa_products?.name || "?";
+                const unit = item.pa_products?.unit || "pce";
+                if (!itemMap[name]) itemMap[name] = { name, unit, qty: 0, total: 0 };
+                itemMap[name].qty += item.quantity;
+                itemMap[name].total += item.quantity * item.unit_price;
+              });
+            });
+            const items = Object.values(itemMap).sort((a, b) => b.total - a.total);
+            const grandTotal = items.reduce((s, i) => s + i.total, 0);
+            return (
+              <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden" }}>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>{lang === "en" ? "Product" : "Produit"}</th>
+                      <th style={{ textAlign: "right" }}>{lang === "en" ? "Qty sold" : "Qté vendue"}</th>
+                      <th style={{ textAlign: "right" }}>{lang === "en" ? "Total" : "Total"}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((item, i) => (
+                      <tr key={i}>
+                        <td style={{ fontWeight: 600 }}>{item.name}</td>
+                        <td style={{ textAlign: "right", fontWeight: 600 }}>{item.qty} {item.unit}</td>
+                        <td style={{ textAlign: "right", fontWeight: 700, color: "var(--brand-light)" }}>{item.total.toLocaleString()} F</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ borderTop: "2px solid var(--border)", background: "var(--bg-elevated)" }}>
+                      <td style={{ padding: "12px 16px", fontWeight: 700 }}>
+                        {todaySales.length} {lang === "en" ? "sales" : "ventes"}
+                      </td>
+                      <td></td>
+                      <td style={{ textAlign: "right", padding: "12px 16px", fontWeight: 800, fontSize: 16, color: "var(--brand-light)" }}>
+                        {grandTotal.toLocaleString()} FCFA
+                      </td>
+                    </tr>
+                    <tr style={{ background: "var(--bg-elevated)" }}>
+                      <td colSpan={3} style={{ padding: "8px 16px" }}>
+                        <div style={{ display: "flex", gap: 20, flexWrap: "wrap", fontSize: 13 }}>
+                          <span>✅ {lang === "en" ? "Collected:" : "Encaissé:"} <strong style={{ color: "#34d399" }}>{totalPaid.toLocaleString()} F</strong></span>
+                          {totalCredit > 0 && <span>🔴 {lang === "en" ? "Credit:" : "Crédit:"} <strong style={{ color: "#f87171" }}>{totalCredit.toLocaleString()} F</strong></span>}
+                          {totalPartialDue > 0 && <span>🟡 {lang === "en" ? "Partial due:" : "Restes dus:"} <strong style={{ color: "#fbbf24" }}>{totalPartialDue.toLocaleString()} F</strong></span>}
+                        </div>
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            );
+          })()}
         </div>
       )}
 
