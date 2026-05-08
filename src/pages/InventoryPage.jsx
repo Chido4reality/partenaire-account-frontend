@@ -1002,9 +1002,7 @@ function PricingSection({ data, onChange, lang }) {
 // ── RECEIVE ITEM ROW COMPONENT ────────────────────────────────────────────────
 function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemove, canSeePrices }) {
   const [search, setSearch] = useState("");
-  const [showDrop, setShowDrop] = useState(false);
-  const [localProduct, setLocalProduct] = useState(null);
-  const isClickingRef = React.useRef(false);
+  const [selected, setSelected] = useState(null);
 
   function fuzzyMatch(str, pattern) {
     if (!str || !pattern) return false;
@@ -1017,130 +1015,140 @@ function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemov
     ? products.filter(p => fuzzyMatch(p.name, search) || (p.barcode && p.barcode.includes(search))).slice(0, 8)
     : [];
 
-  const handleSelect = (p) => {
-    setLocalProduct(p);
-    onSelect(p);
+  const pickProduct = (p) => {
+    setSelected(p);
     setSearch("");
-    setShowDrop(false);
+    onSelect(p);
   };
 
   const clearProduct = () => {
-    setLocalProduct(null);
-    onSelect({ id: "", name: "" });
+    setSelected(null);
+    setSearch("");
     onChange("product_id", "");
     onChange("product_name", "");
+    onChange("cost_price", "");
+    onChange("sell_price", "");
+    onChange("wholesale_price", "");
+    onChange("min_price", "");
   };
-
-  const showPrices = localProduct !== null;
-  const currentPrices = localProduct ? {
-    cost: localProduct.cost_price,
-    sell: localProduct.sell_price,
-    wholesale: localProduct.wholesale_price,
-    min: localProduct.min_price
-  } : item.currentPrices;
 
   return (
     <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 14, marginBottom: 12, border: "1px solid var(--border)" }}>
+      {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-        <div style={{ fontWeight: 600, fontSize: 12, color: "var(--text-muted)" }}>
+        <span style={{ fontWeight: 600, fontSize: 12, color: "var(--text-muted)" }}>
           {lang === "en" ? `Item ${idx + 1}` : `Article ${idx + 1}`}
-        </div>
-        {onRemove && <button onClick={onRemove} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: 12 }}>✕ Remove</button>}
+        </span>
+        {onRemove && (
+          <button onClick={onRemove} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: 12 }}>
+            ✕ Remove
+          </button>
+        )}
       </div>
 
-      {/* Product search */}
-      <div className="form-group" style={{ position: "relative", marginBottom: 12 }}>
+      {/* Product search OR selected display */}
+      <div className="form-group" style={{ marginBottom: 12 }}>
         <label className="label">{lang === "en" ? "Product *" : "Produit *"}</label>
-        {localProduct ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: "rgba(79,70,229,0.1)", border: "1px solid var(--brand)", borderRadius: 8 }}>
-            <span style={{ flex: 1, fontWeight: 600, fontSize: 13 }}>{localProduct.name}</span>
-            <button onClick={clearProduct} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: 16, lineHeight: 1 }}>✕</button>
+
+        {selected ? (
+          /* Selected product pill */
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "rgba(79,70,229,0.12)", border: "1px solid var(--brand)", borderRadius: 10 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>{selected.name}</div>
+              {selected.barcode && <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>{selected.barcode}</div>}
+            </div>
+            <button onClick={clearProduct} style={{ background: "rgba(239,68,68,0.15)", border: "none", color: "#f87171", cursor: "pointer", borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 600 }}>
+              ✕ Clear
+            </button>
           </div>
         ) : (
+          /* Search input with dropdown */
           <div style={{ position: "relative" }}>
-            <input className="input"
+            <input
+              className="input"
               placeholder={lang === "en" ? "Type product name or scan barcode..." : "Tapez le nom ou scannez le code-barres..."}
               value={search}
-              onChange={e => { setSearch(e.target.value); setShowDrop(true); }}
-              onFocus={() => setShowDrop(true)}
-              onBlur={() => { if (!isClickingRef.current) setShowDrop(false); }}
-              autoFocus={idx === 0} />
-            {showDrop && filtered.length > 0 && (
-              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 200, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.5)", marginTop: 2 }}>
+              onChange={e => setSearch(e.target.value)}
+              autoFocus={idx === 0}
+            />
+            {/* Dropdown results */}
+            {filtered.length > 0 && (
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 200, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", boxShadow: "0 8px 32px rgba(0,0,0,0.5)", marginTop: 4 }}>
                 {filtered.map(p => (
-                  <div key={p.id}
-                    onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.07)"}
-                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                    onMouseDown={() => { isClickingRef.current = true; }}
-                    onMouseUp={() => { isClickingRef.current = false; handleSelect(p); }}
-                    style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <button
+                    key={p.id}
+                    onClick={() => pickProduct(p)}
+                    style={{ width: "100%", padding: "10px 14px", background: "none", border: "none", borderBottom: "1px solid var(--border)", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", textAlign: "left" }}
+                    onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
+                    onMouseLeave={e => e.currentTarget.style.background = "none"}
+                  >
                     <div>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</div>
+                      <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>{p.name}</div>
                       {p.barcode && <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>{p.barcode}</div>}
                     </div>
-                    {canSeePrices && <div style={{ fontSize: 12, color: "var(--brand-light)", fontWeight: 600 }}>{p.sell_price?.toLocaleString()} F</div>}
-                  </div>
+                    {canSeePrices && (
+                      <div style={{ fontSize: 12, color: "var(--brand-light)", fontWeight: 700 }}>
+                        {Number(p.sell_price).toLocaleString()} F
+                      </div>
+                    )}
+                  </button>
                 ))}
               </div>
             )}
-            {search.length > 0 && filtered.length === 0 && showDrop && (
-              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 200, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-                {lang === "en" ? `No product found for "${search}". Use Add Product for new items.` : `Aucun produit trouvé pour "${search}". Utilisez Ajouter produit.`}
+            {search.length > 1 && filtered.length === 0 && (
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 200, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px", fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
+                {lang === "en" ? `No existing product matches "${search}". Use + Add Product for new items.` : `Aucun produit existant pour "${search}". Utilisez + Ajouter produit.`}
               </div>
             )}
           </div>
         )}
       </div>
 
-      {/* Quantity */}
-      <div className="form-group" style={{ marginBottom: showPrices ? 12 : 0 }}>
+      {/* Quantity — always visible, disabled until product selected */}
+      <div className="form-group" style={{ marginBottom: selected ? 14 : 0 }}>
         <label className="label">{lang === "en" ? "Quantity received *" : "Quantité reçue *"}</label>
-        <input className="input" type="number" value={item.quantity}
+        <input
+          className="input"
+          type="number"
+          value={item.quantity}
           onChange={e => onChange("quantity", e.target.value)}
-          placeholder="0" disabled={!localProduct} />
+          placeholder="0"
+          disabled={!selected}
+        />
       </div>
 
-      {/* Prices — show after product selected */}
-      {showPrices && (
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8 }}>
+      {/* Pricing — only show after product selected */}
+      {selected && (
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14, marginTop: 4 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 10 }}>
             💰 {lang === "en" ? "Update prices (leave blank to keep current)" : "Mettre à jour les prix (laisser vide pour garder)"}
           </div>
-          {currentPrices && (
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10, background: "rgba(255,255,255,0.03)", padding: "8px 12px", borderRadius: 8 }}>
-              <div style={{ fontWeight: 600, marginBottom: 4, color: "var(--text-secondary)" }}>Current prices:</div>
-              <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-                <span>Cost: <strong>{currentPrices.cost?.toLocaleString() || "—"} F</strong></span>
-                <span style={{ color: "var(--brand-light)" }}>Walk-in: <strong>{currentPrices.sell?.toLocaleString() || "—"} F</strong></span>
-                <span style={{ color: "#fbbf24" }}>Wholesale: <strong>{currentPrices.wholesale?.toLocaleString() || "—"} F</strong></span>
-                <span style={{ color: "#f87171" }}>Min: <strong>{currentPrices.min?.toLocaleString() || "—"} F</strong></span>
-              </div>
-            </div>
-          )}
+
+          {/* Current prices display */}
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12, padding: "8px 12px", background: "rgba(255,255,255,0.03)", borderRadius: 8, fontSize: 12 }}>
+            <span style={{ color: "var(--text-muted)" }}>Cost: <strong style={{ color: "var(--text-primary)" }}>{Number(selected.cost_price || 0).toLocaleString()} F</strong></span>
+            <span style={{ color: "var(--text-muted)" }}>Walk-in: <strong style={{ color: "var(--brand-light)" }}>{Number(selected.sell_price || 0).toLocaleString()} F</strong></span>
+            <span style={{ color: "var(--text-muted)" }}>Wholesale: <strong style={{ color: "#fbbf24" }}>{Number(selected.wholesale_price || 0).toLocaleString()} F</strong></span>
+            <span style={{ color: "var(--text-muted)" }}>Min: <strong style={{ color: "#f87171" }}>{Number(selected.min_price || 0).toLocaleString()} F</strong></span>
+          </div>
+
+          {/* New price inputs */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
             <div className="form-group">
-              <label className="label" style={{ fontSize: 10 }}>Cost (FCFA)</label>
-              <input className="input" type="number" value={item.cost_price}
-                onChange={e => onChange("cost_price", e.target.value)}
-                placeholder={currentPrices?.cost?.toString() || "0"} />
+              <label className="label" style={{ fontSize: 10 }}>New Cost</label>
+              <input className="input" type="number" value={item.cost_price} onChange={e => onChange("cost_price", e.target.value)} placeholder={selected.cost_price || "0"} />
             </div>
             <div className="form-group">
-              <label className="label" style={{ fontSize: 10, color: "var(--brand-light)" }}>Walk-in</label>
-              <input className="input" type="number" value={item.sell_price}
-                onChange={e => onChange("sell_price", e.target.value)}
-                placeholder={currentPrices?.sell?.toString() || "0"} />
+              <label className="label" style={{ fontSize: 10, color: "var(--brand-light)" }}>New Walk-in</label>
+              <input className="input" type="number" value={item.sell_price} onChange={e => onChange("sell_price", e.target.value)} placeholder={selected.sell_price || "0"} />
             </div>
             <div className="form-group">
-              <label className="label" style={{ fontSize: 10, color: "#fbbf24" }}>Wholesale</label>
-              <input className="input" type="number" value={item.wholesale_price}
-                onChange={e => onChange("wholesale_price", e.target.value)}
-                placeholder={currentPrices?.wholesale?.toString() || "0"} />
+              <label className="label" style={{ fontSize: 10, color: "#fbbf24" }}>New Wholesale</label>
+              <input className="input" type="number" value={item.wholesale_price} onChange={e => onChange("wholesale_price", e.target.value)} placeholder={selected.wholesale_price || "0"} />
             </div>
             <div className="form-group">
-              <label className="label" style={{ fontSize: 10, color: "#f87171" }}>Min floor</label>
-              <input className="input" type="number" value={item.min_price}
-                onChange={e => onChange("min_price", e.target.value)}
-                placeholder={currentPrices?.min?.toString() || "0"} />
+              <label className="label" style={{ fontSize: 10, color: "#f87171" }}>New Min floor</label>
+              <input className="input" type="number" value={item.min_price} onChange={e => onChange("min_price", e.target.value)} placeholder={selected.min_price || "0"} />
             </div>
           </div>
         </div>
