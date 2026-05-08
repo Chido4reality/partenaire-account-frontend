@@ -1,3 +1,4 @@
+// v12 - receipt payment status fix
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
@@ -715,6 +716,7 @@ function ReceiptModal({ sale, org, lang, onClose }) {
   const buildWhatsAppMessage = () => {
     const shopName = org.name || "Notre boutique";
     const footer = org.receipt_footer || "Merci pour votre achat!";
+    const status = sale.payment_status;
     let msg = `🧾 *Reçu — ${shopName}*
 `;
     msg += `📅 ${dateStr} à ${timeStr}
@@ -731,10 +733,22 @@ function ReceiptModal({ sale, org, lang, onClose }) {
 `;
     msg += `*Total: ${total.toLocaleString()} FCFA*
 `;
-    msg += `Payé: ${paid.toLocaleString()} FCFA
+    if (status === "paid") {
+      msg += `✅ *PAYÉ INTÉGRALEMENT: ${paid.toLocaleString()} FCFA*
 `;
-    if (balance > 0) msg += `*Reste dû: ${balance.toLocaleString()} FCFA*
+    } else if (status === "credit") {
+      msg += `🔴 *CRÉDIT TOTAL — Aucun paiement reçu*
 `;
+      msg += `*Montant dû: ${total.toLocaleString()} FCFA*
+`;
+    } else if (status === "partial") {
+      msg += `🟡 *PAIEMENT PARTIEL*
+`;
+      msg += `Payé: ${paid.toLocaleString()} FCFA
+`;
+      msg += `*Reste dû: ${balance.toLocaleString()} FCFA*
+`;
+    }
     msg += `
 ${footer}
 — ${shopName}`;
@@ -760,6 +774,7 @@ ${footer}
   };
 
   const printReceipt = () => {
+    const status = sale.payment_status;
     const shopName = org.name || "Notre boutique";
     const footer = org.receipt_footer || "Merci pour votre achat!";
     const printContent = `
@@ -783,8 +798,11 @@ ${footer}
         ${items.map(i => `<div class="row"><span>${i.name} ×${i.quantity}</span><span>${(i.quantity * i.unit_price).toLocaleString()} F</span></div>`).join("")}
         <div class="line"></div>
         <div class="row total"><span>TOTAL</span><span>${total.toLocaleString()} FCFA</span></div>
-        <div class="row"><span>Payé</span><span>${paid.toLocaleString()} FCFA</span></div>
-        ${balance > 0 ? `<div class="row" style="color:red"><span>Reste dû</span><span>${balance.toLocaleString()} FCFA</span></div>` : ""}
+        ${status === "paid" ? `<div class="row" style="color:green;font-weight:bold"><span>✅ PAYÉ</span><span>${paid.toLocaleString()} FCFA</span></div>` : ""}
+        ${status === "credit" ? `<div class="row" style="color:red;font-weight:bold"><span>🔴 CRÉDIT TOTAL</span><span>${total.toLocaleString()} FCFA DÛ</span></div>` : ""}
+        ${status === "partial" ? `<div class="row" style="color:orange;font-weight:bold"><span>🟡 PARTIEL — Payé</span><span>${paid.toLocaleString()} FCFA</span></div>` : ""}
+        ${balance > 0 && status !== "credit" ? `<div class="row" style="color:red"><span>Reste dû</span><span>${balance.toLocaleString()} FCFA</span></div>` : ""}
+        ${status === "credit" ? `<div class="row" style="color:red"><span>Montant total dû</span><span>${total.toLocaleString()} FCFA</span></div>` : ""}
         <div class="line"></div>
         <div class="footer">${footer}</div>
         <div class="footer">— ${shopName}</div>
@@ -813,7 +831,13 @@ ${footer}
         {/* Receipt preview */}
         <div style={{ background: "var(--bg-card)", borderRadius: 12, padding: 16, marginBottom: 20, fontSize: 13 }}>
           <div style={{ fontWeight: 700, textAlign: "center", marginBottom: 8 }}>{org.name || "Boutique"}</div>
-          {sale.customer?.name && <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", marginBottom: 8 }}>👤 {sale.customer.name}</div>}
+          {sale.customer?.name && <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", marginBottom: 4 }}>👤 {sale.customer.name}</div>}
+          {/* Payment status badge */}
+          <div style={{ textAlign: "center", marginBottom: 10 }}>
+            {sale.payment_status === "paid" && <span style={{ fontSize: 12, fontWeight: 700, background: "rgba(16,185,129,0.15)", color: "#34d399", padding: "3px 12px", borderRadius: 20 }}>✅ PAYÉ INTÉGRALEMENT</span>}
+            {sale.payment_status === "credit" && <span style={{ fontSize: 12, fontWeight: 700, background: "rgba(239,68,68,0.15)", color: "#f87171", padding: "3px 12px", borderRadius: 20 }}>🔴 CRÉDIT TOTAL — AUCUN PAIEMENT</span>}
+            {sale.payment_status === "partial" && <span style={{ fontSize: 12, fontWeight: 700, background: "rgba(245,158,11,0.15)", color: "#fbbf24", padding: "3px 12px", borderRadius: 20 }}>🟡 PAIEMENT PARTIEL</span>}
+          </div>
           <div style={{ borderTop: "1px dashed var(--border)", paddingTop: 8, marginBottom: 8 }}>
             {items.slice(0, 4).map((i, idx) => (
               <div key={idx} style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 12 }}>
