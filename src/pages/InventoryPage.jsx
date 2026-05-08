@@ -76,7 +76,7 @@ export default function InventoryPage() {
   // Receive Goods state
   const [receiveForm, setReceiveForm] = useState({
     location_id: "", supplier_name: "", invoice_ref: "", notes: "",
-    items: [{ product_id: "", product_name: "", quantity: "", cost_price: "", sell_price: "", wholesale_price: "", min_price: "", currentPrices: null }]
+    items: [{ product_id: "", product_name: "", quantity: "", slot_code: "", cost_price: "", sell_price: "", wholesale_price: "", min_price: "", currentPrices: null }]
   });
 
   // Rapid entry state
@@ -118,8 +118,14 @@ export default function InventoryPage() {
 
   // ── DATA QUERIES ────────────────────────────────────────────────────────────
   const { data: stockData, isLoading: stockLoading } = useQuery({
-    queryKey: ["stock", selectedLocation?.id],
-    queryFn: () => api.get("/stock" + (selectedLocation ? "?location_id=" + selectedLocation.id : "")).then(r => r.data),
+    queryKey: ["stock", selectedLocation?.id, search],
+    queryFn: () => {
+      // When searching, search across ALL locations
+      const params = new URLSearchParams();
+      if (selectedLocation && !search) params.append("location_id", selectedLocation.id);
+      if (search) params.append("search", search);
+      return api.get("/stock?" + params.toString()).then(r => r.data);
+    },
     refetchInterval: 30000
   });
 
@@ -151,7 +157,8 @@ export default function InventoryPage() {
   const locations = locationsData?.data || [];
   const allStock = allStockData?.data || [];
 
-  const filtered = search ? stock.filter(s => fuzzyMatch(s.pa_products?.name, search) || (s.pa_products?.barcode && s.pa_products.barcode.includes(search))) : stock;
+  // Backend handles search globally, just use data as-is
+  const filtered = stock;
   const filteredProducts = search ? products.filter(p => fuzzyMatch(p.name, search) || (p.barcode && p.barcode.includes(search))) : products;
 
   const totalStockValue = isOwner ? stock.reduce((sum, s) => sum + (+s.quantity * +(s.pa_products?.cost_price || 0)), 0) : 0;
@@ -237,7 +244,7 @@ export default function InventoryPage() {
         supplier_name: receiveForm.supplier_name || null,
         invoice_ref: receiveForm.invoice_ref || null,
         notes: receiveForm.notes || null,
-        items: validItems.map(i => ({ product_id: i.product_id, quantity: +i.quantity, cost_price: +i.cost_price || 0 }))
+        items: validItems.map(i => ({ product_id: i.product_id, quantity: +i.quantity, slot_code: i.slot_code || null, cost_price: +i.cost_price || 0 }))
       });
     },
     onSuccess: () => {
@@ -361,7 +368,7 @@ export default function InventoryPage() {
 
   // ── RECEIVE GOODS HELPERS ───────────────────────────────────────────────────
   const setReceiveItem = (idx, k, v) => setReceiveForm(f => ({ ...f, items: f.items.map((it, i) => i === idx ? { ...it, [k]: v } : it) }));
-  const addReceiveItem = () => setReceiveForm(f => ({ ...f, items: [...f.items, { product_id: "", product_name: "", quantity: "", cost_price: "", sell_price: "", wholesale_price: "", min_price: "", currentPrices: null }] }));
+  const addReceiveItem = () => setReceiveForm(f => ({ ...f, items: [...f.items, { product_id: "", product_name: "", quantity: "", slot_code: "", cost_price: "", sell_price: "", wholesale_price: "", min_price: "", currentPrices: null }] }));
   const removeReceiveItem = (idx) => setReceiveForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) }));
 
   const selectReceiveProduct = (idx, product) => {
@@ -478,6 +485,7 @@ export default function InventoryPage() {
                 <tr>
                   <th>{lang === "en" ? "Product" : "Produit"}</th>
                   <th>{lang === "en" ? "Location" : "Emplacement"}</th>
+                  <th>{lang === "en" ? "Slot" : "Emplacement"}</th>
                   <th style={{ textAlign: "right" }}>{lang === "en" ? "Quantity" : "Quantité"}</th>
                   <th style={{ textAlign: "right" }}>Min</th>
                   {canSeePrices && <th style={{ textAlign: "right" }}>{lang === "en" ? "Cost" : "Achat"}</th>}
@@ -485,6 +493,7 @@ export default function InventoryPage() {
                   {canSeePrices && <th style={{ textAlign: "right" }}>{lang === "en" ? "Wholesale" : "Gros"}</th>}
                   {canSeePrices && <th style={{ textAlign: "right" }}>{lang === "en" ? "Min floor" : "Prix min"}</th>}
                   <th>Status</th>
+                  <th style={{ fontSize: 11 }}>{lang === "en" ? "Last moved by" : "Dernier mouvement"}</th>
                   {canAdjustStock && <th>{lang === "en" ? "Actions" : "Actions"}</th>}
                 </tr>
               </thead>
@@ -499,6 +508,13 @@ export default function InventoryPage() {
                         {p?.barcode && <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>{p.barcode}</div>}
                       </td>
                       <td><span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: s.pa_locations?.type === "warehouse" ? "rgba(79,70,229,0.15)" : "rgba(16,185,129,0.15)", color: s.pa_locations?.type === "warehouse" ? "var(--brand-light)" : "#34d399" }}>{s.pa_locations?.name}</span></td>
+                      <td>
+                        {s.slot_code ? (
+                          <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 6, background: "rgba(251,191,36,0.15)", color: "#fbbf24", fontFamily: "monospace", fontWeight: 700 }}>
+                            📍 {s.slot_code}
+                          </span>
+                        ) : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>}
+                      </td>
                       <td style={{ textAlign: "right", fontWeight: 600, color: isLow ? "#f87171" : "var(--text-primary)" }}>{s.quantity} {p?.unit}</td>
                       <td style={{ textAlign: "right", color: "var(--text-muted)" }}>{s.min_quantity}</td>
                       {canSeePrices && <td style={{ textAlign: "right", color: "var(--text-muted)", fontSize: 12 }}>{formatCFA(p?.cost_price)}</td>}
@@ -506,6 +522,14 @@ export default function InventoryPage() {
                       {canSeePrices && <td style={{ textAlign: "right", color: "#fbbf24" }}>{p?.wholesale_price > 0 ? formatCFA(p.wholesale_price) : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>}</td>}
                       {canSeePrices && <td style={{ textAlign: "right", color: "#f87171", fontSize: 12 }}>{p?.min_price > 0 ? formatCFA(p.min_price) : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>}</td>}
                       <td><span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: isLow ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.15)", color: isLow ? "#f87171" : "#34d399" }}>{isLow ? (lang === "en" ? "Low" : "Bas") : "OK"}</span></td>
+                      <td style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                        {s.last_moved_by_name ? (
+                          <div>
+                            <div style={{ fontWeight: 500, color: "var(--text-secondary)" }}>{s.last_moved_by_name}</div>
+                            <div style={{ fontSize: 10 }}>{s.last_movement_type}</div>
+                          </div>
+                        ) : "—"}
+                      </td>
                       {canAdjustStock && (
                         <td>
                           <div style={{ display: "flex", gap: 6 }}>
@@ -1058,6 +1082,11 @@ function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemov
           <div className="form-group" style={{ marginBottom: 14 }}>
             <label className="label">{lang === "en" ? "Quantity received *" : "Quantité reçue *"}</label>
             <input className="input" type="number" value={item.quantity} onChange={e => onChange("quantity", e.target.value)} placeholder="0" />
+          </div>
+          <div className="form-group">
+            <label className="label">📍 {lang === "en" ? "Slot/Zone (optional)" : "Emplacement (opt.)"}</label>
+            <input className="input" value={item.slot_code || ""} onChange={e => onChange("slot_code", e.target.value)} placeholder="A-01, Shelf 2..." />
+          </div>
           </div>
 
           {/* Pricing section */}
