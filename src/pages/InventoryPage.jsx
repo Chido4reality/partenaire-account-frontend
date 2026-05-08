@@ -1,5 +1,5 @@
 import BarcodeInput from "../components/common/BarcodeInput";
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
@@ -1003,18 +1003,41 @@ function PricingSection({ data, onChange, lang }) {
 function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemove, canSeePrices }) {
   const [search, setSearch] = useState("");
   const [showDrop, setShowDrop] = useState(false);
-  const [localSelected, setLocalSelected] = useState(null);
+  const [localProduct, setLocalProduct] = useState(null);
+  const isClickingRef = React.useRef(false);
 
   function fuzzyMatch(str, pattern) {
     if (!str || !pattern) return false;
     const s = str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     const p = pattern.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    return s.includes(p) || (p.length > 1 && s.includes(p.slice(0, p.length - 1)));
+    return s.includes(p);
   }
 
   const filtered = search.length >= 1
     ? products.filter(p => fuzzyMatch(p.name, search) || (p.barcode && p.barcode.includes(search))).slice(0, 8)
     : [];
+
+  const handleSelect = (p) => {
+    setLocalProduct(p);
+    onSelect(p);
+    setSearch("");
+    setShowDrop(false);
+  };
+
+  const clearProduct = () => {
+    setLocalProduct(null);
+    onSelect({ id: "", name: "" });
+    onChange("product_id", "");
+    onChange("product_name", "");
+  };
+
+  const showPrices = localProduct !== null;
+  const currentPrices = localProduct ? {
+    cost: localProduct.cost_price,
+    sell: localProduct.sell_price,
+    wholesale: localProduct.wholesale_price,
+    min: localProduct.min_price
+  } : item.currentPrices;
 
   return (
     <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 14, marginBottom: 12, border: "1px solid var(--border)" }}>
@@ -1028,28 +1051,29 @@ function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemov
       {/* Product search */}
       <div className="form-group" style={{ position: "relative", marginBottom: 12 }}>
         <label className="label">{lang === "en" ? "Product *" : "Produit *"}</label>
-        {item.product_id ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "rgba(79,70,229,0.1)", border: "1px solid var(--brand)", borderRadius: 8 }}>
-            <span style={{ flex: 1, fontWeight: 600, fontSize: 13 }}>{item.product_name}</span>
-            <button onClick={() => { onSelect({ id: "", name: "" }); onChange("product_id", ""); onChange("product_name", ""); }}
-              style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer" }}>✕</button>
+        {localProduct ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: "rgba(79,70,229,0.1)", border: "1px solid var(--brand)", borderRadius: 8 }}>
+            <span style={{ flex: 1, fontWeight: 600, fontSize: 13 }}>{localProduct.name}</span>
+            <button onClick={clearProduct} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: 16, lineHeight: 1 }}>✕</button>
           </div>
         ) : (
-          <>
+          <div style={{ position: "relative" }}>
             <input className="input"
               placeholder={lang === "en" ? "Type product name or scan barcode..." : "Tapez le nom ou scannez le code-barres..."}
               value={search}
               onChange={e => { setSearch(e.target.value); setShowDrop(true); }}
               onFocus={() => setShowDrop(true)}
-              onBlur={() => setTimeout(() => setShowDrop(false), 300)}
+              onBlur={() => { if (!isClickingRef.current) setShowDrop(false); }}
               autoFocus={idx === 0} />
             {showDrop && filtered.length > 0 && (
-              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.4)", marginTop: 2 }}>
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 200, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.5)", marginTop: 2 }}>
                 {filtered.map(p => (
-                  <div key={p.id} onMouseDown={() => { onSelect(p); setLocalSelected(p); setSearch(""); setShowDrop(false); }}
-                    style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}
-                    onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
-                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  <div key={p.id}
+                    onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.07)"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                    onMouseDown={() => { isClickingRef.current = true; }}
+                    onMouseUp={() => { isClickingRef.current = false; handleSelect(p); }}
+                    style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div>
                       <div style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</div>
                       {p.barcode && <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>{p.barcode}</div>}
@@ -1059,51 +1083,64 @@ function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemov
                 ))}
               </div>
             )}
-            {search.length > 0 && filtered.length === 0 && (
-              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-                {lang === "en" ? `No existing product matches "${search}". Use Add Product for new items.` : `Aucun produit trouvé pour "${search}". Utilisez Ajouter produit pour les nouveaux articles.`}
+            {search.length > 0 && filtered.length === 0 && showDrop && (
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 200, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                {lang === "en" ? `No product found for "${search}". Use Add Product for new items.` : `Aucun produit trouvé pour "${search}". Utilisez Ajouter produit.`}
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
 
       {/* Quantity */}
-      <div className="form-group" style={{ marginBottom: item.product_id ? 12 : 0 }}>
+      <div className="form-group" style={{ marginBottom: showPrices ? 12 : 0 }}>
         <label className="label">{lang === "en" ? "Quantity received *" : "Quantité reçue *"}</label>
-        <input className="input" type="number" value={item.quantity} onChange={e => onChange("quantity", e.target.value)} placeholder="0" disabled={!item.product_id} />
+        <input className="input" type="number" value={item.quantity}
+          onChange={e => onChange("quantity", e.target.value)}
+          placeholder="0" disabled={!localProduct} />
       </div>
 
-      {/* Prices — only show after product selected */}
-      {(item.product_id || localSelected) && (
+      {/* Prices — show after product selected */}
+      {showPrices && (
         <div>
           <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8 }}>
-            💰 {lang === "en" ? "Update prices (leave blank to keep current)" : "Mettre à jour les prix (laisser vide pour garder les prix actuels)"}
+            💰 {lang === "en" ? "Update prices (leave blank to keep current)" : "Mettre à jour les prix (laisser vide pour garder)"}
           </div>
-          {(item.currentPrices || localSelected) && (
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8, display: "flex", gap: 12, flexWrap: "wrap" }}>
-              <span>Current → Cost: <strong>{(item.currentPrices?.cost || localSelected?.cost_price)?.toLocaleString() || "—"}</strong></span>
-              <span>Walk-in: <strong style={{ color: "var(--brand-light)" }}>{(item.currentPrices?.sell || localSelected?.sell_price)?.toLocaleString() || "—"}</strong></span>
-              <span>Wholesale: <strong style={{ color: "#fbbf24" }}>{(item.currentPrices?.wholesale || localSelected?.wholesale_price)?.toLocaleString() || "—"}</strong></span>
-              <span>Min: <strong style={{ color: "#f87171" }}>{(item.currentPrices?.min || localSelected?.min_price)?.toLocaleString() || "—"}</strong></span>
+          {currentPrices && (
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10, background: "rgba(255,255,255,0.03)", padding: "8px 12px", borderRadius: 8 }}>
+              <div style={{ fontWeight: 600, marginBottom: 4, color: "var(--text-secondary)" }}>Current prices:</div>
+              <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                <span>Cost: <strong>{currentPrices.cost?.toLocaleString() || "—"} F</strong></span>
+                <span style={{ color: "var(--brand-light)" }}>Walk-in: <strong>{currentPrices.sell?.toLocaleString() || "—"} F</strong></span>
+                <span style={{ color: "#fbbf24" }}>Wholesale: <strong>{currentPrices.wholesale?.toLocaleString() || "—"} F</strong></span>
+                <span style={{ color: "#f87171" }}>Min: <strong>{currentPrices.min?.toLocaleString() || "—"} F</strong></span>
+              </div>
             </div>
           )}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
             <div className="form-group">
               <label className="label" style={{ fontSize: 10 }}>Cost (FCFA)</label>
-              <input className="input" type="number" value={item.cost_price} onChange={e => onChange("cost_price", e.target.value)} placeholder={item.currentPrices?.cost || "0"} />
+              <input className="input" type="number" value={item.cost_price}
+                onChange={e => onChange("cost_price", e.target.value)}
+                placeholder={currentPrices?.cost?.toString() || "0"} />
             </div>
             <div className="form-group">
               <label className="label" style={{ fontSize: 10, color: "var(--brand-light)" }}>Walk-in</label>
-              <input className="input" type="number" value={item.sell_price} onChange={e => onChange("sell_price", e.target.value)} placeholder={item.currentPrices?.sell || "0"} />
+              <input className="input" type="number" value={item.sell_price}
+                onChange={e => onChange("sell_price", e.target.value)}
+                placeholder={currentPrices?.sell?.toString() || "0"} />
             </div>
             <div className="form-group">
               <label className="label" style={{ fontSize: 10, color: "#fbbf24" }}>Wholesale</label>
-              <input className="input" type="number" value={item.wholesale_price} onChange={e => onChange("wholesale_price", e.target.value)} placeholder={item.currentPrices?.wholesale || "0"} />
+              <input className="input" type="number" value={item.wholesale_price}
+                onChange={e => onChange("wholesale_price", e.target.value)}
+                placeholder={currentPrices?.wholesale?.toString() || "0"} />
             </div>
             <div className="form-group">
               <label className="label" style={{ fontSize: 10, color: "#f87171" }}>Min floor</label>
-              <input className="input" type="number" value={item.min_price} onChange={e => onChange("min_price", e.target.value)} placeholder={item.currentPrices?.min || "0"} />
+              <input className="input" type="number" value={item.min_price}
+                onChange={e => onChange("min_price", e.target.value)}
+                placeholder={currentPrices?.min?.toString() || "0"} />
             </div>
           </div>
         </div>
