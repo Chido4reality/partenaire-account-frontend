@@ -263,7 +263,21 @@ export default function POSPage() {
       }).then(r => r.data);
     },
     onSuccess: (data) => {
-      toast.success(data?.isDebt ? (lang === "en" ? "✓ Debt payment recorded!" : "✓ Remboursement enregistré!") : (lang === "en" ? "✓ Sale recorded!" : "✓ Vente enregistrée!"), { duration: 2000 });
+      if (data?.isDebt) {
+        toast.success(lang === "en" ? "✓ Debt payment recorded!" : "✓ Remboursement enregistré!", { duration: 2000 });
+      } else {
+        // Show receipt modal
+        setLastSale({
+          ...data,
+          customer,
+          items: cart,
+          paid_amount: hasDebt ? total : paid,
+          balance_due: hasDebt ? 0 : balance,
+          payment_method: payMethod,
+          payment_status: payMode,
+        });
+        setShowReceipt(true);
+      }
       setCart([]); setCustomer(null); setPayMode("paid");
       setPaidAmt(""); setDueDate(""); setNotes(""); setShowPayment(false);
       setDebtInvoices([]); setSelectedDebtIds(new Set()); setDebtPayAmt("");
