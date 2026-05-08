@@ -56,6 +56,8 @@ export default function POSPage() {
   const [lastScan, setLastScan]           = useState(null);
   const [showDebtModal, setShowDebtModal]     = useState(false);
   const [showPIN, setShowPIN]               = useState(false);
+  const [showReceipt, setShowReceipt]       = useState(false);
+  const [lastSale, setLastSale]             = useState(null);
   const [pinItem, setPinItem]               = useState(null); // {idx, price} pending PIN approval
   const [debtInvoices, setDebtInvoices]       = useState([]);
   const [selectedDebtIds, setSelectedDebtIds] = useState(new Set());
@@ -122,6 +124,14 @@ export default function POSPage() {
     queryFn: () => api.get("/customers?limit=300").then(r => r.data),
     staleTime: 60000
   });
+
+  // ── ORG SETTINGS (for receipts) ──────────────────────────────────────────
+  const { data: orgData } = useQuery({
+    queryKey: ["org-settings"],
+    queryFn: () => api.get("/settings").then(r => r.data),
+    staleTime: 300000
+  });
+  const orgSettings = orgData?.data || {};
 
   const { data: customerDebtData, isLoading: debtLoading } = useQuery({
     queryKey: ["customer-debt", customer?.id],
@@ -663,6 +673,181 @@ export default function POSPage() {
           </div>
         </div>
       </div>
+      {/* ── RECEIPT MODAL ────────────────────────────────────────────── */}
+      {showReceipt && lastSale && (
+        <ReceiptModal
+          sale={lastSale}
+          org={orgSettings}
+          lang={lang}
+          onClose={() => setShowReceipt(false)}
+        />
+      )}
     </>
+  );
+}
+
+// ── RECEIPT MODAL COMPONENT ───────────────────────────────────────────────────
+function ReceiptModal({ sale, org, lang, onClose }) {
+  const today = new Date();
+  const dateStr = today.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const timeStr = today.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+
+  const items = sale.items || [];
+  const total = items.reduce((s, i) => s + i.quantity * i.unit_price, 0);
+  const paid = sale.paid_amount || total;
+  const balance = total - paid;
+
+  // Build WhatsApp message
+  const buildWhatsAppMessage = () => {
+    const shopName = org.name || "Notre boutique";
+    const footer = org.receipt_footer || "Merci pour votre achat!";
+    let msg = `🧾 *Reçu — ${shopName}*
+`;
+    msg += `📅 ${dateStr} à ${timeStr}
+`;
+    if (sale.sale_number) msg += `N° ${sale.sale_number}
+`;
+    msg += `─────────────────────
+`;
+    items.forEach(i => {
+      msg += `${i.name} × ${i.quantity} ........ ${(i.quantity * i.unit_price).toLocaleString()} F
+`;
+    });
+    msg += `─────────────────────
+`;
+    msg += `*Total: ${total.toLocaleString()} FCFA*
+`;
+    msg += `Payé: ${paid.toLocaleString()} FCFA
+`;
+    if (balance > 0) msg += `*Reste dû: ${balance.toLocaleString()} FCFA*
+`;
+    msg += `
+${footer}
+— ${shopName}`;
+    if (org.address) msg += `
+📍 ${org.address}, ${org.city || ""}`;
+    if (org.phone) msg += `
+📞 ${org.phone}`;
+    return msg;
+  };
+
+  const sendWhatsApp = () => {
+    const customer = sale.customer;
+    if (!customer?.phone) {
+      // No customer phone — open wa.me with shop number
+      const msg = buildWhatsAppMessage();
+      window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
+      return;
+    }
+    let phone = customer.phone.toString().replace(/\s+/g, "").replace(/^0/, "");
+    if (!phone.startsWith("237")) phone = "237" + phone;
+    const msg = buildWhatsAppMessage();
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
+  };
+
+  const printReceipt = () => {
+    const shopName = org.name || "Notre boutique";
+    const footer = org.receipt_footer || "Merci pour votre achat!";
+    const printContent = `
+      <html><head><title>Reçu</title><style>
+        body { font-family: monospace; font-size: 12px; width: 300px; margin: 0 auto; }
+        h2 { text-align: center; font-size: 14px; margin: 4px 0; }
+        .center { text-align: center; }
+        .line { border-top: 1px dashed #000; margin: 6px 0; }
+        .row { display: flex; justify-content: space-between; }
+        .total { font-weight: bold; font-size: 14px; }
+        .footer { text-align: center; margin-top: 10px; font-size: 11px; }
+      </style></head><body>
+        <h2>${shopName}</h2>
+        <div class="center">${org.address || ""} ${org.city || ""}</div>
+        <div class="center">${org.phone || ""}</div>
+        <div class="line"></div>
+        <div class="center">${dateStr} ${timeStr}</div>
+        ${sale.sale_number ? `<div class="center">N° ${sale.sale_number}</div>` : ""}
+        ${sale.customer?.name ? `<div class="center">Client: ${sale.customer.name}</div>` : ""}
+        <div class="line"></div>
+        ${items.map(i => `<div class="row"><span>${i.name} ×${i.quantity}</span><span>${(i.quantity * i.unit_price).toLocaleString()} F</span></div>`).join("")}
+        <div class="line"></div>
+        <div class="row total"><span>TOTAL</span><span>${total.toLocaleString()} FCFA</span></div>
+        <div class="row"><span>Payé</span><span>${paid.toLocaleString()} FCFA</span></div>
+        ${balance > 0 ? `<div class="row" style="color:red"><span>Reste dû</span><span>${balance.toLocaleString()} FCFA</span></div>` : ""}
+        <div class="line"></div>
+        <div class="footer">${footer}</div>
+        <div class="footer">— ${shopName}</div>
+      </body></html>
+    `;
+    const w = window.open("", "_blank", "width=350,height=500");
+    w.document.write(printContent);
+    w.document.close();
+    w.focus();
+    setTimeout(() => { w.print(); w.close(); }, 300);
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, maxWidth: 400, width: "100%", boxShadow: "0 24px 60px rgba(0,0,0,0.6)" }}>
+
+        {/* Success header */}
+        <div style={{ textAlign: "center", marginBottom: 20 }}>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>✅</div>
+          <div style={{ fontWeight: 800, fontSize: 18, color: "#10b981" }}>
+            {lang === "en" ? "Sale Recorded!" : "Vente enregistrée!"}
+          </div>
+          {sale.sale_number && <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>{sale.sale_number}</div>}
+        </div>
+
+        {/* Receipt preview */}
+        <div style={{ background: "var(--bg-card)", borderRadius: 12, padding: 16, marginBottom: 20, fontSize: 13 }}>
+          <div style={{ fontWeight: 700, textAlign: "center", marginBottom: 8 }}>{org.name || "Boutique"}</div>
+          {sale.customer?.name && <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", marginBottom: 8 }}>👤 {sale.customer.name}</div>}
+          <div style={{ borderTop: "1px dashed var(--border)", paddingTop: 8, marginBottom: 8 }}>
+            {items.slice(0, 4).map((i, idx) => (
+              <div key={idx} style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 12 }}>
+                <span style={{ color: "var(--text-secondary)" }}>{i.name} ×{i.quantity}</span>
+                <span style={{ fontWeight: 600 }}>{(i.quantity * i.unit_price).toLocaleString()} F</span>
+              </div>
+            ))}
+            {items.length > 4 && <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>...+{items.length - 4} more</div>}
+          </div>
+          <div style={{ borderTop: "1px dashed var(--border)", paddingTop: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 15 }}>
+              <span>Total</span><span style={{ color: "var(--brand-light)" }}>{total.toLocaleString()} F</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#10b981" }}>
+              <span>{lang === "en" ? "Paid" : "Payé"}</span><span>{paid.toLocaleString()} F</span>
+            </div>
+            {balance > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#f87171", fontWeight: 600 }}>
+                <span>{lang === "en" ? "Balance due" : "Reste dû"}</span><span>{balance.toLocaleString()} F</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Action buttons */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {sale.customer?.phone && (
+            <button onClick={sendWhatsApp}
+              style={{ width: "100%", padding: "12px", background: "#25D366", border: "none", color: "#fff", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              📱 {lang === "en" ? "Send Receipt via WhatsApp" : "Envoyer reçu par WhatsApp"}
+            </button>
+          )}
+          {!sale.customer?.phone && (
+            <button onClick={sendWhatsApp}
+              style={{ width: "100%", padding: "12px", background: "#25D366", border: "none", color: "#fff", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              📱 {lang === "en" ? "Share via WhatsApp" : "Partager par WhatsApp"}
+            </button>
+          )}
+          <button onClick={printReceipt}
+            style={{ width: "100%", padding: "12px", background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-primary)", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            🖨️ {lang === "en" ? "Print Receipt" : "Imprimer reçu"}
+          </button>
+          <button onClick={onClose}
+            style={{ width: "100%", padding: "10px", background: "transparent", border: "none", color: "var(--text-muted)", borderRadius: 12, fontSize: 13, cursor: "pointer" }}>
+            {lang === "en" ? "Close" : "Fermer"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
