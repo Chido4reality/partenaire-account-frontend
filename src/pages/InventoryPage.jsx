@@ -1003,6 +1003,7 @@ function PricingSection({ data, onChange, lang }) {
 function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemove, canSeePrices }) {
   const [search, setSearch] = useState("");
   const [showDrop, setShowDrop] = useState(false);
+  const [localSelected, setLocalSelected] = useState(null);
 
   function fuzzyMatch(str, pattern) {
     if (!str || !pattern) return false;
@@ -1040,12 +1041,12 @@ function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemov
               value={search}
               onChange={e => { setSearch(e.target.value); setShowDrop(true); }}
               onFocus={() => setShowDrop(true)}
-              onBlur={() => setTimeout(() => setShowDrop(false), 200)}
+              onBlur={() => setTimeout(() => setShowDrop(false), 300)}
               autoFocus={idx === 0} />
             {showDrop && filtered.length > 0 && (
               <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.4)", marginTop: 2 }}>
                 {filtered.map(p => (
-                  <div key={p.id} onMouseDown={() => { onSelect(p); setSearch(""); setShowDrop(false); }}
+                  <div key={p.id} onMouseDown={() => { onSelect(p); setLocalSelected(p); setSearch(""); setShowDrop(false); }}
                     style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}
                     onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
                     onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
@@ -1074,17 +1075,17 @@ function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemov
       </div>
 
       {/* Prices — only show after product selected */}
-      {item.product_id && (
+      {(item.product_id || localSelected) && (
         <div>
           <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8 }}>
             💰 {lang === "en" ? "Update prices (leave blank to keep current)" : "Mettre à jour les prix (laisser vide pour garder les prix actuels)"}
           </div>
-          {item.currentPrices && (
+          {(item.currentPrices || localSelected) && (
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8, display: "flex", gap: 12, flexWrap: "wrap" }}>
-              <span>Current → Cost: <strong>{item.currentPrices.cost?.toLocaleString() || "—"}</strong></span>
-              <span>Walk-in: <strong style={{ color: "var(--brand-light)" }}>{item.currentPrices.sell?.toLocaleString() || "—"}</strong></span>
-              <span>Wholesale: <strong style={{ color: "#fbbf24" }}>{item.currentPrices.wholesale?.toLocaleString() || "—"}</strong></span>
-              <span>Min: <strong style={{ color: "#f87171" }}>{item.currentPrices.min?.toLocaleString() || "—"}</strong></span>
+              <span>Current → Cost: <strong>{(item.currentPrices?.cost || localSelected?.cost_price)?.toLocaleString() || "—"}</strong></span>
+              <span>Walk-in: <strong style={{ color: "var(--brand-light)" }}>{(item.currentPrices?.sell || localSelected?.sell_price)?.toLocaleString() || "—"}</strong></span>
+              <span>Wholesale: <strong style={{ color: "#fbbf24" }}>{(item.currentPrices?.wholesale || localSelected?.wholesale_price)?.toLocaleString() || "—"}</strong></span>
+              <span>Min: <strong style={{ color: "#f87171" }}>{(item.currentPrices?.min || localSelected?.min_price)?.toLocaleString() || "—"}</strong></span>
             </div>
           )}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
