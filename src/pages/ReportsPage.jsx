@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLangStore, useAuthStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
+import VoidReturnModal from "../components/common/VoidReturnModal";
 
 export default function ReportsPage() {
   const { lang } = useLangStore();
@@ -12,6 +13,7 @@ export default function ReportsPage() {
   const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().split("T")[0]; });
   const [to, setTo]     = useState(new Date().toISOString().split("T")[0]);
   const [expandedSale, setExpandedSale] = useState(null);
+  const [voidSale, setVoidSale] = useState(null);
 
   const setPreset = (days) => {
     const d = new Date();
@@ -295,6 +297,11 @@ export default function ReportsPage() {
                               </div>
                               {/* WhatsApp + Print per sale */}
                               <div style={{ display: "flex", gap: 6 }}>
+                                <button onClick={() => setVoidSale(sale)}
+                                  title="Void/Return"
+                                  style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11 }}>
+                                  ↩️
+                                </button>
                                 <button onClick={() => {
                                   const items = sale.pa_sale_items || [];
                                   const total = items.reduce((s,i) => s + i.quantity * i.unit_price, 0);
@@ -608,5 +615,13 @@ export default function ReportsPage() {
         </div>
       )}
     </div>
+
+    {voidSale && (
+      <VoidReturnModal
+        sale={voidSale}
+        lang={lang}
+        onClose={() => setVoidSale(null)}
+      />
+    )}
   );
 }
