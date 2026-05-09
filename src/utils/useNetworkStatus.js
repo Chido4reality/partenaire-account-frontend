@@ -1,14 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
 
+// Your Render backend URL — used to test real connectivity
+const HEALTH_URL = "https://partenaire-server.onrender.com/api/health";
+
 export function useNetworkStatus() {
   const [isOnline, setIsOnline] = useState(true);
 
   const checkRealConnection = useCallback(async () => {
-    if (!navigator.onLine) return false;
     try {
       const controller = new AbortController();
       const tid = setTimeout(() => controller.abort(), 3500);
-      const res = await fetch('/api/health', {
+      const res = await fetch(HEALTH_URL, {
         method: 'HEAD', cache: 'no-store', signal: controller.signal
       });
       clearTimeout(tid);
@@ -19,7 +21,10 @@ export function useNetworkStatus() {
   }, []);
 
   useEffect(() => {
-    const goOnline = () => setIsOnline(true);
+    const goOnline = () => {
+      setIsOnline(true);
+      checkRealConnection().then(setIsOnline);
+    };
     const goOffline = () => setIsOnline(false);
 
     window.addEventListener('online', goOnline);
