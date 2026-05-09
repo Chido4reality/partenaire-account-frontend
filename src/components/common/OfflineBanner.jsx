@@ -1,7 +1,7 @@
 // OfflineBanner.jsx — Shows offline status and pending sync count
 import { useState, useEffect } from "react";
 import { getPendingCount, clearSyncedSales } from "../../utils/offlineStore";
-import { syncPendingSales, onSyncUpdate } from "../../utils/syncService";
+import { processPendingQueue } from "../../utils/syncService";
 
 export default function OfflineBanner({ lang = "fr", collapsed = false }) {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -12,16 +12,13 @@ export default function OfflineBanner({ lang = "fr", collapsed = false }) {
     const goOnline = async () => {
       setIsOnline(true);
       refreshCount();
-      const result = await syncPendingSales();
+      const result = await processPendingQueue();
       if (result.synced > 0) { await clearSyncedSales(); refreshCount(); }
     };
     const goOffline = () => setIsOnline(false);
     window.addEventListener("online", goOnline);
     window.addEventListener("offline", goOffline);
-    const unsubscribe = onSyncUpdate((status) => {
-      setSyncStatus(status.status);
-      if (status.status === "done") { refreshCount(); setTimeout(() => setSyncStatus(null), 3000); }
-    });
+    const unsubscribe = () => {};
     refreshCount();
     const interval = setInterval(refreshCount, 15000);
     return () => {
@@ -37,7 +34,7 @@ export default function OfflineBanner({ lang = "fr", collapsed = false }) {
   const handleManualSync = async () => {
     if (!isOnline) return;
     setSyncStatus("syncing");
-    await syncPendingSales();
+    await processPendingQueue();
     await clearSyncedSales();
     await refreshCount();
     setSyncStatus("done");
