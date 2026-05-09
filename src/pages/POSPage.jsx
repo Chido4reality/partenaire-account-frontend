@@ -177,6 +177,15 @@ export default function POSPage() {
 
   const addToCart = (product, qty = 1) => {
     const price = getPrice(product);
+    // Low stock warning
+    const stockQty = product.stock?.quantity;
+    const minQty = product.stock?.min_quantity || 5;
+    if (stockQty !== undefined && stockQty <= minQty) {
+      toast(`⚠️ ${lang === "en" ? "Low stock:" : "Stock bas:"} ${product.name} — ${stockQty} ${product.unit} ${lang === "en" ? "remaining" : "restant(s)"}`, {
+        duration: 3000,
+        style: { background: "#451a03", color: "#fbbf24", border: "1px solid #92400e" }
+      });
+    }
     setCart(prev => {
       const idx = prev.findIndex(i => i.product_id === (product.product_id || product.id));
       if (idx >= 0) {
@@ -537,7 +546,12 @@ export default function POSPage() {
                     <div style={{ fontSize: 11, color: "var(--text-muted)", display: "flex", gap: 8 }}>
                       {p.barcode && <span style={{ fontFamily: "monospace" }}>{p.barcode}</span>}
                       {p.stock?.quantity !== undefined && (
-                        <span style={{ color: p.stock.quantity < 5 ? "#f87171" : "var(--text-muted)" }}>Stock: {p.stock.quantity} {p.unit}</span>
+                        <span style={{
+                          color: p.stock.quantity <= (p.stock.min_quantity || 5) ? "#f87171" : p.stock.quantity <= (p.stock.min_quantity || 5) * 2 ? "#fbbf24" : "var(--text-muted)",
+                          fontWeight: p.stock.quantity <= (p.stock.min_quantity || 5) ? 600 : 400
+                        }}>
+                          {p.stock.quantity <= (p.stock.min_quantity || 5) ? "⚠️ " : ""}Stock: {p.stock.quantity} {p.unit}
+                        </span>
                       )}
                     </div>
                   </div>
