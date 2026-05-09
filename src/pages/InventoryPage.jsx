@@ -460,7 +460,7 @@ export default function InventoryPage() {
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16, maxWidth: 600 }}>
           <div style={{ flex: 1, position: "relative" }}>
             <input ref={searchRef} className="input"
-              placeholder={lang === "en" ? "Search by name or barcode..." : "Chercher par nom ou code-barres..."}
+              placeholder={lang === "en" ? "Search all locations by name, barcode or slot..." : "Chercher partout par nom, code-barres ou emplacement..."}
               value={search} onChange={e => setSearch(e.target.value)}
               style={{ paddingLeft: 36 }} />
             <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", fontSize: 14, color: scanning ? "#10b981" : "var(--text-muted)" }}>
