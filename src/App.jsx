@@ -15,6 +15,7 @@ import ExpenditurePage from "./pages/ExpenditurePage";
 import CreditsPage from "./pages/CreditsPage";
 import CustomersPage from "./pages/CustomersPage";
 import SettingsPage from "./pages/SettingsPage";
+import ShiftsPage from "./pages/ShiftsPage";
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
 
@@ -29,6 +30,7 @@ const ROUTE_ACCESS = {
   "/expenditures": ["owner", "manager"],
   "/reports":      ["owner", "manager"],
   "/settings":     ["owner", "manager"],
+  "/shifts":       ["owner", "manager", "cashier"],
 };
 
 function Guard({ children }) {
@@ -75,6 +77,7 @@ export default function App() {
             <Route path="expenditures" element={<RoleGuard path="/expenditures"><ExpenditurePage /></RoleGuard>} />
             <Route path="reports"      element={<RoleGuard path="/reports"><ReportsPage /></RoleGuard>} />
             <Route path="settings"     element={<RoleGuard path="/settings"><SettingsPage /></RoleGuard>} />
+            <Route path="shifts"       element={<RoleGuard path="/shifts"><ShiftsPage /></RoleGuard>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

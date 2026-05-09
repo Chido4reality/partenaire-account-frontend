@@ -8,12 +8,13 @@ import api from "../../utils/api";
 const NAV = [
   { to: "/",             en: "Dashboard",  fr: "Tableau de bord", icon: "📊", roles: ["owner","manager","cashier","warehouse"] },
   { to: "/pos",          en: "Sales",      fr: "Ventes",          icon: "🛒", roles: ["owner","manager","cashier"] },
+  { to: "/shifts",       en: "Cash",       fr: "Caisse",          icon: "💰", roles: ["owner","manager","cashier"] },
   { to: "/inventory",    en: "Inventory",  fr: "Inventaire",      icon: "📦", roles: ["owner","manager","warehouse"] },
   { to: "/customers",    en: "Customers",  fr: "Clients",         icon: "👥", roles: ["owner","manager"] },
   { to: "/credits",      en: "Credits",    fr: "Crédits",         icon: "💳", roles: ["owner","manager"] },
   { to: "/transfers",    en: "Transfers",  fr: "Transferts",      icon: "🔄", roles: ["owner","manager","warehouse"] },
   { to: "/expenditures", en: "Expenses",   fr: "Dépenses",        icon: "💸", roles: ["owner","manager"] },
-  { to: "/reports",      en: "Reports",    fr: "Rapports",        icon: "📈", roles: ["owner","manager"] },
+  { to: "/reports",      en: "Reports",    fr: "Rapports",        icon: "📋", roles: ["owner","manager"] },
   { to: "/settings",     en: "Settings",   fr: "Paramètres",      icon: "⚙️", roles: ["owner","manager"] },
 ];
 
@@ -56,10 +57,7 @@ export default function Layout() {
   const unread = notifications.filter(n => !n.is_read).length;
   const role = user?.role || "cashier";
 
-  // Filter nav based on role
   const visibleNav = NAV.filter(item => item.roles.includes(role));
-
-  // Mobile nav - show what's allowed, max 5
   const mobileNav = visibleNav.slice(0, 5);
 
   const notifColor = (type) => {
@@ -100,11 +98,10 @@ export default function Layout() {
     </div>
   );
 
-  // ── MOBILE LAYOUT ──────────────────────────────────────────
+  // ── MOBILE LAYOUT ────────────────────────────────────────────────────────────
   if (isMobile) {
     return (
       <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
-        {/* Mobile top bar */}
         <div style={{ background: "var(--bg-surface)", borderBottom: "1px solid var(--border)", padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
           <div>
             <div style={{ fontWeight: 800, fontSize: 15 }}>Mon Partenaire</div>
@@ -125,7 +122,6 @@ export default function Layout() {
           <Outlet />
         </main>
 
-        {/* Bottom nav - role filtered */}
         <div style={{ background: "var(--bg-surface)", borderTop: "1px solid var(--border)", display: "flex", flexShrink: 0, paddingBottom: "env(safe-area-inset-bottom)" }}>
           {mobileNav.map(item => {
             const isActive = item.to === "/" ? location.pathname === "/" : location.pathname.startsWith(item.to);
@@ -142,12 +138,11 @@ export default function Layout() {
     );
   }
 
-  // ── DESKTOP LAYOUT ─────────────────────────────────────────
+  // ── DESKTOP LAYOUT ────────────────────────────────────────────────────────────
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
       <aside style={{ width: collapsed ? 60 : 220, flexShrink: 0, height: "100vh", background: "var(--bg-surface)", borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", transition: "width 0.2s ease", position: "sticky", top: 0, overflow: "hidden" }}>
 
-        {/* Logo */}
         <div style={{ padding: "16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", minHeight: 60 }}>
           {!collapsed && (
             <div>
@@ -160,7 +155,6 @@ export default function Layout() {
           </button>
         </div>
 
-        {/* Role badge */}
         {!collapsed && (
           <div style={{ padding: "8px 16px", borderBottom: "1px solid var(--border)", fontSize: 11 }}>
             <span style={{ background: "rgba(79,70,229,0.15)", color: "var(--brand-light)", padding: "3px 10px", borderRadius: 20, fontWeight: 600 }}>
@@ -169,7 +163,6 @@ export default function Layout() {
           </div>
         )}
 
-        {/* Nav — role filtered */}
         <nav style={{ flex: 1, padding: "8px 0", overflowY: "auto" }}>
           {visibleNav.map(item => (
             <NavLink key={item.to} to={item.to} end={item.to === "/"}
@@ -190,15 +183,12 @@ export default function Layout() {
           ))}
         </nav>
 
-        {/* Bottom: notifications, language, user, logout */}
         <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
-          {/* Online indicator */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, fontSize: 11 }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: isOnline ? "#10b981" : "#ef4444", flexShrink: 0 }} />
             {!collapsed && <span style={{ color: "var(--text-muted)" }}>{isOnline ? "Online" : "Offline"}</span>}
           </div>
 
-          {/* Notifications */}
           {!collapsed && (
             <div style={{ position: "relative", marginBottom: 6 }}>
               <button onClick={() => setShowNotif(s => !s)} style={{ width: "100%", padding: "6px 10px", borderRadius: 8, background: "rgba(255,255,255,0.05)", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: 11, textAlign: "left", display: "flex", justifyContent: "space-between" }}>
@@ -209,23 +199,20 @@ export default function Layout() {
             </div>
           )}
 
-          {/* Language toggle */}
           {!collapsed && (
             <button onClick={toggleLang} style={{ width: "100%", padding: "6px 10px", borderRadius: 8, background: "rgba(255,255,255,0.05)", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: 11, textAlign: "left", marginBottom: 6 }}>
               🌐 {lang === "en" ? "Français" : "English"}
             </button>
           )}
 
-          {/* User info */}
           {!collapsed && (
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, padding: "4px 0" }}>
               {user?.full_name}
             </div>
           )}
 
-          {/* Logout */}
           <button onClick={handleLogout} style={{ width: "100%", padding: "7px 10px", borderRadius: 8, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.15)", color: "#f87171", cursor: "pointer", fontSize: 11, textAlign: collapsed ? "center" : "left" }}>
-            {collapsed ? "↩" : (lang === "en" ? "Sign Out" : "Déconnexion")}
+            {collapsed ? "⏻" : (lang === "en" ? "Sign Out" : "Déconnexion")}
           </button>
         </div>
       </aside>
