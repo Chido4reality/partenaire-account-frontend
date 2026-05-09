@@ -151,6 +151,7 @@ export default function ReportsPage() {
   );
 
   return (
+    <>
     <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
       <div className="page-header">
         <h1 className="page-title">{lang === "en" ? "Reports" : "Rapports"}</h1>
@@ -613,9 +614,7 @@ export default function ReportsPage() {
           )}
         </div>
       )}
-    </div>
 
-      {/* Void/Return Modal */}
       {voidSale && (
         <VoidReturnModal
           sale={voidSale}
@@ -623,5 +622,6 @@ export default function ReportsPage() {
           onClose={() => setVoidSale(null)}
         />
       )}
+    </>
   );
 }
