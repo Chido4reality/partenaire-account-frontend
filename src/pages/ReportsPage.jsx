@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLangStore, useAuthStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
-import VoidReturnModal from "../components/common/VoidReturnModal";
 
 export default function ReportsPage() {
   const { lang } = useLangStore();
@@ -13,7 +12,6 @@ export default function ReportsPage() {
   const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().split("T")[0]; });
   const [to, setTo]     = useState(new Date().toISOString().split("T")[0]);
   const [expandedSale, setExpandedSale] = useState(null);
-  const [voidSale, setVoidSale] = useState(null);
 
   const setPreset = (days) => {
     const d = new Date();
@@ -151,7 +149,6 @@ export default function ReportsPage() {
   );
 
   return (
-    <>
     <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
       <div className="page-header">
         <h1 className="page-title">{lang === "en" ? "Reports" : "Rapports"}</h1>
@@ -311,11 +308,7 @@ export default function ReportsPage() {
                                 }} style={{ background: "#25D366", border: "none", color: "#fff", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
                                   📱
                                 </button>
-                                <button onClick={() => setVoidSale(sale)}
-                                  style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
-                                  ↩️
-                                </button>
-                                <button onClick={() => {
+<button onClick={() => {
                                   const items = sale.pa_sale_items || [];
                                   const total = items.reduce((s,i) => s + i.quantity * i.unit_price, 0);
                                   const w = window.open("","_blank","width=350,height=500");
@@ -615,13 +608,5 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {voidSale && (
-        <VoidReturnModal
-          sale={voidSale}
-          lang={lang}
-          onClose={() => setVoidSale(null)}
-        />
-      )}
-    </>
   );
 }
