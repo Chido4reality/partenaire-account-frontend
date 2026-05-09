@@ -300,22 +300,15 @@ export default function POSPage() {
         payment_method: payMethod, paid_amount: paid, due_date: dueDate || null, notes: notes || null
       };
 
-      // STEP 1: Save locally FIRST — instant UX regardless of connection
-      const localSale = await savePendingSale(salePayload);
-
-      // STEP 2: Try server only if we think we are online
-      if (isOnline) {
-        try {
-          const response = await api.post("/sales", salePayload, { timeout: 8000 });
-          await markSaleSynced(localSale.local_id, response.data?.data?.id);
-          return response.data; // contains sale data for receipt
-        } catch (err) {
-          console.warn("Online sync failed, kept offline", err?.message);
-        }
+      // STEP 1: Try server first (online flow with receipt)
+      try {
+        const response = await api.post("/sales", salePayload, { timeout: 8000 });
+        return response.data;
+      } catch (err) {
+        // STEP 2: Server failed — save locally
+        const localSale = await savePendingSale(salePayload);
+        return { offline: true, local_id: localSale.local_id };
       }
-
-      // Offline or sync failed — return offline
-      return { offline: true, local_id: localSale.local_id };
     },
     onSuccess: (data) => {
       if (data?.offline) {

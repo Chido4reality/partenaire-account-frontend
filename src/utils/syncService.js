@@ -1,35 +1,51 @@
 import api from './api';
 import { getPendingSales, markSaleSynced, markSaleFailed, clearSyncedSales } from './offlineStore';
 
+let isSyncing = false;
+
 export const processPendingQueue = async () => {
-  const pending = await getPendingSales();
-  if (pending.length === 0) return { synced: 0, total: 0 };
+  if (isSyncing) return { synced: 0, total: 0 };
+  isSyncing = true;
 
-  console.log(`Syncing ${pending.length} pending sales...`);
-  let synced = 0;
+  try {
+    const pending = await getPendingSales();
+    if (pending.length === 0) return { synced: 0, total: 0 };
 
-  for (const item of pending) {
-    try {
-      const res = await api.post('/sales', item.payload, { timeout: 12000 });
-      if (res.data?.success) {
-        await markSaleSynced(item.local_id, res.data?.data?.id);
-        synced++;
+    console.log(`Syncing ${pending.length} pending sales...`);
+    let synced = 0;
+
+    for (const item of pending) {
+      try {
+        const res = await api.post('/sales', item.payload, { timeout: 12000 });
+        if (res.data?.success) {
+          await markSaleSynced(item.local_id, res.data?.data?.id);
+          synced++;
+        }
+      } catch (err) {
+        console.error(`Failed to sync ${item.local_id}`, err?.message);
+        await markSaleFailed(item.local_id, err?.message || 'Unknown error');
       }
-    } catch (err) {
-      console.error(`Failed to sync ${item.local_id}`, err?.message);
-      await markSaleFailed(item.local_id, err?.message || 'Unknown error');
     }
-  }
 
-  await clearSyncedSales();
-  console.log(`Synced ${synced}/${pending.length}`);
-  return { synced, total: pending.length };
+    await clearSyncedSales();
+    console.log(`Synced ${synced}/${pending.length}`);
+    return { synced, total: pending.length };
+  } finally {
+    isSyncing = false;
+  }
 };
 
 export const startAutoSync = () => {
-  const handleOnline = () => processPendingQueue();
+  // Auto sync when browser comes back online
+  const handleOnline = () => {
+    setTimeout(() => processPendingQueue(), 1000);
+  };
+
+  // Auto sync when tab becomes visible
   const handleVisible = () => {
-    if (document.visibilityState === 'visible') processPendingQueue();
+    if (document.visibilityState === 'visible') {
+      processPendingQueue();
+    }
   };
 
   window.addEventListener('online', handleOnline);
@@ -44,5 +60,5 @@ export const startAutoSync = () => {
   };
 };
 
-// Keep backward compat
+// Backward compat stub
 export const onSyncUpdate = (cb) => { return () => {}; };
