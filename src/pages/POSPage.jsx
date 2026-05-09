@@ -293,14 +293,13 @@ export default function POSPage() {
         }
         return { isDebt: true };
       }
-      // ── SAVE LOCALLY FIRST, SYNC IN BACKGROUND ──────────────────────
-      // This eliminates hanging — cashier gets instant confirmation
       const salePayload = {
         location_id: selectedLocation?.id, customer_id: customer?.id || null,
         items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_price: i.unit_price, cost_price: i.cost_price })),
         payment_method: payMethod, paid_amount: paid, due_date: dueDate || null, notes: notes || null
       };
 
+      // Queue sale offline immediately, then attempt server sync
       const localId = generateLocalId();
       await initDB();
       await savePendingSale({
@@ -309,27 +308,26 @@ export default function POSPage() {
         sale_number: "LOCAL-" + Date.now(), created_at: new Date().toISOString()
       });
 
-      // Try to sync online in background (non-blocking)
-      api.post("/sales", { ...salePayload, local_id: localId }, { timeout: 8000 })
-        .then(async (res) => {
-          if (res.data?.success) {
-            await markSaleSynced(localId, res.data?.data?.id);
-          }
-        })
-        .catch(() => {
-          // Will sync later when online
-        });
-
-      return { offline: false, immediate: true };
+      // Try server - if it works, use server response (receipt etc)
+      // If it fails for any reason, return offline success
+      try {
+        const result = await api.post("/sales", { ...salePayload, local_id: localId }, { timeout: 8000 }).then(r => r.data);
+        // Server succeeded - mark local as synced
+        await markSaleSynced(localId, result?.data?.id);
+        return result;
+      } catch (err) {
+        // Server failed - already saved locally, return offline
+        return { offline: true };
+      }
     },
     onSuccess: (data) => {
-      if (data?.immediate) {
-        // Sale saved locally — show success immediately
-        toast.success(lang === "en" ? "✓ Sale recorded!" : "✓ Vente enregistrée!", { duration: 2000 });
+      if (data?.offline) {
+        toast(`📥 ${lang === "en" ? "Saved offline — will sync when connected" : "Sauvé hors ligne — sync à la reconnexion"}`, {
+          duration: 4000,
+          style: { background: "#451a03", color: "#fbbf24", border: "1px solid #92400e" }
+        });
         setCart([]); setCustomer(null); setNotes(""); setPaidAmt(""); setShowPayment(false);
         setPayMode("paid"); setDueDate(""); setDebtInvoices([]); setSelectedDebtIds(new Set()); setDebtPayAmt("");
-        qc.invalidateQueries(["recent-sales"]);
-        qc.invalidateQueries(["daily-summary"]);
         return;
       }
       if (data?.isDebt) {
