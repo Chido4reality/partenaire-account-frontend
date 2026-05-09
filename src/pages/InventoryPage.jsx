@@ -1,3 +1,4 @@
+// v20260509_0045 - slot + last_moved_by + global_search
 import BarcodeInput from "../components/common/BarcodeInput";
 import React, { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -1204,4 +1205,3 @@ function AdjustModal({ product, lang, onClose, onSuccess }) {
     </div>
   );
 }
-  
