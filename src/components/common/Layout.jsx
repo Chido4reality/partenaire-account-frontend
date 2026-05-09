@@ -67,8 +67,12 @@ export default function Layout() {
   };
 
   const roleLabel = () => {
-    const labels = { owner: "👑 Owner", manager: "🔑 Manager", cashier: "🛒 Cashier", warehouse: "📦 Warehouse" };
-    return labels[role] || role;
+    const icons = { owner: "👑", manager: "🔑", cashier: "🛒", warehouse: "📦" };
+    const roleNames = { owner: "Owner", manager: "Manager", cashier: "Cashier", warehouse: "Warehouse" };
+    const firstName = user?.full_name?.split(" ")[0] || "";
+    const icon = icons[role] || "👤";
+    const roleName = roleNames[role] || role;
+    return `${icon} ${firstName} · ${roleName}`;
   };
 
   const NotifPanel = () => (
@@ -223,4 +227,3 @@ export default function Layout() {
     </div>
   );
 }
-  

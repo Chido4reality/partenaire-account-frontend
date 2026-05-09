@@ -40,9 +40,18 @@ export default function Dashboard() {
   const { selectedLocation } = useSettingsStore();
   const navigate = useNavigate();
 
+  const role = user?.role || 'cashier';
+  const isOwner = role === 'owner';
+  const isManager = role === 'manager';
+  const isCashier = role === 'cashier';
+  const isWarehouse = role === 'warehouse';
+
   const today = new Date().toLocaleDateString(lang === 'fr' ? 'fr-CM' : 'en-GB', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
   });
+
+  const roleIcon = { owner: '👑', manager: '🔑', cashier: '🛒', warehouse: '📦' }[role] || '👤';
+  const firstName = user?.full_name?.split(' ')[0] || '';
 
   const { data: summary, isLoading } = useQuery({
     queryKey: ['daily-summary', selectedLocation?.id],
@@ -57,7 +66,8 @@ export default function Dashboard() {
   const { data: alerts } = useQuery({
     queryKey: ['stock-alerts'],
     queryFn: async () => api.get('/stock?low_only=true').then(r => r.data),
-    refetchInterval: 300000
+    refetchInterval: 300000,
+    enabled: !isCashier
   });
 
   const { data: recentSales } = useQuery({
@@ -69,6 +79,7 @@ export default function Dashboard() {
   const { data: credits } = useQuery({
     queryKey: ['overdue-credits'],
     queryFn: async () => api.get('/reports/debts').then(r => r.data),
+    enabled: isOwner || isManager
   });
 
   const s = summary?.data || {};
@@ -87,127 +98,181 @@ export default function Dashboard() {
       <div className="page-header" style={{ marginBottom: 28 }}>
         <div>
           <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 4, textTransform: 'capitalize' }}>
-            {getGreeting(lang)}, {user?.full_name?.split(' ')[0]} 👋
+            {getGreeting(lang)}, {firstName} {roleIcon}
           </div>
           <h1 className="page-title">{t('nav.dashboard')}</h1>
           <div className="page-sub" style={{ textTransform: 'capitalize' }}>{today}</div>
+          {/* Role badge */}
+          <div style={{ marginTop: 6 }}>
+            <span style={{ fontSize: 11, padding: "3px 10px", borderRadius: 20, fontWeight: 600, background: isOwner ? "rgba(251,191,36,0.15)" : isManager ? "rgba(79,70,229,0.15)" : isWarehouse ? "rgba(52,211,153,0.15)" : "rgba(148,163,184,0.15)", color: isOwner ? "#fbbf24" : isManager ? "var(--brand-light)" : isWarehouse ? "#34d399" : "#94a3b8" }}>
+              {roleIcon} {user?.full_name} · {role.charAt(0).toUpperCase() + role.slice(1)}
+            </span>
+          </div>
         </div>
-        <button className="btn btn-primary" onClick={() => navigate('/pos')} style={{ gap: 8 }}>
-          ⊕ {t('nav.sales')}
-        </button>
+        {!isWarehouse && (
+          <button className="btn btn-primary" onClick={() => navigate('/pos')} style={{ gap: 8 }}>
+            🛒 {t('nav.sales')}
+          </button>
+        )}
       </div>
 
-      {/* Alerts */}
-      {(lowStockCount > 0 || overdueCount > 0) && (
+      {/* Alerts — only for owner/manager */}
+      {(isOwner || isManager) && (lowStockCount > 0 || overdueCount > 0) && (
         <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
           {lowStockCount > 0 && (
-            <div onClick={() => navigate('/inventory')} style={{
-              display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px',
-              background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)',
-              borderRadius: 10, cursor: 'pointer', fontSize: 13, color: '#fbbf24'
-            }}>
-              ⚠ {lowStockCount} {t('dashboard.lowStockAlert')}
+            <div onClick={() => navigate('/inventory')} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 10, cursor: 'pointer', fontSize: 13, color: '#fbbf24' }}>
+              ⚠️ {lowStockCount} {t('dashboard.lowStockAlert')}
             </div>
           )}
           {overdueCount > 0 && (
-            <div onClick={() => navigate('/credits')} style={{
-              display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px',
-              background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)',
-              borderRadius: 10, cursor: 'pointer', fontSize: 13, color: '#f87171'
-            }}>
-              ◎ {overdueCount} {t('dashboard.overdueCredits')}
+            <div onClick={() => navigate('/credits')} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, cursor: 'pointer', fontSize: 13, color: '#f87171' }}>
+              🔴 {overdueCount} {t('dashboard.overdueCredits')}
             </div>
           )}
         </div>
       )}
 
-      {/* Stats grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
-        <StatCard icon="◈" label={t('dashboard.todaySales')}
-          value={isLoading ? '...' : formatCFA(s.gross_sales || 0)}
-          sub={`${s.sale_count || 0} ${t('dashboard.transactions')}`}
-          color="var(--brand-light)" onClick={() => navigate('/reports')} />
-        <StatCard icon="◉" label={t('dashboard.cashCollected')}
-          value={isLoading ? '...' : formatCFA(s.cash_collected || 0)}
-          color="#10b981" />
-        <StatCard icon="▦" label={t('dashboard.netProfit')}
-          value={isLoading ? '...' : formatCFA(s.net_profit || 0)}
-          sub={s.profit_margin_pct ? `${s.profit_margin_pct}% ${t('dashboard.profitMargin')}` : ''}
-          color={s.net_profit >= 0 ? '#10b981' : '#ef4444'} />
-        <StatCard icon="⊟" label={t('dashboard.creditSales')}
-          value={isLoading ? '...' : formatCFA(s.credit_sales || 0)}
-          color="#f59e0b" onClick={() => navigate('/credits')} />
-        <StatCard icon="⊖" label={t('dashboard.totalExpenses')}
-          value={isLoading ? '...' : formatCFA(s.total_expenditure || 0)}
-          color="#ef4444" onClick={() => navigate('/expenditures')} />
-        <StatCard icon="◎" label={t('dashboard.netCash')}
-          value={isLoading ? '...' : formatCFA(s.net_cash || 0)}
-          color={s.net_cash >= 0 ? '#10b981' : '#ef4444'} />
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 20, alignItems: 'start' }}>
-        {/* Recent sales */}
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15 }}>{t('dashboard.recentSales')}</span>
-            <button onClick={() => navigate('/reports')} className="btn btn-secondary btn-sm">
-              {t('common.all')} →
-            </button>
-          </div>
-
-          {recentSales?.data?.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-state-icon">◈</div>
-              <div className="empty-state-text">{t('common.noData')}</div>
-            </div>
-          ) : (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>{lang === 'en' ? 'Invoice' : 'Facture'}</th>
-                  <th>{t('common.date')}</th>
-                  <th>{t('nav.customers')}</th>
-                  <th style={{ textAlign: 'right' }}>{t('common.total')}</th>
-                  <th>{t('common.status')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentSales?.data?.map(sale => (
-                  <tr key={sale.id}>
-                    <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{sale.sale_number}</td>
-                    <td style={{ color: 'var(--text-secondary)' }}>{formatDate(sale.sale_date, lang)}</td>
-                    <td>{sale.pa_customers?.name || <span style={{ color: 'var(--text-muted)' }}>{t('pos.noCustomer')}</span>}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 500 }}>{formatCFA(sale.total_amount)}</td>
-                    <td>
-                      <span className="badge" style={{
-                        background: `${statusColor(sale.payment_status)}20`,
-                        color: statusColor(sale.payment_status)
-                      }}>
-                        {t(`common.${sale.payment_status}`)}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        {/* Quick actions */}
+      {/* ── WAREHOUSE VIEW ── */}
+      {isWarehouse && (
         <div>
-          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 14, marginBottom: 12, color: 'var(--text-secondary)' }}>
-            {t('dashboard.quickActions')}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
+            <StatCard icon="📦" label={lang === 'en' ? "Low stock items" : "Articles stock bas"}
+              value={lowStockCount || 0} color="#fbbf24"
+              sub={lang === 'en' ? "Need restocking" : "À réapprovisionner"}
+              onClick={() => navigate('/inventory')} />
+            <StatCard icon="🔄" label={lang === 'en' ? "Transfers today" : "Transferts aujourd'hui"}
+              value="→" color="var(--brand-light)"
+              sub={lang === 'en' ? "View transfers" : "Voir transferts"}
+              onClick={() => navigate('/transfers')} />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            <QuickBtn icon="⊕" label={t('pos.title')}           to="/pos"          color="var(--brand)" />
-            <QuickBtn icon="⊟" label={t('stock.arrivals')}      to="/inventory"    color="#0891b2" />
-            <QuickBtn icon="⇄" label={t('transfers.new')}       to="/transfers"    color="#7c3aed" />
-            <QuickBtn icon="⊖" label={t('expenditures.new')}    to="/expenditures" color="#dc2626" />
-            <QuickBtn icon="◉" label={t('nav.customers')}       to="/customers"    color="#059669" />
-            <QuickBtn icon="◎" label={t('nav.credits')}         to="/credits"      color="#d97706" />
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: 24, textAlign: 'center' }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>📦</div>
+            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>{lang === 'en' ? "Warehouse Dashboard" : "Tableau de bord entrepôt"}</div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>{lang === 'en' ? "Manage stock, receive goods and process transfers." : "Gérez le stock, réceptionnez les marchandises et traitez les transferts."}</div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+              <button className="btn btn-primary" onClick={() => navigate('/inventory')}>📦 Inventory</button>
+              <button className="btn btn-secondary" onClick={() => navigate('/transfers')}>🔄 Transfers</button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* ── CASHIER VIEW ── */}
+      {isCashier && (
+        <div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
+            <StatCard icon="🛒" label={lang === 'en' ? "My sales today" : "Mes ventes aujourd'hui"}
+              value={isLoading ? '...' : formatCFA(s.gross_sales || 0)}
+              sub={`${s.sale_count || 0} ${t('dashboard.transactions')}`}
+              color="var(--brand-light)" onClick={() => navigate('/reports')} />
+            <StatCard icon="💵" label={lang === 'en' ? "Cash collected" : "Espèces encaissées"}
+              value={isLoading ? '...' : formatCFA(s.cash_collected || 0)}
+              color="#10b981" />
+            <StatCard icon="💳" label={lang === 'en' ? "Credit sales" : "Ventes crédit"}
+              value={isLoading ? '...' : formatCFA(s.credit_sales || 0)}
+              color="#f59e0b" onClick={() => navigate('/credits')} />
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, marginBottom: 24 }}>
+            <QuickBtn icon="🛒" label={lang === 'en' ? "New Sale" : "Nouvelle vente"} to="/pos" color="var(--brand)" />
+            <QuickBtn icon="💰" label={lang === 'en' ? "Cash Register" : "Caisse"} to="/shifts" color="#10b981" />
+            <QuickBtn icon="👥" label={lang === 'en' ? "Customers" : "Clients"} to="/customers" color="#7c3aed" />
+          </div>
+        </div>
+      )}
+
+      {/* ── OWNER / MANAGER VIEW ── */}
+      {(isOwner || isManager) && (
+        <div>
+          {/* Stats grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
+            <StatCard icon="📊" label={t('dashboard.todaySales')}
+              value={isLoading ? '...' : formatCFA(s.gross_sales || 0)}
+              sub={`${s.sale_count || 0} ${t('dashboard.transactions')}`}
+              color="var(--brand-light)" onClick={() => navigate('/reports')} />
+            <StatCard icon="💵" label={t('dashboard.cashCollected')}
+              value={isLoading ? '...' : formatCFA(s.cash_collected || 0)}
+              color="#10b981" />
+            {isOwner && (
+              <StatCard icon="📈" label={t('dashboard.netProfit')}
+                value={isLoading ? '...' : formatCFA(s.net_profit || 0)}
+                sub={s.profit_margin_pct ? `${s.profit_margin_pct}% margin` : ''}
+                color={s.net_profit >= 0 ? '#10b981' : '#ef4444'} />
+            )}
+            <StatCard icon="💳" label={t('dashboard.creditSales')}
+              value={isLoading ? '...' : formatCFA(s.credit_sales || 0)}
+              color="#f59e0b" onClick={() => navigate('/credits')} />
+            <StatCard icon="💸" label={t('dashboard.totalExpenses')}
+              value={isLoading ? '...' : formatCFA(s.total_expenditure || 0)}
+              color="#ef4444" onClick={() => navigate('/expenditures')} />
+            {isOwner && (
+              <StatCard icon="🏦" label={t('dashboard.netCash')}
+                value={isLoading ? '...' : formatCFA(s.net_cash || 0)}
+                color={s.net_cash >= 0 ? '#10b981' : '#ef4444'} />
+            )}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 20, alignItems: 'start' }}>
+            {/* Recent sales */}
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15 }}>{t('dashboard.recentSales')}</span>
+                <button onClick={() => navigate('/reports')} className="btn btn-secondary btn-sm">
+                  {t('common.all')} →
+                </button>
+              </div>
+              {recentSales?.data?.length === 0 ? (
+                <div className="empty-state">
+                  <div className="empty-state-icon">📊</div>
+                  <div className="empty-state-text">{t('common.noData')}</div>
+                </div>
+              ) : (
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>{lang === 'en' ? 'Invoice' : 'Facture'}</th>
+                      <th>{t('common.date')}</th>
+                      <th>{t('nav.customers')}</th>
+                      <th style={{ textAlign: 'right' }}>{t('common.total')}</th>
+                      <th>{t('common.status')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentSales?.data?.map(sale => (
+                      <tr key={sale.id}>
+                        <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{sale.sale_number}</td>
+                        <td style={{ color: 'var(--text-secondary)' }}>{formatDate(sale.sale_date, lang)}</td>
+                        <td>{sale.pa_customers?.name || <span style={{ color: 'var(--text-muted)' }}>{t('pos.noCustomer')}</span>}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 500 }}>{formatCFA(sale.total_amount)}</td>
+                        <td>
+                          <span className="badge" style={{ background: `${statusColor(sale.payment_status)}20`, color: statusColor(sale.payment_status) }}>
+                            {t(`common.${sale.payment_status}`)}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Quick actions */}
+            <div>
+              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 14, marginBottom: 12, color: 'var(--text-secondary)' }}>
+                {t('dashboard.quickActions')}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <QuickBtn icon="🛒" label={t('pos.title')}          to="/pos"          color="var(--brand)" />
+                <QuickBtn icon="📦" label={t('stock.arrivals')}     to="/inventory"    color="#0891b2" />
+                <QuickBtn icon="🔄" label={t('transfers.new')}      to="/transfers"    color="#7c3aed" />
+                <QuickBtn icon="💸" label={t('expenditures.new')}   to="/expenditures" color="#dc2626" />
+                <QuickBtn icon="👥" label={t('nav.customers')}      to="/customers"    color="#059669" />
+                <QuickBtn icon="💳" label={t('nav.credits')}        to="/credits"      color="#d97706" />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
