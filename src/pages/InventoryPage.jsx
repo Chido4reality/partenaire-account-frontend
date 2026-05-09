@@ -1088,7 +1088,6 @@ function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemov
             <label className="label">📍 {lang === "en" ? "Slot/Zone (optional)" : "Emplacement (opt.)"}</label>
             <input className="input" value={item.slot_code || ""} onChange={e => onChange("slot_code", e.target.value)} placeholder="A-01, Shelf 2..." />
           </div>
-          </div>
 
           {/* Pricing section */}
           <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14 }}>
