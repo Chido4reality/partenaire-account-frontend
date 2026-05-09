@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import OwnerPIN from "../components/common/OwnerPIN";
 import api, { formatCFA } from "../utils/api";
-import { savePendingSale, generateLocalId, initDB, cacheData, getCachedData } from "../utils/offlineStore";
+import { savePendingSale, generateLocalId, initDB, markSaleSynced, cacheData, getCachedData } from "../utils/offlineStore";
 import { syncPendingSales } from "../utils/syncService";
 import CameraScanner from "../components/common/CameraScanner";
 
@@ -293,41 +293,43 @@ export default function POSPage() {
         }
         return { isDebt: true };
       }
-      // Build sale payload
+      // ── SAVE LOCALLY FIRST, SYNC IN BACKGROUND ──────────────────────
+      // This eliminates hanging — cashier gets instant confirmation
       const salePayload = {
         location_id: selectedLocation?.id, customer_id: customer?.id || null,
         items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_price: i.unit_price, cost_price: i.cost_price })),
         payment_method: payMethod, paid_amount: paid, due_date: dueDate || null, notes: notes || null
       };
 
-      const queueOffline = async () => {
-        await initDB();
-        const op = { ...salePayload, local_id: generateLocalId(), is_offline: true,
-          total_amount: cart.reduce((s, i) => s + i.quantity * i.unit_price, 0),
-          sale_number: "OFFLINE-" + Date.now(), created_at: new Date().toISOString()
-        };
-        await savePendingSale(op);
-        return { offline: true, sale_number: op.sale_number };
-      };
+      const localId = generateLocalId();
+      await initDB();
+      await savePendingSale({
+        ...salePayload, local_id: localId, is_offline: true,
+        total_amount: cart.reduce((s, i) => s + i.quantity * i.unit_price, 0),
+        sale_number: "LOCAL-" + Date.now(), created_at: new Date().toISOString()
+      });
 
-      try {
-        const result = await api.post("/sales", salePayload, { timeout: 5000 }).then(r => r.data);
-        return result;
-      } catch (err) {
-        // Any network error → save offline
-        if (!err.response || err.code === "ERR_NETWORK" || err.message?.includes("Network") || err.message?.includes("timeout") || err.code === "ECONNABORTED") {
-          return await queueOffline();
-        }
-        throw err;
-      }
+      // Try to sync online in background (non-blocking)
+      api.post("/sales", { ...salePayload, local_id: localId }, { timeout: 8000 })
+        .then(async (res) => {
+          if (res.data?.success) {
+            await markSaleSynced(localId, res.data?.data?.id);
+          }
+        })
+        .catch(() => {
+          // Will sync later when online
+        });
+
+      return { offline: false, immediate: true };
     },
     onSuccess: (data) => {
-      if (data?.offline) {
-        toast(`📥 ${lang === "en" ? "Saved offline — will sync when connected" : "Sauvé hors ligne — sync à la reconnexion"}`, {
-          duration: 4000,
-          style: { background: "#451a03", color: "#fbbf24", border: "1px solid #92400e" }
-        });
-        setCart([]); setCustomer(null); setNotes(""); setPaidAmt(""); setShowPayModal(false);
+      if (data?.immediate) {
+        // Sale saved locally — show success immediately
+        toast.success(lang === "en" ? "✓ Sale recorded!" : "✓ Vente enregistrée!", { duration: 2000 });
+        setCart([]); setCustomer(null); setNotes(""); setPaidAmt(""); setShowPayment(false);
+        setPayMode("paid"); setDueDate(""); setDebtInvoices([]); setSelectedDebtIds(new Set()); setDebtPayAmt("");
+        qc.invalidateQueries(["recent-sales"]);
+        qc.invalidateQueries(["daily-summary"]);
         return;
       }
       if (data?.isDebt) {
