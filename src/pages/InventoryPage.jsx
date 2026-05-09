@@ -1173,13 +1173,14 @@ function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemov
 // ── ADJUST MODAL ──────────────────────────────────────────────────────────────
 function AdjustModal({ product, lang, onClose, onSuccess }) {
   const [qty, setQty] = useState(product.quantity);
+  const [minQty, setMinQty] = useState(product.min_quantity || 5);
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      await api.patch("/stock/adjust", { product_id: product.product_id, location_id: product.location_id, new_quantity: +qty, reason });
+      await api.patch("/stock/adjust", { product_id: product.product_id, location_id: product.location_id, new_quantity: +qty, min_quantity: +minQty, reason });
       toast.success(lang === "en" ? "✓ Stock adjusted!" : "✓ Stock ajusté!");
       onSuccess();
     } catch (err) {
@@ -1196,9 +1197,18 @@ function AdjustModal({ product, lang, onClose, onSuccess }) {
           <span style={{ color: "var(--text-muted)", fontSize: 13 }}>Current</span>
           <strong>{product.quantity} {product.pa_products?.unit}</strong>
         </div>
-        <div className="form-group">
-          <label className="label">{lang === "en" ? "New quantity" : "Nouvelle quantité"}</label>
-          <input className="input" type="number" value={qty} onChange={e => setQty(e.target.value)} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div className="form-group">
+            <label className="label">{lang === "en" ? "New quantity" : "Nouvelle quantité"}</label>
+            <input className="input" type="number" value={qty} onChange={e => setQty(e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label className="label" style={{ color: "#fbbf24" }}>⚠️ {lang === "en" ? "Low stock alert at" : "Alerte stock bas à"}</label>
+            <input className="input" type="number" value={minQty} onChange={e => setMinQty(e.target.value)} placeholder="5" />
+            <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 3 }}>
+              {lang === "en" ? "Alert when below this number" : "Alerte quand en dessous de ce nombre"}
+            </div>
+          </div>
         </div>
         <div className="form-group">
           <label className="label">{lang === "en" ? "Reason" : "Raison"}</label>
