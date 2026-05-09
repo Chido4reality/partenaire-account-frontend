@@ -3,6 +3,8 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore, useLangStore, useOfflineStore } from "../../store";
 import api from "../../utils/api";
+import OfflineBanner from "./OfflineBanner";
+import { startAutoSync } from "../../utils/syncService";
 
 // Nav items with role restrictions
 const NAV = [
@@ -35,6 +37,11 @@ export default function Layout() {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    const stopAutoSync = startAutoSync();
+    return () => stopAutoSync();
   }, []);
 
   const handleLogout = () => { logout(); navigate("/login"); };
@@ -190,10 +197,7 @@ export default function Layout() {
         </nav>
 
         <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, fontSize: 11 }}>
-            <div style={{ width: 6, height: 6, borderRadius: "50%", background: isOnline ? "#10b981" : "#ef4444", flexShrink: 0 }} />
-            {!collapsed && <span style={{ color: "var(--text-muted)" }}>{isOnline ? "Online" : "Offline"}</span>}
-          </div>
+          <OfflineBanner lang={lang} collapsed={collapsed} />
 
           {!collapsed && (
             <div style={{ position: "relative", marginBottom: 6 }}>

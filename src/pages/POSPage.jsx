@@ -5,6 +5,8 @@ import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import OwnerPIN from "../components/common/OwnerPIN";
 import api, { formatCFA } from "../utils/api";
+import { savePendingSale, generateLocalId, initDB } from "../utils/offlineStore";
+import { syncPendingSales } from "../utils/syncService";
 import CameraScanner from "../components/common/CameraScanner";
 
 const PAYMENT_MODES = [
@@ -266,6 +268,23 @@ export default function POSPage() {
         }
         return { isDebt: true };
       }
+      // If offline, save to local queue
+      if (!navigator.onLine) {
+        const payload = {
+          local_id: generateLocalId(),
+          location_id: selectedLocation?.id,
+          customer_id: customer?.id || null,
+          items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_price: i.unit_price, cost_price: i.cost_price })),
+          payment_method: payMethod, paid_amount: paid, due_date: dueDate || null, notes: notes || null,
+          is_offline: true,
+          sale_number: `OFFLINE-${Date.now()}`,
+          total_amount: total,
+          created_at: new Date().toISOString()
+        };
+        await initDB();
+        await savePendingSale(payload);
+        return { offline: true, sale_number: payload.sale_number };
+      }
       return api.post("/sales", {
         location_id: selectedLocation?.id, customer_id: customer?.id || null,
         items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_price: i.unit_price, cost_price: i.cost_price })),
@@ -273,6 +292,14 @@ export default function POSPage() {
       }).then(r => r.data);
     },
     onSuccess: (data) => {
+      if (data?.offline) {
+        toast(`📥 ${lang === "en" ? "Saved offline — will sync when connected" : "Sauvé hors ligne — sync à la reconnexion"}`, {
+          duration: 4000,
+          style: { background: "#451a03", color: "#fbbf24", border: "1px solid #92400e" }
+        });
+        setCart([]); setCustomer(null); setNotes(""); setPaidAmt(""); setShowPayModal(false);
+        return;
+      }
       if (data?.isDebt) {
         toast.success(lang === "en" ? "✓ Debt payment recorded!" : "✓ Remboursement enregistré!", { duration: 2000 });
       } else {
