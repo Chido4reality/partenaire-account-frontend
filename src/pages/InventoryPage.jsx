@@ -884,7 +884,7 @@ export default function InventoryPage() {
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setShowRapidEntry(false); setRapidCount(0); setRapidItem(EMPTY_PRODUCT); }}>
                 {lang === "en" ? "Done" : "Terminer"}
               </button>
-              <button className="btn btn-success" style={{ flex: 2, fontWeight: 700 }}
+              <button className="btn btn-primary" style={{ flex: 2, fontWeight: 700 }}
                 disabled={!rapidItem.name || !rapidItem.sell_price || rapidMutation.isPending}
                 onClick={() => rapidMutation.mutate()}>
                 {rapidMutation.isPending ? "..." : (lang === "en" ? "✓ Add & Next →" : "✓ Ajouter & Suivant →")}
