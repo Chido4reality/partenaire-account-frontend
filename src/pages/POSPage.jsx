@@ -310,11 +310,31 @@ export default function POSPage() {
         await savePendingSale(payload);
         return { offline: true, sale_number: payload.sale_number };
       }
-      return api.post("/sales", {
-        location_id: selectedLocation?.id, customer_id: customer?.id || null,
-        items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_price: i.unit_price, cost_price: i.cost_price })),
-        payment_method: payMethod, paid_amount: paid, due_date: dueDate || null, notes: notes || null
-      }).then(r => r.data);
+      try {
+        const result = await Promise.race([
+          api.post("/sales", {
+            location_id: selectedLocation?.id, customer_id: customer?.id || null,
+            items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_price: i.unit_price, cost_price: i.cost_price })),
+            payment_method: payMethod, paid_amount: paid, due_date: dueDate || null, notes: notes || null
+          }).then(r => r.data),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), 6000))
+        ]);
+        return result;
+      } catch (err) {
+        if (err.message === "TIMEOUT" || !navigator.onLine || err.code === "ERR_NETWORK") {
+          const op = {
+            local_id: generateLocalId(), location_id: selectedLocation?.id,
+            customer_id: customer?.id || null,
+            items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_price: i.unit_price, cost_price: i.cost_price })),
+            payment_method: payMethod, paid_amount: paid, due_date: dueDate || null, notes: notes || null,
+            is_offline: true, total_amount: cart.reduce((s, i) => s + i.quantity * i.unit_price, 0),
+            sale_number: "OFFLINE-" + Date.now(), created_at: new Date().toISOString()
+          };
+          await savePendingSale(op);
+          return { offline: true, sale_number: op.sale_number };
+        }
+        throw err;
+      }
     },
     onSuccess: (data) => {
       if (data?.offline) {
@@ -745,7 +765,12 @@ export default function POSPage() {
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={() => setShowPayment(false)} className="btn btn-secondary" style={{ flex: 1 }}>← {lang === "en" ? "Back" : "Retour"}</button>
-                  <button onClick={() => saleMutation.mutate()} disabled={saleMutation.isPending || (!hasDebt && payMode === "partial" && !paidAmt)} className="btn btn-success" style={{ flex: 2, fontWeight: 700 }}>
+                  {(payMode === "credit" || payMode === "partial") && !customer && (
+                    <div style={{ gridColumn: "1/-1", padding: "8px 12px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, fontSize: 12, color: "#f87171", marginBottom: 8 }}>
+                      ⚠️ {lang === "en" ? "A registered customer is required for credit or partial sales." : "Un client enregistré est requis pour les ventes à crédit ou partielles."}
+                    </div>
+                  )}
+                  <button onClick={() => saleMutation.mutate()} disabled={saleMutation.isPending || (!hasDebt && payMode === "partial" && !paidAmt) || ((payMode === "credit" || payMode === "partial") && !customer)} className="btn btn-success" style={{ flex: 2, fontWeight: 700 }}>
                     {saleMutation.isPending ? "⏳" : (lang === "en" ? "✓ Confirm" : "✓ Valider")}
                   </button>
                 </div>
