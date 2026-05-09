@@ -5,8 +5,9 @@ import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import OwnerPIN from "../components/common/OwnerPIN";
 import api, { formatCFA } from "../utils/api";
-import { savePendingSale, generateLocalId, initDB, markSaleSynced, cacheData, getCachedData } from "../utils/offlineStore";
-import { syncPendingSales } from "../utils/syncService";
+import { savePendingSale, markSaleSynced, cacheData, getCachedData } from "../utils/offlineStore";
+import { processPendingQueue } from "../utils/syncService";
+import { useNetworkStatus } from "../utils/useNetworkStatus";
 import CameraScanner from "../components/common/CameraScanner";
 
 const PAYMENT_MODES = [
@@ -299,26 +300,22 @@ export default function POSPage() {
         payment_method: payMethod, paid_amount: paid, due_date: dueDate || null, notes: notes || null
       };
 
-      // Queue sale offline immediately, then attempt server sync
-      const localId = generateLocalId();
-      await initDB();
-      await savePendingSale({
-        ...salePayload, local_id: localId, is_offline: true,
-        total_amount: cart.reduce((s, i) => s + i.quantity * i.unit_price, 0),
-        sale_number: "LOCAL-" + Date.now(), created_at: new Date().toISOString()
-      });
+      // STEP 1: Save locally FIRST — instant UX regardless of connection
+      const localSale = await savePendingSale(salePayload);
 
-      // Try server - if it works, use server response (receipt etc)
-      // If it fails for any reason, return offline success
-      try {
-        const result = await api.post("/sales", { ...salePayload, local_id: localId }, { timeout: 8000 }).then(r => r.data);
-        // Server succeeded - mark local as synced
-        await markSaleSynced(localId, result?.data?.id);
-        return result;
-      } catch (err) {
-        // Server failed - already saved locally, return offline
-        return { offline: true };
+      // STEP 2: Try server only if we think we are online
+      if (isOnline) {
+        try {
+          const response = await api.post("/sales", salePayload, { timeout: 8000 });
+          await markSaleSynced(localSale.local_id, response.data?.data?.id);
+          return response.data; // contains sale data for receipt
+        } catch (err) {
+          console.warn("Online sync failed, kept offline", err?.message);
+        }
       }
+
+      // Offline or sync failed — return offline
+      return { offline: true, local_id: localSale.local_id };
     },
     onSuccess: (data) => {
       if (data?.offline) {
@@ -357,6 +354,7 @@ export default function POSPage() {
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
 
+  const { isOnline } = useNetworkStatus();
   const mobile = isMobile();
 
   return (

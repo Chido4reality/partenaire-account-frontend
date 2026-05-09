@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore, useLangStore, useOfflineStore } from "../../store";
 import api from "../../utils/api";
 import OfflineBanner from "./OfflineBanner";
-import { startAutoSync } from "../../utils/syncService";
+import { startAutoSync, processPendingQueue } from "../../utils/syncService";
 
 // Nav items with role restrictions
 const NAV = [

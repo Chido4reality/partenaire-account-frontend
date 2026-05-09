@@ -1,91 +1,48 @@
-// syncService.js — Syncs offline sales to server when internet returns
-import { getPendingSales, markSaleSynced, incrementSyncAttempt } from "./offlineStore";
-import api from "./api";
+import api from './api';
+import { getPendingSales, markSaleSynced, markSaleFailed, clearSyncedSales } from './offlineStore';
 
-let isSyncing = false;
-let syncListeners = [];
+export const processPendingQueue = async () => {
+  const pending = await getPendingSales();
+  if (pending.length === 0) return { synced: 0, total: 0 };
 
-export function onSyncUpdate(callback) {
-  syncListeners.push(callback);
-  return () => { syncListeners = syncListeners.filter(l => l !== callback); };
-}
+  console.log(`Syncing ${pending.length} pending sales...`);
+  let synced = 0;
 
-function notifyListeners(status) {
-  syncListeners.forEach(l => l(status));
-}
-
-export async function syncPendingSales() {
-  if (isSyncing) return { synced: 0, failed: 0 };
-  isSyncing = true;
-
-  try {
-    const pending = await getPendingSales();
-    if (pending.length === 0) {
-      isSyncing = false;
-      return { synced: 0, failed: 0 };
-    }
-
-    notifyListeners({ status: "syncing", count: pending.length });
-
-    let synced = 0;
-    let failed = 0;
-
-    for (const sale of pending) {
-      // Skip if too many failed attempts
-      if (sale.sync_attempts >= 5) {
-        failed++;
-        continue;
+  for (const item of pending) {
+    try {
+      const res = await api.post('/sales', item.payload, { timeout: 12000 });
+      if (res.data?.success) {
+        await markSaleSynced(item.local_id, res.data?.data?.id);
+        synced++;
       }
-
-      try {
-        // Try to submit the sale to server
-        const response = await api.post("/sales", {
-          ...sale,
-          local_id: sale.local_id, // Server stores this for deduplication
-        });
-
-        if (response?.data?.success) {
-          await markSaleSynced(sale.local_id, response.data.data?.id);
-          synced++;
-        } else {
-          await incrementSyncAttempt(sale.local_id);
-          failed++;
-        }
-      } catch (err) {
-        await incrementSyncAttempt(sale.local_id);
-        failed++;
-        // If it's a 409 conflict (already exists), mark as synced
-        if (err.response?.status === 409) {
-          await markSaleSynced(sale.local_id, null);
-          synced++;
-          failed--;
-        }
-      }
+    } catch (err) {
+      console.error(`Failed to sync ${item.local_id}`, err?.message);
+      await markSaleFailed(item.local_id, err?.message || 'Unknown error');
     }
-
-    notifyListeners({ status: "done", synced, failed });
-    return { synced, failed };
-  } catch (err) {
-    notifyListeners({ status: "error", error: err.message });
-    return { synced: 0, failed: 0 };
-  } finally {
-    isSyncing = false;
   }
-}
 
-// Auto-sync when browser comes online
-export function startAutoSync() {
-  const handleOnline = async () => {
-    console.log("🔵 Back online — syncing pending sales...");
-    await syncPendingSales();
+  await clearSyncedSales();
+  console.log(`Synced ${synced}/${pending.length}`);
+  return { synced, total: pending.length };
+};
+
+export const startAutoSync = () => {
+  const handleOnline = () => processPendingQueue();
+  const handleVisible = () => {
+    if (document.visibilityState === 'visible') processPendingQueue();
   };
 
-  window.addEventListener("online", handleOnline);
+  window.addEventListener('online', handleOnline);
+  document.addEventListener('visibilitychange', handleVisible);
 
-  // Also try to sync immediately if online
-  if (navigator.onLine) {
-    syncPendingSales();
-  }
+  // Try sync on start
+  processPendingQueue();
 
-  return () => window.removeEventListener("online", handleOnline);
-}
+  return () => {
+    window.removeEventListener('online', handleOnline);
+    document.removeEventListener('visibilitychange', handleVisible);
+  };
+};
+
+// Keep backward compat
+export const onSyncUpdate = (cb) => { return () => {}; };
