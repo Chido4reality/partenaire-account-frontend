@@ -112,7 +112,15 @@ export default function POSPage() {
 
   const { data: locData } = useQuery({
     queryKey: ["locations"],
-    queryFn: () => api.get("/locations").then(r => r.data)
+    queryFn: async () => {
+      if (!navigator.onLine) {
+        const cached = await getCachedData("pos-locations");
+        return cached || { data: [] };
+      }
+      const result = await api.get("/locations").then(r => r.data);
+      cacheData("pos-locations", result);
+      return result;
+    }
   });
 
   const { data: allProducts } = useQuery({
@@ -127,13 +135,21 @@ export default function POSPage() {
       cacheData(cacheKey, result); // cache for offline use
       return result;
     },
-    enabled: !!selectedLocation?.id,
+    enabled: true,
     staleTime: 60000
   });
 
   const { data: allCustomers } = useQuery({
     queryKey: ["pos-customers"],
-    queryFn: () => api.get("/customers?limit=300").then(r => r.data),
+    queryFn: async () => {
+      if (!navigator.onLine) {
+        const cached = await getCachedData("pos-customers");
+        return cached || { data: [] };
+      }
+      const result = await api.get("/customers?limit=300").then(r => r.data);
+      cacheData("pos-customers", result);
+      return result;
+    },
     staleTime: 60000
   });
 
