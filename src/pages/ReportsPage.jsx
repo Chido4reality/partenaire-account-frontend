@@ -614,14 +614,13 @@ export default function ReportsPage() {
           )}
         </div>
       )}
+      {voidSale && (
+        <VoidReturnModal
+          sale={voidSale}
+          lang={lang}
+          onClose={() => setVoidSale(null)}
+        />
+      )}
     </div>
-
-    {voidSale && (
-      <VoidReturnModal
-        sale={voidSale}
-        lang={lang}
-        onClose={() => setVoidSale(null)}
-      />
-    )}
   );
 }
