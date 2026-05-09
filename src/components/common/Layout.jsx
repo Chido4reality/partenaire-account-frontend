@@ -25,7 +25,19 @@ const NAV = [
 export default function Layout() {
   const { user, org, logout } = useAuthStore();
   const { lang, setLang }     = useLangStore();
-  const { isOnline }          = useOfflineStore();
+  const { isOnline: storeOnline } = useOfflineStore();
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
   const [collapsed, setCollapsed] = useState(false);
   const [showNotif, setShowNotif] = useState(false);
   const [isMobile, setIsMobile]   = useState(window.innerWidth < 768);
