@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import OwnerPIN from "../components/common/OwnerPIN";
 import api, { formatCFA } from "../utils/api";
-import { savePendingSale, generateLocalId, initDB } from "../utils/offlineStore";
+import { savePendingSale, generateLocalId, initDB, cacheData, getCachedData } from "../utils/offlineStore";
 import { syncPendingSales } from "../utils/syncService";
 import CameraScanner from "../components/common/CameraScanner";
 
@@ -117,7 +117,16 @@ export default function POSPage() {
 
   const { data: allProducts } = useQuery({
     queryKey: ["pos-products", selectedLocation?.id],
-    queryFn: () => api.get("/products?location_id=" + (selectedLocation?.id || "") + "&limit=200").then(r => r.data),
+    queryFn: async () => {
+      const cacheKey = "pos-products-" + (selectedLocation?.id || "all");
+      if (!navigator.onLine) {
+        const cached = await getCachedData(cacheKey);
+        return cached || { data: [] };
+      }
+      const result = await api.get("/products?location_id=" + (selectedLocation?.id || "") + "&limit=200").then(r => r.data);
+      cacheData(cacheKey, result); // cache for offline use
+      return result;
+    },
     enabled: !!selectedLocation?.id,
     staleTime: 60000
   });
