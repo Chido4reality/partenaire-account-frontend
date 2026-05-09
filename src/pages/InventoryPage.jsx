@@ -24,7 +24,7 @@ const UNITS = ["pce", "kg", "litre", "metre", "boite", "set", "paire", "carton",
 const EMPTY_PRODUCT = {
   name: "", barcode: "", unit: "pce",
   cost_price: "", sell_price: "", wholesale_price: "", min_price: "",
-  description: "", initial_location_id: "", initial_quantity: ""
+  description: "", initial_location_id: "", initial_quantity: "", initial_slot: ""
 };
 
 export default function InventoryPage() {
@@ -188,7 +188,7 @@ export default function InventoryPage() {
       if (newProduct.initial_location_id && newProduct.initial_quantity) {
         await api.post("/stock/arrivals", {
           location_id: newProduct.initial_location_id,
-          items: [{ product_id: product.id, quantity: +newProduct.initial_quantity, cost_price: +newProduct.cost_price || 0 }]
+          items: [{ product_id: product.id, quantity: +newProduct.initial_quantity, slot_code: newProduct.initial_slot || null, cost_price: +newProduct.cost_price || 0 }]
         });
       }
       return res.data;
@@ -269,7 +269,7 @@ export default function InventoryPage() {
       if (rapidItem.initial_location_id && rapidItem.initial_quantity) {
         await api.post("/stock/arrivals", {
           location_id: rapidItem.initial_location_id,
-          items: [{ product_id: product.id, quantity: +rapidItem.initial_quantity, cost_price: +rapidItem.cost_price || 0 }]
+          items: [{ product_id: product.id, quantity: +rapidItem.initial_quantity, slot_code: rapidItem.initial_slot || null, cost_price: +rapidItem.cost_price || 0 }]
         });
       }
       return res.data;
@@ -708,6 +708,10 @@ export default function InventoryPage() {
                   <label className="label">{lang === "en" ? "Initial quantity" : "Quantité initiale"}</label>
                   <input className="input" type="number" value={newProduct.initial_quantity} onChange={e => setNewProduct(p => ({ ...p, initial_quantity: e.target.value }))} placeholder="0" disabled={!newProduct.initial_location_id} />
                 </div>
+                <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+                  <label className="label">📍 {lang === "en" ? "Slot/Zone (optional)" : "Emplacement/Rayon (optionnel)"}</label>
+                  <input className="input" value={newProduct.initial_slot || ""} onChange={e => setNewProduct(p => ({ ...p, initial_slot: e.target.value }))} placeholder="A-01, Rayon 2..." disabled={!newProduct.initial_location_id} />
+                </div>
               </div>
             </div>
 
@@ -876,6 +880,10 @@ export default function InventoryPage() {
                   <input className="input" type="number" value={rapidItem.initial_quantity} onChange={e => setRapidItem(p => ({ ...p, initial_quantity: e.target.value }))} placeholder="0"
                     onKeyDown={e => { if (e.key === "Enter" && rapidItem.name && rapidItem.sell_price) rapidMutation.mutate(); }}
                     disabled={!rapidItem.initial_location_id} />
+                </div>
+                <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+                  <label className="label">📍 Slot/Zone</label>
+                  <input className="input" value={rapidItem.initial_slot || ""} onChange={e => setRapidItem(p => ({ ...p, initial_slot: e.target.value }))} placeholder="A-01, Rayon 2..." disabled={!rapidItem.initial_location_id} />
                 </div>
               </div>
             </div>
