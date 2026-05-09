@@ -16,6 +16,7 @@ import CreditsPage from "./pages/CreditsPage";
 import CustomersPage from "./pages/CustomersPage";
 import SettingsPage from "./pages/SettingsPage";
 import ShiftsPage from "./pages/ShiftsPage";
+import StockCountPage from "./pages/StockCountPage";
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
 
@@ -31,6 +32,7 @@ const ROUTE_ACCESS = {
   "/reports":      ["owner", "manager"],
   "/settings":     ["owner", "manager"],
   "/shifts":       ["owner", "manager", "cashier"],
+  "/stock-count":  ["owner", "manager", "warehouse"],
 };
 
 function Guard({ children }) {
@@ -78,6 +80,7 @@ export default function App() {
             <Route path="reports"      element={<RoleGuard path="/reports"><ReportsPage /></RoleGuard>} />
             <Route path="settings"     element={<RoleGuard path="/settings"><SettingsPage /></RoleGuard>} />
             <Route path="shifts"       element={<RoleGuard path="/shifts"><ShiftsPage /></RoleGuard>} />
+            <Route path="stock-count"  element={<RoleGuard path="/stock-count"><StockCountPage /></RoleGuard>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
