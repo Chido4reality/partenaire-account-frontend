@@ -1,7 +1,7 @@
-﻿import axios from "axios";
+import axios from "axios";
 import { useAuthStore } from "../store";
 
-const api = axios.create({ baseURL: import.meta.env.VITE_API_URL || "/api", timeout: 12000 });
+const api = axios.create({ baseURL: import.meta.env.VITE_API_URL || "/api", timeout: 5000 });
 
 api.interceptors.request.use(config => {
   const token = useAuthStore.getState().token;
@@ -17,12 +17,12 @@ api.interceptors.response.use(res => res, err => {
 export default api;
 
 export const formatCFA = (amount) => {
-  if (!amount && amount !== 0) return "â€”";
+  if (!amount && amount !== 0) return "—";
   return new Intl.NumberFormat("fr-CM").format(Math.round(amount)) + " FCFA";
 };
 
 export const formatDate = (date) => {
-  if (!date) return "â€”";
+  if (!date) return "—";
   return new Date(date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 };
 
