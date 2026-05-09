@@ -310,28 +310,31 @@ export default function POSPage() {
         await savePendingSale(payload);
         return { offline: true, sale_number: payload.sale_number };
       }
+      // Always try to save offline if not online
+      const saveOffline = async () => {
+        const op = {
+          local_id: generateLocalId(), location_id: selectedLocation?.id,
+          customer_id: customer?.id || null,
+          items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_price: i.unit_price, cost_price: i.cost_price })),
+          payment_method: payMethod, paid_amount: paid, due_date: dueDate || null, notes: notes || null,
+          is_offline: true, total_amount: cart.reduce((s, i) => s + i.quantity * i.unit_price, 0),
+          sale_number: "OFFLINE-" + Date.now(), created_at: new Date().toISOString()
+        };
+        await savePendingSale(op);
+        return { offline: true, sale_number: op.sale_number };
+      };
+
       try {
-        const result = await Promise.race([
-          api.post("/sales", {
-            location_id: selectedLocation?.id, customer_id: customer?.id || null,
-            items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_price: i.unit_price, cost_price: i.cost_price })),
-            payment_method: payMethod, paid_amount: paid, due_date: dueDate || null, notes: notes || null
-          }).then(r => r.data),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), 6000))
-        ]);
+        const result = await api.post("/sales", {
+          location_id: selectedLocation?.id, customer_id: customer?.id || null,
+          items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_price: i.unit_price, cost_price: i.cost_price })),
+          payment_method: payMethod, paid_amount: paid, due_date: dueDate || null, notes: notes || null
+        }, { timeout: 8000 }).then(r => r.data);
         return result;
       } catch (err) {
-        if (err.message === "TIMEOUT" || !navigator.onLine || err.code === "ERR_NETWORK") {
-          const op = {
-            local_id: generateLocalId(), location_id: selectedLocation?.id,
-            customer_id: customer?.id || null,
-            items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_price: i.unit_price, cost_price: i.cost_price })),
-            payment_method: payMethod, paid_amount: paid, due_date: dueDate || null, notes: notes || null,
-            is_offline: true, total_amount: cart.reduce((s, i) => s + i.quantity * i.unit_price, 0),
-            sale_number: "OFFLINE-" + Date.now(), created_at: new Date().toISOString()
-          };
-          await savePendingSale(op);
-          return { offline: true, sale_number: op.sale_number };
+        // Any network error → save offline
+        if (!err.response || err.code === "ERR_NETWORK" || err.message?.includes("Network") || err.message?.includes("timeout")) {
+          return await saveOffline();
         }
         throw err;
       }
