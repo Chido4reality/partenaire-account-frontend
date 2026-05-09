@@ -310,8 +310,18 @@ export default function POSPage() {
         await savePendingSale(payload);
         return { offline: true, sale_number: payload.sale_number };
       }
-      // Check online status FIRST before attempting server
-      if (!navigator.onLine) {
+      // Test real connectivity with a quick ping (navigator.onLine is unreliable on Windows)
+      const isReallyOnline = await (async () => {
+        try {
+          await fetch(import.meta.env.VITE_API_URL + "/health" || "/api/health", {
+            method: "HEAD", cache: "no-store",
+            signal: AbortSignal.timeout ? AbortSignal.timeout(2000) : undefined
+          });
+          return true;
+        } catch { return false; }
+      })();
+
+      if (!isReallyOnline) {
         const op = {
           local_id: generateLocalId(), location_id: selectedLocation?.id,
           customer_id: customer?.id || null,
