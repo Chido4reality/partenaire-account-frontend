@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore, useLangStore, useOfflineStore } from "../../store";
 import api from "../../utils/api";
+import UpgradeModal from "./UpgradeModal";
 import OfflineBanner from "./OfflineBanner";
 import { startAutoSync, processPendingQueue } from "../../utils/syncService";
 
@@ -39,6 +40,14 @@ export default function Layout() {
     };
   }, []);
   const [collapsed, setCollapsed] = useState(false);
+  const [showUpgrade, setShowUpgrade] = useState(false);
+
+  const { data: planData } = useQuery({
+    queryKey: ["my-plan"],
+    queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
+    refetchInterval: 300000
+  });
+  const myPlan = planData?.data;
   const [showNotif, setShowNotif] = useState(false);
   const [isMobile, setIsMobile]   = useState(window.innerWidth < 768);
   const navigate  = useNavigate();
@@ -182,9 +191,29 @@ export default function Layout() {
 
         {!collapsed && (
           <div style={{ padding: "8px 16px", borderBottom: "1px solid var(--border)", fontSize: 11 }}>
-            <span style={{ background: "rgba(79,70,229,0.15)", color: "var(--brand-light)", padding: "3px 10px", borderRadius: 20, fontWeight: 600 }}>
-              {roleLabel()}
-            </span>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ background: "rgba(79,70,229,0.15)", color: "var(--brand-light)", padding: "3px 10px", borderRadius: 20, fontWeight: 600 }}>
+                {roleLabel()}
+              </span>
+              {myPlan && (
+                <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, fontWeight: 700,
+                  background: myPlan.plan_id === "premium" ? "rgba(251,191,36,0.15)" : myPlan.plan_id === "gold" ? "rgba(251,191,36,0.1)" : "rgba(100,100,100,0.1)",
+                  color: myPlan.plan_id === "premium" ? "#fbbf24" : myPlan.plan_id === "gold" ? "#f59e0b" : "var(--text-muted)" }}>
+                  {myPlan.plan?.badge_icon} {myPlan.plan?.name}
+                </span>
+              )}
+            </div>
+            {myPlan?.user_id_number && (
+              <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4, fontFamily: "monospace" }}>
+                ID: {myPlan.user_id_number}
+              </div>
+            )}
+            {myPlan?.plan_id === "silver" && role === "owner" && (
+              <button onClick={() => setShowUpgrade(true)}
+                style={{ marginTop: 6, width: "100%", padding: "5px 10px", borderRadius: 8, border: "1px solid var(--brand)", background: "rgba(79,70,229,0.1)", color: "var(--brand-light)", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
+                ⬆️ {lang === "en" ? "Upgrade plan" : "Améliorer le plan"}
+              </button>
+            )}
           </div>
         )}
 
@@ -242,6 +271,8 @@ export default function Layout() {
       <main style={{ flex: 1, overflowY: "auto", background: "var(--bg-base)" }}>
         <Outlet />
       </main>
+
+      {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} currentPlan={myPlan?.plan} />}
     </div>
   );
 }
