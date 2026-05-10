@@ -300,12 +300,31 @@ export default function POSPage() {
         payment_method: payMethod, paid_amount: paid, due_date: dueDate || null, notes: notes || null
       };
 
-      // STEP 1: Try server first (online flow with receipt)
+      // Use AbortController to hard-kill the request after 5 seconds
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+
       try {
-        const response = await api.post("/sales", salePayload, { timeout: 8000 });
-        return response.data;
+        const response = await fetch(
+          "https://partenaire-account-api.onrender.com/api/sales",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer " + (JSON.parse(localStorage.getItem("mp-auth") || "{}").state?.token || "")
+            },
+            body: JSON.stringify(salePayload),
+            signal: controller.signal
+          }
+        );
+        clearTimeout(timer);
+
+        if (!response.ok) throw new Error("Server error");
+        const data = await response.json();
+        return data;
       } catch (err) {
-        // STEP 2: Server failed — save locally
+        clearTimeout(timer);
+        // AbortError = timeout or offline — save locally
         const localSale = await savePendingSale(salePayload);
         return { offline: true, local_id: localSale.local_id };
       }
