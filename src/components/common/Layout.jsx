@@ -45,7 +45,9 @@ export default function Layout() {
   const { data: planData } = useQuery({
     queryKey: ["my-plan"],
     queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
-    refetchInterval: 300000
+    refetchInterval: 300000,
+    retry: 1,
+    onError: () => {} // silent fail
   });
   const myPlan = planData?.data;
   const [showNotif, setShowNotif] = useState(false);

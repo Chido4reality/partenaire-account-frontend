@@ -21,9 +21,10 @@ export default function UpgradeModal({ onClose, currentPlan }) {
   const [notes, setNotes] = useState("");
   const [step, setStep] = useState(1); // 1=choose plan, 2=choose payment, 3=confirm
 
-  const { data: plansData } = useQuery({
+  const { data: plansData, isLoading: plansLoading, error: plansError } = useQuery({
     queryKey: ["plans"],
-    queryFn: () => api.get("/subscriptions/plans").then(r => r.data)
+    queryFn: () => api.get("/subscriptions/plans").then(r => r.data),
+    retry: 2
   });
 
   const plans = (plansData?.data || []).filter(p => p.id !== "silver");
@@ -70,6 +71,8 @@ export default function UpgradeModal({ onClose, currentPlan }) {
             <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-muted)", marginBottom: 12, textTransform: "uppercase" }}>
               {lang === "en" ? "Select a plan" : "Choisir un plan"}
             </div>
+            {plansLoading && <div style={{ textAlign: "center", padding: 20, color: "var(--text-muted)" }}>Loading plans...</div>}
+            {plansError && <div style={{ textAlign: "center", padding: 20, color: "#f87171" }}>Failed to load plans. Please try again.</div>}
             {plans.map(plan => (
               <div key={plan.id} onClick={() => setSelectedPlan(plan)}
                 style={{ padding: 16, borderRadius: 14, border: `2px solid ${selectedPlan?.id === plan.id ? "var(--brand)" : "var(--border)"}`, background: selectedPlan?.id === plan.id ? "rgba(79,70,229,0.08)" : "var(--bg-card)", cursor: "pointer", marginBottom: 10, transition: "all 0.15s" }}>
