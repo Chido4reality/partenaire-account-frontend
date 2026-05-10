@@ -1,5 +1,5 @@
 import InventoryPage from "./pages/InventoryPage";
-import { useEffect } from "react";
+import { useEffect, Component } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "react-hot-toast";
@@ -20,6 +20,26 @@ import StockCountPage from "./pages/StockCountPage";
 import BarcodePage from "./pages/BarcodePage";
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
+
+class ErrorBoundary extends Component {
+  state = { crashed: false, error: null };
+  static getDerivedStateFromError(error) { return { crashed: true, error }; }
+  componentDidCatch(error, info) { console.error("[ErrorBoundary]", error, info); }
+  render() {
+    if (!this.state.crashed) return this.props.children;
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", padding: 40, textAlign: "center", background: "#0f0e1a", color: "#f4f3ff" }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
+        <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 8 }}>Something went wrong</div>
+        <div style={{ color: "#9ca3af", fontSize: 13, marginBottom: 24, maxWidth: 360 }}>{this.state.error?.message || "An unexpected error occurred."}</div>
+        <button onClick={() => { this.setState({ crashed: false, error: null }); window.location.href = "/"; }}
+          style={{ padding: "10px 24px", borderRadius: 10, background: "#4f46e5", border: "none", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: 14 }}>
+          Reload app
+        </button>
+      </div>
+    );
+  }
+}
 
 // Route access rules per role
 const ROUTE_ACCESS = {
@@ -66,6 +86,7 @@ export default function App() {
   }, []);
 
   return (
+    <ErrorBoundary>
     <QueryClientProvider client={qc}>
       <BrowserRouter>
         <Routes>
@@ -92,5 +113,6 @@ export default function App() {
         style: { background: "#1e1d2e", color: "#f4f3ff", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "12px", fontSize: "13px" }
       }} />
     </QueryClientProvider>
+    </ErrorBoundary>
   );
 }

@@ -85,7 +85,7 @@ export default function UpgradeModal({ onClose, currentPlan }) {
                       {plan.max_users === -1 ? "∞" : plan.max_users} {lang === "en" ? "user(s)" : "utilisateur(s)"}
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                      {(JSON.parse(plan.features || "[]")).map((f, i) => (
+                      {(Array.isArray(plan.features) ? plan.features : (() => { try { return JSON.parse(plan.features || "[]"); } catch { return []; } })()).map((f, i) => (
                         <span key={i} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: "rgba(79,70,229,0.1)", color: "var(--brand-light)" }}>✓ {f}</span>
                       ))}
                     </div>

@@ -300,31 +300,31 @@ export default function POSPage() {
         payment_method: payMethod, paid_amount: paid, due_date: dueDate || null, notes: notes || null
       };
 
-      // Use AbortController to hard-kill the request after 5 seconds
+      // If the browser reports no network, skip the fetch entirely and save offline immediately
+      if (!navigator.onLine) {
+        const localSale = await savePendingSale(salePayload);
+        return { offline: true, local_id: localSale.local_id };
+      }
+
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 5000);
 
       try {
+        const token = useAuthStore.getState().token || "";
         const response = await fetch(
           "https://partenaire-account-api.onrender.com/api/sales",
           {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": "Bearer " + (JSON.parse(localStorage.getItem("mp-auth") || "{}").state?.token || "")
-            },
+            headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
             body: JSON.stringify(salePayload),
             signal: controller.signal
           }
         );
         clearTimeout(timer);
-
-        if (!response.ok) throw new Error("Server error");
-        const data = await response.json();
-        return data;
+        if (!response.ok) throw new Error("Server error " + response.status);
+        return await response.json();
       } catch (err) {
         clearTimeout(timer);
-        // AbortError = timeout or offline — save locally
         const localSale = await savePendingSale(salePayload);
         return { offline: true, local_id: localSale.local_id };
       }

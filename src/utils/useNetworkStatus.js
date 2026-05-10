@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 
-const HEALTH_URL = "https://partenaire-server.onrender.com/api/health";
+const HEALTH_URL = "https://partenaire-account-api.onrender.com/api/health";
 
 export function useNetworkStatus() {
   const [isOnline, setIsOnline] = useState(true);
