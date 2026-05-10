@@ -522,7 +522,9 @@ export default function InventoryPage() {
                       {canSeePrices && <td style={{ textAlign: "right", fontWeight: 600, color: "var(--brand-light)" }}>{formatCFA(p?.sell_price)}</td>}
                       {canSeePrices && <td style={{ textAlign: "right", color: "#fbbf24" }}>{p?.wholesale_price > 0 ? formatCFA(p.wholesale_price) : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>}</td>}
                       {canSeePrices && <td style={{ textAlign: "right", color: "#f87171", fontSize: 12 }}>{p?.min_price > 0 ? formatCFA(p.min_price) : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>}</td>}
-                      <td><span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: isLow ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.15)", color: isLow ? "#f87171" : "#34d399" }}>{isLow ? (lang === "en" ? "Low" : "Bas") : "OK"}</span></td>
+                      <td><span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: s.pa_products?.is_active === false ? "rgba(100,100,100,0.15)" : isLow && s.alert_enabled !== false ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.15)", color: s.pa_products?.is_active === false ? "var(--text-muted)" : isLow && s.alert_enabled !== false ? "#f87171" : "#34d399" }}>
+  {s.pa_products?.is_active === false ? (lang === "en" ? "⏸ Paused" : "⏸ Pausé") : isLow && s.alert_enabled !== false ? (lang === "en" ? "Low" : "Bas") : "OK"}
+</span></td>
                       <td style={{ fontSize: 11, color: "var(--text-muted)" }}>
                         {s.last_moved_by_name ? (
                           <div>
@@ -1174,13 +1176,17 @@ function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemov
 function AdjustModal({ product, lang, onClose, onSuccess }) {
   const [qty, setQty] = useState(product.quantity);
   const [minQty, setMinQty] = useState(product.min_quantity || 5);
+  const [alertEnabled, setAlertEnabled] = useState(product.alert_enabled !== false);
+  const [isActive, setIsActive] = useState(product.pa_products?.is_active !== false);
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      await api.patch("/stock/adjust", { product_id: product.product_id, location_id: product.location_id, new_quantity: +qty, min_quantity: +minQty, reason });
+      await api.patch("/stock/adjust", { product_id: product.product_id, location_id: product.location_id, new_quantity: +qty, min_quantity: +minQty, alert_enabled: alertEnabled, reason });
+      // Update product active status
+      await api.patch("/products/" + product.product_id, { is_active: isActive });
       toast.success(lang === "en" ? "✓ Stock adjusted!" : "✓ Stock ajusté!");
       onSuccess();
     } catch (err) {
@@ -1214,6 +1220,26 @@ function AdjustModal({ product, lang, onClose, onSuccess }) {
           <label className="label">{lang === "en" ? "Reason" : "Raison"}</label>
           <input className="input" value={reason} onChange={e => setReason(e.target.value)} placeholder={lang === "en" ? "e.g. Stock count, damaged..." : "Ex: Inventaire, endommagé..."} />
         </div>
+
+        {/* Alert & Active toggles */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "12px 14px", background: "var(--bg-elevated)", borderRadius: 10, marginBottom: 4 }}>
+          <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>⚠️ {lang === "en" ? "Low stock alert" : "Alerte stock bas"}</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en" ? "Get notified when stock is low" : "Recevoir une alerte quand le stock est bas"}</div>
+            </div>
+            <input type="checkbox" checked={alertEnabled} onChange={e => setAlertEnabled(e.target.checked)} style={{ width: 18, height: 18, cursor: "pointer" }} />
+          </label>
+          <div style={{ borderTop: "1px solid var(--border)" }} />
+          <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>🛒 {lang === "en" ? "Available for sale" : "Disponible à la vente"}</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en" ? "Uncheck to pause/discontinue this product" : "Décocher pour mettre en pause ce produit"}</div>
+            </div>
+            <input type="checkbox" checked={isActive} onChange={e => setIsActive(e.target.checked)} style={{ width: 18, height: 18, cursor: "pointer" }} />
+          </label>
+        </div>
+
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onClose}>{lang === "en" ? "Cancel" : "Annuler"}</button>
           <button className="btn btn-primary" style={{ flex: 2 }} disabled={loading} onClick={handleSubmit}>{loading ? "..." : (lang === "en" ? "✓ Save" : "✓ Enregistrer")}</button>
