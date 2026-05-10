@@ -172,6 +172,8 @@ export default function InventoryPage() {
   };
 
   // ── ADD PRODUCT MUTATION ────────────────────────────────────────────────────
+  const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
+
   const addProductMutation = useMutation({
     mutationFn: async () => {
       const res = await api.post("/products", {
@@ -986,6 +988,31 @@ export default function InventoryPage() {
                 disabled={importPreview.length === 0 || importMutation.isPending}
                 onClick={() => importMutation.mutate()}>
                 {importMutation.isPending ? `⏳ ${lang === "en" ? "Importing..." : "Importation..."}` : (lang === "en" ? `✓ Import ${importPreview.filter(r => r.sell_price).length} Products` : `✓ Importer ${importPreview.filter(r => r.sell_price).length} produits`)}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── UPGRADE PROMPT ── */}
+      {showUpgradePrompt && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 20, padding: 32, maxWidth: 380, width: "100%", textAlign: "center" }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>🚀</div>
+            <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 8 }}>{lang === "en" ? "Upgrade Required" : "Mise à niveau requise"}</div>
+            <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 20 }}>
+              {lang === "en"
+                ? "You've reached your plan limit. Upgrade to Gold or Premium to add more products, locations and users."
+                : "Vous avez atteint la limite de votre plan. Passez à Gold ou Premium pour ajouter plus de produits, emplacements et utilisateurs."}
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setShowUpgradePrompt(false)}
+                style={{ flex: 1, padding: "10px", border: "1px solid var(--border)", borderRadius: 10, background: "transparent", color: "var(--text-secondary)", cursor: "pointer" }}>
+                {lang === "en" ? "Later" : "Plus tard"}
+              </button>
+              <button onClick={() => { setShowUpgradePrompt(false); window.location.href = "/settings"; }}
+                className="btn btn-primary" style={{ flex: 2 }}>
+                ⬆️ {lang === "en" ? "Upgrade now" : "Améliorer maintenant"}
               </button>
             </div>
           </div>
