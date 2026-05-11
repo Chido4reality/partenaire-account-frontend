@@ -89,7 +89,14 @@ export default function Layout() {
   const unread = notifications.filter(n => !n.is_read).length;
   const role = user?.role || "cashier";
 
-  const visibleNav = NAV.filter(item => item.roles.includes(role));
+  const isSilverRestricted = myPlan?.plan_id === "silver" && !myPlan?.trial_active;
+  const SILVER_ALLOWED = ["/", "/pos", "/inventory", "/shifts"];
+
+  const visibleNav = NAV.filter(item => {
+    if (!item.roles.includes(role)) return false;
+    if (isSilverRestricted && !SILVER_ALLOWED.includes(item.to)) return false;
+    return true;
+  });
   const mobileNav = visibleNav.slice(0, 5);
 
   const notifColor = (type) => {

@@ -1,9 +1,10 @@
 import InventoryPage from "./pages/InventoryPage";
 import { useEffect, Component } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "react-hot-toast";
 import { useAuthStore, useOfflineStore } from "./store";
+import api from "./utils/api";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import Layout from "./components/common/Layout";
@@ -78,6 +79,36 @@ function RoleGuard({ path, children }) {
   return children;
 }
 
+const SILVER_ALLOWED = ["/", "/pos", "/inventory", "/shifts"];
+
+function PlanGuard({ path, children }) {
+  const isAuth = useAuthStore(s => s.isAuthenticated);
+  const { data: planData } = useQuery({
+    queryKey: ["my-plan"],
+    queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
+    enabled: isAuth,
+    staleTime: 60000,
+    retry: false
+  });
+  const myPlan = planData?.data;
+  const isSilverRestricted = myPlan?.plan_id === "silver" && !myPlan?.trial_active;
+  if (isSilverRestricted && !SILVER_ALLOWED.includes(path)) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", padding: 40, textAlign: "center" }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
+        <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 8 }}>Upgrade Required</div>
+        <div style={{ color: "var(--text-muted)", fontSize: 14, maxWidth: 320, marginBottom: 20 }}>
+          This feature is not available on the Silver plan. Upgrade to Gold or Premium to unlock it.
+        </div>
+        <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+          Use the <strong>⬆️ Upgrade plan</strong> button in the sidebar to request an upgrade.
+        </div>
+      </div>
+    );
+  }
+  return children;
+}
+
 export default function App() {
   const { setOnline } = useOfflineStore();
   useEffect(() => {
@@ -96,15 +127,15 @@ export default function App() {
             <Route index               element={<RoleGuard path="/"><Dashboard /></RoleGuard>} />
             <Route path="pos"          element={<RoleGuard path="/pos"><POSPage /></RoleGuard>} />
             <Route path="inventory"    element={<RoleGuard path="/inventory"><InventoryPage /></RoleGuard>} />
-            <Route path="customers"    element={<RoleGuard path="/customers"><CustomersPage /></RoleGuard>} />
-            <Route path="credits"      element={<RoleGuard path="/credits"><CreditsPage /></RoleGuard>} />
-            <Route path="transfers"    element={<RoleGuard path="/transfers"><TransfersPage /></RoleGuard>} />
-            <Route path="expenditures" element={<RoleGuard path="/expenditures"><ExpenditurePage /></RoleGuard>} />
-            <Route path="reports"      element={<RoleGuard path="/reports"><ReportsPage /></RoleGuard>} />
-            <Route path="settings"     element={<RoleGuard path="/settings"><SettingsPage /></RoleGuard>} />
+            <Route path="customers"    element={<RoleGuard path="/customers"><PlanGuard path="/customers"><CustomersPage /></PlanGuard></RoleGuard>} />
+            <Route path="credits"      element={<RoleGuard path="/credits"><PlanGuard path="/credits"><CreditsPage /></PlanGuard></RoleGuard>} />
+            <Route path="transfers"    element={<RoleGuard path="/transfers"><PlanGuard path="/transfers"><TransfersPage /></PlanGuard></RoleGuard>} />
+            <Route path="expenditures" element={<RoleGuard path="/expenditures"><PlanGuard path="/expenditures"><ExpenditurePage /></PlanGuard></RoleGuard>} />
+            <Route path="reports"      element={<RoleGuard path="/reports"><PlanGuard path="/reports"><ReportsPage /></PlanGuard></RoleGuard>} />
+            <Route path="settings"     element={<RoleGuard path="/settings"><PlanGuard path="/settings"><SettingsPage /></PlanGuard></RoleGuard>} />
             <Route path="shifts"       element={<RoleGuard path="/shifts"><ShiftsPage /></RoleGuard>} />
-            <Route path="stock-count"  element={<RoleGuard path="/stock-count"><StockCountPage /></RoleGuard>} />
-            <Route path="barcodes"      element={<RoleGuard path="/barcodes"><BarcodePage /></RoleGuard>} />
+            <Route path="stock-count"  element={<RoleGuard path="/stock-count"><PlanGuard path="/stock-count"><StockCountPage /></PlanGuard></RoleGuard>} />
+            <Route path="barcodes"     element={<RoleGuard path="/barcodes"><PlanGuard path="/barcodes"><BarcodePage /></PlanGuard></RoleGuard>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
