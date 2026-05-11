@@ -221,7 +221,7 @@ export default function Layout() {
               myPlan?.status === "pending"
                 ? (
                   <div style={{ marginTop: 6, width: "100%", padding: "5px 10px", borderRadius: 8, border: "1px solid rgba(245,158,11,0.4)", background: "rgba(245,158,11,0.08)", color: "#fbbf24", fontSize: 11, fontWeight: 600, textAlign: "center" }}>
-                    ⏳ {lang === "en" ? "Pending approval" : "En attente d'approbation"}
+                    ⏳ {lang === "en" ? "Pending approval — awaiting admin" : "En attente d'approbation admin"}
                   </div>
                 ) : (
                   <button onClick={() => setShowUpgrade(true)}
