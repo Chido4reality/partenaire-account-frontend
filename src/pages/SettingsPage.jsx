@@ -46,6 +46,9 @@ export default function SettingsPage() {
   const [pinError, setPinError]   = useState("");
   const [shopLoaded, setShopLoaded] = useState(false);
 
+  // Dozie state
+  const [dozieForm, setDozieForm] = useState({ dozie_pin: "", city: "Douala", shop_description: "" });
+
   // ── QUERIES ────────────────────────────────────────────────────────────────
   const { data: locData } = useQuery({
     queryKey: ["locations"],
@@ -166,6 +169,23 @@ export default function SettingsPage() {
     setPinError(""); pinMutation.mutate();
   };
 
+  // ── DOZIE QUERIES & MUTATIONS ─────────────────────────────────────────────
+  const { data: dozieStatusData, isLoading: dozieLoading } = useQuery({
+    queryKey: ["dozie-status"],
+    queryFn: () => api.get("/dozie/status").then(r => r.data),
+    enabled: tab === "dozie" && isOwner
+  });
+  const dozieStatus = dozieStatusData?.data;
+
+  const activateDozieMutation = useMutation({
+    mutationFn: () => api.post("/dozie/activate", dozieForm),
+    onSuccess: (res) => {
+      toast.success(lang === "en" ? "✓ Linked to Partenaire Dozie!" : "✓ Lié à Partenaire Dozie!");
+      qc.invalidateQueries(["dozie-status"]);
+    },
+    onError: (err) => toast.error(err.response?.data?.message || "Error")
+  });
+
   const locations = locData?.data || [];
   const staff = staffData?.data || [];
   const activeStaff = staff.filter(s => s.is_active);
@@ -182,6 +202,7 @@ export default function SettingsPage() {
     { key: "staff",     en: "Staff",              fr: "Personnel" },
     { key: "shop",      en: "Shop Settings",      fr: "Paramètres boutique", ownerOnly: true },
     { key: "account",   en: "Account",            fr: "Compte" },
+    { key: "dozie",     en: "Partenaire Dozie",   fr: "Partenaire Dozie",    ownerOnly: true },
   ];
 
   return (
@@ -498,6 +519,98 @@ export default function SettingsPage() {
               🌐 {lang === "en" ? "Switch to Français" : "Switch to English"}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ══ PARTENAIRE DOZIE TAB ══════════════════════════════════════════════ */}
+      {tab === "dozie" && (
+        <div>
+          <div style={{ background: "linear-gradient(135deg, rgba(201,168,76,0.12), rgba(26,43,74,0.3))", border: "1px solid rgba(201,168,76,0.3)", borderRadius: 16, padding: 24, marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+              <div style={{ fontSize: 32 }}>✦</div>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: 17 }}>Partenaire Dozie</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  {lang === "en" ? "Wholesale & B2B marketplace" : "Marché de gros & B2B"}
+                </div>
+              </div>
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
+              {lang === "en"
+                ? "Connect your Mon Partenaire account to Partenaire Dozie. Your products will be listed for wholesale buyers, and you can log in to Dozie using your phone number."
+                : "Connectez votre compte Mon Partenaire à Partenaire Dozie. Vos produits seront listés pour les acheteurs en gros, et vous pourrez vous connecter à Dozie avec votre numéro de téléphone."}
+            </div>
+          </div>
+
+          {dozieLoading ? (
+            <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>Loading...</div>
+          ) : dozieStatus?.activated ? (
+            <div style={{ background: "var(--bg-card)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: 16, padding: 24 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+                <div style={{ fontSize: 28 }}>✅</div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 15 }}>{lang === "en" ? "Connected to Partenaire Dozie" : "Connecté à Partenaire Dozie"}</div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                    {lang === "en" ? "Your shop is live on the marketplace" : "Votre boutique est en ligne sur le marché"}
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: "grid", gap: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
+                  <span style={{ color: "var(--text-secondary)", fontSize: 13 }}>{lang === "en" ? "Dozie Seller ID" : "ID Vendeur Dozie"}</span>
+                  <span style={{ fontWeight: 600, fontSize: 13, fontFamily: "monospace" }}>{dozieStatus.identity?.ptn_user_id}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
+                  <span style={{ color: "var(--text-secondary)", fontSize: 13 }}>{lang === "en" ? "Linked at" : "Lié le"}</span>
+                  <span style={{ fontSize: 13 }}>{dozieStatus.identity?.linked_at ? new Date(dozieStatus.identity.linked_at).toLocaleDateString() : "—"}</span>
+                </div>
+              </div>
+              <div style={{ marginTop: 16, background: "rgba(79,70,229,0.08)", border: "1px solid rgba(79,70,229,0.2)", borderRadius: 10, padding: 12, fontSize: 12, color: "var(--brand-light)" }}>
+                💡 {lang === "en"
+                  ? "Log in to Partenaire Dozie using your registered phone number and the Dozie PIN you set during activation."
+                  : "Connectez-vous à Partenaire Dozie avec votre numéro de téléphone et le code PIN Dozie défini lors de l'activation."}
+              </div>
+            </div>
+          ) : (
+            <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, padding: 24 }}>
+              <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>{lang === "en" ? "Activate Partenaire Dozie" : "Activer Partenaire Dozie"}</div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 20 }}>
+                {lang === "en" ? "This will create your seller profile and list your products on the wholesale marketplace." : "Cela créera votre profil vendeur et listera vos produits sur le marché de gros."}
+              </div>
+
+              <div className="form-group">
+                <label className="label">{lang === "en" ? "City" : "Ville"}</label>
+                <select className="input" value={dozieForm.city} onChange={e => setDozieForm(f => ({ ...f, city: e.target.value }))}>
+                  {["Douala","Yaoundé","Bafoussam","Garoua","Maroua","Bertoua","Ebolowa"].map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="label">{lang === "en" ? "Shop description (optional)" : "Description boutique (optionnel)"}</label>
+                <textarea className="input" rows={3} value={dozieForm.shop_description}
+                  onChange={e => setDozieForm(f => ({ ...f, shop_description: e.target.value }))}
+                  placeholder={lang === "en" ? "Tell buyers what you sell..." : "Dites aux acheteurs ce que vous vendez..."} />
+              </div>
+
+              <div className="form-group">
+                <label className="label">{lang === "en" ? "Choose a Dozie PIN (4 digits)" : "Choisir un code PIN Dozie (4 chiffres)"}</label>
+                <input className="input" type="password" inputMode="numeric" maxLength={4}
+                  value={dozieForm.dozie_pin} onChange={e => setDozieForm(f => ({ ...f, dozie_pin: e.target.value.replace(/\D/g, "").slice(0, 4) }))}
+                  placeholder="e.g. 1234" />
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                  {lang === "en" ? "You will use this PIN to log in to Partenaire Dozie" : "Vous utiliserez ce PIN pour vous connecter à Partenaire Dozie"}
+                </div>
+              </div>
+
+              <button className="btn btn-primary" style={{ width: "100%", height: 46, marginTop: 8 }}
+                disabled={dozieForm.dozie_pin.length !== 4 || activateDozieMutation.isPending}
+                onClick={() => activateDozieMutation.mutate()}>
+                {activateDozieMutation.isPending ? "..." : (lang === "en" ? "✦ Activate Partenaire Dozie" : "✦ Activer Partenaire Dozie")}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
