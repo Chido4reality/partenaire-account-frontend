@@ -211,10 +211,17 @@ export default function Layout() {
               </div>
             )}
             {myPlan?.plan_id === "silver" && role === "owner" && (
-              <button onClick={() => setShowUpgrade(true)}
-                style={{ marginTop: 6, width: "100%", padding: "5px 10px", borderRadius: 8, border: "1px solid var(--brand)", background: "rgba(79,70,229,0.1)", color: "var(--brand-light)", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
-                ⬆️ {lang === "en" ? "Upgrade plan" : "Améliorer le plan"}
-              </button>
+              myPlan?.status === "pending"
+                ? (
+                  <div style={{ marginTop: 6, width: "100%", padding: "5px 10px", borderRadius: 8, border: "1px solid rgba(245,158,11,0.4)", background: "rgba(245,158,11,0.08)", color: "#fbbf24", fontSize: 11, fontWeight: 600, textAlign: "center" }}>
+                    ⏳ {lang === "en" ? "Pending approval" : "En attente d'approbation"}
+                  </div>
+                ) : (
+                  <button onClick={() => setShowUpgrade(true)}
+                    style={{ marginTop: 6, width: "100%", padding: "5px 10px", borderRadius: 8, border: "1px solid var(--brand)", background: "rgba(79,70,229,0.1)", color: "var(--brand-light)", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
+                    ⬆️ {lang === "en" ? "Upgrade plan" : "Améliorer le plan"}
+                  </button>
+                )
             )}
           </div>
         )}
