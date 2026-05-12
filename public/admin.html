@@ -551,6 +551,19 @@ window.addEventListener('DOMContentLoaded', function() {
         <button onclick="mpToken=null;mpInitPage()" style="background:transparent;border:1px solid var(--green);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;color:var(--green)">Disconnect</button>
       </div>
 
+      <!-- On-screen debug panel — visible alternative to DevTools console -->
+      <div id="mp-debug-panel" style="background:#1A2B4A;color:#9DD8FF;border-radius:10px;padding:14px 16px;margin-bottom:16px;font-family:'Consolas','Courier New',monospace;font-size:12px;line-height:1.7;white-space:pre-wrap;word-break:break-all;max-height:360px;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-family:'Segoe UI',system-ui,sans-serif">
+          <strong style="color:#FFCC66;font-size:13px">🔧 MP Debug Panel — share contents to diagnose issues</strong>
+          <div style="display:flex;gap:6px">
+            <button onclick="mpRefreshDebug()" style="background:transparent;border:1px solid #9DD8FF;color:#9DD8FF;border-radius:5px;padding:3px 12px;font-size:11px;cursor:pointer">↻ Re-run</button>
+            <button onclick="mpCopyDebug()" style="background:transparent;border:1px solid #FFCC66;color:#FFCC66;border-radius:5px;padding:3px 12px;font-size:11px;cursor:pointer">📋 Copy</button>
+            <button onclick="document.getElementById('mp-debug-panel').style.display='none'" style="background:transparent;border:1px solid #FF7B7B;color:#FF7B7B;border-radius:5px;padding:3px 12px;font-size:11px;cursor:pointer">✕ Hide</button>
+          </div>
+        </div>
+        <div id="mp-debug-output">Click ↻ Re-run to probe endpoints…</div>
+      </div>
+
       <!-- Stats -->
       <div class="stats-grid" style="margin-bottom:20px">
         <div class="stat-card"><div class="stat-label">Total Businesses</div><div class="stat-value" id="mp-stat-total">—</div><div class="stat-sub" id="mp-stat-new-week">— this week</div></div>
@@ -2527,6 +2540,9 @@ function mpAuthErr(msg) {
 async function mpLoadAll() {
   const bizTbody = document.getElementById('mp-biz-table');
   if (bizTbody) bizTbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--grey)">⏳ Loading…</td></tr>';
+  // Fire-and-forget: refresh on-screen debug panel so user can see endpoint
+  // results even if the loads below fail
+  mpRefreshDebug().catch(() => {});
 
   try {
     await Promise.all([mpLoadOrgs(), mpLoadPayments(), mpLoadPlans(), mpLoadDashboard()]);
@@ -2617,6 +2633,72 @@ async function mpRefresh() {
   try { await mpLoadAll(); toast('✅ Mon Partenaire data refreshed', 'success'); }
   catch(e) { toast('Error: ' + e.message, 'error'); }
   finally { if (btn) { btn.textContent = '🔄 Refresh'; btn.disabled = false; } }
+}
+
+// ── On-screen debug: probes every admin endpoint and shows status + summary ──
+async function mpRefreshDebug() {
+  const out = document.getElementById('mp-debug-output');
+  if (!out) return;
+  const ok    = (s) => `<span style="color:#7ED957;font-weight:700">[${s} OK]</span>`;
+  const fail  = (s) => `<span style="color:#FF7B7B;font-weight:700">[${s} FAIL]</span>`;
+  const dim   = (s) => `<span style="color:#7A99B8">${s}</span>`;
+  const lines = [];
+  lines.push(dim('Vercel build: ' + document.lastModified) + '  |  API: ' + MP_API);
+  lines.push('');
+
+  if (!mpToken) {
+    lines.push(fail('NO-TOKEN') + ' Not logged in to Mon Partenaire — log in first.');
+    out.innerHTML = lines.join('<br>');
+    return;
+  }
+  lines.push('TOKEN preview: ' + mpToken.substring(0, 20) + '… (length=' + mpToken.length + ')');
+  out.innerHTML = lines.join('<br>') + '<br><br>' + dim('Probing endpoints…');
+
+  const probes = [
+    '/auth/me',
+    '/subscriptions/admin/all',
+    '/subscriptions/admin/orgs-enriched',
+    '/subscriptions/admin/payments',
+    '/subscriptions/admin/dashboard'
+  ];
+  for (const path of probes) {
+    let status = '???', summary = '';
+    try {
+      const r = await fetch(MP_API + path, { headers: { 'Authorization': 'Bearer ' + mpToken } });
+      status = r.status;
+      let body;
+      try { body = await r.json(); } catch { body = { message: '(non-JSON)' }; }
+      if (path === '/auth/me') {
+        const u   = body.user || {};
+        const org = u.pa_organisations || {};
+        summary = ' role=' + (u.role || '?') +
+                  ' org_id=' + (u.org_id || '?').toString().slice(0, 8) + '…' +
+                  ' user_id_number=' + (org.user_id_number || '(null)') +
+                  '  ← admin requires MP-000001';
+      } else if (Array.isArray(body.data)) {
+        summary = ' data.length=' + body.data.length;
+      } else if (body.data && typeof body.data === 'object') {
+        summary = ' data keys=[' + Object.keys(body.data).slice(0, 6).join(',') + ']';
+      } else if (body.message) {
+        summary = ' message="' + body.message + '"';
+      }
+      lines.push((r.ok ? ok(status) : fail(status)) + ' GET ' + path + summary);
+    } catch (e) {
+      lines.push(fail('NET-ERR') + ' GET ' + path + ' — ' + e.message);
+    }
+    out.innerHTML = lines.join('<br>');
+  }
+  lines.push('');
+  lines.push(dim('— end of diagnostics —'));
+  out.innerHTML = lines.join('<br>');
+}
+
+async function mpCopyDebug() {
+  const out = document.getElementById('mp-debug-output');
+  if (!out) return;
+  const text = out.innerText || out.textContent || '';
+  try { await navigator.clipboard.writeText(text); toast('📋 Debug copied — paste to share', 'success'); }
+  catch { toast('Copy failed — select text manually', 'error'); }
 }
 
 // ── Stats ─────────────────────────────────────────────────────
