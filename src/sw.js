@@ -4,7 +4,7 @@ import { precacheAndRoute } from "workbox-precaching";
 // Bump this string whenever the offline behaviour changes so it's easy to
 // confirm in DevTools which SW the browser is actually running. Open the
 // service worker console and look for "[SW] booting vN".
-const SW_VERSION = "v4-preflight-health";
+const SW_VERSION = "v5-put-not-add";
 console.log("[SW] booting", SW_VERSION);
 
 // Activate immediately — no waiting for all tabs to close
@@ -70,7 +70,9 @@ async function isServerReachable() {
   const ctrl = new AbortController();
   const tid  = setTimeout(() => ctrl.abort(), HEALTH_MS);
   try {
-    const r = await fetch(HEALTH_URL, { method: "HEAD", signal: ctrl.signal, cache: "no-store" });
+    // GET (not HEAD) — some hosts/proxies return 405 or strip CORS headers on
+    // HEAD, which would falsely report unreachable. /api/health is small.
+    const r = await fetch(HEALTH_URL, { signal: ctrl.signal, cache: "no-store" });
     return r.status < 500;
   } catch {
     return false;
@@ -176,7 +178,11 @@ async function saveToOfflineQueue(payload, authToken) {
   try {
     return await new Promise((resolve, reject) => {
       const tx  = db.transaction(STORE, "readwrite");
-      const req = tx.objectStore(STORE).add({
+      // put() not add() — if the millisecond-resolution clock collides with a
+      // prior local_id (extremely rare, but happens on rapid-fire sales),
+      // add() throws ConstraintError and the second sale appears to hang from
+      // the UI's perspective. put() overwrites instead.
+      const req = tx.objectStore(STORE).put({
         local_id:   localId,
         payload,
         auth_token: authToken,
