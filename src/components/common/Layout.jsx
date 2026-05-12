@@ -212,6 +212,14 @@ export default function Layout() {
                 </span>
               )}
             </div>
+            {myPlan?.trial_active && myPlan?.trial_ends_at && (() => {
+              const daysLeft = Math.max(0, Math.ceil((new Date(myPlan.trial_ends_at) - new Date()) / 86400000));
+              return (
+                <div style={{ marginTop: 5, padding: "3px 10px", borderRadius: 8, background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", color: "var(--brand-light)", fontSize: 10, fontWeight: 700, textAlign: "center" }}>
+                  💎 Trial — {daysLeft} {lang === "en" ? (daysLeft === 1 ? "day left" : "days left") : (daysLeft === 1 ? "jour restant" : "jours restants")}
+                </div>
+              );
+            })()}
             {myPlan?.user_id_number && (
               <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4, fontFamily: "monospace" }}>
                 ID: {myPlan.user_id_number}
