@@ -56,13 +56,25 @@ export default function UpgradeModal({ onClose, currentPlan }) {
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
 
-  // CamPay payment initiation
+  // CamPay payment initiation.
+  //
+  // Two wrinkles that previously surfaced as "Fail to fetch":
+  //   1. Render free-tier dynos cold-start in 20–40s after idleness. The
+  //      backend handler then does two serial CamPay API calls (/token/ +
+  //      /collect/), so the total response time can easily exceed the 15s
+  //      default axios timeout. We bump this call to 60s.
+  //   2. Without a warmup, the FIRST request after idleness hits the cold
+  //      start AND the CamPay roundtrip at once. We fire a cheap GET to
+  //      /api/health first so the dyno is warm by the time the POST lands.
   const campayMutation = useMutation({
-    mutationFn: () => api.post("/subscriptions/campay-pay", {
-      plan_id: selectedPlan.id,
-      months,
-      phone
-    }),
+    mutationFn: async () => {
+      try { await api.get("/health", { timeout: 45000 }); } catch (_) { /* warmup is best-effort */ }
+      return api.post(
+        "/subscriptions/campay-pay",
+        { plan_id: selectedPlan.id, months, phone },
+        { timeout: 60000 }
+      );
+    },
     onSuccess: (res) => {
       const { reference, ussd_code } = res.data.data;
       setCampayRef(reference);
@@ -72,7 +84,22 @@ export default function UpgradeModal({ onClose, currentPlan }) {
       setStep(4);
       startPolling(reference);
     },
-    onError: (err) => toast.error(err.response?.data?.message || "CamPay error")
+    onError: (err) => {
+      // Network/timeout failures have no err.response. Distinguish them so
+      // users know to retry vs contact support.
+      if (!err.response) {
+        const msg = err.code === "ECONNABORTED"
+          ? (lang === "en"
+              ? "CamPay timed out. The server may be cold-starting — please try again in 30s."
+              : "CamPay a expiré. Le serveur démarre — réessayez dans 30s.")
+          : (lang === "en"
+              ? "Could not reach the server. Check your connection and try again."
+              : "Serveur inaccessible. Vérifiez votre connexion.");
+        toast.error(msg, { duration: 6000 });
+        return;
+      }
+      toast.error(err.response.data?.message || "CamPay error");
+    }
   });
 
   function startPolling(reference) {
