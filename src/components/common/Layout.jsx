@@ -275,6 +275,15 @@ export default function Layout() {
           )}
 
           {!collapsed && (
+            <a
+              href={`https://wa.me/237675995524?text=${encodeURIComponent(`Bonjour, je suis ${user?.full_name || ""}${myPlan?.user_id_number ? " ("+myPlan.user_id_number+")" : ""} sur Mon Partenaire. J'ai besoin d'aide.`)}`}
+              target="_blank" rel="noopener noreferrer"
+              style={{ display: "block", width: "100%", padding: "6px 10px", borderRadius: 8, background: "rgba(37,211,102,0.08)", border: "1px solid rgba(37,211,102,0.2)", color: "#25d366", fontSize: 11, textAlign: "left", textDecoration: "none", marginBottom: 6 }}>
+              💬 {lang === "en" ? "Contact Support" : "Contacter le Support"}
+            </a>
+          )}
+
+          {!collapsed && (
             <button onClick={toggleLang} style={{ width: "100%", padding: "6px 10px", borderRadius: 8, background: "rgba(255,255,255,0.05)", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: 11, textAlign: "left", marginBottom: 6 }}>
               🌐 {lang === "en" ? "Français" : "English"}
             </button>
