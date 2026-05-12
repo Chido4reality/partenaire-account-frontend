@@ -49,6 +49,20 @@ export default function SettingsPage() {
   // Dozie state
   const [dozieForm, setDozieForm] = useState({ dozie_pin: "", city: "Douala", shop_description: "" });
 
+  const { data: planData } = useQuery({
+    queryKey: ["my-plan"],
+    queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
+    enabled: tab === "dozie"
+  });
+  const myPlan = planData?.data;
+  const trialActive = myPlan?.trial_active;
+  const planId = myPlan?.plan_id;
+  const isSilverBlocked = planId === "silver" && !trialActive;
+  const isGoldTier = planId === "gold" || (planId === "silver" && trialActive);
+  const GOLD_CITIES = ["Douala", "Yaoundé", "Bafoussam"];
+  const ALL_CITIES = ["Douala", "Yaoundé", "Bafoussam", "Garoua", "Maroua", "Bertoua", "Ebolowa"];
+  const allowedCities = isGoldTier ? GOLD_CITIES : ALL_CITIES;
+
   // ── QUERIES ────────────────────────────────────────────────────────────────
   const { data: locData } = useQuery({
     queryKey: ["locations"],
@@ -544,6 +558,26 @@ export default function SettingsPage() {
 
           {dozieLoading ? (
             <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>Loading...</div>
+          ) : isSilverBlocked ? (
+            <div style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 16, padding: 24, textAlign: "center" }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>🔒</div>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>
+                {lang === "en" ? "Gold or Premium required" : "Gold ou Premium requis"}
+              </div>
+              <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16, lineHeight: 1.6 }}>
+                {lang === "en"
+                  ? "Partenaire Dozie is available on Gold (3 cities) and Premium (all cities) plans."
+                  : "Partenaire Dozie est disponible sur les plans Gold (3 villes) et Premium (toutes les villes)."}
+              </div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "center", fontSize: 12, marginBottom: 16 }}>
+                <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 8, padding: "8px 14px", color: "#f59e0b" }}>
+                  🥇 Gold — Douala, Yaoundé, Bafoussam
+                </div>
+                <div style={{ background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)", borderRadius: 8, padding: "8px 14px", color: "#fbbf24" }}>
+                  💎 Premium — {lang === "en" ? "All cities" : "Toutes les villes"}
+                </div>
+              </div>
+            </div>
           ) : dozieStatus?.activated ? (
             <div style={{ background: "var(--bg-card)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: 16, padding: 24 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
@@ -581,10 +615,15 @@ export default function SettingsPage() {
               <div className="form-group">
                 <label className="label">{lang === "en" ? "City" : "Ville"}</label>
                 <select className="input" value={dozieForm.city} onChange={e => setDozieForm(f => ({ ...f, city: e.target.value }))}>
-                  {["Douala","Yaoundé","Bafoussam","Garoua","Maroua","Bertoua","Ebolowa"].map(c => (
+                  {allowedCities.map(c => (
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
+                {isGoldTier && (
+                  <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 4 }}>
+                    🥇 {lang === "en" ? "Gold plan: Douala, Yaoundé, Bafoussam only. Upgrade to Premium for all cities." : "Plan Gold: Douala, Yaoundé, Bafoussam uniquement. Passez à Premium pour toutes les villes."}
+                  </div>
+                )}
               </div>
 
               <div className="form-group">
