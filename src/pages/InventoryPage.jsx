@@ -1162,9 +1162,18 @@ function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemov
           {/* Search input */}
           <div className="form-group" style={{ marginBottom: filtered.length > 0 ? 8 : 0 }}>
             <label className="label">{lang === "en" ? "Product *" : "Produit *"}</label>
-            <input className="input" value={search} onChange={e => setSearch(e.target.value)}
-              placeholder={lang === "en" ? "Type to search..." : "Tapez pour chercher..."}
-              autoFocus={idx === 0} />
+            <BarcodeInput
+              lang={lang}
+              value={search}
+              onChange={v => {
+                setSearch(v);
+                // Auto-pick if barcode matches exactly
+                const match = products.find(p => p.barcode && p.barcode === v.trim());
+                if (match) pickProduct(match);
+              }}
+              placeholder={lang === "en" ? "Type to search or scan barcode..." : "Tapez pour chercher ou scannez..."}
+              autoFocus={idx === 0}
+            />
           </div>
           {/* Results shown INLINE — no dropdown, no blur issues */}
           {filtered.length > 0 && (

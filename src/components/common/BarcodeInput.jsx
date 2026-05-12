@@ -4,21 +4,28 @@ import CameraScanner from "./CameraScanner";
 // Detect if device is mobile/tablet
 const isMobile = () => /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
 
-export default function BarcodeInput({ value, onChange, placeholder, lang, style }) {
+export default function BarcodeInput({ value, onChange, onScan, placeholder, lang, style, inputRef, ...inputProps }) {
   const [showCamera, setShowCamera] = useState(false);
   const mobile = isMobile();
+
+  const handleScan = (code) => {
+    setShowCamera(false);
+    onChange(code);
+    if (onScan) onScan(code);
+  };
 
   return (
     <>
       {showCamera && (
         <CameraScanner
           lang={lang}
-          onScan={(code) => { setShowCamera(false); onChange(code); }}
+          onScan={handleScan}
           onClose={() => setShowCamera(false)}
         />
       )}
       <div style={{ display: "flex", gap: 8, ...(style || {}) }}>
         <input
+          ref={inputRef}
           className="input"
           value={value}
           onChange={e => onChange(e.target.value)}
@@ -26,6 +33,7 @@ export default function BarcodeInput({ value, onChange, placeholder, lang, style
             ? (lang === "en" ? "Tap camera button to scan..." : "Appuyez sur camera pour scanner...")
             : (lang === "en" ? "Scan barcode or type..." : "Scanner ou saisir..."))}
           style={{ flex: 1 }}
+          {...inputProps}
         />
         {/* Only show camera button on mobile */}
         {mobile && (

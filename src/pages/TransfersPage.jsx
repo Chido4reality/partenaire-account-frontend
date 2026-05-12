@@ -200,15 +200,17 @@ export default function TransfersPage() {
               <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 10 }}>
                 {lang === "en" ? "Point camera at barcode OR type barcode below" : "Pointer la camera sur le code-barres OU taper ci-dessous"}
               </div>
-              <input ref={scanRef} className="input" value={scanInput}
-                onChange={e => setScanInput(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter" && scanInput.trim()) { lookupBarcode(scanInput.trim()); } }}
-                placeholder={lang === "en" ? "Type or scan barcode â€” press Enter" : "Taper ou scanner â€” appuyer Entree"}
-                style={{ textAlign: "center", fontSize: 16, letterSpacing: 2 }}
-                autoFocus />
-              <div style={{ marginTop: 10, fontSize: 11, color: "var(--text-muted)" }}>
-                {lang === "en" ? "USB scanner: just scan directly" : "Lecteur USB: scannez directement"}
-              </div>
+              <BarcodeInput
+                inputRef={scanRef}
+                lang={lang}
+                value={scanInput}
+                onChange={setScanInput}
+                onScan={(code) => lookupBarcode(code)}
+                onKeyDown={e => { if (e.key === “Enter” && scanInput.trim()) lookupBarcode(scanInput.trim()); }}
+                placeholder={lang === “en” ? “Type or scan barcode — press Enter” : “Taper ou scanner — appuyer Entrée”}
+                style={{ marginBottom: 4 }}
+                autoFocus
+              />
             </div>
 
             {/* Manual search */}

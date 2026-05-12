@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import api, { formatCFA } from "../utils/api";
+import BarcodeInput from "../components/common/BarcodeInput";
 
 export default function StockCountPage() {
   const { lang } = useLangStore();
@@ -169,13 +170,15 @@ export default function StockCountPage() {
           </div>
 
           {/* Search */}
-          <div style={{ position: "relative", marginBottom: 12 }}>
-            <input ref={searchRef} className="input"
+          <div style={{ marginBottom: 12 }}>
+            <BarcodeInput
+              inputRef={searchRef}
+              lang={lang}
+              value={search}
+              onChange={setSearch}
               placeholder={lang === "en" ? "Type name, scan barcode or slot..." : "Nom, code-barres ou emplacement..."}
-              value={search} onChange={e => setSearch(e.target.value)}
-              style={{ paddingLeft: 36 }} autoFocus />
-            <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }}>🔍</span>
-            {search && <button onClick={() => setSearch("")} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>✕</button>}
+              autoFocus
+            />
           </div>
 
           {/* Stock list */}
