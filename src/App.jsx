@@ -2,7 +2,7 @@ import InventoryPage from "./pages/InventoryPage";
 import { useEffect, Component } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { Toaster } from "react-hot-toast";
+import { Toaster, toast } from "react-hot-toast";
 import { useAuthStore, useOfflineStore } from "./store";
 import api from "./utils/api";
 import LoginPage from "./pages/LoginPage";
@@ -114,6 +114,14 @@ export default function App() {
   useEffect(() => {
     window.addEventListener("online",  () => setOnline(true));
     window.addEventListener("offline", () => setOnline(false));
+    const onSync = ({ detail }) => {
+      toast.success(
+        `✓ ${detail.synced} offline sale${detail.synced > 1 ? "s" : ""} synced`,
+        { duration: 4000, style: { background: "#064e3b", color: "#6ee7b7", border: "1px solid #065f46" } }
+      );
+    };
+    window.addEventListener("sw-sync-complete", onSync);
+    return () => window.removeEventListener("sw-sync-complete", onSync);
   }, []);
 
   return (

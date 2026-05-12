@@ -5,9 +5,7 @@ import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import OwnerPIN from "../components/common/OwnerPIN";
 import api, { formatCFA } from "../utils/api";
-import { savePendingSale, markSaleSynced, cacheData, getCachedData } from "../utils/offlineStore";
-import { processPendingQueue } from "../utils/syncService";
-import { useNetworkStatus } from "../utils/useNetworkStatus";
+import { cacheData, getCachedData } from "../utils/offlineStore";
 import CameraScanner from "../components/common/CameraScanner";
 
 const PAYMENT_MODES = [
@@ -114,13 +112,14 @@ export default function POSPage() {
   const { data: locData } = useQuery({
     queryKey: ["locations"],
     queryFn: async () => {
-      if (!navigator.onLine) {
+      try {
+        const result = await api.get("/locations").then(r => r.data);
+        cacheData("pos-locations", result);
+        return result;
+      } catch {
         const cached = await getCachedData("pos-locations");
         return cached || { data: [] };
       }
-      const result = await api.get("/locations").then(r => r.data);
-      cacheData("pos-locations", result);
-      return result;
     }
   });
 
@@ -128,13 +127,14 @@ export default function POSPage() {
     queryKey: ["pos-products", selectedLocation?.id],
     queryFn: async () => {
       const cacheKey = "pos-products-" + (selectedLocation?.id || "all");
-      if (!navigator.onLine) {
+      try {
+        const result = await api.get("/products?location_id=" + (selectedLocation?.id || "") + "&limit=200").then(r => r.data);
+        cacheData(cacheKey, result);
+        return result;
+      } catch {
         const cached = await getCachedData(cacheKey);
         return cached || { data: [] };
       }
-      const result = await api.get("/products?location_id=" + (selectedLocation?.id || "") + "&limit=200").then(r => r.data);
-      cacheData(cacheKey, result); // cache for offline use
-      return result;
     },
     enabled: true,
     staleTime: 60000
@@ -143,13 +143,14 @@ export default function POSPage() {
   const { data: allCustomers } = useQuery({
     queryKey: ["pos-customers"],
     queryFn: async () => {
-      if (!navigator.onLine) {
+      try {
+        const result = await api.get("/customers?limit=300").then(r => r.data);
+        cacheData("pos-customers", result);
+        return result;
+      } catch {
         const cached = await getCachedData("pos-customers");
         return cached || { data: [] };
       }
-      const result = await api.get("/customers?limit=300").then(r => r.data);
-      cacheData("pos-customers", result);
-      return result;
     },
     staleTime: 60000
   });
@@ -279,55 +280,41 @@ export default function POSPage() {
     mutationFn: async () => {
       const debtItem = cart.find(i => i.product_id === "__DEBT__");
       if (debtItem) {
-        // If partial debt amount entered, split proportionally across invoices
-        const totalDebt = debtItem.debtAmount;
+        const totalDebt  = debtItem.debtAmount;
         const amountToPay = debtPayAmt ? Math.min(parseFloat(debtPayAmt), totalDebt) : totalDebt;
         let remaining = amountToPay;
         for (const saleId of debtItem.debtSaleIds) {
           if (remaining <= 0) break;
           const inv = debtInvoices.find(i => i.id === saleId);
           if (!inv) continue;
-          const invBalance = parseFloat(inv.balance_due);
-          const payThis = Math.min(remaining, invBalance);
+          const payThis = Math.min(remaining, parseFloat(inv.balance_due));
           await api.post(`/sales/${saleId}/payment`, { amount: payThis, payment_method: payMethod, notes: notes || null });
           remaining -= payThis;
         }
         return { isDebt: true };
       }
+
       const salePayload = {
-        location_id: selectedLocation?.id, customer_id: customer?.id || null,
-        items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_price: i.unit_price, cost_price: i.cost_price })),
-        payment_method: payMethod, paid_amount: paid, due_date: dueDate || null, notes: notes || null
+        location_id:    selectedLocation?.id,
+        customer_id:    customer?.id || null,
+        items:          cart.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_price: i.unit_price, cost_price: i.cost_price })),
+        payment_method: payMethod,
+        paid_amount:    paid,
+        due_date:       dueDate || null,
+        notes:          notes || null,
       };
 
-      // If the browser reports no network, skip the fetch entirely and save offline immediately
-      if (!navigator.onLine) {
-        const localSale = await savePendingSale(salePayload);
-        return { offline: true, local_id: localSale.local_id };
-      }
-
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 5000);
-
-      try {
-        const token = useAuthStore.getState().token || "";
-        const response = await fetch(
-          "https://partenaire-account-api.onrender.com/api/sales",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
-            body: JSON.stringify(salePayload),
-            signal: controller.signal
-          }
-        );
-        clearTimeout(timer);
-        if (!response.ok) throw new Error("Server error " + response.status);
-        return await response.json();
-      } catch (err) {
-        clearTimeout(timer);
-        const localSale = await savePendingSale(salePayload);
-        return { offline: true, local_id: localSale.local_id };
-      }
+      // Use native fetch — the service worker intercepts this, applies a 2s
+      // timeout, and returns {success:true, offline:true} when unreachable.
+      const token    = useAuthStore.getState().token || "";
+      const apiBase  = import.meta.env.VITE_API_URL || "/api";
+      const response = await fetch(`${apiBase}/sales`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body:    JSON.stringify(salePayload),
+      });
+      if (!response.ok) throw new Error("Server error " + response.status);
+      return response.json();
     },
     onSuccess: (data) => {
       if (data?.offline) {
@@ -366,7 +353,6 @@ export default function POSPage() {
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
 
-  const { isOnline } = useNetworkStatus();
   const mobile = isMobile();
 
   return (
