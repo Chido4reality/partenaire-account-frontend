@@ -64,6 +64,8 @@ export default function InventoryPage() {
 
   // Modal states
   const [showAddProduct, setShowAddProduct] = useState(false);
+  const [showCameraAdd, setShowCameraAdd] = useState(false);
+  const [showCameraRapid, setShowCameraRapid] = useState(false);
   const [showReceive, setShowReceive] = useState(false);
   const [showAdjust, setShowAdjust] = useState(false);
   const [showEditProduct, setShowEditProduct] = useState(false);
@@ -699,7 +701,14 @@ export default function InventoryPage() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div className="form-group">
                 <label className="label">Barcode</label>
-                <BarcodeInput lang={lang} value={newProduct.barcode} onChange={v => setNewProduct(p => ({ ...p, barcode: v }))} placeholder="Scan or type" />
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <div style={{ flex: 1 }}>
+                    <BarcodeInput lang={lang} value={newProduct.barcode} onChange={v => setNewProduct(p => ({ ...p, barcode: v }))} placeholder="Scan or type" />
+                  </div>
+                  <button type="button" onClick={() => setShowCameraAdd(true)}
+                    style={{ flexShrink: 0, height: 42, width: 42, borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elevated)", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" }}
+                    title={lang === "en" ? "Scan with camera" : "Scanner avec la caméra"}>📷</button>
+                </div>
               </div>
               <div className="form-group">
                 <label className="label">Unit</label>
@@ -708,6 +717,14 @@ export default function InventoryPage() {
                 </select>
               </div>
             </div>
+
+            {showCameraAdd && (
+              <CameraScanner
+                lang={lang}
+                onScan={(code) => { setShowCameraAdd(false); setNewProduct(p => ({ ...p, barcode: code })); }}
+                onClose={() => setShowCameraAdd(false)}
+              />
+            )}
 
             <PricingSection data={newProduct} onChange={(k, v) => setNewProduct(p => ({ ...p, [k]: v }))} lang={lang} />
 
@@ -872,7 +889,14 @@ export default function InventoryPage() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div className="form-group">
                 <label className="label">Barcode</label>
-                <BarcodeInput lang={lang} value={rapidItem.barcode} onChange={v => setRapidItem(p => ({ ...p, barcode: v }))} placeholder="Scan or type" />
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <div style={{ flex: 1 }}>
+                    <BarcodeInput lang={lang} value={rapidItem.barcode} onChange={v => setRapidItem(p => ({ ...p, barcode: v }))} placeholder="Scan or type" />
+                  </div>
+                  <button type="button" onClick={() => setShowCameraRapid(true)}
+                    style={{ flexShrink: 0, height: 42, width: 42, borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elevated)", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" }}
+                    title={lang === "en" ? "Scan with camera" : "Scanner avec la caméra"}>📷</button>
+                </div>
               </div>
               <div className="form-group">
                 <label className="label">Unit</label>
@@ -881,6 +905,14 @@ export default function InventoryPage() {
                 </select>
               </div>
             </div>
+
+            {showCameraRapid && (
+              <CameraScanner
+                lang={lang}
+                onScan={(code) => { setShowCameraRapid(false); setRapidItem(p => ({ ...p, barcode: code })); rapidNameRef.current?.focus(); }}
+                onClose={() => setShowCameraRapid(false)}
+              />
+            )}
 
             <PricingSection data={rapidItem} onChange={(k, v) => setRapidItem(p => ({ ...p, [k]: v }))} lang={lang} />
 
@@ -1080,6 +1112,7 @@ function PricingSection({ data, onChange, lang }) {
 function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemove, canSeePrices }) {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
+  const [showCam, setShowCam] = useState(false);
 
   function fuzzyMatch(str, pattern) {
     if (!str || !pattern) return false;
@@ -1177,19 +1210,39 @@ function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemov
           {/* Search input */}
           <div className="form-group" style={{ marginBottom: filtered.length > 0 ? 8 : 0 }}>
             <label className="label">{lang === "en" ? "Product *" : "Produit *"}</label>
-            <BarcodeInput
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <div style={{ flex: 1 }}>
+                <BarcodeInput
+                  lang={lang}
+                  value={search}
+                  onChange={v => {
+                    setSearch(v);
+                    // Auto-pick if barcode matches exactly
+                    const match = products.find(p => p.barcode && p.barcode === v.trim());
+                    if (match) pickProduct(match);
+                  }}
+                  placeholder={lang === "en" ? "Type to search or scan barcode..." : "Tapez pour chercher ou scannez..."}
+                  autoFocus={idx === 0}
+                />
+              </div>
+              <button type="button" onClick={() => setShowCam(true)}
+                style={{ flexShrink: 0, height: 42, width: 42, borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elevated)", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" }}
+                title={lang === "en" ? "Scan with camera" : "Scanner avec la caméra"}>📷</button>
+            </div>
+          </div>
+          {showCam && (
+            <CameraScanner
               lang={lang}
-              value={search}
-              onChange={v => {
-                setSearch(v);
-                // Auto-pick if barcode matches exactly
-                const match = products.find(p => p.barcode && p.barcode === v.trim());
+              onScan={(code) => {
+                setShowCam(false);
+                setSearch(code);
+                // Same auto-pick path as the typed-input branch above
+                const match = products.find(p => p.barcode && p.barcode === code.trim());
                 if (match) pickProduct(match);
               }}
-              placeholder={lang === "en" ? "Type to search or scan barcode..." : "Tapez pour chercher ou scannez..."}
-              autoFocus={idx === 0}
+              onClose={() => setShowCam(false)}
             />
-          </div>
+          )}
           {/* Results shown INLINE — no dropdown, no blur issues */}
           {filtered.length > 0 && (
             <div style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", marginBottom: 8 }}>
