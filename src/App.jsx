@@ -112,8 +112,16 @@ function PlanGuard({ path, children }) {
 export default function App() {
   const { setOnline } = useOfflineStore();
   useEffect(() => {
-    window.addEventListener("online",  () => setOnline(true));
+    const handleOnline = () => {
+      setOnline(true);
+      // Trigger background sync now that we're back online
+      navigator.serviceWorker?.ready.then(reg => {
+        reg.sync?.register("sync-pending-sales").catch(() => {});
+      });
+    };
+    window.addEventListener("online",  handleOnline);
     window.addEventListener("offline", () => setOnline(false));
+
     const onSync = ({ detail }) => {
       toast.success(
         `✓ ${detail.synced} offline sale${detail.synced > 1 ? "s" : ""} synced`,
@@ -121,7 +129,10 @@ export default function App() {
       );
     };
     window.addEventListener("sw-sync-complete", onSync);
-    return () => window.removeEventListener("sw-sync-complete", onSync);
+    return () => {
+      window.removeEventListener("online",           handleOnline);
+      window.removeEventListener("sw-sync-complete", onSync);
+    };
   }, []);
 
   return (

@@ -7,6 +7,9 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.js",
       includeAssets: ["icon.svg"],
       manifest: {
         name:             "Mon Partenaire",
@@ -22,28 +25,9 @@ export default defineConfig({
           { src: "icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any maskable" }
         ]
       },
-      workbox: {
-        // Activate new SW immediately without waiting for all tabs to close
-        skipWaiting: true,
-        clientsClaim: true,
-        // Load our custom offline-sales handler into the generated SW
-        importScripts: ["/sw-offline-sales.js"],
+      injectManifest: {
+        // Only include app shell assets — not source maps
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
-        runtimeCaching: [
-          {
-            // Only cache GET requests — POST to /api/sales is handled by
-            // sw-offline-sales.js, never by NetworkFirst
-            urlPattern: ({ request, url }) =>
-              request.method === "GET" &&
-              url.hostname === "partenaire-account-api.onrender.com",
-            handler: "NetworkFirst",
-            options: {
-              cacheName: "api-cache",
-              networkTimeoutSeconds: 5,
-              expiration: { maxEntries: 50, maxAgeSeconds: 300 }
-            }
-          }
-        ]
       }
     })
   ],

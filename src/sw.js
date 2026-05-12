@@ -1,110 +1,40 @@
-import { precacheAndRoute } from 'workbox-precaching';
+import { clientsClaim } from "workbox-core";
+import { precacheAndRoute } from "workbox-precaching";
 
-// Precache the app shell — vite-plugin-pwa replaces self.__WB_MANIFEST with
-// the actual asset list at build time. This also keeps the reference alive
-// so esbuild can't eliminate it as dead code.
+// Activate immediately — no waiting for all tabs to close
+self.skipWaiting();
+clientsClaim();
+
+// Precache the app shell (vite-plugin-pwa injects the asset list here)
 precacheAndRoute(self.__WB_MANIFEST);
 
-const DB_NAME    = 'POS_OfflineDB';
-const STORE      = 'pendingSales';
-const SYNC_TAG   = 'sync-pending-sales';
-const SALE_RE    = /\/api\/sales$/;
+// ── Constants ────────────────────────────────────────────────────────────────
 
-// ── IndexedDB helpers ─────────────────────────────────────────────────────────
+const SALE_RE  = /\/api\/sales$/;
+const DB_NAME  = "POS_OfflineDB";
+const STORE    = "pendingSales";
+const SYNC_TAG = "sync-pending-sales";
+// Full URL used when replaying offline sales in syncPendingSales()
+const API_URL  = "https://partenaire-account-api.onrender.com/api/sales";
 
-function openDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME);
-    req.onupgradeneeded = ({ target: { result: db } }) => {
-      if (!db.objectStoreNames.contains(STORE)) {
-        const store = db.createObjectStore(STORE, { keyPath: 'local_id' });
-        store.createIndex('status',     'status',     { unique: false });
-        store.createIndex('created_at', 'created_at', { unique: false });
-      }
-    };
-    req.onsuccess  = ({ target: { result } }) => resolve(result);
-    req.onerror    = ({ target: { error  } }) => reject(error);
-  });
-}
+// ── Fetch interception ───────────────────────────────────────────────────────
 
-function genId() {
-  return 'local_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
-}
-
-async function savePending(url, authHeader, body) {
-  const db = await openDB();
-  const record = {
-    local_id:   genId(),
-    status:     'pending',
-    created_at: new Date().toISOString(),
-    url,
-    headers:    { Authorization: authHeader },
-    payload:    JSON.parse(body),
-  };
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite');
-    tx.objectStore(STORE).add(record).onsuccess = () => resolve(record);
-    tx.onerror = ({ target: { error } }) => reject(error);
-  });
-}
-
-async function getPending() {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx  = db.transaction(STORE, 'readonly');
-    const req = tx.objectStore(STORE).getAll();
-    req.onsuccess = ({ target: { result } }) =>
-      resolve(result.filter(r => r.status === 'pending'));
-    req.onerror = ({ target: { error } }) => reject(error);
-  });
-}
-
-async function markSynced(local_id) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx    = db.transaction(STORE, 'readwrite');
-    const store = tx.objectStore(STORE);
-    const get   = store.get(local_id);
-    get.onsuccess = ({ target: { result: rec } }) => {
-      if (!rec) return resolve();
-      rec.status    = 'synced';
-      rec.synced_at = new Date().toISOString();
-      store.put(rec).onsuccess = () => resolve();
-    };
-    get.onerror = ({ target: { error } }) => reject(error);
-  });
-}
-
-// ── Lifecycle ─────────────────────────────────────────────────────────────────
-
-self.addEventListener('install',  ()  => self.skipWaiting());
-self.addEventListener('activate', e   => e.waitUntil(self.clients.claim()));
-
-// ── Fetch interception ────────────────────────────────────────────────────────
-
-self.addEventListener('fetch', e => {
-  if (e.request.method !== 'POST') return;
-  if (!SALE_RE.test(e.request.url))  return;
-  e.respondWith(handleSale(e.request));
+self.addEventListener("fetch", (event) => {
+  if (event.request.method !== "POST") return;
+  if (!SALE_RE.test(event.request.url)) return;
+  event.respondWith(handleSaleRequest(event.request));
 });
 
-async function handleSale(request) {
+async function handleSaleRequest(request) {
+  // Read body once up-front so we can use it in the catch block
   const body       = await request.clone().text();
-  const authHeader = request.headers.get('Authorization') || '';
+  const authHeader = request.headers.get("Authorization") || "";
 
-  // Rebuild request so we can abort it independently
-  const headersObj = {};
-  request.headers.forEach((v, k) => { headersObj[k] = v; });
   const controller = new AbortController();
-  const timer      = setTimeout(() => controller.abort(), 2000);
+  const timer      = setTimeout(() => controller.abort(), 4000);
 
   try {
-    const response = await fetch(request.url, {
-      method:  'POST',
-      headers: headersObj,
-      body,
-      signal:  controller.signal,
-    });
+    const response = await fetch(request, { signal: controller.signal });
     clearTimeout(timer);
     return response;
   } catch {
@@ -112,53 +42,121 @@ async function handleSale(request) {
 
     let localId;
     try {
-      const rec = await savePending(request.url, authHeader, body);
-      localId   = rec.local_id;
-      if ('sync' in self.registration) {
+      localId = await saveToOfflineQueue(JSON.parse(body), authHeader);
+
+      // Register background sync so the sale replays when connection returns
+      if ("sync" in self.registration) {
         self.registration.sync.register(SYNC_TAG).catch(() => {});
       }
+
+      // Notify open app tabs so the UI can reflect the offline state
       const clients = await self.clients.matchAll({ includeUncontrolled: true });
-      clients.forEach(c => c.postMessage({ type: 'SALE_SAVED_OFFLINE', local_id: localId }));
+      clients.forEach(c => c.postMessage({ type: "SALE_SAVED_OFFLINE", local_id: localId }));
     } catch (dbErr) {
-      console.error('[SW] IndexedDB save failed:', dbErr);
+      console.error("[SW] IndexedDB save failed:", dbErr);
     }
 
     return new Response(
-      JSON.stringify({ success: true, offline: true, local_id: localId }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } },
+      JSON.stringify({
+        success: true,
+        offline: true,
+        local_id: localId,
+        data: { sale_number: "OFFLINE-" + Date.now() },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
     );
   }
 }
 
-// ── Background Sync ───────────────────────────────────────────────────────────
+// ── IndexedDB helpers ────────────────────────────────────────────────────────
 
-self.addEventListener('sync', e => {
-  if (e.tag === SYNC_TAG) e.waitUntil(syncAll());
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = ({ target: { result: db } }) => {
+      if (!db.objectStoreNames.contains(STORE)) {
+        db.createObjectStore(STORE, { keyPath: "local_id" });
+      }
+    };
+    req.onsuccess = ({ target: { result } }) => resolve(result);
+    req.onerror   = ({ target: { error  } }) => reject(error);
+  });
+}
+
+async function saveToOfflineQueue(payload, authToken) {
+  const db      = await openDB();
+  const localId = "local_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(STORE, "readwrite");
+    const req = tx.objectStore(STORE).add({
+      local_id:   localId,
+      payload,
+      auth_token: authToken,
+      status:     "pending",
+      created_at: new Date().toISOString(),
+    });
+    req.onsuccess = () => resolve(localId);
+    req.onerror   = () => reject(req.error);
+    tx.onerror    = () => reject(tx.error);
+  });
+}
+
+async function getPending() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(STORE, "readonly").objectStore(STORE).getAll();
+    req.onsuccess = () => resolve((req.result || []).filter(r => r.status === "pending"));
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+async function markSynced(localId) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx    = db.transaction(STORE, "readwrite");
+    const store = tx.objectStore(STORE);
+    const get   = store.get(localId);
+    get.onsuccess = () => {
+      const rec = get.result;
+      if (!rec) return resolve();
+      rec.status    = "synced";
+      rec.synced_at = new Date().toISOString();
+      store.put(rec).onsuccess = () => resolve();
+    };
+    get.onerror = () => reject(get.error);
+  });
+}
+
+// ── Background sync ──────────────────────────────────────────────────────────
+
+self.addEventListener("sync", (event) => {
+  if (event.tag === SYNC_TAG) event.waitUntil(syncPendingSales());
 });
 
-async function syncAll() {
-  const pending = await getPending();
-  if (!pending.length) return;
+async function syncPendingSales() {
+  const sales = await getPending();
+  if (!sales.length) return;
 
   let synced = 0;
-  for (const rec of pending) {
+  for (const sale of sales) {
     try {
-      const res = await fetch(rec.url, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', ...rec.headers },
-        body:    JSON.stringify(rec.payload),
+      const res = await fetch(API_URL, {
+        method:  "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": sale.auth_token,
+        },
+        body: JSON.stringify(sale.payload),
       });
       if (res.ok) {
-        await markSynced(rec.local_id);
+        await markSynced(sale.local_id);
         synced++;
       }
-    } catch {
-      // Network still down — leave pending, will retry on next sync event
-    }
+    } catch { /* still offline — leave pending, retry on next sync event */ }
   }
 
   if (synced > 0) {
     const clients = await self.clients.matchAll({ includeUncontrolled: true });
-    clients.forEach(c => c.postMessage({ type: 'SYNC_COMPLETE', synced }));
+    clients.forEach(c => c.postMessage({ type: "SYNC_COMPLETE", synced }));
   }
 }
