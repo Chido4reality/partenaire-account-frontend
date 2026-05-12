@@ -4,7 +4,7 @@ import { precacheAndRoute } from "workbox-precaching";
 // Bump this string whenever the offline behaviour changes so it's easy to
 // confirm in DevTools which SW the browser is actually running. Open the
 // service worker console and look for "[SW] booting vN".
-const SW_VERSION = "v3-offline-resilient";
+const SW_VERSION = "v4-preflight-health";
 console.log("[SW] booting", SW_VERSION);
 
 // Activate immediately — no waiting for all tabs to close
@@ -16,13 +16,15 @@ precacheAndRoute(self.__WB_MANIFEST);
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const SALE_RE     = /\/api\/sales$/;
-const DB_NAME     = "POS_OfflineDB";
-const STORE       = "pendingSales";
-const SYNC_TAG    = "sync-pending-sales";
-const REPLAY_HDR  = "x-replay-sync"; // request header set by syncService when replaying
-const API_URL     = "https://partenaire-account-api.onrender.com/api/sales";
-const ABORT_MS    = 4000;
+const SALE_RE       = /\/api\/sales$/;
+const DB_NAME       = "POS_OfflineDB";
+const STORE         = "pendingSales";
+const SYNC_TAG      = "sync-pending-sales";
+const REPLAY_HDR    = "x-replay-sync"; // request header set by syncService when replaying
+const API_URL       = "https://partenaire-account-api.onrender.com/api/sales";
+const HEALTH_URL    = "https://partenaire-account-api.onrender.com/api/health";
+const HEALTH_MS     = 2000; // pre-flight timeout — fail fast when offline
+const ABORT_MS      = 4000;
 
 // ── Fetch interception ───────────────────────────────────────────────────────
 
@@ -61,56 +63,81 @@ async function safeHandleSaleRequest(request) {
   }
 }
 
+// Cheap HEAD probe — returns true if the API is reachable within HEALTH_MS,
+// false otherwise. Lets us short-circuit straight to the offline queue without
+// burning the full ABORT_MS budget on every sale when the network is down.
+async function isServerReachable() {
+  const ctrl = new AbortController();
+  const tid  = setTimeout(() => ctrl.abort(), HEALTH_MS);
+  try {
+    const r = await fetch(HEALTH_URL, { method: "HEAD", signal: ctrl.signal, cache: "no-store" });
+    return r.status < 500;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(tid);
+  }
+}
+
 async function handleSaleRequest(request) {
   // Read body up-front so we have it available in the offline branch.
   const body       = await request.clone().text();
   const authHeader = request.headers.get("Authorization") || "";
 
-  // Race fetch against an explicit timeout. AbortController in service workers
-  // has historically had edge cases (some browsers silently drop the abort on
-  // certain offline transitions) — Promise.race is a strict timeout that
-  // ALWAYS fires, even if fetch never settles.
-  let response;
+  // Pre-flight health check. If the API is unreachable, queue the sale
+  // immediately instead of waiting out the full ABORT_MS budget on the real POST.
+  const reachable = await isServerReachable();
+  if (!reachable) {
+    console.log("[SW] pre-flight failed → queuing offline");
+    return queueOfflineSale(body, authHeader);
+  }
+
+  // Reachable: try the real POST. Still race against ABORT_MS — server might
+  // accept the connection but stall on processing, in which case we'd rather
+  // queue than hang the UI indefinitely.
   try {
-    response = await Promise.race([
+    const response = await Promise.race([
       fetch(request),
       new Promise((_, rej) => setTimeout(() => rej(new Error("SW-fetch-timeout")), ABORT_MS))
     ]);
     console.log("[SW] sale POST online → forwarding response", response.status);
     return response;
   } catch (err) {
-    console.log("[SW] sale POST offline → queuing", err && err.message);
+    console.log("[SW] sale POST raced/failed after pre-flight passed → queuing", err && err.message);
+    return queueOfflineSale(body, authHeader);
+  }
+}
 
-    let localId;
-    try {
-      localId = await saveToOfflineQueue(JSON.parse(body), authHeader);
-      console.log("[SW] queued sale", localId);
+// Persist a sale to IndexedDB and return the standard offline 200 response.
+// Extracted so both the pre-flight-failed and post-flight-timeout paths share it.
+async function queueOfflineSale(body, authHeader) {
+  let localId;
+  try {
+    localId = await saveToOfflineQueue(JSON.parse(body), authHeader);
+    console.log("[SW] queued sale", localId);
 
-      // Register background sync (browsers that support it will retry on reconnect)
-      if ("sync" in self.registration) {
-        self.registration.sync.register(SYNC_TAG).catch(() => {});
-      }
-
-      // Notify open tabs so the UI can refresh the offline-pending count immediately.
-      // Wrapped in try/catch — a failed postMessage must not block the response.
-      try {
-        const clients = await self.clients.matchAll({ includeUncontrolled: true });
-        clients.forEach(c => c.postMessage({ type: "SALE_SAVED_OFFLINE", local_id: localId }));
-      } catch (msgErr) { console.warn("[SW] postMessage failed (non-fatal):", msgErr); }
-    } catch (dbErr) {
-      console.error("[SW] IndexedDB save failed:", dbErr);
+    if ("sync" in self.registration) {
+      self.registration.sync.register(SYNC_TAG).catch(() => {});
     }
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        offline: true,
-        local_id: localId,
-        data: { sale_number: "OFFLINE-" + Date.now() },
-      }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    );
+    // Notify open tabs so the UI can refresh the offline-pending count immediately.
+    try {
+      const clients = await self.clients.matchAll({ includeUncontrolled: true });
+      clients.forEach(c => c.postMessage({ type: "SALE_SAVED_OFFLINE", local_id: localId }));
+    } catch (msgErr) { console.warn("[SW] postMessage failed (non-fatal):", msgErr); }
+  } catch (dbErr) {
+    console.error("[SW] IndexedDB save failed:", dbErr);
   }
+
+  return new Response(
+    JSON.stringify({
+      success: true,
+      offline: true,
+      local_id: localId,
+      data: { sale_number: "OFFLINE-" + Date.now() },
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
 }
 
 // ── Client message handler ───────────────────────────────────────────────────
