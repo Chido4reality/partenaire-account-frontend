@@ -1,6 +1,9 @@
-// Referenced so vite-plugin-pwa injects the precache asset list at build time
-// eslint-disable-next-line no-undef
-const _manifest = self.__WB_MANIFEST; // eslint-disable-line no-unused-vars
+import { precacheAndRoute } from 'workbox-precaching';
+
+// Precache the app shell — vite-plugin-pwa replaces self.__WB_MANIFEST with
+// the actual asset list at build time. This also keeps the reference alive
+// so esbuild can't eliminate it as dead code.
+precacheAndRoute(self.__WB_MANIFEST);
 
 const DB_NAME    = 'POS_OfflineDB';
 const STORE      = 'pendingSales';
