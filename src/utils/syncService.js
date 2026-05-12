@@ -16,7 +16,13 @@ export const processPendingQueue = async () => {
 
     for (const item of pending) {
       try {
-        const res = await api.post('/sales', item.payload, { timeout: 12000 });
+        // The x-replay-sync header signals our service worker to pass this
+        // request straight through instead of treating a failure as a new
+        // offline queue entry (which would create duplicates on reconnect).
+        const res = await api.post('/sales', item.payload, {
+          timeout: 12000,
+          headers: { 'x-replay-sync': '1' },
+        });
         if (res.data?.success) {
           await markSaleSynced(item.local_id, res.data?.data?.id);
           synced++;

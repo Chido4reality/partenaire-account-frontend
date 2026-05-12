@@ -310,19 +310,27 @@ export default function POSPage() {
       return result;
     },
     onSuccess: (data) => {
+      const resetCart = () => {
+        setCart([]); setCustomer(null); setPayMode("paid");
+        setPaidAmt(""); setDueDate(""); setNotes(""); setShowPayment(false);
+        setDebtInvoices([]); setSelectedDebtIds(new Set()); setDebtPayAmt("");
+      };
+
       if (data?.offline) {
         toast(`📥 ${lang === "en" ? "Saved offline — will sync when connected" : "Sauvé hors ligne — sync à la reconnexion"}`, {
           duration: 4000,
           style: { background: "#451a03", color: "#fbbf24", border: "1px solid #92400e" }
         });
-        setCart([]); setCustomer(null); setNotes(""); setPaidAmt(""); setShowPayment(false);
-        setPayMode("paid"); setDueDate(""); setDebtInvoices([]); setSelectedDebtIds(new Set()); setDebtPayAmt("");
+        resetCart();
+        // Required: without reset(), the success state lingers and the next
+        // mutate() call can appear stuck — the symptom previously seen as
+        // "second sale hangs" after a successful first offline sale.
+        saleMutation.reset();
         return;
       }
       if (data?.isDebt) {
         toast.success(lang === "en" ? "✓ Debt payment recorded!" : "✓ Remboursement enregistré!", { duration: 2000 });
       } else {
-        // Show receipt modal
         setLastSale({
           ...data,
           customer,
@@ -334,14 +342,13 @@ export default function POSPage() {
         });
         setShowReceipt(true);
       }
-      setCart([]); setCustomer(null); setPayMode("paid");
-      setPaidAmt(""); setDueDate(""); setNotes(""); setShowPayment(false);
-      setDebtInvoices([]); setSelectedDebtIds(new Set()); setDebtPayAmt("");
+      resetCart();
       qc.invalidateQueries(["recent-sales"]);
       qc.invalidateQueries(["daily-summary"]);
       qc.invalidateQueries(["pos-customers"]);
       qc.invalidateQueries(["customer-debt"]);
       qc.invalidateQueries(["credits"]);
+      saleMutation.reset();
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });

@@ -16,15 +16,23 @@ export default function OfflineBanner({ lang = "fr", collapsed = false }) {
       if (result.synced > 0) { await clearSyncedSales(); refreshCount(); }
     };
     const goOffline = () => setIsOnline(false);
+    // The service worker posts these messages from sw.js — refresh immediately
+    // instead of waiting for the next poll tick so the badge reflects each
+    // offline sale as it happens.
+    const onSWMessage = (e) => {
+      if (e.data?.type === "SALE_SAVED_OFFLINE" || e.data?.type === "SYNC_COMPLETE") {
+        refreshCount();
+      }
+    };
     window.addEventListener("online", goOnline);
     window.addEventListener("offline", goOffline);
-    const unsubscribe = () => {};
+    navigator.serviceWorker?.addEventListener("message", onSWMessage);
     refreshCount();
-    const interval = setInterval(refreshCount, 15000);
+    const interval = setInterval(refreshCount, 3000);
     return () => {
       window.removeEventListener("online", goOnline);
       window.removeEventListener("offline", goOffline);
-      unsubscribe();
+      navigator.serviceWorker?.removeEventListener("message", onSWMessage);
       clearInterval(interval);
     };
   }, []);

@@ -1,7 +1,10 @@
 import axios from "axios";
 import { useAuthStore } from "../store";
 
-const api = axios.create({ baseURL: import.meta.env.VITE_API_URL || "/api", timeout: 5000 });
+// Timeout intentionally generous: the service worker has its own 4s abort timer
+// for offline detection, then writes to IndexedDB and posts a message. A short
+// axios timeout (e.g. 5s) can fire DURING that fallback and surface as a hang.
+const api = axios.create({ baseURL: import.meta.env.VITE_API_URL || "/api", timeout: 15000 });
 
 api.interceptors.request.use(config => {
   const token = useAuthStore.getState().token;
