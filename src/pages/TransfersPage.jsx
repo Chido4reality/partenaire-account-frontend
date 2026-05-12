@@ -129,7 +129,7 @@ export default function TransfersPage() {
 
   const resetNew = () => { setMode("list"); setStep(1); setFromLoc(""); setToLoc(""); setNotes(""); setScannedItems([]); };
 
-  // â”€â”€ NEW TRANSFER FLOW â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â"€â"€ NEW TRANSFER FLOW â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
   if (mode === "new") {
     return (
       <div style={{ padding: 24, maxWidth: 700, margin: "0 auto" }}>
@@ -160,7 +160,7 @@ export default function TransfersPage() {
               </select>
             </div>
 
-            <div style={{ textAlign: "center", color: "var(--text-muted)", margin: "8px 0", fontSize: 20 }}>â†“</div>
+            <div style={{ textAlign: "center", color: "var(--text-muted)", margin: "8px 0", fontSize: 20 }}>â†"</div>
 
             <div className="form-group">
               <label className="label">{lang === "en" ? "TO (destination)" : "VERS (destination)"}</label>
@@ -180,7 +180,7 @@ export default function TransfersPage() {
             <button className="btn btn-primary btn-block btn-lg"
               disabled={!fromLoc && !toLoc}
               onClick={() => setStep(2)}>
-              {lang === "en" ? "Next â€” Scan items" : "Suivant â€” Scanner les articles"} â†’
+              {lang === "en" ? "Next â€" Scan items" : "Suivant â€" Scanner les articles"} â†'
             </button>
           </div>
         )}
@@ -192,7 +192,7 @@ export default function TransfersPage() {
               {lang === "en" ? "Scan or search items" : "Scanner ou chercher les articles"}
             </div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 20 }}>
-              {locations.find(l => l.id === fromLoc)?.name || "External"} â†’ {locations.find(l => l.id === toLoc)?.name || "External"}
+              {locations.find(l => l.id === fromLoc)?.name || "External"} â†' {locations.find(l => l.id === toLoc)?.name || "External"}
             </div>
 
             {/* Scan input */}
@@ -206,8 +206,8 @@ export default function TransfersPage() {
                 value={scanInput}
                 onChange={setScanInput}
                 onScan={(code) => lookupBarcode(code)}
-                onKeyDown={e => { if (e.key === “Enter” && scanInput.trim()) lookupBarcode(scanInput.trim()); }}
-                placeholder={lang === “en” ? “Type or scan barcode — press Enter” : “Taper ou scanner — appuyer Entrée”}
+                onKeyDown={e => { if (e.key === "Enter" && scanInput.trim()) lookupBarcode(scanInput.trim()); }}
+                placeholder={lang === "en" ? "Type or scan barcode — press Enter" : "Taper ou scanner — appuyer Entrée"}
                 style={{ marginBottom: 4 }}
                 autoFocus
               />
@@ -264,7 +264,7 @@ export default function TransfersPage() {
               <button className="btn btn-primary" style={{ flex: 2 }}
                 disabled={scannedItems.length === 0}
                 onClick={() => setStep(3)}>
-                {lang === "en" ? "Review & confirm" : "Verifier et confirmer"} â†’
+                {lang === "en" ? "Review & confirm" : "Verifier et confirmer"} â†'
               </button>
             </div>
           </div>
@@ -283,7 +283,7 @@ export default function TransfersPage() {
                   <div style={{ color: "var(--text-muted)", fontSize: 11, marginBottom: 4 }}>FROM</div>
                   <div style={{ fontWeight: 600 }}>{locations.find(l => l.id === fromLoc)?.name || "External"}</div>
                 </div>
-                <div style={{ fontSize: 24, color: "var(--text-muted)" }}>â†’</div>
+                <div style={{ fontSize: 24, color: "var(--text-muted)" }}>â†'</div>
                 <div style={{ textAlign: "right" }}>
                   <div style={{ color: "var(--text-muted)", fontSize: 11, marginBottom: 4 }}>TO</div>
                   <div style={{ fontWeight: 600 }}>{locations.find(l => l.id === toLoc)?.name || "External"}</div>
@@ -316,7 +316,7 @@ export default function TransfersPage() {
     );
   }
 
-  // â”€â”€ TRANSFER LIST â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â"€â"€ TRANSFER LIST â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
   return (
     <div style={{ padding: 24, maxWidth: 1000, margin: "0 auto" }}>
       <div className="page-header">
@@ -364,7 +364,7 @@ export default function TransfersPage() {
                       <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: sc.bg, color: sc.color }}>{tr.status}</span>
                     </div>
                     <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>
-                      {fromName} <span style={{ color: "var(--text-muted)" }}>â†’</span> {toName}
+                      {fromName} <span style={{ color: "var(--text-muted)" }}>â†'</span> {toName}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                       {formatDate(tr.transfer_date)}
