@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import OwnerPIN from "../components/common/OwnerPIN";
 import api, { formatCFA } from "../utils/api";
-import { cacheData, getCachedData } from "../utils/offlineStore";
+import { savePendingSale, cacheData, getCachedData } from "../utils/offlineStore";
 import CameraScanner from "../components/common/CameraScanner";
 
 const PAYMENT_MODES = [
@@ -304,17 +304,33 @@ export default function POSPage() {
         notes:          notes || null,
       };
 
-      // Use native fetch — the service worker intercepts this, applies a 2s
-      // timeout, and returns {success:true, offline:true} when unreachable.
-      const token    = useAuthStore.getState().token || "";
-      const apiBase  = import.meta.env.VITE_API_URL || "/api";
-      const response = await fetch(`${apiBase}/sales`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body:    JSON.stringify(salePayload),
-      });
-      if (!response.ok) throw new Error("Server error " + response.status);
-      return response.json();
+      // Use native fetch so the service worker can intercept it.
+      // The SW applies a 2s AbortController timeout and returns
+      // {success:true,offline:true} when offline.
+      // The 5s AbortController here is a belt-and-suspenders fallback for
+      // when the SW is not yet controlling the page (first load after deploy).
+      const token      = useAuthStore.getState().token || "";
+      const apiBase    = import.meta.env.VITE_API_URL || "/api";
+      const controller = new AbortController();
+      const timer      = setTimeout(() => controller.abort(), 5000);
+      try {
+        const response = await fetch(`${apiBase}/sales`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+          body:    JSON.stringify(salePayload),
+          signal:  controller.signal,
+        });
+        clearTimeout(timer);
+        if (!response.ok) throw new Error("Server error " + response.status);
+        return response.json();
+      } catch (fetchErr) {
+        clearTimeout(timer);
+        if (fetchErr.name === "AbortError" || fetchErr.name === "TypeError") {
+          const localSale = await savePendingSale(salePayload);
+          return { offline: true, local_id: localSale.local_id };
+        }
+        throw fetchErr;
+      }
     },
     onSuccess: (data) => {
       if (data?.offline) {
