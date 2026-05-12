@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import api, { formatCFA } from "../utils/api";
 import BarcodeInput from "../components/common/BarcodeInput";
+import CameraScanner from "../components/common/CameraScanner";
 
 export default function StockCountPage() {
   const { lang } = useLangStore();
@@ -19,6 +20,7 @@ export default function StockCountPage() {
   const [countList, setCountList] = useState([]); // [{product_id, name, unit, location_id, location_name, system_qty, actual_qty}]
   const [submitted, setSubmitted] = useState(false);
   const [results, setResults] = useState([]);
+  const [showCamera, setShowCamera] = useState(false);
   const searchRef = useRef(null);
 
   if (!canCount) return (
@@ -170,16 +172,31 @@ export default function StockCountPage() {
           </div>
 
           {/* Search */}
-          <div style={{ marginBottom: 12 }}>
-            <BarcodeInput
-              inputRef={searchRef}
-              lang={lang}
-              value={search}
-              onChange={setSearch}
-              placeholder={lang === "en" ? "Type name, scan barcode or slot..." : "Nom, code-barres ou emplacement..."}
-              autoFocus
-            />
+          <div style={{ marginBottom: 12, display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ flex: 1 }}>
+              <BarcodeInput
+                inputRef={searchRef}
+                lang={lang}
+                value={search}
+                onChange={setSearch}
+                placeholder={lang === "en" ? "Type name, scan barcode or slot..." : "Nom, code-barres ou emplacement..."}
+                autoFocus
+              />
+            </div>
+            <button onClick={() => setShowCamera(true)}
+              style={{ flexShrink: 0, height: 42, width: 42, borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elevated)", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" }}
+              title={lang === "en" ? "Scan with camera" : "Scanner avec la caméra"}>
+              📷
+            </button>
           </div>
+
+          {showCamera && (
+            <CameraScanner
+              lang={lang}
+              onScan={(code) => { setShowCamera(false); setSearch(code); searchRef.current?.focus(); }}
+              onClose={() => setShowCamera(false)}
+            />
+          )}
 
           {/* Stock list */}
           <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden", maxHeight: 500, overflowY: "auto" }}>

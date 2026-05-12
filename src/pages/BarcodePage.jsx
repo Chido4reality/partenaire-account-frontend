@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLangStore, useAuthStore } from "../store";
 import api, { formatCFA } from "../utils/api";
+import CameraScanner from "../components/common/CameraScanner";
 
 export default function BarcodePage() {
   const { lang } = useLangStore();
@@ -9,6 +10,7 @@ export default function BarcodePage() {
 
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
+  const [showCamera, setShowCamera] = useState(false);
   const [copies, setCopies] = useState(1);
   const [showPrice, setShowPrice] = useState(true);
   const [showOrg, setShowOrg] = useState(true);
@@ -138,11 +140,29 @@ export default function BarcodePage() {
 
         {/* LEFT: Product list */}
         <div>
-          <div style={{ marginBottom: 12 }}>
+          <div style={{ marginBottom: 12, display: "flex", gap: 8, alignItems: "center" }}>
             <input className="input" value={search} onChange={e => setSearch(e.target.value)}
               placeholder={lang === "en" ? "Search product by name or barcode..." : "Chercher par nom ou code-barres..."}
-              style={{ paddingLeft: 36 }} />
+              style={{ flex: 1, paddingLeft: 12 }} />
+            <button onClick={() => setShowCamera(true)}
+              style={{ flexShrink: 0, height: 42, width: 42, borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elevated)", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" }}
+              title={lang === "en" ? "Scan with camera" : "Scanner avec la caméra"}>
+              📷
+            </button>
           </div>
+
+          {showCamera && (
+            <CameraScanner
+              lang={lang}
+              onScan={(code) => {
+                setShowCamera(false);
+                setSearch(code);
+                const match = (productsData?.data || []).find(p => p.barcode === code);
+                if (match) setSelected(match);
+              }}
+              onClose={() => setShowCamera(false)}
+            />
+          )}
 
           <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden", maxHeight: 520, overflowY: "auto" }}>
             {products.length === 0 ? (

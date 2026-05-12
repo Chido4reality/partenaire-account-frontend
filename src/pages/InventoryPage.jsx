@@ -1,5 +1,6 @@
 // v20260509_0045 - slot + last_moved_by + global_search
 import BarcodeInput from "../components/common/BarcodeInput";
+import CameraScanner from "../components/common/CameraScanner";
 import React, { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
@@ -59,6 +60,7 @@ export default function InventoryPage() {
   const [tab, setTab] = useState("stock");
   const [search, setSearch] = useState("");
   const [scanning, setScanning] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
 
   // Modal states
   const [showAddProduct, setShowAddProduct] = useState(false);
@@ -470,7 +472,20 @@ export default function InventoryPage() {
             </span>
             {search && <button onClick={() => setSearch("")} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>✕</button>}
           </div>
+          <button onClick={() => setShowCamera(true)}
+            style={{ flexShrink: 0, height: 42, width: 42, borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elevated)", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" }}
+            title={lang === "en" ? "Scan with camera" : "Scanner avec la caméra"}>
+            📷
+          </button>
         </div>
+      )}
+
+      {showCamera && (
+        <CameraScanner
+          lang={lang}
+          onScan={(code) => { setShowCamera(false); setSearch(code); setScanning(true); setTimeout(() => setScanning(false), 800); searchRef.current?.focus(); }}
+          onClose={() => setShowCamera(false)}
+        />
       )}
 
       {/* ── STOCK TAB ── */}
