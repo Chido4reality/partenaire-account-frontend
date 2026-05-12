@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import api, { formatCFA } from "../../utils/api";
 import OwnerPIN from "./OwnerPIN";
@@ -24,6 +24,40 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr" }) {
     (sale.pa_sale_items || []).map(i => ({ ...i, returnQty: i.quantity, selected: true }))
   );
   const [loading, setLoading] = useState(false);
+
+  // Exchange-specific state
+  const [newItems, setNewItems] = useState([]);
+  const [exchSearch, setExchSearch] = useState("");
+
+  const { data: productsData } = useQuery({
+    queryKey: ["products-all"],
+    queryFn: () => api.get("/products?limit=500").then(r => r.data),
+    enabled: mode === "exchange",
+  });
+  const allProducts = productsData?.data || [];
+  const filteredProducts = exchSearch.trim().length > 0
+    ? allProducts.filter(p => p.name.toLowerCase().includes(exchSearch.toLowerCase()) && p.is_active !== false)
+    : [];
+
+  const addNewItem = (product) => {
+    setNewItems(prev => {
+      const existing = prev.find(i => i.product_id === product.id);
+      if (existing) return prev.map(i => i.product_id === product.id ? { ...i, quantity: i.quantity + 1 } : i);
+      return [...prev, { product_id: product.id, name: product.name, sell_price: product.sell_price || 0, quantity: 1 }];
+    });
+    setExchSearch("");
+  };
+
+  const updateNewItemQty = (idx, qty) => {
+    const q = Math.max(1, +qty || 1);
+    setNewItems(prev => prev.map((it, i) => i === idx ? { ...it, quantity: q } : it));
+  };
+
+  const removeNewItem = (idx) => setNewItems(prev => prev.filter((_, i) => i !== idx));
+
+  const returnedTotal = selectedItems.filter(i => i.selected).reduce((s, i) => s + i.returnQty * i.unit_price, 0);
+  const newTotal = newItems.reduce((s, i) => s + i.quantity * i.sell_price, 0);
+  const cashDiff = newTotal - returnedTotal;
 
   const items = sale.pa_sale_items || [];
   const total = items.reduce((s, i) => s + i.quantity * i.unit_price, 0);
@@ -54,7 +88,16 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr" }) {
           items_returned: returnedItems, restock
         });
       } else if (mode === "exchange") {
-        res = await api.post(`/returns/exchange/${sale.id}`, { pin, reason });
+        const returnedItems = selectedItems.filter(i => i.selected).map(i => ({
+          product_id: i.product_id, quantity: +i.returnQty
+        }));
+        res = await api.post(`/returns/exchange/${sale.id}`, {
+          pin, reason,
+          returned_items: returnedItems,
+          new_items: newItems.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
+          cash_difference: Math.abs(cashDiff),
+          cash_direction: cashDiff > 0 ? "collect" : cashDiff < 0 ? "refund" : "none"
+        });
       }
 
       toast.success(lang === "en" ? "✓ Done!" : "✓ Effectué!");
@@ -211,15 +254,88 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr" }) {
         {/* EXCHANGE mode */}
         {mode === "exchange" && (
           <div>
-            <div style={{ background: "rgba(79,70,229,0.08)", border: "1px solid rgba(79,70,229,0.3)", borderRadius: 10, padding: 12, marginBottom: 16 }}>
-              <div style={{ fontWeight: 700, color: "var(--brand-light)", marginBottom: 4 }}>🔄 {lang === "en" ? "Exchange" : "Échange"}</div>
-              <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                {lang === "en" ? "Record the exchange manually. Stock will be adjusted automatically." : "Enregistrez l'échange manuellement. Le stock sera ajusté automatiquement."}
+            {/* Returned items */}
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>
+              ↩️ {lang === "en" ? "Items being returned:" : "Articles retournés:"}
+            </div>
+            {selectedItems.map((item, i) => (
+              <div key={i} style={{ background: "var(--bg-card)", borderRadius: 10, padding: "10px 12px", marginBottom: 8, border: `1px solid ${item.selected ? "rgba(239,68,68,0.4)" : "var(--border)"}` }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <input type="checkbox" checked={item.selected} onChange={() => toggleItem(i)} style={{ width: 16, height: 16 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{item.pa_products?.name}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{item.quantity} × {formatCFA(item.unit_price)}</div>
+                  </div>
+                  {item.selected && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en" ? "Qty:" : "Qté:"}</span>
+                      <input type="number" value={item.returnQty} onChange={e => setReturnQty(i, e.target.value)}
+                        min={1} max={item.quantity}
+                        style={{ width: 56, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", fontSize: 13 }} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {/* New items picker */}
+            <div style={{ fontWeight: 600, fontSize: 13, marginTop: 16, marginBottom: 8 }}>
+              🆕 {lang === "en" ? "New items given:" : "Nouveaux articles donnés:"}
+            </div>
+            <div style={{ position: "relative", marginBottom: 8 }}>
+              <input className="input" value={exchSearch} onChange={e => setExchSearch(e.target.value)}
+                placeholder={lang === "en" ? "Search product to add…" : "Chercher produit à ajouter…"}
+                style={{ fontSize: 13 }} />
+              {filteredProducts.length > 0 && (
+                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, zIndex: 50, maxHeight: 180, overflowY: "auto", boxShadow: "0 4px 16px rgba(0,0,0,0.3)" }}>
+                  {filteredProducts.slice(0, 8).map(p => (
+                    <div key={p.id} onClick={() => addNewItem(p)}
+                      style={{ padding: "8px 12px", cursor: "pointer", display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--border)", fontSize: 13 }}
+                      onMouseEnter={e => e.currentTarget.style.background = "var(--bg-card)"}
+                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                      <span>{p.name}</span>
+                      <span style={{ color: "var(--brand-light)", fontWeight: 600 }}>{formatCFA(p.sell_price || 0)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {newItems.length === 0 && (
+              <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "8px 12px", background: "var(--bg-card)", borderRadius: 8, marginBottom: 8 }}>
+                {lang === "en" ? "No new items added yet" : "Aucun nouvel article ajouté"}
+              </div>
+            )}
+            {newItems.map((item, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--bg-card)", borderRadius: 10, padding: "8px 12px", marginBottom: 6, border: "1px solid rgba(79,70,229,0.3)" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{item.name}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{formatCFA(item.sell_price)} × {item.quantity} = {formatCFA(item.sell_price * item.quantity)}</div>
+                </div>
+                <input type="number" value={item.quantity} onChange={e => updateNewItemQty(i, e.target.value)} min={1}
+                  style={{ width: 56, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", fontSize: 13 }} />
+                <button onClick={() => removeNewItem(i)}
+                  style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer", fontSize: 16, padding: "0 4px" }}>×</button>
+              </div>
+            ))}
+
+            {/* Price difference summary */}
+            <div style={{ background: "var(--bg-card)", borderRadius: 10, padding: "12px 14px", marginTop: 12, marginBottom: 14, border: "1px solid var(--border)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>
+                <span>{lang === "en" ? "Returned value:" : "Valeur retournée:"}</span>
+                <span style={{ color: "#34d399" }}>{formatCFA(returnedTotal)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
+                <span>{lang === "en" ? "New items value:" : "Valeur nouveaux articles:"}</span>
+                <span style={{ color: "var(--brand-light)" }}>{formatCFA(newTotal)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 14, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+                <span>{cashDiff === 0 ? (lang === "en" ? "Even exchange" : "Échange égal") : cashDiff > 0 ? (lang === "en" ? "Customer pays:" : "Client paie:") : (lang === "en" ? "Refund to customer:" : "Remboursement client:")}</span>
+                <span style={{ color: cashDiff === 0 ? "var(--text-muted)" : cashDiff > 0 ? "#fbbf24" : "#34d399" }}>
+                  {cashDiff === 0 ? "—" : formatCFA(Math.abs(cashDiff))}
+                </span>
               </div>
             </div>
-            <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>
-              {lang === "en" ? "Process the exchange at the counter, then confirm here to update stock records." : "Effectuez l'échange au comptoir, puis confirmez ici pour mettre à jour le stock."}
-            </div>
+
             <PinAndReason pin={pin} setPin={setPin} reason={reason} setReason={setReason} pinError={pinError} lang={lang} />
             <ActionButtons mode="exchange" loading={loading} onBack={() => setMode(null)} onConfirm={handleSubmit} lang={lang} />
           </div>
