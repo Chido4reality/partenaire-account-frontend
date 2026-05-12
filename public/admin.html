@@ -521,20 +521,24 @@ window.addEventListener('DOMContentLoaded', function() {
 
     <!-- ── Auth gate ─────────────────────────────────────────── -->
     <div id="mp-auth-section">
-      <div style="background:#fff;border-radius:16px;padding:32px;max-width:420px;margin:32px auto;box-shadow:0 4px 24px rgba(0,0,0,0.07)">
+      <div style="background:#fff;border-radius:16px;padding:32px;max-width:440px;margin:32px auto;box-shadow:0 4px 24px rgba(0,0,0,0.07)">
         <div style="font-size:18px;font-weight:800;color:var(--navy);margin-bottom:4px">🔑 Connect to Mon Partenaire</div>
-        <div style="font-size:13px;color:var(--grey);margin-bottom:24px">Use your Mon Partenaire owner account (org MP-000001)</div>
+        <div style="font-size:13px;color:var(--grey);margin-bottom:18px">Log in with your <strong>Mon Partenaire owner account (MP-000001)</strong></div>
+        <div style="background:#FEF9EC;border:1px solid #F0C050;border-radius:10px;padding:10px 14px;margin-bottom:18px;font-size:12px;color:#92600A;line-height:1.5">
+          ⚠️ Use the <strong>phone number and password of the OWNER of the MP-000001 org (Dozie Store)</strong>. Any other Mon Partenaire account will return 401/403.
+        </div>
         <div class="form-group">
-          <label class="form-label">Phone Number</label>
+          <label class="form-label">Owner Phone Number</label>
           <input class="form-input" id="mp-login-phone" placeholder="+237 6XX XXX XXX" type="tel" onkeydown="if(event.key==='Enter')mpLogin()">
         </div>
         <div class="form-group">
           <label class="form-label">Password</label>
-          <input class="form-input" id="mp-login-pass" placeholder="Your account password" type="password" onkeydown="if(event.key==='Enter')mpLogin()">
+          <input class="form-input" id="mp-login-pass" placeholder="Your owner password" type="password" onkeydown="if(event.key==='Enter')mpLogin()">
         </div>
         <button class="btn btn-primary" style="width:100%;justify-content:center;padding:13px;margin-top:4px" onclick="mpLogin()" id="mp-login-btn">Connect →</button>
+        <button class="btn" style="width:100%;justify-content:center;padding:10px;margin-top:8px;font-size:12px;color:var(--grey)" onclick="mpTestAuth()">🔍 Test current token (GET /auth/me)</button>
         <div id="mp-auth-error" style="color:var(--red);font-size:13px;margin-top:12px;display:none"></div>
-        <div class="alert alert-info" style="margin-top:16px;margin-bottom:0">ℹ️ This connects to the Mon Partenaire POS backend (separate from PARTENAIRE marketplace).</div>
+        <div id="mp-auth-debug" style="font-size:11px;color:var(--grey);margin-top:12px;font-family:monospace;display:none;background:#f8f7f4;padding:10px;border-radius:8px;white-space:pre-wrap;word-break:break-all"></div>
       </div>
     </div>
 
@@ -542,14 +546,14 @@ window.addEventListener('DOMContentLoaded', function() {
     <div id="mp-content" style="display:none">
 
       <!-- Connected user info -->
-      <div id="mp-user-bar" style="background:#E8F5E9;border:1px solid #A5D6A7;border-radius:10px;padding:10px 16px;margin-bottom:16px;font-size:13px;color:var(--green);display:flex;justify-content:space-between;align-items:center">
+      <div id="mp-user-bar" style="background:#E8F5E9;border:1.5px solid #A5D6A7;border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:var(--green);display:flex;justify-content:space-between;align-items:center">
         <span>✅ Connected as: <strong id="mp-logged-user">—</strong> &nbsp;·&nbsp; Org: <strong id="mp-logged-org">—</strong></span>
         <button onclick="mpToken=null;mpInitPage()" style="background:transparent;border:1px solid var(--green);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;color:var(--green)">Disconnect</button>
       </div>
 
       <!-- Stats -->
       <div class="stats-grid" style="margin-bottom:20px">
-        <div class="stat-card"><div class="stat-label">Total Businesses</div><div class="stat-value" id="mp-stat-total">—</div></div>
+        <div class="stat-card"><div class="stat-label">Total Businesses</div><div class="stat-value" id="mp-stat-total">—</div><div class="stat-sub" id="mp-stat-new-week">— this week</div></div>
         <div class="stat-card blue"><div class="stat-label">On Trial</div><div class="stat-value" id="mp-stat-trial" style="color:var(--blue)">—</div></div>
         <div class="stat-card green"><div class="stat-label">Active Plans</div><div class="stat-value" id="mp-stat-active" style="color:var(--green)">—</div></div>
         <div class="stat-card red"><div class="stat-label">Pending Approval</div><div class="stat-value" id="mp-stat-pending" style="color:var(--red)">—</div></div>
@@ -557,28 +561,56 @@ window.addEventListener('DOMContentLoaded', function() {
       </div>
 
       <!-- Tabs -->
-      <div style="display:flex;gap:0;margin-bottom:0;border-bottom:2px solid var(--lgrey)">
-        <button onclick="mpSwitchTab('businesses')" id="mp-tab-businesses"
-          style="padding:11px 20px;border:none;background:transparent;font-size:13px;font-weight:700;cursor:pointer;border-bottom:3px solid var(--navy);margin-bottom:-2px;color:var(--navy)">
-          🏢 All Businesses
-        </button>
-        <button onclick="mpSwitchTab('pending')" id="mp-tab-pending"
-          style="padding:11px 20px;border:none;background:transparent;font-size:13px;font-weight:600;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;color:var(--grey)">
-          ⏳ Pending Payments <span id="mp-pending-count" style="background:var(--red);color:#fff;font-size:10px;font-weight:800;padding:1px 6px;border-radius:10px;margin-left:4px;display:none">0</span>
-        </button>
-        <button onclick="mpSwitchTab('history')" id="mp-tab-history"
-          style="padding:11px 20px;border:none;background:transparent;font-size:13px;font-weight:600;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;color:var(--grey)">
-          📋 All Payments
-        </button>
+      <div style="display:flex;gap:0;margin-bottom:0;border-bottom:2px solid var(--lgrey);flex-wrap:wrap">
+        <button onclick="mpSwitchTab('overview')"     id="mp-tab-overview"     class="mp-tab" style="padding:11px 18px;border:none;background:transparent;font-size:13px;cursor:pointer;border-bottom:3px solid var(--navy);margin-bottom:-2px;color:var(--navy);font-weight:700">📊 Overview</button>
+        <button onclick="mpSwitchTab('businesses')"   id="mp-tab-businesses"   class="mp-tab" style="padding:11px 18px;border:none;background:transparent;font-size:13px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;color:var(--grey);font-weight:600">🏢 All Businesses</button>
+        <button onclick="mpSwitchTab('pending')"      id="mp-tab-pending"      class="mp-tab" style="padding:11px 18px;border:none;background:transparent;font-size:13px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;color:var(--grey);font-weight:600">⏳ Pending Payments <span id="mp-pending-count" style="background:var(--red);color:#fff;font-size:10px;font-weight:800;padding:1px 6px;border-radius:10px;margin-left:4px;display:none">0</span></button>
+        <button onclick="mpSwitchTab('finance')"      id="mp-tab-finance"      class="mp-tab" style="padding:11px 18px;border:none;background:transparent;font-size:13px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;color:var(--grey);font-weight:600">💰 Finance</button>
+        <button onclick="mpSwitchTab('csv')"          id="mp-tab-csv"          class="mp-tab" style="padding:11px 18px;border:none;background:transparent;font-size:13px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;color:var(--grey);font-weight:600">📥 CSV Export</button>
+        <button onclick="mpSwitchTab('broadcasts')"   id="mp-tab-broadcasts"   class="mp-tab" style="padding:11px 18px;border:none;background:transparent;font-size:13px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;color:var(--grey);font-weight:600">📢 Broadcasts</button>
+        <button onclick="mpSwitchTab('history')"      id="mp-tab-history"      class="mp-tab" style="padding:11px 18px;border:none;background:transparent;font-size:13px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;color:var(--grey);font-weight:600">📋 Payment History</button>
+      </div>
+
+      <!-- Panel: Overview -->
+      <div id="mp-panel-overview" style="margin-top:16px">
+        <div class="finance-grid">
+          <div class="finance-card"><div class="finance-card-label">Subscription Revenue (Approved)</div><div class="finance-card-value" id="mp-ov-sub-revenue">—</div></div>
+          <div class="finance-card"><div class="finance-card-label">Sales Revenue (All Orgs)</div><div class="finance-card-value" id="mp-ov-sales-revenue">—</div><div class="finance-card-sub" id="mp-ov-sales-count">— sales</div></div>
+          <div class="finance-card"><div class="finance-card-label">New Businesses This Week</div><div class="finance-card-value" id="mp-ov-new-week" style="color:var(--green)">—</div></div>
+          <div class="finance-card"><div class="finance-card-label">Pending Approvals</div><div class="finance-card-value" id="mp-ov-pending" style="color:var(--red)">—</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div class="table-wrap">
+            <div class="table-head"><div class="table-title">Plan Breakdown</div></div>
+            <table>
+              <thead><tr><th>Plan</th><th style="text-align:right">Businesses</th></tr></thead>
+              <tbody id="mp-plan-breakdown-table"><tr><td colspan="2" class="loading"><div class="spinner"></div></td></tr></tbody>
+            </table>
+          </div>
+          <div class="table-wrap">
+            <div class="table-head"><div class="table-title">Status Breakdown</div></div>
+            <table>
+              <thead><tr><th>Status</th><th style="text-align:right">Businesses</th></tr></thead>
+              <tbody id="mp-status-breakdown-table"><tr><td colspan="2" class="loading"><div class="spinner"></div></td></tr></tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       <!-- Panel: Businesses -->
-      <div id="mp-panel-businesses" style="margin-top:16px">
+      <div id="mp-panel-businesses" style="display:none;margin-top:16px">
         <div class="table-wrap">
           <div class="table-head">
             <div class="table-title">Registered Businesses</div>
             <div class="toolbar">
               <div class="search-box"><input type="text" id="mp-biz-search" placeholder="Search name or MP-ID..." oninput="mpFilterBiz()"></div>
+              <select class="filter" id="mp-biz-plan" onchange="mpFilterBiz()">
+                <option value="">All Plans</option>
+                <option value="silver">Silver</option>
+                <option value="gold">Gold</option>
+                <option value="gold_premium">Gold Premium</option>
+                <option value="intl_gold">Intl Gold</option>
+              </select>
               <select class="filter" id="mp-biz-status" onchange="mpFilterBiz()">
                 <option value="">All Status</option>
                 <option value="trial">Trial</option>
@@ -589,12 +621,108 @@ window.addEventListener('DOMContentLoaded', function() {
               </select>
             </div>
           </div>
+          <div style="overflow-x:auto">
           <table>
             <thead><tr>
-              <th>Business</th><th>MP-ID</th><th>Plan</th><th>Status</th><th>Expires</th><th>Joined</th><th>Actions</th>
+              <th>Business</th><th>MP-ID</th><th>Plan</th><th>Status</th><th style="text-align:right">Sales</th><th style="text-align:right">Revenue</th><th style="text-align:right">Products</th><th style="text-align:right">Users</th><th>Joined</th><th>Actions</th>
             </tr></thead>
-            <tbody id="mp-biz-table"><tr><td colspan="7" class="loading"><div class="spinner"></div> Loading...</td></tr></tbody>
+            <tbody id="mp-biz-table"><tr><td colspan="10" class="loading"><div class="spinner"></div> Loading...</td></tr></tbody>
           </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel: Finance -->
+      <div id="mp-panel-finance" style="display:none;margin-top:16px">
+        <div class="finance-grid">
+          <div class="finance-card"><div class="finance-card-label">Total Subscription Revenue</div><div class="finance-card-value" id="mp-fin-revenue">—</div></div>
+          <div class="finance-card"><div class="finance-card-label">Approved Payments</div><div class="finance-card-value" id="mp-fin-approved">—</div></div>
+          <div class="finance-card"><div class="finance-card-label">Pending Payments</div><div class="finance-card-value" id="mp-fin-pending" style="color:var(--amber)">—</div></div>
+          <div class="finance-card"><div class="finance-card-label">Rejected Payments</div><div class="finance-card-value" id="mp-fin-rejected" style="color:var(--red)">—</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+          <div class="table-wrap">
+            <div class="table-head"><div class="table-title">Revenue by Payment Method</div></div>
+            <table>
+              <thead><tr><th>Method</th><th style="text-align:right">Approved Revenue</th></tr></thead>
+              <tbody id="mp-fin-method-table"><tr><td colspan="2" class="loading"><div class="spinner"></div></td></tr></tbody>
+            </table>
+          </div>
+          <div class="table-wrap">
+            <div class="table-head"><div class="table-title">Monthly Revenue (Last 6 Months)</div></div>
+            <table>
+              <thead><tr><th>Month</th><th style="text-align:right">Revenue</th><th>Bar</th></tr></thead>
+              <tbody id="mp-fin-monthly-table"><tr><td colspan="3" class="loading"><div class="spinner"></div></td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <div class="table-head">
+            <div class="table-title">All Subscription Payments</div>
+            <button class="btn btn-gold" onclick="mpExportPaymentsCSV()">📥 Export Payments CSV</button>
+          </div>
+          <div style="overflow-x:auto">
+          <table>
+            <thead><tr><th>Business</th><th>Plan</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th></tr></thead>
+            <tbody id="mp-fin-payments-table"><tr><td colspan="6" class="loading"><div class="spinner"></div></td></tr></tbody>
+          </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel: CSV Export -->
+      <div id="mp-panel-csv" style="display:none;margin-top:16px">
+        <div class="alert alert-info">
+          📊 <span>Download CSVs per business for BI/LLM analysis. Each business has 4 datasets: Sales, Inventory, Credits and Staff.</span>
+        </div>
+        <div class="table-wrap">
+          <div class="table-head">
+            <div class="table-title">Per-Business Exports</div>
+            <button class="btn btn-gold" onclick="mpExportAllZip()" id="mp-export-all-btn">📦 Export All as ZIP</button>
+          </div>
+          <div style="overflow-x:auto">
+          <table>
+            <thead><tr><th>Business</th><th>MP-ID</th><th>Sales</th><th>Inventory</th><th>Credits</th><th>Staff</th></tr></thead>
+            <tbody id="mp-csv-table"><tr><td colspan="6" class="loading"><div class="spinner"></div></td></tr></tbody>
+          </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel: Broadcasts -->
+      <div id="mp-panel-broadcasts" style="display:none;margin-top:16px">
+        <div class="table-wrap">
+          <div class="table-head"><div class="table-title">📢 Send a Broadcast to Mon Partenaire users</div></div>
+          <div style="padding:20px;max-width:640px">
+            <div class="form-group">
+              <label class="form-label">Target Audience</label>
+              <select class="form-input" id="mp-bc-target">
+                <option value="all">All Mon Partenaire users</option>
+                <option value="silver">Silver plan only</option>
+                <option value="gold">Gold plan only</option>
+                <option value="gold_premium">Gold Premium only</option>
+                <option value="intl_gold">International Gold only</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Title (English)</label>
+              <input class="form-input" id="mp-bc-title-en" placeholder="e.g. New feature: barcode scanning">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Title (Français)</label>
+              <input class="form-input" id="mp-bc-title-fr" placeholder="e.g. Nouvelle fonctionnalité: scan de codes-barres">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Message (English)</label>
+              <textarea class="form-input" id="mp-bc-body-en" rows="3" style="resize:vertical;font-family:inherit" placeholder="Your message to users..."></textarea>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Message (Français)</label>
+              <textarea class="form-input" id="mp-bc-body-fr" rows="3" style="resize:vertical;font-family:inherit" placeholder="Votre message aux utilisateurs..."></textarea>
+            </div>
+            <button class="btn btn-gold" style="width:100%;justify-content:center;padding:13px" onclick="mpSendBroadcast()" id="mp-bc-send-btn">📢 Send Broadcast</button>
+            <div id="mp-bc-result" style="margin-top:12px;font-size:13px;display:none"></div>
+          </div>
         </div>
       </div>
 
@@ -861,6 +989,16 @@ window.addEventListener('DOMContentLoaded', function() {
     <button class="btn btn-gold" style="width:100%;justify-content:center;padding:13px" onclick="mpSavePlan()">
       ✓ Apply Changes
     </button>
+  </div>
+</div>
+
+<!-- ══ MODAL: MP ORG DETAILS ══ -->
+<div class="modal-overlay" id="modal-mp-detail">
+  <div class="modal" style="max-width:760px">
+    <button class="modal-close" onclick="closeModal('modal-mp-detail')">✕</button>
+    <div class="modal-title" id="mp-detail-title">Business Details</div>
+    <div class="modal-sub" id="mp-detail-sub">—</div>
+    <div id="mp-detail-body" style="margin-top:8px"><div class="loading"><div class="spinner"></div></div></div>
   </div>
 </div>
 
@@ -2288,7 +2426,7 @@ function closeSellerDetail() {
 //  MON PARTENAIRE SECTION
 // ══════════════════════════════════════════════════════════════
 const MP_API = 'https://partenaire-account-api.onrender.com/api';
-let mpToken = null, mpOrgs = [], mpPayments = [], mpPlans = [];
+let mpToken = null, mpOrgs = [], mpPayments = [], mpPlans = [], mpDashboard = null;
 let mpCurrentPaymentId = null, mpCurrentOrgId = null;
 
 // ── HTTP helper ───────────────────────────────────────────────
@@ -2301,10 +2439,39 @@ async function mpFetch(method, path, body) {
     headers,
     body: body ? JSON.stringify(body) : undefined
   });
-  const data = await res.json();
+  let data;
+  try { data = await res.json(); } catch { data = { message: 'Non-JSON response (' + res.status + ')' }; }
   console.log('[MP]', method, path, '→', res.status, data);
-  if (!res.ok) throw new Error(data.message || ('Request failed (' + res.status + ')'));
+  if (!res.ok) {
+    const err = new Error(data.message || ('Request failed (' + res.status + ')'));
+    err.status = res.status;
+    throw err;
+  }
   return data;
+}
+
+// ── Debug: test current auth token ────────────────────────────
+async function mpTestAuth() {
+  const dbg = document.getElementById('mp-auth-debug');
+  if (!dbg) return;
+  dbg.style.display = 'block';
+  dbg.textContent = 'Calling GET /auth/me …';
+  if (!mpToken) {
+    dbg.textContent = '⚠️ No token yet — fill in phone+password and click Connect first.';
+    return;
+  }
+  try {
+    const me = await mpFetch('GET', '/auth/me');
+    const u = me.user || {};
+    const org = u.pa_organisations || {};
+    dbg.textContent =
+      '✅ Logged in as: ' + (u.full_name || '?') + ' (role=' + (u.role || '?') + ')\n' +
+      '   Org name: ' + (org.name || '?') + '\n' +
+      '   Org MP-ID: ' + (org.user_id_number || '?') + '\n' +
+      '   Required for admin: MP-000001 — ' + (org.user_id_number === 'MP-000001' ? 'OK ✓' : '❌ MISMATCH');
+  } catch (e) {
+    dbg.textContent = '❌ /auth/me failed (' + (e.status || '?') + '): ' + e.message;
+  }
 }
 
 // ── Page init ─────────────────────────────────────────────────
@@ -2329,15 +2496,17 @@ async function mpLogin() {
   try {
     const result = await mpFetch('POST', '/auth/login', { phone, password });
     if (!result.token) throw new Error('No token returned — check credentials');
-    if (!result.success && !result.token) throw new Error(result.message || 'Login failed');
     mpToken = result.token;
     console.log('[MP] Login success — token:', mpToken);
     console.log('[MP] User:', result.user, '| Org:', result.org);
-    // Show connected user in the bar
-    const mpUserEl = document.getElementById('mp-logged-user');
-    if (mpUserEl) mpUserEl.textContent = result.user?.full_name || phone;
-    const mpOrgEl = document.getElementById('mp-logged-org');
-    if (mpOrgEl) mpOrgEl.textContent = result.org?.user_id_number || result.org?.name || result.user?.org_id || '(fetching…)';
+    // Block early if the logged-in org isn't MP-000001 — saves a confusing 403 cascade later
+    const mpId = result.org?.user_id_number;
+    if (mpId && mpId !== 'MP-000001') {
+      mpToken = null;
+      throw new Error('Wrong account — you logged in as ' + mpId + ' (' + (result.org?.name || '?') + '). You must use the MP-000001 owner account.');
+    }
+    document.getElementById('mp-logged-user').textContent = result.user?.full_name || phone;
+    document.getElementById('mp-logged-org').textContent  = mpId || result.org?.name || '(fetching…)';
     document.getElementById('mp-auth-section').style.display = 'none';
     document.getElementById('mp-content').style.display = 'block';
     await mpLoadAll();
@@ -2351,24 +2520,24 @@ async function mpLogin() {
 function mpAuthErr(msg) {
   const el = document.getElementById('mp-auth-error');
   el.textContent = msg; el.style.display = 'block';
-  setTimeout(() => el.style.display = 'none', 5000);
+  setTimeout(() => el.style.display = 'none', 8000);
 }
 
 // ── Load all data ─────────────────────────────────────────────
 async function mpLoadAll() {
-  // Show loading placeholder in businesses table
   const bizTbody = document.getElementById('mp-biz-table');
-  if (bizTbody) bizTbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--grey)">⏳ Loading…</td></tr>';
+  if (bizTbody) bizTbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--grey)">⏳ Loading…</td></tr>';
 
   try {
-    await Promise.all([mpLoadOrgs(), mpLoadPayments(), mpLoadPlans()]);
+    await Promise.all([mpLoadOrgs(), mpLoadPayments(), mpLoadPlans(), mpLoadDashboard()]);
     console.log('[MP] Loaded:', mpOrgs.length, 'orgs,', mpPayments.length, 'payments,', mpPlans.length, 'plans');
     mpUpdateStats();
-    mpSwitchTab('businesses'); // ensure first tab is active
+    mpRenderOverview();
     mpFilterBiz();
     mpRenderPending();
     mpRenderHistory();
-    // Update nav badge — count both pending and processing
+    mpRenderFinance();
+    mpRenderCSV();
     const pending = mpPayments.filter(p => p.status === 'pending' || p.status === 'processing').length;
     const badge = document.getElementById('mp-badge');
     if (badge) { badge.textContent = pending; badge.style.display = pending > 0 ? 'inline' : 'none'; }
@@ -2376,21 +2545,34 @@ async function mpLoadAll() {
     if (pc) { pc.textContent = pending; pc.style.display = pending > 0 ? 'inline' : 'none'; }
   } catch(e) {
     console.error('[MP] Load error:', e);
-    if (e.message.includes('403') || e.message.toLowerCase().includes('denied') || e.message.toLowerCase().includes('forbidden')) {
-      if (bizTbody) bizTbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--red)">❌ Access denied — your account is not the MP-000001 admin account. Use your Mon Partenaire owner credentials.</td></tr>';
-    } else if (e.message.includes('401') || e.message.toLowerCase().includes('unauthorized') || e.message.toLowerCase().includes('not authenticated')) {
+    const denied = e.status === 403 || e.message.toLowerCase().includes('denied') || e.message.toLowerCase().includes('forbidden');
+    const unauth = e.status === 401 || e.message.toLowerCase().includes('unauthorized') || e.message.toLowerCase().includes('not authenticated');
+    if (denied) {
+      if (bizTbody) bizTbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--red)">❌ Access denied — your account is not the MP-000001 owner. Log in with the OWNER of the MP-000001 (Dozie Store) org.</td></tr>';
+      toast('Wrong account — log in as the MP-000001 owner', 'error');
+    } else if (unauth) {
       mpToken = null; mpInitPage();
       toast('Session expired — please reconnect', 'error');
     } else {
-      if (bizTbody) bizTbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--red)">⚠️ Load error: ${e.message} — <a href="#" onclick="mpRefresh()">Retry</a></td></tr>`;
+      if (bizTbody) bizTbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--red)">⚠️ Load error: ${e.message} — <a href="#" onclick="mpRefresh()">Retry</a></td></tr>`;
       toast('MP load error: ' + e.message, 'error');
     }
   }
 }
 
 async function mpLoadOrgs() {
-  const r = await mpFetch('GET', '/subscriptions/admin/all');
-  mpOrgs = r.data || [];
+  // Prefer enriched endpoint; if the backend hasn't rolled out yet, fall back
+  // to the basic list so the page still works.
+  try {
+    const r = await mpFetch('GET', '/subscriptions/admin/orgs-enriched');
+    mpOrgs = r.data || [];
+  } catch (e) {
+    if (e.status === 404 || /not found/i.test(e.message)) {
+      console.warn('[MP] orgs-enriched not deployed yet — falling back to /admin/all');
+      const r = await mpFetch('GET', '/subscriptions/admin/all');
+      mpOrgs = (r.data || []).map(o => ({ ...o, sales_count: null, total_revenue: null, products_count: null, users_count: null, last_activity: o.created_at }));
+    } else { throw e; }
+  }
 }
 async function mpLoadPayments() {
   const r = await mpFetch('GET', '/subscriptions/admin/payments');
@@ -2399,6 +2581,15 @@ async function mpLoadPayments() {
 async function mpLoadPlans() {
   const r = await mpFetch('GET', '/subscriptions/plans');
   mpPlans = r.data || [];
+}
+async function mpLoadDashboard() {
+  try {
+    const r = await mpFetch('GET', '/subscriptions/admin/dashboard');
+    mpDashboard = r.data;
+  } catch (e) {
+    console.warn('[MP] dashboard endpoint failed (perhaps not deployed):', e.message);
+    mpDashboard = null;
+  }
 }
 
 async function mpExportCSV() {
@@ -2440,6 +2631,192 @@ function mpUpdateStats() {
   document.getElementById('mp-stat-active').textContent    = active;
   document.getElementById('mp-stat-pending').textContent   = pending;
   document.getElementById('mp-stat-suspended').textContent = suspended;
+  const newWeek = mpDashboard?.new_orgs_this_week ?? 0;
+  const el = document.getElementById('mp-stat-new-week');
+  if (el) el.textContent = '+' + newWeek + ' this week';
+}
+
+const PLAN_LABELS = { silver:'🥈 Silver', gold:'🥇 Gold', gold_premium:'❖ Gold Premium', intl_gold:'🌐 Intl Gold' };
+const STATUS_LABELS = { trial:'🔵 Trial', active:'✅ Active', pending:'⏳ Pending', expired:'🔴 Expired', suspended:'⛔ Suspended', cancelled:'Cancelled' };
+const fmtFCFA = (n) => (Math.round(parseFloat(n || 0))).toLocaleString() + ' FCFA';
+
+// ── Render: Overview tab ──────────────────────────────────────
+function mpRenderOverview() {
+  const d = mpDashboard;
+  const subRev   = d?.total_subscription_revenue ?? mpPayments.filter(p => p.status === 'approved').reduce((s, p) => s + parseFloat(p.amount || 0), 0);
+  const salesRev = d?.total_sales_revenue ?? 0;
+  const salesCnt = d?.total_sales_count ?? 0;
+  const newWeek  = d?.new_orgs_this_week ?? 0;
+  const pendingApprovals = d?.pending_approvals ?? mpPayments.filter(p => p.status === 'pending' || p.status === 'processing').length;
+  document.getElementById('mp-ov-sub-revenue').textContent   = fmtFCFA(subRev);
+  document.getElementById('mp-ov-sales-revenue').textContent = fmtFCFA(salesRev);
+  document.getElementById('mp-ov-sales-count').textContent   = salesCnt.toLocaleString() + ' sales';
+  document.getElementById('mp-ov-new-week').textContent      = newWeek;
+  document.getElementById('mp-ov-pending').textContent       = pendingApprovals;
+
+  const planCounts = d?.plan_counts || mpOrgs.reduce((a, o) => { a[o.plan_id || 'none'] = (a[o.plan_id || 'none'] || 0) + 1; return a; }, {});
+  document.getElementById('mp-plan-breakdown-table').innerHTML = Object.entries(planCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => `<tr><td>${PLAN_LABELS[k] || k}</td><td style="text-align:right;font-weight:700">${v}</td></tr>`).join('') ||
+    '<tr><td colspan="2" style="text-align:center;color:var(--grey)">No data</td></tr>';
+
+  const statusCounts = d?.status_counts || mpOrgs.reduce((a, o) => { a[o.subscription_status || 'unknown'] = (a[o.subscription_status || 'unknown'] || 0) + 1; return a; }, {});
+  document.getElementById('mp-status-breakdown-table').innerHTML = Object.entries(statusCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => `<tr><td>${STATUS_LABELS[k] || k}</td><td style="text-align:right;font-weight:700">${v}</td></tr>`).join('') ||
+    '<tr><td colspan="2" style="text-align:center;color:var(--grey)">No data</td></tr>';
+}
+
+// ── Render: Finance tab ───────────────────────────────────────
+function mpRenderFinance() {
+  const approved = mpPayments.filter(p => p.status === 'approved');
+  const pending  = mpPayments.filter(p => p.status === 'pending' || p.status === 'processing');
+  const rejected = mpPayments.filter(p => p.status === 'rejected');
+  const revenue  = approved.reduce((s, p) => s + parseFloat(p.amount || 0), 0);
+  document.getElementById('mp-fin-revenue').textContent  = fmtFCFA(revenue);
+  document.getElementById('mp-fin-approved').textContent = approved.length;
+  document.getElementById('mp-fin-pending').textContent  = pending.length;
+  document.getElementById('mp-fin-rejected').textContent = rejected.length;
+
+  const byMethod = mpDashboard?.subscription_revenue_by_method ||
+    approved.reduce((a, p) => { const k = p.payment_method || 'unknown'; a[k] = (a[k] || 0) + parseFloat(p.amount || 0); return a; }, {});
+  document.getElementById('mp-fin-method-table').innerHTML = Object.entries(byMethod)
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => `<tr><td>${mpPayMethodLabel(k)}</td><td style="text-align:right;font-weight:700">${fmtFCFA(v)}</td></tr>`).join('') ||
+    '<tr><td colspan="2" style="text-align:center;color:var(--grey)">No approved payments yet</td></tr>';
+
+  const monthly = mpDashboard?.monthly_subscription_revenue || [];
+  const maxRev = Math.max(1, ...monthly.map(m => m.total));
+  document.getElementById('mp-fin-monthly-table').innerHTML = monthly.length
+    ? monthly.map(m => {
+        const pct = Math.round((m.total / maxRev) * 100);
+        return `<tr><td>${m.month}</td><td style="text-align:right;font-weight:700">${fmtFCFA(m.total)}</td><td style="min-width:120px"><div style="background:var(--lgrey);border-radius:4px;height:8px;overflow:hidden"><div style="background:var(--gold);height:8px;width:${pct}%"></div></div></td></tr>`;
+      }).join('')
+    : '<tr><td colspan="3" style="text-align:center;color:var(--grey)">Monthly breakdown not available</td></tr>';
+
+  // Full history (same table layout as the legacy History tab but in Finance)
+  document.getElementById('mp-fin-payments-table').innerHTML = mpPayments.length
+    ? mpPayments.map(p => {
+        const orgName = p.pa_organisations?.name || p.org_id;
+        const orgId   = p.pa_organisations?.user_id_number || '—';
+        const status  = { pending:'badge-amber', processing:'badge-amber', approved:'badge-green', rejected:'badge-red' }[p.status] || 'badge-grey';
+        return `<tr>
+          <td>${orgName} <span style="font-size:11px;color:var(--grey);font-family:monospace">${orgId}</span></td>
+          <td>${mpPlanBadge(p.pa_plans)}</td>
+          <td style="font-weight:700">${fmtFCFA(p.amount)}</td>
+          <td style="font-size:12px">${mpPayMethodLabel(p.payment_method)}</td>
+          <td><span class="badge ${status}">${p.status}</span></td>
+          <td style="font-size:12px;color:var(--grey)">${fmtDate(p.requested_at || p.created_at)}</td>
+        </tr>`;
+      }).join('')
+    : '<tr><td colspan="6" style="text-align:center;color:var(--grey);padding:20px">No payments yet</td></tr>';
+}
+
+// ── Render: CSV Export tab ────────────────────────────────────
+function mpRenderCSV() {
+  const tbody = document.getElementById('mp-csv-table');
+  if (!tbody) return;
+  if (!mpOrgs.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--grey)">No businesses</td></tr>';
+    return;
+  }
+  const btn = (orgId, name, type) =>
+    `<button class="btn btn-sm" onclick="mpDownloadOrgCSV('${orgId}','${(name || '').replace(/'/g, '')}','${type}')">⬇ ${type}.csv</button>`;
+  tbody.innerHTML = mpOrgs.map(o => `<tr>
+    <td><strong>${o.name || '—'}</strong></td>
+    <td style="font-family:monospace;font-weight:700">${o.user_id_number || '—'}</td>
+    <td>${btn(o.id, o.name, 'sales')}</td>
+    <td>${btn(o.id, o.name, 'inventory')}</td>
+    <td>${btn(o.id, o.name, 'credits')}</td>
+    <td>${btn(o.id, o.name, 'staff')}</td>
+  </tr>`).join('');
+}
+
+async function mpDownloadOrgCSV(orgId, name, type) {
+  if (!mpToken) { toast('Not logged in', 'error'); return; }
+  try {
+    const res = await fetch(`${MP_API}/subscriptions/admin/orgs/${orgId}/export/${type}.csv`, {
+      headers: { 'Authorization': 'Bearer ' + mpToken }
+    });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.message || ('Export failed (' + res.status + ')')); }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${name || 'business'}_${type}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('✅ Downloaded ' + type + '.csv', 'success');
+  } catch (e) { toast('Export error: ' + e.message, 'error'); }
+}
+
+// "Export All" downloads each CSV sequentially. No real ZIP — that would
+// require a library; this is good enough for 5 orgs × 4 types = 20 files
+// and the user can multiselect-zip them locally if they want one archive.
+async function mpExportAllZip() {
+  if (!mpToken) { toast('Not logged in', 'error'); return; }
+  if (!mpOrgs.length) { toast('No businesses to export', 'error'); return; }
+  const btn = document.getElementById('mp-export-all-btn');
+  btn.textContent = '⏳ Exporting...'; btn.disabled = true;
+  try {
+    const types = ['sales', 'inventory', 'credits', 'staff'];
+    let count = 0;
+    for (const o of mpOrgs) {
+      for (const t of types) {
+        await mpDownloadOrgCSV(o.id, o.name, t);
+        count++;
+        await new Promise(r => setTimeout(r, 250)); // give browser time to handle each download
+      }
+    }
+    toast(`✅ ${count} files queued for download — check your Downloads folder`, 'success');
+  } catch (e) { toast('Export error: ' + e.message, 'error'); }
+  finally { btn.textContent = '📦 Export All as ZIP'; btn.disabled = false; }
+}
+
+function mpExportPaymentsCSV() {
+  if (!mpPayments.length) { toast('No payments to export', 'error'); return; }
+  const headers = ['Business', 'MP-ID', 'Plan', 'Amount', 'Method', 'Months', 'Status', 'Reference', 'Notes', 'Date'];
+  const quote = v => { if (v == null) return ''; const s = String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const rows = mpPayments.map(p => [
+    p.pa_organisations?.name || '',
+    p.pa_organisations?.user_id_number || '',
+    p.pa_plans?.name || p.plan_id || '',
+    p.amount, p.payment_method, p.months || 1, p.status,
+    p.payment_reference || p.campay_transaction_id || '',
+    p.notes || '',
+    p.processed_at || p.requested_at || p.created_at || ''
+  ]);
+  const csv = [headers.join(','), ...rows.map(r => r.map(quote).join(','))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `mp-payments-${new Date().toISOString().split('T')[0]}.csv`; a.click();
+  URL.revokeObjectURL(url);
+  toast('✅ Payments CSV downloaded', 'success');
+}
+
+// ── Broadcasts ────────────────────────────────────────────────
+async function mpSendBroadcast() {
+  if (!mpToken) { toast('Not logged in', 'error'); return; }
+  const title_en = document.getElementById('mp-bc-title-en').value.trim();
+  const title_fr = document.getElementById('mp-bc-title-fr').value.trim() || title_en;
+  const body_en  = document.getElementById('mp-bc-body-en').value.trim();
+  const body_fr  = document.getElementById('mp-bc-body-fr').value.trim() || body_en;
+  const target   = document.getElementById('mp-bc-target').value;
+  if (!title_en || !body_en) { toast('Title and message (English) are required', 'error'); return; }
+  if (!confirm('Send this broadcast to ' + (target === 'all' ? 'ALL Mon Partenaire businesses' : target + ' plan businesses') + '?')) return;
+
+  const btn = document.getElementById('mp-bc-send-btn');
+  btn.textContent = '⏳ Sending...'; btn.disabled = true;
+  try {
+    const r = await mpFetch('POST', '/subscriptions/admin/broadcast', { title_en, title_fr, body_en, body_fr, target });
+    const el = document.getElementById('mp-bc-result');
+    el.style.display = 'block';
+    el.innerHTML = '<div style="color:var(--green);font-weight:700">✅ Broadcast sent to ' + r.sent + ' businesses</div>';
+    toast('✅ Broadcast sent (' + r.sent + ' recipients)', 'success');
+    ['mp-bc-title-en','mp-bc-title-fr','mp-bc-body-en','mp-bc-body-fr'].forEach(id => document.getElementById(id).value = '');
+  } catch (e) { toast('Broadcast failed: ' + e.message, 'error'); }
+  finally { btn.textContent = '📢 Send Broadcast'; btn.disabled = false; }
 }
 
 // ── Plan helpers ──────────────────────────────────────────────
@@ -2469,8 +2846,9 @@ function mpPayMethodLabel(m) {
 }
 
 // ── Tabs ──────────────────────────────────────────────────────
+const MP_TABS = ['overview','businesses','pending','finance','csv','broadcasts','history'];
 function mpSwitchTab(tab) {
-  ['businesses','pending','history'].forEach(t => {
+  MP_TABS.forEach(t => {
     const btn   = document.getElementById('mp-tab-' + t);
     const panel = document.getElementById('mp-panel-' + t);
     const isActive = t === tab;
@@ -2487,24 +2865,27 @@ function mpSwitchTab(tab) {
 function mpFilterBiz() {
   const q  = (document.getElementById('mp-biz-search')?.value || '').toLowerCase();
   const sf = document.getElementById('mp-biz-status')?.value || '';
+  const pf = document.getElementById('mp-biz-plan')?.value   || '';
   const data = mpOrgs.filter(o =>
     (!q || o.name?.toLowerCase().includes(q) || o.user_id_number?.toLowerCase().includes(q)) &&
-    (!sf || o.subscription_status === sf)
+    (!sf || o.subscription_status === sf) &&
+    (!pf || o.plan_id === pf)
   );
   const tbody = document.getElementById('mp-biz-table');
   if (!tbody) return;
   if (!data.length) {
-    tbody.innerHTML = '<tr><td colspan="7"><div class="empty"><div class="empty-icon">🏪</div><div class="empty-text">No businesses found</div></div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10"><div class="empty"><div class="empty-icon">🏪</div><div class="empty-text">No businesses found</div></div></td></tr>';
     return;
   }
-  const now = new Date();
   tbody.innerHTML = data.map(o => {
     const plan    = o.pa_plans;
-    const expires = o.plan_expires_at ? new Date(o.plan_expires_at) : null;
-    const expiredNow = expires && expires < now;
-    const expiresStr = expires
-      ? `<span style="color:${expiredNow?'var(--red)':'var(--grey)'};font-size:11px">${fmtDate(o.plan_expires_at)}${expiredNow?' ⚠':''}</span>`
-      : '<span style="color:var(--grey);font-size:11px">—</span>';
+    const numCell = (v) => v === null || v === undefined
+      ? '<span style="color:var(--grey)">—</span>'
+      : `<span style="font-weight:700">${Number(v).toLocaleString()}</span>`;
+    const revCell = o.total_revenue === null || o.total_revenue === undefined
+      ? '<span style="color:var(--grey)">—</span>'
+      : `<span style="font-weight:700;color:var(--green)">${fmtFCFA(o.total_revenue)}</span>`;
+    const safeName = (o.name || '').replace(/'/g, "\\'");
 
     return `<tr>
       <td>
@@ -2512,25 +2893,74 @@ function mpFilterBiz() {
           <div class="avatar" style="background:var(--navy)">${(o.name||'?').charAt(0).toUpperCase()}</div>
           <div class="user-cell-info">
             <span class="user-cell-name">${o.name || '—'}</span>
-            <span class="user-cell-sub">${o.user_id_number || '—'}</span>
+            <span class="user-cell-sub">${mpStatusBadge(o.subscription_status)}</span>
           </div>
         </div>
       </td>
       <td style="font-family:monospace;font-size:12px;font-weight:700;color:var(--navy)">${o.user_id_number || '—'}</td>
       <td>${mpPlanBadge(plan)}</td>
       <td>${mpStatusBadge(o.subscription_status)}</td>
-      <td>${expiresStr}</td>
+      <td style="text-align:right">${numCell(o.sales_count)}</td>
+      <td style="text-align:right">${revCell}</td>
+      <td style="text-align:right">${numCell(o.products_count)}</td>
+      <td style="text-align:right">${numCell(o.users_count)}</td>
       <td style="font-size:12px;color:var(--grey)">${fmtDate(o.created_at)}</td>
       <td>
         <div class="action-row">
-          <button class="btn btn-gold btn-sm" onclick="mpOpenChangePlan('${o.id}','${o.name?.replace(/'/g,'')}','${o.subscription_status}','${o.plan_id||''}')">⚙️ Plan</button>
+          <button class="btn btn-sm" onclick="mpOpenDetail('${o.id}','${safeName}')">👁 Details</button>
+          <button class="btn btn-gold btn-sm" onclick="mpOpenChangePlan('${o.id}','${safeName}','${o.subscription_status}','${o.plan_id||''}')">⚙️ Plan</button>
           ${o.subscription_status !== 'suspended'
-            ? `<button class="btn btn-sm" style="color:var(--red);border-color:var(--red)" onclick="mpSuspend('${o.id}','${o.name?.replace(/'/g,'')}')">Suspend</button>`
-            : `<button class="btn btn-green btn-sm" onclick="mpReactivate('${o.id}','${o.name?.replace(/'/g,'')}')">Reactivate</button>`}
+            ? `<button class="btn btn-sm" style="color:var(--red);border-color:var(--red)" onclick="mpSuspend('${o.id}','${safeName}')">Suspend</button>`
+            : `<button class="btn btn-green btn-sm" onclick="mpReactivate('${o.id}','${safeName}')">Reactivate</button>`}
         </div>
       </td>
     </tr>`;
   }).join('');
+}
+
+// ── Business detail modal ─────────────────────────────────────
+async function mpOpenDetail(orgId, orgName) {
+  if (!mpToken) { toast('Not logged in', 'error'); return; }
+  document.getElementById('mp-detail-title').textContent = orgName || 'Business';
+  document.getElementById('mp-detail-sub').textContent = 'Loading details…';
+  document.getElementById('mp-detail-body').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  openModal('modal-mp-detail');
+  try {
+    const r = await mpFetch('GET', '/subscriptions/admin/orgs/' + orgId + '/details');
+    const d = r.data || {};
+    const org = d.org || {};
+    document.getElementById('mp-detail-sub').textContent = (org.user_id_number || '—') + ' · ' + (org.subscription_status || '—');
+
+    const staffRows = (d.staff || []).map(u =>
+      `<tr><td><strong>${u.full_name}</strong></td><td style="font-size:12px">${u.phone || '—'}</td><td><span class="badge badge-grey">${u.role}</span></td><td>${u.is_active ? '✅' : '⛔'}</td><td style="font-size:11px;color:var(--grey)">${u.last_login ? fmtDate(u.last_login) : '—'}</td></tr>`
+    ).join('');
+    const salesRows = (d.recent_sales || []).map(s =>
+      `<tr><td style="font-family:monospace;font-size:12px">${s.sale_number || s.id.slice(0,8)}</td><td>${fmtDate(s.sale_date || s.created_at)}</td><td style="text-align:right;font-weight:700">${fmtFCFA(s.total_amount)}</td><td><span class="badge ${s.payment_status === 'paid' ? 'badge-green' : s.payment_status === 'partial' ? 'badge-amber' : 'badge-red'}">${s.payment_status || '—'}</span></td></tr>`
+    ).join('');
+    const histRows = (d.subscription_history || []).map(p =>
+      `<tr><td>${p.pa_plans?.name || p.plan_id || '—'}</td><td style="font-weight:700">${fmtFCFA(p.amount)}</td><td style="font-size:12px">${mpPayMethodLabel(p.payment_method)}</td><td><span class="badge ${p.status === 'approved' ? 'badge-green' : p.status === 'rejected' ? 'badge-red' : 'badge-amber'}">${p.status}</span></td><td style="font-size:11px;color:var(--grey)">${fmtDate(p.processed_at || p.created_at)}</td></tr>`
+    ).join('');
+
+    document.getElementById('mp-detail-body').innerHTML = `
+      <div class="finance-grid" style="margin-bottom:16px">
+        <div class="finance-card"><div class="finance-card-label">Inventory Items</div><div class="finance-card-value">${(d.inventory_count || 0).toLocaleString()}</div></div>
+        <div class="finance-card"><div class="finance-card-label">Total Credit Owed</div><div class="finance-card-value" style="color:var(--red)">${fmtFCFA(d.total_credit_owed)}</div></div>
+        <div class="finance-card"><div class="finance-card-label">Staff Members</div><div class="finance-card-value">${(d.staff || []).length}</div></div>
+        <div class="finance-card"><div class="finance-card-label">Plan</div><div class="finance-card-value" style="font-size:16px">${org.pa_plans?.name || org.plan_id || '—'}</div></div>
+      </div>
+      <div class="table-wrap" style="margin-bottom:14px"><div class="table-head"><div class="table-title">Staff (${(d.staff || []).length})</div></div>
+        <table><thead><tr><th>Name</th><th>Phone</th><th>Role</th><th>Active</th><th>Last Login</th></tr></thead><tbody>${staffRows || '<tr><td colspan="5" style="text-align:center;color:var(--grey)">No staff</td></tr>'}</tbody></table>
+      </div>
+      <div class="table-wrap" style="margin-bottom:14px"><div class="table-head"><div class="table-title">Recent Sales (last 10)</div></div>
+        <table><thead><tr><th>#</th><th>Date</th><th style="text-align:right">Amount</th><th>Status</th></tr></thead><tbody>${salesRows || '<tr><td colspan="4" style="text-align:center;color:var(--grey)">No sales yet</td></tr>'}</tbody></table>
+      </div>
+      <div class="table-wrap"><div class="table-head"><div class="table-title">Subscription History</div></div>
+        <table><thead><tr><th>Plan</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th></tr></thead><tbody>${histRows || '<tr><td colspan="5" style="text-align:center;color:var(--grey)">No payments</td></tr>'}</tbody></table>
+      </div>
+    `;
+  } catch (e) {
+    document.getElementById('mp-detail-body').innerHTML = '<div style="padding:20px;color:var(--red)">❌ ' + e.message + '</div>';
+  }
 }
 
 // ── Render: Pending payments ──────────────────────────────────
