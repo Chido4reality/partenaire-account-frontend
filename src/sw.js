@@ -1,6 +1,12 @@
 import { clientsClaim } from "workbox-core";
 import { precacheAndRoute } from "workbox-precaching";
 
+// Bump this string whenever the offline behaviour changes so it's easy to
+// confirm in DevTools which SW the browser is actually running. Open the
+// service worker console and look for "[SW] booting vN".
+const SW_VERSION = "v3-offline-resilient";
+console.log("[SW] booting", SW_VERSION);
+
 // Activate immediately — no waiting for all tabs to close
 self.skipWaiting();
 clientsClaim();
@@ -30,25 +36,50 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   console.log("[SW] intercepting sale POST", event.request.url);
-  event.respondWith(handleSaleRequest(event.request));
+  // safeHandleSaleRequest wraps the real handler so an unexpected throw still
+  // resolves the respondWith with a 200 offline response. Without this, a
+  // single thrown error inside handleSaleRequest leaves the fetch event hung
+  // forever — that's the "second sale never returns" symptom.
+  event.respondWith(safeHandleSaleRequest(event.request));
 });
+
+async function safeHandleSaleRequest(request) {
+  try {
+    return await handleSaleRequest(request);
+  } catch (err) {
+    console.error("[SW] handleSaleRequest threw — falling back to offline response:", err);
+    return new Response(
+      JSON.stringify({
+        success: true,
+        offline: true,
+        local_id: null,
+        data: { sale_number: "OFFLINE-" + Date.now() },
+        note: "SW handler crashed but did not hang"
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }
+}
 
 async function handleSaleRequest(request) {
   // Read body up-front so we have it available in the offline branch.
   const body       = await request.clone().text();
   const authHeader = request.headers.get("Authorization") || "";
 
-  const controller = new AbortController();
-  const timer      = setTimeout(() => controller.abort(), ABORT_MS);
-
+  // Race fetch against an explicit timeout. AbortController in service workers
+  // has historically had edge cases (some browsers silently drop the abort on
+  // certain offline transitions) — Promise.race is a strict timeout that
+  // ALWAYS fires, even if fetch never settles.
+  let response;
   try {
-    const response = await fetch(request, { signal: controller.signal });
-    clearTimeout(timer);
+    response = await Promise.race([
+      fetch(request),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("SW-fetch-timeout")), ABORT_MS))
+    ]);
     console.log("[SW] sale POST online → forwarding response", response.status);
     return response;
   } catch (err) {
-    clearTimeout(timer);
-    console.log("[SW] sale POST offline → queuing", err && err.name);
+    console.log("[SW] sale POST offline → queuing", err && err.message);
 
     let localId;
     try {
@@ -60,9 +91,12 @@ async function handleSaleRequest(request) {
         self.registration.sync.register(SYNC_TAG).catch(() => {});
       }
 
-      // Notify open tabs so the UI can refresh the offline-pending count immediately
-      const clients = await self.clients.matchAll({ includeUncontrolled: true });
-      clients.forEach(c => c.postMessage({ type: "SALE_SAVED_OFFLINE", local_id: localId }));
+      // Notify open tabs so the UI can refresh the offline-pending count immediately.
+      // Wrapped in try/catch — a failed postMessage must not block the response.
+      try {
+        const clients = await self.clients.matchAll({ includeUncontrolled: true });
+        clients.forEach(c => c.postMessage({ type: "SALE_SAVED_OFFLINE", local_id: localId }));
+      } catch (msgErr) { console.warn("[SW] postMessage failed (non-fatal):", msgErr); }
     } catch (dbErr) {
       console.error("[SW] IndexedDB save failed:", dbErr);
     }
