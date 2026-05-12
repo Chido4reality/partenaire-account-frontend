@@ -1,4 +1,4 @@
-﻿import BarcodeInput from "../components/common/BarcodeInput";
+﻿﻿import BarcodeInput from "../components/common/BarcodeInput";
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
@@ -129,13 +129,13 @@ export default function TransfersPage() {
 
   const resetNew = () => { setMode("list"); setStep(1); setFromLoc(""); setToLoc(""); setNotes(""); setScannedItems([]); };
 
-  // â"€â"€ NEW TRANSFER FLOW â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+  // -- NEW TRANSFER FLOW --------------------------------------
   if (mode === "new") {
     return (
       <div style={{ padding: 24, maxWidth: 700, margin: "0 auto" }}>
         {/* Header with steps */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 28 }}>
-          <button onClick={resetNew} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 18 }}>â†</button>
+          <button onClick={resetNew} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 18 }}>{"←"}</button>
           <h1 className="page-title">{lang === "en" ? "New Transfer" : "Nouveau transfert"}</h1>
           <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
             {[1,2,3].map(s => (
@@ -160,7 +160,7 @@ export default function TransfersPage() {
               </select>
             </div>
 
-            <div style={{ textAlign: "center", color: "var(--text-muted)", margin: "8px 0", fontSize: 20 }}>â†"</div>
+            <div style={{ textAlign: "center", color: "var(--text-muted)", margin: "8px 0", fontSize: 20 }}>></div>
 
             <div className="form-group">
               <label className="label">{lang === "en" ? "TO (destination)" : "VERS (destination)"}</label>
@@ -180,7 +180,7 @@ export default function TransfersPage() {
             <button className="btn btn-primary btn-block btn-lg"
               disabled={!fromLoc && !toLoc}
               onClick={() => setStep(2)}>
-              {lang === "en" ? "Next â€" Scan items" : "Suivant â€" Scanner les articles"} â†'
+              {lang === "en" ? "Next - Scan items" : "Suivant - Scanner les articles"} >
             </button>
           </div>
         )}
@@ -192,7 +192,7 @@ export default function TransfersPage() {
               {lang === "en" ? "Scan or search items" : "Scanner ou chercher les articles"}
             </div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 20 }}>
-              {locations.find(l => l.id === fromLoc)?.name || "External"} â†' {locations.find(l => l.id === toLoc)?.name || "External"}
+              {locations.find(l => l.id === fromLoc)?.name || "External"} > {locations.find(l => l.id === toLoc)?.name || "External"}
             </div>
 
             {/* Scan input */}
@@ -260,11 +260,11 @@ export default function TransfersPage() {
             )}
 
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setStep(1)}>â† {lang === "en" ? "Back" : "Retour"}</button>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setStep(1)}>{"←"} {lang === "en" ? "Back" : "Retour"}</button>
               <button className="btn btn-primary" style={{ flex: 2 }}
                 disabled={scannedItems.length === 0}
                 onClick={() => setStep(3)}>
-                {lang === "en" ? "Review & confirm" : "Verifier et confirmer"} â†'
+                {lang === "en" ? "Review & confirm" : "Verifier et confirmer"} >
               </button>
             </div>
           </div>
@@ -283,7 +283,7 @@ export default function TransfersPage() {
                   <div style={{ color: "var(--text-muted)", fontSize: 11, marginBottom: 4 }}>FROM</div>
                   <div style={{ fontWeight: 600 }}>{locations.find(l => l.id === fromLoc)?.name || "External"}</div>
                 </div>
-                <div style={{ fontSize: 24, color: "var(--text-muted)" }}>â†'</div>
+                <div style={{ fontSize: 24, color: "var(--text-muted)" }}>></div>
                 <div style={{ textAlign: "right" }}>
                   <div style={{ color: "var(--text-muted)", fontSize: 11, marginBottom: 4 }}>TO</div>
                   <div style={{ fontWeight: 600 }}>{locations.find(l => l.id === toLoc)?.name || "External"}</div>
@@ -303,7 +303,7 @@ export default function TransfersPage() {
             </div>
 
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setStep(2)}>â† {lang === "en" ? "Back" : "Retour"}</button>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setStep(2)}>{"←"} {lang === "en" ? "Back" : "Retour"}</button>
               <button className="btn btn-success" style={{ flex: 2 }}
                 disabled={createMutation.isPending}
                 onClick={() => createMutation.mutate()}>
@@ -316,7 +316,7 @@ export default function TransfersPage() {
     );
   }
 
-  // â"€â"€ TRANSFER LIST â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+  // -- TRANSFER LIST ------------------------------------------
   return (
     <div style={{ padding: 24, maxWidth: 1000, margin: "0 auto" }}>
       <div className="page-header">
@@ -364,7 +364,7 @@ export default function TransfersPage() {
                       <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: sc.bg, color: sc.color }}>{tr.status}</span>
                     </div>
                     <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>
-                      {fromName} <span style={{ color: "var(--text-muted)" }}>â†'</span> {toName}
+                      {fromName} <span style={{ color: "var(--text-muted)" }}>></span> {toName}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                       {formatDate(tr.transfer_date)}
