@@ -9,6 +9,10 @@
   <link rel="icon" href="/icon.svg" />
   <link rel="apple-touch-icon" href="/icon.svg" />
 
+  <!-- Chart.js — used by the MP Finance section. defer so it doesn't block
+       theme/auth bootstrap. Charts wait on window.Chart in their loader. -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+
   <!-- Apply persisted theme BEFORE first paint to avoid a FOUC flicker.
        Inline so it runs synchronously while the head is parsing. -->
   <script>
@@ -416,6 +420,234 @@
       to { opacity: 1; transform: translateY(0); }
     }
 
+    /* ───────────────── TABLES ───────────────── */
+    .stat-strip {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px; margin-bottom: 16px;
+    }
+    .stat-strip .stat-card { padding: 12px 14px; }
+    .stat-strip .stat-value { font-size: 20px; margin-top: 2px; }
+    .stat-strip .stat-card.clickable { cursor: pointer; transition: border-color 0.15s; }
+    .stat-strip .stat-card.clickable:hover { border-color: var(--accent); }
+
+    .toolbar {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      margin-bottom: 12px;
+    }
+    .toolbar input, .toolbar select { padding: 8px 12px; font-size: 13px; }
+    .toolbar .grow { flex: 1; min-width: 200px; }
+    .toolbar-right { margin-left: auto; display: flex; gap: 8px; }
+
+    .table-wrap {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    table.data {
+      width: 100%; border-collapse: collapse; font-size: 13px;
+    }
+    table.data th, table.data td {
+      padding: 11px 14px; text-align: left;
+      border-bottom: 1px solid var(--border-subtle);
+      vertical-align: middle;
+    }
+    table.data th {
+      font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+      text-transform: uppercase; color: var(--text-muted);
+      background: var(--bg-tertiary);
+      position: sticky; top: 0;
+    }
+    table.data tr:last-child td { border-bottom: none; }
+    table.data tr:hover td { background: var(--bg-tertiary); }
+    table.data .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    table.data .num  { text-align: right; font-variant-numeric: tabular-nums; }
+    table.data .empty {
+      text-align: center; padding: 36px 16px; color: var(--text-muted); font-size: 13px;
+    }
+
+    /* Plan + status badges */
+    .badge-plan { padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; }
+    .badge-plan.silver  { background: var(--plan-silver-bg);  color: var(--plan-silver-text); }
+    .badge-plan.gold    { background: var(--plan-gold-bg);    color: var(--plan-gold-text); }
+    .badge-plan.premium { background: var(--plan-premium-bg); color: var(--plan-premium-text); }
+    .badge-plan.none    { background: var(--bg-tertiary);     color: var(--text-muted); }
+
+    .pill {
+      padding: 3px 9px; border-radius: 12px;
+      font-size: 11px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase;
+      white-space: nowrap; display: inline-block;
+    }
+    .pill.active    { background: rgba(16,185,129,0.15);  color: var(--success); }
+    .pill.trial     { background: var(--plan-trial-bg);   color: var(--plan-trial-text); }
+    .pill.pending   { background: rgba(59,130,246,0.15);  color: var(--info); }
+    .pill.processing{ background: rgba(59,130,246,0.15);  color: var(--info); }
+    .pill.approved  { background: rgba(16,185,129,0.15);  color: var(--success); }
+    .pill.rejected  { background: rgba(239,68,68,0.15);   color: var(--danger); }
+    .pill.suspended { background: rgba(148,163,184,0.15); color: var(--text-muted); }
+    .pill.expired   { background: rgba(239,68,68,0.15);   color: var(--danger); }
+
+    /* Row action dropdown */
+    .row-actions { position: relative; }
+    .row-actions-trigger {
+      width: 28px; height: 28px; border-radius: 6px;
+      background: var(--bg-tertiary); border: 1px solid var(--border);
+      color: var(--text-secondary); cursor: pointer; font-size: 14px;
+      display: inline-grid; place-items: center; line-height: 1;
+    }
+    .row-actions-trigger:hover { background: var(--bg-secondary); color: var(--text-primary); }
+    .row-actions-menu {
+      position: absolute; right: 0; top: calc(100% + 4px); z-index: 50;
+      background: var(--bg-secondary); border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow);
+      min-width: 200px;
+      padding: 6px; display: none;
+    }
+    .row-actions-menu.open { display: block; }
+    .row-actions-menu button {
+      display: flex; align-items: center; gap: 8px;
+      width: 100%; padding: 8px 12px;
+      border: none; background: transparent; color: var(--text-secondary);
+      font-size: 13px; text-align: left; cursor: pointer; border-radius: 6px;
+    }
+    .row-actions-menu button:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+    .row-actions-menu button.danger { color: var(--danger); }
+    .row-actions-menu button.danger:hover { background: rgba(239,68,68,0.08); }
+    .row-actions-menu hr { border: none; border-top: 1px solid var(--border-subtle); margin: 4px 6px; }
+
+    /* ───────────────── MODAL ───────────────── */
+    .modal-backdrop {
+      position: fixed; inset: 0; z-index: 1000;
+      background: rgba(0, 0, 0, 0.55);
+      display: none; align-items: center; justify-content: center;
+      padding: 24px;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal-shell {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      width: 100%; max-width: 520px;
+      max-height: calc(100vh - 48px);
+      overflow-y: auto;
+      box-shadow: var(--shadow);
+    }
+    .modal-shell.wide { max-width: 820px; }
+    .modal-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 18px 22px; border-bottom: 1px solid var(--border-subtle);
+    }
+    .modal-title { font-size: 16px; font-weight: 700; }
+    .modal-sub { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+    .modal-close {
+      background: transparent; border: none; cursor: pointer;
+      width: 32px; height: 32px; border-radius: 6px;
+      color: var(--text-muted); font-size: 18px; line-height: 1;
+    }
+    .modal-close:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+    .modal-body { padding: 22px; }
+    .modal-foot {
+      display: flex; gap: 10px; justify-content: flex-end;
+      padding: 16px 22px; border-top: 1px solid var(--border-subtle);
+    }
+    .modal-foot .btn { min-width: 100px; }
+
+    .field { margin-bottom: 14px; }
+    .field label {
+      display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+      text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px;
+    }
+    .field input, .field select, .field textarea { width: 100%; }
+    .field textarea { min-height: 70px; resize: vertical; }
+
+    .copy-row {
+      display: flex; gap: 8px; align-items: center;
+    }
+    .copy-row input {
+      flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: 0.5px;
+    }
+    .one-time-warning {
+      background: rgba(245, 158, 11, 0.12);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      color: var(--warning);
+      padding: 10px 12px; border-radius: var(--radius-sm);
+      font-size: 12px; margin-bottom: 12px;
+    }
+
+    /* Detail modal tabs */
+    .detail-tabs {
+      display: flex; gap: 4px; padding: 0 18px;
+      border-bottom: 1px solid var(--border-subtle);
+      flex-wrap: wrap;
+    }
+    .detail-tab {
+      padding: 10px 14px; background: transparent; border: none;
+      color: var(--text-secondary); font-size: 13px; font-weight: 500;
+      cursor: pointer; border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+    .detail-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 700; }
+    .detail-tab:hover:not(.active) { color: var(--text-primary); }
+    .detail-pane { display: none; padding: 22px; }
+    .detail-pane.active { display: block; }
+
+    .health-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px; margin-bottom: 16px;
+    }
+    .health-card {
+      background: var(--bg-tertiary); border-radius: var(--radius-sm);
+      padding: 12px 14px;
+    }
+    .health-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; }
+    .health-value { font-size: 18px; font-weight: 700; margin-top: 4px; }
+    .health-value.up   { color: var(--success); }
+    .health-value.down { color: var(--danger); }
+
+    /* Tab bar for sections (Subscriptions: All / Pending / ...) */
+    .section-tabs {
+      display: flex; gap: 4px; border-bottom: 1px solid var(--border-subtle);
+      margin-bottom: 14px;
+    }
+    .section-tab {
+      padding: 9px 14px; background: transparent; border: none;
+      color: var(--text-secondary); font-size: 13px; font-weight: 500;
+      cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+    }
+    .section-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 700; }
+    .section-tab:hover:not(.active) { color: var(--text-primary); }
+    .section-tab .tab-count {
+      display: inline-block; margin-left: 6px;
+      padding: 1px 6px; border-radius: 8px; font-size: 10px;
+      background: var(--bg-tertiary); color: var(--text-secondary);
+    }
+
+    .refresh-meta {
+      font-size: 11px; color: var(--text-muted); margin-left: 8px;
+    }
+
+    /* Charts row */
+    .charts-row {
+      display: grid; grid-template-columns: 2fr 1fr; gap: 16px;
+      margin: 20px 0;
+    }
+    @media (max-width: 900px) { .charts-row { grid-template-columns: 1fr; } }
+    .chart-card { padding: 18px 20px; }
+    .chart-card-title { font-size: 14px; font-weight: 700; margin-bottom: 12px; }
+    .chart-empty { text-align: center; color: var(--text-muted); font-size: 13px; padding: 40px 0; }
+    .chart-canvas-host { position: relative; height: 280px; }
+
+    /* MoM growth badge inline */
+    .delta {
+      font-size: 12px; font-weight: 700; padding: 2px 7px; border-radius: 8px;
+      margin-left: 8px;
+    }
+    .delta.up   { background: rgba(16,185,129,0.15); color: var(--success); }
+    .delta.down { background: rgba(239,68,68,0.15);  color: var(--danger); }
+    .delta.flat { background: var(--bg-tertiary);    color: var(--text-muted); }
+
     /* ───────────────── RESPONSIVE ───────────────── */
     @media (max-width: 900px) {
       #app-shell.active { grid-template-columns: 1fr; }
@@ -523,10 +755,141 @@
         </div>
       </section>
 
-      <!-- PLACEHOLDER SECTIONS (rendered identically by JS) -->
-      <section class="route" id="route-businesses"></section>
-      <section class="route" id="route-subscriptions"></section>
-      <section class="route" id="route-mp-finance"></section>
+      <!-- BUSINESSES -->
+      <section class="route" id="route-businesses">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Businesses</div>
+            <div class="page-sub">Mon Partenaire orgs — plans, status, owner controls.</div>
+          </div>
+          <div style="display:flex; gap:8px">
+            <button class="btn" id="biz-refresh">Refresh</button>
+            <button class="btn" id="biz-export-all">Export all (ZIP)</button>
+          </div>
+        </div>
+
+        <div class="stat-strip" id="biz-strip">
+          <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">Active</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">Trial</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">Suspended</div><div class="stat-value muted">…</div></div>
+        </div>
+
+        <div class="toolbar">
+          <input type="search" id="biz-search" class="grow" placeholder="Search by name or MP-ID…" />
+          <select id="biz-plan">
+            <option value="">All plans</option>
+            <option value="silver">Silver</option>
+            <option value="gold">Gold</option>
+            <option value="premium">Premium</option>
+          </select>
+          <select id="biz-status">
+            <option value="">All status</option>
+            <option value="active">Active</option>
+            <option value="trial">Trial</option>
+            <option value="suspended">Suspended</option>
+          </select>
+        </div>
+
+        <div class="table-wrap">
+          <table class="data" id="biz-table">
+            <thead><tr>
+              <th>MP-ID</th><th>Business</th><th>Plan</th><th>Status</th>
+              <th class="num">Users</th><th class="num">Sales</th><th class="num">Revenue</th>
+              <th>Joined</th><th>Last active</th><th style="text-align:right">Actions</th>
+            </tr></thead>
+            <tbody id="biz-tbody">
+              <tr><td class="empty" colspan="10">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- SUBSCRIPTIONS -->
+      <section class="route" id="route-subscriptions">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Subscriptions</div>
+            <div class="page-sub">Approve, reject, or retry CamPay on subscription payments.</div>
+          </div>
+          <div style="display:flex; gap:8px">
+            <button class="btn" id="subs-export">Export payment history</button>
+          </div>
+        </div>
+
+        <div class="stat-strip" id="subs-strip">
+          <div class="stat-card clickable" data-tab="pending"><div class="stat-label">Pending</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">Approved this month</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">Rejected this month</div><div class="stat-value muted">…</div></div>
+        </div>
+
+        <div class="section-tabs" id="subs-tabs">
+          <button class="section-tab active"   data-subs-tab="pending">Pending  <span class="tab-count" id="cnt-pending">·</span></button>
+          <button class="section-tab"          data-subs-tab="approved">Approved <span class="tab-count" id="cnt-approved">·</span></button>
+          <button class="section-tab"          data-subs-tab="rejected">Rejected <span class="tab-count" id="cnt-rejected">·</span></button>
+          <button class="section-tab"          data-subs-tab="all">All <span class="tab-count" id="cnt-all">·</span></button>
+          <span class="refresh-meta" id="subs-refresh-meta"></span>
+        </div>
+
+        <div class="table-wrap">
+          <table class="data">
+            <thead><tr>
+              <th>Date</th><th>Business</th><th>Plan</th>
+              <th class="num">Amount</th><th>Method</th><th>Status</th>
+              <th>Notes</th><th style="text-align:right">Actions</th>
+            </tr></thead>
+            <tbody id="subs-tbody">
+              <tr><td class="empty" colspan="8">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- MP FINANCE -->
+      <section class="route" id="route-mp-finance">
+        <div class="page-head">
+          <div>
+            <div class="page-title">MP Finance</div>
+            <div class="page-sub">Revenue, MRR, ARPU, and trends for the Mon Partenaire subscription business.</div>
+          </div>
+          <button class="btn" id="finance-refresh">Refresh</button>
+        </div>
+
+        <div class="stat-strip" id="finance-strip">
+          <div class="stat-card"><div class="stat-label">Total revenue</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">MTD revenue</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">MRR</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">ARPU (MTD)</div><div class="stat-value muted">…</div></div>
+        </div>
+
+        <div class="charts-row">
+          <div class="card chart-card">
+            <div class="chart-card-title">Last 6 months revenue</div>
+            <div class="chart-canvas-host"><canvas id="chart-monthly"></canvas></div>
+          </div>
+          <div class="card chart-card">
+            <div class="chart-card-title">Revenue by payment method</div>
+            <div class="chart-canvas-host" id="chart-donut-host"><canvas id="chart-donut"></canvas></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="settings-card-title">Payment history</div>
+          <div class="settings-card-sub">All approved payments. Use Subscriptions tab to manage pending.</div>
+          <div class="table-wrap" style="margin-top:12px">
+            <table class="data">
+              <thead><tr>
+                <th>Date</th><th>Business</th><th>Plan</th>
+                <th class="num">Amount</th><th>Method</th><th>Status</th>
+              </tr></thead>
+              <tbody id="finance-tbody">
+                <tr><td class="empty" colspan="6">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
       <section class="route" id="route-marketplace-users"></section>
       <section class="route" id="route-verifications"></section>
       <section class="route" id="route-orders"></section>
@@ -604,6 +967,7 @@
   </div>
 
   <div id="toast-host"></div>
+  <div id="modal-host" class="modal-backdrop"></div>
 
   <script>
   (function () {
@@ -619,11 +983,8 @@
     const PW_RE = /^[A-Za-z0-9]{8,}$/;
 
     // Maps route names to the Phase they ship in. Used to render placeholder
-    // copy. Dashboard and Settings are absent because they're working in A.
+    // copy. Routes implemented in this or earlier phases are absent.
     const ROUTE_PLACEHOLDERS = {
-      'businesses':           { phase: 'B', icon: '🏪', label: 'Businesses',          text: 'List of MP businesses with plan, status, sales, and account control.' },
-      'subscriptions':        { phase: 'B', icon: '💳', label: 'Subscriptions',       text: 'Pending payment approvals, plan changes, and CamPay retries.' },
-      'mp-finance':           { phase: 'B', icon: '📊', label: 'MP Finance',          text: 'Subscription revenue, payment-method breakdown, and monthly trends.' },
       'marketplace-users':    { phase: 'C', icon: '👥', label: 'Marketplace users',   text: 'Dozie buyer and seller accounts with verification and status.' },
       'verifications':        { phase: 'C', icon: '✅', label: 'Verifications',       text: 'Seller badge approvals and KYC review queue.' },
       'orders':               { phase: 'C', icon: '🛒', label: 'Orders',              text: 'Dozie orders, escrow status, and release controls.' },
@@ -753,10 +1114,15 @@
         a.classList.toggle('active', a.getAttribute('data-route') === route);
       });
       // Per-route side effects
-      if (route === 'dashboard') loadDashboard();
-      if (route === 'settings')  loadSettings();
+      if (route === 'dashboard')     loadDashboard();
+      if (route === 'settings')      loadSettings();
+      if (route === 'businesses')    loadBusinesses();
+      if (route === 'subscriptions') loadSubscriptions();
+      if (route === 'mp-finance')    loadFinance();
       // Render placeholders lazily on first visit (cheap; idempotent).
       if (ROUTE_PLACEHOLDERS[route]) renderPlaceholder(route);
+      // Stop subs auto-refresh when navigating away from subscriptions tab.
+      if (route !== 'subscriptions') stopSubsAutoRefresh();
     }
 
     function renderPlaceholder(route) {
@@ -1045,6 +1411,886 @@
       location.reload();
     }
 
+    // ────────────────────── MODAL SYSTEM ──────────────────────
+    //
+    // openModal({ title, sub?, content (HTML string or DOM node), wide?,
+    //             primary?: { label, onClick(close) }, secondary?: { label } })
+    // close()  — programmatically dismiss whatever modal is open.
+    // isModalOpen()
+    //
+    // One container at #modal-host. Backdrop click closes (unless modal sets
+    // .lock). Escape closes. Inside content can call window.modalClose().
+    let _modalLocked = false;
+    function isModalOpen() {
+      return $('modal-host').classList.contains('open');
+    }
+    function closeModal() {
+      const host = $('modal-host');
+      host.classList.remove('open');
+      host.innerHTML = '';
+      _modalLocked = false;
+    }
+    window.modalClose = closeModal;
+
+    function openModal(opts) {
+      opts = opts || {};
+      const host = $('modal-host');
+      const shell = document.createElement('div');
+      shell.className = 'modal-shell' + (opts.wide ? ' wide' : '');
+
+      const head = document.createElement('div');
+      head.className = 'modal-head';
+      head.innerHTML =
+        '<div>' +
+          '<div class="modal-title">' + escapeHtml(opts.title || '') + '</div>' +
+          (opts.sub ? '<div class="modal-sub">' + escapeHtml(opts.sub) + '</div>' : '') +
+        '</div>' +
+        '<button class="modal-close" type="button" aria-label="Close">✕</button>';
+      shell.appendChild(head);
+
+      const body = document.createElement('div');
+      body.className = 'modal-body';
+      if (typeof opts.content === 'string') body.innerHTML = opts.content;
+      else if (opts.content) body.appendChild(opts.content);
+      shell.appendChild(body);
+
+      if (opts.primary || opts.secondary) {
+        const foot = document.createElement('div'); foot.className = 'modal-foot';
+        if (opts.secondary) {
+          const b = document.createElement('button');
+          b.type = 'button'; b.className = 'btn';
+          b.textContent = opts.secondary.label || 'Cancel';
+          b.addEventListener('click', () => {
+            if (opts.secondary.onClick) opts.secondary.onClick(closeModal);
+            else closeModal();
+          });
+          foot.appendChild(b);
+        }
+        if (opts.primary) {
+          const b = document.createElement('button');
+          b.type = 'button'; b.className = 'btn btn-primary';
+          b.textContent = opts.primary.label || 'OK';
+          b.addEventListener('click', () => {
+            if (opts.primary.onClick) opts.primary.onClick(closeModal);
+            else closeModal();
+          });
+          foot.appendChild(b);
+        }
+        shell.appendChild(foot);
+      }
+
+      // Backdrop / close handlers
+      host.innerHTML = '';
+      host.appendChild(shell);
+      host.classList.add('open');
+      _modalLocked = !!opts.lock;
+      head.querySelector('.modal-close').addEventListener('click', closeModal);
+      host.addEventListener('click', (e) => {
+        if (e.target === host && !_modalLocked) closeModal();
+      }, { once: true });
+      return { close: closeModal, body, shell };
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && isModalOpen() && !_modalLocked) closeModal();
+    });
+
+    // ────────────────────── BUSINESSES ──────────────────────
+    let _bizCache = [];
+    let _bizFilter = { search: '', plan: '', status: '' };
+    let _bizSearchTimer = null;
+
+    function planBadgeHtml(plan) {
+      const p = String(plan || '').toLowerCase();
+      const cls = ['silver','gold','premium'].includes(p) ? p : 'none';
+      const label = p ? (p.charAt(0).toUpperCase() + p.slice(1)) : '—';
+      return '<span class="badge-plan ' + cls + '">' + escapeHtml(label) + '</span>';
+    }
+    function statusPillHtml(s) {
+      const v = String(s || '').toLowerCase();
+      const cls = ['active','trial','pending','suspended','expired','approved','rejected','processing'].includes(v) ? v : '';
+      return '<span class="pill ' + cls + '">' + escapeHtml(v || '—') + '</span>';
+    }
+    function fmtDate(iso) {
+      if (!iso) return '—';
+      const d = new Date(iso); if (isNaN(d.getTime())) return '—';
+      return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    }
+
+    async function loadBusinesses() {
+      const tbody = $('biz-tbody');
+      tbody.innerHTML = '<tr><td class="empty" colspan="10">Loading…</td></tr>';
+      try {
+        const q = new URLSearchParams();
+        if (_bizFilter.search) q.set('search', _bizFilter.search);
+        if (_bizFilter.plan)   q.set('plan', _bizFilter.plan);
+        if (_bizFilter.status) q.set('status', _bizFilter.status);
+        const path = '/admin/businesses' + (q.toString() ? '?' + q.toString() : '');
+        const res = await apiAdmin('GET', path);
+        _bizCache = (res && res.data) || [];
+        renderBusinessesTable();
+        renderBusinessesStrip();
+      } catch (e) {
+        tbody.innerHTML = '<tr><td class="empty" colspan="10">Error: ' + escapeHtml(e.message) + '</td></tr>';
+      }
+    }
+
+    function renderBusinessesStrip() {
+      const total = _bizCache.length;
+      const counts = _bizCache.reduce((acc, o) => {
+        const s = (o.status || '').toLowerCase();
+        acc[s] = (acc[s] || 0) + 1;
+        return acc;
+      }, {});
+      const cards = $('biz-strip').children;
+      const set = (i, n) => {
+        const v = cards[i].querySelector('.stat-value');
+        v.textContent = String(n);
+        v.classList.remove('muted');
+      };
+      set(0, total);
+      set(1, counts['active'] || 0);
+      set(2, counts['trial'] || 0);
+      set(3, counts['suspended'] || 0);
+    }
+
+    function renderBusinessesTable() {
+      const tbody = $('biz-tbody');
+      if (!_bizCache.length) {
+        tbody.innerHTML = '<tr><td class="empty" colspan="10">No businesses match the current filters.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = _bizCache.map(o => {
+        const id = escapeHtml(o.id);
+        const safeName = escapeHtml(o.name || '');
+        const safeMp   = escapeHtml(o.mp_id || '—');
+        const isSuspended = (o.status || '').toLowerCase() === 'suspended';
+        return '<tr>' +
+          '<td class="mono">' + safeMp + '</td>' +
+          '<td>' + safeName +
+            (o.owner_name ? '<div style="font-size:11px;color:var(--text-muted)">' + escapeHtml(o.owner_name) + '</div>' : '') +
+          '</td>' +
+          '<td>' + planBadgeHtml(o.plan) + '</td>' +
+          '<td>' + statusPillHtml(o.status) + '</td>' +
+          '<td class="num">' + (o.users_count || 0) + '</td>' +
+          '<td class="num">' + (o.sales_count || 0) + '</td>' +
+          '<td class="num">' + fmtFCFA(o.total_revenue) + '</td>' +
+          '<td>' + fmtDate(o.joined_at) + '</td>' +
+          '<td>' + fmtDate(o.last_active_at) + '</td>' +
+          '<td style="text-align:right">' +
+            '<div class="row-actions">' +
+              '<button class="row-actions-trigger" data-biz-row="' + id + '" aria-label="Open actions">⋯</button>' +
+              '<div class="row-actions-menu" id="ram-' + id + '">' +
+                '<button data-action="details">View details</button>' +
+                '<button data-action="plan">Change plan</button>' +
+                '<button data-action="status">' + (isSuspended ? 'Reactivate' : 'Suspend') + '</button>' +
+                '<button data-action="extend-trial">Extend trial</button>' +
+                '<button data-action="extend-sub">Extend subscription</button>' +
+                '<hr>' +
+                '<button data-action="reset">Force password reset</button>' +
+                '<button data-action="impersonate">Impersonate (View as owner)</button>' +
+                '<hr>' +
+                '<button data-action="csv-sales">Export sales CSV</button>' +
+                '<button data-action="csv-inventory">Export inventory CSV</button>' +
+                '<button data-action="csv-credits">Export credits CSV</button>' +
+                '<button data-action="csv-staff">Export staff CSV</button>' +
+                '<button data-action="csv-customers">Export customers CSV</button>' +
+              '</div>' +
+            '</div>' +
+          '</td>' +
+        '</tr>';
+      }).join('');
+
+      // Wire dropdown triggers
+      tbody.querySelectorAll('.row-actions-trigger').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const id = btn.getAttribute('data-biz-row');
+          document.querySelectorAll('.row-actions-menu.open').forEach(m => {
+            if (m.id !== 'ram-' + id) m.classList.remove('open');
+          });
+          $('ram-' + id).classList.toggle('open');
+        });
+      });
+      tbody.querySelectorAll('.row-actions-menu button').forEach(b => {
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const menu = b.closest('.row-actions-menu');
+          const id = menu.id.replace(/^ram-/, '');
+          menu.classList.remove('open');
+          handleBizAction(b.getAttribute('data-action'), id);
+        });
+      });
+    }
+    document.addEventListener('click', () => {
+      document.querySelectorAll('.row-actions-menu.open').forEach(m => m.classList.remove('open'));
+    });
+
+    function handleBizAction(action, id) {
+      const biz = _bizCache.find(b => b.id === id);
+      if (!biz) { showToast('Business not found', 'danger'); return; }
+      switch (action) {
+        case 'details':      return openBizDetail(biz);
+        case 'plan':         return openBizPlan(biz);
+        case 'status':       return openBizStatus(biz);
+        case 'extend-trial': return openExtendTrial(biz);
+        case 'extend-sub':   return openExtendSubscription(biz);
+        case 'reset':        return openForceReset(biz);
+        case 'impersonate':  return openImpersonate(biz);
+        case 'csv-sales':
+        case 'csv-inventory':
+        case 'csv-credits':
+        case 'csv-staff':
+        case 'csv-customers':
+          return downloadBusinessCsv(biz, action.replace(/^csv-/, ''));
+      }
+    }
+
+    function downloadBusinessCsv(biz, type) {
+      const token = localStorage.getItem(TOKEN_KEY);
+      if (!token) { showToast('Not signed in', 'danger'); return; }
+      // Browsers cannot attach Authorization headers via window.open / <a>
+      // download, but our backend reads the token from the Authorization
+      // header only. Use fetch + Blob URL workaround.
+      showToast('Preparing ' + type + ' CSV…', 'info');
+      fetch(API_BASE + '/admin/businesses/' + encodeURIComponent(biz.id) + '/export?type=' + encodeURIComponent(type), {
+        headers: { 'Authorization': 'Bearer ' + token }
+      }).then(r => {
+        if (r.status === 401) { localStorage.removeItem(TOKEN_KEY); showLogin(); throw new Error('401'); }
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.blob();
+      }).then(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = (biz.mp_id || biz.id) + '-' + type + '-' + new Date().toISOString().slice(0,10) + '.csv';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }).catch(e => showToast('Download failed: ' + e.message, 'danger'));
+    }
+
+    function openBizPlan(biz) {
+      const html =
+        '<div class="field"><label>Plan</label>' +
+          '<select id="bp-plan">' +
+            '<option value="silver"  ' + (biz.plan === 'silver'  ? 'selected' : '') + '>Silver</option>' +
+            '<option value="gold"    ' + (biz.plan === 'gold'    ? 'selected' : '') + '>Gold</option>' +
+            '<option value="premium" ' + (biz.plan === 'premium' ? 'selected' : '') + '>Premium</option>' +
+          '</select>' +
+        '</div>' +
+        '<div class="field"><label>Notes (optional)</label><textarea id="bp-notes" placeholder="Why are you changing this?"></textarea></div>';
+      openModal({
+        title: 'Change plan — ' + biz.name,
+        sub: biz.mp_id, content: html,
+        secondary: { label: 'Cancel' },
+        primary: { label: 'Save', onClick: async (close) => {
+          const plan = $('bp-plan').value;
+          const notes = $('bp-notes').value;
+          try {
+            await apiAdmin('PATCH', '/admin/businesses/' + biz.id + '/plan', { plan, notes });
+            showToast('Plan updated', 'success'); close(); loadBusinesses();
+          } catch (e) { showToast(e.message, 'danger'); }
+        }}
+      });
+    }
+
+    function openBizStatus(biz) {
+      const next = (biz.status || '').toLowerCase() === 'suspended' ? 'active' : 'suspended';
+      const html =
+        '<div class="field"><label>Notes (recorded in audit log)</label>' +
+        '<textarea id="bs-notes" placeholder="Reason for ' + escapeHtml(next === 'suspended' ? 'suspension' : 'reactivation') + '"></textarea></div>';
+      openModal({
+        title: (next === 'suspended' ? 'Suspend ' : 'Reactivate ') + biz.name,
+        sub: biz.mp_id, content: html,
+        secondary: { label: 'Cancel' },
+        primary: { label: next === 'suspended' ? 'Suspend' : 'Reactivate', onClick: async (close) => {
+          try {
+            await apiAdmin('PATCH', '/admin/businesses/' + biz.id + '/status', { status: next, notes: $('bs-notes').value });
+            showToast('Status updated', 'success'); close(); loadBusinesses();
+          } catch (e) { showToast(e.message, 'danger'); }
+        }}
+      });
+    }
+
+    function openExtendTrial(biz) {
+      const html =
+        '<div class="field"><label>Days to extend</label>' +
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+          '<label><input type="radio" name="et-d" value="7" checked> 7 days</label>' +
+          '<label><input type="radio" name="et-d" value="14"> 14 days</label>' +
+          '<label><input type="radio" name="et-d" value="30"> 30 days</label>' +
+          '<label><input type="radio" name="et-d" value="custom"> Custom:</label>' +
+          '<input id="et-custom" type="number" min="1" max="365" placeholder="days" style="width:90px"/>' +
+        '</div></div>' +
+        '<div class="field"><label>Notes (optional)</label><textarea id="et-notes"></textarea></div>';
+      openModal({
+        title: 'Extend trial — ' + biz.name, sub: biz.mp_id, content: html,
+        secondary: { label: 'Cancel' },
+        primary: { label: 'Extend', onClick: async (close) => {
+          let days = (document.querySelector('input[name="et-d"]:checked') || {}).value;
+          if (days === 'custom') days = Number($('et-custom').value || 0);
+          else days = Number(days);
+          if (!days || days <= 0) return showToast('Pick a positive number of days', 'danger');
+          try {
+            await apiAdmin('POST', '/admin/businesses/' + biz.id + '/extend-trial', { days, notes: $('et-notes').value });
+            showToast('Trial extended by ' + days + ' days', 'success'); close(); loadBusinesses();
+          } catch (e) { showToast(e.message, 'danger'); }
+        }}
+      });
+    }
+
+    function openExtendSubscription(biz) {
+      const html =
+        '<div class="field"><label>Days</label><input id="es-days" type="number" min="1" max="365" value="30"/></div>' +
+        '<div class="field"><label>Reason (required)</label><textarea id="es-reason" placeholder="Why are you extending without payment?"></textarea></div>';
+      openModal({
+        title: 'Extend subscription — ' + biz.name, sub: biz.mp_id, content: html,
+        secondary: { label: 'Cancel' },
+        primary: { label: 'Extend', onClick: async (close) => {
+          const days = Number($('es-days').value);
+          const reason = $('es-reason').value.trim();
+          if (!days || days <= 0) return showToast('Days must be positive', 'danger');
+          if (!reason) return showToast('Reason is required', 'danger');
+          try {
+            await apiAdmin('POST', '/admin/businesses/' + biz.id + '/extend-subscription', { days, reason });
+            showToast('Subscription extended by ' + days + ' days', 'success'); close(); loadBusinesses();
+          } catch (e) { showToast(e.message, 'danger'); }
+        }}
+      });
+    }
+
+    function openForceReset(biz) {
+      const ownerName = biz.owner_name || 'the owner';
+      const html =
+        '<p style="margin:0 0 12px;font-size:13px">This will generate a new temporary password for <strong>' +
+        escapeHtml(ownerName) + '</strong> and require them to change it on next login. Continue?</p>';
+      openModal({
+        title: 'Force password reset', sub: biz.name + ' · ' + (biz.mp_id || ''), content: html,
+        secondary: { label: 'Cancel' },
+        primary: { label: 'Generate temp password', onClick: async (close) => {
+          try {
+            // First find the owner user id
+            const detail = await apiAdmin('GET', '/admin/businesses/' + biz.id);
+            const owner = (detail.data.staff || []).find(u => u.role === 'owner') || (detail.data.staff || [])[0];
+            if (!owner) return showToast('No active users found for this org', 'danger');
+            const r = await apiAdmin('POST', '/admin/users/' + owner.id + '/force-reset');
+            close();
+            const temp = r.data.temp_password;
+            openModal({
+              title: 'Temporary password generated', sub: biz.name, lock: true,
+              content:
+                '<div class="one-time-warning">⚠ This password is shown ONCE. Copy it now and share it securely with ' +
+                escapeHtml(owner.full_name || 'the user') + '. The owner will be required to change it on next login.</div>' +
+                '<div class="copy-row">' +
+                  '<input id="tp-text" readonly value="' + escapeHtml(temp) + '"/>' +
+                  '<button class="btn" id="tp-copy">Copy</button>' +
+                '</div>',
+              primary: { label: 'Done', onClick: closeModal }
+            });
+            setTimeout(() => {
+              const cp = $('tp-copy'); if (!cp) return;
+              cp.addEventListener('click', () => {
+                $('tp-text').select(); document.execCommand && document.execCommand('copy');
+                navigator.clipboard && navigator.clipboard.writeText(temp).catch(() => {});
+                showToast('Copied to clipboard', 'success');
+              });
+            }, 0);
+          } catch (e) { showToast(e.message, 'danger'); }
+        }}
+      });
+    }
+
+    function openImpersonate(biz) {
+      const html =
+        '<p style="margin:0 0 8px;font-size:13px">You will open <strong>' + escapeHtml(biz.name) +
+        '</strong>\'s POS in a new tab as the owner. Your admin session in this tab is unaffected. The impersonation token is valid for 1 hour and is logged to the audit trail.</p>';
+      openModal({
+        title: 'View as owner', sub: biz.mp_id, content: html,
+        secondary: { label: 'Cancel' },
+        primary: { label: 'Open POS', onClick: async (close) => {
+          try {
+            const r = await apiAdmin('POST', '/admin/businesses/' + biz.id + '/impersonate');
+            close();
+            if (r && r.data && r.data.url) window.open(r.data.url, '_blank', 'noopener,noreferrer');
+            else showToast('No URL returned', 'danger');
+          } catch (e) { showToast(e.message, 'danger'); }
+        }}
+      });
+    }
+
+    async function openBizDetail(biz) {
+      openModal({
+        title: biz.name, sub: biz.mp_id + ' · ' + (biz.plan || '—') + ' · ' + (biz.status || '—'),
+        wide: true,
+        content: '<div style="padding:24px;text-align:center;color:var(--text-muted)">Loading detail…</div>'
+      });
+      try {
+        const r = await apiAdmin('GET', '/admin/businesses/' + biz.id);
+        const d = r.data;
+        const h = d.health || {};
+        const safe = (v) => (v === null || v === undefined) ? '—' : v;
+        const momCls = (p) => p == null ? 'muted' : (p > 0 ? 'up' : (p < 0 ? 'down' : ''));
+        const fmtMom = (p) => p == null ? '—' : (p > 0 ? '+' : '') + p.toFixed(1) + '%';
+        const tabBtn = (id, label, active) =>
+          '<button class="detail-tab' + (active ? ' active' : '') + '" data-detail-tab="' + id + '">' + label + '</button>';
+        const owner = (d.staff || []).find(u => u.role === 'owner');
+        const detailHtml =
+          '<div class="detail-tabs">' +
+            tabBtn('overview', 'Overview', true) +
+            tabBtn('staff', 'Staff (' + (d.staff || []).length + ')') +
+            tabBtn('sales', 'Recent sales (' + (d.recent_sales || []).length + ')') +
+            tabBtn('inventory', 'Inventory') +
+            tabBtn('credits', 'Credits') +
+            tabBtn('history', 'Subscription history (' + (d.subscription_history || []).length + ')') +
+          '</div>' +
+          // Overview
+          '<div class="detail-pane active" data-pane="overview">' +
+            '<div class="health-grid">' +
+              '<div class="health-card"><div class="health-label">Days since last sale</div><div class="health-value">' + safe(h.days_since_last_sale) + '</div></div>' +
+              '<div class="health-card"><div class="health-label">Days since owner login</div><div class="health-value">' + safe(h.days_since_owner_login) + '</div></div>' +
+              '<div class="health-card"><div class="health-label">Stock value</div><div class="health-value">' + fmtFCFA(h.stock_value || 0) + '</div></div>' +
+              '<div class="health-card"><div class="health-label">Credits outstanding</div><div class="health-value">' + fmtFCFA(h.credits_total || 0) + '</div></div>' +
+            '</div>' +
+            '<div class="card" style="background:var(--bg-tertiary)">' +
+              '<div class="settings-card-sub">30-day sales vs prior 30 days</div>' +
+              '<div class="health-value ' + momCls(h.sales_30d_vs_prior_30d_pct) + '" style="font-size:24px">' + fmtMom(h.sales_30d_vs_prior_30d_pct) + '</div>' +
+            '</div>' +
+            (owner ? '<div class="card" style="margin-top:12px;background:var(--bg-tertiary)">' +
+              '<div class="settings-card-title" style="font-size:14px">Owner contact</div>' +
+              '<div class="profile-row"><span class="profile-row-label">Name</span><span class="profile-row-value">' + escapeHtml(owner.full_name || '—') + '</span></div>' +
+              '<div class="profile-row"><span class="profile-row-label">Phone</span><span class="profile-row-value">' + escapeHtml(owner.phone || '—') + '</span></div>' +
+              '<div class="profile-row"><span class="profile-row-label">Email</span><span class="profile-row-value">' + escapeHtml(d.owner_email || '—') + '</span></div>' +
+              '<div class="profile-row"><span class="profile-row-label">Last login</span><span class="profile-row-value">' + fmtDate(owner.last_login) + '</span></div>' +
+            '</div>' : '') +
+          '</div>' +
+          // Staff
+          '<div class="detail-pane" data-pane="staff">' + renderStaffTable(d.staff || []) + '</div>' +
+          // Sales
+          '<div class="detail-pane" data-pane="sales">' + renderSalesTable(d.recent_sales || []) + '</div>' +
+          // Inventory
+          '<div class="detail-pane" data-pane="inventory">' +
+            '<div class="health-grid">' +
+              '<div class="health-card"><div class="health-label">Products</div><div class="health-value">' + (d.inventory_total ? d.inventory_total.count : 0) + '</div></div>' +
+              '<div class="health-card"><div class="health-label">Stock value</div><div class="health-value">' + fmtFCFA(d.inventory_total ? d.inventory_total.total_value : 0) + '</div></div>' +
+            '</div>' +
+            '<div style="font-size:12px;color:var(--text-muted)">Detailed inventory listing available via Export inventory CSV.</div>' +
+          '</div>' +
+          // Credits
+          '<div class="detail-pane" data-pane="credits">' +
+            '<div class="health-grid">' +
+              '<div class="health-card"><div class="health-label">Total outstanding</div><div class="health-value">' + fmtFCFA(d.credits_outstanding || 0) + '</div></div>' +
+            '</div>' +
+            '<div style="font-size:12px;color:var(--text-muted)">Detailed credit list available via Export credits CSV.</div>' +
+          '</div>' +
+          // History
+          '<div class="detail-pane" data-pane="history">' + renderSubHistoryTable(d.subscription_history || []) + '</div>';
+        const m = $('modal-host').querySelector('.modal-body');
+        m.innerHTML = detailHtml;
+        m.querySelectorAll('.detail-tab').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const t = btn.getAttribute('data-detail-tab');
+            m.querySelectorAll('.detail-tab').forEach(b => b.classList.toggle('active', b === btn));
+            m.querySelectorAll('.detail-pane').forEach(p => p.classList.toggle('active', p.getAttribute('data-pane') === t));
+          });
+        });
+      } catch (e) {
+        const m = $('modal-host').querySelector('.modal-body');
+        if (m) m.innerHTML = '<div style="padding:24px;color:var(--danger)">Error: ' + escapeHtml(e.message) + '</div>';
+      }
+    }
+
+    function renderStaffTable(staff) {
+      if (!staff.length) return '<div class="empty" style="padding:32px">No staff users.</div>';
+      return '<table class="data"><thead><tr><th>Name</th><th>Phone</th><th>Role</th><th>Active</th><th>Last login</th></tr></thead><tbody>' +
+        staff.map(u =>
+          '<tr><td>' + escapeHtml(u.full_name || '—') + '</td>' +
+          '<td>' + escapeHtml(u.phone || '—') + '</td>' +
+          '<td>' + escapeHtml(u.role || '—') + '</td>' +
+          '<td>' + (u.is_active ? '<span class="pill active">Yes</span>' : '<span class="pill suspended">No</span>') + '</td>' +
+          '<td>' + fmtDate(u.last_login) + '</td></tr>'
+        ).join('') + '</tbody></table>';
+    }
+    function renderSalesTable(sales) {
+      if (!sales.length) return '<div class="empty" style="padding:32px">No recent sales.</div>';
+      return '<table class="data"><thead><tr><th>Sale #</th><th>Date</th><th class="num">Total</th><th>Status</th><th>Method</th></tr></thead><tbody>' +
+        sales.map(s =>
+          '<tr><td class="mono">' + escapeHtml(s.sale_number || s.id) + '</td>' +
+          '<td>' + fmtDate(s.created_at || s.sale_date) + '</td>' +
+          '<td class="num">' + fmtFCFA(s.total_amount) + '</td>' +
+          '<td>' + statusPillHtml(s.payment_status || (s.is_voided ? 'voided' : 'paid')) + '</td>' +
+          '<td>' + escapeHtml(s.payment_method || '—') + '</td></tr>'
+        ).join('') + '</tbody></table>';
+    }
+    function renderSubHistoryTable(hist) {
+      if (!hist.length) return '<div class="empty" style="padding:32px">No subscription payments yet.</div>';
+      return '<table class="data"><thead><tr><th>Date</th><th>Plan</th><th class="num">Amount</th><th>Method</th><th>Status</th></tr></thead><tbody>' +
+        hist.map(p =>
+          '<tr><td>' + fmtDate(p.created_at) + '</td>' +
+          '<td>' + (p.pa_plans ? escapeHtml(p.pa_plans.name || p.plan_id) : escapeHtml(p.plan_id || '—')) + '</td>' +
+          '<td class="num">' + fmtFCFA(p.amount) + '</td>' +
+          '<td>' + escapeHtml(p.payment_method || '—') + '</td>' +
+          '<td>' + statusPillHtml(p.status) + '</td></tr>'
+        ).join('') + '</tbody></table>';
+    }
+
+    function openExportAll() {
+      const html =
+        '<p style="font-size:13px;color:var(--text-muted)">Streams a ZIP archive with one folder per business containing the selected CSV types.</p>' +
+        '<div class="field"><label>Include</label>' +
+        ['sales','inventory','credits','staff','customers'].map(t =>
+          '<label style="display:block;margin-bottom:4px"><input type="checkbox" name="ea-type" value="' + t + '" checked> ' + t + '</label>'
+        ).join('') + '</div>';
+      openModal({
+        title: 'Export all businesses (ZIP)', content: html,
+        secondary: { label: 'Cancel' },
+        primary: { label: 'Download', onClick: (close) => {
+          const types = Array.from(document.querySelectorAll('input[name="ea-type"]:checked')).map(c => c.value);
+          if (!types.length) return showToast('Pick at least one type', 'danger');
+          const token = localStorage.getItem(TOKEN_KEY);
+          if (!token) return showToast('Not signed in', 'danger');
+          close();
+          showToast('Preparing ZIP — this may take a moment for many orgs.', 'info');
+          fetch(API_BASE + '/admin/businesses/export-all?types=' + types.join(','), {
+            headers: { 'Authorization': 'Bearer ' + token }
+          }).then(r => {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.blob();
+          }).then(blob => {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = 'partenaire-all-businesses-' + new Date().toISOString().slice(0,10) + '.zip';
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+          }).catch(e => showToast('Download failed: ' + e.message, 'danger'));
+        }}
+      });
+    }
+
+    // ────────────────────── SUBSCRIPTIONS ──────────────────────
+    let _subsCache = [];
+    let _subsTab = 'pending';
+    let _subsRefreshTimer = null;
+    let _subsLastFetched = null;
+
+    function startSubsAutoRefresh() {
+      stopSubsAutoRefresh();
+      if (_subsTab !== 'pending') return;
+      _subsRefreshTimer = setInterval(() => {
+        if (isModalOpen()) return; // avoid flicker while a modal is open
+        loadSubscriptions({ silent: true });
+      }, 10000);
+    }
+    function stopSubsAutoRefresh() {
+      if (_subsRefreshTimer) { clearInterval(_subsRefreshTimer); _subsRefreshTimer = null; }
+    }
+
+    async function loadSubscriptions(opts) {
+      opts = opts || {};
+      const tbody = $('subs-tbody');
+      if (!opts.silent) tbody.innerHTML = '<tr><td class="empty" colspan="8">Loading…</td></tr>';
+      try {
+        const res = await apiAdmin('GET', '/admin/payments?status=all');
+        _subsCache = (res && res.data) || [];
+        _subsLastFetched = new Date();
+        renderSubsStrip();
+        renderSubsTabs();
+        renderSubsTable();
+      } catch (e) {
+        if (!opts.silent) tbody.innerHTML = '<tr><td class="empty" colspan="8">Error: ' + escapeHtml(e.message) + '</td></tr>';
+      }
+      // (Re)start auto-refresh after each render if we're still on pending.
+      if (_subsTab === 'pending') startSubsAutoRefresh(); else stopSubsAutoRefresh();
+    }
+
+    function renderSubsStrip() {
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      const pending  = _subsCache.filter(p => p.status === 'pending' || p.status === 'processing').length;
+      const approved = _subsCache.filter(p => p.status === 'approved' && (p.processed_at || p.created_at || '') >= monthStart).length;
+      const rejected = _subsCache.filter(p => p.status === 'rejected' && (p.processed_at || p.created_at || '') >= monthStart).length;
+      const cards = $('subs-strip').children;
+      const set = (i, n) => {
+        const v = cards[i].querySelector('.stat-value');
+        v.textContent = String(n); v.classList.remove('muted');
+      };
+      set(0, pending); set(1, approved); set(2, rejected);
+    }
+
+    function renderSubsTabs() {
+      const counts = _subsCache.reduce((acc, p) => {
+        const s = p.status === 'processing' ? 'pending' : p.status;
+        acc[s] = (acc[s] || 0) + 1;
+        return acc;
+      }, {});
+      $('cnt-pending').textContent  = counts.pending  || 0;
+      $('cnt-approved').textContent = counts.approved || 0;
+      $('cnt-rejected').textContent = counts.rejected || 0;
+      $('cnt-all').textContent      = _subsCache.length;
+      // Refresh-meta
+      const meta = $('subs-refresh-meta');
+      if (_subsTab === 'pending' && _subsLastFetched) {
+        meta.textContent = 'Updated ' + Math.floor((Date.now() - _subsLastFetched.getTime()) / 1000) + 's ago · auto-refresh every 10s';
+      } else {
+        meta.textContent = '';
+      }
+    }
+
+    function renderSubsTable() {
+      const tbody = $('subs-tbody');
+      const rows = _subsCache.filter(p => {
+        if (_subsTab === 'all') return true;
+        if (_subsTab === 'pending') return p.status === 'pending' || p.status === 'processing';
+        return p.status === _subsTab;
+      });
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td class="empty" colspan="8">No payments in this tab.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map(p => {
+        const org = p.pa_organisations || {};
+        const isPending = p.status === 'pending' || p.status === 'processing';
+        const isCampay = (p.payment_method || '').toLowerCase() === 'campay';
+        const actions = [];
+        if (isPending) {
+          actions.push('<button class="btn" style="padding:5px 10px;font-size:12px" data-sub-action="approve" data-sub-id="' + escapeHtml(p.id) + '">Approve</button>');
+          actions.push('<button class="btn" style="padding:5px 10px;font-size:12px;color:var(--danger);border-color:rgba(239,68,68,0.4)" data-sub-action="reject" data-sub-id="' + escapeHtml(p.id) + '">Reject</button>');
+          if (isCampay) {
+            actions.push('<button class="btn" style="padding:5px 10px;font-size:12px;color:var(--warning);border-color:rgba(245,158,11,0.4)" data-sub-action="retry" data-sub-id="' + escapeHtml(p.id) + '">Retry CamPay</button>');
+          }
+        }
+        return '<tr>' +
+          '<td>' + fmtDate(p.created_at) + '</td>' +
+          '<td>' + escapeHtml(org.name || '—') + '<div style="font-size:11px;color:var(--text-muted)">' + escapeHtml(org.user_id_number || '') + '</div></td>' +
+          '<td>' + escapeHtml(p.plan_id || '—') + '</td>' +
+          '<td class="num">' + fmtFCFA(p.amount) + '</td>' +
+          '<td>' + escapeHtml(p.payment_method || '—') + '</td>' +
+          '<td>' + statusPillHtml(p.status) + '</td>' +
+          '<td style="font-size:11px;color:var(--text-muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(p.notes || '') + '</td>' +
+          '<td style="text-align:right">' + (actions.join(' ') || '—') + '</td>' +
+        '</tr>';
+      }).join('');
+
+      tbody.querySelectorAll('button[data-sub-action]').forEach(b => {
+        b.addEventListener('click', () => handleSubAction(b.getAttribute('data-sub-action'), b.getAttribute('data-sub-id')));
+      });
+    }
+
+    function handleSubAction(action, id) {
+      const p = _subsCache.find(x => x.id === id);
+      if (!p) return;
+      const org = p.pa_organisations || {};
+      if (action === 'approve') {
+        openModal({
+          title: 'Approve payment', sub: org.name + ' · ' + fmtFCFA(p.amount),
+          content: '<div class="field"><label>Notes (optional)</label><textarea id="ap-notes" placeholder="Any details on this approval?"></textarea></div>',
+          secondary: { label: 'Cancel' },
+          primary: { label: 'Approve', onClick: async (close) => {
+            try {
+              await apiAdmin('PATCH', '/admin/payments/' + id, { action: 'approve', notes: $('ap-notes').value });
+              showToast('Payment approved', 'success'); close(); loadSubscriptions();
+            } catch (e) { showToast(e.message, 'danger'); }
+          }}
+        });
+      } else if (action === 'reject') {
+        openModal({
+          title: 'Reject payment', sub: org.name + ' · ' + fmtFCFA(p.amount),
+          content: '<div class="field"><label>Reason (required)</label><textarea id="rj-notes" placeholder="Why is this being rejected?"></textarea></div>',
+          secondary: { label: 'Cancel' },
+          primary: { label: 'Reject', onClick: async (close) => {
+            const notes = $('rj-notes').value.trim();
+            if (!notes) return showToast('Reason is required', 'danger');
+            try {
+              await apiAdmin('PATCH', '/admin/payments/' + id, { action: 'reject', notes });
+              showToast('Payment rejected', 'success'); close(); loadSubscriptions();
+            } catch (e) { showToast(e.message, 'danger'); }
+          }}
+        });
+      } else if (action === 'retry') {
+        openModal({
+          title: 'Retry CamPay', sub: org.name + ' · ' + fmtFCFA(p.amount),
+          content: '<p style="font-size:13px">A fresh USSD prompt will be sent to the org\'s registered phone number. The existing payment row will be updated with the new reference.</p>',
+          secondary: { label: 'Cancel' },
+          primary: { label: 'Retry', onClick: async (close) => {
+            try {
+              const r = await apiAdmin('POST', '/admin/payments/' + id + '/retry-campay');
+              close();
+              const d = r && r.data;
+              showToast('CamPay retried — ref ' + (d && d.reference || '?'), 'success');
+              loadSubscriptions();
+            } catch (e) { showToast(e.message || 'Retry failed', 'danger'); }
+          }}
+        });
+      }
+    }
+
+    function openSubsExport() {
+      const html =
+        '<div class="field"><label>Date from</label><input type="date" id="sx-from"/></div>' +
+        '<div class="field"><label>Date to</label><input type="date" id="sx-to"/></div>' +
+        '<div class="field"><label>Status</label>' +
+          '<select id="sx-status">' +
+            '<option value="all">All</option><option value="pending">Pending</option>' +
+            '<option value="approved">Approved</option><option value="rejected">Rejected</option>' +
+          '</select>' +
+        '</div>';
+      openModal({
+        title: 'Export payment history', content: html,
+        secondary: { label: 'Cancel' },
+        primary: { label: 'Download CSV', onClick: (close) => {
+          const token = localStorage.getItem(TOKEN_KEY);
+          if (!token) return showToast('Not signed in', 'danger');
+          const q = new URLSearchParams();
+          const f = $('sx-from').value; const t = $('sx-to').value; const s = $('sx-status').value;
+          if (s && s !== 'all') q.set('status', s);
+          if (f) q.set('date_from', f);
+          if (t) q.set('date_to', t);
+          close();
+          showToast('Preparing CSV…', 'info');
+          fetch(API_BASE + '/admin/payments/export?' + q.toString(), { headers: { 'Authorization': 'Bearer ' + token } })
+            .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
+            .then(blob => {
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url; a.download = 'partenaire-payments-' + new Date().toISOString().slice(0,10) + '.csv';
+              document.body.appendChild(a); a.click(); a.remove();
+              setTimeout(() => URL.revokeObjectURL(url), 1000);
+            }).catch(e => showToast('Download failed: ' + e.message, 'danger'));
+        }}
+      });
+    }
+
+    // ────────────────────── MP FINANCE ──────────────────────
+    let _chartMonthly = null, _chartDonut = null;
+
+    function readThemeChartColors() {
+      const s = getComputedStyle(document.documentElement);
+      return {
+        text:    s.getPropertyValue('--text-secondary').trim() || '#cbd5e1',
+        muted:   s.getPropertyValue('--text-muted').trim() || '#94a3b8',
+        grid:    s.getPropertyValue('--border-subtle').trim() || '#1e293b',
+        accent:  s.getPropertyValue('--accent').trim() || '#c9a84c',
+        success: s.getPropertyValue('--success').trim() || '#10b981',
+        info:    s.getPropertyValue('--info').trim() || '#3b82f6',
+        warning: s.getPropertyValue('--warning').trim() || '#f59e0b'
+      };
+    }
+
+    async function loadFinance() {
+      try {
+        const [stats, payRes] = await Promise.all([
+          apiAdmin('GET', '/admin/mp/stats'),
+          apiAdmin('GET', '/admin/payments?status=approved')
+        ]);
+        const s = (stats && stats.data) || {};
+        const cards = $('finance-strip').children;
+        const setVal = (i, txt) => {
+          const v = cards[i].querySelector('.stat-value');
+          v.textContent = txt; v.classList.remove('muted');
+        };
+        setVal(0, fmtFCFA(s.total_revenue_all_time));
+        // MTD + MoM delta
+        const mom = s.mom_growth_pct == null ? null : s.mom_growth_pct;
+        const deltaHtml = mom == null ? ''
+          : ' <span class="delta ' + (mom > 0 ? 'up' : mom < 0 ? 'down' : 'flat') + '">' + (mom > 0 ? '+' : '') + mom.toFixed(1) + '%</span>';
+        cards[1].querySelector('.stat-value').innerHTML = escapeHtml(fmtFCFA(s.mtd_revenue)) + deltaHtml;
+        cards[1].querySelector('.stat-value').classList.remove('muted');
+        setVal(2, fmtFCFA(s.mrr));
+        setVal(3, fmtFCFA(s.arpu));
+
+        // Charts wait on Chart.js
+        if (!window.Chart) {
+          await new Promise((resolve) => {
+            const tryLoad = () => window.Chart ? resolve() : setTimeout(tryLoad, 100);
+            tryLoad();
+          });
+        }
+        renderMonthlyChart(s.monthly_trend || []);
+        renderDonutChart(s.revenue_by_method || {});
+
+        // Payment history table — show approved only (full)
+        const tbody = $('finance-tbody');
+        const list = (payRes && payRes.data) || [];
+        if (!list.length) {
+          tbody.innerHTML = '<tr><td class="empty" colspan="6">No approved payments yet.</td></tr>';
+        } else {
+          tbody.innerHTML = list.map(p => {
+            const org = p.pa_organisations || {};
+            return '<tr>' +
+              '<td>' + fmtDate(p.processed_at || p.created_at) + '</td>' +
+              '<td>' + escapeHtml(org.name || '—') + '<div style="font-size:11px;color:var(--text-muted)">' + escapeHtml(org.user_id_number || '') + '</div></td>' +
+              '<td>' + escapeHtml(p.plan_id || '—') + '</td>' +
+              '<td class="num">' + fmtFCFA(p.amount) + '</td>' +
+              '<td>' + escapeHtml(p.payment_method || '—') + '</td>' +
+              '<td>' + statusPillHtml(p.status) + '</td>' +
+            '</tr>';
+          }).join('');
+        }
+      } catch (e) {
+        showToast('Finance load failed: ' + e.message, 'danger');
+      }
+    }
+
+    function renderMonthlyChart(trend) {
+      const ctx = $('chart-monthly').getContext('2d');
+      const colors = readThemeChartColors();
+      const labels = trend.map(t => t.month);
+      const data   = trend.map(t => Number(t.revenue || 0));
+      if (_chartMonthly) _chartMonthly.destroy();
+      _chartMonthly = new window.Chart(ctx, {
+        type: 'bar',
+        data: { labels, datasets: [{ label: 'Revenue (FCFA)', data, backgroundColor: colors.accent, borderRadius: 6 }] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: (c) => fmtFCFA(c.parsed.y) } }
+          },
+          scales: {
+            x: { ticks: { color: colors.muted }, grid: { color: colors.grid } },
+            y: { ticks: { color: colors.muted, callback: (v) => v >= 1000 ? (v/1000).toFixed(0) + 'k' : v }, grid: { color: colors.grid } }
+          }
+        }
+      });
+    }
+
+    function renderDonutChart(byMethod) {
+      const host = $('chart-donut-host');
+      const entries = Object.entries(byMethod || {}).filter(([, v]) => v > 0);
+      const ctx = $('chart-donut').getContext('2d');
+      if (_chartDonut) { _chartDonut.destroy(); _chartDonut = null; }
+      if (!entries.length) {
+        host.innerHTML = '<div class="chart-empty">No data yet</div>';
+        return;
+      }
+      // Restore canvas if previously replaced
+      if (!host.querySelector('canvas')) {
+        host.innerHTML = '<canvas id="chart-donut"></canvas>';
+      }
+      const colors = readThemeChartColors();
+      const palette = [colors.accent, colors.info, colors.success, colors.warning, '#a78bfa', '#fb7185'];
+      _chartDonut = new window.Chart($('chart-donut').getContext('2d'), {
+        type: 'doughnut',
+        data: {
+          labels: entries.map(([k]) => k),
+          datasets: [{ data: entries.map(([, v]) => v), backgroundColor: entries.map((_, i) => palette[i % palette.length]), borderWidth: 0 }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, cutout: '60%',
+          plugins: {
+            legend: { position: 'bottom', labels: { color: colors.text, boxWidth: 12 } },
+            tooltip: { callbacks: { label: (c) => c.label + ': ' + fmtFCFA(c.parsed) } }
+          }
+        }
+      });
+    }
+
+    // Re-skin charts on theme change.
+    const _themeObserver = new MutationObserver(() => {
+      if (!_chartMonthly && !_chartDonut) return;
+      // Cheap re-skin: destroy and re-render with current data.
+      if ($('route-mp-finance').classList.contains('active')) loadFinance();
+    });
+    _themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
     // ────────────────────── WIRE-UP ──────────────────────
     document.addEventListener('DOMContentLoaded', function () {
       $('login-form').addEventListener('submit', handleLoginSubmit);
@@ -1056,6 +2302,46 @@
       document.querySelectorAll('.theme-option').forEach(btn =>
         btn.addEventListener('click', () => setTheme(btn.getAttribute('data-theme-choice'))));
       $('dashboard-refresh').addEventListener('click', loadDashboard);
+
+      // BUSINESSES
+      $('biz-refresh').addEventListener('click', loadBusinesses);
+      $('biz-export-all').addEventListener('click', openExportAll);
+      $('biz-search').addEventListener('input', (e) => {
+        clearTimeout(_bizSearchTimer);
+        _bizSearchTimer = setTimeout(() => {
+          _bizFilter.search = e.target.value.trim();
+          loadBusinesses();
+        }, 300);
+      });
+      $('biz-plan').addEventListener('change', (e) => {
+        _bizFilter.plan = e.target.value;
+        loadBusinesses();
+      });
+      $('biz-status').addEventListener('change', (e) => {
+        _bizFilter.status = e.target.value;
+        loadBusinesses();
+      });
+
+      // SUBSCRIPTIONS
+      document.querySelectorAll('[data-subs-tab]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          _subsTab = btn.getAttribute('data-subs-tab');
+          document.querySelectorAll('[data-subs-tab]').forEach(b => b.classList.toggle('active', b === btn));
+          renderSubsTable();
+          renderSubsTabs();
+          if (_subsTab === 'pending') startSubsAutoRefresh(); else stopSubsAutoRefresh();
+        });
+      });
+      $('subs-export').addEventListener('click', openSubsExport);
+      // Clicking the "Pending" stat card jumps to that tab.
+      document.querySelectorAll('#subs-strip [data-tab="pending"]').forEach(c =>
+        c.addEventListener('click', () => {
+          const tab = document.querySelector('[data-subs-tab="pending"]');
+          if (tab) tab.click();
+        }));
+
+      // FINANCE
+      $('finance-refresh').addEventListener('click', loadFinance);
 
       // Sidebar nav — single delegated handler so we don't bind 13 times.
       document.querySelectorAll('.sb-link').forEach(a => {
