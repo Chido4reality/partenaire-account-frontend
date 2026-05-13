@@ -521,50 +521,12 @@ window.addEventListener('DOMContentLoaded', function() {
       </div>
     </div>
 
-    <!-- ── Auth gate ─────────────────────────────────────────── -->
-    <div id="mp-auth-section">
-      <div style="background:#fff;border-radius:16px;padding:32px;max-width:440px;margin:32px auto;box-shadow:0 4px 24px rgba(0,0,0,0.07)">
-        <div style="font-size:18px;font-weight:800;color:var(--navy);margin-bottom:4px">🔑 Connect to Mon Partenaire</div>
-        <div style="font-size:13px;color:var(--grey);margin-bottom:18px">Log in with your <strong>Mon Partenaire owner account (MP-000001)</strong></div>
-        <div style="background:#FEF9EC;border:1px solid #F0C050;border-radius:10px;padding:10px 14px;margin-bottom:18px;font-size:12px;color:#92600A;line-height:1.5">
-          ⚠️ Use the <strong>phone number and password of the OWNER of the MP-000001 org (Dozie Store)</strong>. Any other Mon Partenaire account will return 401/403.
-        </div>
-        <div class="form-group">
-          <label class="form-label">Owner Phone Number</label>
-          <input class="form-input" id="mp-login-phone" placeholder="+237 6XX XXX XXX" type="tel" onkeydown="if(event.key==='Enter')mpLogin()">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Password</label>
-          <input class="form-input" id="mp-login-pass" placeholder="Your owner password" type="password" onkeydown="if(event.key==='Enter')mpLogin()">
-        </div>
-        <button class="btn btn-primary" style="width:100%;justify-content:center;padding:13px;margin-top:4px" onclick="mpLogin()" id="mp-login-btn">Connect →</button>
-        <button class="btn" style="width:100%;justify-content:center;padding:10px;margin-top:8px;font-size:12px;color:var(--grey)" onclick="mpTestAuth()">🔍 Test current token (GET /auth/me)</button>
-        <div id="mp-auth-error" style="color:var(--red);font-size:13px;margin-top:12px;display:none"></div>
-        <div id="mp-auth-debug" style="font-size:11px;color:var(--grey);margin-top:12px;font-family:monospace;display:none;background:#f8f7f4;padding:10px;border-radius:8px;white-space:pre-wrap;word-break:break-all"></div>
-      </div>
-    </div>
-
-    <!-- ── Authenticated content ─────────────────────────────── -->
-    <div id="mp-content" style="display:none">
-
-      <!-- Connected user info -->
-      <div id="mp-user-bar" style="background:#E8F5E9;border:1.5px solid #A5D6A7;border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:var(--green);display:flex;justify-content:space-between;align-items:center">
-        <span>✅ Connected as: <strong id="mp-logged-user">—</strong> &nbsp;·&nbsp; Org: <strong id="mp-logged-org">—</strong></span>
-        <button onclick="mpToken=null;mpInitPage()" style="background:transparent;border:1px solid var(--green);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;color:var(--green)">Disconnect</button>
-      </div>
-
-      <!-- On-screen debug panel — visible alternative to DevTools console -->
-      <div id="mp-debug-panel" style="background:#1A2B4A;color:#9DD8FF;border-radius:10px;padding:14px 16px;margin-bottom:16px;font-family:'Consolas','Courier New',monospace;font-size:12px;line-height:1.7;white-space:pre-wrap;word-break:break-all;max-height:360px;overflow-y:auto">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-family:'Segoe UI',system-ui,sans-serif">
-          <strong style="color:#FFCC66;font-size:13px">🔧 MP Debug Panel — share contents to diagnose issues</strong>
-          <div style="display:flex;gap:6px">
-            <button onclick="mpRefreshDebug()" style="background:transparent;border:1px solid #9DD8FF;color:#9DD8FF;border-radius:5px;padding:3px 12px;font-size:11px;cursor:pointer">↻ Re-run</button>
-            <button onclick="mpCopyDebug()" style="background:transparent;border:1px solid #FFCC66;color:#FFCC66;border-radius:5px;padding:3px 12px;font-size:11px;cursor:pointer">📋 Copy</button>
-            <button onclick="document.getElementById('mp-debug-panel').style.display='none'" style="background:transparent;border:1px solid #FF7B7B;color:#FF7B7B;border-radius:5px;padding:3px 12px;font-size:11px;cursor:pointer">✕ Hide</button>
-          </div>
-        </div>
-        <div id="mp-debug-output">Click ↻ Re-run to probe endpoints…</div>
-      </div>
+    <!-- Authenticated content — admin JWT is the sole credential. The
+         legacy "Connect to Mon Partenaire" sub-login that asked for the
+         MP-000001 owner's phone+password has been removed; admin token
+         (ADMIN_JWT_SECRET) authorises every /api/admin/* call directly
+         via requireAdmin. -->
+    <div id="mp-content">
 
       <!-- Stats -->
       <div class="stats-grid" style="margin-bottom:20px">
@@ -2602,16 +2564,41 @@ function closeSellerDetail() {
 
 // ══════════════════════════════════════════════════════════════
 //  MON PARTENAIRE SECTION
+//
+//  Admin JWT (localStorage.admin_token) is the SOLE credential for
+//  every call in this section. The previous dual-auth flow that asked
+//  the admin to log in a SECOND time as the MP-000001 owner has been
+//  removed — admin token alone authorizes /api/admin/* via the
+//  requireAdmin middleware on the backend.
 // ══════════════════════════════════════════════════════════════
 const MP_API = 'https://partenaire-account-api.onrender.com/api';
-let mpToken = null, mpOrgs = [], mpPayments = [], mpPlans = [], mpDashboard = null;
+// mpToken is retained as a transparent alias for localStorage.admin_token —
+// dozens of legacy call sites (`if (!mpToken) ...`, direct fetch helpers)
+// use it as a "logged-in" guard. Each access reads localStorage so a logout
+// in another tab is picked up immediately. There is NO separate MP user
+// token any more — admin_token is the sole credential.
+Object.defineProperty(window, 'mpToken', {
+  get() { return localStorage.getItem('admin_token'); },
+  set(v) {
+    if (v) localStorage.setItem('admin_token', v);
+    else localStorage.removeItem('admin_token');
+  },
+  configurable: true
+});
+let mpOrgs = [], mpPayments = [], mpPlans = [], mpDashboard = null;
 let mpCurrentPaymentId = null, mpCurrentOrgId = null;
 
 // ── HTTP helper ───────────────────────────────────────────────
+//
+// Reads admin_token from localStorage on every call rather than
+// caching to a module-level mpToken var; if the user logs out from
+// another tab, this picks up the missing token on the next request
+// and the 401 handler reloads to the login screen.
 async function mpFetch(method, path, body) {
+  const token = localStorage.getItem('admin_token');
   const headers = { 'Content-Type': 'application/json' };
-  if (mpToken) headers['Authorization'] = 'Bearer ' + mpToken;
-  console.log('[MP]', method, MP_API + path, '| auth:', mpToken ? 'Bearer ' + mpToken.substring(0, 20) + '…' : 'NONE', body || '');
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  console.log('[MP]', method, MP_API + path, '| auth:', token ? 'Bearer ' + token.substring(0, 20) + '…' : 'NONE', body || '');
   const res = await fetch(MP_API + path, {
     method,
     headers,
@@ -2620,6 +2607,13 @@ async function mpFetch(method, path, body) {
   let data;
   try { data = await res.json(); } catch { data = { message: 'Non-JSON response (' + res.status + ')' }; }
   console.log('[MP]', method, path, '→', res.status, data);
+  if (res.status === 401) {
+    // Admin token rejected or expired — wipe and force a fresh login.
+    localStorage.removeItem('admin_token');
+    location.reload();
+    // Throw so callers stop processing; the reload navigates away anyway.
+    throw new Error('Admin session expired');
+  }
   if (!res.ok) {
     const err = new Error(data.message || ('Request failed (' + res.status + ')'));
     err.status = res.status;
@@ -2628,77 +2622,19 @@ async function mpFetch(method, path, body) {
   return data;
 }
 
-// ── Debug: test current auth token ────────────────────────────
-async function mpTestAuth() {
-  const dbg = document.getElementById('mp-auth-debug');
-  if (!dbg) return;
-  dbg.style.display = 'block';
-  dbg.textContent = 'Calling GET /auth/me …';
-  if (!mpToken) {
-    dbg.textContent = '⚠️ No token yet — fill in phone+password and click Connect first.';
+// ── Page init ─────────────────────────────────────────────────
+//
+// No more auth gate. Admin is already logged in (the whole admin.html
+// is gated by handleLogin / bootstrapAdminSession upstream); navigating
+// to the MP tab loads data immediately.
+function mpInitPage() {
+  if (!localStorage.getItem('admin_token')) {
+    // Shouldn't normally happen — bootstrap would have cleared the page.
+    console.warn('[MP] No admin token at mpInitPage; reloading');
+    location.reload();
     return;
   }
-  try {
-    const me = await mpFetch('GET', '/auth/me');
-    const u = me.user || {};
-    const org = u.pa_organisations || {};
-    dbg.textContent =
-      '✅ Logged in as: ' + (u.full_name || '?') + ' (role=' + (u.role || '?') + ')\n' +
-      '   Org name: ' + (org.name || '?') + '\n' +
-      '   Org MP-ID: ' + (org.user_id_number || '?') + '\n' +
-      '   Required for admin: MP-000001 — ' + (org.user_id_number === 'MP-000001' ? 'OK ✓' : '❌ MISMATCH');
-  } catch (e) {
-    dbg.textContent = '❌ /auth/me failed (' + (e.status || '?') + '): ' + e.message;
-  }
-}
-
-// ── Page init ─────────────────────────────────────────────────
-function mpInitPage() {
-  if (mpToken) {
-    document.getElementById('mp-auth-section').style.display = 'none';
-    document.getElementById('mp-content').style.display = 'block';
-    mpRefresh();
-  } else {
-    document.getElementById('mp-auth-section').style.display = 'block';
-    document.getElementById('mp-content').style.display = 'none';
-  }
-}
-
-// ── Auth ──────────────────────────────────────────────────────
-async function mpLogin() {
-  const phone    = document.getElementById('mp-login-phone').value.trim();
-  const password = document.getElementById('mp-login-pass').value.trim();
-  if (!phone || !password) { mpAuthErr('Enter phone and password'); return; }
-  const btn = document.getElementById('mp-login-btn');
-  btn.textContent = '⏳ Connecting...'; btn.disabled = true;
-  try {
-    const result = await mpFetch('POST', '/auth/login', { phone, password });
-    if (!result.token) throw new Error('No token returned — check credentials');
-    mpToken = result.token;
-    console.log('[MP] Login success — token:', mpToken);
-    console.log('[MP] User:', result.user, '| Org:', result.org);
-    // Block early if the logged-in org isn't MP-000001 — saves a confusing 403 cascade later
-    const mpId = result.org?.user_id_number;
-    if (mpId && mpId !== 'MP-000001') {
-      mpToken = null;
-      throw new Error('Wrong account — you logged in as ' + mpId + ' (' + (result.org?.name || '?') + '). You must use the MP-000001 owner account.');
-    }
-    document.getElementById('mp-logged-user').textContent = result.user?.full_name || phone;
-    document.getElementById('mp-logged-org').textContent  = mpId || result.org?.name || '(fetching…)';
-    document.getElementById('mp-auth-section').style.display = 'none';
-    document.getElementById('mp-content').style.display = 'block';
-    await mpLoadAll();
-  } catch(e) {
-    mpAuthErr('❌ ' + e.message);
-  } finally {
-    btn.textContent = 'Connect →'; btn.disabled = false;
-  }
-}
-
-function mpAuthErr(msg) {
-  const el = document.getElementById('mp-auth-error');
-  el.textContent = msg; el.style.display = 'block';
-  setTimeout(() => el.style.display = 'none', 8000);
+  mpRefresh();
 }
 
 // ── Load all data ─────────────────────────────────────────────
@@ -2729,11 +2665,15 @@ async function mpLoadAll() {
     const denied = e.status === 403 || e.message.toLowerCase().includes('denied') || e.message.toLowerCase().includes('forbidden');
     const unauth = e.status === 401 || e.message.toLowerCase().includes('unauthorized') || e.message.toLowerCase().includes('not authenticated');
     if (denied) {
-      if (bizTbody) bizTbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--red)">❌ Access denied — your account is not the MP-000001 owner. Log in with the OWNER of the MP-000001 (Dozie Store) org.</td></tr>';
-      toast('Wrong account — log in as the MP-000001 owner', 'error');
+      if (bizTbody) bizTbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--red)">❌ Admin access denied — your admin role does not permit this view.</td></tr>';
+      toast('Admin access denied', 'error');
     } else if (unauth) {
-      mpToken = null; mpInitPage();
-      toast('Session expired — please reconnect', 'error');
+      // mpFetch already cleared admin_token and reloaded on 401, so reaching
+      // here is rare. Clear-and-reload defensively in case the call bypassed
+      // mpFetch.
+      localStorage.removeItem('admin_token');
+      location.reload();
+      toast('Admin session expired — please log in again', 'error');
     } else {
       if (bizTbody) bizTbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--red)">⚠️ Load error: ${e.message} — <a href="#" onclick="mpRefresh()">Retry</a></td></tr>`;
       toast('MP load error: ' + e.message, 'error');
@@ -3157,6 +3097,7 @@ function mpFilterBiz() {
         <div class="action-row">
           <button class="btn btn-sm" onclick="mpOpenDetail('${o.id}','${safeName}')">👁 Details</button>
           <button class="btn btn-gold btn-sm" onclick="mpOpenChangePlan('${o.id}','${safeName}','${o.subscription_status}','${o.plan_id||''}')">⚙️ Plan</button>
+          <button class="btn btn-sm" style="background:#7C3AED;color:#fff;border-color:#7C3AED" onclick="mpImpersonate('${o.id}','${safeName}')">🕵️ View as owner</button>
           ${o.subscription_status !== 'suspended'
             ? `<button class="btn btn-sm" style="color:var(--red);border-color:var(--red)" onclick="mpSuspend('${o.id}','${safeName}')">Suspend</button>`
             : `<button class="btn btn-green btn-sm" onclick="mpReactivate('${o.id}','${safeName}')">Reactivate</button>`}
@@ -3251,6 +3192,32 @@ function mpRenderPending() {
       </td>
     </tr>`;
   }).join('');
+}
+
+// Open the target org's POS dashboard in a new tab AS that org's owner —
+// no secondary login needed. Calls POST /admin/impersonate/:orgId which
+// returns a short-lived (1h) MP user JWT signed with JWT_SECRET. We pass
+// it to the React app via ?impersonate_token=... which is intercepted in
+// the React app's bootstrap (see App.jsx) and stored in authStore. Every
+// impersonation is server-side logged to pa_audit_log.
+async function mpImpersonate(orgId, orgName) {
+  if (!confirm(`Open ${orgName}'s POS dashboard as the owner?\n\nThis opens a new tab with a 1-hour token. The action is logged to pa_audit_log with your admin id, the target org, your IP, and the timestamp.`)) return;
+  try {
+    const r = await mpFetch('POST', '/admin/impersonate/' + orgId);
+    if (!r?.data?.token) {
+      toast('Impersonation failed: no token returned', 'error');
+      return;
+    }
+    const t = r.data.target;
+    toast(`🕵️ Opening ${t.org_name} as ${t.user_name} (${t.user_role})`, 'success');
+    // Use the app origin so the same Vercel deployment that hosts admin.html
+    // also serves the React POS app. window.location.origin works for both
+    // production (https://mon-partenaire-app.vercel.app) and local dev.
+    const url = window.location.origin + '/?impersonate_token=' + encodeURIComponent(r.data.token);
+    window.open(url, '_blank', 'noopener,noreferrer');
+  } catch (e) {
+    toast('Impersonate failed: ' + e.message, 'error');
+  }
 }
 
 // Re-fire CamPay for a stuck pending/processing payment. Uses the org's

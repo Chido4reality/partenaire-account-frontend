@@ -109,9 +109,55 @@ function PlanGuard({ path, children }) {
   return children;
 }
 
+// Detect ?impersonate_token=<jwt> set by the admin portal's "View as owner"
+// flow. The admin backend mints a short-lived (1h) MP user JWT and opens
+// this app in a new tab with the token in the URL. We swap it into the
+// auth store, fetch /auth/me to populate user + org, then strip the param
+// from the URL so a refresh doesn't re-bootstrap or accidentally leak the
+// token via screenshots / browser history. Returns true when impersonation
+// is being processed (so the route tree can show a spinner until done).
+async function consumeImpersonateToken() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get("impersonate_token");
+  if (!token) return false;
+  try {
+    const res = await fetch(
+      (import.meta.env.VITE_API_URL || "https://partenaire-account-api.onrender.com/api") + "/auth/me",
+      { headers: { Authorization: "Bearer " + token } }
+    );
+    if (!res.ok) {
+      toast.error("Impersonation token rejected: " + res.status, { duration: 6000 });
+      return false;
+    }
+    const data = await res.json();
+    const user = data?.user;
+    if (!user) {
+      toast.error("Impersonation token had no user payload", { duration: 6000 });
+      return false;
+    }
+    const org = user.pa_organisations || null;
+    useAuthStore.getState().login(user, org, token);
+    toast(`🕵️ Viewing as ${user.full_name || user.role || "owner"}${org?.user_id_number ? " (" + org.user_id_number + ")" : ""}`,
+      { duration: 5000, style: { background: "#4c1d95", color: "#ede9fe", border: "1px solid #6d28d9" } });
+    // Strip the token from the URL so a refresh doesn't re-import and so
+    // the URL bar doesn't display secrets.
+    const clean = window.location.pathname + window.location.hash;
+    window.history.replaceState({}, document.title, clean);
+    return true;
+  } catch (e) {
+    toast.error("Impersonation failed: " + e.message, { duration: 6000 });
+    return false;
+  }
+}
+
 export default function App() {
   const { setOnline } = useOfflineStore();
   useEffect(() => {
+    // Fire the impersonation consumer eagerly. It only does anything when
+    // ?impersonate_token= is present in the URL, otherwise it's a quick
+    // URLSearchParams check.
+    consumeImpersonateToken();
+
     const handleOnline = () => {
       setOnline(true);
       // Trigger background sync now that we're back online
