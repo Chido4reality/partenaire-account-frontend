@@ -201,21 +201,22 @@ window.addEventListener('DOMContentLoaded', function() {
 <div id="login-screen">
   <div class="login-box">
     <div class="login-logo">PARTENAIRE <span>✦</span></div>
-    <div class="login-sub">Administrator Portal · Email + 4-Digit PIN</div>
+    <div class="login-sub">Administrator Portal · Email + Password</div>
     <div>
       <label>Email Address</label>
       <input type="email" id="login-email" placeholder="chido4reality@yahoo.com" autocomplete="email">
-      <label>4-Digit PIN</label>
+      <label>Password</label>
       <div style="position:relative;margin-bottom:16px">
-        <input type="password" id="login-pass" placeholder="Enter your PIN" maxlength="4" style="margin-bottom:0;padding-right:44px;letter-spacing:6px;font-size:22px;text-align:center">
-        <button onclick="togglePass()" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:18px;color:var(--grey)" id="pass-eye">👁️</button>
+        <input type="password" id="login-pass" placeholder="Your admin password" autocomplete="current-password" minlength="8" style="margin-bottom:0;padding-right:44px;font-size:15px"
+               onkeydown="if(event.key==='Enter')handleLogin()">
+        <button onclick="togglePass()" type="button" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:18px;color:var(--grey)" id="pass-eye">👁️</button>
       </div>
       <button class="login-btn" onclick="handleLogin()">Access Admin Panel →</button>
       <div class="login-error" id="login-error"></div>
       <div class="login-hint">
         <strong>PARTENAIRE ✦ Admin Access</strong><br>
-        Use your assigned email and 4-digit PIN<br>
-        <small style="color:#bbb;margin-top:4px;display:block">Contact CEO if you have forgotten your PIN</small>
+        Use your registered email and password (letters and numbers, 8+ chars)<br>
+        <small style="color:#bbb;margin-top:4px;display:block">Contact the system owner if you have forgotten your password</small>
       </div>
     </div>
   </div>
@@ -249,7 +250,8 @@ window.addEventListener('DOMContentLoaded', function() {
   </nav>
   <div class="sb-footer">
     <div style="font-size:11px;color:rgba(255,255,255,0.3);margin-bottom:8px;text-align:center">Douala, Cameroun · 2026</div>
-    <button class="sb-logout" style="margin-bottom:8px" onclick="openChangePIN()">🔑 Change My PIN</button>
+    <button class="sb-logout" style="margin-bottom:8px" onclick="openChangePassword()">🔐 Change Password</button>
+    <button class="sb-logout" style="margin-bottom:8px;display:none" onclick="openChangePIN()" id="legacy-change-pin-btn">🔑 Change My PIN (legacy)</button>
 <button class="sb-logout" onclick="reloadData()" style="background:rgba(201,168,76,0.15);color:#C9A84C;margin-bottom:8px;border:1px solid rgba(201,168,76,0.3)" id="reload-btn">🔄 Refresh Data</button>
     <button class="sb-logout" onclick="logout()">← Sign Out</button>
   </div>
@@ -903,6 +905,31 @@ window.addEventListener('DOMContentLoaded', function() {
   </div>
 </div>
 
+<!-- ══ MODAL: CHANGE ADMIN PASSWORD (Item 4) ══ -->
+<div class="modal-overlay" id="cp-modal">
+  <div class="modal" style="max-width:420px">
+    <button class="modal-close" onclick="closeChangePassword()">✕</button>
+    <div class="modal-title">🔐 Change Admin Password</div>
+    <div class="modal-sub">Letters and numbers only · 8+ characters · Bcrypt-hashed on save</div>
+    <div class="form-group">
+      <label class="form-label">Current Password</label>
+      <input class="form-input" id="cp-current" type="password" autocomplete="current-password" oninput="validateChangePassword()">
+    </div>
+    <div class="form-group">
+      <label class="form-label">New Password</label>
+      <input class="form-input" id="cp-new" type="password" autocomplete="new-password" minlength="8" oninput="validateChangePassword()">
+      <div id="cp-new-hint" style="font-size:11px;margin-top:4px;color:var(--grey)">Must be 8+ chars, letters and numbers only</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Confirm New Password</label>
+      <input class="form-input" id="cp-confirm" type="password" autocomplete="new-password" oninput="validateChangePassword()">
+      <div id="cp-match-hint" style="font-size:11px;margin-top:4px;color:var(--grey)"></div>
+    </div>
+    <div id="cp-error" class="alert" style="display:none;background:#FEECEC;color:var(--red);margin-bottom:12px;font-size:13px"></div>
+    <button id="cp-submit" class="btn btn-gold" style="width:100%;justify-content:center;padding:13px" onclick="submitChangePassword()" disabled>✓ Update Password</button>
+  </div>
+</div>
+
 <!-- ══ MODAL: RECORD PAYMENT ══ -->
 <div class="modal-overlay" id="modal-record-payment">
   <div class="modal">
@@ -1139,33 +1166,105 @@ function togglePass() {
   eye.textContent = inp.type === 'password' ? '👁️' : '🙈';
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+//  ADMIN AUTH (Item 4)
+//
+//  Admin identity lives in mp_admin_users (Mon Partenaire Supabase project),
+//  authenticated via POST /api/admin/auth/login against the MP backend. Token
+//  signed with ADMIN_JWT_SECRET (server-side env), kept separate from the MP
+//  app-user JWT_SECRET so admin tokens can't be swapped with user tokens.
+//
+//  Token is stored in localStorage under 'admin_token'. mpToken (used by the
+//  existing mpFetch helper for admin endpoints) is aliased to the same value
+//  so existing /subscriptions/admin/* calls keep working through the
+//  legacy URL alias (mounted in backend/src/index.js).
+// ════════════════════════════════════════════════════════════════════════════
+const ADMIN_API = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  ? 'http://localhost:3001/api'
+  : 'https://partenaire-account-api.onrender.com/api';
+
+async function apiAdmin(method, path, body) {
+  const token = localStorage.getItem('admin_token');
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  const res = await fetch(ADMIN_API + path, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (res.status === 401) {
+    // Token rejected — clear and force re-login. Avoid throwing here so the
+    // caller's error handler doesn't show a misleading message; the login
+    // screen will surface the real auth error on the next attempt.
+    localStorage.removeItem('admin_token');
+    location.reload();
+    return;
+  }
+  const text = await res.text();
+  let data;
+  try { data = text ? JSON.parse(text) : {}; } catch { data = { _raw: text }; }
+  if (!res.ok) {
+    const msg = data?.message || ('HTTP ' + res.status);
+    const err = new Error(msg);
+    err.status = res.status;
+    err.body = data;
+    throw err;
+  }
+  return data;
+}
+
 async function handleLogin() {
-  const email = document.getElementById('login-email').value.trim().toLowerCase();
-  const pin   = document.getElementById('login-pass').value.trim();
+  const email    = document.getElementById('login-email').value.trim().toLowerCase();
+  const password = document.getElementById('login-pass').value;
 
-  if (!email || !pin) { showError('Please enter your email and PIN'); return; }
-  if (pin.length !== 4) { showError('PIN must be exactly 4 digits'); return; }
-
-  // Check if running from file:// protocol
+  if (!email || !password) { showError('Please enter your email and password'); return; }
+  if (!/^[A-Za-z0-9]{8,}$/.test(password)) {
+    showError('Password must be 8+ characters, letters and numbers only');
+    return;
+  }
   if (window.location.protocol === 'file:') {
-    showError('⚠ Please open via localhost. Run in PowerShell: cd Downloads; python -m http.server 8080 — then go to http://localhost:8080/PARTENAIRE_Admin.html');
+    showError('⚠ Please open via the admin URL, not file://');
     return;
   }
 
   try {
-    const rows = await xhr('GET',
-      apiUrl('ptn_admin_roles', 'email=eq.' + encodeURIComponent(email) + '&pin=eq.' + pin + '&select=*')
-    );
-    const data = rows[0];
-    if (!data) { showError('❌ Email or PIN incorrect'); return; }
-    if (!data.active) { showError('❌ Account disabled — contact CEO'); return; }
-    currentAdmin = data;
+    const res = await apiAdmin('POST', '/admin/auth/login', { email, password });
+    if (!res?.success || !res?.token) {
+      showError('❌ ' + (res?.message || 'Invalid credentials'));
+      return;
+    }
+    localStorage.setItem('admin_token', res.token);
+    currentAdmin = res.admin;
     isDemoMode = false;
-    enterDashboard(data);
+    // mpToken is read by the existing mpFetch helper. We alias it to the
+    // admin token so the existing /subscriptions/admin/* call sites work
+    // unchanged through the legacy URL alias.
+    mpToken = res.token;
+    enterDashboard(res.admin);
   } catch(e) {
-    showError('Login failed: ' + e.message + '. Make sure you have internet access.');
+    showError('❌ ' + (e.message || 'Login failed'));
   }
 }
+
+// On page load: if admin_token present, validate it via /me. On success skip
+// the login screen and go straight to the dashboard.
+async function bootstrapAdminSession() {
+  const token = localStorage.getItem('admin_token');
+  if (!token) return; // show login screen as normal
+  try {
+    const res = await apiAdmin('GET', '/admin/auth/me');
+    if (res?.success && res?.admin) {
+      currentAdmin = res.admin;
+      mpToken = token; // alias for legacy mpFetch helpers
+      isDemoMode = false;
+      enterDashboard(res.admin);
+    }
+  } catch (_) {
+    // 401 cleared the token inside apiAdmin and reloaded; any other error
+    // we silently swallow — user can still log in manually.
+  }
+}
+window.addEventListener('load', bootstrapAdminSession);
 
 function showError(msg) {
   const el = document.getElementById('login-error');
@@ -1183,16 +1282,82 @@ function demoMode() {
 
 function enterDashboard(admin) {
   document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('sb-name').textContent = admin.name;
-  document.getElementById('sb-role').textContent = admin.role === 'master' ? '👑 Master Admin' : '🔑 ' + admin.role.charAt(0).toUpperCase() + admin.role.slice(1);
-  if (admin.role !== 'master') {
-    document.getElementById('nav-admins').style.display = 'none';
-    document.getElementById('add-admin-btn').style.display = 'none';
+  // /me returns { id, email, full_name, role } — handle both shapes (legacy
+  // demo mode still passes { name }) so the demo button keeps working.
+  const displayName = admin.full_name || admin.name || admin.email || 'Admin';
+  document.getElementById('sb-name').textContent = displayName;
+  const isSuper = admin.role === 'superadmin' || admin.role === 'master' || admin.role === 'master_admin';
+  document.getElementById('sb-role').textContent = isSuper
+    ? '👑 Super Admin'
+    : '🔑 ' + String(admin.role || '').replace(/^./, c => c.toUpperCase());
+  if (!isSuper) {
+    const adminsNav = document.getElementById('nav-admins'); if (adminsNav) adminsNav.style.display = 'none';
+    const addAdminBtn = document.getElementById('add-admin-btn'); if (addAdminBtn) addAdminBtn.style.display = 'none';
   }
   loadAll();
 }
 
-function logout() { location.reload(); }
+function logout() {
+  // Wipe admin token and any cached admin state so the next user landing
+  // here hits the login screen rather than seeing the previous session.
+  localStorage.removeItem('admin_token');
+  mpToken = null;
+  location.reload();
+}
+
+// ──── CHANGE PASSWORD MODAL ────────────────────────────────────────────────
+function openChangePassword() {
+  document.getElementById('cp-modal').classList.add('open');
+  ['cp-current', 'cp-new', 'cp-confirm'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.getElementById('cp-error').textContent = '';
+  document.getElementById('cp-error').style.display = 'none';
+  validateChangePassword();
+}
+function closeChangePassword() {
+  document.getElementById('cp-modal').classList.remove('open');
+}
+function validateChangePassword() {
+  const cur  = document.getElementById('cp-current').value;
+  const next = document.getElementById('cp-new').value;
+  const conf = document.getElementById('cp-confirm').value;
+  const hint = document.getElementById('cp-new-hint');
+  const matchHint = document.getElementById('cp-match-hint');
+  const btn  = document.getElementById('cp-submit');
+
+  const okChars = /^[A-Za-z0-9]*$/.test(next);
+  const okLen   = next.length >= 8;
+  if (!okChars) { hint.textContent = 'Letters and numbers only — no special characters'; hint.style.color = '#dc2626'; }
+  else if (!okLen) { hint.textContent = 'Must be at least 8 characters'; hint.style.color = '#dc2626'; }
+  else { hint.textContent = '✓ Looks good'; hint.style.color = '#16a34a'; }
+
+  if (conf.length === 0) { matchHint.textContent = ''; }
+  else if (conf !== next) { matchHint.textContent = "Passwords don't match"; matchHint.style.color = '#dc2626'; }
+  else { matchHint.textContent = '✓ Matches'; matchHint.style.color = '#16a34a'; }
+
+  btn.disabled = !(cur && okChars && okLen && conf === next && next !== cur);
+}
+async function submitChangePassword() {
+  const currentPassword = document.getElementById('cp-current').value;
+  const newPassword     = document.getElementById('cp-new').value;
+  const confirmPassword = document.getElementById('cp-confirm').value;
+  const err = document.getElementById('cp-error');
+  err.style.display = 'none';
+  try {
+    const res = await apiAdmin('POST', '/admin/auth/change-password', { currentPassword, newPassword, confirmPassword });
+    if (res?.success) {
+      toast('✓ Password updated. Use the new password on next login.', 'success');
+      closeChangePassword();
+    } else {
+      err.textContent = res?.message || 'Could not update password';
+      err.style.display = 'block';
+    }
+  } catch (e) {
+    err.textContent = e.message || 'Could not update password';
+    err.style.display = 'block';
+  }
+}
 
 // ══════════════════════════════════════════════════════════════
 //  DATA LOADING
