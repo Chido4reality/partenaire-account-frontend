@@ -3258,7 +3258,11 @@ function mpRenderPending() {
 // a prompt if the registered number is wrong.
 async function mpRetryCampay(paymentId, orgName) {
   if (!mpToken) { toast('Not logged in', 'error'); return; }
-  if (!confirm('Retry CamPay payment for ' + orgName + '?\\n\\nThis will send a fresh USSD prompt to the org\\'s registered phone number. The existing payment row will be updated with the new reference.')) return;
+  // Template literal (backticks) avoids the apostrophe-escaping hazard that
+  // previously broke this line with a single-quoted string. Using real
+  // newlines inside a template literal is fine for confirm() — \n still
+  // works, but the explicit `\n` here is intentional and well-defined.
+  if (!confirm(`Retry CamPay payment for ${orgName}?\n\nThis will send a fresh USSD prompt to the org's registered phone number. The existing payment row will be updated with the new reference.`)) return;
   const customPhone = prompt('Override phone number? Leave blank to use the registered one.', '');
   try {
     const body = customPhone && customPhone.trim() ? { phone: customPhone.trim() } : {};
