@@ -23,6 +23,42 @@ const NAV = [
   { to: "/settings",     en: "Settings",   fr: "Paramètres",      icon: "⚙️", roles: ["owner","manager"] },
 ];
 
+// Persistent banner shown above the header while an admin is impersonating
+// this org. Click "End session" wipes the impersonated session and reloads
+// the tab back to a normal login screen. Lives here (not in each page) so
+// it stays put as the user navigates inside the POS.
+function ImpersonationBanner() {
+  const { impersonating, impersonation, endImpersonation } = useAuthStore();
+  if (!impersonating) return null;
+  const meta = impersonation || {};
+  const handleEnd = () => {
+    endImpersonation();
+    window.location.replace("/");
+  };
+  return (
+    <div style={{
+      width: "100%", minHeight: 40, padding: "8px 16px",
+      background: "rgba(245,158,11,0.18)", color: "#fbbf24",
+      borderBottom: "1px solid rgba(245,158,11,0.45)",
+      display: "flex", alignItems: "center", gap: 12,
+      fontSize: 13, fontWeight: 600, flexShrink: 0
+    }}>
+      <span style={{ fontSize: 16 }}>⚠</span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        Admin impersonation — viewing as <strong>{meta.target_org_name || "this org"}</strong>
+        {meta.target_org_mp_id ? <span style={{ opacity: 0.85 }}> ({meta.target_org_mp_id})</span> : null}
+        {meta.admin_email ? <span style={{ opacity: 0.85 }}> · by {meta.admin_email}</span> : null}
+      </span>
+      <button onClick={handleEnd}
+        style={{ background: "transparent", border: "1px solid rgba(245,158,11,0.55)",
+                 color: "#fbbf24", padding: "5px 12px", borderRadius: 8,
+                 fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+        End session →
+      </button>
+    </div>
+  );
+}
+
 export default function Layout() {
   const { user, org, logout } = useAuthStore();
   const { lang, setLang }     = useLangStore();
@@ -145,6 +181,7 @@ export default function Layout() {
   if (isMobile) {
     return (
       <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
+        <ImpersonationBanner />
         <div style={{ background: "var(--bg-surface)", borderBottom: "1px solid var(--border)", padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
           <div>
             <div style={{ fontWeight: 800, fontSize: 15 }}>Mon Partenaire</div>
@@ -183,8 +220,10 @@ export default function Layout() {
 
   // ── DESKTOP LAYOUT ────────────────────────────────────────────────────────────
   return (
-    <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
-      <aside style={{ width: collapsed ? 60 : 220, flexShrink: 0, height: "100vh", background: "var(--bg-surface)", borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", transition: "width 0.2s ease", position: "sticky", top: 0, overflow: "hidden" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
+      <ImpersonationBanner />
+      <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+      <aside style={{ width: collapsed ? 60 : 220, flexShrink: 0, height: "100%", background: "var(--bg-surface)", borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", transition: "width 0.2s ease", position: "sticky", top: 0, overflow: "hidden" }}>
 
         <div style={{ padding: "16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", minHeight: 60 }}>
           {!collapsed && (
@@ -306,6 +345,7 @@ export default function Layout() {
       </main>
 
       {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} currentPlan={myPlan?.plan} />}
+      </div>
     </div>
   );
 }

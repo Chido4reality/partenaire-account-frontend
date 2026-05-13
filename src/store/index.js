@@ -5,8 +5,15 @@ import { translations } from "../i18n/translations";
 export const useAuthStore = create(persist(
   (set) => ({
     user: null, org: null, token: null, isAuthenticated: false,
-    login: (user, org, token) => set({ user, org, token, isAuthenticated: true }),
-    logout: () => set({ user: null, org: null, token: null, isAuthenticated: false }),
+    // Impersonation flag + metadata set by App.jsx when ?impersonate=<token>
+    // is consumed at boot. The MP backend's session token still works the
+    // same way as a real login token; this flag just powers the banner.
+    impersonating: false,
+    impersonation: null, // { admin_email, target_org_name, target_org_mp_id, target_user_name }
+    login: (user, org, token) => set({ user, org, token, isAuthenticated: true, impersonating: false, impersonation: null }),
+    loginImpersonated: (user, org, token, meta) => set({ user, org, token, isAuthenticated: true, impersonating: true, impersonation: meta || null }),
+    endImpersonation: () => set({ user: null, org: null, token: null, isAuthenticated: false, impersonating: false, impersonation: null }),
+    logout: () => set({ user: null, org: null, token: null, isAuthenticated: false, impersonating: false, impersonation: null }),
   }),
   { name: "mp-auth" }
 ));

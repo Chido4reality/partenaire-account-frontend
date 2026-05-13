@@ -109,43 +109,88 @@ function PlanGuard({ path, children }) {
   return children;
 }
 
-// Detect ?impersonate_token=<jwt> set by the admin portal's "View as owner"
-// flow. The admin backend mints a short-lived (1h) MP user JWT and opens
-// this app in a new tab with the token in the URL. We swap it into the
-// auth store, fetch /auth/me to populate user + org, then strip the param
-// from the URL so a refresh doesn't re-bootstrap or accidentally leak the
-// token via screenshots / browser history. Returns true when impersonation
-// is being processed (so the route tree can show a spinner until done).
+// Detect ?impersonate=<jwt> (Phase B) set by the admin portal's
+// "View as owner" flow. The admin backend mints a short-lived token signed
+// with ADMIN_IMPERSONATE_SECRET (NOT a session token); we exchange it via
+// GET /api/auth/impersonate-exchange for a real 1h MP user session token,
+// then store it with the impersonating flag so the banner renders.
+//
+// Also handles the older ?impersonate_token=<jwt> path (Item 4 single-token
+// flow) for backward compatibility with any in-flight tabs.
 async function consumeImpersonateToken() {
   const params = new URLSearchParams(window.location.search);
-  const token = params.get("impersonate_token");
-  if (!token) return false;
+  const exchangeToken = params.get("impersonate");
+  const legacyToken   = params.get("impersonate_token");
+  if (!exchangeToken && !legacyToken) return false;
+
+  const apiBase = import.meta.env.VITE_API_URL || "https://partenaire-account-api.onrender.com/api";
+
+  // Strip ASAP so a refresh doesn't re-trigger and the URL bar doesn't
+  // display the token; also avoids accidental copy-paste leakage.
+  const stripUrl = () => {
+    const clean = window.location.pathname + window.location.hash;
+    window.history.replaceState({}, document.title, clean);
+  };
+
   try {
-    const res = await fetch(
-      (import.meta.env.VITE_API_URL || "https://partenaire-account-api.onrender.com/api") + "/auth/me",
-      { headers: { Authorization: "Bearer " + token } }
-    );
+    if (exchangeToken) {
+      // New flow: exchange the impersonation token for a real session.
+      const res = await fetch(apiBase + "/auth/impersonate-exchange?token=" + encodeURIComponent(exchangeToken));
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success || !data?.session_token) {
+        toast.error(data?.message || "Impersonation token expired or invalid. Close this tab and try again from the admin portal.", { duration: 8000 });
+        stripUrl();
+        return false;
+      }
+      // Fetch the user record so the existing app code (which reads
+      // authStore.user / authStore.org) keeps working unchanged.
+      const meRes = await fetch(apiBase + "/auth/me", { headers: { Authorization: "Bearer " + data.session_token } });
+      const me = await meRes.json().catch(() => ({}));
+      const user = me?.user;
+      const org = user?.pa_organisations || null;
+      if (!user) {
+        toast.error("Could not load impersonated user.", { duration: 6000 });
+        stripUrl();
+        return false;
+      }
+      useAuthStore.getState().loginImpersonated(user, org, data.session_token, {
+        admin_email:      data.admin_email,
+        target_org_name:  data.target_org_name,
+        target_org_mp_id: data.target_org_mp_id,
+        target_user_name: data.target_user_name,
+        target_user_role: data.target_user_role
+      });
+      toast(`🕵️ Admin impersonation — viewing as ${data.target_org_name || "the org"}`,
+        { duration: 4000, style: { background: "#451a03", color: "#fbbf24", border: "1px solid #92400e" } });
+      stripUrl();
+      return true;
+    }
+
+    // Legacy single-token flow (Item 4): the URL token is already a real
+    // session token signed with JWT_SECRET. Call /auth/me directly.
+    const res = await fetch(apiBase + "/auth/me", { headers: { Authorization: "Bearer " + legacyToken } });
     if (!res.ok) {
       toast.error("Impersonation token rejected: " + res.status, { duration: 6000 });
+      stripUrl();
       return false;
     }
     const data = await res.json();
     const user = data?.user;
-    if (!user) {
-      toast.error("Impersonation token had no user payload", { duration: 6000 });
-      return false;
-    }
+    if (!user) { stripUrl(); return false; }
     const org = user.pa_organisations || null;
-    useAuthStore.getState().login(user, org, token);
-    toast(`🕵️ Viewing as ${user.full_name || user.role || "owner"}${org?.user_id_number ? " (" + org.user_id_number + ")" : ""}`,
-      { duration: 5000, style: { background: "#4c1d95", color: "#ede9fe", border: "1px solid #6d28d9" } });
-    // Strip the token from the URL so a refresh doesn't re-import and so
-    // the URL bar doesn't display secrets.
-    const clean = window.location.pathname + window.location.hash;
-    window.history.replaceState({}, document.title, clean);
+    useAuthStore.getState().loginImpersonated(user, org, legacyToken, {
+      target_org_name: org?.name,
+      target_org_mp_id: org?.user_id_number,
+      target_user_name: user.full_name,
+      target_user_role: user.role
+    });
+    toast(`🕵️ Admin impersonation — viewing as ${user.full_name || "owner"}`,
+      { duration: 4000, style: { background: "#451a03", color: "#fbbf24", border: "1px solid #92400e" } });
+    stripUrl();
     return true;
   } catch (e) {
     toast.error("Impersonation failed: " + e.message, { duration: 6000 });
+    stripUrl();
     return false;
   }
 }
