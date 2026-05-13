@@ -487,34 +487,45 @@
     .pill.suspended { background: rgba(148,163,184,0.15); color: var(--text-muted); }
     .pill.expired   { background: rgba(239,68,68,0.15);   color: var(--danger); }
 
-    /* Row action dropdown */
-    .row-actions { position: relative; }
+    /* Row action dropdown — portal-positioned.
+       The trigger lives inside the table row; the menu itself is appended
+       to <body> at open time and positioned with `fixed` so it escapes
+       the table's overflow:hidden and never clips. */
     .row-actions-trigger {
       width: 28px; height: 28px; border-radius: 6px;
       background: var(--bg-tertiary); border: 1px solid var(--border);
       color: var(--text-secondary); cursor: pointer; font-size: 14px;
       display: inline-grid; place-items: center; line-height: 1;
     }
-    .row-actions-trigger:hover { background: var(--bg-secondary); color: var(--text-primary); }
-    .row-actions-menu {
-      position: absolute; right: 0; top: calc(100% + 4px); z-index: 50;
+    .row-actions-trigger:hover,
+    .row-actions-trigger.open { background: var(--bg-secondary); color: var(--text-primary); border-color: var(--accent); }
+
+    /* Portal menu — only ever ONE on the page at a time. */
+    .row-actions-menu-portal {
+      position: fixed; z-index: 1000;
       background: var(--bg-secondary); border: 1px solid var(--border);
       border-radius: var(--radius-sm);
       box-shadow: var(--shadow);
-      min-width: 200px;
-      padding: 6px; display: none;
+      min-width: 220px; max-width: 280px;
+      padding: 6px;
+      /* Subtle entry animation keeps the portal from feeling jarring. */
+      animation: ram-fade 0.12s ease-out;
     }
-    .row-actions-menu.open { display: block; }
-    .row-actions-menu button {
+    @keyframes ram-fade {
+      from { opacity: 0; transform: translateY(-2px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .row-actions-menu-portal button {
       display: flex; align-items: center; gap: 8px;
       width: 100%; padding: 8px 12px;
       border: none; background: transparent; color: var(--text-secondary);
       font-size: 13px; text-align: left; cursor: pointer; border-radius: 6px;
+      font-family: inherit;
     }
-    .row-actions-menu button:hover { background: var(--bg-tertiary); color: var(--text-primary); }
-    .row-actions-menu button.danger { color: var(--danger); }
-    .row-actions-menu button.danger:hover { background: rgba(239,68,68,0.08); }
-    .row-actions-menu hr { border: none; border-top: 1px solid var(--border-subtle); margin: 4px 6px; }
+    .row-actions-menu-portal button:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+    .row-actions-menu-portal button.danger { color: var(--danger); }
+    .row-actions-menu-portal button.danger:hover { background: rgba(239,68,68,0.08); }
+    .row-actions-menu-portal hr { border: none; border-top: 1px solid var(--border-subtle); margin: 4px 6px; }
 
     /* ───────────────── MODAL ───────────────── */
     .modal-backdrop {
@@ -1578,53 +1589,134 @@
           '<td>' + fmtDate(o.joined_at) + '</td>' +
           '<td>' + fmtDate(o.last_active_at) + '</td>' +
           '<td style="text-align:right">' +
-            '<div class="row-actions">' +
-              '<button class="row-actions-trigger" data-biz-row="' + id + '" aria-label="Open actions">⋯</button>' +
-              '<div class="row-actions-menu" id="ram-' + id + '">' +
-                '<button data-action="details">View details</button>' +
-                '<button data-action="plan">Change plan</button>' +
-                '<button data-action="status">' + (isSuspended ? 'Reactivate' : 'Suspend') + '</button>' +
-                '<button data-action="extend-trial">Extend trial</button>' +
-                '<button data-action="extend-sub">Extend subscription</button>' +
-                '<hr>' +
-                '<button data-action="reset">Force password reset</button>' +
-                '<button data-action="impersonate">Impersonate (View as owner)</button>' +
-                '<hr>' +
-                '<button data-action="csv-sales">Export sales CSV</button>' +
-                '<button data-action="csv-inventory">Export inventory CSV</button>' +
-                '<button data-action="csv-credits">Export credits CSV</button>' +
-                '<button data-action="csv-staff">Export staff CSV</button>' +
-                '<button data-action="csv-customers">Export customers CSV</button>' +
-              '</div>' +
-            '</div>' +
+            '<button class="row-actions-trigger" data-biz-row="' + id + '" data-is-suspended="' + (isSuspended ? '1' : '0') + '" aria-label="Open actions">⋯</button>' +
           '</td>' +
         '</tr>';
       }).join('');
 
-      // Wire dropdown triggers
+      // Wire dropdown triggers — open portal menu on click.
       tbody.querySelectorAll('.row-actions-trigger').forEach(btn => {
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
           const id = btn.getAttribute('data-biz-row');
-          document.querySelectorAll('.row-actions-menu.open').forEach(m => {
-            if (m.id !== 'ram-' + id) m.classList.remove('open');
-          });
-          $('ram-' + id).classList.toggle('open');
-        });
-      });
-      tbody.querySelectorAll('.row-actions-menu button').forEach(b => {
-        b.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const menu = b.closest('.row-actions-menu');
-          const id = menu.id.replace(/^ram-/, '');
-          menu.classList.remove('open');
-          handleBizAction(b.getAttribute('data-action'), id);
+          const isSuspended = btn.getAttribute('data-is-suspended') === '1';
+          openRowActionMenu(btn, [
+            { action: 'details',         label: 'View details' },
+            { action: 'plan',            label: 'Change plan' },
+            { action: 'status',          label: isSuspended ? 'Reactivate' : 'Suspend' },
+            { action: 'extend-trial',    label: 'Extend trial' },
+            { action: 'extend-sub',      label: 'Extend subscription' },
+            { separator: true },
+            { action: 'reset',           label: 'Force password reset' },
+            { action: 'impersonate',     label: 'Impersonate (View as owner)' },
+            { separator: true },
+            { action: 'csv-sales',       label: 'Export sales CSV' },
+            { action: 'csv-inventory',   label: 'Export inventory CSV' },
+            { action: 'csv-credits',     label: 'Export credits CSV' },
+            { action: 'csv-staff',       label: 'Export staff CSV' },
+            { action: 'csv-customers',   label: 'Export customers CSV' }
+          ], (action) => handleBizAction(action, id));
         });
       });
     }
-    document.addEventListener('click', () => {
-      document.querySelectorAll('.row-actions-menu.open').forEach(m => m.classList.remove('open'));
-    });
+
+    // ────────────────────── PORTAL ROW ACTION MENU ──────────────────────
+    //
+    // Single global menu element appended to body when opened. Positioned
+    // with `fixed`, escaping any ancestor's overflow:hidden so it never
+    // clips at the table edge. Flips upward when the trigger is in the
+    // bottom half of the viewport.
+    //
+    // Close triggers: outside click, Escape, scroll, viewport resize.
+    let _ramEl = null;
+    let _ramTrigger = null;
+    let _ramOutsideHandler = null;
+    let _ramEscHandler = null;
+    let _ramScrollHandler = null;
+    let _ramResizeHandler = null;
+
+    function closeRowActionMenu() {
+      if (_ramEl && _ramEl.parentNode) _ramEl.parentNode.removeChild(_ramEl);
+      if (_ramTrigger) _ramTrigger.classList.remove('open');
+      if (_ramOutsideHandler) document.removeEventListener('mousedown', _ramOutsideHandler, true);
+      if (_ramEscHandler) document.removeEventListener('keydown', _ramEscHandler);
+      if (_ramScrollHandler) window.removeEventListener('scroll', _ramScrollHandler, true);
+      if (_ramResizeHandler) window.removeEventListener('resize', _ramResizeHandler);
+      _ramEl = null; _ramTrigger = null;
+      _ramOutsideHandler = null; _ramEscHandler = null;
+      _ramScrollHandler = null; _ramResizeHandler = null;
+    }
+
+    function openRowActionMenu(triggerEl, items, onPick) {
+      closeRowActionMenu(); // only one open at a time
+
+      const menu = document.createElement('div');
+      menu.className = 'row-actions-menu-portal';
+      for (const it of items) {
+        if (it.separator) { menu.appendChild(document.createElement('hr')); continue; }
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        if (it.danger) btn.className = 'danger';
+        btn.textContent = it.label;
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          closeRowActionMenu();
+          try { onPick(it.action); } catch (err) { console.error('[row-action]', err); }
+        });
+        menu.appendChild(btn);
+      }
+      // Append off-screen first so we can measure it before positioning.
+      menu.style.visibility = 'hidden';
+      menu.style.left = '-9999px'; menu.style.top = '0';
+      document.body.appendChild(menu);
+
+      const rect = triggerEl.getBoundingClientRect();
+      const menuRect = menu.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const margin = 8;
+
+      // Vertical: flip when the trigger is in the bottom half of the
+      // viewport — opens upward so the whole menu stays visible.
+      const openUp = rect.top > vh / 2;
+      const top = openUp
+        ? Math.max(margin, rect.top - menuRect.height - 4)
+        : Math.min(vh - menuRect.height - margin, rect.bottom + 4);
+
+      // Horizontal: align the menu's right edge with the trigger's right
+      // edge, then clamp inside the viewport so a narrow window doesn't
+      // push the menu off the side.
+      let left = rect.right - menuRect.width;
+      if (left < margin) left = margin;
+      if (left + menuRect.width > vw - margin) left = Math.max(margin, vw - menuRect.width - margin);
+
+      menu.style.top = top + 'px';
+      menu.style.left = left + 'px';
+      menu.style.visibility = '';
+
+      triggerEl.classList.add('open');
+      _ramEl = menu;
+      _ramTrigger = triggerEl;
+
+      // Close on outside click. capture=true so it fires before any inner
+      // click handler that might inadvertently re-open the menu.
+      _ramOutsideHandler = (ev) => {
+        if (_ramEl && (_ramEl.contains(ev.target) || _ramTrigger.contains(ev.target))) return;
+        closeRowActionMenu();
+      };
+      document.addEventListener('mousedown', _ramOutsideHandler, true);
+
+      _ramEscHandler = (ev) => { if (ev.key === 'Escape') closeRowActionMenu(); };
+      document.addEventListener('keydown', _ramEscHandler);
+
+      // Fixed positioning doesn't follow scroll — simplest correct behaviour
+      // is to close on scroll. Capture-phase so scrollable ancestors trigger
+      // it too (table-wrap, main, etc.).
+      _ramScrollHandler = () => closeRowActionMenu();
+      window.addEventListener('scroll', _ramScrollHandler, true);
+      _ramResizeHandler = () => closeRowActionMenu();
+      window.addEventListener('resize', _ramResizeHandler);
+    }
 
     function handleBizAction(action, id) {
       const biz = _bizCache.find(b => b.id === id);
