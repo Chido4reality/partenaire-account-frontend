@@ -653,6 +653,90 @@
     .chart-empty { text-align: center; color: var(--text-muted); font-size: 13px; padding: 40px 0; }
     .chart-canvas-host { position: relative; height: 280px; }
 
+    /* ───────────────── PHASE D ───────────────── */
+    /* Generic data-table — used by broadcasts, admin-team, audit-log. */
+    .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .data-table thead { background: var(--bg-tertiary); }
+    .data-table th {
+      text-align: left; font-weight: 700; padding: 10px 14px;
+      color: var(--text-secondary); text-transform: uppercase;
+      font-size: 11px; letter-spacing: 0.8px; border-bottom: 1px solid var(--border);
+    }
+    .data-table td { padding: 12px 14px; border-bottom: 1px solid var(--border-subtle); vertical-align: middle; }
+    .data-table tbody tr:hover { background: var(--bg-secondary); }
+    .ta-right { text-align: right; }
+    .ta-center { text-align: center; }
+
+    /* Pills used in tables (severity, audience, role) */
+    .pill {
+      display: inline-block; padding: 2px 8px; border-radius: 999px;
+      font-size: 11px; font-weight: 700; letter-spacing: 0.3px;
+      background: var(--bg-tertiary); color: var(--text-secondary);
+    }
+    .pill-info     { background: rgba(96,165,250,0.18);  color: #93c5fd; }
+    .pill-warning  { background: rgba(245,158,11,0.18);  color: #fcd34d; }
+    .pill-critical { background: rgba(239,68,68,0.22);   color: #fca5a5; }
+    .pill-success  { background: rgba(34,197,94,0.18);   color: #86efac; }
+    .pill-muted    { background: var(--bg-tertiary); color: var(--text-muted); }
+
+    /* Audit-log filter grid + load-more footer */
+    .al-filter-grid {
+      display: grid; grid-template-columns: 1fr 1.5fr 1.5fr 1fr 1fr auto;
+      gap: 12px; align-items: end;
+    }
+    @media (max-width: 1100px) { .al-filter-grid { grid-template-columns: 1fr 1fr; } }
+    .al-filter-actions { display: flex; gap: 8px; align-items: flex-end; }
+    .al-scroll-foot { padding: 14px; text-align: center; border-top: 1px solid var(--border-subtle); }
+
+    /* Bell + notifications dropdown */
+    .sb-bell { position: relative; }
+    .sb-bell-dot {
+      position: absolute; top: 4px; right: 4px;
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #ef4444; box-shadow: 0 0 0 2px var(--bg-secondary);
+    }
+    .notif-dropdown {
+      position: fixed;
+      width: 360px; max-height: 480px; overflow: hidden;
+      background: var(--bg-secondary); border: 1px solid var(--border);
+      border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,0.35);
+      z-index: 9999;
+      display: flex; flex-direction: column;
+    }
+    .notif-dd-head {
+      padding: 12px 14px; border-bottom: 1px solid var(--border-subtle);
+      display: flex; justify-content: space-between; align-items: center;
+      font-weight: 700;
+    }
+    .notif-link {
+      background: none; border: 0; color: var(--accent);
+      font-size: 12px; font-weight: 700; cursor: pointer;
+    }
+    .notif-link:hover { text-decoration: underline; }
+    .notif-dd-body { overflow-y: auto; flex: 1; }
+    .notif-row {
+      display: flex; gap: 10px; padding: 10px 14px;
+      border-bottom: 1px solid var(--border-subtle); cursor: pointer;
+    }
+    .notif-row:hover { background: var(--bg-tertiary); }
+    .notif-row.unread { background: rgba(201,168,76,0.06); }
+    .notif-icon { font-size: 16px; flex-shrink: 0; padding-top: 2px; }
+    .notif-content { flex: 1; min-width: 0; }
+    .notif-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+    .notif-body  { font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .notif-time  { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .notif-empty { padding: 32px 14px; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+    /* Temp password reveal modal */
+    .temp-pw-box {
+      background: var(--bg-tertiary); border: 1px dashed var(--accent);
+      border-radius: 8px; padding: 12px 14px; margin: 8px 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 16px; font-weight: 700; letter-spacing: 1px;
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    .temp-pw-warning { font-size: 12px; color: var(--text-muted); }
+
     /* ───────────────── GLOBAL SEARCH DROPDOWN ───────────────── */
     /* Lives inside .row-actions-menu-portal (same portal container as the
        row dropdowns) but uses its own typography so the two never collide. */
@@ -757,7 +841,21 @@
           <div class="sb-admin-name" id="sb-admin-name">—</div>
           <span class="sb-admin-role" id="sb-admin-role">—</span>
         </div>
-        <button class="sb-bell" title="Notifications (coming up in Phase D)" aria-label="Notifications">🔔</button>
+        <button class="sb-bell" id="sb-bell" title="Notifications" aria-label="Notifications">
+          🔔
+          <span class="sb-bell-dot" id="sb-bell-dot" hidden></span>
+        </button>
+      </div>
+      <!-- Notifications dropdown — portal-style, positioned via JS so it
+           escapes any overflow:hidden on the sidebar. Hidden until bell click. -->
+      <div id="notif-dropdown" class="notif-dropdown" hidden>
+        <div class="notif-dd-head">
+          <div>Notifications</div>
+          <button id="notif-mark-all" class="notif-link">Mark all read</button>
+        </div>
+        <div id="notif-dd-body" class="notif-dd-body">
+          <div class="notif-empty">Loading…</div>
+        </div>
       </div>
 
       <input class="sb-search" id="sb-search" type="search" placeholder="Search users, businesses, orders…"
@@ -1087,19 +1185,35 @@
         <div class="page-head">
           <div>
             <div class="page-title">Marketplace finance</div>
-            <div class="page-sub">Escrow, commissions, GMV trends for Partenaire Dozie.</div>
+            <div class="page-sub">Marketplace activity — GMV, escrow, and Dozie seller engagement.</div>
           </div>
           <button class="btn" id="dz-fin-refresh">Refresh</button>
         </div>
         <div class="stat-strip" id="dz-fin-strip">
-          <div class="stat-card"><div class="stat-label">Escrow held now</div><div class="stat-value muted">…</div></div>
-          <div class="stat-card"><div class="stat-label">MTD commissions</div><div class="stat-value muted">…</div></div>
-          <div class="stat-card"><div class="stat-label">Total delivered</div><div class="stat-value muted">…</div></div>
-          <div class="stat-card"><div class="stat-label">Pending payouts</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card">
+            <div class="stat-label">Active Dozie sellers</div>
+            <div class="stat-value muted">…</div>
+            <div class="stat-sub muted" id="dz-fin-sub-sellers">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">GMV this month</div>
+            <div class="stat-value muted">…</div>
+            <div class="stat-sub muted" id="dz-fin-sub-gmv">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">GMV delivered</div>
+            <div class="stat-value muted">…</div>
+            <div class="stat-sub muted" id="dz-fin-sub-delivered">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Escrow held now</div>
+            <div class="stat-value muted">…</div>
+            <div class="stat-sub muted" id="dz-fin-sub-escrow">—</div>
+          </div>
         </div>
         <div class="charts-row">
           <div class="card chart-card">
-            <div class="chart-card-title">6-month GMV</div>
+            <div class="chart-card-title">6-month GMV (placed vs delivered)</div>
             <div class="chart-canvas-host"><canvas id="dz-chart-volume"></canvas></div>
           </div>
           <div class="card chart-card">
@@ -1108,9 +1222,106 @@
           </div>
         </div>
       </section>
-      <section class="route" id="route-broadcasts"></section>
-      <section class="route" id="route-admin-team"></section>
-      <section class="route" id="route-audit-log"></section>
+      <!-- BROADCASTS (Phase D-C) -->
+      <section class="route" id="route-broadcasts">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Broadcasts</div>
+            <div class="page-sub">Send targeted announcements to MP or Dozie users. Push dispatch lands in a later phase.</div>
+          </div>
+          <button class="btn btn-primary" id="bc-new-btn">+ New broadcast</button>
+        </div>
+        <div class="stat-strip" id="bc-stat-strip">
+          <div class="stat-card"><div class="stat-label">Active</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">Expired this month</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">Total all-time</div><div class="stat-value muted">…</div></div>
+        </div>
+        <div class="section-tabs" id="bc-tabs">
+          <button class="section-tab active" data-bc-tab="active">Active <span class="tab-count" id="bcnt-active">·</span></button>
+          <button class="section-tab"        data-bc-tab="expired">Expired <span class="tab-count" id="bcnt-expired">·</span></button>
+          <button class="section-tab"        data-bc-tab="drafts">Drafts <span class="tab-count" id="bcnt-drafts">·</span></button>
+          <button class="section-tab"        data-bc-tab="all">All <span class="tab-count" id="bcnt-all">·</span></button>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <table class="data-table" id="bc-table">
+            <thead><tr>
+              <th>Title</th><th>Audience</th><th>Severity</th><th>Reach</th><th>Starts</th><th>Expires</th><th class="ta-right">Actions</th>
+            </tr></thead>
+            <tbody id="bc-tbody"><tr><td colspan="7" class="muted ta-center" style="padding:20px">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ADMIN TEAM (Phase D-D) -->
+      <section class="route" id="route-admin-team">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Admin team</div>
+            <div class="page-sub">Master admin manages sub-admins. Staff is read-only; Admin can mutate but cannot manage admins.</div>
+          </div>
+          <button class="btn btn-primary" id="at-new-btn">+ Add admin</button>
+        </div>
+        <div id="at-no-permission" class="placeholder" hidden>
+          <div class="placeholder-icon">🔒</div>
+          <div class="placeholder-title">Master admin only</div>
+          <div class="placeholder-text">You don't have permission to view this section.</div>
+        </div>
+        <div id="at-body">
+          <div class="stat-strip" id="at-stat-strip">
+            <div class="stat-card"><div class="stat-label">Total admins</div><div class="stat-value muted">…</div></div>
+            <div class="stat-card"><div class="stat-label">Active (last 30d)</div><div class="stat-value muted">…</div></div>
+            <div class="stat-card"><div class="stat-label">Inactive</div><div class="stat-value muted">…</div></div>
+          </div>
+          <div class="card" style="padding:0;overflow:hidden">
+            <table class="data-table" id="at-table">
+              <thead><tr>
+                <th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last login</th><th>Created</th><th class="ta-right">Actions</th>
+              </tr></thead>
+              <tbody id="at-tbody"><tr><td colspan="7" class="muted ta-center" style="padding:20px">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- AUDIT LOG (Phase D-E) -->
+      <section class="route" id="route-audit-log">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Audit log</div>
+            <div class="page-sub">Unified history of admin actions across Mon Partenaire and Partenaire Dozie.</div>
+          </div>
+          <button class="btn" id="al-export-btn">Export CSV</button>
+        </div>
+        <div class="card" id="al-filter-card" style="margin-bottom:16px">
+          <div class="al-filter-grid">
+            <div class="field"><label>Source</label>
+              <select id="al-source"><option value="both">Both</option><option value="pa">Mon Partenaire</option><option value="ptn">Partenaire Dozie (legacy)</option></select>
+            </div>
+            <div class="field"><label>Admin</label>
+              <input type="text" id="al-admin-email" placeholder="email@example.com" />
+            </div>
+            <div class="field"><label>Action (use * for prefix)</label>
+              <input type="text" id="al-action" list="al-action-list" placeholder="e.g. broadcast_* or dozie_dispute_resolve" />
+              <datalist id="al-action-list"></datalist>
+            </div>
+            <div class="field"><label>From</label><input type="date" id="al-date-from" /></div>
+            <div class="field"><label>To</label><input type="date" id="al-date-to" /></div>
+            <div class="field al-filter-actions">
+              <button class="btn btn-primary" id="al-apply">Apply filters</button>
+              <button class="btn" id="al-clear">Clear</button>
+            </div>
+          </div>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <table class="data-table" id="al-table">
+            <thead><tr>
+              <th>Timestamp</th><th>Source</th><th>Admin</th><th>Action</th><th>Target</th><th class="ta-right">Details</th>
+            </tr></thead>
+            <tbody id="al-tbody"><tr><td colspan="6" class="muted ta-center" style="padding:20px">Loading…</td></tr></tbody>
+          </table>
+          <div class="al-scroll-foot" id="al-scroll-foot"><button class="btn" id="al-load-more">Load more</button></div>
+        </div>
+      </section>
 
       <!-- SETTINGS -->
       <section class="route" id="route-settings">
@@ -1197,11 +1408,10 @@
 
     // Maps route names to the Phase they ship in. Used to render placeholder
     // copy. Routes implemented in this or earlier phases are absent.
-    const ROUTE_PLACEHOLDERS = {
-      'broadcasts':           { phase: 'D', icon: '📣', label: 'Broadcasts',          text: 'Send targeted announcements to MP or Dozie users.' },
-      'admin-team':           { phase: 'D', icon: '👤', label: 'Admin team',          text: 'Invite, deactivate, and manage admin accounts.' },
-      'audit-log':            { phase: 'D', icon: '📋', label: 'Audit log',           text: 'Searchable history of every admin action with actor, target, and timestamp.' }
-    };
+    // Phase D shipped real implementations for broadcasts / admin-team /
+    // audit-log so the placeholder map is now empty. Kept as an extension
+    // point for future sections that should show a "coming soon" card.
+    const ROUTE_PLACEHOLDERS = {};
 
     // ────────────────────── STATE ──────────────────────
     let currentAdmin = null;
@@ -1332,6 +1542,9 @@
       if (route === 'orders')             loadDzOrders();
       if (route === 'disputes')           loadDzDisputes();
       if (route === 'marketplace-finance') loadDzFinance();
+      if (route === 'broadcasts')          loadBroadcasts();
+      if (route === 'admin-team')          loadAdminTeam();
+      if (route === 'audit-log')           { loadAuditLogActions(); loadAuditLog(); }
       // Render placeholders lazily on first visit (cheap; idempotent).
       if (ROUTE_PLACEHOLDERS[route]) renderPlaceholder(route);
       // Stop auto-refresh when navigating away from sections that use it.
@@ -1528,6 +1741,8 @@
           showToast('Password updated. Use the new one on next login.', 'success');
           $('cp-current').value = $('cp-new').value = $('cp-confirm').value = '';
           validateChangePassword();
+          // Phase D-D: forced-password-change satisfied — clear the local flag.
+          if (currentAdmin) currentAdmin.must_change_password = false;
         } else {
           showToast(r?.message || 'Could not update password', 'danger');
         }
@@ -1559,13 +1774,20 @@
       const role = (admin.role || '').toLowerCase();
       const isMaster = role === 'superadmin' || role === 'master_admin' || role === 'master';
       const roleEl = $('sb-admin-role');
-      roleEl.textContent = isMaster ? 'Master admin' : 'Admin';
+      roleEl.textContent = isMaster ? 'Master admin' : (role === 'staff' ? 'Staff' : 'Admin');
       roleEl.className = 'sb-admin-role';
+
+      // Hide the Admin Team sidebar link for non-master admins.
+      const teamLink = document.querySelector('.sb-link[data-route="admin-team"]');
+      if (teamLink) teamLink.style.display = isMaster ? '' : 'none';
 
       $('login-screen').style.display = 'none';
       $('app-shell').classList.add('active');
       // Pick up the hash on first paint so refresh-on-section works.
       navigateTo(parseHashRoute(), { fromHash: true });
+      // Phase D: notification bell polling + forced-password gate.
+      startNotifPolling();
+      enforceForcedPasswordChange(admin);
     }
 
     async function handleLoginSubmit(e) {
@@ -2693,6 +2915,7 @@
               '<div class="health-card"><div class="health-label">Badge</div><div class="health-value" style="font-size:14px">' + escapeHtml((d.user && d.user.badge_status) || '—') + '</div></div>' +
               '<div class="health-card"><div class="health-label">Status</div><div class="health-value" style="font-size:14px">' + escapeHtml(u.status || '—') + '</div></div>' +
             '</div>' +
+            renderMpStatusCard(d.mp_status, u.role) +
             (d.user && d.user.shop_desc ? '<div class="card" style="background:var(--bg-tertiary)"><div class="settings-card-sub">Shop description</div><div>' + escapeHtml(d.user.shop_desc) + '</div></div>' : '') +
           '</div>' +
           '<div class="detail-pane" data-pane="list">' + renderDzListingsTable(d.listings || []) + '</div>' +
@@ -2713,6 +2936,60 @@
         const m = $('modal-host').querySelector('.modal-body');
         if (m) m.innerHTML = '<div style="padding:24px;color:var(--danger)">' + escapeHtml(e.message) + '</div>';
       }
+    }
+
+    // Phase D-B: Marketplace user detail → MP subscription status card.
+    // View returns null rows for pure buyers; we hide the card in that case.
+    function renderMpStatusCard(mp, role) {
+      if (!mp && (role === 'buyer')) return ''; // pure buyer — nothing to show
+      const status = mp ? mp.effective_status : 'no_mp_account';
+      const sevMap = {
+        active:        { pill: 'pill-success',  label: 'Active' },
+        trial:         { pill: 'pill-info',     label: 'Trial' },
+        inactive:      { pill: 'pill-warning',  label: 'Inactive' },
+        no_mp_account: { pill: 'pill-muted',    label: 'No MP account' }
+      };
+      const cfg = sevMap[status] || sevMap.no_mp_account;
+      let extras = '';
+      if (mp && mp.mp_org_id) {
+        const plan = mp.mp_plan ? `Plan: <strong>${escapeHtml(mp.mp_plan)}</strong>` : '';
+        const expires = mp.mp_plan_expires_at
+          ? `Expires: <strong>${new Date(mp.mp_plan_expires_at).toLocaleDateString()}</strong>`
+          : '';
+        extras = `<div style="margin-top:6px;font-size:13px;color:var(--text-secondary)">${plan}${plan && expires ? ' · ' : ''}${expires}</div>`;
+        if (status !== 'active') {
+          extras += `<button class="btn" style="margin-top:8px" data-mp-jump="${escapeHtml(mp.mp_id || '')}">Open in Businesses →</button>`;
+        }
+      } else if (status === 'no_mp_account') {
+        extras = `<div class="settings-card-sub" style="margin-top:6px">This seller has no linked Mon Partenaire account — they registered for Dozie only.</div>`;
+      }
+      const card = `
+        <div class="card" style="background:var(--bg-tertiary);margin-top:12px">
+          <div class="settings-card-sub">MP subscription status</div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
+            <span class="pill ${cfg.pill}">${cfg.label}</span>
+            ${mp && mp.mp_id ? `<span class="mono" style="color:var(--text-muted);font-size:13px">MP-${escapeHtml(mp.mp_id)}</span>` : ''}
+          </div>
+          ${extras}
+        </div>
+      `;
+      // Wire jump button after the modal lands. setTimeout because the
+      // string is interpolated into innerHTML by the caller — addEventListener
+      // can only attach once the node is in the DOM.
+      setTimeout(() => {
+        const btn = document.querySelector('[data-mp-jump]');
+        if (btn) btn.addEventListener('click', () => {
+          const mpId = btn.getAttribute('data-mp-jump');
+          closeModal();
+          navigateTo('businesses');
+          // Best-effort highlight by MP-ID in the businesses search.
+          setTimeout(() => {
+            const search = document.getElementById('biz-search');
+            if (search && mpId) { search.value = 'MP-' + mpId; search.dispatchEvent(new Event('input', { bubbles: true })); }
+          }, 200);
+        });
+      }, 0);
+      return card;
     }
 
     function renderDzListingsTable(rows) {
@@ -3290,10 +3567,27 @@
         const s = (res && res.data) || {};
         const cards = $('dz-fin-strip').children;
         const set = (i, v) => { const el = cards[i].querySelector('.stat-value'); el.textContent = v; el.classList.remove('muted'); };
-        set(0, fmtFCFA(s.escrow_held_now));
-        set(1, fmtFCFA(s.mtd_commissions));
-        set(2, fmtFCFA(s.total_delivered));
-        set(3, fmtFCFA(s.pending_payouts));
+        // Card 0: Active sellers (count, with MP-linked sub-stat).
+        set(0, (s.active_dozie_sellers || 0).toLocaleString('fr-CM'));
+        $('dz-fin-sub-sellers').textContent =
+          `of which ${(s.active_dozie_sellers_with_mp || 0).toLocaleString('fr-CM')} have an active MP sub`;
+        // Card 1: GMV MTD + MoM trend.
+        set(1, fmtFCFA(s.gmv_mtd));
+        if (s.gmv_mom_pct == null) {
+          $('dz-fin-sub-gmv').textContent = 'no prior-month data';
+        } else {
+          const pct = s.gmv_mom_pct;
+          const arrow = pct > 0 ? '▲' : (pct < 0 ? '▼' : '•');
+          $('dz-fin-sub-gmv').textContent = `${arrow} ${Math.abs(pct).toFixed(1)}% vs last month`;
+        }
+        // Card 2: GMV delivered + completion ratio.
+        set(2, fmtFCFA(s.gmv_delivered_mtd));
+        const ratio = s.gmv_mtd > 0 ? Math.round((Number(s.gmv_delivered_mtd) / Number(s.gmv_mtd)) * 100) : 0;
+        $('dz-fin-sub-delivered').textContent = s.gmv_mtd > 0 ? `${ratio}% of placed GMV` : 'no orders this month';
+        // Card 3: Escrow held now + MP-sub-attributed MTD revenue context.
+        set(3, fmtFCFA(s.escrow_held_now));
+        $('dz-fin-sub-escrow').textContent =
+          `MP-sub revenue from Dozie sellers (MTD): ${fmtFCFA(s.dozie_seller_mp_revenue_mtd)}`;
 
         if (!window.Chart) {
           await new Promise((resolve) => { const t = () => window.Chart ? resolve() : setTimeout(t, 100); t(); });
@@ -3308,12 +3602,23 @@
     function renderDzVolumeChart(trend) {
       const colors = readThemeChartColors();
       if (_dzChartVolume) _dzChartVolume.destroy();
+      // Two-series bar: placed (gmv) vs delivered (gmv_delivered). The
+      // overlap visually communicates the completion gap.
       _dzChartVolume = new window.Chart($('dz-chart-volume').getContext('2d'), {
         type: 'bar',
-        data: { labels: trend.map(t => t.month), datasets: [{ label: 'GMV (FCFA)', data: trend.map(t => Number(t.gmv || 0)), backgroundColor: colors.accent, borderRadius: 6 }] },
+        data: {
+          labels: trend.map(t => t.month),
+          datasets: [
+            { label: 'GMV placed',    data: trend.map(t => Number(t.gmv || 0)),           backgroundColor: colors.accent, borderRadius: 6 },
+            { label: 'GMV delivered', data: trend.map(t => Number(t.gmv_delivered || 0)), backgroundColor: colors.info || '#60a5fa', borderRadius: 6 }
+          ]
+        },
         options: {
           responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => fmtFCFA(c.parsed.y) } } },
+          plugins: {
+            legend: { display: true, labels: { color: colors.muted } },
+            tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmtFCFA(c.parsed.y)}` } }
+          },
           scales: {
             x: { ticks: { color: colors.muted }, grid: { color: colors.grid } },
             y: { ticks: { color: colors.muted, callback: (v) => v >= 1000 ? (v/1000).toFixed(0) + 'k' : v }, grid: { color: colors.grid } }
@@ -3511,8 +3816,724 @@
       setTimeout(() => { tr.style.backgroundColor = ''; }, 2000);
     }
 
-    // ────────────────────── WIRE-UP ──────────────────────
-    document.addEventListener('DOMContentLoaded', function () {
+    // ══════════════════════════════════════════════════════════════
+    // PHASE D — Broadcasts, Admin team, Audit log, Notifications bell.
+    // Grouped here for clarity; wire-ups land in the DOMContentLoaded
+    // block below.
+    // ══════════════════════════════════════════════════════════════
+
+    // ─── Shared role helpers ─────────────────────────────────────────
+    function isMasterAdmin() {
+      const r = (currentAdmin && currentAdmin.role) || '';
+      return r === 'master_admin' || r === 'superadmin';
+    }
+    function adminCanMutate() {
+      // staff = read-only. admin/master_admin = full CRUD.
+      const r = (currentAdmin && currentAdmin.role) || '';
+      return r === 'admin' || r === 'master_admin' || r === 'superadmin';
+    }
+    function formatActionSlug(s) {
+      return String(s || '').replace(/_/g, ' ');
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  D-C — BROADCASTS
+    // ════════════════════════════════════════════════════════════════
+    let _bcTab = 'active';
+    let _bcRowsByTab = { active: [], expired: [], drafts: [], all: [] };
+
+    async function loadBroadcasts() {
+      try {
+        // Fetch all four tabs once so tab switching is instant. Stats
+        // come from the 'active' call (server returns the same stats
+        // payload across calls).
+        const [active, expired, drafts, all] = await Promise.all([
+          apiAdmin('GET', '/admin/broadcasts?status=active'),
+          apiAdmin('GET', '/admin/broadcasts?status=expired'),
+          apiAdmin('GET', '/admin/broadcasts?status=drafts'),
+          apiAdmin('GET', '/admin/broadcasts?status=all')
+        ]);
+        _bcRowsByTab = {
+          active:  active.data  || [],
+          expired: expired.data || [],
+          drafts:  drafts.data  || [],
+          all:     all.data     || []
+        };
+        const stats = active.stats || {};
+        const stripCards = $('bc-stat-strip').children;
+        stripCards[0].querySelector('.stat-value').textContent = stats.active || 0;
+        stripCards[1].querySelector('.stat-value').textContent = stats.expired_month || 0;
+        stripCards[2].querySelector('.stat-value').textContent = stats.total || 0;
+        for (const el of stripCards) el.querySelector('.stat-value').classList.remove('muted');
+        $('bcnt-active').textContent  = _bcRowsByTab.active.length;
+        $('bcnt-expired').textContent = _bcRowsByTab.expired.length;
+        $('bcnt-drafts').textContent  = _bcRowsByTab.drafts.length;
+        $('bcnt-all').textContent     = _bcRowsByTab.all.length;
+        renderBcTable();
+      } catch (e) {
+        showToast('Broadcasts load failed: ' + e.message, 'danger');
+      }
+    }
+
+    function renderBcTable() {
+      const rows = _bcRowsByTab[_bcTab] || [];
+      if (!rows.length) {
+        $('bc-tbody').innerHTML = '<tr><td colspan="7" class="muted ta-center" style="padding:20px">No broadcasts in this tab.</td></tr>';
+        return;
+      }
+      const audienceLabel = (b) => {
+        const app = b.audience_app === 'mon_partenaire' ? 'MP'
+                  : b.audience_app === 'partenaire_dozie' ? 'Dozie' : 'MP + Dozie';
+        const filter = b.audience_filter || {};
+        const bits = [];
+        if (Array.isArray(filter.plan) && filter.plan.length) bits.push(filter.plan.join('/'));
+        if (filter.dozie_role) bits.push(filter.dozie_role);
+        if (filter.city) bits.push(filter.city);
+        return app + (bits.length ? ' · ' + escapeHtml(bits.join(' · ')) : '');
+      };
+      const sevPill = (s) => `<span class="pill pill-${escapeHtml(s||'info')}">${escapeHtml(s||'info')}</span>`;
+      $('bc-tbody').innerHTML = rows.map(b => `
+        <tr data-bc-id="${escapeHtml(b.id)}">
+          <td>${escapeHtml(b.title)}${b.is_draft ? ' <span class="pill pill-muted">draft</span>' : ''}</td>
+          <td>${audienceLabel(b)}</td>
+          <td>${sevPill(b.severity)}</td>
+          <td class="muted" data-bc-reach="${escapeHtml(b.id)}">—</td>
+          <td>${b.starts_at ? new Date(b.starts_at).toLocaleString() : '—'}</td>
+          <td>${b.expires_at ? new Date(b.expires_at).toLocaleString() : 'never'}</td>
+          <td class="ta-right">
+            <button class="btn" data-bc-view="${escapeHtml(b.id)}">View</button>
+            ${adminCanMutate() ? `<button class="btn" data-bc-edit="${escapeHtml(b.id)}">Edit</button>
+            <button class="btn btn-danger" data-bc-delete="${escapeHtml(b.id)}">Delete</button>` : ''}
+          </td>
+        </tr>
+      `).join('');
+      // Wire row actions.
+      $('bc-tbody').querySelectorAll('[data-bc-view]').forEach(b => b.addEventListener('click', () => openBcDetail(b.getAttribute('data-bc-view'))));
+      $('bc-tbody').querySelectorAll('[data-bc-edit]').forEach(b => b.addEventListener('click', () => openBcCompose(rows.find(r => r.id === b.getAttribute('data-bc-edit')))));
+      $('bc-tbody').querySelectorAll('[data-bc-delete]').forEach(b => b.addEventListener('click', () => confirmBcDelete(rows.find(r => r.id === b.getAttribute('data-bc-delete')))));
+      // Lazy-fetch reach counts (one round-trip per visible row — bounded by
+      // table page size, so latency is acceptable).
+      rows.forEach(b => {
+        apiAdmin('GET', '/admin/broadcasts/' + b.id).then(res => {
+          const el = document.querySelector(`[data-bc-reach="${b.id}"]`);
+          if (el && res && res.data) {
+            el.textContent = (res.data.audience_count || 0).toLocaleString('fr-CM');
+            el.classList.remove('muted');
+          }
+        }).catch(() => {});
+      });
+    }
+
+    function openBcCompose(existing) {
+      const b = existing || {};
+      const isEdit = !!existing;
+      const filter = b.audience_filter || {};
+      const isMP   = (b.audience_app || 'mon_partenaire') === 'mon_partenaire';
+      const isDz   = (b.audience_app || '') === 'partenaire_dozie';
+      const isBoth = (b.audience_app || '') === 'both';
+      openModal({
+        title: isEdit ? 'Edit broadcast' : 'New broadcast',
+        sub: isEdit ? (b.title || '') : 'Compose an announcement and target an audience slice.',
+        content: `
+          <div class="field"><label>Title (max 80)</label>
+            <input type="text" id="bc-title" maxlength="80" value="${escapeHtml(b.title || '')}" placeholder="Short headline visible to users" /></div>
+          <div class="field"><label>Body (max 500)</label>
+            <textarea id="bc-body" maxlength="500" placeholder="What do you want them to know?">${escapeHtml(b.body || '')}</textarea></div>
+          <div class="field"><label>Audience app</label>
+            <select id="bc-app">
+              <option value="mon_partenaire"${isMP   ? ' selected' : ''}>Mon Partenaire</option>
+              <option value="partenaire_dozie"${isDz ? ' selected' : ''}>Partenaire Dozie</option>
+              <option value="both"${isBoth ? ' selected' : ''}>Both</option>
+            </select>
+          </div>
+          <div id="bc-mp-filters" class="field">
+            <label>MP plans</label>
+            <select id="bc-plans" multiple size="4">
+              <option value="silver"${(filter.plan||[]).includes('silver')   ? ' selected' : ''}>Silver</option>
+              <option value="gold"${(filter.plan||[]).includes('gold')       ? ' selected' : ''}>Gold</option>
+              <option value="premium"${(filter.plan||[]).includes('premium') ? ' selected' : ''}>Premium</option>
+            </select>
+            <label style="margin-top:8px">Subscription status</label>
+            <select id="bc-sub-status" multiple size="3">
+              <option value="active"${(filter.sub_status||['active','trial']).includes('active')   ? ' selected' : ''}>Active</option>
+              <option value="trial"${(filter.sub_status||['active','trial']).includes('trial')     ? ' selected' : ''}>Trial</option>
+              <option value="pending"${(filter.sub_status||[]).includes('pending')                 ? ' selected' : ''}>Pending</option>
+            </select>
+          </div>
+          <div id="bc-dz-filters" class="field">
+            <label>Dozie role</label>
+            <select id="bc-role">
+              <option value="">Both buyers + sellers</option>
+              <option value="buyer"${filter.dozie_role === 'buyer'  ? ' selected' : ''}>Buyer</option>
+              <option value="seller"${filter.dozie_role === 'seller' ? ' selected' : ''}>Seller</option>
+            </select>
+            <label style="margin-top:8px">City (optional)</label>
+            <input type="text" id="bc-city" value="${escapeHtml(filter.city || '')}" placeholder="e.g. Douala" />
+          </div>
+          <div class="field"><label>Severity</label>
+            <select id="bc-severity">
+              <option value="info"${(b.severity||'info')==='info'         ? ' selected' : ''}>Info</option>
+              <option value="warning"${b.severity==='warning'             ? ' selected' : ''}>Warning</option>
+              <option value="critical"${b.severity==='critical'           ? ' selected' : ''}>Critical</option>
+            </select>
+          </div>
+          <div class="field"><label>Starts at</label>
+            <input type="datetime-local" id="bc-starts" value="${b.starts_at ? new Date(b.starts_at).toISOString().slice(0,16) : ''}" /></div>
+          <div class="field"><label>Expires at (optional — leave blank for never)</label>
+            <input type="datetime-local" id="bc-expires" value="${b.expires_at ? new Date(b.expires_at).toISOString().slice(0,16) : ''}" /></div>
+          <div class="field"><label>Estimated audience</label>
+            <div id="bc-audience-count" class="muted">—</div></div>
+        `,
+        secondary: { label: 'Cancel' },
+        // Drafts get a third button surfaced manually via DOM after open.
+        primary: { label: isEdit ? 'Save changes' : 'Publish', onClick: async (close) => {
+          const payload = bcReadCompose(false);
+          if (!payload) return;
+          try {
+            if (isEdit) await apiAdmin('PATCH', '/admin/broadcasts/' + b.id, payload);
+            else        await apiAdmin('POST',  '/admin/broadcasts', payload);
+            showToast(isEdit ? 'Broadcast updated' : 'Broadcast published', 'success');
+            close(); loadBroadcasts();
+          } catch (e) { showToast(e.message, 'danger'); }
+        }}
+      });
+      // Toggle MP/Dozie filter blocks based on audience_app.
+      const togg = () => {
+        const v = $('bc-app').value;
+        $('bc-mp-filters').style.display = (v === 'mon_partenaire' || v === 'both') ? '' : 'none';
+        $('bc-dz-filters').style.display = (v === 'partenaire_dozie' || v === 'both') ? '' : 'none';
+        bcPreviewAudience();
+      };
+      togg();
+      ['bc-app','bc-plans','bc-sub-status','bc-role','bc-city'].forEach(id => {
+        $(id).addEventListener('change', () => { togg(); bcPreviewAudience(); });
+        $(id).addEventListener('input',  bcPreviewAudience);
+      });
+      // Inject a "Save as draft" button between Cancel and Publish (new-only).
+      const foot = document.querySelector('.modal-foot');
+      const cancelBtn = foot && foot.querySelector('.btn:not(.btn-primary):not(.btn-danger)');
+      if (foot && cancelBtn && !isEdit) {
+        const draftBtn = document.createElement('button');
+        draftBtn.type = 'button';
+        draftBtn.className = 'btn';
+        draftBtn.textContent = 'Save as draft';
+        draftBtn.addEventListener('click', async () => {
+          const payload = bcReadCompose(true);
+          if (!payload) return;
+          try {
+            await apiAdmin('POST', '/admin/broadcasts', payload);
+            showToast('Draft saved', 'success');
+            closeModal(); loadBroadcasts();
+          } catch (e) { showToast(e.message, 'danger'); }
+        });
+        cancelBtn.parentNode.insertBefore(draftBtn, cancelBtn.nextSibling);
+      }
+    }
+
+    function bcReadCompose(asDraft) {
+      const title = $('bc-title').value.trim();
+      const body  = $('bc-body').value.trim();
+      if (!title) { showToast('Title is required', 'danger'); return null; }
+      if (!body)  { showToast('Body is required', 'danger'); return null; }
+      const audience_app = $('bc-app').value;
+      const plans  = [...$('bc-plans').selectedOptions].map(o => o.value);
+      const subs   = [...$('bc-sub-status').selectedOptions].map(o => o.value);
+      const filter = {};
+      if (audience_app === 'mon_partenaire' || audience_app === 'both') {
+        if (plans.length) filter.plan = plans;
+        if (subs.length)  filter.sub_status = subs;
+      }
+      if (audience_app === 'partenaire_dozie' || audience_app === 'both') {
+        if ($('bc-role').value) filter.dozie_role = $('bc-role').value;
+        if ($('bc-city').value.trim()) filter.city = $('bc-city').value.trim();
+      }
+      return {
+        title, body, audience_app, audience_filter: filter,
+        severity: $('bc-severity').value,
+        starts_at:  $('bc-starts').value  ? new Date($('bc-starts').value).toISOString()  : null,
+        expires_at: $('bc-expires').value ? new Date($('bc-expires').value).toISOString() : null,
+        is_draft: !!asDraft
+      };
+    }
+
+    let _bcPreviewTimer = null;
+    function bcPreviewAudience() {
+      clearTimeout(_bcPreviewTimer);
+      _bcPreviewTimer = setTimeout(async () => {
+        try {
+          const payload = bcReadCompose(false);
+          if (!payload) return;
+          const res = await apiAdmin('POST', '/admin/broadcasts/preview-audience',
+            { audience_app: payload.audience_app, audience_filter: payload.audience_filter });
+          const el = $('bc-audience-count');
+          if (el) {
+            const n = (res && res.data && res.data.audience_count) || 0;
+            el.textContent = n.toLocaleString('fr-CM') + ' users';
+            el.classList.remove('muted');
+          }
+        } catch (_) { /* preview failure is silent */ }
+      }, 250);
+    }
+
+    function openBcDetail(id) {
+      apiAdmin('GET', '/admin/broadcasts/' + id).then(res => {
+        const b = res && res.data;
+        if (!b) return;
+        const filter = b.audience_filter || {};
+        openModal({
+          title: b.title,
+          sub: b.is_draft ? 'Draft' : ('Published ' + new Date(b.created_at).toLocaleString()),
+          content: `
+            <div class="field"><label>Body</label><div>${escapeHtml(b.body)}</div></div>
+            <div class="field"><label>Severity</label><span class="pill pill-${escapeHtml(b.severity)}">${escapeHtml(b.severity)}</span></div>
+            <div class="field"><label>Audience</label><div>${escapeHtml(b.audience_app)} · ${escapeHtml(JSON.stringify(filter))}</div></div>
+            <div class="field"><label>Estimated audience</label><div>${(b.audience_count || 0).toLocaleString('fr-CM')} users</div></div>
+            <div class="field"><label>Starts / expires</label>
+              <div>${b.starts_at ? new Date(b.starts_at).toLocaleString() : '—'} → ${b.expires_at ? new Date(b.expires_at).toLocaleString() : 'never'}</div></div>
+            <div class="field"><label>Created by</label><div>${escapeHtml(b.created_by || '—')}</div></div>
+            <div class="field"><label>Delivery status</label>
+              <div class="muted">Pending dispatch — push infrastructure comes in a later phase.</div></div>
+          `,
+          secondary: { label: 'Close' }
+        });
+      }).catch(e => showToast(e.message, 'danger'));
+    }
+
+    function confirmBcDelete(b) {
+      if (!b) return;
+      openModal({
+        title: 'Delete broadcast?',
+        sub: b.title,
+        content: '<div>This soft-deletes the broadcast. It will no longer appear in any tab.</div>',
+        secondary: { label: 'Cancel' },
+        primary: { label: 'Delete', danger: true, onClick: async (close) => {
+          try {
+            await apiAdmin('DELETE', '/admin/broadcasts/' + b.id);
+            showToast('Broadcast deleted', 'success');
+            close(); loadBroadcasts();
+          } catch (e) { showToast(e.message, 'danger'); }
+        }}
+      });
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  D-D — ADMIN TEAM
+    // ════════════════════════════════════════════════════════════════
+    async function loadAdminTeam() {
+      // Hard gate at the frontend; backend re-enforces independently.
+      if (!isMasterAdmin()) {
+        $('at-no-permission').hidden = false;
+        $('at-body').hidden = true;
+        return;
+      }
+      $('at-no-permission').hidden = true;
+      $('at-body').hidden = false;
+
+      try {
+        const res = await apiAdmin('GET', '/admin/admins');
+        const rows  = res.data  || [];
+        const stats = res.stats || {};
+        const cards = $('at-stat-strip').children;
+        cards[0].querySelector('.stat-value').textContent = stats.total || 0;
+        cards[1].querySelector('.stat-value').textContent = stats.active || 0;
+        cards[2].querySelector('.stat-value').textContent = stats.inactive || 0;
+        for (const el of cards) el.querySelector('.stat-value').classList.remove('muted');
+        renderAdminTeamTable(rows);
+      } catch (e) {
+        showToast('Admin team load failed: ' + e.message, 'danger');
+      }
+    }
+
+    function rolePill(role) {
+      const map = { master_admin: 'pill-critical', admin: 'pill-info', staff: 'pill-muted' };
+      return `<span class="pill ${map[role] || 'pill-muted'}">${escapeHtml(role || '—')}</span>`;
+    }
+
+    function renderAdminTeamTable(rows) {
+      if (!rows.length) {
+        $('at-tbody').innerHTML = '<tr><td colspan="7" class="muted ta-center" style="padding:20px">No admins yet.</td></tr>';
+        return;
+      }
+      $('at-tbody').innerHTML = rows.map(a => `
+        <tr data-at-id="${escapeHtml(a.id)}">
+          <td>${escapeHtml(a.full_name || '—')}</td>
+          <td>${escapeHtml(a.email)}</td>
+          <td>${rolePill(a.role)}</td>
+          <td>${a.is_active ? '<span class="pill pill-success">Active</span>' : '<span class="pill pill-muted">Inactive</span>'}</td>
+          <td>${a.last_login ? new Date(a.last_login).toLocaleString() : '—'}</td>
+          <td>${a.created_at ? new Date(a.created_at).toLocaleString() : '—'}</td>
+          <td class="ta-right">
+            <button class="btn" data-at-view="${escapeHtml(a.id)}">View</button>
+            ${a.role === 'master_admin' ? '' : `
+              <button class="btn" data-at-reset="${escapeHtml(a.id)}">Reset PW</button>
+              <button class="btn" data-at-toggle="${escapeHtml(a.id)}">${a.is_active ? 'Deactivate' : 'Reactivate'}</button>
+              <button class="btn btn-danger" data-at-delete="${escapeHtml(a.id)}">Delete</button>
+            `}
+          </td>
+        </tr>
+      `).join('');
+      const byId = id => rows.find(r => r.id === id);
+      $('at-tbody').querySelectorAll('[data-at-view]')  .forEach(b => b.addEventListener('click', () => openAdminDetail(byId(b.getAttribute('data-at-view')))));
+      $('at-tbody').querySelectorAll('[data-at-reset]') .forEach(b => b.addEventListener('click', () => resetAdminPassword(byId(b.getAttribute('data-at-reset')))));
+      $('at-tbody').querySelectorAll('[data-at-toggle]').forEach(b => b.addEventListener('click', () => toggleAdminActive(byId(b.getAttribute('data-at-toggle')))));
+      $('at-tbody').querySelectorAll('[data-at-delete]').forEach(b => b.addEventListener('click', () => confirmDeleteAdmin(byId(b.getAttribute('data-at-delete')))));
+    }
+
+    function openAddAdmin() {
+      openModal({
+        title: 'Add admin',
+        sub: 'New admins receive a one-time temp password they must rotate on first login.',
+        content: `
+          <div class="field"><label>Full name</label><input type="text" id="at-name" /></div>
+          <div class="field"><label>Email</label><input type="email" id="at-email" /></div>
+          <div class="field"><label>Role</label>
+            <select id="at-role">
+              <option value="admin">Admin — full CRUD, cannot manage admins</option>
+              <option value="staff">Staff — read-only</option>
+            </select>
+          </div>
+          <div class="field"><label>Notes (optional)</label>
+            <textarea id="at-notes" placeholder="Context for audit / handover"></textarea></div>
+        `,
+        secondary: { label: 'Cancel' },
+        primary: { label: 'Create admin', onClick: async (close) => {
+          const full_name = $('at-name').value.trim();
+          const email     = $('at-email').value.trim();
+          const role      = $('at-role').value;
+          const notes     = $('at-notes').value.trim();
+          if (!full_name || !email) return showToast('Name and email required', 'danger');
+          try {
+            const res = await apiAdmin('POST', '/admin/admins', { full_name, email, role, notes });
+            const temp = res && res.data && res.data.temp_password;
+            close();
+            if (temp) showTempPassword(temp, 'New admin created');
+            loadAdminTeam();
+          } catch (e) { showToast(e.message, 'danger'); }
+        }}
+      });
+    }
+
+    function showTempPassword(temp, title) {
+      openModal({
+        title,
+        sub: 'Share this securely — it will not be shown again.',
+        content: `
+          <div class="temp-pw-box">
+            <span id="temp-pw-val">${escapeHtml(temp)}</span>
+            <button class="btn" id="temp-pw-copy">Copy</button>
+          </div>
+          <div class="temp-pw-warning">The admin will be required to change this on first login.</div>
+        `,
+        secondary: { label: 'Done' }
+      });
+      $('temp-pw-copy').addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(temp);
+          showToast('Password copied to clipboard', 'success');
+        } catch (_) { showToast('Could not copy — select and copy manually', 'danger'); }
+      });
+    }
+
+    function openAdminDetail(a) {
+      if (!a) return;
+      apiAdmin('GET', '/admin/admins/' + a.id).then(res => {
+        const data = (res && res.data) || {};
+        const actions = data.recent_actions || [];
+        openModal({
+          title: a.full_name || a.email,
+          sub: a.email,
+          content: `
+            <div class="field"><label>Role</label>${rolePill(data.admin?.role || a.role)}</div>
+            <div class="field"><label>Status</label>${(data.admin?.is_active ?? a.is_active) ? 'Active' : 'Inactive'}</div>
+            <div class="field"><label>Last login</label>${(data.admin?.last_login || a.last_login) ? new Date(data.admin?.last_login || a.last_login).toLocaleString() : '—'}</div>
+            <div class="field"><label>Recent actions (20 most recent)</label>
+              ${actions.length
+                ? '<table class="data-table">' +
+                    '<thead><tr><th>When</th><th>Action</th><th>Target</th></tr></thead>' +
+                    '<tbody>' + actions.map(act =>
+                      `<tr><td>${new Date(act.created_at).toLocaleString()}</td><td>${escapeHtml(act.action)}</td><td>${escapeHtml(act.table_name || '')} ${escapeHtml(act.record_id || '')}</td></tr>`
+                    ).join('') + '</tbody></table>'
+                : '<div class="muted">No recorded actions.</div>'}
+            </div>
+            ${a.role !== 'master_admin' ? `
+              <div class="field"><label>Change role</label>
+                <select id="at-role-edit">
+                  <option value="admin"${(data.admin?.role || a.role) === 'admin' ? ' selected' : ''}>Admin</option>
+                  <option value="staff"${(data.admin?.role || a.role) === 'staff' ? ' selected' : ''}>Staff</option>
+                </select>
+                <button class="btn" id="at-role-save" style="margin-top:8px">Save role</button>
+              </div>` : ''}
+          `,
+          secondary: { label: 'Close' }
+        });
+        const saveBtn = $('at-role-save');
+        if (saveBtn) saveBtn.addEventListener('click', async () => {
+          const role = $('at-role-edit').value;
+          try {
+            await apiAdmin('PATCH', '/admin/admins/' + a.id, { role });
+            showToast('Role updated', 'success');
+            closeModal(); loadAdminTeam();
+          } catch (e) { showToast(e.message, 'danger'); }
+        });
+      }).catch(e => showToast(e.message, 'danger'));
+    }
+
+    function resetAdminPassword(a) {
+      if (!a) return;
+      openModal({
+        title: 'Reset password?',
+        sub: a.email,
+        content: '<div>This issues a new one-time temp password. The admin will be required to change it on first login.</div>',
+        secondary: { label: 'Cancel' },
+        primary: { label: 'Reset password', onClick: async (close) => {
+          try {
+            const res = await apiAdmin('POST', '/admin/admins/' + a.id + '/reset-password');
+            const temp = res && res.data && res.data.temp_password;
+            close();
+            if (temp) showTempPassword(temp, 'Password reset');
+          } catch (e) { showToast(e.message, 'danger'); }
+        }}
+      });
+    }
+
+    function toggleAdminActive(a) {
+      if (!a) return;
+      const next = !a.is_active;
+      apiAdmin('PATCH', '/admin/admins/' + a.id, { is_active: next })
+        .then(() => { showToast('Admin ' + (next ? 'reactivated' : 'deactivated'), 'success'); loadAdminTeam(); })
+        .catch(e => showToast(e.message, 'danger'));
+    }
+
+    function confirmDeleteAdmin(a) {
+      if (!a) return;
+      openModal({
+        title: 'Delete admin?',
+        sub: a.email,
+        content: '<div>This hard-deletes the admin account and revokes any active sessions.</div>',
+        secondary: { label: 'Cancel' },
+        primary: { label: 'Delete', danger: true, onClick: async (close) => {
+          try {
+            await apiAdmin('DELETE', '/admin/admins/' + a.id);
+            showToast('Admin deleted', 'success');
+            close(); loadAdminTeam();
+          } catch (e) { showToast(e.message, 'danger'); }
+        }}
+      });
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  D-E — AUDIT LOG VIEWER
+    // ════════════════════════════════════════════════════════════════
+    let _alRows = [];
+    let _alNextCursor = null;
+
+    async function loadAuditLog(opts) {
+      opts = opts || {};
+      const params = new URLSearchParams();
+      params.set('source',      $('al-source').value || 'both');
+      const email = $('al-admin-email').value.trim();
+      if (email)                              params.set('admin_email', email);
+      if ($('al-action').value.trim())        params.set('action',      $('al-action').value.trim());
+      if ($('al-date-from').value)            params.set('date_from',   $('al-date-from').value);
+      if ($('al-date-to').value)              params.set('date_to',     $('al-date-to').value + 'T23:59:59');
+      if (opts.append && _alNextCursor)       params.set('before',      _alNextCursor);
+      params.set('limit', '50');
+
+      try {
+        const res = await apiAdmin('GET', '/admin/audit-log?' + params.toString());
+        const rows = res.data || [];
+        if (opts.append) _alRows = _alRows.concat(rows);
+        else             _alRows = rows;
+        _alNextCursor = res.next_cursor;
+        renderAuditLogTable();
+      } catch (e) {
+        showToast('Audit log load failed: ' + e.message, 'danger');
+      }
+    }
+
+    function renderAuditLogTable() {
+      if (!_alRows.length) {
+        $('al-tbody').innerHTML = '<tr><td colspan="6" class="muted ta-center" style="padding:20px">No audit rows match these filters.</td></tr>';
+        $('al-scroll-foot').style.display = 'none';
+        return;
+      }
+      $('al-tbody').innerHTML = _alRows.map((r, i) => `
+        <tr data-al-i="${i}">
+          <td>${new Date(r.created_at).toLocaleString()}</td>
+          <td><span class="pill ${r.source === 'pa' ? 'pill-info' : 'pill-muted'}">${escapeHtml(r.source || '')}</span></td>
+          <td>${escapeHtml(r.admin_email || '—')}</td>
+          <td>${escapeHtml(r.action || '')}</td>
+          <td>${escapeHtml(r.target_type || '')} ${r.target_id ? '<span class="muted">' + escapeHtml(String(r.target_id).slice(0, 8)) + '…</span>' : ''}</td>
+          <td class="ta-right"><button class="btn" data-al-view="${i}">Details</button></td>
+        </tr>
+      `).join('');
+      $('al-tbody').querySelectorAll('[data-al-view]').forEach(b =>
+        b.addEventListener('click', () => openAuditDetail(_alRows[parseInt(b.getAttribute('data-al-view'), 10)])));
+      $('al-scroll-foot').style.display = _alNextCursor ? '' : 'none';
+    }
+
+    function openAuditDetail(r) {
+      if (!r) return;
+      let jumpHtml = '';
+      // Jump-to button: known Dozie targets → marketplace-users / orders / disputes.
+      if (r.target_type === 'ptn_users' && r.target_id) {
+        jumpHtml = `<button class="btn" id="al-jump">Open user in admin →</button>`;
+      } else if (r.target_type === 'ptn_disputes' && r.target_id) {
+        jumpHtml = `<button class="btn" id="al-jump">Open disputes →</button>`;
+      } else if (r.target_type === 'pa_organisations' && r.target_id) {
+        jumpHtml = `<button class="btn" id="al-jump">Open in Businesses →</button>`;
+      }
+      openModal({
+        title: r.action,
+        sub: (r.admin_email || '—') + ' · ' + new Date(r.created_at).toLocaleString(),
+        content: `
+          <div class="field"><label>Source / target</label>
+            <div>${escapeHtml(r.source)} · ${escapeHtml(r.target_type || '—')} ${r.target_id ? '· ' + escapeHtml(r.target_id) : ''}</div></div>
+          <div class="field"><label>IP</label><div>${escapeHtml(r.ip || '—')}</div></div>
+          <div class="field"><label>Payload</label>
+            <pre style="background:var(--bg-tertiary);padding:10px;border-radius:6px;overflow:auto;max-height:240px;font-size:12px">${escapeHtml(JSON.stringify(r.payload || {}, null, 2))}</pre></div>
+          ${r.old_data ? `<div class="field"><label>Old data</label>
+            <pre style="background:var(--bg-tertiary);padding:10px;border-radius:6px;overflow:auto;max-height:160px;font-size:12px">${escapeHtml(JSON.stringify(r.old_data, null, 2))}</pre></div>` : ''}
+          ${jumpHtml}
+        `,
+        secondary: { label: 'Close' }
+      });
+      const jump = $('al-jump');
+      if (jump) jump.addEventListener('click', () => {
+        closeModal();
+        if (r.target_type === 'ptn_users')         navigateTo('marketplace-users');
+        else if (r.target_type === 'ptn_disputes') navigateTo('disputes');
+        else if (r.target_type === 'pa_organisations') navigateTo('businesses');
+      });
+    }
+
+    async function exportAuditLogCsv() {
+      const token = localStorage.getItem(TOKEN_KEY);
+      const params = new URLSearchParams();
+      params.set('source', $('al-source').value || 'both');
+      if ($('al-admin-email').value.trim()) params.set('admin_email', $('al-admin-email').value.trim());
+      if ($('al-action').value.trim())      params.set('action',      $('al-action').value.trim());
+      if ($('al-date-from').value)          params.set('date_from',   $('al-date-from').value);
+      if ($('al-date-to').value)            params.set('date_to',     $('al-date-to').value + 'T23:59:59');
+      try {
+        const res = await fetch(API_BASE + '/admin/audit-log/export?' + params.toString(), {
+          headers: { Authorization: 'Bearer ' + token }
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'audit-log-' + new Date().toISOString().slice(0,10) + '.csv';
+        document.body.appendChild(a); a.click(); a.remove();
+      } catch (e) { showToast('Export failed: ' + e.message, 'danger'); }
+    }
+
+    async function loadAuditLogActions() {
+      try {
+        const res = await apiAdmin('GET', '/admin/audit-log/actions');
+        const dl = $('al-action-list');
+        if (!dl) return;
+        dl.innerHTML = (res.data || []).map(a => `<option value="${escapeHtml(a)}"></option>`).join('');
+      } catch (_) { /* autocomplete is nice-to-have */ }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  D-F — NOTIFICATIONS BELL
+    // ════════════════════════════════════════════════════════════════
+    let _notifPollTimer = null;
+    let _notifOpen = false;
+
+    async function refreshNotifications() {
+      try {
+        const res = await apiAdmin('GET', '/admin/notifications?status=all');
+        const list = res.data || [];
+        const unread = res.unread_count || 0;
+        $('sb-bell-dot').hidden = unread === 0;
+        if (_notifOpen) renderNotifDropdown(list);
+        return list;
+      } catch (_) { return []; }
+    }
+
+    function renderNotifDropdown(list) {
+      const body = $('notif-dd-body');
+      if (!list || !list.length) {
+        body.innerHTML = '<div class="notif-empty">No notifications yet</div>';
+        return;
+      }
+      const sevIcon = (s) => s === 'critical' ? '⛔' : s === 'warning' ? '⚠️' : '🔔';
+      body.innerHTML = list.map(n => `
+        <div class="notif-row ${n._is_read ? '' : 'unread'}" data-notif-id="${escapeHtml(n.id)}" data-notif-url="${escapeHtml(n.target_url || '')}">
+          <div class="notif-icon">${sevIcon(n.severity)}</div>
+          <div class="notif-content">
+            <div class="notif-title">${escapeHtml(n.title)}</div>
+            <div class="notif-body">${escapeHtml(n.body || '')}</div>
+            <div class="notif-time">${fmtRelative(n.created_at)}</div>
+          </div>
+        </div>
+      `).join('');
+      body.querySelectorAll('.notif-row').forEach(row => {
+        row.addEventListener('click', async () => {
+          const id  = row.getAttribute('data-notif-id');
+          const url = row.getAttribute('data-notif-url');
+          try { await apiAdmin('POST', '/admin/notifications/' + id + '/mark-read'); } catch (_) {}
+          row.classList.remove('unread');
+          closeNotifDropdown();
+          if (url) {
+            // Parse "/admin.html#<route>" → navigate via hash.
+            const hashIdx = url.indexOf('#');
+            if (hashIdx >= 0) {
+              const tail  = url.slice(hashIdx + 1);
+              const route = tail.split('?')[0];
+              navigateTo(route);
+            }
+          }
+          refreshNotifications();
+        });
+      });
+    }
+
+    function openNotifDropdown() {
+      const bell = $('sb-bell');
+      const dd   = $('notif-dropdown');
+      if (!bell || !dd) return;
+      const rect = bell.getBoundingClientRect();
+      dd.style.top  = (rect.bottom + 6) + 'px';
+      dd.style.left = (rect.right  - 360) + 'px';  // right-align with bell
+      dd.hidden = false;
+      _notifOpen = true;
+      refreshNotifications();
+    }
+    function closeNotifDropdown() {
+      const dd = $('notif-dropdown');
+      if (dd) dd.hidden = true;
+      _notifOpen = false;
+    }
+    function toggleNotifDropdown() { _notifOpen ? closeNotifDropdown() : openNotifDropdown(); }
+
+    function startNotifPolling() {
+      stopNotifPolling();
+      refreshNotifications();
+      _notifPollTimer = setInterval(refreshNotifications, 30000);
+    }
+    function stopNotifPolling() {
+      if (_notifPollTimer) { clearInterval(_notifPollTimer); _notifPollTimer = null; }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  Force password change gate (Phase D-D)
+    // ════════════════════════════════════════════════════════════════
+    function enforceForcedPasswordChange(admin) {
+      if (admin && admin.must_change_password) {
+        // Steer the user straight to the Change Password card and warn them.
+        navigateTo('settings');
+        setTimeout(() => {
+          const card = $('cp-form');
+          if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 200);
+        showToast('Password change required before you can use other actions.', 'warning');
+      }
+    }
+
       $('login-form').addEventListener('submit', handleLoginSubmit);
       $('sb-signout').addEventListener('click', signOut);
       $('profile-signout').addEventListener('click', signOut);
@@ -3623,6 +4644,44 @@
       });
       searchInput.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') { closeSearchDropdown(); searchInput.blur(); }
+      });
+
+      // PHASE D — Broadcasts wire-up
+      $('bc-new-btn').addEventListener('click', () => openBcCompose(null));
+      document.querySelectorAll('[data-bc-tab]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          _bcTab = btn.getAttribute('data-bc-tab');
+          document.querySelectorAll('[data-bc-tab]').forEach(b => b.classList.toggle('active', b === btn));
+          renderBcTable();
+        });
+      });
+      // PHASE D — Admin team wire-up
+      $('at-new-btn').addEventListener('click', openAddAdmin);
+      // PHASE D — Audit log wire-up
+      $('al-apply').addEventListener('click', () => loadAuditLog());
+      $('al-clear').addEventListener('click', () => {
+        ['al-admin-email','al-action','al-date-from','al-date-to'].forEach(id => $(id).value = '');
+        $('al-source').value = 'both';
+        loadAuditLog();
+      });
+      $('al-export-btn').addEventListener('click', exportAuditLogCsv);
+      $('al-load-more').addEventListener('click', () => loadAuditLog({ append: true }));
+      // PHASE D — Notifications bell
+      $('sb-bell').addEventListener('click', (e) => { e.stopPropagation(); toggleNotifDropdown(); });
+      $('notif-mark-all').addEventListener('click', async () => {
+        try {
+          await apiAdmin('POST', '/admin/notifications/mark-all-read');
+          refreshNotifications();
+        } catch (e) { showToast(e.message, 'danger'); }
+      });
+      document.addEventListener('click', (e) => {
+        const dd = $('notif-dropdown');
+        if (_notifOpen && dd && !dd.contains(e.target) && e.target.id !== 'sb-bell') {
+          closeNotifDropdown();
+        }
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && _notifOpen) closeNotifDropdown();
       });
 
       // Sidebar nav — single delegated handler so we don't bind 13 times.
