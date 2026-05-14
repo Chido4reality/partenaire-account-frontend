@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore, useLangStore, useOfflineStore } from "../../store";
 import api from "../../utils/api";
@@ -188,8 +188,32 @@ export default function Layout() {
     return `${icon} ${firstName} · ${roleName}`;
   };
 
-  const NotifPanel = () => (
-    <div style={{ position: "absolute", bottom: isMobile ? "auto" : "100%", top: isMobile ? 52 : "auto", right: isMobile ? 0 : "auto", left: isMobile ? 0 : 0, width: isMobile ? "100%" : 320, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.4)", overflow: "hidden", zIndex: 200, marginBottom: isMobile ? 0 : 4 }}>
+  // Desktop bell trigger lives inside the sidebar, which has
+  // overflow:hidden. position:absolute on the panel gets clipped at
+  // the sidebar boundary (~220px wide), so the action group at flex-end
+  // — including the "Mark all" button — was rendered offscreen and
+  // looked missing. Fix: use position:fixed on desktop and read the
+  // trigger's getBoundingClientRect to anchor the panel. Mobile keeps
+  // absolute positioning since the mobile header has no overflow clip.
+  const NotifPanel = () => {
+    const panelRef = useRef(null);
+    useLayoutEffect(() => {
+      if (isMobile || !panelRef.current) return;
+      const trigger = document.getElementById("notif-bell-desktop");
+      if (!trigger) return;
+      const r = trigger.getBoundingClientRect();
+      // Anchor below the trigger, aligned to its left edge. Clamp so
+      // the 320px panel never runs off the right of the viewport on
+      // narrow desktops.
+      const left = Math.min(r.left, window.innerWidth - 320 - 8);
+      panelRef.current.style.top  = (r.bottom + 4) + "px";
+      panelRef.current.style.left = Math.max(8, left) + "px";
+    });
+    const baseStyle = isMobile
+      ? { position: "absolute", top: 52, left: 0, right: 0, width: "100%", marginBottom: 0 }
+      : { position: "fixed",    top: 0,  left: -9999, width: 320, marginBottom: 0 };
+    return (
+    <div ref={panelRef} style={{ ...baseStyle, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.4)", overflow: "hidden", zIndex: 1000 }}>
       <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
         <span style={{ fontWeight: 600, fontSize: 13, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Notifications {unread > 0 && `(${unread})`}</span>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
@@ -226,7 +250,8 @@ export default function Layout() {
         ))}
       </div>
     </div>
-  );
+    );
+  };
 
   // ── MOBILE LAYOUT ────────────────────────────────────────────────────────────
   if (isMobile) {
@@ -375,7 +400,7 @@ export default function Layout() {
 
           {!collapsed && (
             <div style={{ position: "relative", marginBottom: 6 }}>
-              <button onClick={() => setShowNotif(s => !s)} style={{ width: "100%", padding: "6px 10px", borderRadius: 8, background: "rgba(255,255,255,0.05)", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: 11, textAlign: "left", display: "flex", justifyContent: "space-between" }}>
+              <button id="notif-bell-desktop" onClick={() => setShowNotif(s => !s)} style={{ width: "100%", padding: "6px 10px", borderRadius: 8, background: "rgba(255,255,255,0.05)", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: 11, textAlign: "left", display: "flex", justifyContent: "space-between" }}>
                 <span>🔔 {lang === "en" ? "Alerts" : "Alertes"}</span>
                 {unread > 0 && <span style={{ background: "#ef4444", color: "#fff", borderRadius: 10, padding: "0 6px", fontSize: 10, fontWeight: 700 }}>{unread}</span>}
               </button>
