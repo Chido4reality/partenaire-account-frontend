@@ -2376,6 +2376,7 @@
           '</div>' +
           // Overview
           '<div class="detail-pane active" data-pane="overview">' +
+            renderEffectivePlanCard(d.effective_plan, d) +
             '<div class="health-grid">' +
               '<div class="health-card"><div class="health-label">Days since last sale</div><div class="health-value">' + safe(h.days_since_last_sale) + '</div></div>' +
               '<div class="health-card"><div class="health-label">Days since owner login</div><div class="health-value">' + safe(h.days_since_owner_login) + '</div></div>' +
@@ -2950,6 +2951,35 @@
         const m = $('modal-host').querySelector('.modal-body');
         if (m) m.innerHTML = '<div style="padding:24px;color:var(--danger)">' + escapeHtml(e.message) + '</div>';
       }
+    }
+
+    // Sprint A: Effective plan card on the Business detail Overview tab.
+    // Hidden when the computed plan matches plan_id and there's no grace
+    // / auto-downgrade context — i.e., when "what the DB says" already
+    // matches "what the user effectively gets".
+    function renderEffectivePlanCard(eff, biz) {
+      if (!eff) return '';
+      const planId = biz && biz.plan_id;
+      const same = eff.plan === planId && !eff.is_grace && !eff.auto_downgraded;
+      if (same) return '';
+      let body = '';
+      if (eff.is_grace) {
+        body = `Effective plan: <strong>Trial</strong> (${eff.days_remaining_in_grace} day${eff.days_remaining_in_grace === 1 ? '' : 's'} of grace remaining)`;
+      } else if (eff.auto_downgraded) {
+        body = `Effective plan: <strong>Silver</strong> (auto-downgraded from <strong>${escapeHtml(planId || 'trial')}</strong> — DB row not yet reconciled)`;
+      } else if (eff.plan === 'trial' && eff.days_remaining_in_trial != null) {
+        body = `Effective plan: <strong>Trial</strong> (${eff.days_remaining_in_trial} day${eff.days_remaining_in_trial === 1 ? '' : 's'} remaining)`;
+      } else if (eff.plan !== planId) {
+        body = `Effective plan: <strong>${escapeHtml(eff.plan)}</strong> (differs from DB plan_id <strong>${escapeHtml(planId || '—')}</strong>)`;
+      }
+      if (!body) return '';
+      const tone = eff.is_grace || eff.auto_downgraded ? 'pill-warning' : 'pill-info';
+      return `<div class="card" style="background:var(--bg-tertiary);margin-bottom:12px;border-left:3px solid var(--accent)">
+        <div class="settings-card-sub">
+          <span class="pill ${tone}">computed</span>
+          ${body}
+        </div>
+      </div>`;
     }
 
     // Phase D-B: Marketplace user detail → MP subscription status card.
