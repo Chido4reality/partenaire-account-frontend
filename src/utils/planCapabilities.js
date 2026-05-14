@@ -30,7 +30,7 @@ export const PLAN_CAPABILITIES = {
   silver: {
     label: 'Silver',
     label_fr: 'Silver',
-    sections: ['sales', 'inventory', 'count', 'settings'],
+    sections: ['sales', 'inventory', 'settings'],
     inventory_cap: 10,
     staff_cap: 1,
     location_cap: 1,
