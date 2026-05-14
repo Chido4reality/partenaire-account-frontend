@@ -886,6 +886,7 @@
         <div class="sb-section">Partenaire Dozie</div>
         <a class="sb-link" data-route="marketplace-users"><span class="sb-link-icon">👥</span><span class="sb-link-label">Marketplace users</span></a>
         <a class="sb-link" data-route="verifications"><span class="sb-link-icon">✅</span><span class="sb-link-label">Verifications</span></a>
+        <a class="sb-link" data-route="dozie-subscriptions"><span class="sb-link-icon">🎟️</span><span class="sb-link-label">Dozie subscriptions</span></a>
         <a class="sb-link" data-route="orders"><span class="sb-link-icon">🛒</span><span class="sb-link-label">Orders</span></a>
         <a class="sb-link" data-route="disputes"><span class="sb-link-icon">⚖️</span><span class="sb-link-label">Disputes</span></a>
         <a class="sb-link" data-route="marketplace-finance"><span class="sb-link-icon">💰</span><span class="sb-link-label">Marketplace finance</span></a>
@@ -1190,6 +1191,39 @@
               <th style="text-align:right">Actions</th>
             </tr></thead>
             <tbody id="dz-disp-tbody"><tr><td class="empty" colspan="8">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- DOZIE SUBSCRIPTIONS (Sprint B) -->
+      <section class="route" id="route-dozie-subscriptions">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Dozie subscriptions</div>
+            <div class="page-sub">Standalone Dozie subs — free tier + 3 000 FCFA / month paid tier. MP-linked sellers are tracked under Businesses.</div>
+          </div>
+          <button class="btn" id="ds-export-btn">Export payments CSV</button>
+        </div>
+        <div class="stat-strip" id="ds-stat-strip">
+          <div class="stat-card"><div class="stat-label">Active paid</div><div class="stat-value muted">…</div><div class="stat-sub muted" id="ds-sub-paid">—</div></div>
+          <div class="stat-card"><div class="stat-label">Free sellers</div><div class="stat-value muted">…</div><div class="stat-sub muted" id="ds-sub-free">—</div></div>
+          <div class="stat-card"><div class="stat-label">Pending payments</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">MTD revenue</div><div class="stat-value muted">…</div></div>
+        </div>
+        <div class="section-tabs" id="ds-tabs">
+          <button class="section-tab active" data-ds-tab="all">All <span class="tab-count" id="dscnt-all">·</span></button>
+          <button class="section-tab"        data-ds-tab="active_paid">Active paid <span class="tab-count" id="dscnt-paid">·</span></button>
+          <button class="section-tab"        data-ds-tab="free">Free <span class="tab-count" id="dscnt-free">·</span></button>
+          <button class="section-tab"        data-ds-tab="pending_payments">Pending payments <span class="tab-count" id="dscnt-pending">·</span></button>
+          <button class="section-tab"        data-ds-tab="expired">Expired <span class="tab-count" id="dscnt-expired">·</span></button>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <table class="data-table" id="ds-table">
+            <thead><tr>
+              <th>Seller</th><th>Phone</th><th>Tier</th><th>Orders</th>
+              <th>Started</th><th>Expires</th><th class="ta-right">Actions</th>
+            </tr></thead>
+            <tbody id="ds-tbody"><tr><td colspan="7" class="muted ta-center" style="padding:20px">Loading…</td></tr></tbody>
           </table>
         </div>
       </section>
@@ -1522,7 +1556,7 @@
     // ────────────────────── ROUTING ──────────────────────
     const VALID_ROUTES = new Set([
       'dashboard', 'businesses', 'subscriptions', 'mp-finance',
-      'marketplace-users', 'verifications', 'orders', 'disputes', 'marketplace-finance',
+      'marketplace-users', 'verifications', 'dozie-subscriptions', 'orders', 'disputes', 'marketplace-finance',
       'broadcasts', 'admin-team', 'audit-log', 'settings'
     ]);
 
@@ -1556,6 +1590,7 @@
       if (route === 'orders')             loadDzOrders();
       if (route === 'disputes')           loadDzDisputes();
       if (route === 'marketplace-finance') loadDzFinance();
+      if (route === 'dozie-subscriptions') loadDozieSubs();
       if (route === 'broadcasts')          loadBroadcasts();
       if (route === 'admin-team')          loadAdminTeam();
       if (route === 'audit-log')           { loadAuditLogActions(); loadAuditLog(); }
@@ -3861,6 +3896,147 @@
     }
 
     // ══════════════════════════════════════════════════════════════
+    // SPRINT B — Dozie standalone subscriptions
+    // ══════════════════════════════════════════════════════════════
+    let _dsTab = 'all';
+
+    async function loadDozieSubs() {
+      try {
+        const res = await apiAdmin('GET', '/admin/dozie/subscriptions?status=' + encodeURIComponent(_dsTab));
+        const rows  = res.data  || [];
+        const stats = res.stats || {};
+        const cards = $('ds-stat-strip').children;
+        const set = (i, v) => { const el = cards[i].querySelector('.stat-value'); el.textContent = v; el.classList.remove('muted'); };
+        set(0, (stats.active_paid || 0).toLocaleString('fr-CM'));
+        set(1, (stats.free_total  || 0).toLocaleString('fr-CM'));
+        set(2, (stats.pending_payments || 0).toLocaleString('fr-CM'));
+        set(3, fmtFCFA(stats.mtd_revenue_xaf));
+        $('ds-sub-paid').textContent = (stats.active_paid || 0) > 0
+          ? 'standalone @ 3 000 FCFA / month'
+          : 'no active paid subs yet';
+        $('ds-sub-free').textContent = (stats.free_capped || 0) > 0
+          ? `${stats.free_capped} of which capped (2 / 2 orders)`
+          : 'none capped';
+        renderDsTable(rows);
+      } catch (e) {
+        showToast('Dozie subs load failed: ' + e.message, 'danger');
+      }
+    }
+
+    function tierPillHtml(tier) {
+      if (tier === 'paid_standalone') return '<span class="pill pill-success">Paid 3k</span>';
+      if (tier === 'free')            return '<span class="pill pill-muted">Free</span>';
+      return '<span class="pill pill-muted">' + escapeHtml(tier || '—') + '</span>';
+    }
+
+    function renderDsTable(rows) {
+      if (!rows.length) {
+        $('ds-tbody').innerHTML = '<tr><td colspan="7" class="muted ta-center" style="padding:20px">No subscriptions match this tab.</td></tr>';
+        return;
+      }
+      $('ds-tbody').innerHTML = rows.map(s => {
+        const u = s.ptn_users || {};
+        return `
+        <tr data-ds-id="${escapeHtml(s.id)}">
+          <td>${escapeHtml(u.name || '—')}</td>
+          <td>${escapeHtml(u.phone || '—')}</td>
+          <td>${tierPillHtml(s.tier)} ${s.status !== 'active' ? '<span class="pill pill-warning">' + escapeHtml(s.status) + '</span>' : ''}</td>
+          <td>${s.lifetime_orders_accepted || 0}${s.tier === 'free' ? ' / 2' : ''}</td>
+          <td>${s.started_at ? new Date(s.started_at).toLocaleDateString() : '—'}</td>
+          <td>${s.expires_at ? new Date(s.expires_at).toLocaleDateString() : '—'}</td>
+          <td class="ta-right">
+            <button class="btn" data-ds-view="${escapeHtml(s.id)}">View</button>
+            ${s.tier === 'free' ? `<button class="btn" data-ds-upgrade="${escapeHtml(s.id)}">Force upgrade</button>` : ''}
+            ${s.tier === 'paid_standalone' && s.status === 'active' ? `<button class="btn" data-ds-downgrade="${escapeHtml(s.id)}">Downgrade</button>
+              <button class="btn btn-danger" data-ds-cancel="${escapeHtml(s.id)}">Cancel</button>` : ''}
+          </td>
+        </tr>`;
+      }).join('');
+      const byId = id => rows.find(r => r.id === id);
+      $('ds-tbody').querySelectorAll('[data-ds-view]')     .forEach(b => b.addEventListener('click', () => openDsDetail(byId(b.getAttribute('data-ds-view')))));
+      $('ds-tbody').querySelectorAll('[data-ds-upgrade]')  .forEach(b => b.addEventListener('click', () => openDsOverride('force_upgrade',   byId(b.getAttribute('data-ds-upgrade')))));
+      $('ds-tbody').querySelectorAll('[data-ds-downgrade]').forEach(b => b.addEventListener('click', () => openDsOverride('force_downgrade', byId(b.getAttribute('data-ds-downgrade')))));
+      $('ds-tbody').querySelectorAll('[data-ds-cancel]')   .forEach(b => b.addEventListener('click', () => openDsOverride('cancel',          byId(b.getAttribute('data-ds-cancel')))));
+    }
+
+    function openDsDetail(s) {
+      if (!s) return;
+      apiAdmin('GET', '/admin/dozie/subscriptions/' + s.id).then(res => {
+        const d = (res && res.data) || {};
+        const u = d.ptn_users || {};
+        const payments = d.payments || [];
+        openModal({
+          title: u.name || 'Subscription',
+          sub: (u.phone || '') + ' · ' + (u.city || ''),
+          wide: true,
+          content: `
+            <div class="field"><label>Tier</label>${tierPillHtml(d.tier)} <span class="muted">${escapeHtml(d.status)}</span></div>
+            <div class="field"><label>Orders accepted (lifetime)</label>${d.lifetime_orders_accepted || 0}${d.tier === 'free' ? ' / 2' : ''}</div>
+            <div class="field"><label>Started / expires</label>
+              ${d.started_at ? new Date(d.started_at).toLocaleString() : '—'} → ${d.expires_at ? new Date(d.expires_at).toLocaleString() : 'never'}</div>
+            <div class="field"><label>Payments (${payments.length})</label>
+              ${payments.length ? '<table class="data-table"><thead><tr><th>When</th><th>Amount</th><th>Status</th><th>Ref</th></tr></thead><tbody>' +
+                payments.map(p => `<tr>
+                  <td>${new Date(p.created_at).toLocaleString()}</td>
+                  <td>${fmtFCFA(p.amount)}</td>
+                  <td><span class="pill pill-${p.status === 'approved' ? 'success' : p.status === 'rejected' ? 'critical' : 'info'}">${escapeHtml(p.status)}</span></td>
+                  <td class="muted" style="font-family:monospace;font-size:11px">${escapeHtml((p.campay_external_reference || '').slice(0, 16))}…</td>
+                </tr>`).join('') + '</tbody></table>'
+                : '<div class="muted">No payments yet.</div>'}
+            </div>
+          `,
+          secondary: { label: 'Close' }
+        });
+      }).catch(e => showToast(e.message, 'danger'));
+    }
+
+    function openDsOverride(action, s) {
+      if (!s) return;
+      const titles = {
+        force_upgrade:   'Force upgrade to paid_standalone',
+        force_downgrade: 'Force downgrade to free',
+        cancel:          'Cancel subscription'
+      };
+      openModal({
+        title: titles[action],
+        sub: ((s.ptn_users || {}).name || '') + ' (' + ((s.ptn_users || {}).phone || '') + ')',
+        content: `
+          <div class="field"><label>Notes (required — audit-logged)</label>
+            <textarea id="ds-notes" placeholder="Why this override?"></textarea></div>
+          ${action === 'force_upgrade'
+            ? '<div class="field"><label>Months to add</label><input type="number" id="ds-months" min="1" max="12" value="1" /></div>'
+            : ''}
+        `,
+        secondary: { label: 'Cancel' },
+        primary: { label: 'Apply', onClick: async (close) => {
+          const notes  = $('ds-notes').value.trim();
+          const months = action === 'force_upgrade' ? parseInt($('ds-months').value, 10) : null;
+          if (!notes) return showToast('Notes required', 'danger');
+          try {
+            await apiAdmin('PATCH', '/admin/dozie/subscriptions/' + s.id, { action, notes, months });
+            showToast('Override applied', 'success');
+            close(); loadDozieSubs();
+          } catch (e) { showToast(e.message, 'danger'); }
+        }}
+      });
+    }
+
+    async function exportDozieSubPaymentsCsv() {
+      const token = localStorage.getItem(TOKEN_KEY);
+      try {
+        const res = await fetch(API_BASE + '/admin/dozie/sub-payments/export', {
+          headers: { Authorization: 'Bearer ' + token }
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'dozie-sub-payments-' + new Date().toISOString().slice(0,10) + '.csv';
+        document.body.appendChild(a); a.click(); a.remove();
+      } catch (e) { showToast('Export failed: ' + e.message, 'danger'); }
+    }
+
+    // ══════════════════════════════════════════════════════════════
     // PHASE D — Broadcasts, Admin team, Audit log, Notifications bell.
     // Grouped here for clarity; wire-ups land in the DOMContentLoaded
     // block below.
@@ -4820,6 +4996,16 @@
       searchInput.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') { closeSearchDropdown(); searchInput.blur(); }
       });
+
+      // SPRINT B — Dozie subscriptions
+      document.querySelectorAll('[data-ds-tab]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          _dsTab = btn.getAttribute('data-ds-tab');
+          document.querySelectorAll('[data-ds-tab]').forEach(b => b.classList.toggle('active', b === btn));
+          loadDozieSubs();
+        });
+      });
+      $('ds-export-btn').addEventListener('click', exportDozieSubPaymentsCsv);
 
       // PHASE D — Broadcasts wire-up
       $('bc-new-btn').addEventListener('click', () => openBcCompose(null));
