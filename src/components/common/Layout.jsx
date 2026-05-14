@@ -209,6 +209,43 @@ export default function Layout() {
       panelRef.current.style.top  = (r.bottom + 4) + "px";
       panelRef.current.style.left = Math.max(8, left) + "px";
     });
+
+    // Close on outside-click / Esc / scroll / resize — mirrors the
+    // admin notif dropdown pattern from Phase D-F. Handlers attach
+    // when the panel mounts (showNotif flips true) and detach on
+    // unmount, so there's no leak when the panel closes.
+    useEffect(() => {
+      const isInsideBell = (target) => {
+        const bells = [
+          document.getElementById("notif-bell-desktop"),
+          document.getElementById("notif-bell-mobile")
+        ].filter(Boolean);
+        return bells.some(b => b === target || b.contains(target));
+      };
+      const onMouseDown = (e) => {
+        if (!panelRef.current) return;
+        if (panelRef.current.contains(e.target)) return;
+        if (isInsideBell(e.target)) return; // bell's own click toggles
+        setShowNotif(false);
+      };
+      const onKey = (e) => { if (e.key === "Escape") setShowNotif(false); };
+      const onScroll = () => setShowNotif(false);
+      const onResize = () => setShowNotif(false);
+      // capture=true on mousedown picks up clicks before any bubbling
+      // listeners can swallow them. capture=true on scroll catches
+      // scroll on inner containers (e.g., the sidebar) as well as
+      // window scroll — same trick used in the admin dropdown.
+      document.addEventListener("mousedown", onMouseDown, true);
+      document.addEventListener("keydown", onKey);
+      window.addEventListener("scroll", onScroll, true);
+      window.addEventListener("resize", onResize);
+      return () => {
+        document.removeEventListener("mousedown", onMouseDown, true);
+        document.removeEventListener("keydown", onKey);
+        window.removeEventListener("scroll", onScroll, true);
+        window.removeEventListener("resize", onResize);
+      };
+    }, []);
     const baseStyle = isMobile
       ? { position: "absolute", top: 52, left: 0, right: 0, width: "100%", marginBottom: 0 }
       : { position: "fixed",    top: 0,  left: -9999, width: 320, marginBottom: 0 };
@@ -266,7 +303,7 @@ export default function Layout() {
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ width: 8, height: 8, borderRadius: "50%", background: isOnline ? "#10b981" : "#ef4444" }} />
             <div style={{ position: "relative" }}>
-              <button onClick={() => setShowNotif(s => !s)} style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px", cursor: "pointer", color: "var(--text-primary)", fontSize: 12 }}>
+              <button id="notif-bell-mobile" onClick={() => setShowNotif(s => !s)} style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px", cursor: "pointer", color: "var(--text-primary)", fontSize: 12 }}>
                 🔔 {unread > 0 && <span style={{ background: "#ef4444", color: "#fff", borderRadius: 10, padding: "0 5px", fontSize: 10, fontWeight: 700, marginLeft: 4 }}>{unread}</span>}
               </button>
               {showNotif && <NotifPanel />}
