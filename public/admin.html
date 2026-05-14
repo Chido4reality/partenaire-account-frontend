@@ -695,24 +695,20 @@
       width: 8px; height: 8px; border-radius: 50%;
       background: #ef4444; box-shadow: 0 0 0 2px var(--bg-secondary);
     }
+    /* Notifications dropdown — appended to <body> at open time, positioned
+       fixed against the bell button. Mirrors the row-action portal pattern. */
     .notif-dropdown {
-      position: fixed;
-      width: 360px; max-height: 480px; overflow: hidden;
+      position: fixed; z-index: 1000;
+      width: 360px; max-height: 60vh; overflow: hidden;
       background: var(--bg-secondary); border: 1px solid var(--border);
       border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,0.35);
-      z-index: 9999;
       display: flex; flex-direction: column;
+      animation: ram-fade 0.12s ease-out;
     }
     .notif-dd-head {
       padding: 12px 14px; border-bottom: 1px solid var(--border-subtle);
-      display: flex; justify-content: space-between; align-items: center;
       font-weight: 700;
     }
-    .notif-link {
-      background: none; border: 0; color: var(--accent);
-      font-size: 12px; font-weight: 700; cursor: pointer;
-    }
-    .notif-link:hover { text-decoration: underline; }
     .notif-dd-body { overflow-y: auto; flex: 1; }
     .notif-row {
       display: flex; gap: 10px; padding: 10px 14px;
@@ -726,6 +722,25 @@
     .notif-body  { font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .notif-time  { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
     .notif-empty { padding: 32px 14px; text-align: center; color: var(--text-muted); font-size: 13px; }
+    .notif-loading {
+      display: flex; align-items: center; justify-content: center;
+      gap: 10px; padding: 40px 14px; color: var(--text-muted); font-size: 13px;
+    }
+    .notif-spinner {
+      width: 16px; height: 16px; border-radius: 50%;
+      border: 2px solid var(--border); border-top-color: var(--accent);
+      animation: notif-spin 0.7s linear infinite;
+    }
+    @keyframes notif-spin { to { transform: rotate(360deg); } }
+    .notif-error {
+      padding: 24px 14px; text-align: center; color: var(--text-secondary); font-size: 13px;
+    }
+    .notif-error-btn {
+      margin-top: 10px; padding: 6px 14px; border-radius: 6px;
+      background: var(--bg-tertiary); border: 1px solid var(--border);
+      color: var(--text-primary); cursor: pointer; font-size: 12px; font-weight: 600;
+    }
+    .notif-error-btn:hover { background: var(--bg-secondary); border-color: var(--accent); }
 
     /* Temp password reveal modal */
     .temp-pw-box {
@@ -846,17 +861,16 @@
           <span class="sb-bell-dot" id="sb-bell-dot" hidden></span>
         </button>
       </div>
-      <!-- Notifications dropdown — portal-style, positioned via JS so it
-           escapes any overflow:hidden on the sidebar. Hidden until bell click. -->
-      <div id="notif-dropdown" class="notif-dropdown" hidden>
-        <div class="notif-dd-head">
-          <div>Notifications</div>
-          <button id="notif-mark-all" class="notif-link">Mark all read</button>
+      <!-- Notifications dropdown moved to document.body on open via JS
+           (row-action-portal pattern) so it escapes the sidebar's
+           overflow:auto and never clips. No "Mark all read" — admin
+           notifications represent action items, not casual updates. -->
+      <template id="notif-dropdown-template">
+        <div id="notif-dropdown" class="notif-dropdown" role="dialog" aria-label="Notifications">
+          <div class="notif-dd-head"><div>Notifications</div></div>
+          <div id="notif-dd-body" class="notif-dd-body"></div>
         </div>
-        <div id="notif-dd-body" class="notif-dd-body">
-          <div class="notif-empty">Loading…</div>
-        </div>
-      </div>
+      </template>
 
       <input class="sb-search" id="sb-search" type="search" placeholder="Search users, businesses, orders…"
              disabled title="Coming up in Phase C" />
@@ -4439,23 +4453,165 @@
 
     // ════════════════════════════════════════════════════════════════
     //  D-F — NOTIFICATIONS BELL
+    //
+    //  Dropdown is appended to <body> at open time (row-action portal
+    //  pattern) so it escapes the sidebar's overflow:auto and never
+    //  clips. No "Mark all read" — admin notifications represent action
+    //  items (approve payment, review dispute, verify KYC) that need
+    //  individual review, not casual updates worth bulk-clearing.
     // ════════════════════════════════════════════════════════════════
     let _notifPollTimer = null;
-    let _notifOpen = false;
+    let _notifEl = null;          // body-attached dropdown when open
+    let _notifOutsideHandler = null;
+    let _notifEscHandler = null;
+    let _notifScrollHandler = null;
+    let _notifResizeHandler = null;
+    const NOTIF_TIMEOUT_MS = 5000;
 
-    async function refreshNotifications() {
+    function _notifOpen() { return !!_notifEl; }
+
+    // Background poll — updates the red dot, no UI rendering. Failures
+    // are silent (the bell just won't gain/lose its dot on this tick).
+    async function refreshNotificationsDot() {
       try {
-        const res = await apiAdmin('GET', '/admin/notifications?status=all');
-        const list = res.data || [];
-        const unread = res.unread_count || 0;
-        $('sb-bell-dot').hidden = unread === 0;
-        if (_notifOpen) renderNotifDropdown(list);
-        return list;
-      } catch (_) { return []; }
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), NOTIF_TIMEOUT_MS);
+        const token = localStorage.getItem(TOKEN_KEY);
+        const res = await fetch(API_BASE + '/admin/notifications?status=all', {
+          headers: token ? { Authorization: 'Bearer ' + token } : {},
+          signal: ctrl.signal
+        });
+        clearTimeout(t);
+        if (!res.ok) return;
+        const json = await res.json();
+        const unread = (json && json.unread_count) || 0;
+        const dot = $('sb-bell-dot');
+        if (dot) dot.hidden = unread === 0;
+      } catch (_) { /* swallow — next tick retries */ }
     }
 
-    function renderNotifDropdown(list) {
-      const body = $('notif-dd-body');
+    function startNotifPolling() {
+      stopNotifPolling();
+      refreshNotificationsDot();
+      _notifPollTimer = setInterval(refreshNotificationsDot, 30000);
+    }
+    function stopNotifPolling() {
+      if (_notifPollTimer) { clearInterval(_notifPollTimer); _notifPollTimer = null; }
+    }
+
+    // Build the dropdown element from the template, append to body,
+    // measure + position against the bell with viewport clamping.
+    function openNotifDropdown() {
+      const bell = $('sb-bell');
+      const tpl  = $('notif-dropdown-template');
+      if (!bell || !tpl) return;
+      closeNotifDropdown(); // belt-and-braces — should be a no-op
+
+      const dd = tpl.content.firstElementChild.cloneNode(true);
+      dd.style.visibility = 'hidden';
+      dd.style.left = '-9999px'; dd.style.top = '0';
+      document.body.appendChild(dd);
+      _notifEl = dd;
+
+      positionNotifDropdown();
+      dd.style.visibility = '';
+
+      // Initial render — spinner while we wait for the network.
+      const body = dd.querySelector('#notif-dd-body');
+      body.innerHTML =
+        '<div class="notif-loading"><div class="notif-spinner"></div><span>Loading notifications…</span></div>';
+      loadNotificationsIntoDropdown();
+
+      // Close handlers, mirroring the row-action portal pattern.
+      _notifOutsideHandler = (e) => {
+        if (!_notifEl) return;
+        if (_notifEl.contains(e.target)) return;
+        if (e.target === bell || bell.contains(e.target)) return;
+        closeNotifDropdown();
+      };
+      _notifEscHandler = (e) => { if (e.key === 'Escape') closeNotifDropdown(); };
+      _notifScrollHandler  = () => closeNotifDropdown();
+      _notifResizeHandler  = () => closeNotifDropdown();
+      document.addEventListener('mousedown', _notifOutsideHandler, true);
+      document.addEventListener('keydown',   _notifEscHandler);
+      // capture=true picks up scroll on inner containers (the sidebar)
+      // as well as window scroll, mirroring row-action behaviour.
+      window.addEventListener('scroll', _notifScrollHandler, true);
+      window.addEventListener('resize', _notifResizeHandler);
+    }
+
+    function closeNotifDropdown() {
+      if (_notifEl && _notifEl.parentNode) _notifEl.parentNode.removeChild(_notifEl);
+      _notifEl = null;
+      if (_notifOutsideHandler) document.removeEventListener('mousedown', _notifOutsideHandler, true);
+      if (_notifEscHandler)     document.removeEventListener('keydown',   _notifEscHandler);
+      if (_notifScrollHandler)  window.removeEventListener('scroll', _notifScrollHandler, true);
+      if (_notifResizeHandler)  window.removeEventListener('resize', _notifResizeHandler);
+      _notifOutsideHandler = _notifEscHandler = _notifScrollHandler = _notifResizeHandler = null;
+    }
+
+    function toggleNotifDropdown() { _notifOpen() ? closeNotifDropdown() : openNotifDropdown(); }
+
+    function positionNotifDropdown() {
+      if (!_notifEl) return;
+      const bell = $('sb-bell');
+      if (!bell) return;
+      const rect = bell.getBoundingClientRect();
+      const ddRect = _notifEl.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const margin = 8;
+      // Anchor below the bell. Clamp left so the panel stays in viewport;
+      // when the bell sits near the left edge (it usually does — sidebar),
+      // this resolves to bell.left and the panel extends rightward as spec'd.
+      let left = rect.left;
+      if (left + ddRect.width > vw - margin) left = Math.max(margin, vw - ddRect.width - margin);
+      if (left < margin) left = margin;
+      // Top: just below the bell; clamp so it doesn't run off the bottom.
+      let top = rect.bottom + 4;
+      if (top + ddRect.height > vh - margin) top = Math.max(margin, vh - ddRect.height - margin);
+      _notifEl.style.left = left + 'px';
+      _notifEl.style.top  = top  + 'px';
+    }
+
+    // Fetch with 5s timeout. On error/timeout: show retry button. On
+    // success+empty: "No notifications yet". On success+data: render list.
+    async function loadNotificationsIntoDropdown() {
+      if (!_notifEl) return;
+      const body = _notifEl.querySelector('#notif-dd-body');
+      const ctrl = new AbortController();
+      const timeoutId = setTimeout(() => ctrl.abort(), NOTIF_TIMEOUT_MS);
+      try {
+        const token = localStorage.getItem(TOKEN_KEY);
+        const res = await fetch(API_BASE + '/admin/notifications?status=all', {
+          headers: token ? { Authorization: 'Bearer ' + token } : {},
+          signal: ctrl.signal
+        });
+        clearTimeout(timeoutId);
+        if (res.status === 401) {
+          localStorage.removeItem(TOKEN_KEY);
+          closeNotifDropdown();
+          showLogin();
+          return;
+        }
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const json = await res.json();
+        const list = (json && json.data) || [];
+        const unread = (json && json.unread_count) || 0;
+        const dot = $('sb-bell-dot');
+        if (dot) dot.hidden = unread === 0;
+        if (!_notifEl) return; // user closed while waiting
+        renderNotifList(list);
+      } catch (e) {
+        clearTimeout(timeoutId);
+        if (!_notifEl) return;
+        renderNotifError();
+      }
+    }
+
+    function renderNotifList(list) {
+      if (!_notifEl) return;
+      const body = _notifEl.querySelector('#notif-dd-body');
       if (!list || !list.length) {
         body.innerHTML = '<div class="notif-empty">No notifications yet</div>';
         return;
@@ -4479,44 +4635,31 @@
           row.classList.remove('unread');
           closeNotifDropdown();
           if (url) {
-            // Parse "/admin.html#<route>" → navigate via hash.
             const hashIdx = url.indexOf('#');
             if (hashIdx >= 0) {
-              const tail  = url.slice(hashIdx + 1);
-              const route = tail.split('?')[0];
-              navigateTo(route);
+              const tail = url.slice(hashIdx + 1);
+              navigateTo(tail.split('?')[0]);
             }
           }
-          refreshNotifications();
+          refreshNotificationsDot();
         });
       });
     }
 
-    function openNotifDropdown() {
-      const bell = $('sb-bell');
-      const dd   = $('notif-dropdown');
-      if (!bell || !dd) return;
-      const rect = bell.getBoundingClientRect();
-      dd.style.top  = (rect.bottom + 6) + 'px';
-      dd.style.left = (rect.right  - 360) + 'px';  // right-align with bell
-      dd.hidden = false;
-      _notifOpen = true;
-      refreshNotifications();
-    }
-    function closeNotifDropdown() {
-      const dd = $('notif-dropdown');
-      if (dd) dd.hidden = true;
-      _notifOpen = false;
-    }
-    function toggleNotifDropdown() { _notifOpen ? closeNotifDropdown() : openNotifDropdown(); }
-
-    function startNotifPolling() {
-      stopNotifPolling();
-      refreshNotifications();
-      _notifPollTimer = setInterval(refreshNotifications, 30000);
-    }
-    function stopNotifPolling() {
-      if (_notifPollTimer) { clearInterval(_notifPollTimer); _notifPollTimer = null; }
+    function renderNotifError() {
+      if (!_notifEl) return;
+      const body = _notifEl.querySelector('#notif-dd-body');
+      body.innerHTML =
+        '<div class="notif-error">' +
+          'Unable to load notifications. Try again.' +
+          '<div><button type="button" class="notif-error-btn" id="notif-retry">Retry</button></div>' +
+        '</div>';
+      const retry = body.querySelector('#notif-retry');
+      if (retry) retry.addEventListener('click', () => {
+        body.innerHTML =
+          '<div class="notif-loading"><div class="notif-spinner"></div><span>Loading notifications…</span></div>';
+        loadNotificationsIntoDropdown();
+      });
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -4668,23 +4811,12 @@
       });
       $('al-export-btn').addEventListener('click', exportAuditLogCsv);
       $('al-load-more').addEventListener('click', () => loadAuditLog({ append: true }));
-      // PHASE D — Notifications bell
+      // PHASE D — Notifications bell. Outside-click + Escape + scroll +
+      // resize handlers are installed inside openNotifDropdown so they
+      // get cleanly torn down on close. No "Mark all read" — admin
+      // notifications are action items, not casual updates; users
+      // dismiss them by clicking through to the target action.
       $('sb-bell').addEventListener('click', (e) => { e.stopPropagation(); toggleNotifDropdown(); });
-      $('notif-mark-all').addEventListener('click', async () => {
-        try {
-          await apiAdmin('POST', '/admin/notifications/mark-all-read');
-          refreshNotifications();
-        } catch (e) { showToast(e.message, 'danger'); }
-      });
-      document.addEventListener('click', (e) => {
-        const dd = $('notif-dropdown');
-        if (_notifOpen && dd && !dd.contains(e.target) && e.target.id !== 'sb-bell') {
-          closeNotifDropdown();
-        }
-      });
-      document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && _notifOpen) closeNotifDropdown();
-      });
 
       // Sidebar nav — single delegated handler so we don't bind 13 times.
       document.querySelectorAll('.sb-link').forEach(a => {
