@@ -10,6 +10,42 @@ import OwnerPIN from "../components/common/OwnerPIN";
 import PaywallModal from "../components/common/PaywallModal";
 import { getCapabilities, isAtCap } from "../utils/planCapabilities";
 
+// Sprint C — shared helper for the 4 product entry paths. Reads a File
+// from the camera/file picker, resizes if larger than 1920px on the
+// long side, and returns a base64 data URL. Backend accepts the URL
+// directly and uploads to Supabase Storage.
+async function readPhotoToDataUrl(file, lang) {
+  if (!file) return null;
+  if (!/^image\//.test(file.type)) {
+    const msg = lang === "en" ? "Please pick an image" : "Veuillez choisir une image";
+    throw new Error(msg);
+  }
+  if (file.size > 8 * 1024 * 1024) {
+    const msg = lang === "en" ? "Image too large (max 8MB before resize)" : "Image trop grande (8MB max)";
+    throw new Error(msg);
+  }
+  const reader = new FileReader();
+  const dataUrl = await new Promise((resolve, reject) => {
+    reader.onload  = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("Read failed"));
+    reader.readAsDataURL(file);
+  });
+  // Resize via canvas to cap long-side at 1920px (keeps storage costs
+  // sane). Skip if already small enough.
+  const img = new Image();
+  await new Promise((resolve) => { img.onload = resolve; img.src = dataUrl; });
+  const maxSide = 1920;
+  if (img.width <= maxSide && img.height <= maxSide && file.size < 1_500_000) return dataUrl;
+  const ratio = Math.min(maxSide / img.width, maxSide / img.height, 1);
+  const w = Math.round(img.width * ratio);
+  const h = Math.round(img.height * ratio);
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+  const mime = file.type === "image/png" ? "image/png" : "image/jpeg";
+  return canvas.toDataURL(mime, 0.85);
+}
+
 function fuzzyMatch(str, pattern) {
   if (!str || !pattern) return false;
   const s = str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -73,6 +109,8 @@ export default function InventoryPage() {
   const [showEditProduct, setShowEditProduct] = useState(false);
   const [showRapidEntry, setShowRapidEntry] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showBackfill, setShowBackfill] = useState(false);   // Sprint C — photo backfill modal
+  const [backfillUploading, setBackfillUploading] = useState(null); // id of product currently uploading
   const [showPIN, setShowPIN] = useState(false);
   const [pinAction, setPinAction] = useState(null);
 
@@ -216,6 +254,16 @@ export default function InventoryPage() {
         description: newProduct.description || null,
       });
       const product = res.data.data;
+      // Sprint C: if the user attached a photo, upload it now that we
+      // have the product id. Photo upload is non-blocking for stock
+      // arrival — a failed upload doesn't roll back the product.
+      if (newProduct.photo_data_url) {
+        try {
+          await api.post(`/products/${product.id}/photo`, { data_url: newProduct.photo_data_url });
+        } catch (e) {
+          toast.error(lang === "en" ? "Product saved but photo upload failed" : "Produit créé mais l'envoi de la photo a échoué");
+        }
+      }
       if (newProduct.initial_location_id && newProduct.initial_quantity) {
         await api.post("/stock/arrivals", {
           location_id: newProduct.initial_location_id,
@@ -445,6 +493,26 @@ export default function InventoryPage() {
 
       <OwnerPIN open={showPIN} onSuccess={() => { setShowPIN(false); pinAction?.(); }} onCancel={() => { setShowPIN(false); setPinAction(null); }} lang={lang} />
 
+      {/* Sprint C: backfill banner for products that pre-date photo
+          capture. Hidden when every product already has photo_url set. */}
+      {(() => {
+        const photoless = products.filter(p => !p.photo_url && !p.image_url).length;
+        if (photoless === 0) return null;
+        return (
+          <div style={{ background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.35)", borderRadius: 12, padding: "10px 14px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 13, color: "#fbbf24" }}>
+              📷 {lang === "en"
+                  ? `You have ${photoless} product${photoless === 1 ? "" : "s"} without photos.`
+                  : `Vous avez ${photoless} produit${photoless === 1 ? "" : "s"} sans photo.`}
+            </span>
+            <button onClick={() => setShowBackfill(true)}
+              style={{ background: "rgba(251,191,36,0.2)", border: "1px solid rgba(251,191,36,0.5)", color: "#fbbf24", padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+              {lang === "en" ? "Add photos now →" : "Ajouter les photos →"}
+            </button>
+          </div>
+        );
+      })()}
+
       {/* ── HEADER ── */}
       <div className="page-header">
         <div>
@@ -641,9 +709,17 @@ export default function InventoryPage() {
                 {overviewProducts.map((p, i) => {
                   const product = products.find(pr => pr.name === p.name);
                   const value = isOwner ? p.total * (product?.cost_price || 0) : 0;
+                  const photo = product?.photo_url || product?.image_url || null;
                   return (
                     <tr key={i}>
-                      <td style={{ fontWeight: 500 }}>{p.name}</td>
+                      <td style={{ fontWeight: 500 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          {photo
+                            ? <img src={photo} alt="" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)", flexShrink: 0 }} />
+                            : <div style={{ width: 40, height: 40, borderRadius: 6, background: "var(--bg-elevated)", border: "1px dashed var(--border)", display: "grid", placeItems: "center", fontSize: 14, color: "var(--text-muted)", flexShrink: 0 }} title={lang === "en" ? "No photo" : "Pas de photo"}>📷</div>}
+                          <span>{p.name}</span>
+                        </div>
+                      </td>
                       <td style={{ color: "var(--text-muted)", fontSize: 12 }}>{p.unit}</td>
                       {locations.map(l => <td key={l.id} style={{ textAlign: "right" }}>{p.locs[l.id] != null ? p.locs[l.id] : <span style={{ color: "var(--text-muted)" }}>—</span>}</td>)}
                       <td style={{ textAlign: "right", fontWeight: 700, color: "var(--brand-light)" }}>{p.total}</td>
@@ -684,19 +760,40 @@ export default function InventoryPage() {
                   {canSeePrices && <th style={{ textAlign: "right" }}>Walk-in</th>}
                   {canSeePrices && <th style={{ textAlign: "right" }}>Wholesale</th>}
                   {canSeePrices && <th style={{ textAlign: "right" }}>Min floor</th>}
+                  <th>Dozie</th>
                   {isOwner && <th>Edit</th>}
                 </tr>
               </thead>
               <tbody>
                 {filteredProducts.map(p => (
                   <tr key={p.id}>
-                    <td style={{ fontWeight: 500 }}>{p.name}</td>
+                    <td style={{ fontWeight: 500 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        {(p.photo_url || p.image_url)
+                          ? <img src={p.photo_url || p.image_url} alt="" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)", flexShrink: 0 }} />
+                          : <div style={{ width: 40, height: 40, borderRadius: 6, background: "var(--bg-elevated)", border: "1px dashed var(--border)", display: "grid", placeItems: "center", fontSize: 14, color: "var(--text-muted)", flexShrink: 0 }}>📷</div>}
+                        <span>{p.name}</span>
+                      </div>
+                    </td>
                     <td style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text-muted)" }}>{p.barcode || "—"}</td>
                     <td style={{ color: "var(--text-muted)" }}>{p.unit}</td>
                     {canSeePrices && <td style={{ textAlign: "right", color: "var(--text-muted)", fontSize: 12 }}>{formatCFA(p.cost_price)}</td>}
                     {canSeePrices && <td style={{ textAlign: "right", fontWeight: 600, color: "var(--brand-light)" }}>{formatCFA(p.sell_price)}</td>}
                     {canSeePrices && <td style={{ textAlign: "right", color: "#fbbf24" }}>{p.wholesale_price > 0 ? formatCFA(p.wholesale_price) : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>}</td>}
                     {canSeePrices && <td style={{ textAlign: "right", color: "#f87171", fontSize: 12 }}>{p.min_price > 0 ? formatCFA(p.min_price) : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>}</td>}
+                    <td>
+                      <button className="btn btn-secondary btn-sm"
+                        title={lang === "en" ? "Expose this product on Dozie marketplace" : "Exposer ce produit sur Dozie"}
+                        onClick={async () => {
+                          try {
+                            await api.patch(`/products/${p.id}/expose-on-dozie`, { is_visible: true });
+                            toast.success(lang === "en" ? "✓ Exposed on Dozie" : "✓ Exposé sur Dozie");
+                          } catch (err) {
+                            // 403 with upgrade_required → global axios interceptor (Sprint A) pops the paywall.
+                            if (err.response?.status !== 403) toast.error(err.response?.data?.message || "Error");
+                          }
+                        }}>🛒 Dozie</button>
+                    </td>
                     {isOwner && <td><button className="btn btn-secondary btn-sm" onClick={() => { setEditProduct({ ...p }); setShowEditProduct(true); }} style={{ color: "var(--brand-light)" }}>✏️ Edit</button></td>}
                   </tr>
                 ))}
@@ -771,6 +868,31 @@ export default function InventoryPage() {
                 onClose={() => setShowCameraAdd(false)}
               />
             )}
+
+            {/* Sprint C: photo capture. Standard HTML input with
+                accept=image/* + capture=environment → uses native
+                camera on mobile, file picker on desktop. Preview is
+                inline; data URL is posted in addProductMutation. */}
+            <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 12 }}>
+                📷 {lang === "en" ? "Product photo (optional)" : "Photo du produit (optionnel)"}
+              </div>
+              {newProduct.photo_data_url ? (
+                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                  <img src={newProduct.photo_data_url} alt="" style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 10, border: "1px solid var(--border)" }} />
+                  <button type="button" onClick={() => setNewProduct(p => ({ ...p, photo_data_url: null }))}
+                    style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.35)", color: "#fca5a5", padding: "8px 12px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+                    {lang === "en" ? "Remove" : "Retirer"}
+                  </button>
+                </div>
+              ) : (
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10, border: "1px dashed var(--border)", background: "var(--bg-card)", cursor: "pointer", fontSize: 13 }}>
+                  📷 {lang === "en" ? "Take or choose a photo" : "Prendre ou choisir une photo"}
+                  <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" style={{ display: "none" }}
+                    onChange={(e) => readPhotoToDataUrl(e.target.files && e.target.files[0], lang).then(dataUrl => dataUrl && setNewProduct(p => ({ ...p, photo_data_url: dataUrl }))).catch(err => toast.error(err.message))} />
+                </label>
+              )}
+            </div>
 
             <PricingSection data={newProduct} onChange={(k, v) => setNewProduct(p => ({ ...p, [k]: v }))} lang={lang} />
 
@@ -1121,6 +1243,59 @@ export default function InventoryPage() {
 
       {/* Sprint A: inventory-cap paywall */}
       {paywall && <PaywallModal feature={paywall.feature} currentPlan={effectivePlan} mpId={paywall.mpId} onClose={() => setPaywall(null)} />}
+
+      {/* Sprint C: photo backfill modal — grid of photoless products
+          with a per-row 📷 upload button. */}
+      {showBackfill && (() => {
+        const list = products.filter(p => !p.photo_url && !p.image_url);
+        const done = products.length - list.length - products.filter(p => !p.photo_url && !p.image_url && p.is_active === false).length;
+        return (
+          <div className="modal-overlay" onClick={() => setShowBackfill(false)}>
+            <div className="modal" style={{ maxWidth: 640, maxHeight: "85vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 17 }}>📷 {lang === "en" ? "Add photos to your products" : "Ajouter des photos"}</div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
+                    {lang === "en" ? `${list.length} products without photos.` : `${list.length} produits sans photo.`}
+                  </div>
+                </div>
+                <button onClick={() => setShowBackfill(false)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 20 }}>✕</button>
+              </div>
+              {list.length === 0 ? (
+                <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>
+                  ✓ {lang === "en" ? "All products have photos." : "Tous les produits ont une photo."}
+                </div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  {list.map(p => (
+                    <div key={p.id} style={{ background: "var(--bg-elevated)", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{p.sku || p.barcode || "—"}</div>
+                      <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 10px", borderRadius: 8, border: "1px dashed var(--border)", background: "var(--bg-card)", cursor: backfillUploading === p.id ? "wait" : "pointer", fontSize: 12, fontWeight: 600, opacity: backfillUploading === p.id ? 0.6 : 1 }}>
+                        {backfillUploading === p.id ? "⏳ Uploading…" : "📷 Add photo"}
+                        <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" style={{ display: "none" }}
+                          disabled={backfillUploading === p.id}
+                          onChange={async (e) => {
+                            const f = e.target.files && e.target.files[0]; if (!f) return;
+                            try {
+                              setBackfillUploading(p.id);
+                              const dataUrl = await readPhotoToDataUrl(f, lang);
+                              if (!dataUrl) return;
+                              await api.post(`/products/${p.id}/photo`, { data_url: dataUrl });
+                              toast.success(lang === "en" ? "✓ Photo uploaded" : "✓ Photo ajoutée");
+                              invalidateAll();
+                            } catch (err) { toast.error(err.message || "Upload failed"); }
+                            finally { setBackfillUploading(null); }
+                          }} />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
