@@ -6,6 +6,7 @@ import api from "../../utils/api";
 import UpgradeModal from "./UpgradeModal";
 import OfflineBanner from "./OfflineBanner";
 import { startAutoSync, processPendingQueue } from "../../utils/syncService";
+import toast from "react-hot-toast";
 
 // Nav items with role restrictions
 const NAV = [
@@ -121,6 +122,15 @@ export default function Layout() {
     onSuccess: () => qc.invalidateQueries(["notifications"])
   });
 
+  const markAllReadMutation = useMutation({
+    mutationFn: () => api.post("/notifications/mark-all-read"),
+    onSuccess: () => {
+      qc.invalidateQueries(["notifications"]);
+      toast.success(lang === "en" ? "All alerts marked as read" : "Toutes les alertes marquées comme lues");
+    },
+    onError: (err) => toast.error(err?.response?.data?.message || (lang === "en" ? "Could not mark all read" : "Échec — réessayez"))
+  });
+
   const notifications = notifData?.data || [];
   const unread = notifications.filter(n => !n.is_read).length;
   const role = user?.role || "cashier";
@@ -152,9 +162,22 @@ export default function Layout() {
 
   const NotifPanel = () => (
     <div style={{ position: "absolute", bottom: isMobile ? "auto" : "100%", top: isMobile ? 52 : "auto", right: isMobile ? 0 : "auto", left: isMobile ? 0 : 0, width: isMobile ? "100%" : 280, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.4)", overflow: "hidden", zIndex: 200, marginBottom: isMobile ? 0 : 4 }}>
-      <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between" }}>
+      <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
         <span style={{ fontWeight: 600, fontSize: 13 }}>Notifications {unread > 0 && `(${unread})`}</span>
-        <button onClick={() => setShowNotif(false)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>✕</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {unread > 0 && (
+            <button
+              onClick={() => markAllReadMutation.mutate()}
+              disabled={markAllReadMutation.isLoading}
+              style={{ background: "none", border: "none", color: "var(--brand-light)", cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0 }}
+            >
+              {markAllReadMutation.isLoading
+                ? (lang === "en" ? "Marking…" : "En cours…")
+                : (lang === "en" ? "Mark all read" : "Tout marquer lu")}
+            </button>
+          )}
+          <button onClick={() => setShowNotif(false)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>✕</button>
+        </div>
       </div>
       <div style={{ maxHeight: 300, overflowY: "auto" }}>
         {notifications.length === 0 ? (
