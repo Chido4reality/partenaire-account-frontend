@@ -901,11 +901,164 @@
         </div>
       </section>
 
-      <section class="route" id="route-marketplace-users"></section>
-      <section class="route" id="route-verifications"></section>
-      <section class="route" id="route-orders"></section>
-      <section class="route" id="route-disputes"></section>
-      <section class="route" id="route-marketplace-finance"></section>
+      <!-- MARKETPLACE USERS -->
+      <section class="route" id="route-marketplace-users">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Marketplace users</div>
+            <div class="page-sub">Partenaire Dozie buyers and sellers.</div>
+          </div>
+          <button class="btn" id="dz-users-refresh">Refresh</button>
+        </div>
+        <div class="stat-strip" id="dz-users-strip">
+          <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">Active sellers</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">Active buyers</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">Suspended</div><div class="stat-value muted">…</div></div>
+        </div>
+        <div class="toolbar">
+          <input type="search" id="dz-users-search" class="grow" placeholder="Search by name, phone, or company…" />
+          <select id="dz-users-role">
+            <option value="">All roles</option>
+            <option value="seller">Sellers</option>
+            <option value="buyer">Buyers</option>
+          </select>
+          <select id="dz-users-status">
+            <option value="">All status</option>
+            <option value="active">Active</option>
+            <option value="suspended">Suspended</option>
+          </select>
+          <input type="text" id="dz-users-city" placeholder="City…" style="max-width:140px" />
+        </div>
+        <div class="table-wrap">
+          <table class="data" id="dz-users-table">
+            <thead><tr>
+              <th>Phone</th><th>Name</th><th>Role</th><th>City</th>
+              <th>Joined</th><th class="num">Listings</th><th class="num">Orders</th>
+              <th class="num">Rating</th><th>Status</th><th style="text-align:right">Actions</th>
+            </tr></thead>
+            <tbody id="dz-users-tbody"><tr><td class="empty" colspan="10">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- VERIFICATIONS -->
+      <section class="route" id="route-verifications">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Verifications</div>
+            <div class="page-sub">Seller KYC / badge document review queue.</div>
+          </div>
+        </div>
+        <div class="section-tabs" id="dz-verif-tabs">
+          <button class="section-tab active" data-verif-tab="pending">Pending <span class="tab-count" id="vcnt-pending">·</span></button>
+          <button class="section-tab" data-verif-tab="approved">Approved <span class="tab-count" id="vcnt-approved">·</span></button>
+          <button class="section-tab" data-verif-tab="rejected">Rejected <span class="tab-count" id="vcnt-rejected">·</span></button>
+          <span class="refresh-meta" id="dz-verif-refresh-meta"></span>
+        </div>
+        <div class="table-wrap">
+          <table class="data">
+            <thead><tr>
+              <th>Seller</th><th>Phone</th><th>Doc type</th><th>Submitted</th>
+              <th>Documents</th><th>Status</th><th style="text-align:right">Actions</th>
+            </tr></thead>
+            <tbody id="dz-verif-tbody"><tr><td class="empty" colspan="7">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ORDERS -->
+      <section class="route" id="route-orders">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Orders</div>
+            <div class="page-sub">Dozie marketplace orders, escrow, and refunds.</div>
+          </div>
+          <button class="btn" id="dz-orders-refresh">Refresh</button>
+        </div>
+        <div class="stat-strip" id="dz-orders-strip">
+          <div class="stat-card"><div class="stat-label">Today</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">This month</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">Open disputes</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">Escrow held</div><div class="stat-value muted">…</div></div>
+        </div>
+        <div class="toolbar">
+          <input type="search" id="dz-orders-search" class="grow" placeholder="Search by order ref…" />
+          <select id="dz-orders-status">
+            <option value="">All status</option>
+            <option value="pending">Pending</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="shipped">Shipped</option>
+            <option value="delivered">Delivered</option>
+            <option value="refunded">Refunded</option>
+            <option value="rejected">Rejected</option>
+          </select>
+          <input type="date" id="dz-orders-from" />
+          <input type="date" id="dz-orders-to" />
+        </div>
+        <div class="table-wrap">
+          <table class="data">
+            <thead><tr>
+              <th>Order #</th><th>Buyer</th><th>Seller</th><th class="num">Items</th>
+              <th class="num">Total</th><th>Method</th><th>Status</th><th>Placed</th>
+              <th style="text-align:right">Actions</th>
+            </tr></thead>
+            <tbody id="dz-orders-tbody"><tr><td class="empty" colspan="9">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- DISPUTES -->
+      <section class="route" id="route-disputes">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Disputes</div>
+            <div class="page-sub">Buyer-seller order disputes awaiting resolution.</div>
+          </div>
+        </div>
+        <div class="section-tabs" id="dz-disp-tabs">
+          <button class="section-tab active" data-disp-tab="open">Open <span class="tab-count" id="dcnt-open">·</span></button>
+          <button class="section-tab" data-disp-tab="resolved">Resolved <span class="tab-count" id="dcnt-resolved">·</span></button>
+          <span class="refresh-meta" id="dz-disp-refresh-meta"></span>
+        </div>
+        <div class="table-wrap">
+          <table class="data">
+            <thead><tr>
+              <th>Order</th><th>Buyer</th><th>Seller</th><th>Buyer claim</th>
+              <th class="num">Amount</th><th>Submitted</th><th>Status</th>
+              <th style="text-align:right">Actions</th>
+            </tr></thead>
+            <tbody id="dz-disp-tbody"><tr><td class="empty" colspan="8">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- MARKETPLACE FINANCE -->
+      <section class="route" id="route-marketplace-finance">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Marketplace finance</div>
+            <div class="page-sub">Escrow, commissions, GMV trends for Partenaire Dozie.</div>
+          </div>
+          <button class="btn" id="dz-fin-refresh">Refresh</button>
+        </div>
+        <div class="stat-strip" id="dz-fin-strip">
+          <div class="stat-card"><div class="stat-label">Escrow held now</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">MTD commissions</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">Total delivered</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">Pending payouts</div><div class="stat-value muted">…</div></div>
+        </div>
+        <div class="charts-row">
+          <div class="card chart-card">
+            <div class="chart-card-title">6-month GMV</div>
+            <div class="chart-canvas-host"><canvas id="dz-chart-volume"></canvas></div>
+          </div>
+          <div class="card chart-card">
+            <div class="chart-card-title">Orders by status</div>
+            <div class="chart-canvas-host" id="dz-chart-status-host"><canvas id="dz-chart-status"></canvas></div>
+          </div>
+        </div>
+      </section>
       <section class="route" id="route-broadcasts"></section>
       <section class="route" id="route-admin-team"></section>
       <section class="route" id="route-audit-log"></section>
@@ -996,11 +1149,6 @@
     // Maps route names to the Phase they ship in. Used to render placeholder
     // copy. Routes implemented in this or earlier phases are absent.
     const ROUTE_PLACEHOLDERS = {
-      'marketplace-users':    { phase: 'C', icon: '👥', label: 'Marketplace users',   text: 'Dozie buyer and seller accounts with verification and status.' },
-      'verifications':        { phase: 'C', icon: '✅', label: 'Verifications',       text: 'Seller badge approvals and KYC review queue.' },
-      'orders':               { phase: 'C', icon: '🛒', label: 'Orders',              text: 'Dozie orders, escrow status, and release controls.' },
-      'disputes':             { phase: 'C', icon: '⚖️', label: 'Disputes',            text: 'Open buyer-seller disputes and resolution actions.' },
-      'marketplace-finance':  { phase: 'C', icon: '💰', label: 'Marketplace finance', text: 'Escrow held, fees collected, payouts issued, and platform revenue.' },
       'broadcasts':           { phase: 'D', icon: '📣', label: 'Broadcasts',          text: 'Send targeted announcements to MP or Dozie users.' },
       'admin-team':           { phase: 'D', icon: '👤', label: 'Admin team',          text: 'Invite, deactivate, and manage admin accounts.' },
       'audit-log':            { phase: 'D', icon: '📋', label: 'Audit log',           text: 'Searchable history of every admin action with actor, target, and timestamp.' }
@@ -1125,15 +1273,22 @@
         a.classList.toggle('active', a.getAttribute('data-route') === route);
       });
       // Per-route side effects
-      if (route === 'dashboard')     loadDashboard();
-      if (route === 'settings')      loadSettings();
-      if (route === 'businesses')    loadBusinesses();
-      if (route === 'subscriptions') loadSubscriptions();
-      if (route === 'mp-finance')    loadFinance();
+      if (route === 'dashboard')          loadDashboard();
+      if (route === 'settings')           loadSettings();
+      if (route === 'businesses')         loadBusinesses();
+      if (route === 'subscriptions')      loadSubscriptions();
+      if (route === 'mp-finance')         loadFinance();
+      if (route === 'marketplace-users')  loadDzUsers();
+      if (route === 'verifications')      loadDzVerifs();
+      if (route === 'orders')             loadDzOrders();
+      if (route === 'disputes')           loadDzDisputes();
+      if (route === 'marketplace-finance') loadDzFinance();
       // Render placeholders lazily on first visit (cheap; idempotent).
       if (ROUTE_PLACEHOLDERS[route]) renderPlaceholder(route);
-      // Stop subs auto-refresh when navigating away from subscriptions tab.
+      // Stop auto-refresh when navigating away from sections that use it.
       if (route !== 'subscriptions') stopSubsAutoRefresh();
+      if (route !== 'verifications')  stopVerifsAutoRefresh();
+      if (route !== 'disputes')       stopDisputesAutoRefresh();
     }
 
     function renderPlaceholder(route) {
@@ -2377,11 +2532,726 @@
 
     // Re-skin charts on theme change.
     const _themeObserver = new MutationObserver(() => {
-      if (!_chartMonthly && !_chartDonut) return;
-      // Cheap re-skin: destroy and re-render with current data.
+      if (!_chartMonthly && !_chartDonut && !_dzChartVolume && !_dzChartStatus) return;
       if ($('route-mp-finance').classList.contains('active')) loadFinance();
+      if ($('route-marketplace-finance').classList.contains('active')) loadDzFinance();
     });
     _themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+    // ────────────────────── DOZIE: USERS ──────────────────────
+    let _dzUsersCache = [];
+    let _dzUsersFilter = { search: '', role: '', status: '', city: '' };
+    let _dzUsersSearchTimer = null;
+
+    async function loadDzUsers() {
+      const tbody = $('dz-users-tbody');
+      tbody.innerHTML = '<tr><td class="empty" colspan="10">Loading…</td></tr>';
+      try {
+        const q = new URLSearchParams();
+        if (_dzUsersFilter.search) q.set('search', _dzUsersFilter.search);
+        if (_dzUsersFilter.role)   q.set('role',   _dzUsersFilter.role);
+        if (_dzUsersFilter.status) q.set('status', _dzUsersFilter.status);
+        if (_dzUsersFilter.city)   q.set('city',   _dzUsersFilter.city);
+        const res = await apiAdmin('GET', '/admin/dozie/users' + (q.toString() ? '?' + q.toString() : ''));
+        _dzUsersCache = (res && res.data) || [];
+        renderDzUsersStrip();
+        renderDzUsersTable();
+      } catch (e) {
+        tbody.innerHTML = '<tr><td class="empty" colspan="10">Error: ' + escapeHtml(e.message) + '</td></tr>';
+      }
+    }
+
+    function renderDzUsersStrip() {
+      const total = _dzUsersCache.length;
+      const activeSellers = _dzUsersCache.filter(u => u.status === 'active' && (u.role === 'seller' || u.also_seller)).length;
+      const activeBuyers  = _dzUsersCache.filter(u => u.status === 'active' && (u.role === 'buyer'  || u.also_buyer)).length;
+      const suspended     = _dzUsersCache.filter(u => u.status === 'suspended').length;
+      const cards = $('dz-users-strip').children;
+      const set = (i, n) => { const v = cards[i].querySelector('.stat-value'); v.textContent = String(n); v.classList.remove('muted'); };
+      set(0, total); set(1, activeSellers); set(2, activeBuyers); set(3, suspended);
+    }
+
+    function renderDzUsersTable() {
+      const tbody = $('dz-users-tbody');
+      if (!_dzUsersCache.length) {
+        tbody.innerHTML = '<tr><td class="empty" colspan="10">No users match the current filters.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = _dzUsersCache.map(u => {
+        const id = escapeHtml(u.id);
+        const isSuspended = (u.status || '').toLowerCase() === 'suspended';
+        const ratingStr = (u.rating_avg != null) ? Number(u.rating_avg).toFixed(1) + ' (' + (u.review_count || 0) + ')' : '—';
+        return '<tr data-dz-user="' + id + '">' +
+          '<td class="mono">' + escapeHtml(u.phone || '—') + '</td>' +
+          '<td>' + escapeHtml(u.name || '—') + (u.company ? '<div style="font-size:11px;color:var(--text-muted)">' + escapeHtml(u.company) + '</div>' : '') + '</td>' +
+          '<td><span class="pill ' + (u.role === 'seller' ? 'active' : 'pending') + '">' + escapeHtml(u.role || '—') + '</span></td>' +
+          '<td>' + escapeHtml(u.city || '—') + '</td>' +
+          '<td>' + fmtDate(u.joined_at) + '</td>' +
+          '<td class="num">' + (u.listings_count || 0) + '</td>' +
+          '<td class="num">' + ((u.orders_count_as_seller || 0) + (u.orders_count_as_buyer || 0)) + '</td>' +
+          '<td>' + escapeHtml(ratingStr) + '</td>' +
+          '<td>' + statusPillHtml(u.status) + '</td>' +
+          '<td style="text-align:right"><button class="row-actions-trigger" data-dz-user-row="' + id + '" data-is-suspended="' + (isSuspended ? '1' : '0') + '" aria-label="Open actions">⋯</button></td>' +
+        '</tr>';
+      }).join('');
+      tbody.querySelectorAll('.row-actions-trigger').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const id = btn.getAttribute('data-dz-user-row');
+          const isSuspended = btn.getAttribute('data-is-suspended') === '1';
+          openRowActionMenu(btn, [
+            { action: 'view',        label: 'View profile' },
+            { action: 'status',      label: isSuspended ? 'Reactivate' : 'Suspend' },
+            { action: 'impersonate', label: 'Impersonate (View as user)' }
+          ], (action) => handleDzUserAction(action, id));
+        });
+      });
+    }
+
+    function handleDzUserAction(action, id) {
+      const u = _dzUsersCache.find(x => x.id === id);
+      if (!u) return;
+      if (action === 'view')        return openDzUserDetail(u);
+      if (action === 'status')      return openDzUserStatus(u);
+      if (action === 'impersonate') return openDzImpersonate(u);
+    }
+
+    async function openDzUserDetail(u) {
+      openModal({
+        title: u.name || u.phone, sub: (u.role || '—') + ' · ' + (u.city || '—'),
+        wide: true, content: '<div style="padding:24px;text-align:center;color:var(--text-muted)">Loading detail…</div>'
+      });
+      try {
+        const r = await apiAdmin('GET', '/admin/dozie/users/' + u.id);
+        const d = r.data;
+        const tabBtn = (id, label, active) =>
+          '<button class="detail-tab' + (active ? ' active' : '') + '" data-detail-tab="' + id + '">' + label + '</button>';
+        const html =
+          '<div class="detail-tabs">' +
+            tabBtn('ov', 'Overview', true) +
+            tabBtn('list', 'Listings (' + (d.listings || []).length + ')') +
+            tabBtn('os', 'Orders as seller (' + (d.recent_orders_as_seller || []).length + ')') +
+            tabBtn('ob', 'Orders as buyer (' + (d.recent_orders_as_buyer || []).length + ')') +
+            tabBtn('rv', 'Reviews (' + (d.reviews || []).length + ')') +
+            tabBtn('docs', 'Documents (' + (d.verification_docs || []).length + ')') +
+          '</div>' +
+          '<div class="detail-pane active" data-pane="ov">' +
+            '<div class="health-grid">' +
+              '<div class="health-card"><div class="health-label">Phone</div><div class="health-value" style="font-size:14px">' + escapeHtml(u.phone || '—') + '</div></div>' +
+              '<div class="health-card"><div class="health-label">Joined</div><div class="health-value" style="font-size:14px">' + fmtDate(u.joined_at) + '</div></div>' +
+              '<div class="health-card"><div class="health-label">Rating</div><div class="health-value">' + escapeHtml(u.rating_avg != null ? Number(u.rating_avg).toFixed(1) : '—') + '</div></div>' +
+              '<div class="health-card"><div class="health-label">Reviews</div><div class="health-value">' + (u.review_count || 0) + '</div></div>' +
+              '<div class="health-card"><div class="health-label">Badge</div><div class="health-value" style="font-size:14px">' + escapeHtml((d.user && d.user.badge_status) || '—') + '</div></div>' +
+              '<div class="health-card"><div class="health-label">Status</div><div class="health-value" style="font-size:14px">' + escapeHtml(u.status || '—') + '</div></div>' +
+            '</div>' +
+            (d.user && d.user.shop_desc ? '<div class="card" style="background:var(--bg-tertiary)"><div class="settings-card-sub">Shop description</div><div>' + escapeHtml(d.user.shop_desc) + '</div></div>' : '') +
+          '</div>' +
+          '<div class="detail-pane" data-pane="list">' + renderDzListingsTable(d.listings || []) + '</div>' +
+          '<div class="detail-pane" data-pane="os">'   + renderDzOrdersTable(d.recent_orders_as_seller || []) + '</div>' +
+          '<div class="detail-pane" data-pane="ob">'   + renderDzOrdersTable(d.recent_orders_as_buyer  || []) + '</div>' +
+          '<div class="detail-pane" data-pane="rv">'   + renderDzReviewsTable(d.reviews || []) + '</div>' +
+          '<div class="detail-pane" data-pane="docs">' + renderDzDocsTable(d.verification_docs || []) + '</div>';
+        const m = $('modal-host').querySelector('.modal-body');
+        m.innerHTML = html;
+        m.querySelectorAll('.detail-tab').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const t = btn.getAttribute('data-detail-tab');
+            m.querySelectorAll('.detail-tab').forEach(b => b.classList.toggle('active', b === btn));
+            m.querySelectorAll('.detail-pane').forEach(p => p.classList.toggle('active', p.getAttribute('data-pane') === t));
+          });
+        });
+      } catch (e) {
+        const m = $('modal-host').querySelector('.modal-body');
+        if (m) m.innerHTML = '<div style="padding:24px;color:var(--danger)">' + escapeHtml(e.message) + '</div>';
+      }
+    }
+
+    function renderDzListingsTable(rows) {
+      if (!rows.length) return '<div class="empty" style="padding:32px">No listings.</div>';
+      return '<table class="data"><thead><tr><th>Product</th><th>Category</th><th class="num">Price</th><th class="num">Stock</th><th>Published</th></tr></thead><tbody>' +
+        rows.map(p =>
+          '<tr><td>' + escapeHtml(p.name) + '</td>' +
+          '<td>' + escapeHtml(p.category || '—') + '</td>' +
+          '<td class="num">' + fmtFCFA(p.price) + '</td>' +
+          '<td class="num">' + (p.stock || 0) + '</td>' +
+          '<td>' + (p.published ? '<span class="pill active">Yes</span>' : '<span class="pill suspended">No</span>') + '</td></tr>'
+        ).join('') + '</tbody></table>';
+    }
+    function renderDzOrdersTable(rows) {
+      if (!rows.length) return '<div class="empty" style="padding:32px">No orders.</div>';
+      return '<table class="data"><thead><tr><th>Order #</th><th>Date</th><th class="num">Total</th><th>Status</th><th>Escrow</th></tr></thead><tbody>' +
+        rows.map(o =>
+          '<tr><td class="mono">' + escapeHtml(o.order_ref || o.id) + '</td>' +
+          '<td>' + fmtDate(o.created_at) + '</td>' +
+          '<td class="num">' + fmtFCFA(o.total) + '</td>' +
+          '<td>' + statusPillHtml(o.status) + '</td>' +
+          '<td>' + (o.escrow_released ? '<span class="pill approved">Released</span>' : (o.escrow_held > 0 ? '<span class="pill processing">Held</span>' : '—')) + '</td></tr>'
+        ).join('') + '</tbody></table>';
+    }
+    function renderDzReviewsTable(rows) {
+      if (!rows.length) return '<div class="empty" style="padding:32px">No reviews.</div>';
+      return '<table class="data"><thead><tr><th>Rating</th><th>Comment</th><th>Date</th></tr></thead><tbody>' +
+        rows.map(r =>
+          '<tr><td>' + ('★'.repeat(r.rating || 0)) + '<span style="color:var(--text-muted)">' + ('☆'.repeat(Math.max(0, 5 - (r.rating || 0)))) + '</span></td>' +
+          '<td>' + escapeHtml(r.comment || '') + '</td>' +
+          '<td>' + fmtDate(r.created_at) + '</td></tr>'
+        ).join('') + '</tbody></table>';
+    }
+    function renderDzDocsTable(rows) {
+      if (!rows.length) return '<div class="empty" style="padding:32px">No verification documents submitted.</div>';
+      return '<table class="data"><thead><tr><th>Doc type</th><th>Status</th><th>Submitted</th><th>Files</th></tr></thead><tbody>' +
+        rows.map(d => {
+          const files = ['id_document','business_doc','shop_photo','file_url'].map(k => {
+            const u = d[k]; if (!u) return null;
+            return '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener" style="margin-right:8px">' + k.replace(/_/g, ' ') + '</a>';
+          }).filter(Boolean).join('');
+          return '<tr><td>' + escapeHtml(d.doc_type || '—') + '</td>' +
+            '<td>' + statusPillHtml(d.status) + '</td>' +
+            '<td>' + fmtDate(d.submitted_at) + '</td>' +
+            '<td style="font-size:12px">' + (files || '<span style="color:var(--text-muted)">none</span>') + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    }
+
+    function openDzUserStatus(u) {
+      const next = (u.status || '').toLowerCase() === 'suspended' ? 'active' : 'suspended';
+      openModal({
+        title: (next === 'suspended' ? 'Suspend ' : 'Reactivate ') + (u.name || u.phone),
+        sub: u.phone || '',
+        content: '<div class="field"><label>Notes (recorded in audit log)</label><textarea id="dzs-notes" placeholder="Reason"></textarea></div>',
+        secondary: { label: 'Cancel' },
+        primary: { label: next === 'suspended' ? 'Suspend' : 'Reactivate', onClick: async (close) => {
+          try {
+            await apiAdmin('PATCH', '/admin/dozie/users/' + u.id + '/status', { status: next, notes: $('dzs-notes').value });
+            showToast('User ' + next, 'success'); close(); loadDzUsers();
+          } catch (e) { showToast(e.message, 'danger'); }
+        }}
+      });
+    }
+
+    function openDzImpersonate(u) {
+      openModal({
+        title: 'View as user', sub: (u.name || u.phone) + ' · ' + (u.role || '—'),
+        content: '<p style="font-size:13px;margin:0 0 8px">Opens Partenaire Dozie in a new tab as <strong>' + escapeHtml(u.name || u.phone) + '</strong>. Your admin session stays intact. The impersonation token is valid for 1 hour and is logged to the audit trail.</p>',
+        secondary: { label: 'Cancel' },
+        primary: { label: 'Open as user', onClick: async (close) => {
+          try {
+            const r = await apiAdmin('POST', '/admin/dozie/users/' + u.id + '/impersonate');
+            close();
+            if (r && r.data && r.data.url) window.open(r.data.url, '_blank', 'noopener,noreferrer');
+            else showToast('No URL returned', 'danger');
+          } catch (e) { showToast(e.message, 'danger'); }
+        }}
+      });
+    }
+
+    // ────────────────────── DOZIE: VERIFICATIONS ──────────────────────
+    let _dzVerifCache = [];
+    let _dzVerifTab = 'pending';
+    let _dzVerifRefreshTimer = null;
+    let _dzVerifLastFetched = null;
+
+    function startVerifsAutoRefresh() {
+      stopVerifsAutoRefresh();
+      if (_dzVerifTab !== 'pending') return;
+      _dzVerifRefreshTimer = setInterval(() => {
+        if (isModalOpen()) return;
+        loadDzVerifs({ silent: true });
+      }, 10000);
+    }
+    function stopVerifsAutoRefresh() {
+      if (_dzVerifRefreshTimer) { clearInterval(_dzVerifRefreshTimer); _dzVerifRefreshTimer = null; }
+    }
+
+    async function loadDzVerifs(opts) {
+      opts = opts || {};
+      const tbody = $('dz-verif-tbody');
+      if (!opts.silent) tbody.innerHTML = '<tr><td class="empty" colspan="7">Loading…</td></tr>';
+      try {
+        const res = await apiAdmin('GET', '/admin/dozie/verifications?status=all');
+        _dzVerifCache = (res && res.data) || [];
+        _dzVerifLastFetched = new Date();
+        renderDzVerifsTabs();
+        renderDzVerifsTable();
+      } catch (e) {
+        if (!opts.silent) tbody.innerHTML = '<tr><td class="empty" colspan="7">Error: ' + escapeHtml(e.message) + '</td></tr>';
+      }
+      if (_dzVerifTab === 'pending') startVerifsAutoRefresh(); else stopVerifsAutoRefresh();
+    }
+
+    function renderDzVerifsTabs() {
+      const counts = _dzVerifCache.reduce((acc, v) => { const s = (v.status || 'pending'); acc[s] = (acc[s] || 0) + 1; return acc; }, {});
+      $('vcnt-pending').textContent  = counts.pending  || 0;
+      $('vcnt-approved').textContent = counts.approved || 0;
+      $('vcnt-rejected').textContent = counts.rejected || 0;
+      const meta = $('dz-verif-refresh-meta');
+      meta.textContent = (_dzVerifTab === 'pending' && _dzVerifLastFetched)
+        ? 'Updated ' + Math.floor((Date.now() - _dzVerifLastFetched.getTime()) / 1000) + 's ago · auto-refresh every 10s' : '';
+    }
+
+    function renderDzVerifsTable() {
+      const tbody = $('dz-verif-tbody');
+      const rows = _dzVerifCache.filter(v => (v.status || 'pending') === _dzVerifTab);
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td class="empty" colspan="7">No documents in this tab.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map(v => {
+        const s = v.seller || {};
+        const files = ['id_document','business_doc','shop_photo','file_url'].map(k => {
+          const u = v[k]; if (!u) return '';
+          return '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener" style="margin-right:6px;font-size:11px">' + k.replace(/_/g, ' ') + '</a>';
+        }).join('');
+        const isPending = (v.status || 'pending') === 'pending';
+        return '<tr>' +
+          '<td>' + escapeHtml(s.name || '—') + '<div style="font-size:11px;color:var(--text-muted)">' + escapeHtml(s.company || '') + '</div></td>' +
+          '<td class="mono">' + escapeHtml(s.phone || '—') + '</td>' +
+          '<td>' + escapeHtml(v.doc_type || '—') + '</td>' +
+          '<td>' + fmtDate(v.submitted_at) + '</td>' +
+          '<td style="font-size:11px">' + (files || '<span style="color:var(--text-muted)">none</span>') + '</td>' +
+          '<td>' + statusPillHtml(v.status || 'pending') + '</td>' +
+          '<td style="text-align:right">' +
+            (isPending
+              ? '<button class="btn" style="padding:4px 10px;font-size:12px" data-verif-action="approve" data-verif-id="' + escapeHtml(v.id) + '">Approve</button> ' +
+                '<button class="btn" style="padding:4px 10px;font-size:12px;color:var(--danger);border-color:rgba(239,68,68,0.4)" data-verif-action="reject" data-verif-id="' + escapeHtml(v.id) + '">Reject</button>'
+              : '—') +
+          '</td>' +
+        '</tr>';
+      }).join('');
+      tbody.querySelectorAll('button[data-verif-action]').forEach(b => {
+        b.addEventListener('click', () => handleDzVerifAction(b.getAttribute('data-verif-action'), b.getAttribute('data-verif-id')));
+      });
+    }
+
+    function handleDzVerifAction(action, id) {
+      const v = _dzVerifCache.find(x => x.id === id);
+      if (!v) return;
+      const seller = v.seller || {};
+      if (action === 'approve') {
+        openModal({
+          title: 'Approve verification', sub: seller.name || seller.phone,
+          content: '<div class="field"><label>Notes (optional)</label><textarea id="va-notes"></textarea></div>',
+          secondary: { label: 'Cancel' },
+          primary: { label: 'Approve', onClick: async (close) => {
+            try {
+              await apiAdmin('PATCH', '/admin/dozie/verifications/' + id, { action: 'approve', notes: $('va-notes').value });
+              showToast('Verification approved', 'success'); close(); loadDzVerifs();
+            } catch (e) { showToast(e.message, 'danger'); }
+          }}
+        });
+      } else if (action === 'reject') {
+        openModal({
+          title: 'Reject verification', sub: seller.name || seller.phone,
+          content: '<div class="field"><label>Reason (required)</label><textarea id="vr-notes" placeholder="What documents are missing or incorrect?"></textarea></div>',
+          secondary: { label: 'Cancel' },
+          primary: { label: 'Reject', onClick: async (close) => {
+            const notes = $('vr-notes').value.trim();
+            if (!notes) return showToast('Reason is required', 'danger');
+            try {
+              await apiAdmin('PATCH', '/admin/dozie/verifications/' + id, { action: 'reject', notes });
+              showToast('Verification rejected', 'success'); close(); loadDzVerifs();
+            } catch (e) { showToast(e.message, 'danger'); }
+          }}
+        });
+      }
+    }
+
+    // ────────────────────── DOZIE: ORDERS ──────────────────────
+    let _dzOrdersCache = [];
+
+    async function loadDzOrders() {
+      const tbody = $('dz-orders-tbody');
+      tbody.innerHTML = '<tr><td class="empty" colspan="9">Loading…</td></tr>';
+      try {
+        const q = new URLSearchParams();
+        const s = $('dz-orders-status').value; if (s) q.set('status', s);
+        const f = $('dz-orders-from').value;   if (f) q.set('date_from', f);
+        const t = $('dz-orders-to').value;     if (t) q.set('date_to', t);
+        const search = $('dz-orders-search').value.trim(); if (search) q.set('search', search);
+        const res = await apiAdmin('GET', '/admin/dozie/orders' + (q.toString() ? '?' + q.toString() : ''));
+        _dzOrdersCache = (res && res.data) || [];
+        renderDzOrdersStrip();
+        renderDzOrdersTable();
+      } catch (e) {
+        tbody.innerHTML = '<tr><td class="empty" colspan="9">Error: ' + escapeHtml(e.message) + '</td></tr>';
+      }
+    }
+
+    function renderDzOrdersStrip() {
+      const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+      const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
+      const today = _dzOrdersCache.filter(o => new Date(o.created_at) >= todayStart).length;
+      const month = _dzOrdersCache.filter(o => new Date(o.created_at) >= monthStart).length;
+      const disputes = _dzOrdersCache.filter(o => o.dispute_status === 'open' || o.dispute_raised).length;
+      const escrow = _dzOrdersCache.filter(o => !o.escrow_released).reduce((s, o) => s + parseFloat(o.escrow_held || 0), 0);
+      const cards = $('dz-orders-strip').children;
+      const set = (i, v) => { const el = cards[i].querySelector('.stat-value'); el.textContent = v; el.classList.remove('muted'); };
+      set(0, today.toString()); set(1, month.toString()); set(2, disputes.toString()); set(3, fmtFCFA(escrow));
+    }
+
+    function renderDzOrdersTable() {
+      const tbody = $('dz-orders-tbody');
+      if (!_dzOrdersCache.length) {
+        tbody.innerHTML = '<tr><td class="empty" colspan="9">No orders match.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = _dzOrdersCache.map(o => {
+        const buyer = o.buyer || {};
+        const seller = o.seller || {};
+        return '<tr>' +
+          '<td class="mono">' + escapeHtml(o.order_ref || '—') + '</td>' +
+          '<td>' + escapeHtml(buyer.name || '—') + '<div style="font-size:11px;color:var(--text-muted)">' + escapeHtml(buyer.phone || '') + '</div></td>' +
+          '<td>' + escapeHtml(seller.company || seller.name || '—') + '</td>' +
+          '<td class="num">' + (o.items_count || 0) + '</td>' +
+          '<td class="num">' + fmtFCFA(o.total) + '</td>' +
+          '<td>' + escapeHtml(o.payment_method || '—') + '</td>' +
+          '<td>' + statusPillHtml(o.status) + (o.dispute_status === 'open' ? ' <span class="pill rejected">Dispute</span>' : '') + '</td>' +
+          '<td>' + fmtDate(o.created_at) + '</td>' +
+          '<td style="text-align:right"><button class="btn" style="padding:4px 10px;font-size:12px" data-order-id="' + escapeHtml(o.id) + '">View</button></td>' +
+        '</tr>';
+      }).join('');
+      tbody.querySelectorAll('button[data-order-id]').forEach(b => {
+        b.addEventListener('click', () => openDzOrderDetail(b.getAttribute('data-order-id')));
+      });
+    }
+
+    async function openDzOrderDetail(orderId) {
+      openModal({
+        title: 'Order detail', wide: true,
+        content: '<div style="padding:24px;text-align:center;color:var(--text-muted)">Loading…</div>'
+      });
+      try {
+        const r = await apiAdmin('GET', '/admin/dozie/orders/' + orderId);
+        const o = r.data;
+        const buyer = o.buyer || {}; const seller = o.seller || {};
+        const items = Array.isArray(o.items) ? o.items : [];
+        const m = $('modal-host').querySelector('.modal-body');
+        m.innerHTML =
+          '<div class="health-grid">' +
+            '<div class="health-card"><div class="health-label">Order #</div><div class="health-value" style="font-size:14px">' + escapeHtml(o.order_ref) + '</div></div>' +
+            '<div class="health-card"><div class="health-label">Total</div><div class="health-value" style="font-size:14px">' + fmtFCFA(o.total) + '</div></div>' +
+            '<div class="health-card"><div class="health-label">Status</div><div class="health-value" style="font-size:14px">' + statusPillHtml(o.status) + '</div></div>' +
+            '<div class="health-card"><div class="health-label">Escrow</div><div class="health-value" style="font-size:14px">' + fmtFCFA(o.escrow_held || 0) + (o.escrow_released ? ' (released)' : ' (held)') + '</div></div>' +
+          '</div>' +
+          '<div class="card" style="background:var(--bg-tertiary);margin-bottom:12px"><strong>Buyer</strong><br>' + escapeHtml(buyer.name || '—') + ' · ' + escapeHtml(buyer.phone || '—') + '</div>' +
+          '<div class="card" style="background:var(--bg-tertiary);margin-bottom:12px"><strong>Seller</strong><br>' + escapeHtml(seller.company || seller.name || '—') + ' · ' + escapeHtml(seller.phone || '—') + '</div>' +
+          '<table class="data"><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Line</th></tr></thead><tbody>' +
+          items.map(it => '<tr><td>' + escapeHtml(it.name || it.product || '—') + '</td><td class="num">' + (it.qty || it.quantity || 1) + '</td><td class="num">' + fmtFCFA(it.price) + '</td><td class="num">' + fmtFCFA((it.qty || 1) * (it.price || 0)) + '</td></tr>').join('') +
+          '</tbody></table>' +
+          (o.dispute ? '<div class="card" style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.3);margin-top:12px"><strong style="color:var(--danger)">Dispute open</strong><br><div style="font-size:13px;margin-top:4px">' + escapeHtml(o.dispute.buyer_claim || '') + '</div>' + (o.dispute.seller_reply ? '<div style="font-size:13px;margin-top:8px;color:var(--text-muted)">Seller reply: ' + escapeHtml(o.dispute.seller_reply) + '</div>' : '') + '</div>' : '');
+      } catch (e) {
+        const m = $('modal-host').querySelector('.modal-body');
+        if (m) m.innerHTML = '<div style="padding:24px;color:var(--danger)">' + escapeHtml(e.message) + '</div>';
+      }
+    }
+
+    // ────────────────────── DOZIE: DISPUTES ──────────────────────
+    let _dzDispCache = [];
+    let _dzDispTab = 'open';
+    let _dzDispRefreshTimer = null;
+    let _dzDispLastFetched = null;
+
+    function startDisputesAutoRefresh() {
+      stopDisputesAutoRefresh();
+      if (_dzDispTab !== 'open') return;
+      _dzDispRefreshTimer = setInterval(() => {
+        if (isModalOpen()) return;
+        loadDzDisputes({ silent: true });
+      }, 10000);
+    }
+    function stopDisputesAutoRefresh() {
+      if (_dzDispRefreshTimer) { clearInterval(_dzDispRefreshTimer); _dzDispRefreshTimer = null; }
+    }
+
+    async function loadDzDisputes(opts) {
+      opts = opts || {};
+      const tbody = $('dz-disp-tbody');
+      if (!opts.silent) tbody.innerHTML = '<tr><td class="empty" colspan="8">Loading…</td></tr>';
+      try {
+        const res = await apiAdmin('GET', '/admin/dozie/disputes?status=all');
+        _dzDispCache = (res && res.data) || [];
+        _dzDispLastFetched = new Date();
+        renderDzDispTabs();
+        renderDzDispTable();
+      } catch (e) {
+        if (!opts.silent) tbody.innerHTML = '<tr><td class="empty" colspan="8">Error: ' + escapeHtml(e.message) + '</td></tr>';
+      }
+      if (_dzDispTab === 'open') startDisputesAutoRefresh(); else stopDisputesAutoRefresh();
+    }
+
+    function renderDzDispTabs() {
+      const open = _dzDispCache.filter(d => d.status === 'open').length;
+      const resolved = _dzDispCache.filter(d => d.status === 'resolved').length;
+      $('dcnt-open').textContent = open;
+      $('dcnt-resolved').textContent = resolved;
+      const meta = $('dz-disp-refresh-meta');
+      meta.textContent = (_dzDispTab === 'open' && _dzDispLastFetched)
+        ? 'Updated ' + Math.floor((Date.now() - _dzDispLastFetched.getTime()) / 1000) + 's ago · auto-refresh every 10s' : '';
+    }
+
+    function renderDzDispTable() {
+      const tbody = $('dz-disp-tbody');
+      const rows = _dzDispCache.filter(d => d.status === _dzDispTab);
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td class="empty" colspan="8">No disputes in this tab.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map(d => {
+        const buyer = d.buyer || {}; const seller = d.seller || {};
+        const isOpen = d.status === 'open';
+        const waLink = (phone) => phone ? ('https://wa.me/' + String(phone).replace(/[^0-9]/g, '')) : null;
+        const buyerWa  = waLink(buyer.phone);
+        const sellerWa = waLink(seller.phone);
+        return '<tr>' +
+          '<td class="mono">' + escapeHtml(d.order_ref || '—') + '</td>' +
+          '<td>' + escapeHtml(buyer.name || '—') + '<div style="font-size:11px;color:var(--text-muted)">' + escapeHtml(buyer.phone || '') + '</div></td>' +
+          '<td>' + escapeHtml(seller.company || seller.name || '—') + '</td>' +
+          '<td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--text-muted)" title="' + escapeHtml(d.buyer_claim || '') + '">' + escapeHtml(d.buyer_claim || '') + '</td>' +
+          '<td class="num">' + fmtFCFA(d.amount) + '</td>' +
+          '<td>' + fmtDate(d.created_at) + '</td>' +
+          '<td>' + statusPillHtml(d.status) + '</td>' +
+          '<td style="text-align:right">' +
+            (isOpen
+              ? '<button class="btn" style="padding:4px 10px;font-size:12px" data-disp-action="view" data-disp-id="' + escapeHtml(d.id) + '">View</button> ' +
+                '<button class="btn" style="padding:4px 10px;font-size:12px" data-disp-action="resolve" data-disp-id="' + escapeHtml(d.id) + '">Resolve</button>' +
+                (buyerWa ? ' <a class="btn" style="padding:4px 10px;font-size:12px;text-decoration:none" href="' + buyerWa + '" target="_blank" rel="noopener">Buyer WA</a>' : '') +
+                (sellerWa ? ' <a class="btn" style="padding:4px 10px;font-size:12px;text-decoration:none" href="' + sellerWa + '" target="_blank" rel="noopener">Seller WA</a>' : '')
+              : '<button class="btn" style="padding:4px 10px;font-size:12px" data-disp-action="view" data-disp-id="' + escapeHtml(d.id) + '">View</button>') +
+          '</td>' +
+        '</tr>';
+      }).join('');
+      tbody.querySelectorAll('button[data-disp-action]').forEach(b => {
+        b.addEventListener('click', () => handleDzDispAction(b.getAttribute('data-disp-action'), b.getAttribute('data-disp-id')));
+      });
+    }
+
+    function handleDzDispAction(action, id) {
+      const d = _dzDispCache.find(x => x.id === id);
+      if (!d) return;
+      if (action === 'view') {
+        const buyer = d.buyer || {}; const seller = d.seller || {};
+        openModal({
+          title: 'Dispute ' + (d.order_ref || '—'), wide: true,
+          content:
+            '<div class="card" style="background:var(--bg-tertiary);margin-bottom:12px"><strong>Buyer claim</strong><br>' + escapeHtml(d.buyer_claim || '—') + '</div>' +
+            (d.seller_reply ? '<div class="card" style="background:var(--bg-tertiary);margin-bottom:12px"><strong>Seller reply</strong><br>' + escapeHtml(d.seller_reply) + '</div>' : '<div class="card" style="background:var(--bg-tertiary);margin-bottom:12px;color:var(--text-muted)">Seller has not replied yet.</div>') +
+            '<div class="health-grid">' +
+              '<div class="health-card"><div class="health-label">Amount</div><div class="health-value" style="font-size:16px">' + fmtFCFA(d.amount) + '</div></div>' +
+              '<div class="health-card"><div class="health-label">Buyer</div><div class="health-value" style="font-size:14px">' + escapeHtml(buyer.name || '—') + '</div></div>' +
+              '<div class="health-card"><div class="health-label">Seller</div><div class="health-value" style="font-size:14px">' + escapeHtml(seller.company || seller.name || '—') + '</div></div>' +
+              '<div class="health-card"><div class="health-label">Opened</div><div class="health-value" style="font-size:14px">' + fmtDate(d.created_at) + '</div></div>' +
+            '</div>' +
+            (d.resolution_note ? '<div class="card" style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.3)"><strong style="color:var(--success)">Resolution</strong><br>' + escapeHtml(d.resolution_note) + '</div>' : '')
+        });
+      } else if (action === 'resolve') {
+        openModal({
+          title: 'Resolve dispute', sub: d.order_ref,
+          content:
+            '<div class="field"><label>Resolution</label>' +
+              '<div style="display:flex;flex-direction:column;gap:6px">' +
+                '<label><input type="radio" name="dr-res" value="favor_buyer"> Favor buyer (full refund from escrow)</label>' +
+                '<label><input type="radio" name="dr-res" value="favor_seller"> Favor seller (release escrow)</label>' +
+                '<label><input type="radio" name="dr-res" value="partial_refund"> Partial refund</label>' +
+              '</div></div>' +
+            '<div class="field"><label>Refund amount (only for partial)</label><input id="dr-amount" type="number" step="1" min="0"/></div>' +
+            '<div class="field"><label>Notes (required)</label><textarea id="dr-notes" placeholder="Explain the decision"></textarea></div>',
+          secondary: { label: 'Cancel' },
+          primary: { label: 'Resolve', onClick: async (close) => {
+            const resolution = (document.querySelector('input[name="dr-res"]:checked') || {}).value;
+            const refund_amount = Number($('dr-amount').value || 0);
+            const notes = $('dr-notes').value.trim();
+            if (!resolution) return showToast('Pick a resolution', 'danger');
+            if (!notes) return showToast('Notes are required', 'danger');
+            if (resolution === 'partial_refund' && (!refund_amount || refund_amount <= 0)) return showToast('Refund amount required for partial', 'danger');
+            try {
+              await apiAdmin('POST', '/admin/dozie/disputes/' + id + '/resolve', {
+                resolution, refund_amount: resolution === 'partial_refund' ? refund_amount : null, notes
+              });
+              showToast('Dispute resolved (' + resolution.replace(/_/g, ' ') + ')', 'success');
+              close(); loadDzDisputes();
+            } catch (e) { showToast(e.message, 'danger'); }
+          }}
+        });
+      }
+    }
+
+    // ────────────────────── DOZIE: FINANCE ──────────────────────
+    let _dzChartVolume = null, _dzChartStatus = null;
+
+    async function loadDzFinance() {
+      try {
+        const res = await apiAdmin('GET', '/admin/dozie/finance/stats');
+        const s = (res && res.data) || {};
+        const cards = $('dz-fin-strip').children;
+        const set = (i, v) => { const el = cards[i].querySelector('.stat-value'); el.textContent = v; el.classList.remove('muted'); };
+        set(0, fmtFCFA(s.escrow_held_now));
+        set(1, fmtFCFA(s.mtd_commissions));
+        set(2, fmtFCFA(s.total_delivered));
+        set(3, fmtFCFA(s.pending_payouts));
+
+        if (!window.Chart) {
+          await new Promise((resolve) => { const t = () => window.Chart ? resolve() : setTimeout(t, 100); t(); });
+        }
+        renderDzVolumeChart(s.monthly_volume || []);
+        renderDzStatusChart(s.orders_by_status_pct || {});
+      } catch (e) {
+        showToast('Marketplace finance load failed: ' + e.message, 'danger');
+      }
+    }
+
+    function renderDzVolumeChart(trend) {
+      const colors = readThemeChartColors();
+      if (_dzChartVolume) _dzChartVolume.destroy();
+      _dzChartVolume = new window.Chart($('dz-chart-volume').getContext('2d'), {
+        type: 'bar',
+        data: { labels: trend.map(t => t.month), datasets: [{ label: 'GMV (FCFA)', data: trend.map(t => Number(t.gmv || 0)), backgroundColor: colors.accent, borderRadius: 6 }] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => fmtFCFA(c.parsed.y) } } },
+          scales: {
+            x: { ticks: { color: colors.muted }, grid: { color: colors.grid } },
+            y: { ticks: { color: colors.muted, callback: (v) => v >= 1000 ? (v/1000).toFixed(0) + 'k' : v }, grid: { color: colors.grid } }
+          }
+        }
+      });
+    }
+
+    function renderDzStatusChart(byStatus) {
+      const host = $('dz-chart-status-host');
+      const entries = Object.entries(byStatus || {}).filter(([, v]) => v > 0);
+      if (_dzChartStatus) { _dzChartStatus.destroy(); _dzChartStatus = null; }
+      if (!entries.length) {
+        host.innerHTML = '<div class="chart-empty">No data yet</div>';
+        return;
+      }
+      if (!host.querySelector('canvas')) host.innerHTML = '<canvas id="dz-chart-status"></canvas>';
+      const colors = readThemeChartColors();
+      const palette = [colors.accent, colors.info, colors.success, colors.warning, '#a78bfa', '#fb7185', colors.muted];
+      _dzChartStatus = new window.Chart($('dz-chart-status').getContext('2d'), {
+        type: 'doughnut',
+        data: {
+          labels: entries.map(([k]) => k),
+          datasets: [{ data: entries.map(([, v]) => v), backgroundColor: entries.map((_, i) => palette[i % palette.length]), borderWidth: 0 }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, cutout: '60%',
+          plugins: {
+            legend: { position: 'bottom', labels: { color: colors.text, boxWidth: 12 } },
+            tooltip: { callbacks: { label: (c) => c.label + ': ' + c.parsed + '%' } }
+          }
+        }
+      });
+    }
+
+    // ────────────────────── GLOBAL SEARCH (Phase C5) ──────────────────────
+    let _searchTimer = null;
+    let _searchDropdown = null;
+
+    function closeSearchDropdown() {
+      if (_searchDropdown && _searchDropdown.parentNode) _searchDropdown.parentNode.removeChild(_searchDropdown);
+      _searchDropdown = null;
+    }
+
+    function openSearchDropdown(html) {
+      closeSearchDropdown();
+      const input = $('sb-search');
+      const rect = input.getBoundingClientRect();
+      const dd = document.createElement('div');
+      dd.className = 'row-actions-menu-portal';
+      dd.style.cssText = 'position:fixed;top:' + (rect.bottom + 4) + 'px;left:' + rect.left + 'px;width:' + Math.max(rect.width, 360) + 'px;max-width:520px;max-height:60vh;overflow-y:auto;padding:0';
+      dd.innerHTML = html;
+      document.body.appendChild(dd);
+      _searchDropdown = dd;
+      // Close on outside / Escape.
+      const outside = (e) => {
+        if (_searchDropdown && _searchDropdown.contains(e.target)) return;
+        if (e.target === input) return;
+        closeSearchDropdown();
+        document.removeEventListener('mousedown', outside, true);
+      };
+      document.addEventListener('mousedown', outside, true);
+    }
+
+    async function runGlobalSearch(q) {
+      if (!q || q.length < 2) { closeSearchDropdown(); return; }
+      try {
+        const res = await apiAdmin('GET', '/admin/search?q=' + encodeURIComponent(q));
+        const d = (res && res.data) || { mon_partenaire: {}, partenaire_dozie: {} };
+        const mp = d.mon_partenaire || {}, dz = d.partenaire_dozie || {};
+        const renderRow = (label, sub, jump) =>
+          '<button type="button" data-jump-section="' + escapeHtml(jump.section) + '"' +
+          (jump.highlight_org_id   ? ' data-highlight-org-id="'   + escapeHtml(jump.highlight_org_id)   + '"' : '') +
+          (jump.highlight_user_id  ? ' data-highlight-user-id="'  + escapeHtml(jump.highlight_user_id)  + '"' : '') +
+          (jump.highlight_order_id ? ' data-highlight-order-id="' + escapeHtml(jump.highlight_order_id) + '"' : '') +
+          (jump.highlight_payment_id ? ' data-highlight-payment-id="' + escapeHtml(jump.highlight_payment_id) + '"' : '') +
+          '><div style="font-size:13px;font-weight:600">' + escapeHtml(label) + '</div>' +
+          '<div style="font-size:11px;color:var(--text-muted)">' + escapeHtml(sub) + '</div></button>';
+        const section = (title, items) => items.length
+          ? '<hr><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);padding:8px 12px 4px">' + title + '</div>' + items.join('')
+          : '';
+        let html = '';
+        const mpRows = [
+          ...((mp.businesses || []).map(b => renderRow(b.name + ' · ' + (b.mp_id || ''), 'Business · ' + (b.plan || '') + ' · ' + (b.status || ''), b.jump_to))),
+          ...((mp.users || []).map(u => renderRow(u.full_name + ' · ' + u.phone, 'MP user' + (u.org_name ? ' at ' + u.org_name : '') + ' · ' + (u.role || ''), u.jump_to))),
+          ...((mp.payments || []).map(p => renderRow(p.reference || p.id, 'Payment · ' + (p.org_name || '') + ' · ' + p.status, p.jump_to)))
+        ];
+        const dzRows = [
+          ...((dz.users || []).map(u => renderRow(u.name + ' · ' + u.phone, 'Dozie ' + (u.role || 'user') + ' · ' + (u.city || ''), u.jump_to))),
+          ...((dz.orders || []).map(o => renderRow(o.order_ref, 'Dozie order · ' + (o.status || ''), o.jump_to))),
+          ...((dz.listings || []).map(l => renderRow(l.name, 'Dozie listing · ' + (l.category || ''), l.jump_to)))
+        ];
+        html = section('Mon Partenaire', mpRows) + section('Partenaire Dozie', dzRows);
+        if (!html) html = '<div style="padding:16px;color:var(--text-muted);text-align:center;font-size:13px">No matches for "' + escapeHtml(q) + '"</div>';
+        openSearchDropdown(html);
+        // Wire jump buttons.
+        if (_searchDropdown) {
+          _searchDropdown.querySelectorAll('button[data-jump-section]').forEach(b => {
+            b.addEventListener('click', () => {
+              const section = b.getAttribute('data-jump-section');
+              const highlight = {
+                org_id:     b.getAttribute('data-highlight-org-id'),
+                user_id:    b.getAttribute('data-highlight-user-id'),
+                order_id:   b.getAttribute('data-highlight-order-id'),
+                payment_id: b.getAttribute('data-highlight-payment-id')
+              };
+              closeSearchDropdown();
+              $('sb-search').value = '';
+              navigateTo(section);
+              // Highlight target row briefly after data loads.
+              setTimeout(() => attemptHighlight(section, highlight), 400);
+            });
+          });
+        }
+      } catch (e) {
+        openSearchDropdown('<div style="padding:16px;color:var(--danger);font-size:13px">Search failed: ' + escapeHtml(e.message) + '</div>');
+      }
+    }
+
+    function attemptHighlight(section, h) {
+      // Find the row matching the highlight target and flash it.
+      let selector = null;
+      if (section === 'businesses' && h.org_id) {
+        const trs = document.querySelectorAll('#biz-tbody tr');
+        for (const tr of trs) {
+          const btn = tr.querySelector('[data-biz-row]');
+          if (btn && btn.getAttribute('data-biz-row') === h.org_id) { flashRow(tr); break; }
+        }
+      } else if (section === 'marketplace-users' && h.user_id) {
+        const tr = document.querySelector('#dz-users-tbody tr[data-dz-user="' + CSS.escape(h.user_id) + '"]');
+        if (tr) flashRow(tr);
+      } else if (section === 'orders' && h.order_id) {
+        const trs = document.querySelectorAll('#dz-orders-tbody tr');
+        for (const tr of trs) {
+          const btn = tr.querySelector('[data-order-id]');
+          if (btn && btn.getAttribute('data-order-id') === h.order_id) { flashRow(tr); break; }
+        }
+      }
+    }
+    function flashRow(tr) {
+      tr.style.transition = 'background-color 0.4s';
+      tr.style.backgroundColor = 'rgba(201,168,76,0.25)';
+      tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => { tr.style.backgroundColor = ''; }, 2000);
+    }
 
     // ────────────────────── WIRE-UP ──────────────────────
     document.addEventListener('DOMContentLoaded', function () {
@@ -2434,6 +3304,68 @@
 
       // FINANCE
       $('finance-refresh').addEventListener('click', loadFinance);
+
+      // DOZIE: USERS
+      $('dz-users-refresh').addEventListener('click', loadDzUsers);
+      $('dz-users-search').addEventListener('input', (e) => {
+        clearTimeout(_dzUsersSearchTimer);
+        _dzUsersSearchTimer = setTimeout(() => {
+          _dzUsersFilter.search = e.target.value.trim();
+          loadDzUsers();
+        }, 300);
+      });
+      $('dz-users-role').addEventListener('change',   (e) => { _dzUsersFilter.role = e.target.value; loadDzUsers(); });
+      $('dz-users-status').addEventListener('change', (e) => { _dzUsersFilter.status = e.target.value; loadDzUsers(); });
+      $('dz-users-city').addEventListener('input',    (e) => {
+        clearTimeout(_dzUsersSearchTimer);
+        _dzUsersSearchTimer = setTimeout(() => { _dzUsersFilter.city = e.target.value.trim(); loadDzUsers(); }, 300);
+      });
+
+      // DOZIE: VERIFICATIONS
+      document.querySelectorAll('[data-verif-tab]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          _dzVerifTab = btn.getAttribute('data-verif-tab');
+          document.querySelectorAll('[data-verif-tab]').forEach(b => b.classList.toggle('active', b === btn));
+          renderDzVerifsTable(); renderDzVerifsTabs();
+          if (_dzVerifTab === 'pending') startVerifsAutoRefresh(); else stopVerifsAutoRefresh();
+        });
+      });
+
+      // DOZIE: ORDERS
+      $('dz-orders-refresh').addEventListener('click', loadDzOrders);
+      ['dz-orders-search', 'dz-orders-status', 'dz-orders-from', 'dz-orders-to'].forEach(id =>
+        $(id).addEventListener('change', loadDzOrders)
+      );
+      $('dz-orders-search').addEventListener('input', (e) => {
+        clearTimeout(_dzUsersSearchTimer);
+        _dzUsersSearchTimer = setTimeout(loadDzOrders, 300);
+      });
+
+      // DOZIE: DISPUTES
+      document.querySelectorAll('[data-disp-tab]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          _dzDispTab = btn.getAttribute('data-disp-tab');
+          document.querySelectorAll('[data-disp-tab]').forEach(b => b.classList.toggle('active', b === btn));
+          renderDzDispTable(); renderDzDispTabs();
+          if (_dzDispTab === 'open') startDisputesAutoRefresh(); else stopDisputesAutoRefresh();
+        });
+      });
+
+      // DOZIE: FINANCE
+      $('dz-fin-refresh').addEventListener('click', loadDzFinance);
+
+      // GLOBAL SEARCH
+      const searchInput = $('sb-search');
+      searchInput.removeAttribute('disabled');
+      searchInput.title = '';
+      searchInput.addEventListener('input', (e) => {
+        clearTimeout(_searchTimer);
+        const q = e.target.value.trim();
+        _searchTimer = setTimeout(() => runGlobalSearch(q), 300);
+      });
+      searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { closeSearchDropdown(); searchInput.blur(); }
+      });
 
       // Sidebar nav — single delegated handler so we don't bind 13 times.
       document.querySelectorAll('.sb-link').forEach(a => {
