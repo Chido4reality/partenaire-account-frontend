@@ -313,14 +313,29 @@ export default function Layout() {
             </div>
           )}
 
-          {!collapsed && (
-            <a
-              href={`https://wa.me/237675995524?text=${encodeURIComponent(`Bonjour, je suis ${user?.full_name || ""}${myPlan?.user_id_number ? " ("+myPlan.user_id_number+")" : ""} sur Mon Partenaire. J'ai besoin d'aide.`)}`}
-              target="_blank" rel="noopener noreferrer"
-              style={{ display: "block", width: "100%", padding: "6px 10px", borderRadius: 8, background: "rgba(37,211,102,0.08)", border: "1px solid rgba(37,211,102,0.2)", color: "#25d366", fontSize: 11, textAlign: "left", textDecoration: "none", marginBottom: 6 }}>
-              💬 {lang === "en" ? "Contact Support" : "Contacter le Support"}
-            </a>
-          )}
+          {!collapsed && (() => {
+            // Pre-fill the WhatsApp message per Peter's T1.3 spec. Tier label
+            // prefers the plan's display name; falls back to the slug
+            // capitalized. Trial wins over plan name so the support agent
+            // sees the trial state up-front.
+            const tier = myPlan?.trial_active
+              ? "Trial"
+              : (myPlan?.plan?.name ||
+                 (myPlan?.plan_id ? myPlan.plan_id.charAt(0).toUpperCase() + myPlan.plan_id.slice(1) : ""));
+            const supportBody =
+              "Bonjour Partenaire Support,\n" +
+              "Mon ID: " + (myPlan?.user_id_number || org?.user_id_number || "") + "\n" +
+              "Nom: " + (org?.name || "") + "\n" +
+              "Plan: " + tier + "\n" +
+              "Message:\n";
+            const href = "https://wa.me/237675995524?text=" + encodeURIComponent(supportBody);
+            return (
+              <a href={href} target="_blank" rel="noopener noreferrer"
+                style={{ display: "block", width: "100%", padding: "6px 10px", borderRadius: 8, background: "rgba(37,211,102,0.08)", border: "1px solid rgba(37,211,102,0.2)", color: "#25d366", fontSize: 11, textAlign: "left", textDecoration: "none", marginBottom: 6 }}>
+                💬 {lang === "en" ? "Contact Support" : "Contacter le Support"}
+              </a>
+            );
+          })()}
 
           {!collapsed && (
             <button onClick={toggleLang} style={{ width: "100%", padding: "6px 10px", borderRadius: 8, background: "rgba(255,255,255,0.05)", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: 11, textAlign: "left", marginBottom: 6 }}>
