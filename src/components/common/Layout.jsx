@@ -278,9 +278,28 @@ export default function Layout() {
           <div style={{ padding: 16, textAlign: "center", color: "var(--text-muted)", fontSize: 12 }}>
             {lang === "en" ? "No notifications" : "Aucune notification"}
           </div>
-        ) : notifications.slice(0, 15).map(n => (
-          <div key={n.id} onClick={() => { if (!n.is_read) markReadMutation.mutate(n.id); setShowNotif(false); }}
-            style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", cursor: "pointer", background: n.is_read ? "transparent" : "rgba(79,70,229,0.05)" }}>
+        ) : notifications.slice(0, 15).map(n => {
+          // Map ref_type → in-app route. Older notifications with NULL
+          // refs (the existing 122 low-stock rows generated before the
+          // backend fix) just mark-read on click — no navigation,
+          // panel stays open.
+          const focusUrlFor = (n) => {
+            if (!n.ref_type || !n.ref_id) return null;
+            switch (n.ref_type) {
+              case "product":  return `/inventory?focus=${n.ref_id}`;
+              case "customer": return `/customers?focus=${n.ref_id}`;
+              case "sale":     return `/pos?focus=${n.ref_id}`;
+              case "credit":   return `/credits?focus=${n.ref_id}`;
+              default:         return null;
+            }
+          };
+          const focusUrl = focusUrlFor(n);
+          return (
+          <div key={n.id} onClick={() => {
+                if (!n.is_read) markReadMutation.mutate(n.id);
+                if (focusUrl) { setShowNotif(false); navigate(focusUrl); }
+              }}
+            style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", cursor: focusUrl ? "pointer" : "default", background: n.is_read ? "transparent" : "rgba(79,70,229,0.05)" }}>
             <div style={{ display: "flex", gap: 8 }}>
               <div style={{ width: 6, height: 6, borderRadius: "50%", background: notifColor(n.type), marginTop: 5, flexShrink: 0 }} />
               <div>
@@ -289,7 +308,8 @@ export default function Layout() {
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
     );
