@@ -806,7 +806,7 @@
 
   <!-- ───────────────── LOGIN ───────────────── -->
   <div id="login-screen" class="auth-screen">
-    <form class="auth-card" id="login-form" autocomplete="on" novalidate>
+    <form class="auth-card" id="login-form" method="post" action="javascript:void(0)" autocomplete="on" novalidate>
       <div class="auth-brand">
         <div class="auth-brand-logo">PARTENAIRE<span class="sparkle">✦</span></div>
         <div class="auth-brand-tag">Admin portal</div>
@@ -4534,6 +4534,8 @@
       }
     }
 
+    // ────────────────────── WIRE-UP ──────────────────────
+    document.addEventListener('DOMContentLoaded', function () {
       $('login-form').addEventListener('submit', handleLoginSubmit);
       $('sb-signout').addEventListener('click', signOut);
       $('profile-signout').addEventListener('click', signOut);
