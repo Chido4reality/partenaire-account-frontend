@@ -486,6 +486,9 @@
     .pill.rejected  { background: rgba(239,68,68,0.15);   color: var(--danger); }
     .pill.suspended { background: rgba(148,163,184,0.15); color: var(--text-muted); }
     .pill.expired   { background: rgba(239,68,68,0.15);   color: var(--danger); }
+    .pill.open       { background: rgba(245,158,11,0.15); color: var(--warning); }
+    .pill.escalated  { background: rgba(239,68,68,0.18);  color: var(--danger); }
+    .pill.resolved   { background: rgba(16,185,129,0.15); color: var(--success); }
 
     /* Row action dropdown — portal-positioned.
        The trigger lives inside the table row; the menu itself is appended
@@ -1063,7 +1066,8 @@
         </div>
         <div class="section-tabs" id="dz-disp-tabs">
           <button class="section-tab active" data-disp-tab="open">Open <span class="tab-count" id="dcnt-open">·</span></button>
-          <button class="section-tab" data-disp-tab="resolved">Resolved <span class="tab-count" id="dcnt-resolved">·</span></button>
+          <button class="section-tab"        data-disp-tab="escalated">Escalated <span class="tab-count" id="dcnt-escalated">·</span></button>
+          <button class="section-tab"        data-disp-tab="resolved">Resolved <span class="tab-count" id="dcnt-resolved">·</span></button>
           <span class="refresh-meta" id="dz-disp-refresh-meta"></span>
         </div>
         <div class="table-wrap">
@@ -1719,7 +1723,7 @@
     }
     function statusPillHtml(s) {
       const v = String(s || '').toLowerCase();
-      const cls = ['active','trial','pending','suspended','expired','approved','rejected','processing'].includes(v) ? v : '';
+      const cls = ['active','trial','pending','suspended','expired','approved','rejected','processing','open','escalated','resolved'].includes(v) ? v : '';
       return '<span class="pill ' + cls + '">' + escapeHtml(v || '—') + '</span>';
     }
     function fmtDate(iso) {
@@ -2997,7 +3001,9 @@
 
     function startDisputesAutoRefresh() {
       stopDisputesAutoRefresh();
-      if (_dzDispTab !== 'open') return;
+      // Both Open and Escalated need fresh data — both are actionable.
+      // Resolved is read-only history and doesn't need polling.
+      if (_dzDispTab !== 'open' && _dzDispTab !== 'escalated') return;
       _dzDispRefreshTimer = setInterval(() => {
         if (isModalOpen()) return;
         loadDzDisputes({ silent: true });
@@ -3024,12 +3030,14 @@
     }
 
     function renderDzDispTabs() {
-      const open = _dzDispCache.filter(d => d.status === 'open').length;
-      const resolved = _dzDispCache.filter(d => d.status === 'resolved').length;
-      $('dcnt-open').textContent = open;
-      $('dcnt-resolved').textContent = resolved;
+      const open      = _dzDispCache.filter(d => d.status === 'open').length;
+      const escalated = _dzDispCache.filter(d => d.status === 'escalated').length;
+      const resolved  = _dzDispCache.filter(d => d.status === 'resolved').length;
+      $('dcnt-open').textContent      = open;
+      $('dcnt-escalated').textContent = escalated;
+      $('dcnt-resolved').textContent  = resolved;
       const meta = $('dz-disp-refresh-meta');
-      meta.textContent = (_dzDispTab === 'open' && _dzDispLastFetched)
+      meta.textContent = ((_dzDispTab === 'open' || _dzDispTab === 'escalated') && _dzDispLastFetched)
         ? 'Updated ' + Math.floor((Date.now() - _dzDispLastFetched.getTime()) / 1000) + 's ago · auto-refresh every 10s' : '';
     }
 
@@ -3042,10 +3050,9 @@
       }
       tbody.innerHTML = rows.map(d => {
         const buyer = d.buyer || {}; const seller = d.seller || {};
-        const isOpen = d.status === 'open';
-        const waLink = (phone) => phone ? ('https://wa.me/' + String(phone).replace(/[^0-9]/g, '')) : null;
-        const buyerWa  = waLink(buyer.phone);
-        const sellerWa = waLink(seller.phone);
+        // Resolved rows are read-only history; Open and Escalated both
+        // expose the full action set including Resolve.
+        const isActionable = d.status === 'open' || d.status === 'escalated';
         return '<tr>' +
           '<td class="mono">' + escapeHtml(d.order_ref || '—') + '</td>' +
           '<td>' + escapeHtml(buyer.name || '—') + '<div style="font-size:11px;color:var(--text-muted)">' + escapeHtml(buyer.phone || '') + '</div></td>' +
@@ -3055,12 +3062,10 @@
           '<td>' + fmtDate(d.created_at) + '</td>' +
           '<td>' + statusPillHtml(d.status) + '</td>' +
           '<td style="text-align:right">' +
-            (isOpen
-              ? '<button class="btn" style="padding:4px 10px;font-size:12px" data-disp-action="view" data-disp-id="' + escapeHtml(d.id) + '">View</button> ' +
-                '<button class="btn" style="padding:4px 10px;font-size:12px" data-disp-action="resolve" data-disp-id="' + escapeHtml(d.id) + '">Resolve</button>' +
-                (buyerWa ? ' <a class="btn" style="padding:4px 10px;font-size:12px;text-decoration:none" href="' + buyerWa + '" target="_blank" rel="noopener">Buyer WA</a>' : '') +
-                (sellerWa ? ' <a class="btn" style="padding:4px 10px;font-size:12px;text-decoration:none" href="' + sellerWa + '" target="_blank" rel="noopener">Seller WA</a>' : '')
-              : '<button class="btn" style="padding:4px 10px;font-size:12px" data-disp-action="view" data-disp-id="' + escapeHtml(d.id) + '">View</button>') +
+            '<button class="btn" style="padding:4px 10px;font-size:12px" data-disp-action="view" data-disp-id="' + escapeHtml(d.id) + '">View</button>' +
+            (isActionable
+              ? ' <button class="btn" style="padding:4px 10px;font-size:12px" data-disp-action="resolve" data-disp-id="' + escapeHtml(d.id) + '">Resolve</button>'
+              : '') +
           '</td>' +
         '</tr>';
       }).join('');
@@ -3069,54 +3074,211 @@
       });
     }
 
+    // Helpers for the dispute detail modal.
+    function dzWaLink(phone, message) {
+      if (!phone) return null;
+      // ptn_users.phone is stored as 9-digit local format in practice, but
+      // some rows include '+237' or '237' prefixes. Strip non-digits, drop
+      // any leading 237, then prepend the country code so the wa.me link
+      // is always well-formed.
+      let p = String(phone).replace(/\D/g, '');
+      if (p.startsWith('237')) p = p.slice(3);
+      if (!p) return null;
+      return 'https://wa.me/237' + p + '?text=' + encodeURIComponent(message);
+    }
+    function dzEscrowLabel(order) {
+      if (!order) return '—';
+      if (order.escrow_released) return 'Released';
+      const held = parseFloat(order.escrow_held || 0);
+      if (held > 0) return 'Held · ' + fmtFCFA(held);
+      return 'No escrow';
+    }
+
     function handleDzDispAction(action, id) {
       const d = _dzDispCache.find(x => x.id === id);
       if (!d) return;
-      if (action === 'view') {
-        const buyer = d.buyer || {}; const seller = d.seller || {};
-        openModal({
-          title: 'Dispute ' + (d.order_ref || '—'), wide: true,
-          content:
-            '<div class="card" style="background:var(--bg-tertiary);margin-bottom:12px"><strong>Buyer claim</strong><br>' + escapeHtml(d.buyer_claim || '—') + '</div>' +
-            (d.seller_reply ? '<div class="card" style="background:var(--bg-tertiary);margin-bottom:12px"><strong>Seller reply</strong><br>' + escapeHtml(d.seller_reply) + '</div>' : '<div class="card" style="background:var(--bg-tertiary);margin-bottom:12px;color:var(--text-muted)">Seller has not replied yet.</div>') +
-            '<div class="health-grid">' +
-              '<div class="health-card"><div class="health-label">Amount</div><div class="health-value" style="font-size:16px">' + fmtFCFA(d.amount) + '</div></div>' +
-              '<div class="health-card"><div class="health-label">Buyer</div><div class="health-value" style="font-size:14px">' + escapeHtml(buyer.name || '—') + '</div></div>' +
-              '<div class="health-card"><div class="health-label">Seller</div><div class="health-value" style="font-size:14px">' + escapeHtml(seller.company || seller.name || '—') + '</div></div>' +
-              '<div class="health-card"><div class="health-label">Opened</div><div class="health-value" style="font-size:14px">' + fmtDate(d.created_at) + '</div></div>' +
-            '</div>' +
-            (d.resolution_note ? '<div class="card" style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.3)"><strong style="color:var(--success)">Resolution</strong><br>' + escapeHtml(d.resolution_note) + '</div>' : '')
-        });
-      } else if (action === 'resolve') {
-        openModal({
-          title: 'Resolve dispute', sub: d.order_ref,
-          content:
-            '<div class="field"><label>Resolution</label>' +
-              '<div style="display:flex;flex-direction:column;gap:6px">' +
-                '<label><input type="radio" name="dr-res" value="favor_buyer"> Favor buyer (full refund from escrow)</label>' +
-                '<label><input type="radio" name="dr-res" value="favor_seller"> Favor seller (release escrow)</label>' +
-                '<label><input type="radio" name="dr-res" value="partial_refund"> Partial refund</label>' +
-              '</div></div>' +
-            '<div class="field"><label>Refund amount (only for partial)</label><input id="dr-amount" type="number" step="1" min="0"/></div>' +
-            '<div class="field"><label>Notes (required)</label><textarea id="dr-notes" placeholder="Explain the decision"></textarea></div>',
-          secondary: { label: 'Cancel' },
-          primary: { label: 'Resolve', onClick: async (close) => {
-            const resolution = (document.querySelector('input[name="dr-res"]:checked') || {}).value;
-            const refund_amount = Number($('dr-amount').value || 0);
-            const notes = $('dr-notes').value.trim();
-            if (!resolution) return showToast('Pick a resolution', 'danger');
-            if (!notes) return showToast('Notes are required', 'danger');
-            if (resolution === 'partial_refund' && (!refund_amount || refund_amount <= 0)) return showToast('Refund amount required for partial', 'danger');
-            try {
-              await apiAdmin('POST', '/admin/dozie/disputes/' + id + '/resolve', {
-                resolution, refund_amount: resolution === 'partial_refund' ? refund_amount : null, notes
-              });
-              showToast('Dispute resolved (' + resolution.replace(/_/g, ' ') + ')', 'success');
-              close(); loadDzDisputes();
-            } catch (e) { showToast(e.message, 'danger'); }
-          }}
-        });
-      }
+      if (action === 'view')     return openDzDisputeDetail(d);
+      if (action === 'resolve')  return openDzDisputeResolve(d, null);
+      if (action === 'escalate') return openDzDisputeEscalate(d);
+    }
+
+    function openDzDisputeDetail(d) {
+      const buyer = d.buyer || {}, seller = d.seller || {}, order = d.order || {};
+      const idShort = (d.id || '').slice(0, 8);
+      // Pre-fill text per Peter's spec (French). encodeURIComponent inside
+      // dzWaLink produces %0A for the embedded newlines automatically.
+      const buyerMsg =
+        'Bonjour ' + (buyer.name || '') + ', concernant votre litige #' + idShort +
+        ' sur Partenaire Dozie. Nous examinons votre demande. ' +
+        'Référence commande: ' + (d.order_ref || '') + '. Équipe Partenaire Dozie.';
+      const sellerMsg =
+        'Bonjour ' + (seller.name || '') + ', concernant le litige #' + idShort +
+        ' sur votre commande ' + (d.order_ref || '') +
+        '. Veuillez soumettre votre réponse dans les 48h. Équipe Partenaire Dozie.';
+      const buyerWa  = dzWaLink(buyer.phone,  buyerMsg);
+      const sellerWa = dzWaLink(seller.phone, sellerMsg);
+      const isResolved = d.status === 'resolved';
+      const waBtn = (href) =>
+        '<a href="' + href + '" target="_blank" rel="noopener" ' +
+        'style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;background:#25D366;color:#0f172a;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;margin-bottom:10px">' +
+        '📱 Contact via WhatsApp</a>';
+
+      const html =
+        // Header
+        '<div style="margin-bottom:14px">' +
+          '<div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--text-muted)">#' + escapeHtml(idShort) + '</div>' +
+          '<div style="display:flex;align-items:center;gap:10px;margin-top:6px">' +
+            statusPillHtml(d.status) +
+            '<span style="font-size:12px;color:var(--text-muted)">opened ' + escapeHtml(fmtDate(d.created_at)) + '</span>' +
+          '</div>' +
+        '</div>' +
+        // Order summary
+        '<div class="card" style="background:var(--bg-tertiary);margin-bottom:12px">' +
+          '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:8px">Order summary</div>' +
+          '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:14px">' +
+            '<div><span style="color:var(--text-muted);font-size:11px">Order #</span><br><span class="mono" style="font-weight:600">' + escapeHtml(d.order_ref || '—') + '</span></div>' +
+            '<div><span style="color:var(--text-muted);font-size:11px">Amount</span><br><span style="font-weight:600">' + fmtFCFA((order.total != null ? order.total : d.amount)) + '</span></div>' +
+            '<div><span style="color:var(--text-muted);font-size:11px">Escrow</span><br><span style="font-weight:600">' + escapeHtml(dzEscrowLabel(order)) + '</span></div>' +
+            '<div><span style="color:var(--text-muted);font-size:11px">Placed</span><br><span style="font-weight:600">' + escapeHtml(fmtDate(order.created_at)) + '</span></div>' +
+          '</div>' +
+        '</div>' +
+        // Two-card buyer / seller row
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">' +
+          // Buyer
+          '<div class="card" style="background:var(--bg-tertiary)">' +
+            '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:6px">Buyer claim</div>' +
+            '<div style="font-weight:600">' + escapeHtml(buyer.name || '—') + '</div>' +
+            '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px" class="mono">' + escapeHtml(buyer.phone || '—') + '</div>' +
+            (buyerWa ? waBtn(buyerWa) : '') +
+            '<div style="font-size:13px;white-space:pre-wrap;line-height:1.5">' + escapeHtml(d.buyer_claim || '—') + '</div>' +
+          '</div>' +
+          // Seller
+          '<div class="card" style="background:var(--bg-tertiary)">' +
+            '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:6px">Seller reply</div>' +
+            '<div style="font-weight:600">' + escapeHtml(seller.company || seller.name || '—') + '</div>' +
+            '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px" class="mono">' + escapeHtml(seller.phone || '—') + '</div>' +
+            (sellerWa ? waBtn(sellerWa) : '') +
+            (d.seller_reply
+              ? ('<div style="font-size:13px;white-space:pre-wrap;line-height:1.5">' + escapeHtml(d.seller_reply) + '</div>' +
+                 (d.seller_replied_at ? '<div style="font-size:11px;color:var(--text-muted);margin-top:6px">replied ' + escapeHtml(fmtDate(d.seller_replied_at)) + '</div>' : ''))
+              : '<div style="font-size:13px;color:var(--text-muted);font-style:italic">No reply submitted yet</div>') +
+          '</div>' +
+        '</div>' +
+        // Admin notes
+        '<div class="card" style="background:var(--bg-tertiary);margin-bottom:16px">' +
+          '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:8px">Admin notes</div>' +
+          '<div id="dz-disp-notes-display" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;white-space:pre-wrap;line-height:1.5;max-height:200px;overflow-y:auto;padding:10px;background:var(--bg-secondary);border-radius:6px;margin-bottom:10px">' +
+            escapeHtml(d.admin_notes || '(no admin notes yet)') +
+          '</div>' +
+          '<textarea id="dz-disp-new-note" placeholder="Add admin note (visible to all admins)..." style="width:100%;min-height:60px;margin-bottom:6px"></textarea>' +
+          '<button id="dz-disp-add-note" type="button" class="btn" style="padding:6px 14px;font-size:12px">Add note</button>' +
+        '</div>' +
+        // Resolution block (existing resolution if resolved; action buttons otherwise)
+        (d.resolution_note || isResolved
+          ? '<div class="card" style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.3);margin-bottom:12px"><strong style="color:var(--success)">Resolution' +
+              (d.dispute_resolution ? ' · ' + escapeHtml(String(d.dispute_resolution).replace(/_/g, ' ')) : '') +
+              '</strong><br>' + escapeHtml(d.resolution_note || '') + '</div>'
+          : '<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end">' +
+              '<button type="button" class="btn" data-disp-resolve="favor_buyer">Resolve — favor buyer</button>' +
+              '<button type="button" class="btn" data-disp-resolve="favor_seller">Resolve — favor seller</button>' +
+              '<button type="button" class="btn" data-disp-resolve="partial_refund">Resolve — partial refund</button>' +
+              '<button type="button" class="btn" id="dz-disp-escalate-btn" style="color:var(--warning);border-color:rgba(245,158,11,0.45)">⏸️ Escalate</button>' +
+            '</div>');
+
+      openModal({
+        title: 'Dispute #' + idShort,
+        sub: d.order_ref || '',
+        wide: true,
+        content: html
+      });
+
+      // Wire add-note (stays in same modal on success)
+      const addBtn = $('dz-disp-add-note');
+      if (addBtn) addBtn.addEventListener('click', async () => {
+        const ta = $('dz-disp-new-note');
+        const text = (ta.value || '').trim();
+        if (!text) return showToast('Note cannot be empty', 'danger');
+        addBtn.disabled = true;
+        try {
+          const r = await apiAdmin('POST', '/admin/dozie/disputes/' + d.id + '/note', { note: text });
+          const updated = r && r.data;
+          if (updated) {
+            // Update local cache so re-opening the modal shows the new note too.
+            const idx = _dzDispCache.findIndex(x => x.id === d.id);
+            if (idx >= 0) _dzDispCache[idx] = { ..._dzDispCache[idx], admin_notes: updated.admin_notes };
+            $('dz-disp-notes-display').textContent = updated.admin_notes || '(no admin notes yet)';
+          }
+          ta.value = '';
+          showToast('Note added', 'success');
+        } catch (e) { showToast(e.message, 'danger'); }
+        finally { addBtn.disabled = false; }
+      });
+
+      // Wire resolve buttons — opens the resolve modal with the chosen
+      // option preselected. openModal replaces the detail modal; on
+      // success we refresh the list and the user is back at the table.
+      document.querySelectorAll('button[data-disp-resolve]').forEach(b => {
+        b.addEventListener('click', () => openDzDisputeResolve(d, b.getAttribute('data-disp-resolve')));
+      });
+      // Wire escalate button
+      const escBtn = $('dz-disp-escalate-btn');
+      if (escBtn) escBtn.addEventListener('click', () => openDzDisputeEscalate(d));
+    }
+
+    function openDzDisputeResolve(d, preselected) {
+      const radio = (val, label) =>
+        '<label><input type="radio" name="dr-res" value="' + val + '"' +
+        (preselected === val ? ' checked' : '') + '> ' + label + '</label>';
+      openModal({
+        title: 'Resolve dispute', sub: d.order_ref || '',
+        content:
+          '<div class="field"><label>Resolution</label>' +
+            '<div style="display:flex;flex-direction:column;gap:6px">' +
+              radio('favor_buyer',    'Favor buyer (full refund from escrow)') +
+              radio('favor_seller',   'Favor seller (release escrow)') +
+              radio('partial_refund', 'Partial refund') +
+            '</div></div>' +
+          '<div class="field"><label>Refund amount (only for partial)</label><input id="dr-amount" type="number" step="1" min="0"/></div>' +
+          '<div class="field"><label>Notes (required)</label><textarea id="dr-notes" placeholder="Explain the decision"></textarea></div>',
+        secondary: { label: 'Cancel' },
+        primary: { label: 'Resolve', onClick: async (close) => {
+          const resolution = (document.querySelector('input[name="dr-res"]:checked') || {}).value;
+          const refund_amount = Number($('dr-amount').value || 0);
+          const notes = $('dr-notes').value.trim();
+          if (!resolution) return showToast('Pick a resolution', 'danger');
+          if (!notes)      return showToast('Notes are required', 'danger');
+          if (resolution === 'partial_refund' && (!refund_amount || refund_amount <= 0))
+            return showToast('Refund amount required for partial', 'danger');
+          try {
+            await apiAdmin('POST', '/admin/dozie/disputes/' + d.id + '/resolve', {
+              resolution, refund_amount: resolution === 'partial_refund' ? refund_amount : null, notes
+            });
+            showToast('Dispute resolved (' + resolution.replace(/_/g, ' ') + ')', 'success');
+            close(); loadDzDisputes();
+          } catch (e) { showToast(e.message, 'danger'); }
+        }}
+      });
+    }
+
+    function openDzDisputeEscalate(d) {
+      const idShort = (d.id || '').slice(0, 8);
+      openModal({
+        title: 'Escalate dispute #' + idShort,
+        sub: d.order_ref || '',
+        content:
+          '<div class="field"><label>Why are you escalating this? (required, visible to senior admin review)</label>' +
+          '<textarea id="de-notes" placeholder="Reason for escalation"></textarea></div>',
+        secondary: { label: 'Cancel' },
+        primary: { label: 'Confirm escalation', onClick: async (close) => {
+          const notes = $('de-notes').value.trim();
+          if (!notes) return showToast('Reason is required', 'danger');
+          try {
+            await apiAdmin('POST', '/admin/dozie/disputes/' + d.id + '/escalate', { notes });
+            showToast('Dispute escalated', 'success');
+            close(); loadDzDisputes();
+          } catch (e) { showToast(e.message, 'danger'); }
+        }}
+      });
     }
 
     // ────────────────────── DOZIE: FINANCE ──────────────────────
