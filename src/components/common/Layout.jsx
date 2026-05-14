@@ -189,22 +189,22 @@ export default function Layout() {
   };
 
   const NotifPanel = () => (
-    <div style={{ position: "absolute", bottom: isMobile ? "auto" : "100%", top: isMobile ? 52 : "auto", right: isMobile ? 0 : "auto", left: isMobile ? 0 : 0, width: isMobile ? "100%" : 280, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.4)", overflow: "hidden", zIndex: 200, marginBottom: isMobile ? 0 : 4 }}>
+    <div style={{ position: "absolute", bottom: isMobile ? "auto" : "100%", top: isMobile ? 52 : "auto", right: isMobile ? 0 : "auto", left: isMobile ? 0 : 0, width: isMobile ? "100%" : 320, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.4)", overflow: "hidden", zIndex: 200, marginBottom: isMobile ? 0 : 4 }}>
       <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-        <span style={{ fontWeight: 600, fontSize: 13 }}>Notifications {unread > 0 && `(${unread})`}</span>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontWeight: 600, fontSize: 13, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Notifications {unread > 0 && `(${unread})`}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
           {unread > 0 && (
             <button
               onClick={() => markAllReadMutation.mutate()}
               disabled={markAllReadMutation.isLoading}
-              style={{ background: "none", border: "none", color: "var(--brand-light)", cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0 }}
+              style={{ background: "none", border: "none", color: "var(--brand-light)", cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0, flexShrink: 0, whiteSpace: "nowrap" }}
             >
               {markAllReadMutation.isLoading
                 ? (lang === "en" ? "Marking…" : "En cours…")
-                : (lang === "en" ? "Mark all read" : "Tout marquer lu")}
+                : (lang === "en" ? "Mark all" : "Tout marquer")}
             </button>
           )}
-          <button onClick={() => setShowNotif(false)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>✕</button>
+          <button onClick={() => setShowNotif(false)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}>✕</button>
         </div>
       </div>
       <div style={{ maxHeight: 300, overflowY: "auto" }}>
