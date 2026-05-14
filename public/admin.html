@@ -650,6 +650,51 @@
     .chart-empty { text-align: center; color: var(--text-muted); font-size: 13px; padding: 40px 0; }
     .chart-canvas-host { position: relative; height: 280px; }
 
+    /* ───────────────── GLOBAL SEARCH DROPDOWN ───────────────── */
+    /* Lives inside .row-actions-menu-portal (same portal container as the
+       row dropdowns) but uses its own typography so the two never collide. */
+    .search-group + .search-group { margin-top: 2px; border-top: 1px solid var(--border-subtle); }
+    .search-group-heading {
+      font-size: 10px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase;
+      color: #c4b5fd;                    /* purple accent — distinguishes app */
+      background: rgba(167, 139, 250, 0.08);
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .search-subheading {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase;
+      color: var(--text-muted);
+      padding: 8px 14px 4px;
+    }
+    .search-subheading-count {
+      display: inline-block; margin-left: 4px; padding: 0 6px;
+      background: var(--bg-tertiary); color: var(--text-secondary);
+      border-radius: 8px; font-weight: 700; font-size: 10px;
+    }
+    button.search-row {
+      display: block !important;       /* override the .row-actions-menu-portal button flex */
+      width: 100%;
+      padding: 8px 14px !important;
+      border: none; background: transparent;
+      text-align: left; cursor: pointer;
+      font-family: inherit;
+    }
+    button.search-row:hover { background: var(--bg-tertiary); }
+    button.search-row .search-row-label {
+      font-size: 13px; font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    button.search-row:hover .search-row-label { color: var(--accent); }
+    button.search-row .search-row-sub {
+      font-size: 11px; color: var(--text-muted);
+      margin-top: 2px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .search-empty {
+      padding: 16px; color: var(--text-muted); text-align: center; font-size: 13px;
+    }
+
     /* MoM growth badge inline */
     .delta {
       font-size: 12px; font-weight: 700; padding: 2px 7px; border-radius: 8px;
@@ -3171,40 +3216,92 @@
       document.addEventListener('mousedown', outside, true);
     }
 
+    // Entity-type configuration for the search dropdown. Each entry says
+    // which key in the group payload to read, a sub-section heading, and
+    // how to format the label + sub line. Adding a new entity type only
+    // requires extending these arrays.
+    const SEARCH_GROUPS = [
+      {
+        key:   'mon_partenaire',
+        title: 'Mon Partenaire',
+        kinds: [
+          { key: 'businesses', heading: 'Businesses',  label: b => (b.name || '—') + (b.mp_id ? ' · ' + b.mp_id : ''),
+            sub:   b => 'Business · ' + (b.plan || '—') + ' · ' + (b.status || '—') },
+          { key: 'users',      heading: 'Users',       label: u => (u.full_name || '—') + (u.phone ? ' · ' + u.phone : ''),
+            sub:   u => 'MP user' + (u.org_name ? ' at ' + u.org_name : '') + (u.role ? ' · ' + u.role : '') },
+          { key: 'payments',   heading: 'Payments',    label: p => p.reference || p.id || '—',
+            sub:   p => 'Payment · ' + (p.org_name || '—') + ' · ' + (p.status || '—') }
+        ]
+      },
+      {
+        key:   'partenaire_dozie',
+        title: 'Partenaire Dozie',
+        kinds: [
+          { key: 'users',      heading: 'Users',       label: u => (u.name || '—') + (u.phone ? ' · ' + u.phone : ''),
+            sub:   u => 'Dozie ' + (u.role || 'user') + (u.city ? ' · ' + u.city : '') },
+          { key: 'orders',     heading: 'Orders',      label: o => o.order_ref || '—',
+            sub:   o => 'Dozie order · ' + (o.status || '—') },
+          { key: 'listings',   heading: 'Listings',    label: l => l.name || '—',
+            sub:   l => 'Dozie listing · ' + (l.category || '—') }
+        ]
+      }
+    ];
+
+    function renderSearchRow(row, format) {
+      // Defensive — skip rows with no jump_to so a malformed payload can't
+      // poison the whole render path.
+      if (!row || !row.jump_to || !row.jump_to.section) return '';
+      const jump = row.jump_to;
+      let label, sub;
+      try { label = format.label(row); sub = format.sub(row); }
+      catch (_) { return ''; }
+      let attrs = ' data-jump-section="' + escapeHtml(jump.section) + '"';
+      if (jump.highlight_org_id)     attrs += ' data-highlight-org-id="'     + escapeHtml(jump.highlight_org_id)     + '"';
+      if (jump.highlight_user_id)    attrs += ' data-highlight-user-id="'    + escapeHtml(jump.highlight_user_id)    + '"';
+      if (jump.highlight_order_id)   attrs += ' data-highlight-order-id="'   + escapeHtml(jump.highlight_order_id)   + '"';
+      if (jump.highlight_payment_id) attrs += ' data-highlight-payment-id="' + escapeHtml(jump.highlight_payment_id) + '"';
+      return '<button type="button" class="search-row"' + attrs + '>' +
+        '<div class="search-row-label">' + escapeHtml(label) + '</div>' +
+        '<div class="search-row-sub">'   + escapeHtml(sub)   + '</div>' +
+      '</button>';
+    }
+
+    function renderSearchGroup(groupPayload, groupCfg) {
+      if (!groupPayload) return '';
+      let total = 0;
+      let body = '';
+      for (const kind of groupCfg.kinds) {
+        const rows = Array.isArray(groupPayload[kind.key]) ? groupPayload[kind.key] : [];
+        if (!rows.length) continue;
+        const rowsHtml = rows.map(r => renderSearchRow(r, kind)).join('');
+        if (!rowsHtml) continue;
+        body += '<div class="search-subheading">' + escapeHtml(kind.heading) +
+                ' <span class="search-subheading-count">' + rows.length + '</span></div>' + rowsHtml;
+        total += rows.length;
+      }
+      if (!total) return '';
+      return '<div class="search-group">' +
+               '<div class="search-group-heading">' + escapeHtml(groupCfg.title) + '</div>' +
+               body +
+             '</div>';
+    }
+
     async function runGlobalSearch(q) {
       if (!q || q.length < 2) { closeSearchDropdown(); return; }
       try {
         const res = await apiAdmin('GET', '/admin/search?q=' + encodeURIComponent(q));
-        const d = (res && res.data) || { mon_partenaire: {}, partenaire_dozie: {} };
-        const mp = d.mon_partenaire || {}, dz = d.partenaire_dozie || {};
-        const renderRow = (label, sub, jump) =>
-          '<button type="button" data-jump-section="' + escapeHtml(jump.section) + '"' +
-          (jump.highlight_org_id   ? ' data-highlight-org-id="'   + escapeHtml(jump.highlight_org_id)   + '"' : '') +
-          (jump.highlight_user_id  ? ' data-highlight-user-id="'  + escapeHtml(jump.highlight_user_id)  + '"' : '') +
-          (jump.highlight_order_id ? ' data-highlight-order-id="' + escapeHtml(jump.highlight_order_id) + '"' : '') +
-          (jump.highlight_payment_id ? ' data-highlight-payment-id="' + escapeHtml(jump.highlight_payment_id) + '"' : '') +
-          '><div style="font-size:13px;font-weight:600">' + escapeHtml(label) + '</div>' +
-          '<div style="font-size:11px;color:var(--text-muted)">' + escapeHtml(sub) + '</div></button>';
-        const section = (title, items) => items.length
-          ? '<hr><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);padding:8px 12px 4px">' + title + '</div>' + items.join('')
-          : '';
+        const d = (res && res.data) || {};
         let html = '';
-        const mpRows = [
-          ...((mp.businesses || []).map(b => renderRow(b.name + ' · ' + (b.mp_id || ''), 'Business · ' + (b.plan || '') + ' · ' + (b.status || ''), b.jump_to))),
-          ...((mp.users || []).map(u => renderRow(u.full_name + ' · ' + u.phone, 'MP user' + (u.org_name ? ' at ' + u.org_name : '') + ' · ' + (u.role || ''), u.jump_to))),
-          ...((mp.payments || []).map(p => renderRow(p.reference || p.id, 'Payment · ' + (p.org_name || '') + ' · ' + p.status, p.jump_to)))
-        ];
-        const dzRows = [
-          ...((dz.users || []).map(u => renderRow(u.name + ' · ' + u.phone, 'Dozie ' + (u.role || 'user') + ' · ' + (u.city || ''), u.jump_to))),
-          ...((dz.orders || []).map(o => renderRow(o.order_ref, 'Dozie order · ' + (o.status || ''), o.jump_to))),
-          ...((dz.listings || []).map(l => renderRow(l.name, 'Dozie listing · ' + (l.category || ''), l.jump_to)))
-        ];
-        html = section('Mon Partenaire', mpRows) + section('Partenaire Dozie', dzRows);
-        if (!html) html = '<div style="padding:16px;color:var(--text-muted);text-align:center;font-size:13px">No matches for "' + escapeHtml(q) + '"</div>';
+        for (const group of SEARCH_GROUPS) {
+          html += renderSearchGroup(d[group.key], group);
+        }
+        if (!html) {
+          html = '<div class="search-empty">No matches for "' + escapeHtml(q) + '"</div>';
+        }
         openSearchDropdown(html);
-        // Wire jump buttons.
+        // Wire jump buttons after the DOM lands.
         if (_searchDropdown) {
-          _searchDropdown.querySelectorAll('button[data-jump-section]').forEach(b => {
+          _searchDropdown.querySelectorAll('button.search-row').forEach(b => {
             b.addEventListener('click', () => {
               const section = b.getAttribute('data-jump-section');
               const highlight = {
@@ -3216,13 +3313,12 @@
               closeSearchDropdown();
               $('sb-search').value = '';
               navigateTo(section);
-              // Highlight target row briefly after data loads.
               setTimeout(() => attemptHighlight(section, highlight), 400);
             });
           });
         }
       } catch (e) {
-        openSearchDropdown('<div style="padding:16px;color:var(--danger);font-size:13px">Search failed: ' + escapeHtml(e.message) + '</div>');
+        openSearchDropdown('<div class="search-empty" style="color:var(--danger)">Search failed: ' + escapeHtml(e.message) + '</div>');
       }
     }
 
