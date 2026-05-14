@@ -111,6 +111,11 @@ export default function InventoryPage() {
   const [showImport, setShowImport] = useState(false);
   const [showBackfill, setShowBackfill] = useState(false);   // Sprint C — photo backfill modal
   const [backfillUploading, setBackfillUploading] = useState(null); // id of product currently uploading
+  // FU.4 — migrate-duplicates modal state
+  const [showMigrate, setShowMigrate] = useState(false);
+  const [migrateData, setMigrateData] = useState({ seller: null, pairs: [] });
+  const [migrateSel, setMigrateSel] = useState({});         // ptn_id → { selected, dozie_price, hard_delete }
+  const [migrateApplying, setMigrateApplying] = useState(false);
   const [showPIN, setShowPIN] = useState(false);
   const [pinAction, setPinAction] = useState(null);
 
@@ -563,6 +568,32 @@ export default function InventoryPage() {
             </>
           )}
         </div>
+      </div>
+
+      {/* FU.4 — entry point to the migrate-duplicates tool. Only meaningful
+          for MP-linked sellers; the backend returns seller=null when not
+          applicable so the modal will say "no candidates" instead of
+          erroring. Kept as a small link rather than a primary CTA. */}
+      <div style={{ margin: "0 0 8px 0", fontSize: 11 }}>
+        <a href="javascript:void(0)" onClick={async () => {
+            try {
+              const r = await api.get("/dozie/migrate-duplicates/candidates");
+              const data = r.data?.data || { seller: null, pairs: [] };
+              setMigrateData(data);
+              const initSel = {};
+              for (const pair of (data.pairs || [])) {
+                initSel[pair.ptn.id] = {
+                  selected: !!pair.match,
+                  dozie_price: pair.ptn.price || pair.match?.sell_price || 0,
+                  hard_delete: false
+                };
+              }
+              setMigrateSel(initSel);
+              setShowMigrate(true);
+            } catch (e) { toast.error(e.response?.data?.message || e.message); }
+          }} style={{ color: "var(--text-muted)", textDecoration: "underline", cursor: "pointer" }}>
+          🔗 {lang === "en" ? "Migrate Dozie duplicates" : "Fusionner les doublons Dozie"}
+        </a>
       </div>
 
       {/* ── TABS ── */}
@@ -1239,6 +1270,112 @@ export default function InventoryPage() {
         <AdjustModal product={selectedStockRow} lang={lang}
           onClose={() => { setShowAdjust(false); setSelectedStockRow(null); }}
           onSuccess={() => { setShowAdjust(false); setSelectedStockRow(null); invalidateAll(); }} />
+      )}
+
+      {/* FU.4 — migrate-duplicates modal. Pairs of (ptn_products[], pa_products[]) */}
+      {showMigrate && (
+        <div className="modal-overlay" onClick={() => !migrateApplying && setShowMigrate(false)}>
+          <div className="modal" style={{ maxWidth: 720, maxHeight: "88vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 17 }}>🔗 {lang === "en" ? "Migrate Dozie duplicates" : "Fusionner les doublons Dozie"}</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
+                  {migrateData.seller
+                    ? (lang === "en" ? "Link your standalone Dozie products to matching MP products so they share photos + real stock." : "Reliez vos produits Dozie autonomes à des produits MP correspondants.")
+                    : (lang === "en" ? "You need an MP-linked Dozie seller account to use this tool." : "Vous devez avoir un compte vendeur Dozie lié à MP pour utiliser cet outil.")}
+                </div>
+              </div>
+              <button onClick={() => !migrateApplying && setShowMigrate(false)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 20 }}>✕</button>
+            </div>
+            {migrateData.pairs.length === 0 ? (
+              <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>
+                ✓ {lang === "en" ? "No standalone Dozie products to migrate." : "Aucun doublon à fusionner."}
+              </div>
+            ) : (
+              <>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
+                  {migrateData.pairs.map(pair => {
+                    const sel = migrateSel[pair.ptn.id] || {};
+                    return (
+                      <div key={pair.ptn.id} style={{ background: "var(--bg-elevated)", borderRadius: 10, padding: 12, border: pair.match ? "1px solid var(--border)" : "1px dashed rgba(239,68,68,0.35)" }}>
+                        <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                          <input type="checkbox" disabled={!pair.match}
+                            checked={!!sel.selected}
+                            onChange={(e) => setMigrateSel(s => ({ ...s, [pair.ptn.id]: { ...s[pair.ptn.id], selected: e.target.checked } }))}
+                            style={{ marginTop: 4 }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                              {lang === "en" ? "Dozie:" : "Dozie :"} <strong style={{ color: "var(--text-primary)" }}>{pair.ptn.name}</strong>
+                              <span style={{ color: "var(--text-muted)" }}> · stock {pair.ptn.stock || 0}{pair.ptn.photo_url ? " · 📷" : ""}</span>
+                            </div>
+                            {pair.match ? (
+                              <div style={{ fontSize: 12, marginTop: 4, color: "var(--text-muted)" }}>
+                                MP: <strong style={{ color: pair.confidence === "exact" ? "#10b981" : "#fbbf24" }}>{pair.match.name}</strong>
+                                <span style={{ marginLeft: 6, fontSize: 10, padding: "1px 6px", borderRadius: 10, background: pair.confidence === "exact" ? "rgba(16,185,129,0.15)" : "rgba(251,191,36,0.15)", color: pair.confidence === "exact" ? "#10b981" : "#fbbf24" }}>
+                                  {pair.confidence === "exact" ? (lang === "en" ? "exact match" : "match exact") : (lang === "en" ? "fuzzy match" : "match approx.")}
+                                </span>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: 12, marginTop: 4, color: "#fca5a5" }}>{lang === "en" ? "No MP match — will stay as standalone." : "Aucun match MP — restera autonome."}</div>
+                            )}
+                            {pair.match && sel.selected && (
+                              <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center", fontSize: 12 }}>
+                                <label>Dozie price:</label>
+                                <input className="input" style={{ width: 100, padding: "4px 8px" }} type="number"
+                                  value={sel.dozie_price || ""}
+                                  onChange={(e) => setMigrateSel(s => ({ ...s, [pair.ptn.id]: { ...s[pair.ptn.id], dozie_price: e.target.value } }))} />
+                                <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text-muted)", marginLeft: "auto" }}>
+                                  <input type="checkbox" checked={!!sel.hard_delete}
+                                    onChange={(e) => setMigrateSel(s => ({ ...s, [pair.ptn.id]: { ...s[pair.ptn.id], hard_delete: e.target.checked } }))} />
+                                  {lang === "en" ? "Delete permanently" : "Supprimer définitivement"}
+                                </label>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12 }}>
+                  💡 {lang === "en"
+                    ? "By default, retired Dozie products are soft-deleted (published=false). Tick \"Delete permanently\" only if you're sure."
+                    : "Par défaut, les produits Dozie retirés sont masqués (published=false). Cochez \"Supprimer définitivement\" uniquement si vous êtes sûr."}
+                </div>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button className="btn btn-secondary" style={{ flex: 1 }} disabled={migrateApplying} onClick={() => setShowMigrate(false)}>
+                    {lang === "en" ? "Cancel" : "Annuler"}
+                  </button>
+                  <button className="btn btn-primary" style={{ flex: 2 }} disabled={migrateApplying}
+                    onClick={async () => {
+                      const items = Object.entries(migrateSel)
+                        .filter(([id, s]) => s.selected)
+                        .map(([ptn_id, s]) => {
+                          const pair = migrateData.pairs.find(p => p.ptn.id === ptn_id);
+                          return pair && pair.match ? {
+                            ptn_id,
+                            mp_product_id: pair.match.id,
+                            dozie_price: s.dozie_price ? Number(s.dozie_price) : null,
+                            hard_delete: !!s.hard_delete
+                          } : null;
+                        }).filter(Boolean);
+                      if (!items.length) { toast.error(lang === "en" ? "Nothing selected" : "Rien à fusionner"); return; }
+                      setMigrateApplying(true);
+                      try {
+                        const r = await api.post("/dozie/migrate-duplicates/apply", { items });
+                        toast.success((lang === "en" ? "✓ Migrated " : "✓ Fusionnés ") + r.data.data.applied);
+                        setShowMigrate(false);
+                        invalidateAll();
+                      } catch (e) { toast.error(e.response?.data?.message || e.message); }
+                      finally { setMigrateApplying(false); }
+                    }}>
+                    {migrateApplying ? "..." : (lang === "en" ? "Apply migration" : "Appliquer")}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Sprint A: inventory-cap paywall */}

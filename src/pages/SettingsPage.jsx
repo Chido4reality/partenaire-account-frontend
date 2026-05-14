@@ -197,6 +197,35 @@ export default function SettingsPage() {
     enabled: tab === "dozie" && isOwner
   });
   const dozieStatus = dozieStatusData?.data;
+  // FU.5 — pause/reopen entire Dozie shop. Same backend logic as the
+  // seller HTML's toggle, but resolved through the MP-authenticated
+  // /api/dozie/shop-pause endpoint (linked_mp_org_id → seller id).
+  const shopPaused = dozieStatus?.identity?.status === "paused";
+  const pauseShopMutation = useMutation({
+    mutationFn: () => api.post("/dozie/shop-pause"),
+    onSuccess: () => {
+      toast.success(lang === "en" ? "⏸ Dozie shop paused" : "⏸ Boutique Dozie en pause");
+      qc.invalidateQueries(["dozie-status"]);
+    },
+    onError: (err) => {
+      const d = err.response?.data || {};
+      if (err.response?.status === 409 && d.pending_count) {
+        toast.error(lang === "en"
+          ? `${d.pending_count} pending order(s) — settle before pausing`
+          : `${d.pending_count} commande(s) en cours — réglez-les d'abord`);
+      } else {
+        toast.error(d.message || "Error");
+      }
+    }
+  });
+  const reopenShopMutation = useMutation({
+    mutationFn: () => api.post("/dozie/shop-reopen"),
+    onSuccess: () => {
+      toast.success(lang === "en" ? "✓ Dozie shop reopened" : "✓ Boutique Dozie rouverte");
+      qc.invalidateQueries(["dozie-status"]);
+    },
+    onError: (err) => toast.error(err.response?.data?.message || "Error")
+  });
 
   const activateDozieMutation = useMutation({
     mutationFn: () => api.post("/dozie/activate", dozieForm),
@@ -631,6 +660,36 @@ export default function SettingsPage() {
                 💡 {lang === "en"
                   ? "Log in to Partenaire Dozie using your registered phone number and the Dozie PIN you set during activation."
                   : "Connectez-vous à Partenaire Dozie avec votre numéro de téléphone et le code PIN Dozie défini lors de l'activation."}
+              </div>
+
+              {/* FU.5 — Pause / Reopen entire Dozie shop. */}
+              <div style={{ marginTop: 16, padding: 14, borderRadius: 10, background: shopPaused ? "rgba(239,68,68,0.08)" : "var(--bg-elevated)", border: `1px solid ${shopPaused ? "rgba(239,68,68,0.35)" : "var(--border)"}` }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: shopPaused ? "#fca5a5" : "var(--text-primary)", marginBottom: 4 }}>
+                  {shopPaused
+                    ? (lang === "en" ? "⏸ Your Dozie shop is paused" : "⏸ Votre boutique Dozie est en pause")
+                    : (lang === "en" ? "Dozie Marketplace status" : "État sur le marketplace Dozie")}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10, lineHeight: 1.5 }}>
+                  {shopPaused
+                    ? (lang === "en" ? "Your listings are hidden from buyers. Your products, history, and account stay intact." : "Vos annonces sont cachées des acheteurs. Vos produits, historique et compte restent intacts.")
+                    : (lang === "en" ? "Hide your shop from the Dozie marketplace without losing products or history. Reopen anytime." : "Cachez votre boutique du marketplace Dozie sans perdre vos produits ou historique. Rouvrez à tout moment.")}
+                </div>
+                {shopPaused ? (
+                  <button onClick={() => reopenShopMutation.mutate()}
+                    disabled={reopenShopMutation.isPending}
+                    style={{ background: "#2E7D32", color: "#fff", border: 0, padding: "8px 16px", borderRadius: 8, fontWeight: 700, cursor: "pointer", fontSize: 12 }}>
+                    {reopenShopMutation.isPending ? "..." : (lang === "en" ? "↻ Reopen my shop" : "↻ Rouvrir ma boutique")}
+                  </button>
+                ) : (
+                  <button onClick={() => {
+                      if (!window.confirm(lang === "en" ? "Pause your Dozie shop? Your listings will hide from buyers until you reopen." : "Mettre votre boutique Dozie en pause ? Vos annonces seront cachées jusqu'à réouverture.")) return;
+                      pauseShopMutation.mutate();
+                    }}
+                    disabled={pauseShopMutation.isPending}
+                    style={{ background: "rgba(239,68,68,0.12)", color: "#fca5a5", border: "1px solid rgba(239,68,68,0.35)", padding: "8px 16px", borderRadius: 8, fontWeight: 700, cursor: "pointer", fontSize: 12 }}>
+                    {pauseShopMutation.isPending ? "..." : (lang === "en" ? "⏸ Pause my Dozie shop" : "⏸ Mettre en pause")}
+                  </button>
+                )}
               </div>
             </div>
           ) : (
