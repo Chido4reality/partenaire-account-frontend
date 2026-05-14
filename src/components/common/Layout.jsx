@@ -4,24 +4,30 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore, useLangStore, useOfflineStore } from "../../store";
 import api from "../../utils/api";
 import UpgradeModal from "./UpgradeModal";
+import PaywallModal from "./PaywallModal";
 import OfflineBanner from "./OfflineBanner";
 import { startAutoSync, processPendingQueue } from "../../utils/syncService";
+import { hasSection } from "../../utils/planCapabilities";
 import toast from "react-hot-toast";
 
-// Nav items with role restrictions
+// Sprint A: each nav item declares the capability section it belongs to.
+// `section: 'sales'` and `section: 'settings'` are always visible (every
+// tier includes them). Other sections are filtered against the effective
+// plan via hasSection(). `cashier` and `warehouse` role-restricts apply
+// on top of the plan filter.
 const NAV = [
-  { to: "/",             en: "Dashboard",  fr: "Tableau de bord", icon: "📊", roles: ["owner","manager","cashier","warehouse"] },
-  { to: "/pos",          en: "Sales",      fr: "Ventes",          icon: "🛒", roles: ["owner","manager","cashier"] },
-  { to: "/shifts",       en: "Cash",       fr: "Caisse",          icon: "💰", roles: ["owner","manager","cashier"] },
-  { to: "/stock-count",  en: "Count",      fr: "Comptage",        icon: "🔢", roles: ["owner","manager","warehouse"] },
-  { to: "/barcodes",     en: "Labels",     fr: "Étiquettes",      icon: "🏷️", roles: ["owner","manager","warehouse"] },
-  { to: "/inventory",    en: "Inventory",  fr: "Inventaire",      icon: "📦", roles: ["owner","manager","warehouse"] },
-  { to: "/customers",    en: "Customers",  fr: "Clients",         icon: "👥", roles: ["owner","manager"] },
-  { to: "/credits",      en: "Credits",    fr: "Crédits",         icon: "💳", roles: ["owner","manager"] },
-  { to: "/transfers",    en: "Transfers",  fr: "Transferts",      icon: "🔄", roles: ["owner","manager","warehouse"] },
-  { to: "/expenditures", en: "Expenses",   fr: "Dépenses",        icon: "💸", roles: ["owner","manager"] },
-  { to: "/reports",      en: "Reports",    fr: "Rapports",        icon: "📋", roles: ["owner","manager"] },
-  { to: "/settings",     en: "Settings",   fr: "Paramètres",      icon: "⚙️", roles: ["owner","manager"] },
+  { to: "/",             en: "Dashboard",  fr: "Tableau de bord", icon: "📊", roles: ["owner","manager","cashier","warehouse"], section: "dashboard" },
+  { to: "/pos",          en: "Sales",      fr: "Ventes",          icon: "🛒", roles: ["owner","manager","cashier"],            section: "sales" },
+  { to: "/shifts",       en: "Cash",       fr: "Caisse",          icon: "💰", roles: ["owner","manager","cashier"],            section: "cashflow" },
+  { to: "/stock-count",  en: "Count",      fr: "Comptage",        icon: "🔢", roles: ["owner","manager","warehouse"],          section: "inventory" },
+  { to: "/barcodes",     en: "Labels",     fr: "Étiquettes",      icon: "🏷️", roles: ["owner","manager","warehouse"],          section: "inventory" },
+  { to: "/inventory",    en: "Inventory",  fr: "Inventaire",      icon: "📦", roles: ["owner","manager","warehouse"],          section: "inventory" },
+  { to: "/customers",    en: "Customers",  fr: "Clients",         icon: "👥", roles: ["owner","manager"],                       section: "customers" },
+  { to: "/credits",      en: "Credits",    fr: "Crédits",         icon: "💳", roles: ["owner","manager"],                       section: "credits" },
+  { to: "/transfers",    en: "Transfers",  fr: "Transferts",      icon: "🔄", roles: ["owner","manager","warehouse"],          section: "inventory" },
+  { to: "/expenditures", en: "Expenses",   fr: "Dépenses",        icon: "💸", roles: ["owner","manager"],                       section: "cashflow" },
+  { to: "/reports",      en: "Reports",    fr: "Rapports",        icon: "📋", roles: ["owner","manager"],                       section: "reports" },
+  { to: "/settings",     en: "Settings",   fr: "Paramètres",      icon: "⚙️", roles: ["owner","manager"],                       section: "settings" },
 ];
 
 // Persistent banner shown above the header while an admin is impersonating
@@ -78,6 +84,9 @@ export default function Layout() {
   }, []);
   const [collapsed, setCollapsed] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
+  // Sprint A: paywall state — { feature, mpId } when something gated was
+  // clicked. PaywallModal owns the upgrade flow from there.
+  const [paywall, setPaywall] = useState(null);
 
   const { data: planData } = useQuery({
     queryKey: ["my-plan"],
@@ -102,6 +111,21 @@ export default function Layout() {
   useEffect(() => {
     const stopAutoSync = startAutoSync();
     return () => stopAutoSync();
+  }, []);
+
+  // Sprint A: any 403 with error='upgrade_required' from the axios
+  // interceptor fires this event. Layout owns the paywall state, so
+  // listening here pops the modal regardless of which page the request
+  // originated from.
+  useEffect(() => {
+    const handler = (e) => {
+      setPaywall({
+        feature: e.detail && e.detail.feature,
+        mpId:    null
+      });
+    };
+    window.addEventListener("partenaire:paywall", handler);
+    return () => window.removeEventListener("partenaire:paywall", handler);
   }, []);
 
   const handleLogout = () => { logout(); navigate("/login"); };
@@ -135,12 +159,16 @@ export default function Layout() {
   const unread = notifications.filter(n => !n.is_read).length;
   const role = user?.role || "cashier";
 
-  const isSilverRestricted = myPlan?.plan_id === "silver" && !myPlan?.trial_active;
-  const SILVER_ALLOWED = ["/", "/pos", "/inventory", "/shifts"];
-
+  // Sprint A: effective plan drives section visibility. Falls back to
+  // 'silver' if my-plan hasn't loaded yet (defensive — better to hide
+  // sections briefly than flash them then yank them away on load).
+  const effectivePlan = myPlan?.effective_plan || "silver";
+  const isGrace        = !!myPlan?.is_grace;
+  const trialDaysLeft  = myPlan?.days_remaining_in_trial;
+  const graceDaysLeft  = myPlan?.days_remaining_in_grace;
   const visibleNav = NAV.filter(item => {
     if (!item.roles.includes(role)) return false;
-    if (isSilverRestricted && !SILVER_ALLOWED.includes(item.to)) return false;
+    if (!hasSection(effectivePlan, item.section)) return false;
     return true;
   });
   const mobileNav = visibleNav.slice(0, 5);
@@ -237,6 +265,8 @@ export default function Layout() {
             );
           })}
         </div>
+        {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} currentPlan={myPlan?.plan} />}
+        {paywall && <PaywallModal feature={paywall.feature} currentPlan={effectivePlan} mpId={myPlan?.user_id_number} onClose={() => setPaywall(null)} />}
       </div>
     );
   }
@@ -274,14 +304,31 @@ export default function Layout() {
                 </span>
               )}
             </div>
-            {myPlan?.trial_active && myPlan?.trial_ends_at && (() => {
-              const daysLeft = Math.max(0, Math.ceil((new Date(myPlan.trial_ends_at) - new Date()) / 86400000));
+            {/* Sprint A: trial countdown / grace banner. Color tiers:
+                  >=7 days remaining  → green
+                  3-6 days remaining  → amber
+                  <3 days remaining   → red
+                  in grace            → red + pulse animation. */}
+            {effectivePlan === "trial" && !isGrace && trialDaysLeft != null && (() => {
+              let bg, border, color;
+              if (trialDaysLeft >= 7)      { bg = "rgba(16,185,129,0.15)"; border = "rgba(16,185,129,0.4)"; color = "#10b981"; }
+              else if (trialDaysLeft >= 3) { bg = "rgba(245,158,11,0.15)"; border = "rgba(245,158,11,0.4)"; color = "#fbbf24"; }
+              else                          { bg = "rgba(239,68,68,0.15)";  border = "rgba(239,68,68,0.4)";  color = "#fca5a5"; }
               return (
-                <div style={{ marginTop: 5, padding: "3px 10px", borderRadius: 8, background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", color: "var(--brand-light)", fontSize: 10, fontWeight: 700, textAlign: "center" }}>
-                  💎 Trial — {daysLeft} {lang === "en" ? (daysLeft === 1 ? "day left" : "days left") : (daysLeft === 1 ? "jour restant" : "jours restants")}
-                </div>
+                <button onClick={() => setPaywall({ feature: "trial_countdown", mpId: myPlan?.user_id_number })}
+                  style={{ marginTop: 5, width: "100%", padding: "4px 10px", borderRadius: 8, background: bg, border: `1px solid ${border}`, color, fontSize: 10, fontWeight: 700, textAlign: "center", cursor: "pointer" }}>
+                  💎 {lang === "en" ? `Trial — ${trialDaysLeft} ${trialDaysLeft === 1 ? "day" : "days"} left` : `Essai — ${trialDaysLeft} ${trialDaysLeft === 1 ? "jour" : "jours"}`}
+                </button>
               );
             })()}
+            {effectivePlan === "trial" && isGrace && graceDaysLeft != null && (
+              <button onClick={() => setPaywall({ feature: "trial_countdown", mpId: myPlan?.user_id_number })}
+                style={{ marginTop: 5, width: "100%", padding: "5px 10px", borderRadius: 8, background: "rgba(239,68,68,0.18)", border: "1px solid rgba(239,68,68,0.5)", color: "#fca5a5", fontSize: 10, fontWeight: 700, textAlign: "center", cursor: "pointer", animation: "pulse 1.6s ease-in-out infinite" }}>
+                ⚠ {lang === "en"
+                  ? `Trial ended — Day ${7 - graceDaysLeft}/7 of grace`
+                  : `Essai terminé — Jour ${7 - graceDaysLeft}/7 de grâce`}
+              </button>
+            )}
             {myPlan?.user_id_number && (
               <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4, fontFamily: "monospace" }}>
                 ID: {myPlan.user_id_number}
@@ -383,6 +430,7 @@ export default function Layout() {
       </main>
 
       {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} currentPlan={myPlan?.plan} />}
+      {paywall && <PaywallModal feature={paywall.feature} currentPlan={effectivePlan} mpId={myPlan?.user_id_number} onClose={() => setPaywall(null)} />}
       </div>
     </div>
   );

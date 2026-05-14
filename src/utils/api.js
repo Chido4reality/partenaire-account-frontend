@@ -14,6 +14,23 @@ api.interceptors.request.use(config => {
 
 api.interceptors.response.use(res => res, err => {
   if (err.response?.status === 401) { useAuthStore.getState().logout(); window.location.href = "/login"; }
+  // Sprint A: any 403 with { error: 'upgrade_required' } pops the universal
+  // PaywallModal. Layout listens for this event so individual pages don't
+  // each have to handle the response shape. Rejection still propagates so
+  // local error handlers can stay tight if they want to.
+  if (err.response?.status === 403 && err.response?.data?.error === "upgrade_required") {
+    const d = err.response.data;
+    try {
+      window.dispatchEvent(new CustomEvent("partenaire:paywall", {
+        detail: {
+          feature:      d.feature,
+          current_plan: d.current_plan,
+          current_count: d.current_count,
+          cap:           d.cap
+        }
+      }));
+    } catch (_) { /* SSR / no-window env */ }
+  }
   return Promise.reject(err);
 });
 

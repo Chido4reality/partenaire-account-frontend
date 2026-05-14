@@ -7,6 +7,8 @@ import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import api, { formatCFA } from "../utils/api";
 import OwnerPIN from "../components/common/OwnerPIN";
+import PaywallModal from "../components/common/PaywallModal";
+import { getCapabilities, isAtCap } from "../utils/planCapabilities";
 
 function fuzzyMatch(str, pattern) {
   if (!str || !pattern) return false;
@@ -177,6 +179,29 @@ export default function InventoryPage() {
 
   // ── ADD PRODUCT MUTATION ────────────────────────────────────────────────────
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
+  // Sprint A: paywall state when an inventory cap action is blocked.
+  const [paywall, setPaywall] = useState(null);
+  // Sprint A: pull effective plan + capabilities. We already have the
+  // legacy /my-plan query cached by Layout — re-using the same key
+  // skips an extra round-trip on page load.
+  const { data: planData } = useQuery({
+    queryKey: ["my-plan"],
+    queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
+    refetchInterval: 300000,
+    retry: 1
+  });
+  const myPlan = planData?.data;
+  const effectivePlan = myPlan?.effective_plan || "silver";
+  const planCaps = getCapabilities(effectivePlan);
+  const productsCount = products.length || 0;
+  const atInventoryCap = isAtCap(effectivePlan, "inventory_cap", productsCount);
+  const guardAdd = (continueAction) => {
+    if (atInventoryCap) {
+      setPaywall({ feature: "inventory_cap", mpId: myPlan?.user_id_number });
+      return;
+    }
+    continueAction();
+  };
 
   const addProductMutation = useMutation({
     mutationFn: async () => {
@@ -424,27 +449,48 @@ export default function InventoryPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">{lang === "en" ? "Inventory" : "Inventaire"}</h1>
-          <div style={{ display: "flex", gap: 16, marginTop: 4, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 16, marginTop: 4, flexWrap: "wrap", alignItems: "center" }}>
             {alerts.length > 0 && <div style={{ fontSize: 12, color: "#fbbf24" }}>⚠️ {alerts.length} {lang === "en" ? "items below minimum" : "articles sous le minimum"}</div>}
             {isOwner && <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{lang === "en" ? "Stock value:" : "Valeur stock:"} <strong style={{ color: "var(--brand-light)" }}>{formatCFA(totalStockValue)}</strong></div>}
+            {/* Sprint A: inventory cap usage badge. Hidden on plans with
+                unlimited inventory (Trial/Gold/Premium). */}
+            {planCaps.inventory_cap != null && (
+              <div style={{
+                fontSize: 12, padding: "3px 10px", borderRadius: 12,
+                background: atInventoryCap ? "rgba(239,68,68,0.15)" : "rgba(99,102,241,0.15)",
+                color: atInventoryCap ? "#fca5a5" : "var(--brand-light)",
+                border: `1px solid ${atInventoryCap ? "rgba(239,68,68,0.35)" : "rgba(99,102,241,0.3)"}`,
+                fontWeight: 600, cursor: atInventoryCap ? "pointer" : "default"
+              }}
+              onClick={() => atInventoryCap && setPaywall({ feature: "inventory_cap", mpId: myPlan?.user_id_number })}>
+                {productsCount} / {planCaps.inventory_cap} {lang === "en" ? `products on ${planCaps.label}` : `produits — ${planCaps.label_fr}`}
+                {atInventoryCap && (lang === "en" ? " — upgrade for unlimited" : " — mise à niveau requise")}
+              </div>
+            )}
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {canReceiveGoods && (
-            <button className="btn btn-secondary" onClick={() => setShowReceive(true)}>
-              📦 {lang === "en" ? "Receive Goods" : "Réceptionner"}
+            <button className="btn btn-secondary" onClick={() => guardAdd(() => setShowReceive(true))}
+              style={atInventoryCap ? { opacity: 0.55 } : {}}>
+              📦 {lang === "en" ? "Receive Goods" : "Réceptionner"}{atInventoryCap ? " 🔒" : ""}
             </button>
           )}
           {canAddProduct && (
             <>
-              <button className="btn btn-secondary" onClick={() => setShowRapidEntry(true)} title={lang === "en" ? "Rapid entry mode for multiple products" : "Saisie rapide pour plusieurs produits"}>
-                ⚡ {lang === "en" ? "Rapid Entry" : "Saisie rapide"}
+              <button className="btn btn-secondary" onClick={() => guardAdd(() => setShowRapidEntry(true))}
+                title={lang === "en" ? "Rapid entry mode for multiple products" : "Saisie rapide pour plusieurs produits"}
+                style={atInventoryCap ? { opacity: 0.55 } : {}}>
+                ⚡ {lang === "en" ? "Rapid Entry" : "Saisie rapide"}{atInventoryCap ? " 🔒" : ""}
               </button>
-              <button className="btn btn-secondary" onClick={() => setShowImport(true)} title={lang === "en" ? "Import from Excel/CSV" : "Importer depuis Excel/CSV"}>
-                📊 {lang === "en" ? "Import CSV" : "Importer CSV"}
+              <button className="btn btn-secondary" onClick={() => guardAdd(() => setShowImport(true))}
+                title={lang === "en" ? "Import from Excel/CSV" : "Importer depuis Excel/CSV"}
+                style={atInventoryCap ? { opacity: 0.55 } : {}}>
+                📊 {lang === "en" ? "Import CSV" : "Importer CSV"}{atInventoryCap ? " 🔒" : ""}
               </button>
-              <button className="btn btn-primary" onClick={() => setShowAddProduct(true)}>
-                + {lang === "en" ? "Add Product" : "Ajouter produit"}
+              <button className="btn btn-primary" onClick={() => guardAdd(() => setShowAddProduct(true))}
+                style={atInventoryCap ? { opacity: 0.55 } : {}}>
+                + {lang === "en" ? "Add Product" : "Ajouter produit"}{atInventoryCap ? " 🔒" : ""}
               </button>
             </>
           )}
@@ -625,7 +671,7 @@ export default function InventoryPage() {
           {filteredProducts.length === 0 ? (
             <div className="empty-state">
               <div style={{ fontWeight: 600, marginBottom: 6 }}>{search ? `No products matching "${search}"` : (lang === "en" ? "No products yet" : "Aucun produit")}</div>
-              {!search && canAddProduct && <button className="btn btn-primary" onClick={() => setShowAddProduct(true)} style={{ marginTop: 12 }}>+ {lang === "en" ? "Add product" : "Ajouter"}</button>}
+              {!search && canAddProduct && <button className="btn btn-primary" onClick={() => guardAdd(() => setShowAddProduct(true))} style={{ marginTop: 12, opacity: atInventoryCap ? 0.55 : 1 }}>+ {lang === "en" ? "Add product" : "Ajouter"}{atInventoryCap ? " 🔒" : ""}</button>}
             </div>
           ) : (
             <table className="table">
@@ -1072,6 +1118,9 @@ export default function InventoryPage() {
           onClose={() => { setShowAdjust(false); setSelectedStockRow(null); }}
           onSuccess={() => { setShowAdjust(false); setSelectedStockRow(null); invalidateAll(); }} />
       )}
+
+      {/* Sprint A: inventory-cap paywall */}
+      {paywall && <PaywallModal feature={paywall.feature} currentPlan={effectivePlan} mpId={paywall.mpId} onClose={() => setPaywall(null)} />}
     </div>
   );
 }

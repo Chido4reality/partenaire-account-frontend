@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useAuthStore, useLangStore, useSettingsStore } from "../store";
 import api from "../utils/api";
+import PaywallModal from "../components/common/PaywallModal";
+import { hasFeature, getCapabilities } from "../utils/planCapabilities";
 
 const ROLES = [
   { value: "cashier",   en: "Cashier",    fr: "Caissier",     color: "#94a3b8" },
@@ -49,14 +51,19 @@ export default function SettingsPage() {
   // Dozie state
   const [dozieForm, setDozieForm] = useState({ dozie_pin: "", city: "Douala", shop_description: "" });
 
+  // Sprint A: enable unconditionally — we use my-plan for the branding
+  // gate and Dozie city restrictions, so it must be available on every
+  // tab, not just the Dozie tab.
   const { data: planData } = useQuery({
     queryKey: ["my-plan"],
-    queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
-    enabled: tab === "dozie"
+    queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data)
   });
   const myPlan = planData?.data;
   const trialActive = myPlan?.trial_active;
   const planId = myPlan?.plan_id;
+  const effectivePlan = myPlan?.effective_plan || "silver";
+  const canBrand = hasFeature(effectivePlan, "receipt_branding");
+  const [brandingPaywall, setBrandingPaywall] = useState(false);
   const isSilverBlocked = planId === "silver" && !trialActive;
   const isGoldTier = planId === "gold" || (planId === "silver" && trialActive);
   const GOLD_CITIES = ["Douala", "Yaoundé", "Bafoussam"];
@@ -413,9 +420,30 @@ export default function SettingsPage() {
                 <label className="label">{lang === "en" ? "City" : "Ville"}</label>
                 <input className="input" value={shopForm.city} onChange={e => setFF("city", e.target.value)} placeholder="Douala" />
               </div>
+              {/* Sprint A: receipt_footer is part of receipt_branding —
+                  Premium only. Non-Premium plans see the input disabled
+                  with a lock badge; click opens the paywall modal. */}
               <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-                <label className="label">{lang === "en" ? "Receipt footer" : "Message bas de reçu"}</label>
-                <input className="input" value={shopForm.receipt_footer} onChange={e => setFF("receipt_footer", e.target.value)} placeholder={lang === "en" ? "Thank you for your business!" : "Merci pour votre confiance!"} />
+                <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {lang === "en" ? "Receipt footer" : "Message bas de reçu"}
+                  {!canBrand && (
+                    <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: "rgba(251,191,36,0.15)", color: "#fbbf24", fontWeight: 700 }}>
+                      🔒 {lang === "en" ? "Premium" : "Premium"}
+                    </span>
+                  )}
+                </label>
+                <input className="input"
+                  value={shopForm.receipt_footer}
+                  onChange={e => canBrand ? setFF("receipt_footer", e.target.value) : null}
+                  onClick={() => { if (!canBrand) setBrandingPaywall(true); }}
+                  readOnly={!canBrand}
+                  style={!canBrand ? { opacity: 0.6, cursor: "pointer" } : {}}
+                  placeholder={lang === "en" ? "Thank you for your business!" : "Merci pour votre confiance!"} />
+                {!canBrand && (
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                    {lang === "en" ? "Custom receipt branding is a Premium feature." : "La personnalisation du reçu est réservée au plan Premium."}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -728,6 +756,14 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Sprint A: receipt branding paywall */}
+      {brandingPaywall && (
+        <PaywallModal feature="receipt_branding"
+          currentPlan={effectivePlan}
+          mpId={myPlan?.user_id_number}
+          onClose={() => setBrandingPaywall(false)} />
       )}
     </div>
   );
