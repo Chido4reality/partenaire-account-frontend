@@ -210,31 +210,36 @@ export default function Layout() {
       panelRef.current.style.left = Math.max(8, left) + "px";
     });
 
-    // Close on outside-click / Esc / scroll / resize — mirrors the
-    // admin notif dropdown pattern from Phase D-F. Handlers attach
-    // when the panel mounts (showNotif flips true) and detach on
-    // unmount, so there's no leak when the panel closes.
+    // Close on outside-click / Esc / scroll / resize.
+    //
+    // Both the click and scroll handlers use closest() on a stable DOM
+    // id (rather than ref.contains) so they survive any unmount/remount
+    // of NotifPanel between Layout renders — and so a scroll on the
+    // panel's own scrollable list (caught by capture=true on window)
+    // doesn't get treated as "user scrolled outside, close the panel".
     useEffect(() => {
-      const isInsideBell = (target) => {
-        const bells = [
-          document.getElementById("notif-bell-desktop"),
-          document.getElementById("notif-bell-mobile")
-        ].filter(Boolean);
-        return bells.some(b => b === target || b.contains(target));
-      };
+      const isInsidePanel = (target) =>
+        target && target.closest && target.closest("#notif-panel-pos");
+      const isInsideBell = (target) =>
+        target && target.closest && (target.closest("#notif-bell-desktop") || target.closest("#notif-bell-mobile"));
+
       const onMouseDown = (e) => {
-        if (!panelRef.current) return;
-        if (panelRef.current.contains(e.target)) return;
-        if (isInsideBell(e.target)) return; // bell's own click toggles
+        // Two early-outs in this order: inside-panel clicks let the
+        // alert-row onClick fire its mark-read mutation; bell clicks
+        // let the bell's own onClick toggle the panel.
+        if (isInsidePanel(e.target)) return;
+        if (isInsideBell(e.target)) return;
         setShowNotif(false);
       };
       const onKey = (e) => { if (e.key === "Escape") setShowNotif(false); };
-      const onScroll = () => setShowNotif(false);
+      // Capture=true so scrolls on inner containers (the <main> scroll
+      // region) reach this handler; ignored when the scroll happened
+      // inside the panel itself.
+      const onScroll = (e) => {
+        if (isInsidePanel(e.target)) return;
+        setShowNotif(false);
+      };
       const onResize = () => setShowNotif(false);
-      // capture=true on mousedown picks up clicks before any bubbling
-      // listeners can swallow them. capture=true on scroll catches
-      // scroll on inner containers (e.g., the sidebar) as well as
-      // window scroll — same trick used in the admin dropdown.
       document.addEventListener("mousedown", onMouseDown, true);
       document.addEventListener("keydown", onKey);
       window.addEventListener("scroll", onScroll, true);
@@ -250,7 +255,7 @@ export default function Layout() {
       ? { position: "absolute", top: 52, left: 0, right: 0, width: "100%", marginBottom: 0 }
       : { position: "fixed",    top: 0,  left: -9999, width: 320, marginBottom: 0 };
     return (
-    <div ref={panelRef} style={{ ...baseStyle, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.4)", overflow: "hidden", zIndex: 1000 }}>
+    <div id="notif-panel-pos" ref={panelRef} style={{ ...baseStyle, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.4)", overflow: "hidden", zIndex: 1000 }}>
       <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
         <span style={{ fontWeight: 600, fontSize: 13, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Notifications {unread > 0 && `(${unread})`}</span>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
