@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLangStore, useAuthStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
@@ -14,6 +14,22 @@ export default function ReportsPage() {
   const [to, setTo]     = useState(new Date().toISOString().split("T")[0]);
   const [expandedSale, setExpandedSale] = useState(null);
   const [voidSale, setVoidSale] = useState(null);
+
+  // Deep-link from the global order search: /reports?sale=<id>&on=<YYYY-MM-DD>.
+  // Jump to the Sales Detail tab, widen the range to that day so the
+  // sale is in the result set, expand it, then strip the params so a
+  // refresh doesn't re-pin the view.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const saleId = p.get("sale");
+    if (!saleId) return;
+    const on = p.get("on");
+    setTab("sales");
+    if (on) { setFrom(on); setTo(on); }
+    setExpandedSale(saleId);
+    const clean = window.location.pathname + window.location.hash;
+    window.history.replaceState({}, document.title, clean);
+  }, []);
 
   const setPreset = (days) => {
     const d = new Date();
