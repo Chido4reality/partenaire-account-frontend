@@ -214,6 +214,10 @@ function MappingModal({ entry, lang, busy, onConfirm, onClose, confirmLabel }) {
   );
 }
 
+// Last-used location for this cashier — survives refresh independently
+// of the persisted settings store (which can hold a stale/deleted loc).
+const LOC_LS_KEY = "mp-online-cart-location";
+
 const TABS = [
   { key: "pending",        en: "Pending",   fr: "En attente" },
   { key: "completed",      en: "Completed", fr: "Terminé" },
@@ -236,9 +240,28 @@ export default function OnlineCartPage() {
 
   const { data: locData } = useQuery({
     queryKey: ["locations"],
-    queryFn: () => api.get("/locations").then(r => r.data)
+    queryFn: () => api.get("/locations").then(r => r.data),
+    staleTime: 60000
   });
-  const locations = locData?.data || [];
+  // ["locations"] is a cache key shared with POS/Settings; tolerate
+  // either the {success,data} envelope or a bare array so a different
+  // page priming the cache can't blank this dropdown.
+  const locations = Array.isArray(locData) ? locData
+    : Array.isArray(locData?.data) ? locData.data : [];
+
+  // Cashier-friendly default: keep the store selection if it's still
+  // a valid active location, else fall back to the last-used id
+  // (localStorage) and finally the first location. Without this a
+  // fresh visit leaves selectedLocation null and every action errors
+  // with "Select a location first".
+  useEffect(() => {
+    if (!locations.length) return;
+    const byId = (id) => locations.find(l => l.id === id);
+    if (selectedLocation && byId(selectedLocation.id)) return;
+    const lastId = localStorage.getItem(LOC_LS_KEY);
+    const pick = byId(lastId) || locations[0];
+    if (pick) setLocation(pick);
+  }, [locations, selectedLocation, setLocation]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["online-cart", tab],
@@ -328,7 +351,11 @@ export default function OnlineCartPage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
         <h2 style={{ margin: 0, fontSize: 20 }}>📥 {t("Online Cart", "Panier en ligne")}</h2>
         <select className="input" value={selectedLocation?.id || ""} style={{ width: "auto", minWidth: 180 }}
-          onChange={e => setLocation(locations.find(l => l.id === e.target.value) || null)}>
+          onChange={e => {
+            const loc = locations.find(l => l.id === e.target.value) || null;
+            setLocation(loc);
+            if (loc) localStorage.setItem(LOC_LS_KEY, loc.id);
+          }}>
           <option value="">{t("Select location…", "Choisir un site…")}</option>
           {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
