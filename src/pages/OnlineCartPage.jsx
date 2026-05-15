@@ -289,6 +289,23 @@ export default function OnlineCartPage() {
     onError: (e) => toast.error(e?.response?.data?.message || (lang === "en" ? "Failed" : "Échec"))
   });
 
+  // Fix 1.4: abandon an in-progress cart → entry returns to fresh pending.
+  const cancelSessionMut = useMutation({
+    mutationFn: (id) => api.post(`/online-cart/${id}/cancel-cart-session`),
+    onSuccess: () => {
+      toast.success(lang === "en" ? "Returned to pending" : "Remis en attente");
+      setOpenEntry(null); refresh();
+    },
+    onError: (e) => toast.error(e?.response?.data?.message || (lang === "en" ? "Failed" : "Échec"))
+  });
+
+  // Fix 1.3: resume a cart left in progress — re-open the prefilled
+  // /pos screen with the same online-cart id + session.
+  const resumeCart = (e) => {
+    setOpenEntry(null);
+    navigate(`/pos?from_online=${e.id}&session=${e.cart_session_id || ""}`);
+  };
+
   const openDetail = async (row) => {
     try {
       const res = await api.get(`/online-cart/${row.id}`);
@@ -360,6 +377,11 @@ export default function OnlineCartPage() {
                   </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+                  {e.cart_started_at && e.status === "pending" && (
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 9px", borderRadius: 10, background: "rgba(245,158,11,0.15)", color: "#fbbf24" }}>
+                      🛒 {t("Cart in progress", "Panier en cours")}
+                    </span>
+                  )}
                   <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 9px", borderRadius: 10, background: pill.bg, color: pill.color }}>
                     {lang === "en" ? pill.en : pill.fr}
                   </span>
@@ -402,11 +424,23 @@ export default function OnlineCartPage() {
                   ✓ {t("Confirm Complete", "Confirmer & terminer")}
                 </button>
               )}
-              {openEntry.status === "pending" && openEntry.payment_mode !== "paid_online_full" && (
+              {openEntry.status === "pending" && openEntry.payment_mode !== "paid_online_full" && !openEntry.cart_started_at && (
                 <button onClick={() => startMap("send")}
                   style={{ padding: "8px 16px", borderRadius: 8, background: "var(--brand)", border: "none", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>
                   → {t("Send to Cart", "Envoyer au panier")}
                 </button>
+              )}
+              {openEntry.status === "pending" && openEntry.cart_started_at && (
+                <>
+                  <button onClick={() => resumeCart(openEntry)}
+                    style={{ padding: "8px 16px", borderRadius: 8, background: "#fbbf24", border: "none", color: "#1a1a1a", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>
+                    🛒 {t("Resume Cart", "Reprendre le panier")}
+                  </button>
+                  <button onClick={() => cancelSessionMut.mutate(openEntry.id)} disabled={cancelSessionMut.isLoading}
+                    style={{ padding: "8px 16px", borderRadius: 8, background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>
+                    {t("Return to pending", "Remettre en attente")}
+                  </button>
+                </>
               )}
               {isOwner && (openEntry.status === "pending" || openEntry.status === "completed") && (
                 <button onClick={() => {
