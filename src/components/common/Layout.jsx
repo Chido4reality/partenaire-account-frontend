@@ -329,6 +329,101 @@ export default function Layout() {
     );
   };
 
+  // Fix 2: global order search (VNT-* sales + QOF-* Dozie orders,
+  // partial refs). Debounced 300ms. Lives in the sidebar / mobile
+  // header; the results panel is position:fixed + anchored to the
+  // input via getBoundingClientRect because the sidebar is
+  // overflow:hidden (same constraint NotifPanel works around).
+  const OrderSearchBox = ({ idSuffix }) => {
+    const inputId = "order-search-" + idSuffix;
+    const [term, setTerm] = useState("");
+    const [debounced, setDebounced] = useState("");
+    const [open, setOpen] = useState(false);
+    const panelRef = useRef(null);
+
+    useEffect(() => {
+      const id = setTimeout(() => setDebounced(term.trim()), 300);
+      return () => clearTimeout(id);
+    }, [term]);
+
+    const { data, isFetching } = useQuery({
+      queryKey: ["order-search", debounced],
+      queryFn: () => api.get("/orders/search?ref=" + encodeURIComponent(debounced)).then(r => r.data),
+      enabled: debounced.length >= 2,
+      staleTime: 10000,
+      onError: () => {}
+    });
+    const results = data?.data || [];
+    const showPanel = open && debounced.length >= 2;
+
+    useLayoutEffect(() => {
+      if (!showPanel || isMobile || !panelRef.current) return;
+      const trigger = document.getElementById(inputId);
+      if (!trigger) return;
+      const r = trigger.getBoundingClientRect();
+      panelRef.current.style.top = (r.bottom + 4) + "px";
+      panelRef.current.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 340 - 8)) + "px";
+    });
+
+    useEffect(() => {
+      const onDown = (e) => {
+        if (e.target.closest && (e.target.closest("#order-search-panel") || e.target.closest("#" + inputId))) return;
+        setOpen(false);
+      };
+      document.addEventListener("mousedown", onDown, true);
+      return () => document.removeEventListener("mousedown", onDown, true);
+    }, [inputId]);
+
+    const go = (res) => {
+      setOpen(false); setTerm("");
+      if (res.link_to) navigate(res.link_to);
+      else toast(lang === "en"
+        ? `${res.ref} — ${res.type === "sale" ? "Sale" : "Dozie order"} · ${Number(res.total).toLocaleString()} FCFA · ${res.status}`
+        : `${res.ref} — ${res.type === "sale" ? "Vente" : "Commande Dozie"} · ${Number(res.total).toLocaleString()} FCFA · ${res.status}`,
+        { duration: 4000 });
+    };
+
+    const panelBase = isMobile
+      ? { position: "absolute", top: 44, left: 0, right: 0, width: "100%" }
+      : { position: "fixed", top: 0, left: -9999, width: 340 };
+
+    return (
+      <div style={{ position: "relative", width: "100%" }}>
+        <input id={inputId} value={term}
+          onChange={e => { setTerm(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          placeholder={lang === "en" ? "🔎 Find order (VNT / QOF / digits)" : "🔎 Chercher (VNT / QOF / chiffres)"}
+          style={{ width: "100%", padding: "6px 10px", borderRadius: 8, background: "rgba(255,255,255,0.06)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: 11 }} />
+        {showPanel && (
+          <div id="order-search-panel" ref={panelRef}
+            style={{ ...panelBase, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.4)", overflow: "hidden", zIndex: 1000, maxHeight: 320, overflowY: "auto" }}>
+            {isFetching && !results.length ? (
+              <div style={{ padding: 14, fontSize: 12, color: "var(--text-muted)", textAlign: "center" }}>{lang === "en" ? "Searching…" : "Recherche…"}</div>
+            ) : results.length === 0 ? (
+              <div style={{ padding: 14, fontSize: 12, color: "var(--text-muted)", textAlign: "center" }}>
+                {lang === "en" ? `No order found with reference: ${debounced}` : `Aucune commande pour la référence : ${debounced}`}
+              </div>
+            ) : results.map(res => (
+              <div key={res.type + res.id} onClick={() => go(res)}
+                style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", cursor: "pointer" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700 }}>{res.ref}</span>
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 9, background: res.type === "sale" ? "rgba(79,70,229,0.15)" : "rgba(245,158,11,0.15)", color: res.type === "sale" ? "var(--brand-light)" : "#fbbf24" }}>
+                    {res.type === "sale" ? (lang === "en" ? "MP Sale" : "Vente MP") : (lang === "en" ? "Dozie" : "Dozie")}
+                  </span>
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                  {Number(res.total || 0).toLocaleString()} FCFA · {res.status}
+                  {res.date ? " · " + new Date(res.date).toLocaleDateString() : ""}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // ── MOBILE LAYOUT ────────────────────────────────────────────────────────────
   if (isMobile) {
     return (
@@ -348,6 +443,10 @@ export default function Layout() {
               {showNotif && <NotifPanel />}
             </div>
           </div>
+        </div>
+
+        <div style={{ background: "var(--bg-surface)", borderBottom: "1px solid var(--border)", padding: "8px 16px", flexShrink: 0, position: "relative" }}>
+          <OrderSearchBox idSuffix="m" />
         </div>
 
         <main style={{ flex: 1, overflowY: "auto", background: "var(--bg-base)" }}>
@@ -453,6 +552,12 @@ export default function Layout() {
                   </button>
                 )
             )}
+          </div>
+        )}
+
+        {!collapsed && (
+          <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>
+            <OrderSearchBox idSuffix="d" />
           </div>
         )}
 
