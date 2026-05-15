@@ -191,6 +191,7 @@ export default function POSPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const fromOnline = params.get("from_online");
+    const fromSession = params.get("session") || "";
     if (!fromOnline) return;
     let cancelled = false;
     (async () => {
@@ -225,7 +226,11 @@ export default function POSPage() {
           return;
         }
         setCart(items);
-        setOnlineCtx({ id: entry.id, ref: entry.dozie_order_ref || entry.id.slice(0, 8) });
+        setOnlineCtx({
+          id: entry.id,
+          ref: entry.dozie_order_ref || entry.id.slice(0, 8),
+          session: fromSession || entry.cart_session_id || ""
+        });
         toast.success(lang === "en" ? "Cart prefilled from Dozie order" : "Panier pré-rempli (Dozie)");
       } catch (e) {
         toast.error(e?.response?.data?.message || (lang === "en" ? "Could not load order" : "Échec du chargement"));
@@ -394,11 +399,29 @@ export default function POSPage() {
         toast.success(lang === "en" ? "✓ Debt payment recorded!" : "✓ Remboursement enregistré!", { duration: 2000 });
       } else {
         // D-2.4: link the new sale back to its Online Cart entry so
-        // void can reverse it and reporting can trace Dozie origin.
-        const saleId = data?.data?.id;
-        if (onlineCtx?.id && saleId) {
-          api.post(`/online-cart/${onlineCtx.id}/link-sale`, { sale_id: saleId })
-            .catch(() => { /* non-fatal: sale already rang up */ });
+        // the entry moves to Completed, void can reverse it, and
+        // reporting can trace Dozie origin. Captured locally because
+        // resetCart() nulls onlineCtx right after. The sale is
+        // already persisted — a link failure must NOT be silent
+        // (the old empty .catch left entries stuck pending forever),
+        // so we surface it and tell the cashier to reconcile.
+        const saleId = data?.data?.id || data?.id;
+        const oc = onlineCtx;
+        if (oc?.id && saleId) {
+          api.post(`/online-cart/${oc.id}/link-sale`, {
+            sale_id: saleId,
+            cart_session_id: oc.session || undefined
+          })
+            .then(() => toast.success(lang === "en"
+              ? "Sale recorded and linked to Online Cart entry"
+              : "Vente enregistrée et liée au Panier en ligne", { duration: 4000 }))
+            .catch((err) => {
+              console.error("[online-cart] link-sale failed:", err?.response?.data || err?.message || err);
+              toast(lang === "en"
+                ? "Sale saved, but linking it to the Online Cart entry failed — reconcile it from the Online Cart page."
+                : "Vente enregistrée, mais le lien au Panier en ligne a échoué — à réconcilier depuis le Panier en ligne.",
+                { duration: 7000, style: { background: "#451a03", color: "#fbbf24", border: "1px solid #92400e" } });
+            });
         }
         setLastSale({
           ...data,
