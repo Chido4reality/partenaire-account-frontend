@@ -896,6 +896,7 @@
         <a class="sb-link" data-route="broadcasts"><span class="sb-link-icon">📣</span><span class="sb-link-label">Broadcasts</span></a>
         <a class="sb-link" data-route="admin-team"><span class="sb-link-icon">👤</span><span class="sb-link-label">Admin team</span></a>
         <a class="sb-link" data-route="audit-log"><span class="sb-link-icon">📋</span><span class="sb-link-label">Audit log</span></a>
+        <a class="sb-link" data-route="cart-reconcile"><span class="sb-link-icon">🔗</span><span class="sb-link-label">Cart reconcile</span></a>
         <a class="sb-link" data-route="settings"><span class="sb-link-icon">🔐</span><span class="sb-link-label">Settings</span></a>
       </nav>
 
@@ -1372,6 +1373,25 @@
         </div>
       </section>
 
+      <!-- CART RECONCILE -->
+      <section class="route" id="route-cart-reconcile">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Cart reconcile</div>
+            <div class="page-sub">Online Cart entries still pending with a cart session — likely a sale was rung up but link-sale failed. A human links the right sale; nothing auto-links.</div>
+          </div>
+          <button class="btn" id="cr-refresh">Refresh</button>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <table class="data-table" id="cr-table">
+            <thead><tr>
+              <th>Dozie ref</th><th>Entry total</th><th>Cart started</th><th>Candidate sales (≤10 min)</th>
+            </tr></thead>
+            <tbody id="cr-tbody"><tr><td colspan="4" class="muted ta-center" style="padding:20px">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
       <!-- SETTINGS -->
       <section class="route" id="route-settings">
         <div class="page-head">
@@ -1595,6 +1615,7 @@
       if (route === 'broadcasts')          loadBroadcasts();
       if (route === 'admin-team')          loadAdminTeam();
       if (route === 'audit-log')           { loadAuditLogActions(); loadAuditLog(); }
+      if (route === 'cart-reconcile')      loadCartReconcile();
       // Render placeholders lazily on first visit (cheap; idempotent).
       if (ROUTE_PLACEHOLDERS[route]) renderPlaceholder(route);
       // Stop auto-refresh when navigating away from sections that use it.
@@ -4648,6 +4669,53 @@
     //  D-E — AUDIT LOG VIEWER
     // ════════════════════════════════════════════════════════════════
     let _alRows = [];
+    // ────────────────── CART RECONCILE ──────────────────
+    let _crData = [];
+    async function loadCartReconcile() {
+      const tb = $('cr-tbody');
+      tb.innerHTML = '<tr><td colspan="4" class="muted ta-center" style="padding:20px">Loading…</td></tr>';
+      try {
+        const res = await apiAdmin('GET', '/admin/online-cart/reconcile-candidates');
+        _crData = (res && res.data) || [];
+        if (!_crData.length) {
+          tb.innerHTML = '<tr><td colspan="4" class="muted ta-center" style="padding:20px">Nothing to reconcile — all good.</td></tr>';
+          return;
+        }
+        tb.innerHTML = _crData.map((row, ri) => {
+          const e = row.entry;
+          const cands = (row.candidates || []).filter(c => !c.is_voided);
+          const candHtml = cands.length
+            ? cands.map(c => '<div style="display:flex;align-items:center;gap:8px;margin:3px 0">' +
+                '<span class="mono">' + escapeHtml(c.sale_number || c.id) + '</span>' +
+                '<span class="muted">' + fmtFCFA(c.total_amount) +
+                (c.amount_matches ? ' ✓ match' : ' ⚠ differs') + ' · ' +
+                new Date(c.created_at).toLocaleString() + '</span>' +
+                '<button class="btn btn-sm btn-primary" onclick="crLink(' + ri + ',\'' + c.id + '\')">Link</button>' +
+              '</div>').join('')
+            : '<span class="muted">No nearby sale — investigate manually</span>';
+          return '<tr>' +
+            '<td class="mono">' + escapeHtml(e.dozie_order_ref || e.id) + '</td>' +
+            '<td>' + fmtFCFA(e.total_amount) + '</td>' +
+            '<td>' + (e.cart_started_at ? new Date(e.cart_started_at).toLocaleString() : '—') + '</td>' +
+            '<td>' + candHtml + '</td>' +
+          '</tr>';
+        }).join('');
+      } catch (err) {
+        tb.innerHTML = '<tr><td colspan="4" class="muted ta-center" style="padding:20px">Error: ' + escapeHtml(err.message) + '</td></tr>';
+      }
+    }
+    async function crLink(ri, saleId) {
+      const row = _crData[ri]; if (!row) return;
+      if (!confirm('Link sale to ' + (row.entry.dozie_order_ref || row.entry.id) + '? This marks the entry completed.')) return;
+      try {
+        await apiAdmin('POST', '/admin/online-cart/' + row.entry.id + '/link', { sale_id: saleId });
+        showToast('Linked — entry marked completed', 'success');
+        loadCartReconcile();
+      } catch (err) {
+        showToast(err.message || 'Link failed', 'danger');
+      }
+    }
+
     let _alNextCursor = null;
 
     async function loadAuditLog(opts) {
