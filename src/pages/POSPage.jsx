@@ -64,6 +64,10 @@ export default function POSPage() {
   const [debtInvoices, setDebtInvoices]       = useState([]);
   const [selectedDebtIds, setSelectedDebtIds] = useState(new Set());
   const [debtPayAmt, setDebtPayAmt]           = useState(""); // partial debt payment amount
+  // D-2.4: when arriving from the Online Cart "Send to Cart" flow
+  // (?from_online=<id>&session=<sid>), this holds the entry id + ref so
+  // the banner shows and the created sale gets linked back on finalize.
+  const [onlineCtx, setOnlineCtx]             = useState(null);
 
   const searchRef     = useRef(null);
   const custRef       = useRef(null);
@@ -177,6 +181,63 @@ export default function POSPage() {
       setShowDebtModal(true);
     }
   }, [customerDebtData]);
+
+  // D-2.4: Online Cart → Cart prefill. The entry was finalized by
+  // /online-cart/:id/send-to-cart with cashier-confirmed `mappings`
+  // ([{dozie_item_index, product_id, qty, price}]). We hydrate each
+  // mapping to a full pa_product so the cart row matches the exact
+  // shape addToCart() produces (don't fork the cart model). The sale
+  // is linked back to the entry on finalize (saleMutation.onSuccess).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const fromOnline = params.get("from_online");
+    if (!fromOnline) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get(`/online-cart/${fromOnline}`).then(r => r.data);
+        const entry = res?.data;
+        const mappings = Array.isArray(entry?.mappings) ? entry.mappings : [];
+        if (!mappings.length) {
+          toast.error(lang === "en" ? "No mapped items on that order" : "Aucun article associé");
+          return;
+        }
+        const hydrated = await Promise.all(mappings.map(async m => {
+          try {
+            const p = await api.get(`/products/${m.product_id}`).then(r => r.data?.data);
+            if (!p) return null;
+            return {
+              product_id: p.id,
+              name: p.name, unit: p.unit, barcode: p.barcode,
+              quantity: Number(m.qty) || 1,
+              unit_price: Number(m.price) || Number(p.sell_price) || 0,
+              original_price: Number(p.sell_price) || 0,
+              min_price: p.min_price || 0,
+              cost_price: p.cost_price,
+              stock: undefined
+            };
+          } catch { return null; }
+        }));
+        if (cancelled) return;
+        const items = hydrated.filter(Boolean);
+        if (!items.length) {
+          toast.error(lang === "en" ? "Mapped products not found" : "Produits introuvables");
+          return;
+        }
+        setCart(items);
+        setOnlineCtx({ id: entry.id, ref: entry.dozie_order_ref || entry.id.slice(0, 8) });
+        toast.success(lang === "en" ? "Cart prefilled from Dozie order" : "Panier pré-rempli (Dozie)");
+      } catch (e) {
+        toast.error(e?.response?.data?.message || (lang === "en" ? "Could not load order" : "Échec du chargement"));
+      } finally {
+        // Strip params so a refresh / re-finalize doesn't re-trigger.
+        const clean = window.location.pathname + window.location.hash;
+        window.history.replaceState({}, document.title, clean);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const locations = locData?.data || [];
 
@@ -314,6 +375,7 @@ export default function POSPage() {
         setCart([]); setCustomer(null); setPayMode("paid");
         setPaidAmt(""); setDueDate(""); setNotes(""); setShowPayment(false);
         setDebtInvoices([]); setSelectedDebtIds(new Set()); setDebtPayAmt("");
+        setOnlineCtx(null);
       };
 
       if (data?.offline) {
@@ -331,6 +393,13 @@ export default function POSPage() {
       if (data?.isDebt) {
         toast.success(lang === "en" ? "✓ Debt payment recorded!" : "✓ Remboursement enregistré!", { duration: 2000 });
       } else {
+        // D-2.4: link the new sale back to its Online Cart entry so
+        // void can reverse it and reporting can trace Dozie origin.
+        const saleId = data?.data?.id;
+        if (onlineCtx?.id && saleId) {
+          api.post(`/online-cart/${onlineCtx.id}/link-sale`, { sale_id: saleId })
+            .catch(() => { /* non-fatal: sale already rang up */ });
+        }
         setLastSale({
           ...data,
           customer,
@@ -643,6 +712,17 @@ export default function POSPage() {
               </button>
             )}
           </div>
+
+          {onlineCtx && (
+            <div style={{ padding: "8px 14px", background: "rgba(79,70,229,0.12)", borderBottom: "1px solid rgba(79,70,229,0.3)", display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 14 }}>📥</span>
+              <span style={{ fontSize: 11, color: "var(--brand-light)", fontWeight: 600, flex: 1, minWidth: 0 }}>
+                {lang === "en"
+                  ? `Prefilled from Dozie order ${onlineCtx.ref} — sale links back on checkout`
+                  : `Pré-rempli depuis Dozie ${onlineCtx.ref} — la vente sera liée`}
+              </span>
+            </div>
+          )}
 
           <div style={{ flex: 1, overflowY: "auto" }}>
             {cart.length === 0 ? (
