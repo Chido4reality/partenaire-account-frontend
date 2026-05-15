@@ -18,6 +18,7 @@ import toast from "react-hot-toast";
 const NAV = [
   { to: "/",             en: "Dashboard",  fr: "Tableau de bord", icon: "📊", roles: ["owner","manager","cashier","warehouse"], section: "dashboard" },
   { to: "/pos",          en: "Sales",      fr: "Ventes",          icon: "🛒", roles: ["owner","manager","cashier"],            section: "sales" },
+  { to: "/online-cart",  en: "Online Cart",fr: "Panier en ligne", icon: "📥", roles: ["owner","manager","cashier"],            section: "online_cart", badge: "online_cart" },
   { to: "/shifts",       en: "Cash",       fr: "Caisse",          icon: "💰", roles: ["owner","manager","cashier"],            section: "cashflow" },
   { to: "/stock-count",  en: "Count",      fr: "Comptage",        icon: "🔢", roles: ["owner","manager","warehouse"],          section: "count" },
   { to: "/barcodes",     en: "Labels",     fr: "Étiquettes",      icon: "🏷️", roles: ["owner","manager","warehouse"],          section: "labels" },
@@ -172,6 +173,19 @@ export default function Layout() {
     return true;
   });
   const mobileNav = visibleNav.slice(0, 5);
+
+  // D-2: Online Cart sidebar badge — pending count, 30s poll. Only
+  // fetched when the plan actually exposes the section (silver doesn't),
+  // so we don't spam 403s into the paywall interceptor.
+  const { data: ocPending } = useQuery({
+    queryKey: ["online-cart-pending-count"],
+    queryFn: () => api.get("/online-cart/pending-count").then(r => r.data),
+    refetchInterval: 30000,
+    enabled: hasSection(effectivePlan, "online_cart"),
+    retry: 1,
+    onError: () => {}
+  });
+  const onlineCartPending = ocPending?.count || 0;
 
   const notifColor = (type) => {
     if (type === "low_stock") return "#fbbf24";
@@ -346,7 +360,12 @@ export default function Layout() {
             return (
               <NavLink key={item.to} to={item.to}
                 style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "8px 4px", textDecoration: "none", color: isActive ? "var(--brand-light)" : "var(--text-muted)", fontSize: 10, fontWeight: isActive ? 600 : 400, borderTop: isActive ? "2px solid var(--brand)" : "2px solid transparent", gap: 2 }}>
-                <div style={{ fontSize: 16 }}>{item.icon}</div>
+                <div style={{ fontSize: 16, position: "relative" }}>
+                  {item.icon}
+                  {item.badge === "online_cart" && onlineCartPending > 0 && (
+                    <span style={{ position: "absolute", top: -4, right: -10, background: "#ef4444", color: "#fff", borderRadius: 10, padding: "0 4px", fontSize: 9, fontWeight: 700 }}>{onlineCartPending}</span>
+                  )}
+                </div>
                 {lang === "en" ? item.en : item.fr}
               </NavLink>
             );
@@ -451,8 +470,16 @@ export default function Layout() {
                 fontSize: 13, fontWeight: isActive ? 600 : 400,
                 transition: "all 0.15s"
               })}>
-              <span style={{ fontSize: 15, flexShrink: 0 }}>{item.icon}</span>
-              {!collapsed && <span>{lang === "en" ? item.en : item.fr}</span>}
+              <span style={{ fontSize: 15, flexShrink: 0, position: "relative" }}>
+                {item.icon}
+                {collapsed && item.badge === "online_cart" && onlineCartPending > 0 && (
+                  <span style={{ position: "absolute", top: -6, right: -8, background: "#ef4444", color: "#fff", borderRadius: 10, padding: "0 5px", fontSize: 9, fontWeight: 700 }}>{onlineCartPending}</span>
+                )}
+              </span>
+              {!collapsed && <span style={{ flex: 1 }}>{lang === "en" ? item.en : item.fr}</span>}
+              {!collapsed && item.badge === "online_cart" && onlineCartPending > 0 && (
+                <span style={{ background: "#ef4444", color: "#fff", borderRadius: 10, padding: "0 6px", fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{onlineCartPending}</span>
+              )}
             </NavLink>
           ))}
         </nav>

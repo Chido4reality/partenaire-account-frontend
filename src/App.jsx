@@ -10,6 +10,7 @@ import RegisterPage from "./pages/RegisterPage";
 import Layout from "./components/common/Layout";
 import Dashboard from "./pages/Dashboard";
 import POSPage from "./pages/POSPage";
+import OnlineCartPage from "./pages/OnlineCartPage";
 import ReportsPage from "./pages/ReportsPage";
 import TransfersPage from "./pages/TransfersPage";
 import ExpenditurePage from "./pages/ExpenditurePage";
@@ -46,6 +47,7 @@ class ErrorBoundary extends Component {
 const ROUTE_ACCESS = {
   "/":             ["owner", "manager", "cashier", "warehouse"],
   "/pos":          ["owner", "manager", "cashier"],
+  "/online-cart":  ["owner", "manager", "cashier"],
   "/inventory":    ["owner", "manager", "warehouse"],
   "/customers":    ["owner", "manager"],
   "/credits":      ["owner", "manager"],
@@ -236,6 +238,7 @@ export default function App() {
           <Route path="/" element={<Guard><Layout /></Guard>}>
             <Route index               element={<RoleGuard path="/"><Dashboard /></RoleGuard>} />
             <Route path="pos"          element={<RoleGuard path="/pos"><POSPage /></RoleGuard>} />
+            <Route path="online-cart"  element={<RoleGuard path="/online-cart"><PlanGuard path="/online-cart"><OnlineCartPage /></PlanGuard></RoleGuard>} />
             <Route path="inventory"    element={<RoleGuard path="/inventory"><InventoryPage /></RoleGuard>} />
             <Route path="customers"    element={<RoleGuard path="/customers"><PlanGuard path="/customers"><CustomersPage /></PlanGuard></RoleGuard>} />
             <Route path="credits"      element={<RoleGuard path="/credits"><PlanGuard path="/credits"><CreditsPage /></PlanGuard></RoleGuard>} />
