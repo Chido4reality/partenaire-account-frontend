@@ -111,11 +111,22 @@ export default function InventoryPage() {
   const [showImport, setShowImport] = useState(false);
   const [showBackfill, setShowBackfill] = useState(false);   // Sprint C — photo backfill modal
   const [backfillUploading, setBackfillUploading] = useState(null); // id of product currently uploading
-  // FU.4 — migrate-duplicates modal state
+  // FU.4 — migrate-duplicates modal state + candidates query.
+  // Runs on every Inventory mount so the banner appears immediately
+  // when there's something to migrate. Cached for 5 min to avoid
+  // re-fetching on tab switches; refetches after a successful Apply.
   const [showMigrate, setShowMigrate] = useState(false);
   const [migrateData, setMigrateData] = useState({ seller: null, pairs: [] });
   const [migrateSel, setMigrateSel] = useState({});         // ptn_id → { selected, dozie_price, hard_delete }
   const [migrateApplying, setMigrateApplying] = useState(false);
+  const { data: migrateCandidatesData } = useQuery({
+    queryKey: ["dozie-migrate-candidates"],
+    queryFn: () => api.get("/dozie/migrate-duplicates/candidates").then(r => r.data),
+    enabled: isOwner,
+    staleTime: 300000,
+    retry: 1
+  });
+  const migrateCandidates = migrateCandidatesData?.data || null;
   const [showPIN, setShowPIN] = useState(false);
   const [pinAction, setPinAction] = useState(null);
 
@@ -218,6 +229,7 @@ export default function InventoryPage() {
     qc.invalidateQueries(["stock-all"]);
     qc.invalidateQueries(["products-all"]);
     qc.invalidateQueries(["stock-alerts"]);
+    qc.invalidateQueries(["dozie-migrate-candidates"]); // FU.4 — banner re-evaluates after Apply
   };
 
   // ── ADD PRODUCT MUTATION ────────────────────────────────────────────────────
@@ -570,31 +582,49 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {/* FU.4 — entry point to the migrate-duplicates tool. Only meaningful
-          for MP-linked sellers; the backend returns seller=null when not
-          applicable so the modal will say "no candidates" instead of
-          erroring. Kept as a small link rather than a primary CTA. */}
-      <div style={{ margin: "0 0 8px 0", fontSize: 11 }}>
-        <a href="javascript:void(0)" onClick={async () => {
-            try {
-              const r = await api.get("/dozie/migrate-duplicates/candidates");
-              const data = r.data?.data || { seller: null, pairs: [] };
-              setMigrateData(data);
-              const initSel = {};
-              for (const pair of (data.pairs || [])) {
-                initSel[pair.ptn.id] = {
-                  selected: !!pair.match,
-                  dozie_price: pair.ptn.price || pair.match?.sell_price || 0,
-                  hard_delete: false
-                };
-              }
-              setMigrateSel(initSel);
-              setShowMigrate(true);
-            } catch (e) { toast.error(e.response?.data?.message || e.message); }
-          }} style={{ color: "var(--text-muted)", textDecoration: "underline", cursor: "pointer" }}>
-          🔗 {lang === "en" ? "Migrate Dozie duplicates" : "Fusionner les doublons Dozie"}
-        </a>
-      </div>
+      {/* FU.4 — Migrate Dozie Duplicates entry point. Auto-checks on
+          page mount; renders a prominent banner only when the seller
+          is MP-linked AND has at least one standalone ptn_product
+          (i.e., genuine duplicates to merge). Hidden otherwise so
+          non-applicable users don't see noise. Clicking the button
+          reuses the cached candidates payload — no extra fetch. */}
+      {(() => {
+        if (!migrateCandidates || !migrateCandidates.seller) return null;
+        const count = (migrateCandidates.pairs || []).length;
+        if (count === 0) return null;
+        const matched = (migrateCandidates.pairs || []).filter(p => !!p.match).length;
+        return (
+          <div style={{ background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.4)", borderRadius: 12, padding: "12px 16px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 13, color: "var(--brand-light)", flex: 1, minWidth: 0 }}>
+              🔗 <strong>{lang === "en"
+                ? `You have ${count} standalone Dozie product${count === 1 ? "" : "s"} that may duplicate your MP inventory.`
+                : `Vous avez ${count} produit${count === 1 ? "" : "s"} Dozie autonome${count === 1 ? "" : "s"} qui pourrai${count === 1 ? "t" : "ent"} être un doublon.`}</strong>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                {lang === "en"
+                  ? `${matched} match${matched === 1 ? "" : "es"} found in MP inventory.`
+                  : `${matched} correspondance${matched === 1 ? "" : "s"} trouvée${matched === 1 ? "" : "s"} dans l'inventaire MP.`}
+              </div>
+            </div>
+            <button onClick={() => {
+                // Use the already-loaded candidates; just initialise per-pair selections + open.
+                const initSel = {};
+                for (const pair of (migrateCandidates.pairs || [])) {
+                  initSel[pair.ptn.id] = {
+                    selected: !!pair.match,
+                    dozie_price: pair.ptn.price || pair.match?.sell_price || 0,
+                    hard_delete: false
+                  };
+                }
+                setMigrateData(migrateCandidates);
+                setMigrateSel(initSel);
+                setShowMigrate(true);
+              }}
+              style={{ background: "var(--brand)", border: 0, color: "#fff", padding: "8px 16px", borderRadius: 8, fontWeight: 700, cursor: "pointer", fontSize: 13, whiteSpace: "nowrap" }}>
+              {lang === "en" ? "Auto-link to MP products →" : "Lier aux produits MP →"}
+            </button>
+          </div>
+        );
+      })()}
 
       {/* ── TABS ── */}
       <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: "1px solid var(--border)" }}>
