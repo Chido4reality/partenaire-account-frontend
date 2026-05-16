@@ -66,7 +66,10 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr" }) {
     setNewItems(prev => {
       const existing = prev.find(i => i.product_id === product.id);
       if (existing) return prev.map(i => i.product_id === product.id ? { ...i, quantity: i.quantity + 1 } : i);
-      return [...prev, { product_id: product.id, name: product.name, sell_price: product.sell_price || 0, quantity: 1 }];
+      return [...prev, { product_id: product.id, name: product.name,
+        sell_price: product.sell_price || 0,
+        min_price: product.min_price || product.cost_price || 0,
+        quantity: 1 }];
     });
     setExchSearch("");
   };
@@ -74,6 +77,12 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr" }) {
   const updateNewItemQty = (idx, qty) => {
     const q = Math.max(1, +qty || 1);
     setNewItems(prev => prev.map((it, i) => i === idx ? { ...it, quantity: q } : it));
+  };
+  // Exchange-time negotiation: the replacement price is editable.
+  // Empty is tolerated mid-typing (treated as 0 for live totals).
+  const updateNewItemPrice = (idx, price) => {
+    const p = price === "" ? "" : Math.max(0, +price || 0);
+    setNewItems(prev => prev.map((it, i) => i === idx ? { ...it, sell_price: p } : it));
   };
 
   const removeNewItem = (idx) => setNewItems(prev => prev.filter((_, i) => i !== idx));
@@ -354,10 +363,23 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr" }) {
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--bg-card)", borderRadius: 10, padding: "8px 12px", marginBottom: 6, border: "1px solid rgba(79,70,229,0.3)" }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 600, fontSize: 13 }}>{item.name}</div>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{formatCFA(item.sell_price)} × {item.quantity} = {formatCFA(item.sell_price * item.quantity)}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    {lang === "en" ? "Negotiated price (editable)" : "Prix négocié (modifiable)"} · = {formatCFA((+item.sell_price || 0) * item.quantity)}
+                  </div>
+                  {item.min_price > 0 && (+item.sell_price || 0) < item.min_price && (
+                    <div style={{ fontSize: 10, color: "#fbbf24", marginTop: 2 }}>
+                      ⚠ {lang === "en"
+                        ? `Below min ${formatCFA(item.min_price)} — owner PIN required`
+                        : `Sous le min ${formatCFA(item.min_price)} — PIN patron requis`}
+                    </div>
+                  )}
                 </div>
+                <input type="number" value={item.sell_price} onChange={e => updateNewItemPrice(i, e.target.value)} min={0}
+                  title={lang === "en" ? "Unit price" : "Prix unitaire"}
+                  style={{ width: 80, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", fontSize: 13 }} />
                 <input type="number" value={item.quantity} onChange={e => updateNewItemQty(i, e.target.value)} min={1}
-                  style={{ width: 56, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", fontSize: 13 }} />
+                  title={lang === "en" ? "Qty" : "Qté"}
+                  style={{ width: 50, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", fontSize: 13 }} />
                 <button onClick={() => removeNewItem(i)}
                   style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer", fontSize: 16, padding: "0 4px" }}>×</button>
               </div>
