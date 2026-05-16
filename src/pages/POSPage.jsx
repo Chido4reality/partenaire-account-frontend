@@ -466,7 +466,12 @@ export default function POSPage() {
             });
         }
         setLastSale({
-          ...data,
+          // /sales returns { success, data: fullSale }. Spreading
+          // `data` only exposed { success, data } — so sale.sale_number
+          // was undefined and the receipt's VNT-*/Code128/QR (all
+          // gated on sale_number) silently rendered nothing. Spread
+          // the actual sale row.
+          ...(data?.data || data),
           customer,
           items: cart,
           paid_amount: hasDebt ? total : paid,

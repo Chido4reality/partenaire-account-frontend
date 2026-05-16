@@ -3,6 +3,23 @@ import { useQuery } from "@tanstack/react-query";
 import { useLangStore, useAuthStore, useSettingsStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
 import VoidReturnModal from "../components/common/VoidReturnModal";
+import JsBarcode from "jsbarcode";
+import QRCode from "qrcode";
+
+// Shared receipt-code generator (Sprint K). Code128 (sync canvas) +
+// QR (async) → data URLs that print cleanly. Used by the per-sale
+// receipt print so it matches the POS receipt.
+async function genSaleCodes(saleNumber) {
+  let barcode = "";
+  try {
+    const c = document.createElement("canvas");
+    JsBarcode(c, saleNumber, { format: "CODE128", width: 2, height: 44, displayValue: false, margin: 0 });
+    barcode = c.toDataURL("image/png");
+  } catch { /* ignore */ }
+  let qr = "";
+  try { qr = await QRCode.toDataURL(saleNumber, { margin: 1, width: 130 }); } catch { /* ignore */ }
+  return { barcode, qr };
+}
 
 export default function ReportsPage() {
   const { lang } = useLangStore();
@@ -138,6 +155,44 @@ export default function ReportsPage() {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     a.download = `ledger-${ledger.date}.csv`; a.click();
+  };
+
+  const shareLedgerWhatsApp = () => {
+    if (!ledger) return;
+    const en = lang === "en";
+    const n = (x) => Number(x || 0).toLocaleString(en ? "en-US" : "fr-FR");
+    const locName = ledger.location ? ledger.location.name : (en ? "All locations" : "Tous les sites");
+    const longDate = new Date(ledger.date + "T00:00:00").toLocaleDateString(en ? "en-GB" : "fr-FR",
+      { day: "numeric", month: "long", year: "numeric" });
+    const L = [];
+    L.push(`📊 ${en ? "Daily Ledger" : "Journal de Caisse"} — ${locName}`);
+    L.push(longDate);
+    L.push("");
+    L.push(en ? "SALES" : "VENTES");
+    ledger.sales_by_product.forEach(g =>
+      L.push(`• ${g.product_name}  ${g.qty} × ${n(g.unit_price)} = ${n(g.line_total)}`));
+    L.push(`${en ? "Total sales" : "Total ventes"}: ${n(ledger.gross_sales)} FCFA`);
+    if (ledger.returns_total > 0) {
+      L.push("");
+      L.push(en ? "RETURNS" : "RETOURS");
+      ledger.returns_today.forEach(r =>
+        L.push(`• ${r.ret_ref} ${r.items_summary}  -${n(r.refund_amount)}`));
+      L.push(`${en ? "Total returns" : "Total retours"}: -${n(ledger.returns_total)} FCFA`);
+    }
+    if (ledger.expenses_total > 0) {
+      L.push("");
+      L.push(en ? "EXPENSES" : "DÉPENSES");
+      ledger.expenses.forEach(e =>
+        L.push(`• ${e.category ? e.category + " (" + e.description + ")" : e.description}  -${n(e.amount)}`));
+      L.push(`${en ? "Total expenses" : "Total dépenses"}: -${n(ledger.expenses_total)} FCFA`);
+    }
+    L.push("");
+    L.push("═════════════════════");
+    L.push(`${en ? "Cash balance" : "Solde caisse"}: ${n(ledger.cash_balance)} FCFA`);
+    L.push("═════════════════════");
+    L.push("");
+    L.push(en ? "Sent from Mon Partenaire POS" : "Envoyé depuis Mon Partenaire POS");
+    window.open(`https://wa.me/?text=${encodeURIComponent(L.join("\n"))}`, "_blank");
   };
 
   const { data: returnsData, isLoading: returnsLoading } = useQuery({
@@ -436,23 +491,28 @@ export default function ReportsPage() {
                                 }} style={{ background: "#25D366", border: "none", color: "#fff", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
                                   📱
                                 </button>
-<button onClick={() => {
+<button onClick={async () => {
                                   const items = sale.pa_sale_items || [];
                                   const total = items.reduce((s,i) => s + i.quantity * i.unit_price, 0);
+                                  const codes = sale.sale_number ? await genSaleCodes(sale.sale_number) : { barcode: "", qr: "" };
                                   const w = window.open("","_blank","width=350,height=500");
-                                  w.document.write(`<html><head><style>body{font-family:monospace;font-size:12px;width:300px;margin:0 auto}.row{display:flex;justify-content:space-between}.line{border-top:1px dashed #000;margin:6px 0}.bold{font-weight:bold;font-size:14px}</style></head><body>
-                                    <div style="text-align:center;font-weight:bold;font-size:14px;margin-bottom:4px">REÇU</div>
-                                    <div style="text-align:center">${sale.sale_date}</div>
-                                    <div style="text-align:center">${sale.sale_number}</div>
-                                    ${sale.pa_customers?.name ? `<div style="text-align:center">Client: ${sale.pa_customers.name}</div>` : ""}
+                                  w.document.write(`<html><head><style>body{font-family:monospace;font-size:12px;width:300px;margin:0 auto}.row{display:flex;justify-content:space-between}.line{border-top:1px dashed #000;margin:6px 0}.bold{font-weight:bold;font-size:14px}.center{text-align:center}</style></head><body>
+                                    <div class="center" style="font-weight:bold;font-size:14px;margin-bottom:4px">REÇU</div>
+                                    <div class="center">${sale.sale_date}</div>
+                                    <div class="center" style="font-size:15px;font-weight:bold;margin:4px 0">${sale.sale_number || ""}</div>
+                                    ${sale.pa_customers?.name ? `<div class="center">Client: ${sale.pa_customers.name}</div>` : ""}
                                     <div class="line"></div>
                                     ${items.map(i => `<div class="row"><span>${i.pa_products?.name} ×${i.quantity}</span><span>${(i.quantity*i.unit_price).toLocaleString()} F</span></div>`).join("")}
                                     <div class="line"></div>
                                     <div class="row bold"><span>TOTAL</span><span>${total.toLocaleString()} FCFA</span></div>
                                     ${sale.payment_status === "credit" ? `<div class="row" style="color:red"><span>🔴 CRÉDIT DÛ</span><span>${total.toLocaleString()} F</span></div>` : ""}
                                     ${sale.payment_status === "partial" ? `<div class="row" style="color:orange"><span>🟡 RESTE DÛ</span><span>${sale.balance_due?.toLocaleString()} F</span></div>` : ""}
+                                    <div class="line"></div>
+                                    ${codes.barcode ? `<div class="center"><img src="${codes.barcode}" style="height:44px;image-rendering:pixelated"/></div>` : ""}
+                                    ${codes.qr ? `<div class="center"><img src="${codes.qr}" style="width:110px;height:110px"/></div>` : ""}
+                                    ${sale.sale_number ? `<div class="center" style="font-size:11px">${sale.sale_number}</div>` : ""}
                                   </body></html>`);
-                                  w.document.close(); w.focus(); setTimeout(() => { w.print(); w.close(); }, 300);
+                                  w.document.close(); w.focus(); setTimeout(() => { w.print(); w.close(); }, 400);
                                 }} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-primary)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11 }}>
                                   🖨️
                                 </button>
@@ -821,6 +881,10 @@ export default function ReportsPage() {
             <div style={{ flex: 1 }} />
             <button className="btn btn-secondary" onClick={printLedger} disabled={!ledger}>🖨 {lang === "en" ? "Print" : "Imprimer"}</button>
             <button className="btn btn-secondary" onClick={exportLedgerCSV} disabled={!ledger}>📊 CSV</button>
+            <button onClick={shareLedgerWhatsApp} disabled={!ledger}
+              style={{ background: "#25D366", border: "none", color: "#fff", borderRadius: 8, padding: "8px 14px", cursor: ledger ? "pointer" : "not-allowed", fontWeight: 700, fontSize: 13, opacity: ledger ? 1 : 0.6 }}>
+              📱 {lang === "en" ? "Share via WhatsApp" : "Partager via WhatsApp"}
+            </button>
           </div>
           {ledgerLoading || !ledger ? (
             <div style={{ padding: 30, textAlign: "center", color: "var(--text-muted)" }}>{lang === "en" ? "Loading…" : "Chargement…"}</div>
