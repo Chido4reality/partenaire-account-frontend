@@ -873,8 +873,7 @@
       </template>
 
       <input class="sb-search" id="sb-search" type="search" autocomplete="off"
-             placeholder="Search orders (QOF / VNT / digits)…"
-             oninput="adminOrderSearch(this.value)" />
+             placeholder="Search businesses, sales (VNT), Dozie orders (QOF)…" />
 
       <nav class="sb-nav" id="sb-nav">
         <a class="sb-link" data-route="dashboard"><span class="sb-link-icon">🏠</span><span class="sb-link-label">Dashboard</span></a>
@@ -1655,107 +1654,6 @@
       return new Intl.NumberFormat('fr-CM').format(Math.round(n)) + ' FCFA';
     }
 
-    // ────────────────── GLOBAL ORDER SEARCH ──────────────────
-    // Cross-surface: MP sales (VNT-*) + Dozie orders (QOF-*), no
-    // scope (admin sees all). Results are portalled to <body> so
-    // the dropdown escapes the sidebar's overflow:auto (same trick
-    // the notifications dropdown uses).
-    let _adminSearchTimer = null;
-    function _adminSearchPanel() {
-      let p = document.getElementById('admin-search-panel');
-      if (!p) {
-        p = document.createElement('div');
-        p.id = 'admin-search-panel';
-        p.style.cssText = 'position:fixed;z-index:9999;background:#fff;border:1px solid #e2e2e2;' +
-          'border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,0.22);max-height:60vh;overflow-y:auto;' +
-          'width:420px;display:none;font-size:13px';
-        document.body.appendChild(p);
-      }
-      return p;
-    }
-    function _positionAdminSearch() {
-      const inp = document.getElementById('sb-search');
-      const p = _adminSearchPanel();
-      if (!inp) return;
-      const r = inp.getBoundingClientRect();
-      p.style.top = (r.bottom + 6) + 'px';
-      p.style.left = r.left + 'px';
-      p.style.width = Math.max(r.width, 360) + 'px';
-    }
-    function _hl(ref, q) {
-      const s = String(ref || '');
-      const i = s.toLowerCase().indexOf(q.toLowerCase());
-      if (i < 0 || !q) return escapeHtml(s);
-      return escapeHtml(s.slice(0, i)) +
-        '<mark style="background:#fde68a;padding:0 1px">' + escapeHtml(s.slice(i, i + q.length)) + '</mark>' +
-        escapeHtml(s.slice(i + q.length));
-    }
-    function adminCloseSearch() {
-      const p = document.getElementById('admin-search-panel');
-      if (p) p.style.display = 'none';
-    }
-    function adminSearchGo(type, idx) {
-      const res = (_adminSearchCache || [])[idx];
-      adminCloseSearch();
-      const inp = document.getElementById('sb-search'); if (inp) inp.value = '';
-      if (res && res.link_to_url) navigateTo(res.link_to_url.replace(/^#/, ''));
-    }
-    let _adminSearchCache = [];
-    function adminOrderSearch(v) {
-      clearTimeout(_adminSearchTimer);
-      const q = (v || '').trim();
-      const p = _adminSearchPanel();
-      if (q.length < 2) { p.style.display = 'none'; return; }
-      _adminSearchTimer = setTimeout(async () => {
-        try {
-          const res = await apiAdmin('GET', '/admin/orders/search?ref=' + encodeURIComponent(q));
-          const rows = (res && res.data) || [];
-          _adminSearchCache = rows;
-          _positionAdminSearch();
-          if (!rows.length) {
-            p.innerHTML = '<div style="padding:14px;color:#888;text-align:center">No order found with reference: ' + escapeHtml(q) + '</div>';
-            p.style.display = 'block'; return;
-          }
-          p.innerHTML = rows.map((r, idx) => {
-            const isSale = r.type === 'mp_sale';
-            const tag = isSale
-              ? '<span style="background:#e0e7ff;color:#3730a3;font-weight:700;font-size:10px;padding:2px 7px;border-radius:9px">MP</span>'
-              : '<span style="background:#fef3c7;color:#92400e;font-weight:700;font-size:10px;padding:2px 7px;border-radius:9px">Dozie</span>';
-            const ps = r.payment_state || {};
-            const state = isSale
-              ? [ps.payment_method ? 'via ' + escapeHtml(ps.payment_method) : null,
-                 ps.refunded ? 'REFUNDED/VOID' : (ps.payment_status ? escapeHtml(ps.payment_status) : null),
-                 ps.linked_dozie_order_ref ? '↔ ' + escapeHtml(ps.linked_dozie_order_ref) : null
-                ].filter(Boolean).join(' · ')
-              : ['escrow ' + fmtFCFA(ps.escrow_held || 0) + (ps.escrow_released ? ' (released)' : ' (held)'),
-                 ps.dispute ? '⚠ DISPUTE' : null].filter(Boolean).join(' · ');
-            return '<div onclick="adminSearchGo(\'' + r.type + '\',' + idx + ')" ' +
-              'style="padding:10px 14px;border-bottom:1px solid #f0f0f0;cursor:pointer">' +
-              '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center">' +
-                '<span style="font-weight:700">' + tag + ' ' + _hl(r.ref, q) + '</span>' +
-                '<span style="font-size:11px;color:#666">' + (r.date ? new Date(r.date).toLocaleDateString() : '') + '</span>' +
-              '</div>' +
-              '<div style="font-size:11px;color:#666;margin-top:3px">' +
-                escapeHtml(r.org_or_seller || '—') + ' · ' + fmtFCFA(r.total) + ' · ' + escapeHtml(r.status || '—') +
-              '</div>' +
-              '<div style="font-size:11px;color:#999;margin-top:2px">' + (state || '—') + '</div>' +
-            '</div>';
-          }).join('');
-          p.style.display = 'block';
-        } catch (e) {
-          p.innerHTML = '<div style="padding:14px;color:#c00;text-align:center">' + escapeHtml(e.message || 'Search failed') + '</div>';
-          p.style.display = 'block';
-        }
-      }, 300);
-    }
-    document.addEventListener('mousedown', (e) => {
-      const p = document.getElementById('admin-search-panel');
-      const inp = document.getElementById('sb-search');
-      if (!p || p.style.display === 'none') return;
-      if (e.target === inp || p.contains(e.target)) return;
-      p.style.display = 'none';
-    });
-    window.addEventListener('resize', adminCloseSearch);
     function fmtRelative(iso) {
       if (!iso) return '—';
       const t = new Date(iso).getTime();
@@ -3897,6 +3795,8 @@
         kinds: [
           { key: 'businesses', heading: 'Businesses',  label: b => (b.name || '—') + (b.mp_id ? ' · ' + b.mp_id : ''),
             sub:   b => 'Business · ' + (b.plan || '—') + ' · ' + (b.status || '—') },
+          { key: 'sales',      heading: 'Sales',       label: s => s.sale_number || '—',
+            sub:   s => 'MP sale · ' + (s.org_name || '—') + ' · ' + (s.status || '—') },
           { key: 'users',      heading: 'Users',       label: u => (u.full_name || '—') + (u.phone ? ' · ' + u.phone : ''),
             sub:   u => 'MP user' + (u.org_name ? ' at ' + u.org_name : '') + (u.role ? ' · ' + u.role : '') },
           { key: 'payments',   heading: 'Payments',    label: p => p.reference || p.id || '—',
