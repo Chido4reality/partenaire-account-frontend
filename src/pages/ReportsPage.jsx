@@ -71,6 +71,14 @@ export default function ReportsPage() {
     enabled: tab === "products"
   });
 
+  const { data: returnsData, isLoading: returnsLoading } = useQuery({
+    queryKey: ["reports-returns", from, to],
+    queryFn: () => api.get(`/returns?from=${from}&to=${to}`).then(r => r.data),
+    enabled: tab === "returns"
+  });
+  const returns = returnsData?.data || [];
+  const returnsStats = returnsData?.stats || {};
+
   const daily = dailyData?.data || [];
   const debts = debtData?.data || [];
   const salesDetail = salesDetailData?.data || [];
@@ -142,6 +150,7 @@ export default function ReportsPage() {
     { key: "daily_sales", en: "Daily Sales",     fr: "Ventes du jour" },
     { key: "products",    en: "Top Products",    fr: "Meilleurs produits" },
     { key: "debts",       en: "Debt Report",     fr: "Rapport crédits" },
+    { key: "returns",     en: "Returns",         fr: "Retours" },
   ];
 
   const DateFilter = () => (
@@ -298,6 +307,11 @@ export default function ReportsPage() {
                                     {sale.payment_status}
                                   </span>
                                   <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{sale.payment_method}</span>
+                                  {sale.has_returns && (
+                                    <span style={{ fontSize: 11, padding: "1px 8px", borderRadius: 10, background: "rgba(248,113,113,0.15)", color: "#f87171", fontWeight: 700 }}>
+                                      ↩ {lang === "en" ? "Return" : "Retour"}
+                                    </span>
+                                  )}
                                 </div>
                                 <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
                                   {sale.pa_customers?.name || (lang === "en" ? "Walk-in customer" : "Client de passage")}
@@ -628,6 +642,52 @@ export default function ReportsPage() {
               </table>
             </div>
           )}
+        </div>
+      )}
+      {tab === "returns" && (
+        <div>
+          <div style={{ display: "flex", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+            {[
+              [lang === "en" ? "Returns" : "Retours", returnsStats.count ?? 0],
+              [lang === "en" ? "Total refunded" : "Total remboursé", formatCFA(returnsStats.total_refunded || 0)],
+              [lang === "en" ? "Avg value" : "Valeur moy.", formatCFA(returnsStats.avg_value || 0)],
+              [lang === "en" ? "Top reason" : "Raison principale", returnsStats.top_reason || "—"],
+            ].map(([k, v], i) => (
+              <div key={i} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 16px", minWidth: 130 }}>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{k}</div>
+                <div style={{ fontSize: 18, fontWeight: 700 }}>{v}</div>
+              </div>
+            ))}
+          </div>
+          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+            <table className="data-table" style={{ width: "100%", fontSize: 13 }}>
+              <thead><tr>
+                {[lang === "en" ? "Return" : "Retour", lang === "en" ? "Sale" : "Vente",
+                  lang === "en" ? "Type" : "Type", lang === "en" ? "Items" : "Articles",
+                  lang === "en" ? "Refund" : "Remboursé", lang === "en" ? "Reason" : "Raison",
+                  "Date", lang === "en" ? "By" : "Par"].map(h =>
+                  <th key={h} style={{ textAlign: "left", padding: "10px 12px" }}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {returnsLoading ? (
+                  <tr><td colSpan={8} style={{ padding: 20, textAlign: "center", color: "var(--text-muted)" }}>{lang === "en" ? "Loading…" : "Chargement…"}</td></tr>
+                ) : !returns.length ? (
+                  <tr><td colSpan={8} style={{ padding: 20, textAlign: "center", color: "var(--text-muted)" }}>{lang === "en" ? "No returns in this period." : "Aucun retour sur cette période."}</td></tr>
+                ) : returns.map(r => (
+                  <tr key={r.id} style={{ borderTop: "1px solid var(--border)" }}>
+                    <td style={{ padding: "8px 12px", fontWeight: 600 }}>{r.return_ref || "—"}</td>
+                    <td style={{ padding: "8px 12px" }}>{r.sale_number}</td>
+                    <td style={{ padding: "8px 12px" }}>{r.return_type || "refund"}</td>
+                    <td style={{ padding: "8px 12px" }}>{(r.items_returned || []).length}</td>
+                    <td style={{ padding: "8px 12px", color: "#f87171" }}>{formatCFA(r.refund_amount || 0)}</td>
+                    <td style={{ padding: "8px 12px" }}>{r.reason || "—"}</td>
+                    <td style={{ padding: "8px 12px", color: "var(--text-muted)" }}>{new Date(r.created_at).toLocaleDateString()}</td>
+                    <td style={{ padding: "8px 12px", color: "var(--text-muted)" }}>{r.processed_by_name || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
       {voidSale && (
