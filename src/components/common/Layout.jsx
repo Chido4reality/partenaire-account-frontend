@@ -444,7 +444,18 @@ export default function Layout() {
         <input id={inputId} value={term}
           onChange={e => { setTerm(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
-          placeholder={lang === "en" ? "🔎 Find order (VNT / QOF / digits)" : "🔎 Chercher (VNT / QOF / chiffres)"}
+          onKeyDown={e => {
+            // Sprint K scan-to-find: a USB scanner / phone-camera
+            // scan types the ref and sends Enter. Jump straight to
+            // an exact ref match (or the sole result) so the cashier
+            // doesn't have to click the dropdown.
+            if (e.key !== "Enter") return;
+            const q = term.trim().toLowerCase();
+            const exact = results.find(r => String(r.ref || "").toLowerCase() === q);
+            if (exact) go(exact);
+            else if (results.length === 1) go(results[0]);
+          }}
+          placeholder={lang === "en" ? "🔎 Find / scan (VNT / QOF / digits)" : "🔎 Chercher / scanner (VNT / QOF / chiffres)"}
           style={{ width: "100%", padding: "6px 10px", borderRadius: 8, background: "rgba(255,255,255,0.06)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: 11 }} />
         {showPanel && (
           <div id="order-search-panel" ref={panelRef}

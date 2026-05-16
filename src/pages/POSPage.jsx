@@ -7,6 +7,8 @@ import OwnerPIN from "../components/common/OwnerPIN";
 import api, { formatCFA } from "../utils/api";
 import { cacheData, getCachedData } from "../utils/offlineStore";
 import CameraScanner from "../components/common/CameraScanner";
+import JsBarcode from "jsbarcode";
+import QRCode from "qrcode";
 
 const PAYMENT_MODES = [
   { key: "paid",    en: "Full Payment",  fr: "Paiement total",   color: "#10b981", icon: "✓" },
@@ -1025,6 +1027,25 @@ function ReceiptModal({ sale, org, lang, onClose }) {
   const paid = sale.paid_amount || total;
   const balance = total - paid;
 
+  // Sprint K: Code128 + QR of the sale number, both rendered from
+  // locally-bundled libs (CSP blocks external scripts) → data URLs
+  // so they print cleanly and embed in the print window HTML.
+  const [codes, setCodes] = useState({ barcode: "", qr: "" });
+  useEffect(() => {
+    if (!sale.sale_number) return;
+    let cancelled = false;
+    let bc = "";
+    try {
+      const c = document.createElement("canvas");
+      JsBarcode(c, sale.sale_number, { format: "CODE128", width: 2, height: 44, displayValue: false, margin: 0 });
+      bc = c.toDataURL("image/png");
+    } catch { /* ignore */ }
+    QRCode.toDataURL(sale.sale_number, { margin: 1, width: 130 })
+      .then(qr => { if (!cancelled) setCodes({ barcode: bc, qr }); })
+      .catch(() => { if (!cancelled) setCodes({ barcode: bc, qr: "" }); });
+    return () => { cancelled = true; };
+  }, [sale.sale_number]);
+
   // Build WhatsApp message
   const buildWhatsAppMessage = () => {
     const shopName = org.name || "Notre boutique";
@@ -1105,7 +1126,7 @@ ${footer}
         <div class="center">${org.phone || ""}</div>
         <div class="line"></div>
         <div class="center">${dateStr} ${timeStr}</div>
-        ${sale.sale_number ? `<div class="center">N° ${sale.sale_number}</div>` : ""}
+        ${sale.sale_number ? `<div class="center" style="font-size:15px;font-weight:bold;margin:4px 0">${sale.sale_number}</div>` : ""}
         ${sale.customer?.name ? `<div class="center">Client: ${sale.customer.name}</div>` : ""}
         <div class="line"></div>
         ${items.map(i => `<div class="row"><span>${i.name} ×${i.quantity}</span><span>${(i.quantity * i.unit_price).toLocaleString()} F</span></div>`).join("")}
@@ -1117,6 +1138,9 @@ ${footer}
         ${balance > 0 && status !== "credit" ? `<div class="row" style="color:red"><span>Reste dû</span><span>${balance.toLocaleString()} FCFA</span></div>` : ""}
         ${status === "credit" ? `<div class="row" style="color:red"><span>Montant total dû</span><span>${total.toLocaleString()} FCFA</span></div>` : ""}
         <div class="line"></div>
+        ${sale.sale_number && codes.barcode ? `<div class="center"><img src="${codes.barcode}" style="height:44px;image-rendering:pixelated"/></div>` : ""}
+        ${sale.sale_number && codes.qr ? `<div class="center"><img src="${codes.qr}" style="width:110px;height:110px"/></div>` : ""}
+        ${sale.sale_number ? `<div class="center" style="font-size:11px">${sale.sale_number}</div>` : ""}
         <div class="footer">${footer}</div>
         <div class="footer">— ${shopName}</div>
       </body></html>
@@ -1173,6 +1197,13 @@ ${footer}
               </div>
             )}
           </div>
+          {sale.sale_number && (codes.barcode || codes.qr) && (
+            <div style={{ borderTop: "1px dashed var(--border)", marginTop: 8, paddingTop: 10, textAlign: "center", background: "#fff", borderRadius: 8, padding: "10px 0" }}>
+              {codes.barcode && <img src={codes.barcode} alt="barcode" style={{ height: 44, maxWidth: "90%" }} />}
+              {codes.qr && <div><img src={codes.qr} alt="qr" style={{ width: 96, height: 96 }} /></div>}
+              <div style={{ fontSize: 11, color: "#000", fontFamily: "monospace", fontWeight: 700 }}>{sale.sale_number}</div>
+            </div>
+          )}
         </div>
 
         {/* Action buttons */}
