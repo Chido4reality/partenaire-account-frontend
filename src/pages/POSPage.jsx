@@ -342,7 +342,42 @@ export default function POSPage() {
     setCart(c => c.map((it, i) => i === idx ? { ...it, unit_price: newPrice } : it));
   };
 
-  const total   = cart.reduce((s, i) => s + i.quantity * i.unit_price, 0);
+  // The qty/price fields are <input type=number>. Clearing the
+  // highlighted digits (Delete) fires onChange with value "", and
+  // `+"" === 0` previously hit updateQty(idx,0) → the line was
+  // filtered out. Tolerate a transient empty value (line stays,
+  // digits cleared) and only normalise on blur. Removal stays
+  // explicit via the ✕ button / decrementing below 1.
+  const onQtyInput = (idx, raw) => {
+    if (raw === "") {
+      setCart(c => c.map((it, i) => i === idx ? { ...it, quantity: "" } : it));
+      return;
+    }
+    const n = parseInt(raw, 10);
+    if (isNaN(n) || n < 1) return; // ignore 0/garbage mid-typing
+    setCart(c => c.map((it, i) => i === idx ? { ...it, quantity: n } : it));
+  };
+  const onQtyBlur = (idx) => setCart(c => c.map((it, i) => {
+    if (i !== idx) return it;
+    const n = parseInt(it.quantity, 10);
+    return (isNaN(n) || n < 1) ? { ...it, quantity: 1 } : { ...it, quantity: n };
+  }));
+  const onPriceInput = (idx, raw) => {
+    if (raw === "") {
+      setCart(c => c.map((it, i) => i === idx ? { ...it, unit_price: "" } : it));
+      return;
+    }
+    updatePrice(idx, raw);
+  };
+  const onPriceBlur = (idx) => setCart(c => c.map((it, i) => {
+    if (i !== idx) return it;
+    const p = parseFloat(it.unit_price);
+    return (isNaN(p) || p < 0)
+      ? { ...it, unit_price: it.original_price || it.min_price || 0 }
+      : it;
+  }));
+
+  const total   = cart.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0);
   const hasDebt = cart.some(i => i.product_id === "__DEBT__");
   const paid    = payMode === "paid" ? total : payMode === "credit" ? 0 : (+paidAmt || 0);
   const balance = total - paid;
@@ -368,7 +403,7 @@ export default function POSPage() {
       const salePayload = {
         location_id:    selectedLocation?.id,
         customer_id:    customer?.id || null,
-        items:          cart.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_price: i.unit_price, cost_price: i.cost_price })),
+        items:          cart.map(i => ({ product_id: i.product_id, quantity: Number(i.quantity) || 1, unit_price: Number(i.unit_price) || 0, cost_price: i.cost_price })),
         payment_method: payMethod,
         paid_amount:    paid,
         due_date:       dueDate || null,
@@ -810,10 +845,10 @@ export default function POSPage() {
                 ) : (
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     <button onClick={() => updateQty(idx, item.quantity - 1)} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: "pointer", fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
-                    <input type="number" value={item.quantity} onChange={e => updateQty(idx, +e.target.value)} style={{ width: 40, textAlign: "center", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "3px 4px", fontSize: 13 }} />
+                    <input type="number" value={item.quantity} onChange={e => onQtyInput(idx, e.target.value)} onBlur={() => onQtyBlur(idx)} style={{ width: 40, textAlign: "center", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "3px 4px", fontSize: 13 }} />
                     <button onClick={() => updateQty(idx, item.quantity + 1)} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: "pointer", fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
                     <div style={{ flex: 1, position: "relative" }}>
-                      <input type="number" value={item.unit_price} onChange={e => updatePrice(idx, e.target.value)} style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "4px 6px 4px 18px", fontSize: 12 }} />
+                      <input type="number" value={item.unit_price} onChange={e => onPriceInput(idx, e.target.value)} onBlur={() => onPriceBlur(idx)} style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "4px 6px 4px 18px", fontSize: 12 }} />
                       <span style={{ position: "absolute", left: 6, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "var(--text-muted)" }}>F</span>
                     </div>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "var(--brand-light)", minWidth: 56, textAlign: "right" }}>{formatCFA(item.quantity * item.unit_price)}</div>
