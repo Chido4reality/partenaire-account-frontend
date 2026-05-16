@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import api, { formatCFA } from "../../utils/api";
 import OwnerPIN from "./OwnerPIN";
+import { useSettingsStore } from "../../store";
 
 /**
  * VoidReturnModal — handles void, refund, exchange
@@ -13,6 +14,11 @@ import OwnerPIN from "./OwnerPIN";
  */
 export default function VoidReturnModal({ sale, onClose, lang = "fr" }) {
   const qc = useQueryClient();
+  const { selectedLocation } = useSettingsStore();
+  // The return inherits the sale's location. Some report payloads
+  // don't include location_id (pre-multi-location / trimmed select),
+  // so fall back to the cashier's currently selected location.
+  const returnLocationId = sale.location_id || selectedLocation?.id || null;
   const [mode, setMode] = useState(null); // "void" | "refund" | "exchange"
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState("");
@@ -117,7 +123,7 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr" }) {
           ? newItems.map(i => ({ product_id: i.product_id, qty: +i.quantity, unit_price: +i.sell_price }))
           : [];
         const body = {
-          pin, reason, location_id: sale.location_id,
+          pin, reason, location_id: returnLocationId,
           return_type: mode === "exchange" ? "replace_different" : "refund",
           items_returned, replacement_items,
           refund_method: refundMethod,
