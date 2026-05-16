@@ -7,8 +7,7 @@ import OwnerPIN from "../components/common/OwnerPIN";
 import api, { formatCFA } from "../utils/api";
 import { cacheData, getCachedData } from "../utils/offlineStore";
 import CameraScanner from "../components/common/CameraScanner";
-import JsBarcode from "jsbarcode";
-import QRCode from "qrcode";
+import { genSaleCodes } from "../utils/receiptCodes";
 
 const PAYMENT_MODES = [
   { key: "paid",    en: "Full Payment",  fr: "Paiement total",   color: "#10b981", icon: "✓" },
@@ -75,6 +74,16 @@ export default function POSPage() {
   // exceeding available stock (WARN, may proceed).
   const [blockModal, setBlockModal]           = useState(null);
   const [oversellModal, setOversellModal]     = useState(null);
+  // Hold Sale (park & resume). showHold = label/notes prompt;
+  // heldTicket = the just-held cart to print; showResume = the
+  // active-holds picker.
+  const [showHold, setShowHold]               = useState(false);
+  const [holdLabel, setHoldLabel]             = useState("");
+  const [holdNotes, setHoldNotes]             = useState("");
+  const [heldTicket, setHeldTicket]           = useState(null);
+  const [showResume, setShowResume]           = useState(false);
+  const [cancelTarget, setCancelTarget]       = useState(null); // hold pending cancel
+  const [cancelReason, setCancelReason]       = useState("changed_mind");
 
   const searchRef     = useRef(null);
   const custRef       = useRef(null);
@@ -528,6 +537,147 @@ export default function POSPage() {
     runCheckout();
   };
 
+  // ── HOLD SALE (park & resume) ────────────────────────────────────
+  // Active holds for this org+location (a hold at Bonaberri is not
+  // visible at Bepanda — backend scopes by org and we filter by the
+  // selected location). Backend lazily expires stale rows on read.
+  const { data: heldData } = useQuery({
+    queryKey: ["held-carts", selectedLocation?.id],
+    queryFn: () => api.get("/held-carts?status=active"
+      + (selectedLocation?.id ? "&location_id=" + selectedLocation.id : "")).then(r => r.data),
+    enabled: !!selectedLocation?.id,
+    staleTime: 15000,
+    refetchOnWindowFocus: true,
+  });
+  const activeHolds = heldData?.data || [];
+
+  const holdMutation = useMutation({
+    mutationFn: async () => {
+      const items = cart
+        .filter(i => i.product_id && i.product_id !== "__DEBT__")
+        .map(i => {
+          const qty = Number(i.quantity) || 1;
+          const unit = Number(i.unit_price) || 0;
+          return { product_id: i.product_id, qty, unit_price: unit,
+                   line_total: qty * unit, notes: i.notes || null };
+        });
+      if (!items.length) throw new Error("empty");
+      const res = await api.post("/held-carts", {
+        location_id: selectedLocation?.id,
+        customer_id: customer?.id || null,
+        label: holdLabel.trim() || null,
+        notes: holdNotes.trim() || null,
+        items,
+      }).then(r => r.data);
+      return res?.data;
+    },
+    onSuccess: (row) => {
+      setShowHold(false); setHoldLabel(""); setHoldNotes("");
+      setCart([]); setCustomer(null); setOnlineCtx(null);
+      setShowPayment(false); setPayMode("paid"); setPaidAmt("");
+      toast.success(lang === "en"
+        ? `Sale held as ${row.hold_ref}` : `Vente mise en attente : ${row.hold_ref}`,
+        { duration: 4000 });
+      setHeldTicket(row);                 // open the Hold Ticket print
+      qc.invalidateQueries(["held-carts"]);
+      holdMutation.reset();
+    },
+    onError: (err) => {
+      toast.error(err?.message === "empty"
+        ? (lang === "en" ? "Cart is empty" : "Panier vide")
+        : (err?.response?.data?.message || (lang === "en" ? "Could not hold sale" : "Échec de la mise en attente")));
+    }
+  });
+
+  // Repopulate the POS cart from a held cart. Items carry
+  // current_stock from the backend; we hydrate each product so the
+  // resumed line matches addToCart()'s shape (min/cost/original
+  // price) and set `stock` so the existing oversell gate at checkout
+  // warns (never blocks) on lines that no longer have enough stock.
+  const resumeHold = async (id) => {
+    try {
+      const res = await api.post(`/held-carts/${id}/resume`).then(r => r.data);
+      const h = res?.data;
+      const held = h?.items || [];
+      const hydrated = await Promise.all(held.map(async it => {
+        let p = null;
+        try { p = await api.get(`/products/${it.product_id}`).then(r => r.data?.data); } catch { /* ignore */ }
+        return {
+          product_id: it.product_id,
+          name: it.name || p?.name || "—",
+          unit: p?.unit, barcode: p?.barcode,
+          quantity: Number(it.qty) || 1,
+          unit_price: Number(it.unit_price) || Number(p?.sell_price) || 0,
+          original_price: Number(p?.sell_price) || 0,
+          min_price: p?.min_price || 0,
+          cost_price: p?.cost_price,
+          stock: it.current_stock != null ? Number(it.current_stock) : null,
+        };
+      }));
+      setCart(hydrated);
+      setCustomer(null);
+      setShowResume(false);
+      const short = hydrated.filter(i => typeof i.stock === "number" && i.quantity > i.stock);
+      toast.success(lang === "en"
+        ? `Resumed ${h.hold_ref}` : `Reprise ${h.hold_ref}`, { duration: 3000 });
+      if (short.length) {
+        toast(lang === "en"
+          ? `⚠️ Low stock: ${short.map(i => `${i.name} (${i.stock} left, ${i.quantity} held)`).join("; ")}. Adjust before completing.`
+          : `⚠️ Stock faible : ${short.map(i => `${i.name} (${i.stock} restant, ${i.quantity} en attente)`).join("; ")}. Ajustez avant de finaliser.`,
+          { duration: 8000, style: { background: "#451a03", color: "#fbbf24", border: "1px solid #92400e" } });
+      }
+      qc.invalidateQueries(["held-carts"]);
+    } catch (err) {
+      const code = err?.response?.data?.code;
+      toast.error(code
+        ? (lang === "en" ? `Hold already ${code}` : `Attente déjà ${code}`)
+        : (err?.response?.data?.message || (lang === "en" ? "Could not resume" : "Échec de la reprise")));
+      qc.invalidateQueries(["held-carts"]);
+    }
+  };
+
+  const confirmCancelHold = async () => {
+    if (!cancelTarget) return;
+    try {
+      await api.post(`/held-carts/${cancelTarget.id}/cancel`, { reason: cancelReason });
+      toast.success(lang === "en" ? "Hold cancelled" : "Attente annulée");
+    } catch (err) {
+      toast.error(err?.response?.data?.message || (lang === "en" ? "Could not cancel" : "Échec de l'annulation"));
+    }
+    setCancelTarget(null); setCancelReason("changed_mind");
+    qc.invalidateQueries(["held-carts"]);
+  };
+
+  // Scan-to-resume: Layout routes HLD-* scans here as ?hold=HLD-XXXX.
+  // Look up by ref; if active, open the Resume picker so the cashier
+  // confirms; otherwise tell them why it can't be resumed.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get("hold");
+    if (!ref) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get(`/held-carts/by-ref/${encodeURIComponent(ref)}`).then(r => r.data);
+        const h = res?.data;
+        if (cancelled) return;
+        if (h?.status === "active") setShowResume(true);
+        else toast(lang === "en"
+          ? `Hold ${ref} is ${h?.status || "unavailable"}.`
+          : `L'attente ${ref} est ${h?.status || "indisponible"}.`,
+          { duration: 5000 });
+      } catch {
+        if (!cancelled) toast.error(lang === "en"
+          ? `No active hold matches ${ref}` : `Aucune attente active pour ${ref}`);
+      } finally {
+        const clean = window.location.pathname + window.location.hash;
+        window.history.replaceState({}, document.title, clean);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const mobile = isMobile();
 
   return (
@@ -812,11 +962,20 @@ export default function POSPage() {
               <span style={{ fontWeight: 700, fontSize: 14 }}>🛒 {lang === "en" ? "Cart" : "Panier"}</span>
               {cart.length > 0 && <span style={{ background: "var(--brand)", color: "#fff", borderRadius: 20, padding: "1px 8px", fontSize: 11, fontWeight: 700 }}>{cart.length}</span>}
             </div>
-            {cart.length > 0 && (
-              <button onClick={() => setCart([])} style={{ background: "rgba(239,68,68,0.1)", border: "none", color: "#f87171", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 6 }}>
-                {lang === "en" ? "Clear all" : "Vider"}
-              </button>
-            )}
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              {activeHolds.length > 0 && (
+                <button onClick={() => setShowResume(true)}
+                  title={lang === "en" ? "Resume a held sale" : "Reprendre une vente en attente"}
+                  style={{ background: "rgba(245,158,11,0.14)", border: "1px solid rgba(245,158,11,0.4)", color: "#fbbf24", cursor: "pointer", fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 6 }}>
+                  ⏸ {lang === "en" ? "Resume" : "Reprendre"} ({activeHolds.length})
+                </button>
+              )}
+              {cart.length > 0 && (
+                <button onClick={() => setCart([])} style={{ background: "rgba(239,68,68,0.1)", border: "none", color: "#f87171", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 6 }}>
+                  {lang === "en" ? "Clear all" : "Vider"}
+                </button>
+              )}
+            </div>
           </div>
 
           {onlineCtx && (
@@ -872,9 +1031,17 @@ export default function POSPage() {
             </div>
 
             {!showPayment ? (
-              <button className="btn btn-primary btn-block" disabled={cart.length === 0 || !selectedLocation} onClick={() => setShowPayment(true)} style={{ height: 44, fontSize: 14, fontWeight: 700, borderRadius: 12 }}>
-                {!selectedLocation ? (lang === "en" ? "Select location first" : "Choisir emplacement") : hasDebt ? (lang === "en" ? "Collect Payment →" : "Encaisser →") : (lang === "en" ? "Proceed to Payment →" : "Paiement →")}
-              </button>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <button className="btn btn-primary btn-block" disabled={cart.length === 0 || !selectedLocation} onClick={() => setShowPayment(true)} style={{ height: 44, fontSize: 14, fontWeight: 700, borderRadius: 12 }}>
+                  {!selectedLocation ? (lang === "en" ? "Select location first" : "Choisir emplacement") : hasDebt ? (lang === "en" ? "Collect Payment →" : "Encaisser →") : (lang === "en" ? "Proceed to Payment →" : "Paiement →")}
+                </button>
+                {!hasDebt && (
+                  <button disabled={cart.length === 0 || !selectedLocation} onClick={() => { setHoldLabel(""); setHoldNotes(""); setShowHold(true); }}
+                    style={{ height: 40, fontSize: 13, fontWeight: 700, borderRadius: 12, cursor: cart.length === 0 ? "not-allowed" : "pointer", background: "transparent", border: "1.5px solid rgba(245,158,11,0.5)", color: cart.length === 0 ? "var(--text-muted)" : "#fbbf24", opacity: cart.length === 0 || !selectedLocation ? 0.5 : 1 }}>
+                    ⏸ {lang === "en" ? "Hold Sale" : "Mettre en attente"}
+                  </button>
+                )}
+              </div>
             ) : (
               <div>
                 {hasDebt && (
@@ -1017,6 +1184,127 @@ export default function POSPage() {
           onClose={() => setShowReceipt(false)}
         />
       )}
+
+      {/* ── HOLD SALE — label/notes prompt ───────────────────────────── */}
+      {showHold && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, maxWidth: 400, width: "100%" }}>
+            <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>⏸ {lang === "en" ? "Hold this sale" : "Mettre en attente"}</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
+              {lang === "en"
+                ? "Park this cart so you can serve the next customer. Valid 24h."
+                : "Parquez ce panier pour servir le client suivant. Valable 24h."}
+            </div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+              {lang === "en" ? "Customer description (optional)" : "Description client (optionnel)"}
+            </label>
+            <input className="input" value={holdLabel} onChange={e => setHoldLabel(e.target.value)} autoFocus
+              placeholder={lang === "en" ? "e.g. tall guy, blue shirt" : "ex. monsieur, chemise bleue"}
+              style={{ margin: "6px 0 14px" }} maxLength={120} />
+            <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+              {lang === "en" ? "Notes (optional)" : "Notes (optionnel)"}
+            </label>
+            <textarea className="input" value={holdNotes} onChange={e => setHoldNotes(e.target.value)} rows={2}
+              style={{ margin: "6px 0 18px", resize: "vertical" }} maxLength={500} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setShowHold(false)} className="btn btn-secondary" style={{ flex: 1 }}>
+                {lang === "en" ? "Cancel" : "Annuler"}
+              </button>
+              <button onClick={() => holdMutation.mutate()} disabled={holdMutation.isPending} className="btn btn-primary" style={{ flex: 2, fontWeight: 700 }}>
+                {holdMutation.isPending ? "⏳" : (lang === "en" ? "⏸ Hold & Print Ticket" : "⏸ Attente & Ticket")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── RESUME — active holds picker ─────────────────────────────── */}
+      {showResume && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 22, maxWidth: 460, width: "100%", maxHeight: "82vh", display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>⏸ {lang === "en" ? "Held sales" : "Ventes en attente"}</div>
+              <button onClick={() => setShowResume(false)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 18 }}>✕</button>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 14 }}>
+              {selectedLocation?.name ? `📍 ${selectedLocation.name} · ` : ""}{activeHolds.length} {lang === "en" ? "active" : "actives"}
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
+              {activeHolds.length === 0 && (
+                <div style={{ textAlign: "center", padding: 24, color: "var(--text-muted)", fontSize: 13 }}>
+                  {lang === "en" ? "No held sales." : "Aucune vente en attente."}
+                </div>
+              )}
+              {activeHolds.map(h => {
+                const mins = Math.max(0, Math.round((Date.now() - new Date(h.created_at).getTime()) / 60000));
+                const ago = mins < 60 ? `${mins} ${lang === "en" ? "min ago" : "min"}` : `${Math.round(mins / 60)} ${lang === "en" ? "h ago" : "h"}`;
+                const nItems = (h.items || []).length;
+                return (
+                  <div key={h.id} style={{ border: "1px solid var(--border)", borderRadius: 12, padding: "12px 14px", background: "var(--bg-card)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                      <span style={{ fontWeight: 700, fontSize: 13 }}>{h.hold_ref}</span>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{ago}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)", margin: "4px 0" }}>
+                      👤 {h.label || (lang === "en" ? "Walk-in" : "Client de passage")}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--brand-light)", fontWeight: 600, marginBottom: 10 }}>
+                      {nItems} {lang === "en" ? (nItems === 1 ? "item" : "items") : "article(s)"} · {formatCFA(h.estimated_total)}
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={() => resumeHold(h.id)} className="btn btn-success" style={{ flex: 2, fontWeight: 700, fontSize: 13 }}>
+                        {lang === "en" ? "Resume" : "Reprendre"}
+                      </button>
+                      <button onClick={() => { setCancelReason("changed_mind"); setCancelTarget(h); }}
+                        style={{ flex: 1, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                        {lang === "en" ? "Cancel" : "Annuler"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── CANCEL HOLD — confirm + reason ───────────────────────────── */}
+      {cancelTarget && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 350, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "var(--bg-elevated)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 14, padding: 22, maxWidth: 380, width: "100%" }}>
+            <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 6 }}>
+              {lang === "en" ? "Cancel held sale?" : "Annuler la mise en attente ?"}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 14 }}>
+              {cancelTarget.hold_ref} — {cancelTarget.label || (lang === "en" ? "Walk-in" : "Client de passage")}
+            </div>
+            <select className="input" value={cancelReason} onChange={e => setCancelReason(e.target.value)} style={{ marginBottom: 16 }}>
+              <option value="customer_left">{lang === "en" ? "Customer left" : "Client parti"}</option>
+              <option value="changed_mind">{lang === "en" ? "Changed mind" : "A changé d'avis"}</option>
+              <option value="other">{lang === "en" ? "Other" : "Autre"}</option>
+            </select>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setCancelTarget(null)} className="btn btn-secondary" style={{ flex: 1 }}>
+                {lang === "en" ? "Keep it" : "Garder"}
+              </button>
+              <button onClick={confirmCancelHold} className="btn btn-danger" style={{ flex: 1, fontWeight: 700, background: "#ef4444", color: "#fff" }}>
+                {lang === "en" ? "Cancel hold" : "Annuler l'attente"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── HOLD TICKET (print) ──────────────────────────────────────── */}
+      {heldTicket && (
+        <HoldTicket
+          hold={heldTicket}
+          org={orgSettings}
+          lang={lang}
+          cashierName={user?.name || ""}
+          onClose={() => setHeldTicket(null)}
+        />
+      )}
     </>
   );
 }
@@ -1053,18 +1341,9 @@ function ReceiptModal({ sale, org, lang, onClose }) {
   useEffect(() => {
     if (!sale.sale_number) return;
     let cancelled = false;
-    let bc = "";
-    try {
-      const c = document.createElement("canvas");
-      // CODE128B explicitly — Set B reliably encodes printable
-      // ASCII incl. '-' (auto CODE128 could pick a set that
-      // round-trips '-' as '+' on some decoders).
-      JsBarcode(c, sale.sale_number, { format: "CODE128B", width: 2, height: 44, displayValue: false, margin: 0 });
-      bc = c.toDataURL("image/png");
-    } catch { /* ignore */ }
-    QRCode.toDataURL(sale.sale_number, { margin: 1, width: 130 })
-      .then(qr => { if (!cancelled) setCodes({ barcode: bc, qr }); })
-      .catch(() => { if (!cancelled) setCodes({ barcode: bc, qr: "" }); });
+    genSaleCodes(sale.sale_number)
+      .then(c => { if (!cancelled) setCodes(c); })
+      .catch(() => { if (!cancelled) setCodes({ barcode: "", qr: "" }); });
     return () => { cancelled = true; };
   }, [sale.sale_number]);
 
@@ -1249,6 +1528,130 @@ ${footer}
           <button onClick={onClose}
             style={{ width: "100%", padding: "10px", background: "transparent", border: "none", color: "var(--text-muted)", borderRadius: 12, fontSize: 13, cursor: "pointer" }}>
             {lang === "en" ? "Close" : "Fermer"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── HOLD TICKET COMPONENT ─────────────────────────────────────────────────────
+// Thermal-friendly slip the customer keeps. Code128B + QR of the
+// hold_ref (shared genSaleCodes) so the cashier scans it to resume.
+// This is NOT a receipt — no payment, no totals owed.
+function HoldTicket({ hold, org, lang, cashierName, onClose }) {
+  const en = lang === "en";
+  const loc = en ? "en-US" : "fr-FR";
+  const created = hold.created_at ? new Date(hold.created_at) : new Date();
+  const dateStr = created.toLocaleDateString(loc, { day: "2-digit", month: "short", year: "numeric" });
+  const timeStr = created.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
+  const items = hold.items || [];
+  const HT = {
+    hold:    en ? "HOLD" : "MISE EN ATTENTE",
+    date:    en ? "Date" : "Date",
+    cashier: en ? "Cashier" : "Caissier",
+    customer:en ? "Customer" : "Client",
+    walkin:  en ? "Walk-in" : "Client de passage",
+    est:     en ? "Estimated total" : "Total estimé",
+    notReceipt: en
+      ? "This is NOT a receipt. Please present this slip to resume your purchase. Valid for 24 hours."
+      : "Ceci n'est pas un reçu. Veuillez présenter ce ticket pour reprendre votre achat. Valable 24 heures.",
+    print:   en ? "Print Hold Ticket" : "Imprimer le ticket",
+    close:   en ? "Close" : "Fermer",
+    held:    en ? "Sale held" : "Vente en attente",
+  };
+
+  const [codes, setCodes] = useState({ barcode: "", qr: "" });
+  useEffect(() => {
+    if (!hold.hold_ref) return;
+    let cancelled = false;
+    genSaleCodes(hold.hold_ref)
+      .then(c => { if (!cancelled) setCodes(c); })
+      .catch(() => { if (!cancelled) setCodes({ barcode: "", qr: "" }); });
+    return () => { cancelled = true; };
+  }, [hold.hold_ref]);
+
+  const printTicket = () => {
+    const shopName = org.name || "Boutique";
+    const html = `
+      <html><head><title>${HT.hold} ${hold.hold_ref}</title><style>
+        body { font-family: monospace; font-size: 12px; width: 300px; margin: 0 auto; }
+        h2 { text-align: center; font-size: 14px; margin: 4px 0; }
+        .center { text-align: center; }
+        .line { border-top: 1px dashed #000; margin: 6px 0; }
+        .row { display: flex; justify-content: space-between; }
+        .big { font-size: 17px; font-weight: bold; text-align: center; margin: 6px 0; }
+        .est { font-weight: bold; font-size: 14px; }
+        .note { text-align: center; margin-top: 10px; font-size: 11px; font-weight: bold; }
+      </style></head><body>
+        <h2>${shopName}</h2>
+        <div class="line"></div>
+        <div class="big">${HT.hold}: ${hold.hold_ref}</div>
+        <div class="center">${HT.date}: ${dateStr} ${timeStr}</div>
+        ${cashierName ? `<div class="center">${HT.cashier}: ${cashierName}</div>` : ""}
+        <div class="center">${HT.customer}: ${hold.label || HT.walkin}</div>
+        <div class="line"></div>
+        ${items.map(i => `<div class="row"><span>${i.name} ×${i.qty}</span><span>${(Number(i.line_total) || 0).toLocaleString()} F</span></div>`).join("")}
+        <div class="line"></div>
+        <div class="row est"><span>${HT.est}</span><span>${(Number(hold.estimated_total) || 0).toLocaleString()} FCFA</span></div>
+        <div class="line"></div>
+        ${codes.barcode ? `<div class="center"><img src="${codes.barcode}" style="height:44px;image-rendering:pixelated"/></div>` : ""}
+        ${codes.qr ? `<div class="center"><img src="${codes.qr}" style="width:110px;height:110px"/></div>` : ""}
+        <div class="center" style="font-size:11px">${hold.hold_ref}</div>
+        <div class="line"></div>
+        <div class="note">${HT.notReceipt}</div>
+      </body></html>
+    `;
+    const w = window.open("", "_blank", "width=350,height=520");
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => { w.print(); w.close(); }, 300);
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 360, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, maxWidth: 380, width: "100%" }}>
+        <div style={{ textAlign: "center", marginBottom: 16 }}>
+          <div style={{ fontSize: 36, marginBottom: 6 }}>⏸</div>
+          <div style={{ fontWeight: 800, fontSize: 17, color: "#fbbf24" }}>{HT.held}</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", marginTop: 4 }}>{hold.hold_ref}</div>
+        </div>
+        <div style={{ background: "var(--bg-card)", borderRadius: 12, padding: 16, marginBottom: 18, fontSize: 12 }}>
+          <div style={{ textAlign: "center", fontWeight: 700, marginBottom: 6 }}>{org.name || "Boutique"}</div>
+          <div style={{ textAlign: "center", color: "var(--text-muted)", marginBottom: 8 }}>{dateStr} {timeStr}</div>
+          <div style={{ color: "var(--text-secondary)", marginBottom: 8 }}>
+            👤 {hold.label || HT.walkin}{cashierName ? ` · ${HT.cashier}: ${cashierName}` : ""}
+          </div>
+          <div style={{ borderTop: "1px dashed var(--border)", paddingTop: 8 }}>
+            {items.slice(0, 5).map((i, idx) => (
+              <div key={idx} style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <span style={{ color: "var(--text-secondary)" }}>{i.name} ×{i.qty}</span>
+                <span style={{ fontWeight: 600 }}>{(Number(i.line_total) || 0).toLocaleString()} F</span>
+              </div>
+            ))}
+            {items.length > 5 && <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>...+{items.length - 5}</div>}
+          </div>
+          <div style={{ borderTop: "1px dashed var(--border)", marginTop: 8, paddingTop: 8, display: "flex", justifyContent: "space-between", fontWeight: 800 }}>
+            <span>{HT.est}</span><span style={{ color: "var(--brand-light)" }}>{(Number(hold.estimated_total) || 0).toLocaleString()} F</span>
+          </div>
+          {(codes.barcode || codes.qr) && (
+            <div style={{ borderTop: "1px dashed var(--border)", marginTop: 8, paddingTop: 10, textAlign: "center", background: "#fff", borderRadius: 8, padding: "10px 0" }}>
+              {codes.barcode && <img src={codes.barcode} alt="barcode" style={{ height: 44, maxWidth: "90%" }} />}
+              {codes.qr && <div><img src={codes.qr} alt="qr" style={{ width: 96, height: 96 }} /></div>}
+              <div style={{ fontSize: 11, color: "#000", fontFamily: "monospace", fontWeight: 700 }}>{hold.hold_ref}</div>
+            </div>
+          )}
+          <div style={{ marginTop: 10, fontSize: 11, color: "var(--text-muted)", textAlign: "center", fontWeight: 600 }}>{HT.notReceipt}</div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <button onClick={printTicket}
+            style={{ width: "100%", padding: "12px", background: "var(--brand)", border: "none", color: "#fff", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+            🖨️ {HT.print}
+          </button>
+          <button onClick={onClose}
+            style={{ width: "100%", padding: "10px", background: "transparent", border: "none", color: "var(--text-muted)", borderRadius: 12, fontSize: 13, cursor: "pointer" }}>
+            {HT.close}
           </button>
         </div>
       </div>

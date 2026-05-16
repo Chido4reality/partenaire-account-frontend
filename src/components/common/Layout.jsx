@@ -447,7 +447,7 @@ export default function Layout() {
             // ref-shaped input (VNT/RET/QOF prefix) restore '-' so
             // the scan finds the sale; never touch free-text search.
             let v = e.target.value;
-            if (/^(vnt|ret|qof)/i.test(v.trim())) v = v.replace(/\+/g, "-");
+            if (/^(vnt|ret|qof|hld)/i.test(v.trim())) v = v.replace(/\+/g, "-");
             setTerm(v); setOpen(true);
           }}
           onFocus={() => setOpen(true)}
@@ -458,12 +458,20 @@ export default function Layout() {
             // doesn't have to click the dropdown.
             if (e.key !== "Enter") return;
             let q = term.trim().toLowerCase();
-            if (/^(vnt|ret|qof)/.test(q)) q = q.replace(/\+/g, "-");
+            if (/^(vnt|ret|qof|hld)/.test(q)) q = q.replace(/\+/g, "-");
+            // Hold Sale: HLD-* isn't a completed order so it isn't in
+            // /orders/search. Hand it to POS, which looks it up by-ref
+            // and opens the Resume modal (so the cashier confirms).
+            if (/^hld-/.test(q)) {
+              setOpen(false); setTerm("");
+              navigate("/pos?hold=" + encodeURIComponent(q.toUpperCase()));
+              return;
+            }
             const exact = results.find(r => String(r.ref || "").toLowerCase() === q);
             if (exact) go(exact);
             else if (results.length === 1) go(results[0]);
           }}
-          placeholder={lang === "en" ? "🔎 Find / scan (VNT / QOF / digits)" : "🔎 Chercher / scanner (VNT / QOF / chiffres)"}
+          placeholder={lang === "en" ? "🔎 Find / scan (VNT / QOF / HLD / digits)" : "🔎 Chercher / scanner (VNT / QOF / HLD / chiffres)"}
           style={{ width: "100%", padding: "6px 10px", borderRadius: 8, background: "rgba(255,255,255,0.06)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: 11 }} />
         {showPanel && (
           <div id="order-search-panel" ref={panelRef}

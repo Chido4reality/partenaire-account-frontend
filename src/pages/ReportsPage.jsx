@@ -3,23 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLangStore, useAuthStore, useSettingsStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
 import VoidReturnModal from "../components/common/VoidReturnModal";
-import JsBarcode from "jsbarcode";
-import QRCode from "qrcode";
-
-// Shared receipt-code generator (Sprint K). Code128 (sync canvas) +
-// QR (async) → data URLs that print cleanly. Used by the per-sale
-// receipt print so it matches the POS receipt.
-async function genSaleCodes(saleNumber) {
-  let barcode = "";
-  try {
-    const c = document.createElement("canvas");
-    JsBarcode(c, saleNumber, { format: "CODE128B", width: 2, height: 44, displayValue: false, margin: 0 });
-    barcode = c.toDataURL("image/png");
-  } catch { /* ignore */ }
-  let qr = "";
-  try { qr = await QRCode.toDataURL(saleNumber, { margin: 1, width: 130 }); } catch { /* ignore */ }
-  return { barcode, qr };
-}
+import { genSaleCodes } from "../utils/receiptCodes";
 
 export default function ReportsPage() {
   const { lang } = useLangStore();
