@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useLangStore, useAuthStore } from "../store";
+import { useLangStore, useAuthStore, useSettingsStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
 import VoidReturnModal from "../components/common/VoidReturnModal";
 
@@ -14,6 +14,9 @@ export default function ReportsPage() {
   const [to, setTo]     = useState(new Date().toISOString().split("T")[0]);
   const [expandedSale, setExpandedSale] = useState(null);
   const [voidSale, setVoidSale] = useState(null);
+  const { selectedLocation } = useSettingsStore();
+  const [ledgerDate, setLedgerDate] = useState(new Date().toISOString().split("T")[0]);
+  const [ledgerLoc, setLedgerLoc] = useState(selectedLocation?.id || "all");
 
   // Deep-link from the global order search: /reports?sale=<id>&on=<YYYY-MM-DD>.
   // Jump to the Sales Detail tab, widen the range to that day so the
@@ -70,6 +73,72 @@ export default function ReportsPage() {
     queryFn: () => api.get(`/reports/top-products?from=${from}&to=${to}`).then(r => r.data),
     enabled: tab === "products"
   });
+
+  const { data: locationsData } = useQuery({
+    queryKey: ["locations"],
+    queryFn: () => api.get("/locations").then(r => r.data),
+    staleTime: 300000
+  });
+  const ledgerLocations = locationsData?.data || [];
+
+  const { data: ledgerData, isLoading: ledgerLoading } = useQuery({
+    queryKey: ["reports-ledger", ledgerDate, ledgerLoc],
+    queryFn: () => api.get(`/reports/daily-ledger?date=${ledgerDate}&location_id=${ledgerLoc}`).then(r => r.data),
+    enabled: tab === "ledger"
+  });
+  const ledger = ledgerData?.data || null;
+
+  const printLedger = () => {
+    if (!ledger) return;
+    const L = [];
+    const line = (l, r) => `${String(l).padEnd(24)}${String(r).padStart(14)}`;
+    L.push("DAILY LEDGER");
+    L.push(ledger.date + (ledger.location ? " — " + ledger.location.name : " — All locations"));
+    L.push("------------------------------------");
+    L.push("SALES");
+    ledger.sales_by_product.forEach(g =>
+      L.push(line(`${g.product_name} ${g.qty}x${g.unit_price}`, g.line_total.toLocaleString())));
+    L.push("------------------------------------");
+    L.push(line("Total sales:", ledger.gross_sales.toLocaleString()));
+    if (ledger.returns_total > 0) {
+      L.push(""); L.push("RETURNS");
+      ledger.returns_today.forEach(r =>
+        L.push(line(`${r.ret_ref} ${r.items_summary}`, "-" + r.refund_amount.toLocaleString())));
+      L.push(line("Total returns:", "-" + ledger.returns_total.toLocaleString()));
+      L.push(line("Net sales:", ledger.net_sales.toLocaleString()));
+    }
+    if (ledger.expenses_total > 0) {
+      L.push(""); L.push("EXPENSES");
+      ledger.expenses.forEach(e =>
+        L.push(line(`${e.category ? e.category + " - " : ""}${e.description}`, "-" + e.amount.toLocaleString())));
+      L.push(line("Total expenses:", "-" + ledger.expenses_total.toLocaleString()));
+    }
+    L.push("====================================");
+    L.push(line("CASH BALANCE:", ledger.cash_balance.toLocaleString() + " FCFA"));
+    L.push("====================================");
+    const w = window.open("", "_blank", "width=380,height=600");
+    w.document.write(`<pre style="font:12px/1.5 monospace;padding:12px;white-space:pre-wrap">${L.join("\n")}</pre>`);
+    w.document.close(); w.focus(); setTimeout(() => { w.print(); }, 250);
+  };
+
+  const exportLedgerCSV = () => {
+    if (!ledger) return;
+    const rows = [["section", "description", "qty", "unit_price", "amount"]];
+    ledger.sales_by_product.forEach(g => rows.push(["sale", g.product_name, g.qty, g.unit_price, g.line_total]));
+    rows.push(["", "Total sales", "", "", ledger.gross_sales]);
+    ledger.returns_today.forEach(r => rows.push(["return", `${r.ret_ref} ${r.items_summary}`, "", "", -r.refund_amount]));
+    if (ledger.returns_total > 0) {
+      rows.push(["", "Total returns", "", "", -ledger.returns_total]);
+      rows.push(["", "Net sales", "", "", ledger.net_sales]);
+    }
+    ledger.expenses.forEach(e => rows.push(["expense", `${e.category ? e.category + " - " : ""}${e.description}`, "", "", -e.amount]));
+    if (ledger.expenses_total > 0) rows.push(["", "Total expenses", "", "", -ledger.expenses_total]);
+    rows.push(["", "CASH BALANCE", "", "", ledger.cash_balance]);
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = `ledger-${ledger.date}.csv`; a.click();
+  };
 
   const { data: returnsData, isLoading: returnsLoading } = useQuery({
     queryKey: ["reports-returns", from, to],
@@ -148,6 +217,7 @@ export default function ReportsPage() {
     { key: "daily",       en: "Daily Summary",   fr: "Résumé journalier" },
     { key: "sales",       en: "Sales Detail",    fr: "Détail des ventes" },
     { key: "daily_sales", en: "Daily Sales",     fr: "Ventes du jour" },
+    { key: "ledger",      en: "Daily Ledger",    fr: "Livre de caisse" },
     { key: "products",    en: "Top Products",    fr: "Meilleurs produits" },
     { key: "debts",       en: "Debt Report",     fr: "Rapport crédits" },
     { key: "returns",     en: "Returns",         fr: "Retours" },
@@ -738,6 +808,78 @@ export default function ReportsPage() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+      {tab === "ledger" && (
+        <div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>
+            <input type="date" className="input" value={ledgerDate} onChange={e => setLedgerDate(e.target.value)} style={{ width: "auto" }} />
+            <select className="input" value={ledgerLoc} onChange={e => setLedgerLoc(e.target.value)} style={{ width: "auto" }}>
+              <option value="all">{lang === "en" ? "All locations" : "Tous les sites"}</option>
+              {ledgerLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+            <div style={{ flex: 1 }} />
+            <button className="btn btn-secondary" onClick={printLedger} disabled={!ledger}>🖨 {lang === "en" ? "Print" : "Imprimer"}</button>
+            <button className="btn btn-secondary" onClick={exportLedgerCSV} disabled={!ledger}>📊 CSV</button>
+          </div>
+          {ledgerLoading || !ledger ? (
+            <div style={{ padding: 30, textAlign: "center", color: "var(--text-muted)" }}>{lang === "en" ? "Loading…" : "Chargement…"}</div>
+          ) : (
+            <div className="card" style={{ maxWidth: 560, margin: "0 auto", padding: "18px 20px" }}>
+              <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 12 }}>
+                {lang === "en" ? "Sales" : "Ventes"}
+              </div>
+              {ledger.sales_by_product.length === 0 ? (
+                <div style={{ color: "var(--text-muted)", fontSize: 13, padding: "6px 0" }}>{lang === "en" ? "No sales this day." : "Aucune vente ce jour."}</div>
+              ) : ledger.sales_by_product.map((g, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "5px 0", borderBottom: "1px solid var(--border)" }}>
+                  <span>{g.product_name} <span style={{ color: "var(--text-muted)" }}>{g.qty} × {formatCFA(g.unit_price)}</span></span>
+                  <span style={{ fontWeight: 600 }}>{formatCFA(g.line_total)}</span>
+                </div>
+              ))}
+              <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, padding: "8px 0", borderTop: "2px solid var(--border)", marginTop: 4 }}>
+                <span>{lang === "en" ? "Total sales" : "Total ventes"}</span>
+                <span style={{ color: "var(--brand-light)" }}>{formatCFA(ledger.gross_sales)}</span>
+              </div>
+
+              {ledger.returns_total > 0 && (
+                <>
+                  <div style={{ fontWeight: 800, fontSize: 15, margin: "16px 0 8px" }}>{lang === "en" ? "Returns" : "Retours"}</div>
+                  {ledger.returns_today.map((r, i) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "5px 0", borderBottom: "1px solid var(--border)" }}>
+                      <span><span style={{ fontFamily: "monospace" }}>{r.ret_ref}</span> <span style={{ color: "var(--text-muted)" }}>{r.items_summary}</span></span>
+                      <span style={{ color: "#f87171" }}>-{formatCFA(r.refund_amount)}</span>
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, padding: "8px 0", borderTop: "2px solid var(--border)" }}>
+                    <span>{lang === "en" ? "Net sales" : "Ventes nettes"}</span>
+                    <span style={{ color: "var(--brand-light)" }}>{formatCFA(ledger.net_sales)}</span>
+                  </div>
+                </>
+              )}
+
+              {ledger.expenses_total > 0 && (
+                <>
+                  <div style={{ fontWeight: 800, fontSize: 15, margin: "16px 0 8px" }}>{lang === "en" ? "Expenses" : "Dépenses"}</div>
+                  {ledger.expenses.map((e, i) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "5px 0", borderBottom: "1px solid var(--border)" }}>
+                      <span>{e.category ? e.category + " - " : ""}{e.description}</span>
+                      <span style={{ color: "#f87171" }}>-{formatCFA(e.amount)}</span>
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, padding: "8px 0", borderTop: "2px solid var(--border)" }}>
+                    <span>{lang === "en" ? "Total expenses" : "Total dépenses"}</span>
+                    <span style={{ color: "#f87171" }}>-{formatCFA(ledger.expenses_total)}</span>
+                  </div>
+                </>
+              )}
+
+              <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: 17, padding: "12px 0", borderTop: "3px double var(--border)", borderBottom: "3px double var(--border)", marginTop: 14 }}>
+                <span>{lang === "en" ? "Cash balance (expected)" : "Solde caisse (attendu)"}</span>
+                <span style={{ color: ledger.cash_balance < 0 ? "#f87171" : "#34d399" }}>{formatCFA(ledger.cash_balance)}</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
       {voidSale && (
