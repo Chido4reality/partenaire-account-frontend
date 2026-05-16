@@ -68,6 +68,11 @@ export default function POSPage() {
   // (?from_online=<id>&session=<sid>), this holds the entry id + ref so
   // the banner shows and the created sale gets linked back on finalize.
   const [onlineCtx, setOnlineCtx]             = useState(null);
+  // Inventory guards (Bugs 2 & 3): blockModal = products not stocked
+  // at this location (HARD block, no proceed); oversellModal = lines
+  // exceeding available stock (WARN, may proceed).
+  const [blockModal, setBlockModal]           = useState(null);
+  const [oversellModal, setOversellModal]     = useState(null);
 
   const searchRef     = useRef(null);
   const custRef       = useRef(null);
@@ -442,8 +447,44 @@ export default function POSPage() {
       qc.invalidateQueries(["credits"]);
       saleMutation.reset();
     },
-    onError: (err) => toast.error(err.response?.data?.message || "Error")
+    onError: (err) => {
+      const d = err.response?.data;
+      if (d?.code === "NOT_STOCKED_AT_LOCATION") {
+        // Backend is the source of truth — show the blocking modal
+        // even if the frontend stock snapshot looked fine.
+        setBlockModal({
+          locationName: d.location_name || selectedLocation?.name || "",
+          products: (d.products || []).map(p => p.name).filter(Boolean),
+          message: d.message
+        });
+        return;
+      }
+      toast.error(d?.message || "Error");
+    }
   });
+
+  // Bugs 2 & 3: gate the sale before it's submitted.
+  //  • Not stocked at this location → HARD block (no proceed).
+  //  • qty > available → WARN, allow "Sell anyway".
+  // The synthetic __DEBT__ line carries no real stock — skip it.
+  const runCheckout = () => { setOversellModal(null); saleMutation.mutate(); };
+  const attemptCheckout = () => {
+    const real = cart.filter(i => i.product_id && i.product_id !== "__DEBT__");
+    const notStocked = real.filter(i => i.stock === null || i.stock === undefined);
+    if (notStocked.length) {
+      setBlockModal({
+        locationName: selectedLocation?.name || "",
+        products: notStocked.map(i => i.name),
+        message: null
+      });
+      return;
+    }
+    const oversold = real
+      .filter(i => typeof i.stock === "number" && i.quantity > i.stock)
+      .map(i => ({ name: i.name, available: i.stock, selling: i.quantity }));
+    if (oversold.length) { setOversellModal({ items: oversold }); return; }
+    runCheckout();
+  };
 
   const mobile = isMobile();
 
@@ -854,7 +895,7 @@ export default function POSPage() {
                       ⚠️ {lang === "en" ? "A registered customer is required for credit or partial sales." : "Un client enregistré est requis pour les ventes à crédit ou partielles."}
                     </div>
                   )}
-                  <button onClick={() => saleMutation.mutate()} disabled={saleMutation.isPending || (!hasDebt && payMode === "partial" && !paidAmt) || ((payMode === "credit" || payMode === "partial") && !customer)} className="btn btn-success" style={{ flex: 2, fontWeight: 700 }}>
+                  <button onClick={attemptCheckout} disabled={saleMutation.isPending || (!hasDebt && payMode === "partial" && !paidAmt) || ((payMode === "credit" || payMode === "partial") && !customer)} className="btn btn-success" style={{ flex: 2, fontWeight: 700 }}>
                     {saleMutation.isPending ? "⏳" : (lang === "en" ? "✓ Confirm" : "✓ Valider")}
                   </button>
                 </div>
@@ -863,6 +904,68 @@ export default function POSPage() {
           </div>
         </div>
       </div>
+      {/* ── BUG 2: HARD BLOCK — product not stocked at this location ── */}
+      {blockModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000, padding: 16 }}>
+          <div style={{ background: "var(--bg-card)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 14, width: "100%", maxWidth: 460, padding: 22 }}>
+            <div style={{ fontSize: 30, marginBottom: 8 }}>⛔</div>
+            <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 8 }}>
+              {lang === "en" ? "Cannot sell here" : "Vente impossible ici"}
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 14 }}>
+              {blockModal.message || (lang === "en"
+                ? <>These products are not stocked at <strong>{blockModal.locationName || "this location"}</strong>:</>
+                : <>Ces produits ne sont pas en stock à <strong>{blockModal.locationName || "ce site"}</strong> :</>)}
+              <ul style={{ margin: "8px 0 0 18px" }}>
+                {(blockModal.products || []).map((n, i) => <li key={i} style={{ marginBottom: 2 }}>{n}</li>)}
+              </ul>
+              <div style={{ marginTop: 12, color: "var(--text-muted)" }}>
+                {lang === "en"
+                  ? "Transfer stock to this location, remove the item, or switch the sale location."
+                  : "Transférez le stock vers ce site, retirez l'article, ou changez le site de vente."}
+              </div>
+            </div>
+            <button onClick={() => setBlockModal(null)} className="btn btn-primary btn-block" style={{ fontWeight: 700 }}>
+              {lang === "en" ? "OK, I'll fix it" : "OK, je corrige"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── BUG 3: WARN + ALLOW — overselling ── */}
+      {oversellModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000, padding: 16 }}>
+          <div style={{ background: "var(--bg-card)", border: "1px solid rgba(245,158,11,0.45)", borderRadius: 14, width: "100%", maxWidth: 460, padding: 22 }}>
+            <div style={{ fontSize: 30, marginBottom: 8 }}>⚠️</div>
+            <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 8 }}>
+              {lang === "en" ? "Insufficient stock" : "Stock insuffisant"}
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 14 }}>
+              {(oversellModal.items || []).map((it, i) => (
+                <div key={i} style={{ marginBottom: 4 }}>
+                  <strong>{it.name}</strong> — {lang === "en"
+                    ? `${it.available} available, selling ${it.selling}`
+                    : `${it.available} dispo, vente de ${it.selling}`}
+                </div>
+              ))}
+              <div style={{ marginTop: 10, color: "var(--text-muted)" }}>
+                {lang === "en"
+                  ? "You can still sell — stock will go negative and the sale is flagged for restock follow-up."
+                  : "Vous pouvez vendre — le stock passera en négatif et la vente sera signalée pour réapprovisionnement."}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setOversellModal(null)} className="btn btn-secondary" style={{ flex: 1 }}>
+                {lang === "en" ? "Cancel" : "Annuler"}
+              </button>
+              <button onClick={runCheckout} disabled={saleMutation.isPending} className="btn btn-success" style={{ flex: 2, fontWeight: 700 }}>
+                {lang === "en" ? "Sell anyway" : "Vendre quand même"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── RECEIPT MODAL ────────────────────────────────────────────── */}
       {showReceipt && lastSale && (
         <ReceiptModal
