@@ -278,6 +278,8 @@ export default function ReportsPage() {
               {sortedDates.map(date => {
                 const daySales = salesByDate[date];
                 const dayTotal = daySales.reduce((s, sale) => s + parseFloat(sale.total_amount), 0);
+                const dayReturns = daySales.reduce((s, sale) => s + (Number(sale.refunded_total) || 0), 0);
+                const dayNet = dayTotal - dayReturns;
                 return (
                   <div key={date}>
                     {/* Date header */}
@@ -285,7 +287,15 @@ export default function ReportsPage() {
                       <div style={{ fontWeight: 700, fontSize: 14 }}>📅 {formatDate(date, lang)}</div>
                       <div style={{ display: "flex", gap: 16, fontSize: 13 }}>
                         <span style={{ color: "var(--text-muted)" }}>{daySales.length} {lang === "en" ? "sales" : "ventes"}</span>
-                        <span style={{ fontWeight: 700, color: "var(--brand-light)" }}>{formatCFA(dayTotal)}</span>
+                        {dayReturns > 0 ? (
+                          <>
+                            <span style={{ color: "var(--text-muted)", textDecoration: "line-through" }}>{formatCFA(dayTotal)}</span>
+                            <span style={{ color: "#f87171" }}>↩ -{formatCFA(dayReturns)}</span>
+                            <span style={{ fontWeight: 800, color: "var(--brand-light)" }}>{formatCFA(dayNet)} {lang === "en" ? "NET" : "NET"}</span>
+                          </>
+                        ) : (
+                          <span style={{ fontWeight: 700, color: "var(--brand-light)" }}>{formatCFA(dayTotal)}</span>
+                        )}
                       </div>
                     </div>
 
@@ -307,9 +317,11 @@ export default function ReportsPage() {
                                     {sale.payment_status}
                                   </span>
                                   <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{sale.payment_method}</span>
-                                  {sale.has_returns && (
-                                    <span style={{ fontSize: 11, padding: "1px 8px", borderRadius: 10, background: "rgba(248,113,113,0.15)", color: "#f87171", fontWeight: 700 }}>
-                                      ↩ {lang === "en" ? "Return" : "Retour"}
+                                  {(sale.has_returns || (sale.returns || []).length > 0) && (
+                                    <span onClick={(e) => { e.stopPropagation(); setExpandedSale(sale.id); }}
+                                      title={lang === "en" ? "Show return details" : "Voir les détails du retour"}
+                                      style={{ fontSize: 11, padding: "1px 8px", borderRadius: 10, background: "rgba(248,113,113,0.15)", color: "#f87171", fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}>
+                                      ↩ {lang === "en" ? "Return" : "Retour"} ({(sale.returns || []).length})
                                     </span>
                                   )}
                                 </div>
@@ -320,7 +332,16 @@ export default function ReportsPage() {
                                 </div>
                               </div>
                               <div style={{ textAlign: "right" }}>
-                                <div style={{ fontWeight: 800, fontSize: 15, color: "var(--brand-light)" }}>{formatCFA(sale.total_amount)}</div>
+                                {Number(sale.refunded_total) > 0 ? (
+                                  <>
+                                    <div style={{ fontSize: 12, color: "var(--text-muted)", textDecoration: "line-through" }}>{formatCFA(sale.total_amount)}</div>
+                                    <div style={{ fontWeight: 800, fontSize: 15, color: Number(sale.net_amount) <= 0 ? "var(--text-muted)" : "var(--brand-light)" }}>
+                                      {formatCFA(sale.net_amount)} {lang === "en" ? "NET" : "NET"}
+                                    </div>
+                                  </>
+                                ) : (
+                                  <div style={{ fontWeight: 800, fontSize: 15, color: "var(--brand-light)" }}>{formatCFA(sale.total_amount)}</div>
+                                )}
                                 {sale.balance_due > 0 && <div style={{ fontSize: 11, color: "#f87171" }}>Due: {formatCFA(sale.balance_due)}</div>}
                               </div>
                                 <div style={{ color: "var(--text-muted)", fontSize: 16, transition: "transform 0.15s", transform: isExpanded ? "rotate(90deg)" : "none" }}>›</div>
@@ -385,9 +406,38 @@ export default function ReportsPage() {
                                   </div>
                                 ))}
                                 <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 20px", borderTop: "1px solid var(--border)", fontWeight: 700 }}>
-                                  <span>Total</span>
+                                  <span>{lang === "en" ? "Sold total" : "Total vendu"}</span>
                                   <span style={{ color: "var(--brand-light)" }}>{formatCFA(sale.total_amount)}</span>
                                 </div>
+                                {(sale.returns || []).length > 0 && (
+                                  <div style={{ borderTop: "2px solid rgba(248,113,113,0.4)", background: "rgba(248,113,113,0.06)" }}>
+                                    <div style={{ padding: "8px 20px", fontWeight: 700, fontSize: 12, color: "#f87171" }}>
+                                      ↩ {lang === "en" ? "Returns linked to this sale" : "Retours liés à cette vente"}
+                                    </div>
+                                    {sale.returns.map(r => (
+                                      <div key={r.id} style={{ padding: "8px 20px", borderTop: "1px solid var(--border)", fontSize: 12 }}>
+                                        <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 600 }}>
+                                          <span style={{ fontFamily: "monospace" }}>{r.return_ref}</span>
+                                          <span style={{ color: "#f87171" }}>-{formatCFA(r.refund_amount)} {r.refund_method && r.refund_method !== "none" ? `(${r.refund_method})` : ""}</span>
+                                        </div>
+                                        <div style={{ color: "var(--text-muted)", marginTop: 2 }}>
+                                          {new Date(r.created_at).toLocaleString()} · {r.processed_by_name || "—"}
+                                          {r.reason ? ` · ${lang === "en" ? "reason" : "raison"}: ${r.reason}` : ""}
+                                          {r.return_type ? ` · ${r.return_type}` : ""}
+                                        </div>
+                                        {(r.items_returned || []).map((ri, j) => (
+                                          <div key={j} style={{ color: "var(--text-muted)", marginTop: 2 }}>
+                                            • {ri.name || ri.product_id} × {ri.qty || ri.quantity} @ {formatCFA(ri.unit_price || 0)}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ))}
+                                    <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 20px", borderTop: "1px solid var(--border)", fontWeight: 800 }}>
+                                      <span>{lang === "en" ? "NET after returns" : "NET après retours"}</span>
+                                      <span style={{ color: Number(sale.net_amount) <= 0 ? "var(--text-muted)" : "var(--brand-light)" }}>{formatCFA(sale.net_amount)}</span>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
