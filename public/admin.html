@@ -4222,9 +4222,10 @@
             </select>
           </div>
           <div class="field"><label>Starts at</label>
-            <input type="datetime-local" id="bc-starts" value="${b.starts_at ? new Date(b.starts_at).toISOString().slice(0,16) : ''}" /></div>
-          <div class="field"><label>Expires at (optional — leave blank for never)</label>
-            <input type="datetime-local" id="bc-expires" value="${b.expires_at ? new Date(b.expires_at).toISOString().slice(0,16) : ''}" /></div>
+            <input type="datetime-local" id="bc-starts" oninput="bcDefaultExpiry()" value="${b.starts_at ? new Date(b.starts_at).toISOString().slice(0,16) : ''}" /></div>
+          <div class="field"><label>Expires at</label>
+            <input type="datetime-local" id="bc-expires" value="${b.expires_at ? new Date(b.expires_at).toISOString().slice(0,16) : ''}" />
+            <div class="muted" style="font-size:11px;margin-top:4px">Leave blank for default 7 days. Must be after the start time.</div></div>
           <div class="field"><label>Estimated audience</label>
             <div id="bc-audience-count" class="muted">—</div></div>
         `,
@@ -4298,6 +4299,21 @@
         expires_at: $('bc-expires').value ? new Date($('bc-expires').value).toISOString() : null,
         is_draft: !!asDraft
       };
+    }
+
+    // BUG A: when the start time is picked and Expires is still blank,
+    // prefill it to start + 7 days so the admin never accidentally
+    // ships a zero-duration (invisible) broadcast. If they typed an
+    // expiry already, leave it alone. Server also enforces this.
+    function bcDefaultExpiry() {
+      const s = $('bc-starts'), e = $('bc-expires');
+      if (!s || !e || !s.value || e.value) return;
+      const d = new Date(s.value);
+      if (isNaN(d.getTime())) return;
+      d.setDate(d.getDate() + 7);
+      const pad = n => String(n).padStart(2, '0');
+      e.value = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+                'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
     }
 
     let _bcPreviewTimer = null;
