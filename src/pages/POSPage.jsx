@@ -1023,9 +1023,23 @@ export default function POSPage() {
 
 // ── RECEIPT MODAL COMPONENT ───────────────────────────────────────────────────
 function ReceiptModal({ sale, org, lang, onClose }) {
+  const en = lang === "en";
+  const loc = en ? "en-US" : "fr-FR";
   const today = new Date();
-  const dateStr = today.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
-  const timeStr = today.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  const dateStr = today.toLocaleDateString(loc, { day: "2-digit", month: "2-digit", year: "numeric" });
+  const timeStr = today.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
+  // Receipt copy localised by the UI language. The shop tagline
+  // (org.receipt_footer) stays user-controlled in both locales.
+  const RT = {
+    title:   en ? "Receipt" : "Reçu",
+    client:  en ? "Customer" : "Client",
+    paid:    en ? "PAID" : "PAYÉ",
+    credit:  en ? "FULL CREDIT" : "CRÉDIT TOTAL",
+    due:     en ? "DUE" : "DÛ",
+    partial: en ? "PARTIAL — Paid" : "PARTIEL — Payé",
+    balance: en ? "Balance due" : "Reste dû",
+    totalDue:en ? "Total amount due" : "Montant total dû",
+  };
 
   const items = sale.items || [];
   const total = items.reduce((s, i) => s + i.quantity * i.unit_price, 0);
@@ -1042,7 +1056,10 @@ function ReceiptModal({ sale, org, lang, onClose }) {
     let bc = "";
     try {
       const c = document.createElement("canvas");
-      JsBarcode(c, sale.sale_number, { format: "CODE128", width: 2, height: 44, displayValue: false, margin: 0 });
+      // CODE128B explicitly — Set B reliably encodes printable
+      // ASCII incl. '-' (auto CODE128 could pick a set that
+      // round-trips '-' as '+' on some decoders).
+      JsBarcode(c, sale.sale_number, { format: "CODE128B", width: 2, height: 44, displayValue: false, margin: 0 });
       bc = c.toDataURL("image/png");
     } catch { /* ignore */ }
     QRCode.toDataURL(sale.sale_number, { margin: 1, width: 130 })
@@ -1117,7 +1134,7 @@ ${footer}
     const shopName = org.name || "Notre boutique";
     const footer = org.receipt_footer || "Merci pour votre achat!";
     const printContent = `
-      <html><head><title>Reçu</title><style>
+      <html><head><title>${RT.title}</title><style>
         body { font-family: monospace; font-size: 12px; width: 300px; margin: 0 auto; }
         h2 { text-align: center; font-size: 14px; margin: 4px 0; }
         .center { text-align: center; }
@@ -1132,16 +1149,16 @@ ${footer}
         <div class="line"></div>
         <div class="center">${dateStr} ${timeStr}</div>
         ${sale.sale_number ? `<div class="center" style="font-size:15px;font-weight:bold;margin:4px 0">${sale.sale_number}</div>` : ""}
-        ${sale.customer?.name ? `<div class="center">Client: ${sale.customer.name}</div>` : ""}
+        ${sale.customer?.name ? `<div class="center">${RT.client}: ${sale.customer.name}</div>` : ""}
         <div class="line"></div>
         ${items.map(i => `<div class="row"><span>${i.name} ×${i.quantity}</span><span>${(i.quantity * i.unit_price).toLocaleString()} F</span></div>`).join("")}
         <div class="line"></div>
         <div class="row total"><span>TOTAL</span><span>${total.toLocaleString()} FCFA</span></div>
-        ${status === "paid" ? `<div class="row" style="color:green;font-weight:bold"><span>✅ PAYÉ</span><span>${paid.toLocaleString()} FCFA</span></div>` : ""}
-        ${status === "credit" ? `<div class="row" style="color:red;font-weight:bold"><span>🔴 CRÉDIT TOTAL</span><span>${total.toLocaleString()} FCFA DÛ</span></div>` : ""}
-        ${status === "partial" ? `<div class="row" style="color:orange;font-weight:bold"><span>🟡 PARTIEL — Payé</span><span>${paid.toLocaleString()} FCFA</span></div>` : ""}
-        ${balance > 0 && status !== "credit" ? `<div class="row" style="color:red"><span>Reste dû</span><span>${balance.toLocaleString()} FCFA</span></div>` : ""}
-        ${status === "credit" ? `<div class="row" style="color:red"><span>Montant total dû</span><span>${total.toLocaleString()} FCFA</span></div>` : ""}
+        ${status === "paid" ? `<div class="row" style="color:green;font-weight:bold"><span>✅ ${RT.paid}</span><span>${paid.toLocaleString()} FCFA</span></div>` : ""}
+        ${status === "credit" ? `<div class="row" style="color:red;font-weight:bold"><span>🔴 ${RT.credit}</span><span>${total.toLocaleString()} FCFA ${RT.due}</span></div>` : ""}
+        ${status === "partial" ? `<div class="row" style="color:orange;font-weight:bold"><span>🟡 ${RT.partial}</span><span>${paid.toLocaleString()} FCFA</span></div>` : ""}
+        ${balance > 0 && status !== "credit" ? `<div class="row" style="color:red"><span>${RT.balance}</span><span>${balance.toLocaleString()} FCFA</span></div>` : ""}
+        ${status === "credit" ? `<div class="row" style="color:red"><span>${RT.totalDue}</span><span>${total.toLocaleString()} FCFA</span></div>` : ""}
         <div class="line"></div>
         ${sale.sale_number && codes.barcode ? `<div class="center"><img src="${codes.barcode}" style="height:44px;image-rendering:pixelated"/></div>` : ""}
         ${sale.sale_number && codes.qr ? `<div class="center"><img src="${codes.qr}" style="width:110px;height:110px"/></div>` : ""}
@@ -1176,9 +1193,9 @@ ${footer}
           {sale.customer?.name && <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", marginBottom: 4 }}>👤 {sale.customer.name}</div>}
           {/* Payment status badge */}
           <div style={{ textAlign: "center", marginBottom: 10 }}>
-            {sale.payment_status === "paid" && <span style={{ fontSize: 12, fontWeight: 700, background: "rgba(16,185,129,0.15)", color: "#34d399", padding: "3px 12px", borderRadius: 20 }}>✅ PAYÉ INTÉGRALEMENT</span>}
-            {sale.payment_status === "credit" && <span style={{ fontSize: 12, fontWeight: 700, background: "rgba(239,68,68,0.15)", color: "#f87171", padding: "3px 12px", borderRadius: 20 }}>🔴 CRÉDIT TOTAL — AUCUN PAIEMENT</span>}
-            {sale.payment_status === "partial" && <span style={{ fontSize: 12, fontWeight: 700, background: "rgba(245,158,11,0.15)", color: "#fbbf24", padding: "3px 12px", borderRadius: 20 }}>🟡 PAIEMENT PARTIEL</span>}
+            {sale.payment_status === "paid" && <span style={{ fontSize: 12, fontWeight: 700, background: "rgba(16,185,129,0.15)", color: "#34d399", padding: "3px 12px", borderRadius: 20 }}>✅ {en ? "PAID IN FULL" : "PAYÉ INTÉGRALEMENT"}</span>}
+            {sale.payment_status === "credit" && <span style={{ fontSize: 12, fontWeight: 700, background: "rgba(239,68,68,0.15)", color: "#f87171", padding: "3px 12px", borderRadius: 20 }}>🔴 {en ? "FULL CREDIT — NO PAYMENT" : "CRÉDIT TOTAL — AUCUN PAIEMENT"}</span>}
+            {sale.payment_status === "partial" && <span style={{ fontSize: 12, fontWeight: 700, background: "rgba(245,158,11,0.15)", color: "#fbbf24", padding: "3px 12px", borderRadius: 20 }}>🟡 {en ? "PARTIAL PAYMENT" : "PAIEMENT PARTIEL"}</span>}
           </div>
           <div style={{ borderTop: "1px dashed var(--border)", paddingTop: 8, marginBottom: 8 }}>
             {items.slice(0, 4).map((i, idx) => (

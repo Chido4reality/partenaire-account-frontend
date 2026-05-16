@@ -13,7 +13,7 @@ async function genSaleCodes(saleNumber) {
   let barcode = "";
   try {
     const c = document.createElement("canvas");
-    JsBarcode(c, saleNumber, { format: "CODE128", width: 2, height: 44, displayValue: false, margin: 0 });
+    JsBarcode(c, saleNumber, { format: "CODE128B", width: 2, height: 44, displayValue: false, margin: 0 });
     barcode = c.toDataURL("image/png");
   } catch { /* ignore */ }
   let qr = "";

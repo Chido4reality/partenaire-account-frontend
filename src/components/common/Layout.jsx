@@ -442,7 +442,14 @@ export default function Layout() {
     return (
       <div style={{ position: "relative", width: "100%" }}>
         <input id={inputId} value={term}
-          onChange={e => { setTerm(e.target.value); setOpen(true); }}
+          onChange={e => {
+            // Some Code128 scanners round-trip '-' as '+'. Only for
+            // ref-shaped input (VNT/RET/QOF prefix) restore '-' so
+            // the scan finds the sale; never touch free-text search.
+            let v = e.target.value;
+            if (/^(vnt|ret|qof)/i.test(v.trim())) v = v.replace(/\+/g, "-");
+            setTerm(v); setOpen(true);
+          }}
           onFocus={() => setOpen(true)}
           onKeyDown={e => {
             // Sprint K scan-to-find: a USB scanner / phone-camera
@@ -450,7 +457,8 @@ export default function Layout() {
             // an exact ref match (or the sole result) so the cashier
             // doesn't have to click the dropdown.
             if (e.key !== "Enter") return;
-            const q = term.trim().toLowerCase();
+            let q = term.trim().toLowerCase();
+            if (/^(vnt|ret|qof)/.test(q)) q = q.replace(/\+/g, "-");
             const exact = results.find(r => String(r.ref || "").toLowerCase() === q);
             if (exact) go(exact);
             else if (results.length === 1) go(results[0]);
