@@ -21,9 +21,26 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr" }) {
   const [refundMethod, setRefundMethod] = useState("cash");
   const [restock, setRestock] = useState(true);
   const [selectedItems, setSelectedItems] = useState(
-    (sale.pa_sale_items || []).map(i => ({ ...i, returnQty: i.quantity, selected: true }))
+    (sale.pa_sale_items || []).map(i => ({ ...i, returnQty: i.quantity, selected: true, retReason: "changed_mind" }))
   );
+  const [overrideReason, setOverrideReason] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Sprint L: return-window banner. <30d OK, 30d–1y needs an
+  // override reason, >1y the server rejects.
+  const saleAgeDays = Math.floor(
+    (Date.now() - new Date(sale.created_at || sale.sale_date || Date.now()).getTime()) / 86400000
+  );
+  const pastWindow = saleAgeDays > 30;
+  const RET_REASONS = [
+    ["defective",   lang === "en" ? "Defective"     : "Défectueux"],
+    ["wrong_item",  lang === "en" ? "Wrong item"    : "Mauvais article"],
+    ["changed_mind",lang === "en" ? "Changed mind"  : "A changé d'avis"],
+    ["damaged",     lang === "en" ? "Damaged"       : "Endommagé"],
+    ["other",       lang === "en" ? "Other"         : "Autre"],
+  ];
+  const setItemReason = (idx, r) =>
+    setSelectedItems(prev => prev.map((it, i) => i === idx ? { ...it, retReason: r } : it));
 
   // Exchange-specific state
   const [newItems, setNewItems] = useState([]);
@@ -75,32 +92,47 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr" }) {
     setLoading(true);
     setPinError("");
 
+    // Sprint L: returns past 30 days require an override reason
+    // (the server also enforces this; fail fast for clearer UX).
+    if (mode !== "void" && pastWindow && !overrideReason.trim()) {
+      setPinError(lang === "en"
+        ? "This sale is past 30 days — an override reason is required."
+        : "Vente de plus de 30 jours — une raison de dérogation est requise.");
+      setLoading(false);
+      return;
+    }
+
     try {
       let res;
       if (mode === "void") {
         res = await api.post(`/returns/void/${sale.id}`, { pin, reason });
-      } else if (mode === "refund") {
-        const returnedItems = selectedItems.filter(i => i.selected).map(i => ({
-          product_id: i.product_id, quantity: +i.returnQty
+      } else {
+        // Unified return/replace contract (Sprint L). Exchange =
+        // refund + replacement_items; backend computes price_difference.
+        const items_returned = selectedItems.filter(i => i.selected).map(i => ({
+          product_id: i.product_id, qty: +i.returnQty,
+          unit_price: +i.unit_price, reason: i.retReason || "other"
         }));
-        res = await api.post(`/returns/return/${sale.id}`, {
-          pin, reason, refund_amount: +refundAmount, refund_method: refundMethod,
-          items_returned: returnedItems, restock
-        });
-      } else if (mode === "exchange") {
-        const returnedItems = selectedItems.filter(i => i.selected).map(i => ({
-          product_id: i.product_id, quantity: +i.returnQty
-        }));
-        res = await api.post(`/returns/exchange/${sale.id}`, {
-          pin, reason,
-          returned_items: returnedItems,
-          new_items: newItems.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
-          cash_difference: Math.abs(cashDiff),
-          cash_direction: cashDiff > 0 ? "collect" : cashDiff < 0 ? "refund" : "none"
-        });
+        const replacement_items = mode === "exchange"
+          ? newItems.map(i => ({ product_id: i.product_id, qty: +i.quantity, unit_price: +i.sell_price }))
+          : [];
+        const body = {
+          pin, reason, location_id: sale.location_id,
+          return_type: mode === "exchange" ? "replace_different" : "refund",
+          items_returned, replacement_items,
+          refund_method: refundMethod,
+          return_window_override: pastWindow,
+          override_reason: overrideReason || null,
+          notes: reason || null
+        };
+        // Both legacy paths delegate to one server handler.
+        res = await api.post(`/returns/${mode === "exchange" ? "exchange" : "return"}/${sale.id}`, body);
       }
 
-      toast.success(lang === "en" ? "✓ Done!" : "✓ Effectué!");
+      const ref = res?.data?.data?.return_ref;
+      toast.success(ref
+        ? (lang === "en" ? `✓ Return ${ref} recorded` : `✓ Retour ${ref} enregistré`)
+        : (lang === "en" ? "✓ Done!" : "✓ Effectué!"));
 
       // Show WhatsApp option
       if (res?.data?.data?.wa_message) {
@@ -113,6 +145,7 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr" }) {
       }
 
       qc.invalidateQueries(["reports-sales-detail"]);
+      qc.invalidateQueries(["reports-returns"]);
       qc.invalidateQueries(["stock"]);
       qc.invalidateQueries(["pos-customers"]);
       onClose();
@@ -184,6 +217,7 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr" }) {
                 <span style={{ color: "#34d399" }}>+{item.quantity} {lang === "en" ? "restored" : "restauré"}</span>
               </div>
             ))}
+            {mode !== "void" && pastWindow && <WindowBanner days={saleAgeDays} value={overrideReason} setValue={setOverrideReason} lang={lang} />}
             <PinAndReason pin={pin} setPin={setPin} reason={reason} setReason={setReason} pinError={pinError} lang={lang} />
             <ActionButtons mode="void" loading={loading} onBack={() => setMode(null)} onConfirm={handleSubmit} lang={lang} />
           </div>
@@ -205,10 +239,14 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr" }) {
                   </div>
                   {item.selected && (
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Return qty:</span>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en" ? "Return qty:" : "Qté retour:"}</span>
                       <input type="number" value={item.returnQty} onChange={e => setReturnQty(i, e.target.value)}
                         min={1} max={item.quantity}
                         style={{ width: 60, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", fontSize: 13 }} />
+                      <select value={item.retReason} onChange={e => setItemReason(i, e.target.value)}
+                        style={{ padding: "4px 6px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", fontSize: 12 }}>
+                        {RET_REASONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                      </select>
                     </div>
                   )}
                 </div>
@@ -246,6 +284,7 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr" }) {
               </div>
             </div>
 
+            {mode !== "void" && pastWindow && <WindowBanner days={saleAgeDays} value={overrideReason} setValue={setOverrideReason} lang={lang} />}
             <PinAndReason pin={pin} setPin={setPin} reason={reason} setReason={setReason} pinError={pinError} lang={lang} />
             <ActionButtons mode="refund" loading={loading} onBack={() => setMode(null)} onConfirm={handleSubmit} lang={lang} />
           </div>
@@ -336,11 +375,26 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr" }) {
               </div>
             </div>
 
+            {mode !== "void" && pastWindow && <WindowBanner days={saleAgeDays} value={overrideReason} setValue={setOverrideReason} lang={lang} />}
             <PinAndReason pin={pin} setPin={setPin} reason={reason} setReason={setReason} pinError={pinError} lang={lang} />
             <ActionButtons mode="exchange" loading={loading} onBack={() => setMode(null)} onConfirm={handleSubmit} lang={lang} />
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function WindowBanner({ days, value, setValue, lang }) {
+  return (
+    <div style={{ background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.4)", borderRadius: 10, padding: 12, marginBottom: 14 }}>
+      <div style={{ fontSize: 12, color: "#fbbf24", fontWeight: 600, marginBottom: 6 }}>
+        ⚠ {lang === "en"
+          ? `This sale is ${days} days old. Returns past 30 days require a reason.`
+          : `Vente vieille de ${days} jours. Un retour > 30 jours nécessite une raison.`}
+      </div>
+      <input className="input" value={value} onChange={e => setValue(e.target.value)}
+        placeholder={lang === "en" ? "Required: reason for override" : "Obligatoire : raison de la dérogation"} />
     </div>
   );
 }
