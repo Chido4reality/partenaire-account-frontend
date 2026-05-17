@@ -19,8 +19,11 @@ export default function UpgradeModal({ onClose, currentPlan }) {
   const [paymentMethod, setPaymentMethod] = useState(null);
   const [months, setMonths] = useState(1);
   const [notes, setNotes] = useState("");
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(""); // MoMo payer number — digits only (8–15)
   const [step, setStep] = useState(1); // 1=plan, 2=payment, 3=confirm, 4=campay-polling
+
+  // Backend now REQUIRES a Mobile Money number (digits only, 8–15) for CamPay.
+  const momoValid = /^\d{8,15}$/.test(phone);
 
   // CamPay polling state
   const [campayRef, setCampayRef] = useState(null);
@@ -71,7 +74,7 @@ export default function UpgradeModal({ onClose, currentPlan }) {
       try { await api.get("/health", { timeout: 45000 }); } catch (_) { /* warmup is best-effort */ }
       return api.post(
         "/subscriptions/campay-pay",
-        { plan_id: selectedPlan.id, months, phone },
+        { plan_id: selectedPlan.id, months, phone, payer_phone: phone },
         { timeout: 60000 }
       );
     },
@@ -214,12 +217,18 @@ export default function UpgradeModal({ onClose, currentPlan }) {
             {/* Phone number — only shown for CamPay */}
             {paymentMethod === "campay" && (
               <div className="form-group" style={{ marginBottom: 16 }}>
-                <label className="label">{lang === "en" ? "Mobile Money phone number" : "Numéro Mobile Money"}</label>
-                <input className="input" value={phone} onChange={e => setPhone(e.target.value)}
-                  placeholder="+237 6XX XXX XXX" type="tel" />
+                <label className="label">{lang === "en" ? "Mobile Money number" : "Numéro Mobile Money"}</label>
+                <input className="input" value={phone}
+                  onChange={e => setPhone(e.target.value.replace(/\D/g, ""))}
+                  placeholder="6XXXXXXXX" type="tel" inputMode="numeric" />
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                  {lang === "en" ? "You will receive a USSD push on this number to confirm payment." : "Vous recevrez un USSD push sur ce numéro pour confirmer le paiement."}
+                  {lang === "en" ? "The MoMo number that will be charged for this upgrade." : "Le numéro Mobile Money qui sera débité pour cette mise à niveau."}
                 </div>
+                {phone && !momoValid && (
+                  <div style={{ fontSize: 11, color: "#f87171", marginTop: 4 }}>
+                    {lang === "en" ? "Enter a valid Mobile Money number (8–15 digits)." : "Entrez un numéro Mobile Money valide (8–15 chiffres)."}
+                  </div>
+                )}
               </div>
             )}
 
@@ -234,7 +243,7 @@ export default function UpgradeModal({ onClose, currentPlan }) {
             <div style={{ display: "flex", gap: 10 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setStep(1)}>← {lang === "en" ? "Back" : "Retour"}</button>
               <button className="btn btn-primary" style={{ flex: 2 }}
-                disabled={!paymentMethod || (paymentMethod === "campay" && !phone.trim())}
+                disabled={!paymentMethod || (paymentMethod === "campay" && !momoValid)}
                 onClick={() => setStep(3)}>
                 {lang === "en" ? "Review →" : "Vérifier →"}
               </button>
@@ -292,7 +301,7 @@ export default function UpgradeModal({ onClose, currentPlan }) {
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setStep(2)}>← {lang === "en" ? "Back" : "Retour"}</button>
               {paymentMethod === "campay" ? (
                 <button className="btn btn-primary" style={{ flex: 2, background: "#4f46e5", borderColor: "#4f46e5" }}
-                  disabled={campayMutation.isPending} onClick={() => campayMutation.mutate()}>
+                  disabled={campayMutation.isPending || !momoValid} onClick={() => campayMutation.mutate()}>
                   {campayMutation.isPending ? "⏳ Initiating..." : (lang === "en" ? "⚡ Pay with CamPay" : "⚡ Payer via CamPay")}
                 </button>
               ) : (
