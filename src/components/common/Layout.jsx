@@ -3,6 +3,7 @@ import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore, useLangStore, useOfflineStore } from "../../store";
 import api from "../../utils/api";
+import { openWhatsApp } from "../../utils/whatsapp";
 import UpgradeModal from "./UpgradeModal";
 import PaywallModal from "./PaywallModal";
 import OfflineBanner from "./OfflineBanner";
@@ -712,9 +713,10 @@ export default function Layout() {
               "Nom: " + (org?.name || "") + "\n" +
               "Plan: " + tier + "\n" +
               "Message:\n";
-            const href = "https://wa.me/237675995524?text=" + encodeURIComponent(supportBody);
+            const href = "https://wa.me/237621840952?text=" + encodeURIComponent(supportBody);
             return (
               <a href={href} target="_blank" rel="noopener noreferrer"
+                onClick={(e) => openWhatsApp(e, "237621840952", supportBody)}
                 style={{ display: "block", width: "100%", padding: "6px 10px", borderRadius: 8, background: "rgba(37,211,102,0.08)", border: "1px solid rgba(37,211,102,0.2)", color: "#25d366", fontSize: 11, textAlign: "left", textDecoration: "none", marginBottom: 6 }}>
                 💬 {lang === "en" ? "Contact Support" : "Contacter le Support"}
               </a>

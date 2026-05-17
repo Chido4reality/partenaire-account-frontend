@@ -14,8 +14,9 @@ import { useState } from "react";
 import { useLangStore } from "../../store";
 import UpgradeModal from "./UpgradeModal";
 import { PLAN_CAPABILITIES, getCapabilities } from "../../utils/planCapabilities";
+import { openWhatsApp } from "../../utils/whatsapp";
 
-const SUPPORT_PHONE = "237675995524";
+const SUPPORT_PHONE = "237621840952";
 
 // Human-readable label per feature key, both languages. Falls back to
 // a Title-Cased slug when a feature isn't listed (defensive).
@@ -93,13 +94,13 @@ export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
     );
   }
 
-  const whatsappUrl = () => {
+  const whatsappMsg = () => {
     const planName = (PLAN_CAPABILITIES[selectedTier] || {}).label || selectedTier;
-    const msg = lang === "fr"
+    return lang === "fr"
       ? `Bonjour Partenaire Support, je voudrais mettre à niveau mon compte ${mpId || ""} vers le plan ${planName}.`
       : `Hello Partenaire Support, I would like to upgrade my account ${mpId || ""} to the ${planName} plan.`;
-    return `https://wa.me/${SUPPORT_PHONE}?text=${encodeURIComponent(msg)}`;
   };
+  const whatsappUrl = () => `https://wa.me/${SUPPORT_PHONE}?text=${encodeURIComponent(whatsappMsg())}`;
 
   return (
     <div
@@ -201,7 +202,9 @@ export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
 
         <div style={{ marginTop: 12, textAlign: "center", fontSize: 11, color: "var(--text-muted)" }}>
           {lang === "fr" ? "ou " : "or "}
-          <a href={whatsappUrl()} target="_blank" rel="noopener" style={{ color: "var(--brand-light)" }}>
+          <a href={whatsappUrl()} target="_blank" rel="noopener"
+            onClick={(e) => openWhatsApp(e, SUPPORT_PHONE, whatsappMsg())}
+            style={{ color: "var(--brand-light)" }}>
             {lang === "fr" ? "contacter le support WhatsApp" : "contact WhatsApp support"}
           </a>
         </div>
