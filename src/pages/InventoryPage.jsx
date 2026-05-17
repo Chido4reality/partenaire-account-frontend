@@ -7,6 +7,7 @@ import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import api, { formatCFA } from "../utils/api";
 import OwnerPIN from "../components/common/OwnerPIN";
+import PhotoUploadButtons from "../components/common/PhotoUploadButtons";
 import PaywallModal from "../components/common/PaywallModal";
 import { getCapabilities, isAtCap } from "../utils/planCapabilities";
 
@@ -132,6 +133,11 @@ export default function InventoryPage() {
 
   const [selectedStockRow, setSelectedStockRow] = useState(null);
   const [editProduct, setEditProduct] = useState(null);
+  // MP-INVENTORY-DOZIE-CONTROLS — edit-modal Sell-on-Dozie state.
+  const [dozieEnabled, setDozieEnabled] = useState(false);
+  const [doziePrice, setDoziePrice] = useState(0);
+  const [dozieSaving, setDozieSaving] = useState(false);
+  const [editPhotoUploading, setEditPhotoUploading] = useState(false);
   const [newProduct, setNewProduct] = useState(EMPTY_PRODUCT);
 
   // Receive Goods state
@@ -316,6 +322,29 @@ export default function InventoryPage() {
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
+
+  // MP-INVENTORY-DOZIE-CONTROLS — when the edit modal opens, read back the
+  // product's current Dozie listing so the toggle/price reflect reality.
+  // Defaults: disabled, price = product's MP sell price. A 403 (no
+  // dozie_access plan) is swallowed here — the global axios interceptor
+  // already pops the paywall; the section just stays in its default state.
+  useEffect(() => {
+    if (!showEditProduct || !editProduct?.id) return;
+    let cancelled = false;
+    setDozieEnabled(false);
+    setDoziePrice(Number(editProduct.sell_price) || 0);
+    api.get(`/products/${editProduct.id}/dozie-listing`)
+      .then(r => {
+        if (cancelled) return;
+        const d = r.data && r.data.data;
+        if (d) {
+          setDozieEnabled(!!d.is_visible);
+          setDoziePrice(d.dozie_price != null ? Number(d.dozie_price) : (Number(editProduct.sell_price) || 0));
+        }
+      })
+      .catch(() => { /* 403 → paywall via interceptor; keep defaults */ });
+    return () => { cancelled = true; };
+  }, [showEditProduct, editProduct?.id]);
 
   // ── RECEIVE GOODS MUTATION ──────────────────────────────────────────────────
   const receiveMutation = useMutation({
@@ -821,7 +850,6 @@ export default function InventoryPage() {
                   {canSeePrices && <th style={{ textAlign: "right" }}>Walk-in</th>}
                   {canSeePrices && <th style={{ textAlign: "right" }}>Wholesale</th>}
                   {canSeePrices && <th style={{ textAlign: "right" }}>Min floor</th>}
-                  <th>Dozie</th>
                   {isOwner && <th>Edit</th>}
                 </tr>
               </thead>
@@ -842,19 +870,6 @@ export default function InventoryPage() {
                     {canSeePrices && <td style={{ textAlign: "right", fontWeight: 600, color: "var(--brand-light)" }}>{formatCFA(p.sell_price)}</td>}
                     {canSeePrices && <td style={{ textAlign: "right", color: "#fbbf24" }}>{p.wholesale_price > 0 ? formatCFA(p.wholesale_price) : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>}</td>}
                     {canSeePrices && <td style={{ textAlign: "right", color: "#f87171", fontSize: 12 }}>{p.min_price > 0 ? formatCFA(p.min_price) : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>}</td>}
-                    <td>
-                      <button className="btn btn-secondary btn-sm"
-                        title={lang === "en" ? "Expose this product on Dozie marketplace" : "Exposer ce produit sur Dozie"}
-                        onClick={async () => {
-                          try {
-                            await api.patch(`/products/${p.id}/expose-on-dozie`, { is_visible: true });
-                            toast.success(lang === "en" ? "✓ Exposed on Dozie" : "✓ Exposé sur Dozie");
-                          } catch (err) {
-                            // 403 with upgrade_required → global axios interceptor (Sprint A) pops the paywall.
-                            if (err.response?.status !== 403) toast.error(err.response?.data?.message || "Error");
-                          }
-                        }}>🛒 Dozie</button>
-                    </td>
                     {isOwner && <td><button className="btn btn-secondary btn-sm" onClick={() => { setEditProduct({ ...p }); setShowEditProduct(true); }} style={{ color: "var(--brand-light)" }}>✏️ Edit</button></td>}
                   </tr>
                 ))}
@@ -947,11 +962,10 @@ export default function InventoryPage() {
                   </button>
                 </div>
               ) : (
-                <label style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10, border: "1px dashed var(--border)", background: "var(--bg-card)", cursor: "pointer", fontSize: 13 }}>
-                  📷 {lang === "en" ? "Take or choose a photo" : "Prendre ou choisir une photo"}
-                  <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" style={{ display: "none" }}
-                    onChange={(e) => readPhotoToDataUrl(e.target.files && e.target.files[0], lang).then(dataUrl => dataUrl && setNewProduct(p => ({ ...p, photo_data_url: dataUrl }))).catch(err => toast.error(err.message))} />
-                </label>
+                <PhotoUploadButtons lang={lang}
+                  onPicked={(file) => readPhotoToDataUrl(file, lang)
+                    .then(dataUrl => dataUrl && setNewProduct(p => ({ ...p, photo_data_url: dataUrl })))
+                    .catch(err => toast.error(err.message))} />
               )}
             </div>
 
@@ -1077,6 +1091,71 @@ export default function InventoryPage() {
             </div>
 
             <PricingSection data={editProduct} onChange={(k, v) => setEditProduct(p => ({ ...p, [k]: v }))} lang={lang} />
+
+            {/* MP-INVENTORY-DOZIE-CONTROLS — product photo (same POST
+                /products/:id/photo flow as the backfill modal). */}
+            <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 12 }}>
+                📷 {lang === "en" ? "Product photo" : "Photo du produit"}
+              </div>
+              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                {(editProduct.photo_url || editProduct.image_url)
+                  ? <img src={editProduct.photo_url || editProduct.image_url} alt="" style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 10, border: "1px solid var(--border)", flexShrink: 0 }} />
+                  : <div style={{ width: 64, height: 64, borderRadius: 10, background: "var(--bg-card)", border: "1px dashed var(--border)", display: "grid", placeItems: "center", fontSize: 18, color: "var(--text-muted)", flexShrink: 0 }}>📷</div>}
+                {editPhotoUploading
+                  ? <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>⏳ {lang === "en" ? "Uploading…" : "Téléversement…"}</div>
+                  : <PhotoUploadButtons lang={lang}
+                      onPicked={async (f) => {
+                        try {
+                          setEditPhotoUploading(true);
+                          const dataUrl = await readPhotoToDataUrl(f, lang);
+                          if (!dataUrl) return;
+                          const r = await api.post(`/products/${editProduct.id}/photo`, { data_url: dataUrl });
+                          const newUrl = r.data && r.data.data && r.data.data.photo_url;
+                          if (newUrl) setEditProduct(p => ({ ...p, photo_url: newUrl }));
+                          toast.success(lang === "en" ? "✓ Photo uploaded" : "✓ Photo ajoutée");
+                          invalidateAll();
+                        } catch (err) { toast.error(err.message || "Upload failed"); }
+                        finally { setEditPhotoUploading(false); }
+                      }} />}
+              </div>
+            </div>
+
+            {/* MP-INVENTORY-DOZIE-CONTROLS — Sell-on-Dozie toggle + price.
+                Saves via the existing PATCH /products/:id/expose-on-dozie.
+                Toggle OFF still sends the price so it is preserved for a
+                later toggle-on (matches pa_dozie_seller_listings semantics). */}
+            <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 14 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                <input type="checkbox" checked={dozieEnabled} onChange={e => setDozieEnabled(e.target.checked)} />
+                🛒 {lang === "en" ? "Sell on Dozie" : "Vendre sur Dozie"}
+              </label>
+              {dozieEnabled && (
+                <div className="form-group" style={{ marginTop: 12, marginBottom: 0, maxWidth: 220 }}>
+                  <label className="label">{lang === "en" ? "Dozie price (XAF)" : "Prix Dozie (XAF)"}</label>
+                  <input className="input" type="number" min="0" step="1" value={doziePrice}
+                    onChange={e => setDoziePrice(e.target.value)} />
+                </div>
+              )}
+              <button className="btn btn-secondary btn-sm" style={{ marginTop: 12 }}
+                disabled={dozieSaving}
+                onClick={async () => {
+                  try {
+                    setDozieSaving(true);
+                    await api.patch(`/products/${editProduct.id}/expose-on-dozie`, {
+                      is_visible: dozieEnabled,
+                      dozie_price: doziePrice != null && doziePrice !== "" ? Number(doziePrice) : null
+                    });
+                    toast.success(lang === "en" ? "✓ Dozie settings saved" : "✓ Réglages Dozie enregistrés");
+                    invalidateAll();
+                  } catch (err) {
+                    // 403 upgrade_required → global paywall interceptor.
+                    if (err.response?.status !== 403) toast.error(err.response?.data?.message || "Error");
+                  } finally { setDozieSaving(false); }
+                }}>
+                {dozieSaving ? "..." : (lang === "en" ? "Save Dozie settings" : "Enregistrer Dozie")}
+              </button>
+            </div>
 
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setShowEditProduct(false); setEditProduct(null); }}>{lang === "en" ? "Cancel" : "Annuler"}</button>
@@ -1438,23 +1517,20 @@ export default function InventoryPage() {
                     <div key={p.id} style={{ background: "var(--bg-elevated)", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
                       <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{p.sku || p.barcode || "—"}</div>
-                      <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 10px", borderRadius: 8, border: "1px dashed var(--border)", background: "var(--bg-card)", cursor: backfillUploading === p.id ? "wait" : "pointer", fontSize: 12, fontWeight: 600, opacity: backfillUploading === p.id ? 0.6 : 1 }}>
-                        {backfillUploading === p.id ? "⏳ Uploading…" : "📷 Add photo"}
-                        <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" style={{ display: "none" }}
-                          disabled={backfillUploading === p.id}
-                          onChange={async (e) => {
-                            const f = e.target.files && e.target.files[0]; if (!f) return;
-                            try {
-                              setBackfillUploading(p.id);
-                              const dataUrl = await readPhotoToDataUrl(f, lang);
-                              if (!dataUrl) return;
-                              await api.post(`/products/${p.id}/photo`, { data_url: dataUrl });
-                              toast.success(lang === "en" ? "✓ Photo uploaded" : "✓ Photo ajoutée");
-                              invalidateAll();
-                            } catch (err) { toast.error(err.message || "Upload failed"); }
-                            finally { setBackfillUploading(null); }
-                          }} />
-                      </label>
+                      {backfillUploading === p.id
+                        ? <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", padding: "8px 10px" }}>⏳ {lang === "en" ? "Uploading…" : "Téléversement…"}</div>
+                        : <PhotoUploadButtons lang={lang}
+                            onPicked={async (f) => {
+                              try {
+                                setBackfillUploading(p.id);
+                                const dataUrl = await readPhotoToDataUrl(f, lang);
+                                if (!dataUrl) return;
+                                await api.post(`/products/${p.id}/photo`, { data_url: dataUrl });
+                                toast.success(lang === "en" ? "✓ Photo uploaded" : "✓ Photo ajoutée");
+                                invalidateAll();
+                              } catch (err) { toast.error(err.message || "Upload failed"); }
+                              finally { setBackfillUploading(null); }
+                            }} />}
                     </div>
                   ))}
                 </div>
