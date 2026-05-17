@@ -2989,6 +2989,7 @@
             '</div>' +
             renderMpStatusCard(d.mp_status, u.role) +
             (d.user && d.user.shop_desc ? '<div class="card" style="background:var(--bg-tertiary)"><div class="settings-card-sub">Shop description</div><div>' + escapeHtml(d.user.shop_desc) + '</div></div>' : '') +
+            renderDzFeaturedCard(d.user) +
           '</div>' +
           '<div class="detail-pane" data-pane="list">' + renderDzListingsTable(d.listings || []) + '</div>' +
           '<div class="detail-pane" data-pane="os">'   + renderDzOrdersTable(d.recent_orders_as_seller || []) + '</div>' +
@@ -3004,10 +3005,62 @@
             m.querySelectorAll('.detail-pane').forEach(p => p.classList.toggle('active', p.getAttribute('data-pane') === t));
           });
         });
+        wireDzFeaturedCard(m, u);
       } catch (e) {
         const m = $('modal-host').querySelector('.modal-body');
         if (m) m.innerHTML = '<div style="padding:24px;color:var(--danger)">' + escapeHtml(e.message) + '</div>';
       }
+    }
+
+    // Featured Seller card on the marketplace user detail Overview pane.
+    // Backend route (PATCH /admin/dozie/users/:id/feature) is master_admin
+    // only; this mirrors that gate in the UI. featured_label is server-
+    // managed, so it is never shown or sent here.
+    function renderDzFeaturedCard(user) {
+      const isFeatured = !!(user && user.featured);
+      const order = (user && user.featured_order != null) ? String(user.featured_order) : '';
+      const master = isMasterAdmin();
+      const dis = master ? '' : ' disabled';
+      return '' +
+        '<div class="card" style="background:var(--bg-tertiary)">' +
+          '<div class="settings-card-sub">Featured Seller</div>' +
+          '<label style="display:flex;align-items:center;gap:8px;margin:4px 0 12px;font-size:14px">' +
+            '<input type="checkbox" id="dzf-check"' + (isFeatured ? ' checked' : '') + dis + '> Featured on marketplace' +
+          '</label>' +
+          '<div id="dzf-order-wrap" class="field" style="max-width:220px;' + (isFeatured ? '' : 'display:none') + '">' +
+            '<label>Display order <span style="color:var(--text-muted);font-weight:400">(lower = higher up)</span></label>' +
+            '<input type="number" id="dzf-order" min="1" step="1" value="' + escapeHtml(order) + '" placeholder="e.g. 1"' + dis + '>' +
+          '</div>' +
+          (master
+            ? '<button class="btn btn-primary" id="dzf-save" style="margin-top:4px">Save</button>'
+            : '<div style="font-style:italic;color:var(--text-muted);font-size:13px">Master admin only</div>') +
+        '</div>';
+    }
+
+    function wireDzFeaturedCard(m, u) {
+      const chk  = m.querySelector('#dzf-check');
+      const wrap = m.querySelector('#dzf-order-wrap');
+      const save = m.querySelector('#dzf-save');
+      if (!chk) return;
+      chk.addEventListener('change', () => {
+        wrap.style.display = chk.checked ? '' : 'none';
+      });
+      if (!save) return; // non-master: disabled card, no save handler
+      save.addEventListener('click', async () => {
+        const featured = chk.checked;
+        const orderRaw = (m.querySelector('#dzf-order') || {}).value;
+        const sort_order = featured ? parseInt(orderRaw, 10) : undefined;
+        save.disabled = true; save.textContent = 'Saving…';
+        try {
+          await apiAdmin('PATCH', '/admin/dozie/users/' + u.id + '/feature',
+            { featured, sort_order: (featured ? sort_order : undefined) });
+          showToast(featured ? 'Seller featured' : 'Seller unfeatured', 'success');
+          openDzUserDetail(u); // re-fetch so the card reflects the new state
+        } catch (e) {
+          showToast(e.message, 'danger');
+          save.disabled = false; save.textContent = 'Save';
+        }
+      });
     }
 
     // Sprint A: Effective plan card on the Business detail Overview tab.
