@@ -3048,8 +3048,18 @@
       if (!save) return; // non-master: disabled card, no save handler
       save.addEventListener('click', async () => {
         const featured = chk.checked;
-        const orderRaw = (m.querySelector('#dzf-order') || {}).value;
-        const sort_order = featured ? parseInt(orderRaw, 10) : undefined;
+        const orderRaw = ((m.querySelector('#dzf-order') || {}).value || '').trim();
+        let sort_order;
+        if (featured) {
+          // Validate before sending: empty / non-numeric / < 1 would make the
+          // backend 400 (sort_order must be an integer >= 1). Catch it here so
+          // no request is fired and the user gets a clear message.
+          sort_order = parseInt(orderRaw, 10);
+          if (!/^\d+$/.test(orderRaw) || !Number.isInteger(sort_order) || sort_order < 1) {
+            showToast('Display order is required (1 or higher)', 'danger');
+            return; // button never disabled yet — stays clickable
+          }
+        }
         save.disabled = true; save.textContent = 'Saving…';
         try {
           await apiAdmin('PATCH', '/admin/dozie/users/' + u.id + '/feature',
