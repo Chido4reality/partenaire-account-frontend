@@ -224,7 +224,21 @@ export default function Layout() {
     if (!hasSection(effectivePlan, item.section)) return false;
     return true;
   });
-  const mobileNav = visibleNav.slice(0, 5);
+  // MP-MOBILE-NAV-FIX: mobile has only this 5-slot bottom bar (no
+  // hamburger). /inventory sits at NAV index 7 so it never made the
+  // slice(0,5) — leaving mobile-first sellers unable to reach it. Swap
+  // the /stock-count slot for /inventory in the MOBILE bar only: stock
+  // counting is a subset of inventory management and stays reachable on
+  // the desktop sidebar (which maps the untouched visibleNav) and by
+  // direct URL. Desktop nav is unaffected. The map keeps positions/order;
+  // the post-filter dedupes the later /inventory entry so it can't appear
+  // twice; the `|| item` fallback is role-safe (e.g. a role with no
+  // inventory access keeps its original slot).
+  const _invItem = visibleNav.find(n => n.to === "/inventory");
+  const mobileNav = visibleNav
+    .map(item => (item.to === "/stock-count" && _invItem) ? _invItem : item)
+    .filter((item, idx, arr) => arr.findIndex(x => x.to === item.to) === idx)
+    .slice(0, 5);
 
   // D-2: Online Cart sidebar badge — pending count, 30s poll. Only
   // fetched when the plan actually exposes the section (silver doesn't),
