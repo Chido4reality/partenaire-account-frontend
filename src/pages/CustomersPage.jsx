@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+﻿import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useLangStore } from "../store";
@@ -33,6 +33,33 @@ export default function CustomersPage() {
     queryFn: () => api.get(`/customers/${selected.id}`).then(r => r.data),
     enabled: !!selected?.id
   });
+
+  // MP-CUSTOMER-EDIT-PREFILL: seed the shared form from the FULL record
+  // when an edit modal opens. Root cause: `form` was initialised with an
+  // empty string for every field, and the inputs read
+  // `form.x !== undefined ? form.x : selected.x` — a defined "" always
+  // won, so every field but name (which used `||`, empty-falsy) showed
+  // blank. Seeding the form also fixes the PATCH payload (it no longer
+  // overwrites real values with empty strings).
+  useEffect(() => {
+    const c = detail?.data;
+    if (selected?.id && c) {
+      setForm({
+        name: c.name || "",
+        phone: c.phone || "",
+        address: c.address || "",
+        customer_type: c.customer_type || "retail",
+        credit_limit: c.credit_limit ?? "",
+        notes: c.notes || ""
+      });
+    }
+  }, [detail?.data, selected?.id]);
+
+  // Opening "Add customer" must start from a clean form (don't inherit a
+  // previously-edited customer's values).
+  useEffect(() => {
+    if (showAdd) setForm({ name: "", phone: "", address: "", customer_type: "retail", credit_limit: "", notes: "" });
+  }, [showAdd]);
 
   const addMutation = useMutation({
     mutationFn: () => api.post("/customers", { ...form, credit_limit: +form.credit_limit || 0 }),
