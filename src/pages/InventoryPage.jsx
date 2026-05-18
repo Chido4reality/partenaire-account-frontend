@@ -108,6 +108,7 @@ export default function InventoryPage() {
   const [showReceive, setShowReceive] = useState(false);
   const [showAdjust, setShowAdjust] = useState(false);
   const [showEditProduct, setShowEditProduct] = useState(false);
+  const [showArchived, setShowArchived] = useState(false); // ARCHIVE-RESTORE-UI: Products-tab toggle
   const [showRapidEntry, setShowRapidEntry] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showBackfill, setShowBackfill] = useState(false);   // Sprint C — photo backfill modal
@@ -203,8 +204,8 @@ export default function InventoryPage() {
   });
 
   const { data: productsData } = useQuery({
-    queryKey: ["products-all"],
-    queryFn: () => api.get("/products?limit=500").then(r => r.data),
+    queryKey: ["products-all", showArchived],
+    queryFn: () => api.get("/products?limit=500" + (showArchived ? "&include_archived=true" : "")).then(r => r.data),
   });
 
   const { data: locationsData } = useQuery({
@@ -332,6 +333,17 @@ export default function InventoryPage() {
     mutationFn: () => api.patch(`/products/${editProduct.id}`, { is_active: false }),
     onSuccess: () => {
       toast.success(lang === "en" ? "🗄 Product archived" : "🗄 Produit archivé");
+      setShowEditProduct(false); setEditProduct(null);
+      invalidateAll();
+    },
+    onError: (err) => toast.error(err.response?.data?.message || "Error")
+  });
+
+  // ARCHIVE-RESTORE-UI — un-archive (is_active=true) from the edit modal.
+  const restoreProductMutation = useMutation({
+    mutationFn: () => api.patch(`/products/${editProduct.id}`, { is_active: true }),
+    onSuccess: () => {
+      toast.success(lang === "en" ? "✓ Product restored" : "✓ Produit restauré");
       setShowEditProduct(false); setEditProduct(null);
       invalidateAll();
     },
@@ -849,6 +861,13 @@ export default function InventoryPage() {
       {/* ── PRODUCTS TAB ── */}
       {tab === "products" && (
         <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden" }}>
+          {/* ARCHIVE-RESTORE-UI: include is_active=false rows when ON */}
+          <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", padding: "10px 16px", borderBottom: "1px solid var(--border)" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>
+              <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
+              {lang === "en" ? "Show archived" : "Afficher les archivés"}
+            </label>
+          </div>
           {filteredProducts.length === 0 ? (
             <div className="empty-state">
               <div style={{ fontWeight: 600, marginBottom: 6 }}>{search ? `No products matching "${search}"` : (lang === "en" ? "No products yet" : "Aucun produit")}</div>
@@ -870,13 +889,14 @@ export default function InventoryPage() {
               </thead>
               <tbody>
                 {filteredProducts.map(p => (
-                  <tr key={p.id}>
+                  <tr key={p.id} style={p.is_active === false ? { opacity: 0.6 } : undefined}>
                     <td style={{ fontWeight: 500 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         {(p.photo_url || p.image_url)
                           ? <img src={p.photo_url || p.image_url} alt="" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)", flexShrink: 0 }} />
                           : <div style={{ width: 40, height: 40, borderRadius: 6, background: "var(--bg-elevated)", border: "1px dashed var(--border)", display: "grid", placeItems: "center", fontSize: 14, color: "var(--text-muted)", flexShrink: 0 }}>📷</div>}
-                        <span>{p.name}</span>
+                        <span style={p.is_active === false ? { textDecoration: "line-through" } : undefined}>{p.name}</span>
+                        {p.is_active === false && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: "#ef4444", background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 6, padding: "1px 6px" }}>{lang === "en" ? "ARCHIVED" : "ARCHIVÉ"}</span>}
                       </div>
                     </td>
                     <td style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text-muted)" }}>{p.barcode || "—"}</td>
@@ -1179,23 +1199,36 @@ export default function InventoryPage() {
               </button>
             </div>
 
-            {/* STOCK-UX-PASS Part B — archive a wrong-input product.
-                Soft remove (is_active=false); confirm first since it
-                pulls the item out of all inventory lists. */}
-            <button
-              disabled={archiveProductMutation.isPending}
-              onClick={() => {
-                const ok = window.confirm(lang === "en"
-                  ? `Archive "${editProduct.name}"? It will be removed from your inventory lists. This does not delete its sales history.`
-                  : `Archiver « ${editProduct.name} » ? Le produit sera retiré de vos listes d'inventaire. L'historique des ventes est conservé.`);
-                if (ok) archiveProductMutation.mutate();
-              }}
-              style={{ width: "100%", marginTop: 10, padding: "10px 12px", borderRadius: 8,
-                background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.4)",
-                color: "#ef4444", fontSize: 13, fontWeight: 700,
-                cursor: archiveProductMutation.isPending ? "wait" : "pointer" }}>
-              {archiveProductMutation.isPending ? "..." : (lang === "en" ? "🗄 Archive product" : "🗄 Archiver le produit")}
-            </button>
+            {/* STOCK-UX-PASS Part B / ARCHIVE-RESTORE-UI — archived
+                products show a green Restore; active ones a red Archive
+                (soft is_active toggle; confirm on archive since it pulls
+                the item from all inventory lists). */}
+            {editProduct.is_active === false ? (
+              <button
+                disabled={restoreProductMutation.isPending}
+                onClick={() => restoreProductMutation.mutate()}
+                style={{ width: "100%", marginTop: 10, padding: "10px 12px", borderRadius: 8,
+                  background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.45)",
+                  color: "#22c55e", fontSize: 13, fontWeight: 700,
+                  cursor: restoreProductMutation.isPending ? "wait" : "pointer" }}>
+                {restoreProductMutation.isPending ? "..." : (lang === "en" ? "♻️ Restore product" : "♻️ Restaurer le produit")}
+              </button>
+            ) : (
+              <button
+                disabled={archiveProductMutation.isPending}
+                onClick={() => {
+                  const ok = window.confirm(lang === "en"
+                    ? `Archive "${editProduct.name}"? It will be removed from your inventory lists. This does not delete its sales history.`
+                    : `Archiver « ${editProduct.name} » ? Le produit sera retiré de vos listes d'inventaire. L'historique des ventes est conservé.`);
+                  if (ok) archiveProductMutation.mutate();
+                }}
+                style={{ width: "100%", marginTop: 10, padding: "10px 12px", borderRadius: 8,
+                  background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.4)",
+                  color: "#ef4444", fontSize: 13, fontWeight: 700,
+                  cursor: archiveProductMutation.isPending ? "wait" : "pointer" }}>
+                {archiveProductMutation.isPending ? "..." : (lang === "en" ? "🗄 Archive product" : "🗄 Archiver le produit")}
+              </button>
+            )}
           </div>
         </div>
       )}
