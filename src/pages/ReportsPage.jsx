@@ -15,6 +15,10 @@ export default function ReportsPage() {
   const [to, setTo]     = useState(new Date().toISOString().split("T")[0]);
   const [expandedSale, setExpandedSale] = useState(null);
   const [voidSale, setVoidSale] = useState(null);
+  // MP-DASHBOARD-REPORT-CONSISTENCY: location filter for the daily /
+  // daily-sales / sales-detail aggregations. "" = All locations (default,
+  // same as Dashboard) so the two pages show the same canonical number.
+  const [repLoc, setRepLoc] = useState("");
   const { selectedLocation } = useSettingsStore();
   const [ledgerDate, setLedgerDate] = useState(new Date().toISOString().split("T")[0]);
   const [ledgerLoc, setLedgerLoc] = useState(selectedLocation?.id || "all");
@@ -44,9 +48,13 @@ export default function ReportsPage() {
     setTo(d.toISOString().split("T")[0]);
   };
 
+  // Shared location query-string (backend /reports/* already supports
+  // location_id; empty => all locations).
+  const locQS = repLoc ? `&location_id=${repLoc}` : "";
+
   const { data: dailyData, isLoading: dailyLoading } = useQuery({
-    queryKey: ["reports-daily", from, to],
-    queryFn: () => api.get("/reports/daily?from=" + from + "&to=" + to).then(r => r.data)
+    queryKey: ["reports-daily", from, to, repLoc],
+    queryFn: () => api.get("/reports/daily?from=" + from + "&to=" + to + locQS).then(r => r.data)
   });
 
   const { data: debtData, isLoading: debtLoading } = useQuery({
@@ -55,16 +63,16 @@ export default function ReportsPage() {
   });
 
   const { data: salesDetailData, isLoading: salesDetailLoading } = useQuery({
-    queryKey: ["reports-sales-detail", from, to],
-    queryFn: () => api.get(`/reports/sales-detail?from=${from}&to=${to}`).then(r => r.data),
+    queryKey: ["reports-sales-detail", from, to, repLoc],
+    queryFn: () => api.get(`/reports/sales-detail?from=${from}&to=${to}${locQS}`).then(r => r.data),
     enabled: tab === "sales"
   });
 
   const todayStr = new Date().toISOString().split("T")[0];
 
   const { data: todaySalesData, isLoading: todayLoading } = useQuery({
-    queryKey: ["reports-today-sales"],
-    queryFn: () => api.get(`/reports/sales-detail?date=${todayStr}`).then(r => r.data),
+    queryKey: ["reports-today-sales", repLoc],
+    queryFn: () => api.get(`/reports/sales-detail?date=${todayStr}${locQS}`).then(r => r.data),
     enabled: tab === "daily_sales",
     refetchInterval: 60000
   });
@@ -271,6 +279,15 @@ export default function ReportsPage() {
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <label className="label" style={{ margin: 0 }}>{lang === "en" ? "To" : "Au"}</label>
         <input className="input" type="date" value={to} onChange={e => setTo(e.target.value)} style={{ width: 160 }} />
+      </div>
+      {/* MP-DASHBOARD-REPORT-CONSISTENCY: same location filter + default
+          (All) as Dashboard, so the numbers reconcile. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <label className="label" style={{ margin: 0 }}>{lang === "en" ? "Location" : "Site"}</label>
+        <select className="input" value={repLoc} onChange={e => setRepLoc(e.target.value)} style={{ width: 180 }}>
+          <option value="">{lang === "en" ? "All locations" : "Tous les sites"}</option>
+          {ledgerLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+        </select>
       </div>
       {[
         { en: "Today", fr: "Aujourd'hui", days: 0 },

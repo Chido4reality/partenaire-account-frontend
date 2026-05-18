@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { useAuthStore, useLangStore, useSettingsStore } from '../store';
+import { useAuthStore, useLangStore } from '../store';
 import api, { formatCFA, formatDate, getGreeting } from '../utils/api';
 
 const StatCard = ({ label, value, sub, color = 'var(--brand-light)', icon, onClick }) => (
@@ -37,8 +38,20 @@ const QuickBtn = ({ icon, label, to, color }) => {
 export default function Dashboard() {
   const { user } = useAuthStore();
   const { t, lang } = useLangStore();
-  const { selectedLocation } = useSettingsStore();
   const navigate = useNavigate();
+
+  // MP-DASHBOARD-REPORT-CONSISTENCY: explicit location filter, default
+  // "" = All locations. Decoupled from the global selectedLocation store
+  // so Dashboard's "today's sales" matches Reports (which also defaults
+  // to All) — same backend filter, same number. Selecting a shop here
+  // scopes only this page's today figures, not the POS/Stock context.
+  const [locFilter, setLocFilter] = useState("");
+  const { data: locsResp } = useQuery({
+    queryKey: ["locations"],
+    queryFn: () => api.get("/locations").then(r => r.data),
+    staleTime: 300000
+  });
+  const dashLocations = locsResp?.data || [];
 
   const role = user?.role || 'cashier';
   const isOwner = role === 'owner';
@@ -54,9 +67,9 @@ export default function Dashboard() {
   const firstName = user?.full_name?.split(' ')[0] || '';
 
   const { data: summary, isLoading } = useQuery({
-    queryKey: ['daily-summary', selectedLocation?.id],
+    queryKey: ['daily-summary', locFilter],
     queryFn: async () => {
-      const params = selectedLocation ? `?location_id=${selectedLocation.id}` : '';
+      const params = locFilter ? `?location_id=${locFilter}` : '';
       const res = await api.get(`/sales/today/summary${params}`);
       return res.data;
     },
@@ -102,6 +115,16 @@ export default function Dashboard() {
           </div>
           <h1 className="page-title">{t('nav.dashboard')}</h1>
           <div className="page-sub" style={{ textTransform: 'capitalize' }}>{today}</div>
+          {/* MP-DASHBOARD-REPORT-CONSISTENCY: location filter (default
+              All) — same options/semantics as Reports so the numbers
+              agree. */}
+          <div style={{ marginTop: 8 }}>
+            <select value={locFilter} onChange={e => setLocFilter(e.target.value)}
+              style={{ fontSize: 12, padding: "5px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)" }}>
+              <option value="">{lang === 'en' ? 'All locations' : 'Tous les sites'}</option>
+              {dashLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          </div>
           {/* Role badge */}
           <div style={{ marginTop: 6 }}>
             <span style={{ fontSize: 11, padding: "3px 10px", borderRadius: 20, fontWeight: 600, background: isOwner ? "rgba(251,191,36,0.15)" : isManager ? "rgba(79,70,229,0.15)" : isWarehouse ? "rgba(52,211,153,0.15)" : "rgba(148,163,184,0.15)", color: isOwner ? "#fbbf24" : isManager ? "var(--brand-light)" : isWarehouse ? "#34d399" : "#94a3b8" }}>
