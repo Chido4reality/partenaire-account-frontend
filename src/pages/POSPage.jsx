@@ -491,11 +491,26 @@ export default function POSPage() {
         setShowReceipt(true);
       }
       resetCart();
-      qc.invalidateQueries(["recent-sales"]);
-      qc.invalidateQueries(["daily-summary"]);
-      qc.invalidateQueries(["pos-customers"]);
-      qc.invalidateQueries(["customer-debt"]);
-      qc.invalidateQueries(["credits"]);
+      // MP-INVALIDATE-AFTER-SALE: a sale moves stock + sales + dashboard
+      // + reports + low-stock. RQ matches keys by array prefix, and these
+      // families use distinct first elements (e.g. "stock" vs "stock-all"
+      // vs "stock-alerts", and "reports-*"), so a single ["stock"] call
+      // would miss most. Use a predicate that names every affected
+      // first-key (and the reports-* family) so every dependent view
+      // refetches immediately.
+      qc.invalidateQueries({
+        predicate: (q) => {
+          const k = q.queryKey && q.queryKey[0];
+          if (typeof k !== "string") return false;
+          return (
+            k === "stock" || k === "stock-all" || k === "stock-alerts" || k === "stock-count" ||
+            k === "products-all" || k === "products-barcode" || k === "pos-products" ||
+            k === "recent-sales" || k === "daily-summary" || k === "overdue-credits" ||
+            k === "pos-customers" || k === "customer-debt" || k === "credits" ||
+            k.startsWith("reports-")
+          );
+        }
+      });
       saleMutation.reset();
     },
     onError: (err) => {

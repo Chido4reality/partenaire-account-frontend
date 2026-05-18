@@ -21,7 +21,10 @@ import ShiftsPage from "./pages/ShiftsPage";
 import StockCountPage from "./pages/StockCountPage";
 import BarcodePage from "./pages/BarcodePage";
 
-const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
+// MP-INVALIDATE-AFTER-SALE: refetch stale data when the user returns to
+// the tab/app or reconnects (e.g. after making a sale on another device
+// or being away). staleTime keeps it from spamming refetches.
+const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000, refetchOnWindowFocus: true, refetchOnReconnect: true } } });
 
 class ErrorBoundary extends Component {
   state = { crashed: false, error: null };
