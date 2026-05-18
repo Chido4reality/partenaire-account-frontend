@@ -323,6 +323,21 @@ export default function InventoryPage() {
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
 
+  // STOCK-UX-PASS Part B — archive (soft-remove) a wrong-input product.
+  // Reuses the existing PATCH /products/:id (is_active is in the backend
+  // allow-list, owner/manager + org-scoped). is_active=false → the
+  // product drops out of every list endpoint (they filter is_active=true)
+  // and is recoverable later via DB if needed. Not a hard delete.
+  const archiveProductMutation = useMutation({
+    mutationFn: () => api.patch(`/products/${editProduct.id}`, { is_active: false }),
+    onSuccess: () => {
+      toast.success(lang === "en" ? "🗄 Product archived" : "🗄 Produit archivé");
+      setShowEditProduct(false); setEditProduct(null);
+      invalidateAll();
+    },
+    onError: (err) => toast.error(err.response?.data?.message || "Error")
+  });
+
   // MP-INVENTORY-DOZIE-CONTROLS — when the edit modal opens, read back the
   // product's current Dozie listing so the toggle/price reflect reality.
   // Defaults: disabled, price = product's MP sell price. A 403 (no
@@ -1163,6 +1178,24 @@ export default function InventoryPage() {
                 {editProductMutation.isPending ? "..." : (lang === "en" ? "✓ Save Changes" : "✓ Enregistrer")}
               </button>
             </div>
+
+            {/* STOCK-UX-PASS Part B — archive a wrong-input product.
+                Soft remove (is_active=false); confirm first since it
+                pulls the item out of all inventory lists. */}
+            <button
+              disabled={archiveProductMutation.isPending}
+              onClick={() => {
+                const ok = window.confirm(lang === "en"
+                  ? `Archive "${editProduct.name}"? It will be removed from your inventory lists. This does not delete its sales history.`
+                  : `Archiver « ${editProduct.name} » ? Le produit sera retiré de vos listes d'inventaire. L'historique des ventes est conservé.`);
+                if (ok) archiveProductMutation.mutate();
+              }}
+              style={{ width: "100%", marginTop: 10, padding: "10px 12px", borderRadius: 8,
+                background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.4)",
+                color: "#ef4444", fontSize: 13, fontWeight: 700,
+                cursor: archiveProductMutation.isPending ? "wait" : "pointer" }}>
+              {archiveProductMutation.isPending ? "..." : (lang === "en" ? "🗄 Archive product" : "🗄 Archiver le produit")}
+            </button>
           </div>
         </div>
       )}

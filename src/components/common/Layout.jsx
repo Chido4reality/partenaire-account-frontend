@@ -1,7 +1,7 @@
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useAuthStore, useLangStore, useOfflineStore } from "../../store";
+import { useAuthStore, useLangStore, useOfflineStore, useSettingsStore } from "../../store";
 import api from "../../utils/api";
 import { openWhatsApp } from "../../utils/whatsapp";
 import UpgradeModal from "./UpgradeModal";
@@ -253,6 +253,30 @@ export default function Layout() {
     onError: () => {}
   });
   const onlineCartPending = ocPending?.count || 0;
+
+  // STOCK-UX-PASS Part A — cross-account location leak fix.
+  // selectedLocation is persisted (zustand `mp-settings`) and survives a
+  // logout→login on the same device/wrapper, so user B can inherit user
+  // A's location_id and see empty/foreign stock ("No stock records yet"
+  // despite DB rows). Layout wraps every location-scoped page, so we
+  // validate the stored selection ONCE here against the current user's
+  // accessible locations and clear it if it doesn't belong to them. Pages
+  // then fall back to their own default. The ["locations"] query key is
+  // shared with the pages, so React Query dedupes — no extra network call.
+  const { selectedLocation, setLocation } = useSettingsStore();
+  const { data: _locsResp } = useQuery({
+    queryKey: ["locations"],
+    queryFn: () => api.get("/locations").then(r => r.data),
+    retry: 1,
+    onError: () => {}
+  });
+  useEffect(() => {
+    const list = _locsResp?.data;
+    if (!Array.isArray(list) || list.length === 0) return; // not loaded yet
+    if (selectedLocation && !list.some(l => l.id === selectedLocation.id)) {
+      setLocation(null); // stale/foreign selection → clear it
+    }
+  }, [_locsResp, selectedLocation, setLocation]);
 
   const notifColor = (type) => {
     if (type === "low_stock") return "#fbbf24";
