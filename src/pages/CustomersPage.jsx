@@ -52,7 +52,8 @@ export default function CustomersPage() {
         address: c.address || "",
         customer_type: c.customer_type || "retail",
         credit_limit: c.credit_limit ?? "",
-        notes: c.notes || ""
+        notes: c.notes || "",
+        total_debt: c.total_debt ?? 0   // MP-CUSTOMER-EDIT-DEBT: editable
       });
     }
   }, [detail?.data, selected?.id]);
@@ -75,7 +76,7 @@ export default function CustomersPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: () => api.patch(`/customers/${selected.id}`, form),
+    mutationFn: () => api.patch(`/customers/${selected.id}`, { ...form, total_debt: +form.total_debt || 0 }),
     onSuccess: () => {
       toast.success(lang === "en" ? "Customer updated!" : "Client mis a jour!");
       qc.invalidateQueries(["customers"]);
@@ -239,6 +240,17 @@ export default function CustomersPage() {
               <label className="label">{lang === "en" ? "Credit limit (FCFA)" : "Limite credit (FCFA)"}</label>
               <input className="input" type="number" value={form.credit_limit !== undefined ? form.credit_limit : (selected.credit_limit || "")}
                 onChange={e => setF("credit_limit", e.target.value)} placeholder="0" />
+            </div>
+            {/* MP-CUSTOMER-EDIT-DEBT: direct balance edit (audited). */}
+            <div className="form-group">
+              <label className="label">{lang === "en" ? "Current debt (XAF)" : "Dette actuelle (XAF)"}</label>
+              <input className="input" type="number" min="0" value={form.total_debt ?? 0}
+                onChange={e => setF("total_debt", e.target.value)} placeholder="0" />
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                {lang === "en"
+                  ? "Changes the customer's balance directly. Logged for audit. Use only to correct migration errors or backfill paper records. For normal balance changes, record a payment or credit sale."
+                  : "Modifie directement le solde du client. Enregistré pour audit. À utiliser uniquement pour corriger des erreurs de migration ou saisir des dettes sur papier. Pour les changements normaux, enregistrez un paiement ou une vente à crédit."}
+              </div>
             </div>
             <button className="btn btn-primary btn-block" disabled={updateMutation.isPending}
               onClick={() => updateMutation.mutate()}>
