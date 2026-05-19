@@ -616,8 +616,14 @@ export default function POSPage() {
 
   const holdMutation = useMutation({
     mutationFn: async () => {
+      // Exclude both debt sentinels from holds: invoice-settle (__DEBT__)
+      // and manual debt repayment (__DEBT_PAYMENT__ / type:'debt_payment').
+      // Debt is a live, customer-bound cashier action — parking it would
+      // persist a bogus product_id and corrupt the line on resume.
       const items = cart
-        .filter(i => i.product_id && i.product_id !== "__DEBT__")
+        .filter(i => i.product_id && i.product_id !== "__DEBT__" &&
+                     i.product_id !== "__DEBT_PAYMENT__" &&
+                     i.type !== "debt_payment")
         .map(i => {
           const qty = Number(i.quantity) || 1;
           const unit = Number(i.unit_price) || 0;
