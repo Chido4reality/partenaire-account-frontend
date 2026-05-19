@@ -575,10 +575,15 @@ export default function POSPage() {
   // Bugs 2 & 3: gate the sale before it's submitted.
   //  • Not stocked at this location → HARD block (no proceed).
   //  • qty > available → WARN, allow "Sell anyway".
-  // The synthetic __DEBT__ line carries no real stock — skip it.
+  // Synthetic lines carry no real stock — skip them from every
+  // inventory check: __DEBT__ (invoice settle) and, per MP-POS-DEBT-
+  // LINE-LOCATION-FIX, __DEBT_PAYMENT__ / type:'debt_payment' (manual
+  // debt). Debt is org-level, never location-stocked.
   const runCheckout = () => { setOversellModal(null); saleMutation.mutate(); };
   const attemptCheckout = () => {
-    const real = cart.filter(i => i.product_id && i.product_id !== "__DEBT__");
+    const real = cart.filter(i =>
+      i.product_id && i.product_id !== "__DEBT__" &&
+      i.product_id !== "__DEBT_PAYMENT__" && i.type !== "debt_payment");
     const notStocked = real.filter(i => i.stock === null || i.stock === undefined);
     if (notStocked.length) {
       setBlockModal({
