@@ -65,6 +65,8 @@ export default function POSPage() {
   const [debtInvoices, setDebtInvoices]       = useState([]);
   const [selectedDebtIds, setSelectedDebtIds] = useState(new Set());
   const [debtPayAmt, setDebtPayAmt]           = useState(""); // partial debt payment amount
+  const [generalDebtAmt, setGeneralDebtAmt]   = useState(""); // MP-POS-DEBT-PANEL-FIX: no-invoice debt payment
+  const [generalDebtBusy, setGeneralDebtBusy] = useState(false);
   // D-2.4: when arriving from the Online Cart "Send to Cart" flow
   // (?from_online=<id>&session=<sid>), this holds the entry id + ref so
   // the banner shows and the created sale gets linked back on finalize.
@@ -190,10 +192,21 @@ export default function POSPage() {
     staleTime: 0,
   });
 
+  // MP-POS-DEBT-PANEL-FIX: open the debt popup whenever the customer
+  // owes money per the authoritative pa_customers.total_debt — not only
+  // when outstanding invoices exist. Paper-migrated / manually-edited
+  // debt has total_debt>0 but zero outstanding sales; that case shows
+  // the general (no-invoice) repayment panel below.
   useEffect(() => {
-    if (customerDebtData?.data?.length > 0) {
-      setDebtInvoices(customerDebtData.data);
-      setSelectedDebtIds(new Set(customerDebtData.data.map(i => i.id)));
+    if (!customerDebtData) return;
+    const invoices = customerDebtData.data || [];
+    const owes = Number(customerDebtData.customer_total_debt || customer?.total_debt || 0) > 0;
+    if (invoices.length > 0) {
+      setDebtInvoices(invoices);
+      setSelectedDebtIds(new Set(invoices.map(i => i.id)));
+      setShowDebtModal(true);
+    } else if (owes) {
+      setDebtInvoices([]);
       setShowDebtModal(true);
     }
   }, [customerDebtData]);
@@ -329,6 +342,26 @@ export default function POSPage() {
     ]);
     setShowDebtModal(false);
     setShowPayment(true);
+  };
+
+  // MP-POS-DEBT-PANEL-FIX: collect a payment against pa_customers.
+  // total_debt directly (no invoice). Standalone — does NOT go through
+  // the cart/sale flow.
+  const payGeneralDebt = async () => {
+    const owed = Number(customer?.total_debt || customerDebtData?.customer_total_debt || 0);
+    const amt = generalDebtAmt ? Math.min(parseFloat(generalDebtAmt), owed) : owed;
+    if (!customer?.id || !(amt > 0)) { toast.error(lang === "en" ? "Enter a valid amount" : "Montant invalide"); return; }
+    try {
+      setGeneralDebtBusy(true);
+      const r = await api.post(`/sales/customer-debt/${customer.id}/pay`, { amount: amt, payment_method: "cash" });
+      const newDebt = r.data?.data?.new_total_debt;
+      toast.success(lang === "en" ? `✓ ${formatCFA(amt)} debt payment recorded` : `✓ Paiement de ${formatCFA(amt)} enregistré`);
+      ["customer-debt", "pos-customers", "customers", "customer-summary", "recent-sales", "daily-summary"].forEach(k => qc.invalidateQueries([k]));
+      setShowDebtModal(false); setGeneralDebtAmt("");
+      setCustomer(c => c ? { ...c, total_debt: newDebt != null ? newDebt : 0 } : c);
+    } catch (e) {
+      toast.error(e.response?.data?.message || (lang === "en" ? "Payment failed" : "Échec du paiement"));
+    } finally { setGeneralDebtBusy(false); }
   };
 
   const updateQty   = (idx, qty) => qty <= 0
@@ -753,6 +786,38 @@ export default function POSPage() {
           </div>
         </div>
       )}
+
+      {/* MP-POS-DEBT-PANEL-FIX: general (no-invoice) debt — paper-migrated
+          / manually-edited debt with no outstanding sale. Authoritative
+          amount = pa_customers.total_debt. */}
+      {showDebtModal && debtInvoices.length === 0 && Number(customer?.total_debt || customerDebtData?.customer_total_debt || 0) > 0 && (() => {
+        const owed = Number(customer?.total_debt || customerDebtData?.customer_total_debt || 0);
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+            <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 14, padding: 20, maxWidth: 380, width: "100%" }}>
+              <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>💰 {lang === "en" ? "Outstanding debt" : "Dette en cours"}</div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 14 }}>{customer?.name || ""}</div>
+              <div style={{ background: "rgba(248,113,113,0.12)", border: "1px solid rgba(248,113,113,0.35)", borderRadius: 10, padding: "10px 14px", marginBottom: 14 }}>
+                {lang === "en" ? "Owes" : "Doit"} <strong style={{ color: "#f87171", fontSize: 18 }}>{formatCFA(owed)}</strong>
+              </div>
+              <label style={{ fontSize: 12, color: "var(--text-muted)" }}>{lang === "en" ? "Collect payment (XAF)" : "Encaisser (XAF)"}</label>
+              <input className="input" type="number" min="0" max={owed} placeholder={String(owed)}
+                value={generalDebtAmt} onChange={e => setGeneralDebtAmt(e.target.value)}
+                style={{ width: "100%", margin: "6px 0 16px" }} />
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => { setShowDebtModal(false); setGeneralDebtAmt(""); }}
+                  style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-secondary)", cursor: "pointer", fontWeight: 600 }}>
+                  {lang === "en" ? "Skip" : "Plus tard"}
+                </button>
+                <button onClick={payGeneralDebt} disabled={generalDebtBusy}
+                  style={{ flex: 2, padding: "10px", border: "none", borderRadius: 10, background: "var(--brand)", color: "#fff", fontWeight: 700, cursor: generalDebtBusy ? "wait" : "pointer" }}>
+                  {generalDebtBusy ? "..." : (lang === "en" ? "Collect payment" : "Encaisser")}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {showCamera && (
         <CameraScanner lang={lang} onScan={(code) => { setShowCamera(false); scanBarcode(code); }} onClose={() => setShowCamera(false)} />
