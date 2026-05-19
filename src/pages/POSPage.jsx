@@ -65,8 +65,7 @@ export default function POSPage() {
   const [debtInvoices, setDebtInvoices]       = useState([]);
   const [selectedDebtIds, setSelectedDebtIds] = useState(new Set());
   const [debtPayAmt, setDebtPayAmt]           = useState(""); // partial debt payment amount
-  const [generalDebtAmt, setGeneralDebtAmt]   = useState(""); // MP-POS-DEBT-PANEL-FIX: no-invoice debt payment
-  const [generalDebtBusy, setGeneralDebtBusy] = useState(false);
+  const [debtBanner, setDebtBanner]           = useState(null); // MP-POS-DEBT-CART-FLOW: {customer_id,name,amount}
   // D-2.4: when arriving from the Online Cart "Send to Cart" flow
   // (?from_online=<id>&session=<sid>), this holds the entry id + ref so
   // the banner shows and the created sale gets linked back on finalize.
@@ -192,22 +191,26 @@ export default function POSPage() {
     staleTime: 0,
   });
 
-  // MP-POS-DEBT-PANEL-FIX: open the debt popup whenever the customer
-  // owes money per the authoritative pa_customers.total_debt — not only
-  // when outstanding invoices exist. Paper-migrated / manually-edited
-  // debt has total_debt>0 but zero outstanding sales; that case shows
-  // the general (no-invoice) repayment panel below.
+  // MP-POS-DEBT-CART-FLOW: NO auto-collect. Outstanding invoices keep
+  // the original per-invoice modal (unchanged, works). Manual / paper-
+  // migrated debt (total_debt>0, no outstanding sale) surfaces a
+  // NON-BLOCKING banner — the cashier explicitly chooses Add-to-Cart or
+  // Skip; nothing is collected on select.
   useEffect(() => {
     if (!customerDebtData) return;
     const invoices = customerDebtData.data || [];
-    const owes = Number(customerDebtData.customer_total_debt || customer?.total_debt || 0) > 0;
+    const owed = Number(customerDebtData.customer_total_debt || customer?.total_debt || 0);
     if (invoices.length > 0) {
       setDebtInvoices(invoices);
       setSelectedDebtIds(new Set(invoices.map(i => i.id)));
       setShowDebtModal(true);
-    } else if (owes) {
+      setDebtBanner(null);
+    } else if (owed > 0 && customer?.id) {
       setDebtInvoices([]);
-      setShowDebtModal(true);
+      setShowDebtModal(false);
+      setDebtBanner({ customer_id: customer.id, name: customer.name || "", amount: owed });
+    } else {
+      setDebtBanner(null);
     }
   }, [customerDebtData]);
 
@@ -344,24 +347,23 @@ export default function POSPage() {
     setShowPayment(true);
   };
 
-  // MP-POS-DEBT-PANEL-FIX: collect a payment against pa_customers.
-  // total_debt directly (no invoice). Standalone — does NOT go through
-  // the cart/sale flow.
-  const payGeneralDebt = async () => {
-    const owed = Number(customer?.total_debt || customerDebtData?.customer_total_debt || 0);
-    const amt = generalDebtAmt ? Math.min(parseFloat(generalDebtAmt), owed) : owed;
-    if (!customer?.id || !(amt > 0)) { toast.error(lang === "en" ? "Enter a valid amount" : "Montant invalide"); return; }
-    try {
-      setGeneralDebtBusy(true);
-      const r = await api.post(`/sales/customer-debt/${customer.id}/pay`, { amount: amt, payment_method: "cash" });
-      const newDebt = r.data?.data?.new_total_debt;
-      toast.success(lang === "en" ? `✓ ${formatCFA(amt)} debt payment recorded` : `✓ Paiement de ${formatCFA(amt)} enregistré`);
-      ["customer-debt", "pos-customers", "customers", "customer-summary", "recent-sales", "daily-summary"].forEach(k => qc.invalidateQueries([k]));
-      setShowDebtModal(false); setGeneralDebtAmt("");
-      setCustomer(c => c ? { ...c, total_debt: newDebt != null ? newDebt : 0 } : c);
-    } catch (e) {
-      toast.error(e.response?.data?.message || (lang === "en" ? "Payment failed" : "Échec du paiement"));
-    } finally { setGeneralDebtBusy(false); }
+  // MP-POS-DEBT-CART-FLOW: add the manual/paper debt as an editable,
+  // removable cart LINE ITEM (type:'debt_payment'). It then rides the
+  // NORMAL cart → checkout → pay flow; the backend reduces total_debt
+  // and writes a sale-linked payment on sale completion. NOTHING is
+  // collected here.
+  const addDebtPaymentToCart = () => {
+    if (!debtBanner) return;
+    setCart(prev => [
+      ...prev.filter(i => i.product_id !== "__DEBT_PAYMENT__"),
+      {
+        product_id: "__DEBT_PAYMENT__", type: "debt_payment",
+        name: `${lang === "en" ? "Debt Repayment" : "Remboursement dette"} (${debtBanner.name})`,
+        unit: "pce", quantity: 1, unit_price: debtBanner.amount, cost_price: 0,
+        isDebtPayment: true, customer_id: debtBanner.customer_id, debtMax: debtBanner.amount
+      }
+    ]);
+    setDebtBanner(null);
   };
 
   const updateQty   = (idx, qty) => qty <= 0
@@ -447,7 +449,13 @@ export default function POSPage() {
       const salePayload = {
         location_id:    selectedLocation?.id,
         customer_id:    customer?.id || null,
-        items:          cart.map(i => ({ product_id: i.product_id, quantity: Number(i.quantity) || 1, unit_price: Number(i.unit_price) || 0, cost_price: i.cost_price })),
+        // MP-POS-DEBT-CART-FLOW: debt lines go with product_id:null +
+        // type so the backend never runs them through stock/min-price/
+        // pa_sale_items; it reduces total_debt + writes a sale-linked
+        // payment instead.
+        items:          cart.map(i => i.type === "debt_payment"
+                          ? ({ type: "debt_payment", product_id: null, quantity: 1, unit_price: Number(i.unit_price) || 0, customer_id: i.customer_id })
+                          : ({ product_id: i.product_id, quantity: Number(i.quantity) || 1, unit_price: Number(i.unit_price) || 0, cost_price: i.cost_price })),
         payment_method: payMethod,
         paid_amount:    paid,
         due_date:       dueDate || null,
@@ -464,6 +472,7 @@ export default function POSPage() {
         setCart([]); setCustomer(null); setPayMode("paid");
         setPaidAmt(""); setDueDate(""); setNotes(""); setShowPayment(false);
         setDebtInvoices([]); setSelectedDebtIds(new Set()); setDebtPayAmt("");
+        setDebtBanner(null);
         setOnlineCtx(null);
       };
 
@@ -540,6 +549,7 @@ export default function POSPage() {
             k === "products-all" || k === "products-barcode" || k === "pos-products" ||
             k === "recent-sales" || k === "daily-summary" || k === "overdue-credits" ||
             k === "pos-customers" || k === "customer-debt" || k === "credits" ||
+            k === "customers" || k === "customer-summary" ||
             k.startsWith("reports-")
           );
         }
@@ -787,37 +797,28 @@ export default function POSPage() {
         </div>
       )}
 
-      {/* MP-POS-DEBT-PANEL-FIX: general (no-invoice) debt — paper-migrated
-          / manually-edited debt with no outstanding sale. Authoritative
-          amount = pa_customers.total_debt. */}
-      {showDebtModal && debtInvoices.length === 0 && Number(customer?.total_debt || customerDebtData?.customer_total_debt || 0) > 0 && (() => {
-        const owed = Number(customer?.total_debt || customerDebtData?.customer_total_debt || 0);
-        return (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
-            <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 14, padding: 20, maxWidth: 380, width: "100%" }}>
-              <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>💰 {lang === "en" ? "Outstanding debt" : "Dette en cours"}</div>
-              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 14 }}>{customer?.name || ""}</div>
-              <div style={{ background: "rgba(248,113,113,0.12)", border: "1px solid rgba(248,113,113,0.35)", borderRadius: 10, padding: "10px 14px", marginBottom: 14 }}>
-                {lang === "en" ? "Owes" : "Doit"} <strong style={{ color: "#f87171", fontSize: 18 }}>{formatCFA(owed)}</strong>
-              </div>
-              <label style={{ fontSize: 12, color: "var(--text-muted)" }}>{lang === "en" ? "Collect payment (XAF)" : "Encaisser (XAF)"}</label>
-              <input className="input" type="number" min="0" max={owed} placeholder={String(owed)}
-                value={generalDebtAmt} onChange={e => setGeneralDebtAmt(e.target.value)}
-                style={{ width: "100%", margin: "6px 0 16px" }} />
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => { setShowDebtModal(false); setGeneralDebtAmt(""); }}
-                  style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-secondary)", cursor: "pointer", fontWeight: 600 }}>
-                  {lang === "en" ? "Skip" : "Plus tard"}
-                </button>
-                <button onClick={payGeneralDebt} disabled={generalDebtBusy}
-                  style={{ flex: 2, padding: "10px", border: "none", borderRadius: 10, background: "var(--brand)", color: "#fff", fontWeight: 700, cursor: generalDebtBusy ? "wait" : "pointer" }}>
-                  {generalDebtBusy ? "..." : (lang === "en" ? "Collect payment" : "Encaisser")}
-                </button>
-              </div>
-            </div>
+      {/* MP-POS-DEBT-CART-FLOW: non-blocking debt banner. Explicit
+          cashier choice — Add-to-Cart (editable line item) or Skip.
+          NOTHING is auto-collected. */}
+      {debtBanner && (
+        <div style={{ position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 1100, maxWidth: 460, width: "calc(100% - 24px)", background: "var(--bg-card)", border: "1px solid rgba(245,158,11,0.5)", borderRadius: 12, padding: "12px 16px", boxShadow: "0 8px 24px rgba(0,0,0,0.3)", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 220px", fontSize: 13 }}>
+            ⚠️ {lang === "en"
+              ? <>This customer owes <strong style={{ color: "#f87171" }}>{formatCFA(debtBanner.amount)}</strong>. Add debt payment to cart?</>
+              : <>Ce client doit <strong style={{ color: "#f87171" }}>{formatCFA(debtBanner.amount)}</strong>. Ajouter au panier ?</>}
           </div>
-        );
-      })()}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => setDebtBanner(null)}
+              style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-secondary)", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
+              {lang === "en" ? "Skip — sale only" : "Ignorer"}
+            </button>
+            <button onClick={addDebtPaymentToCart}
+              style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "var(--brand)", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
+              {lang === "en" ? "Add to Cart" : "Ajouter au panier"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {showCamera && (
         <CameraScanner lang={lang} onScan={(code) => { setShowCamera(false); scanBarcode(code); }} onClose={() => setShowCamera(false)} />
@@ -883,7 +884,7 @@ export default function POSPage() {
                     </div>
                   )}
                 </div>
-                <button onClick={() => { setCustomer(null); setDebtInvoices([]); setSelectedDebtIds(new Set()); setCart(c => c.filter(i => i.product_id !== "__DEBT__")); }}
+                <button onClick={() => { setCustomer(null); setDebtInvoices([]); setSelectedDebtIds(new Set()); setDebtBanner(null); setCart(c => c.filter(i => i.product_id !== "__DEBT__" && i.product_id !== "__DEBT_PAYMENT__")); }}
                   style={{ background: "rgba(239,68,68,0.1)", border: "none", color: "#f87171", cursor: "pointer", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontWeight: 700 }}>✕</button>
               </div>
             ) : (
@@ -1076,13 +1077,13 @@ export default function POSPage() {
                 <div style={{ fontSize: 12 }}>{lang === "en" ? "Cart is empty" : "Panier vide"}</div>
               </div>
             ) : cart.map((item, idx) => (
-              <div key={idx} style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", background: item.isDebt ? "rgba(239,68,68,0.04)" : "transparent" }}>
-                {item.isDebt && (
+              <div key={idx} style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", background: (item.isDebt || item.isDebtPayment) ? "rgba(239,68,68,0.04)" : "transparent" }}>
+                {(item.isDebt || item.isDebtPayment) && (
                   <div style={{ fontSize: 10, fontWeight: 700, color: "#f87171", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>
-                    🧾 {lang === "en" ? "Debt Repayment" : "Remboursement dette"}
+                    {item.isDebtPayment ? "💰" : "🧾"} {lang === "en" ? "Debt Repayment" : "Remboursement dette"} · DEBT
                   </div>
                 )}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: item.isDebt ? 4 : 7 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: (item.isDebt || item.isDebtPayment) ? 4 : 7 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, flex: 1, paddingRight: 8, lineHeight: 1.3 }}>{item.name}</div>
                   <button onClick={() => updateQty(idx, 0)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: "0 2px", flexShrink: 0 }}>✕</button>
                 </div>
