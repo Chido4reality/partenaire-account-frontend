@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore, useLangStore, useOfflineStore, useSettingsStore } from "../../store";
 import api from "../../utils/api";
 import { openWhatsApp } from "../../utils/whatsapp";
+import { nukeClientState, hardRedirectToLogin } from "../../utils/authReset";
 import UpgradeModal from "./UpgradeModal";
 import PaywallModal from "./PaywallModal";
 import OfflineBanner from "./OfflineBanner";
@@ -123,6 +124,7 @@ function BroadcastBanner() {
 export default function Layout() {
   const { user, org, logout } = useAuthStore();
   const { lang, setLang }     = useLangStore();
+  const queryClient           = useQueryClient(); // MP-AUTH-STATE-HYGIENE
   const { isOnline: storeOnline } = useOfflineStore();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
@@ -182,7 +184,34 @@ export default function Layout() {
     return () => window.removeEventListener("partenaire:paywall", handler);
   }, []);
 
-  const handleLogout = () => { logout(); navigate("/login"); };
+  // MP-AUTH-STATE-HYGIENE — FIX 1: a real logout nukes EVERYTHING
+  // (React Query cache, all zustand persist stores, local/sessionStorage)
+  // then hard-navigates so React state is fresh. Backend logout call is
+  // best-effort (stateless JWT — it just audits) and must run BEFORE the
+  // nuke since the api interceptor reads the token from the auth store.
+  const handleLogout = async () => {
+    try { await api.post("/auth/logout"); } catch (_) { /* audit-only; proceed */ }
+    logout();
+    nukeClientState(queryClient);
+    hardRedirectToLogin();
+  };
+
+  // MP-AUTH-STATE-HYGIENE — FIX 2: user-change tripwire. If the persisted
+  // last-user id doesn't match the authenticated user (different person
+  // on a shared device, stale state from before logout was fixed), nuke
+  // and bounce to login. Otherwise record the current user. Runs on every
+  // authenticated mount — Layout wraps every protected route.
+  useEffect(() => {
+    const cur = user?.id ? String(user.id) : null;
+    if (!cur) return;
+    const last = localStorage.getItem("mp_last_user_id");
+    if (last && last !== cur) {
+      nukeClientState(queryClient);
+      hardRedirectToLogin("session_changed");
+      return;
+    }
+    if (last !== cur) localStorage.setItem("mp_last_user_id", cur);
+  }, [user?.id, queryClient]);
   const toggleLang = () => {
     const nl = lang === "en" ? "fr" : "en";
     setLang(nl);

@@ -1,10 +1,17 @@
-﻿import { useState } from "react";
+﻿import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAuthStore, useLangStore } from "../store";
 import api from "../utils/api";
 
 export default function LoginPage() {
+  // MP-AUTH-STATE-HYGIENE: surface the user-change tripwire reason.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("flash") === "session_changed") {
+      toast("Session changed — please log in again.", { icon: "🔒" });
+    }
+  }, []);
+
   const [phone, setPhone]       = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading]   = useState(false);
