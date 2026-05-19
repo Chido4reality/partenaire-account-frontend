@@ -30,6 +30,15 @@ export default function CustomersPage() {
     refetchInterval: 30000
   });
 
+  // MP-CUSTOMER-DEBT-SUMMARY: org-wide aggregate (not filtered/paginated
+  // like the list above). Invalidated by the add/update/delete mutations.
+  const { data: summaryResp } = useQuery({
+    queryKey: ["customer-summary"],
+    queryFn: () => api.get("/customers/summary").then(r => r.data),
+    refetchInterval: 30000
+  });
+  const summary = summaryResp?.data || { total_debt: 0, customers_with_debt: 0, total_customers: 0 };
+
   const { data: detail } = useQuery({
     queryKey: ["customer-detail", selected?.id],
     queryFn: () => api.get(`/customers/${selected.id}`).then(r => r.data),
@@ -71,6 +80,7 @@ export default function CustomersPage() {
       setShowAdd(false);
       setForm({ name: "", phone: "", address: "", customer_type: "retail", credit_limit: "", notes: "", total_debt: "" });
       qc.invalidateQueries(["customers"]);
+      qc.invalidateQueries(["customer-summary"]);
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
@@ -80,6 +90,7 @@ export default function CustomersPage() {
     onSuccess: () => {
       toast.success(lang === "en" ? "Customer updated!" : "Client mis a jour!");
       qc.invalidateQueries(["customers"]);
+      qc.invalidateQueries(["customer-summary"]);
       qc.invalidateQueries(["customer-detail", selected.id]);
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
@@ -95,6 +106,7 @@ export default function CustomersPage() {
       if (selected?.id === confirmDel.id) setSelected(null);
       setConfirmDel(null); setDelError(null);
       qc.invalidateQueries(["customers"]);
+      qc.invalidateQueries(["customer-summary"]);
     },
     onError: (err) => {
       const r = err.response;
@@ -133,6 +145,31 @@ export default function CustomersPage() {
           <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
             + {lang === "en" ? "New Customer" : "Nouveau client"}
           </button>
+        </div>
+
+        {/* MP-CUSTOMER-DEBT-SUMMARY: org-wide aggregate (all customers,
+            not just the current filtered/paginated page). */}
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 18px", marginBottom: 16 }}>
+          <div style={{ flex: "1 1 160px" }}>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>
+              💰 {lang === "en" ? "Total owed to you" : "Total dû"}
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: summary.total_debt > 0 ? "#f87171" : "var(--text-primary)" }}>
+              {formatCFA(summary.total_debt)}
+            </div>
+          </div>
+          <div style={{ flex: "1 1 120px" }}>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>
+              {lang === "en" ? "Customers with debt" : "Clients avec dette"}
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 800 }}>{summary.customers_with_debt}</div>
+          </div>
+          <div style={{ flex: "1 1 120px" }}>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>
+              {lang === "en" ? "Total customers" : "Total clients"}
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 800 }}>{summary.total_customers}</div>
+          </div>
         </div>
 
         {/* Filters */}
