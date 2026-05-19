@@ -1105,7 +1105,11 @@ export default function InventoryPage() {
       {showEditProduct && editProduct && (
         <div className="modal-overlay" onClick={() => setShowEditProduct(false)}>
           <div className="modal" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 4 }}>✏️ {lang === "en" ? "Edit Product" : "Modifier le produit"}</div>
+            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 4, color: editProduct.is_active === false ? "#ef4444" : undefined }}>
+              {editProduct.is_active === false
+                ? `🗄 ${lang === "en" ? "Archived" : "Archivé"}: ${editProduct.name}`
+                : `✏️ ${lang === "en" ? "Edit Product" : "Modifier le produit"}`}
+            </div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 20 }}>{editProduct.name}</div>
 
             <div className="form-group">
