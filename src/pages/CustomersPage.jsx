@@ -20,6 +20,8 @@ export default function CustomersPage() {
   const [debtOnly, setDebtOnly]     = useState(false);
   const [showAdd, setShowAdd]       = useState(false);
   const [selected, setSelected]     = useState(null);
+  const [confirmDel, setConfirmDel] = useState(null); // MP-CUSTOMER-DELETE: customer pending delete
+  const [delError, setDelError]     = useState(null); // 409 message shown in the modal
   const [form, setForm]             = useState({ name: "", phone: "", address: "", customer_type: "retail", credit_limit: "", notes: "", total_debt: "" });
 
   const { data, isLoading } = useQuery({
@@ -80,6 +82,31 @@ export default function CustomersPage() {
       qc.invalidateQueries(["customer-detail", selected.id]);
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
+  });
+
+  // MP-CUSTOMER-DELETE: hard delete (backend 409s if the customer has
+  // any sales/payments/etc). 409 keeps the modal open and shows why;
+  // success removes them from the list.
+  const deleteMutation = useMutation({
+    mutationFn: () => api.delete(`/customers/${confirmDel.id}`),
+    onSuccess: () => {
+      toast.success(lang === "en" ? "Customer deleted" : "Client supprimé");
+      if (selected?.id === confirmDel.id) setSelected(null);
+      setConfirmDel(null); setDelError(null);
+      qc.invalidateQueries(["customers"]);
+    },
+    onError: (err) => {
+      const r = err.response;
+      if (r?.status === 409) {
+        setDelError((r.data?.message || "Customer has transaction history. Cannot delete.")
+          + (lang === "en"
+              ? " You can hide them by editing their notes for now. A full archive feature is coming."
+              : " Vous pouvez les masquer via leurs notes pour l'instant. L'archivage complet arrive bientôt."));
+      } else {
+        toast.error(r?.data?.message || "Error");
+        setConfirmDel(null);
+      }
+    }
   });
 
   const customers = data?.data || [];
@@ -217,6 +244,14 @@ export default function CustomersPage() {
               onClick={() => updateMutation.mutate()}>
               {updateMutation.isPending ? "..." : (lang === "en" ? "Save changes" : "Enregistrer")}
             </button>
+            {/* MP-CUSTOMER-DELETE: destructive, separated from Save. */}
+            <button
+              onClick={() => { setDelError(null); setConfirmDel(selected); }}
+              style={{ width: "100%", marginTop: 8, padding: "9px 12px", borderRadius: 8,
+                background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.4)",
+                color: "#ef4444", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+              🗑 {lang === "en" ? "Delete customer" : "Supprimer le client"}
+            </button>
           </div>
 
           {/* Purchase history */}
@@ -320,6 +355,55 @@ export default function CustomersPage() {
                 {addMutation.isPending ? "..." : (lang === "en" ? "Add Customer" : "Ajouter")}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MP-CUSTOMER-DELETE: confirm / 409-reason modal */}
+      {confirmDel && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}
+          onClick={() => { if (!deleteMutation.isPending) { setConfirmDel(null); setDelError(null); } }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 14, padding: 20, maxWidth: 420, width: "100%" }}>
+            {delError ? (
+              <>
+                <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>
+                  {lang === "en" ? "Can't delete this customer" : "Suppression impossible"}
+                </div>
+                <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 18 }}>{delError}</div>
+                <button className="btn btn-secondary btn-block" onClick={() => { setConfirmDel(null); setDelError(null); }}>
+                  {lang === "en" ? "Close" : "Fermer"}
+                </button>
+              </>
+            ) : (
+              <>
+                <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>
+                  {lang === "en" ? `Delete ${confirmDel.name}?` : `Supprimer ${confirmDel.name} ?`}
+                </div>
+                {Number(confirmDel.total_debt) > 0 && (
+                  <div style={{ fontSize: 13, color: "#f87171", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>
+                    {lang === "en"
+                      ? `This customer owes ${formatCFA(confirmDel.total_debt)}. Deleting will remove them from your records.`
+                      : `Ce client doit ${formatCFA(confirmDel.total_debt)}. La suppression le retirera de vos enregistrements.`}
+                  </div>
+                )}
+                <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 18 }}>
+                  {lang === "en"
+                    ? "This permanently removes the customer. Customers with sales or payment history can't be deleted."
+                    : "Suppression définitive. Les clients avec historique de ventes ou paiements ne peuvent pas être supprimés."}
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button className="btn btn-secondary" style={{ flex: 1 }} disabled={deleteMutation.isPending}
+                    onClick={() => { setConfirmDel(null); setDelError(null); }}>
+                    {lang === "en" ? "Cancel" : "Annuler"}
+                  </button>
+                  <button style={{ flex: 1, padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(239,68,68,0.5)", background: "#ef4444", color: "#fff", fontWeight: 700, cursor: deleteMutation.isPending ? "wait" : "pointer" }}
+                    disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate()}>
+                    {deleteMutation.isPending ? "..." : (lang === "en" ? "Delete" : "Supprimer")}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
