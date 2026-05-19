@@ -20,7 +20,7 @@ export default function CustomersPage() {
   const [debtOnly, setDebtOnly]     = useState(false);
   const [showAdd, setShowAdd]       = useState(false);
   const [selected, setSelected]     = useState(null);
-  const [form, setForm]             = useState({ name: "", phone: "", address: "", customer_type: "retail", credit_limit: "", notes: "" });
+  const [form, setForm]             = useState({ name: "", phone: "", address: "", customer_type: "retail", credit_limit: "", notes: "", total_debt: "" });
 
   const { data, isLoading } = useQuery({
     queryKey: ["customers", search, typeFilter, debtOnly],
@@ -58,15 +58,15 @@ export default function CustomersPage() {
   // Opening "Add customer" must start from a clean form (don't inherit a
   // previously-edited customer's values).
   useEffect(() => {
-    if (showAdd) setForm({ name: "", phone: "", address: "", customer_type: "retail", credit_limit: "", notes: "" });
+    if (showAdd) setForm({ name: "", phone: "", address: "", customer_type: "retail", credit_limit: "", notes: "", total_debt: "" });
   }, [showAdd]);
 
   const addMutation = useMutation({
-    mutationFn: () => api.post("/customers", { ...form, credit_limit: +form.credit_limit || 0 }),
+    mutationFn: () => api.post("/customers", { ...form, credit_limit: +form.credit_limit || 0, total_debt: +form.total_debt || 0 }),
     onSuccess: () => {
       toast.success(lang === "en" ? "Customer added!" : "Client ajoute!");
       setShowAdd(false);
-      setForm({ name: "", phone: "", address: "", customer_type: "retail", credit_limit: "", notes: "" });
+      setForm({ name: "", phone: "", address: "", customer_type: "retail", credit_limit: "", notes: "", total_debt: "" });
       qc.invalidateQueries(["customers"]);
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
@@ -296,6 +296,15 @@ export default function CustomersPage() {
             <div className="form-group">
               <label className="label">{lang === "en" ? "Credit limit (FCFA)" : "Limite credit (FCFA)"}</label>
               <input className="input" type="number" value={form.credit_limit} onChange={e => setF("credit_limit", e.target.value)} placeholder="0" />
+            </div>
+            <div className="form-group">
+              <label className="label">{lang === "en" ? "Initial debt (XAF)" : "Dette initiale (XAF)"}</label>
+              <input className="input" type="number" min="0" value={form.total_debt} onChange={e => setF("total_debt", e.target.value)} placeholder="0" />
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                {lang === "en"
+                  ? "If this customer already owes you money from before, enter the amount here. Leave 0 for new customers with no existing balance."
+                  : "Si ce client vous doit déjà de l'argent, saisissez le montant ici. Laissez 0 pour un nouveau client sans solde."}
+              </div>
             </div>
             <div className="form-group">
               <label className="label">{lang === "en" ? "Notes" : "Notes"}</label>
