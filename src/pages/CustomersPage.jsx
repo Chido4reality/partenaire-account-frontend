@@ -92,6 +92,13 @@ export default function CustomersPage() {
       qc.invalidateQueries(["customers"]);
       qc.invalidateQueries(["customer-summary"]);
       qc.invalidateQueries(["customer-detail", selected.id]);
+      // MP-DEBT-LINE-INSERT-FIX (Bug B): POS reads the debt banner from
+      // ["customer-debt", customer.id] and the customer list from
+      // ["pos-customers"]. Without these invalidations, editing
+      // total_debt here leaves POS showing the stale amount until a
+      // hard reload.
+      qc.invalidateQueries(["customer-debt", selected.id]);
+      qc.invalidateQueries(["pos-customers"]);
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
