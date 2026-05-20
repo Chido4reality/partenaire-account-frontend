@@ -26,8 +26,16 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr" }) {
   const [refundAmount, setRefundAmount] = useState(sale.total_amount || "");
   const [refundMethod, setRefundMethod] = useState("cash");
   const [restock, setRestock] = useState(true);
+  // MP-DEBT-LINE-FULL-VISIBILITY: debt-payment rows are not stock-
+  // returnable items — they belong to the customer-debt ledger, not
+  // the product ledger. Keep them OUT of the refund/exchange item
+  // selection so a cashier can't accidentally try to "return" a debt
+  // repayment. (Voiding a sale that includes debt rows: see void mode
+  // banner below.)
   const [selectedItems, setSelectedItems] = useState(
-    (sale.pa_sale_items || []).map(i => ({ ...i, returnQty: i.quantity, selected: true, retReason: "changed_mind" }))
+    (sale.pa_sale_items || [])
+      .filter(i => i.line_type !== "debt_payment" && i.product_id !== null)
+      .map(i => ({ ...i, returnQty: i.quantity, selected: true, retReason: "changed_mind" }))
   );
   const [overrideReason, setOverrideReason] = useState("");
   const [loading, setLoading] = useState(false);
@@ -226,12 +234,31 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr" }) {
                 {lang === "en" ? "This will cancel the entire sale and restore all stock." : "Ceci annule la vente entière et restaure tout le stock."}
               </div>
             </div>
-            {items.map((item, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 13, borderBottom: "1px solid var(--border)" }}>
-                <span>{item.pa_products?.name} × {item.quantity}</span>
-                <span style={{ color: "#34d399" }}>+{item.quantity} {lang === "en" ? "restored" : "restauré"}</span>
+            {items.map((item, i) => {
+              const isDebt = item.line_type === "debt_payment" || item.product_id === null;
+              return (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 13, borderBottom: "1px solid var(--border)" }}>
+                  {isDebt ? (
+                    <>
+                      <span>💰 {lang === "en" ? "Debt Repayment" : "Remboursement dette"} · {formatCFA(item.quantity * item.unit_price)}</span>
+                      <span style={{ color: "#fbbf24", fontSize: 11 }}>{lang === "en" ? "debt NOT auto-restored" : "dette NON restaurée auto"}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>{item.pa_products?.name} × {item.quantity}</span>
+                      <span style={{ color: "#34d399" }}>+{item.quantity} {lang === "en" ? "restored" : "restauré"}</span>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+            {items.some(i => i.line_type === "debt_payment" || i.product_id === null) && (
+              <div style={{ background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.3)", borderRadius: 8, padding: "8px 10px", marginTop: 8, fontSize: 11, color: "var(--text-muted)" }}>
+                ⚠️ {lang === "en"
+                  ? "This sale includes a debt-repayment line. Voiding restores product stock but does NOT add the repaid amount back to the customer's total_debt. If you want to reverse the debt repayment too, edit the customer's debt manually after voiding."
+                  : "Cette vente contient une ligne de remboursement de dette. L'annulation restaure le stock produit mais NE rétablit PAS le montant remboursé sur la dette du client. Si vous voulez aussi annuler le remboursement, modifiez la dette du client manuellement après l'annulation."}
               </div>
-            ))}
+            )}
             {mode !== "void" && pastWindow && <WindowBanner days={saleAgeDays} value={overrideReason} setValue={setOverrideReason} lang={lang} />}
             <PinAndReason pin={pin} setPin={setPin} reason={reason} setReason={setReason} pinError={pinError} lang={lang} />
             <ActionButtons mode="void" loading={loading} onBack={() => setMode(null)} onConfirm={handleSubmit} lang={lang} />

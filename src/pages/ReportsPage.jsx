@@ -5,6 +5,22 @@ import api, { formatCFA, formatDate } from "../utils/api";
 import VoidReturnModal from "../components/common/VoidReturnModal";
 import { genSaleCodes } from "../utils/receiptCodes";
 
+// MP-DEBT-LINE-FULL-VISIBILITY: pa_sale_items can now hold debt-payment
+// rows (line_type='debt_payment', product_id=NULL). Helpers to keep
+// every iteration site consistent.
+//   isDebtItem(i)       — true for a debt-payment row (joined product is null)
+//   itemLabel(i, lang)  — display name ("💰 Debt Repayment" for debt rows)
+//   itemUnit(i)         — unit string (— for debt rows, no quantity)
+//   itemAmount(i)       — line total (qty * unit_price; works for both)
+// Product aggregations (top-products, revenue-by-product) should SKIP
+// debt rows since they have no product_id and no SKU to group by.
+const isDebtItem  = (i) => i?.line_type === "debt_payment" || (i && i.product_id === null);
+const itemLabel   = (i, lang) => isDebtItem(i)
+  ? (lang === "en" ? "💰 Debt Repayment" : "💰 Remboursement dette")
+  : (i?.pa_products?.name || "?");
+const itemUnit    = (i) => isDebtItem(i) ? "—" : (i?.pa_products?.unit || "pce");
+const itemAmount  = (i) => (Number(i?.quantity) || 0) * (Number(i?.unit_price) || 0);
+
 export default function ReportsPage() {
   const { lang } = useLangStore();
   const { user } = useAuthStore();
@@ -229,17 +245,17 @@ export default function ReportsPage() {
   };
 
   const exportSalesCSV = () => {
-    const rows = [["Sale#", "Date", "Customer", "Product", "Qty", "Unit Price", "Line Total", "Payment Status"]];
+    const rows = [["Sale#", "Date", "Customer", "Product / Line Type", "Qty", "Unit Price", "Line Total", "Payment Status"]];
     salesDetail.forEach(sale => {
       (sale.pa_sale_items || []).forEach(item => {
         rows.push([
           sale.sale_number,
           sale.sale_date,
           sale.pa_customers?.name || "Walk-in",
-          item.pa_products?.name || "",
+          isDebtItem(item) ? "Debt Repayment" : (item.pa_products?.name || ""),
           item.quantity,
           item.unit_price,
-          (item.quantity * item.unit_price).toFixed(0),
+          itemAmount(item).toFixed(0),
           sale.payment_status
         ]);
       });
@@ -481,9 +497,13 @@ export default function ReportsPage() {
                                 </button>
                                 <button onClick={() => {
                                   const items = sale.pa_sale_items || [];
-                                  const total = items.reduce((s,i) => s + i.quantity * i.unit_price, 0);
+                                  const total = items.reduce((s,i) => s + itemAmount(i), 0);
                                   let msg = `🧾 *Reçu*\n📅 ${sale.sale_date}\nN° ${sale.sale_number}\n─────────────────────\n`;
-                                  items.forEach(i => { msg += `${i.pa_products?.name} × ${i.quantity} ... ${(i.quantity * i.unit_price).toLocaleString()} F\n`; });
+                                  items.forEach(i => {
+                                    msg += isDebtItem(i)
+                                      ? `${itemLabel(i, lang)} ... ${itemAmount(i).toLocaleString()} F\n`
+                                      : `${itemLabel(i, lang)} × ${i.quantity} ... ${itemAmount(i).toLocaleString()} F\n`;
+                                  });
                                   msg += `─────────────────────\n*Total: ${total.toLocaleString()} FCFA*`;
                                   if (sale.payment_status === "credit") msg += `\n🔴 CRÉDIT: ${total.toLocaleString()} F DÛ`;
                                   else if (sale.payment_status === "partial") msg += `\n🟡 PARTIEL — Reste: ${sale.balance_due?.toLocaleString()} F`;
@@ -494,7 +514,7 @@ export default function ReportsPage() {
                                 </button>
 <button onClick={async () => {
                                   const items = sale.pa_sale_items || [];
-                                  const total = items.reduce((s,i) => s + i.quantity * i.unit_price, 0);
+                                  const total = items.reduce((s,i) => s + itemAmount(i), 0);
                                   const codes = sale.sale_number ? await genSaleCodes(sale.sale_number) : { barcode: "", qr: "" };
                                   const w = window.open("","_blank","width=350,height=500");
                                   w.document.write(`<html><head><style>body{font-family:monospace;font-size:12px;width:300px;margin:0 auto}.row{display:flex;justify-content:space-between}.line{border-top:1px dashed #000;margin:6px 0}.bold{font-weight:bold;font-size:14px}.center{text-align:center}</style></head><body>
@@ -503,7 +523,9 @@ export default function ReportsPage() {
                                     <div class="center" style="font-size:15px;font-weight:bold;margin:4px 0">${sale.sale_number || ""}</div>
                                     ${sale.pa_customers?.name ? `<div class="center">Client: ${sale.pa_customers.name}</div>` : ""}
                                     <div class="line"></div>
-                                    ${items.map(i => `<div class="row"><span>${i.pa_products?.name} ×${i.quantity}</span><span>${(i.quantity*i.unit_price).toLocaleString()} F</span></div>`).join("")}
+                                    ${items.map(i => isDebtItem(i)
+                                      ? `<div class="row"><span>${itemLabel(i, lang)}</span><span>${itemAmount(i).toLocaleString()} F</span></div>`
+                                      : `<div class="row"><span>${itemLabel(i, lang)} ×${i.quantity}</span><span>${itemAmount(i).toLocaleString()} F</span></div>`).join("")}
                                     <div class="line"></div>
                                     <div class="row bold"><span>TOTAL</span><span>${total.toLocaleString()} FCFA</span></div>
                                     ${sale.payment_status === "credit" ? `<div class="row" style="color:red"><span>🔴 CRÉDIT DÛ</span><span>${total.toLocaleString()} F</span></div>` : ""}
@@ -526,13 +548,15 @@ export default function ReportsPage() {
                                 {items.map((item, idx) => (
                                   <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 20px", borderBottom: idx < items.length - 1 ? "1px solid var(--border)" : "none" }}>
                                     <div style={{ flex: 1 }}>
-                                      <div style={{ fontWeight: 600, fontSize: 13 }}>{item.pa_products?.name}</div>
+                                      <div style={{ fontWeight: 600, fontSize: 13 }}>{itemLabel(item, lang)}</div>
                                       <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                                        {item.quantity} {item.pa_products?.unit} × {formatCFA(item.unit_price)}
+                                        {isDebtItem(item)
+                                          ? (lang === "en" ? "applied to customer debt" : "appliqué à la dette client")
+                                          : `${item.quantity} ${itemUnit(item)} × ${formatCFA(item.unit_price)}`}
                                       </div>
                                     </div>
                                     <div style={{ fontWeight: 700, fontSize: 14, color: "var(--brand-light)" }}>
-                                      {formatCFA(item.quantity * item.unit_price)}
+                                      {formatCFA(itemAmount(item))}
                                     </div>
                                   </div>
                                 ))}
@@ -594,9 +618,12 @@ export default function ReportsPage() {
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => {
                 if (!todaySales.length) return;
+                // Aggregate by product name. Skip debt-payment rows
+                // (line_type='debt_payment') — they have no SKU to group
+                // by and would all collapse into a meaningless "?" row.
                 const itemMap = {};
                 todaySales.forEach(sale => {
-                  (sale.pa_sale_items || []).forEach(item => {
+                  (sale.pa_sale_items || []).filter(i => !isDebtItem(i)).forEach(item => {
                     const name = item.pa_products?.name || "?";
                     const unit = item.pa_products?.unit || "pce";
                     if (!itemMap[name]) itemMap[name] = { name, unit, qty: 0, total: 0 };
@@ -633,9 +660,11 @@ export default function ReportsPage() {
               </button>
               <button onClick={() => {
                 if (!todaySales.length) return;
+                // Same product-aggregation as the WhatsApp share above —
+                // debt-payment rows skipped (no SKU to group by).
                 const itemMap = {};
                 todaySales.forEach(sale => {
-                  (sale.pa_sale_items || []).forEach(item => {
+                  (sale.pa_sale_items || []).filter(i => !isDebtItem(i)).forEach(item => {
                     const name = item.pa_products?.name || "?";
                     const unit = item.pa_products?.unit || "pce";
                     if (!itemMap[name]) itemMap[name] = { name, unit, qty: 0, total: 0 };
@@ -674,14 +703,16 @@ export default function ReportsPage() {
               <div style={{ fontWeight: 600 }}>{lang === "en" ? "No sales today yet" : "Aucune vente aujourd'hui"}</div>
             </div>
           ) : (() => {
-            // Aggregate all items sold today
+            // Aggregate products sold today. Debt-payment rows skipped
+            // (no SKU). totalPaid/Credit/PartialDue come from sale-level
+            // fields so they stay correct even on debt-only days.
             const itemMap = {};
             let totalPaid = 0, totalCredit = 0, totalPartialDue = 0;
             todaySales.forEach(sale => {
               if (sale.payment_status === "paid") totalPaid += parseFloat(sale.total_amount);
               if (sale.payment_status === "credit") totalCredit += parseFloat(sale.total_amount);
               if (sale.payment_status === "partial") totalPartialDue += parseFloat(sale.balance_due || 0);
-              (sale.pa_sale_items || []).forEach(item => {
+              (sale.pa_sale_items || []).filter(i => !isDebtItem(i)).forEach(item => {
                 const name = item.pa_products?.name || "?";
                 const unit = item.pa_products?.unit || "pce";
                 if (!itemMap[name]) itemMap[name] = { name, unit, qty: 0, total: 0 };

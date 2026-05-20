@@ -1452,9 +1452,16 @@ function ReceiptModal({ sale, org, lang, onClose }) {
 `;
     msg += `─────────────────────
 `;
+    // MP-DEBT-LINE-FULL-VISIBILITY: debt-payment cart lines render
+    // with a 💰 prefix and no "× qty" (qty is always 1 and meaningless).
     items.forEach(i => {
-      msg += `${i.name} × ${i.quantity} ........ ${(i.quantity * i.unit_price).toLocaleString()} F
+      if (i.type === "debt_payment") {
+        msg += `💰 ${i.name} ........ ${(Number(i.unit_price) || 0).toLocaleString()} F
 `;
+      } else {
+        msg += `${i.name} × ${i.quantity} ........ ${(i.quantity * i.unit_price).toLocaleString()} F
+`;
+      }
     });
     msg += `─────────────────────
 `;
@@ -1522,7 +1529,9 @@ ${footer}
         ${sale.sale_number ? `<div class="center" style="font-size:15px;font-weight:bold;margin:4px 0">${sale.sale_number}</div>` : ""}
         ${sale.customer?.name ? `<div class="center">${RT.client}: ${sale.customer.name}</div>` : ""}
         <div class="line"></div>
-        ${items.map(i => `<div class="row"><span>${i.name} ×${i.quantity}</span><span>${(i.quantity * i.unit_price).toLocaleString()} F</span></div>`).join("")}
+        ${items.map(i => i.type === "debt_payment"
+            ? `<div class="row"><span>💰 ${i.name}</span><span>${(Number(i.unit_price) || 0).toLocaleString()} F</span></div>`
+            : `<div class="row"><span>${i.name} ×${i.quantity}</span><span>${(i.quantity * i.unit_price).toLocaleString()} F</span></div>`).join("")}
         <div class="line"></div>
         <div class="row total"><span>TOTAL</span><span>${total.toLocaleString()} FCFA</span></div>
         ${status === "paid" ? `<div class="row" style="color:green;font-weight:bold"><span>✅ ${RT.paid}</span><span>${paid.toLocaleString()} FCFA</span></div>` : ""}
