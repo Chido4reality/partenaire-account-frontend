@@ -425,7 +425,18 @@ export default function POSPage() {
 
   const total   = cart.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0);
   const hasDebt = cart.some(i => i.product_id === "__DEBT__");
-  const paid    = payMode === "paid" ? total : payMode === "credit" ? 0 : (+paidAmt || 0);
+  // MP-DEBT-ONLY-PARTIAL-PAY-FIX: detect carts that contain ONLY debt
+  // lines (legacy __DEBT__ invoice-settle, or new debt_payment line, or
+  // both). Such carts use the AMOUNT TO COLLECT input — the 3-mode
+  // Paid/Partial/Credit picker doesn't apply (you can't extend further
+  // credit on a debt repayment, and "partial" needs its own field).
+  // The input is wired to debtPayAmt (existing state, previously only
+  // read by the legacy __DEBT__ allocation loop).
+  const isDebtOnlyCart = cart.length > 0 && cart.every(i =>
+    i.product_id === "__DEBT__" || i.type === "debt_payment");
+  const paid    = isDebtOnlyCart
+    ? (debtPayAmt ? Math.min(+debtPayAmt, total) : total)
+    : (payMode === "paid" ? total : payMode === "credit" ? 0 : (+paidAmt || 0));
   const balance = total - paid;
 
   const saleMutation = useMutation({
@@ -1136,13 +1147,13 @@ export default function POSPage() {
               </div>
             ) : (
               <div>
-                {hasDebt && (
+                {isDebtOnlyCart && (
                   <div style={{ marginBottom: 10 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>
                       {lang === "en" ? "Amount to collect (blank = full balance)" : "Montant à encaisser (vide = tout)"}
                     </div>
                     <input className="input" type="number"
-                      placeholder={`${lang === "en" ? "Full balance:" : "Solde total:"} ${(cart.find(i => i.product_id === "__DEBT__")?.unit_price || 0).toLocaleString()} FCFA`}
+                      placeholder={`${lang === "en" ? "Full balance:" : "Solde total:"} ${total.toLocaleString()} FCFA`}
                       value={debtPayAmt} onChange={e => setDebtPayAmt(e.target.value)}
                       style={{ marginBottom: 4 }} />
                     <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
@@ -1150,7 +1161,7 @@ export default function POSPage() {
                     </div>
                   </div>
                 )}
-                {!hasDebt && (
+                {!isDebtOnlyCart && (
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 10 }}>
                     {PAYMENT_MODES.map(pm => (
                       <button key={pm.key} onClick={() => setPayMode(pm.key)} style={{ padding: "8px 4px", borderRadius: 10, border: `1.5px solid ${payMode === pm.key ? pm.color : "var(--border)"}`, background: payMode === pm.key ? pm.color + "18" : "transparent", color: payMode === pm.key ? pm.color : "var(--text-secondary)", cursor: "pointer", fontSize: 11, fontWeight: 700, transition: "all 0.15s" }}>
@@ -1160,10 +1171,10 @@ export default function POSPage() {
                     ))}
                   </div>
                 )}
-                {payMode === "partial" && !hasDebt && (
+                {payMode === "partial" && !isDebtOnlyCart && (
                   <input className="input" type="number" placeholder={lang === "en" ? "Amount paid (FCFA)" : "Montant payé (FCFA)"} value={paidAmt} onChange={e => setPaidAmt(e.target.value)} style={{ marginBottom: 8 }} />
                 )}
-                {(payMode === "partial" || payMode === "credit") && !hasDebt && (
+                {(payMode === "partial" || payMode === "credit") && !isDebtOnlyCart && (
                   <input className="input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={{ marginBottom: 8 }} title={lang === "en" ? "Due date" : "Date d'échéance"} />
                 )}
                 <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
@@ -1180,7 +1191,7 @@ export default function POSPage() {
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ color: "#10b981" }}>{lang === "en" ? "Paid" : "Payé"}</span>
-                    <strong style={{ color: "#10b981" }}>{formatCFA(hasDebt ? total : paid)}</strong>
+                    <strong style={{ color: "#10b981" }}>{formatCFA(paid)}</strong>
                   </div>
                   {balance > 0 && !hasDebt && (
                     <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 6, borderTop: "1px solid var(--border)", marginTop: 3 }}>
