@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
+import toast from "react-hot-toast";
 import { useLangStore, useAuthStore, useSettingsStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
 import VoidReturnModal from "../components/common/VoidReturnModal";
@@ -113,52 +114,91 @@ export default function ReportsPage() {
   });
   const ledger = ledgerData?.data || null;
 
-  const printLedger = () => {
-    if (!ledger) return;
+  // MP-LEDGER-CLARITY: the three helpers below all consume the new
+  // sectioned shape from /reports/daily-ledger:
+  //   ledger.product_sales    { total, items: [{product_name, qty, unit_price, line_total}] }
+  //   ledger.debt_collections { total, items: [{customer_name, amount, sale_number, time}] }
+  //   ledger.refunds          { total, items: [{ret_ref, sale_number, customer_name, refund_amount, items_summary}] }
+  //   ledger.expenses         { total, items: [{category, description, amount}] }
+  //   ledger.drawer           { opening_float, expected, actual, variance, status, cashier_name } | null
+  //   ledger.totals           { argent_recu, net_cash_real }
+  // Helper: build the shared plain-text body for print / copy / WA.
+  const buildLedgerText = () => {
+    if (!ledger) return "";
+    const en   = lang === "en";
+    const n    = (x) => Number(x || 0).toLocaleString(en ? "en-US" : "fr-FR");
+    const ps   = ledger.product_sales    || { total: 0, items: [] };
+    const dc   = ledger.debt_collections || { total: 0, items: [] };
+    const rf   = ledger.refunds          || { total: 0, items: [] };
+    const ex   = ledger.expenses         || { total: 0, items: [] };
+    const dr   = ledger.drawer || null;
+    const tot  = ledger.totals || { argent_recu: 0, net_cash_real: 0 };
+    const locName = ledger.location ? ledger.location.name : (en ? "All locations" : "Tous les sites");
+    const longDate = new Date(ledger.date + "T00:00:00").toLocaleDateString(en ? "en-GB" : "fr-FR",
+      { day: "numeric", month: "long", year: "numeric" });
+
     const L = [];
-    const line = (l, r) => `${String(l).padEnd(24)}${String(r).padStart(14)}`;
-    L.push("DAILY LEDGER");
-    L.push(ledger.date + (ledger.location ? " — " + ledger.location.name : " — All locations"));
-    L.push("------------------------------------");
-    L.push("SALES");
-    ledger.sales_by_product.forEach(g =>
-      L.push(line(`${g.product_name} ${g.qty}x${g.unit_price}`, g.line_total.toLocaleString())));
-    L.push("------------------------------------");
-    L.push(line("Total sales:", ledger.gross_sales.toLocaleString()));
-    if (ledger.returns_total > 0) {
-      L.push(""); L.push("RETURNS");
-      ledger.returns_today.forEach(r =>
-        L.push(line(`${r.ret_ref} ${r.items_summary}`, "-" + r.refund_amount.toLocaleString())));
-      L.push(line("Total returns:", "-" + ledger.returns_total.toLocaleString()));
-      L.push(line("Net sales:", ledger.net_sales.toLocaleString()));
+    L.push(`📊 ${en ? "Daily Report" : "Rapport du jour"} — ${locName}`);
+    L.push(`${longDate}${dr?.cashier_name ? " — " + dr.cashier_name : ""}`);
+    L.push("");
+    L.push(`🛒 ${en ? "Product sales" : "Ventes produits"}: ${n(ps.total)} FCFA (${ps.items.length} ${ps.items.length === 1 ? (en ? "transaction" : "transaction") : (en ? "transactions" : "transactions")})`);
+    L.push(`💰 ${en ? "Debt collections" : "Recouvrements"}: ${n(dc.total)} FCFA (${dc.items.length} ${dc.items.length === 1 ? "transaction" : "transactions"})`);
+    L.push(`↩ ${en ? "Refunds" : "Remboursements"}: ${n(rf.total)} FCFA${rf.total > 0 ? ` (${rf.items.length})` : ""}`);
+    L.push(`💸 ${en ? "Expenses" : "Dépenses"}: ${n(ex.total)} FCFA${ex.total > 0 ? ` (${ex.items.length})` : ""}`);
+    L.push("");
+    L.push(`💵 ${en ? "Cash received" : "Argent reçu"}: ${n(tot.argent_recu)} FCFA`);
+    if (dr) {
+      L.push(`📦 ${en ? "Expected drawer" : "Caisse attendue"}: ${n(dr.expected)} FCFA (${en ? "with opening float" : "avec solde d'ouverture"} ${n(dr.opening_float)})`);
+      if (dr.actual != null) {
+        L.push(`💼 ${en ? "Actual cash" : "Solde réel"}: ${n(dr.actual)} FCFA`);
+        const v = Number(dr.variance || 0);
+        const label = v === 0
+          ? (en ? "(Exact)" : "(Exact)")
+          : v > 0
+            ? (en ? `+${n(v)} (Surplus)` : `+${n(v)} (Excédent)`)
+            : (en ? `−${n(Math.abs(v))} (Shortage)` : `−${n(Math.abs(v))} (Manquant)`);
+        L.push(`⚖ ${en ? "Variance" : "Écart"}: ${label}`);
+      }
     }
-    if (ledger.expenses_total > 0) {
-      L.push(""); L.push("EXPENSES");
-      ledger.expenses.forEach(e =>
-        L.push(line(`${e.category ? e.category + " - " : ""}${e.description}`, "-" + e.amount.toLocaleString())));
-      L.push(line("Total expenses:", "-" + ledger.expenses_total.toLocaleString()));
-    }
-    L.push("====================================");
-    L.push(line("CASH BALANCE:", ledger.cash_balance.toLocaleString() + " FCFA"));
-    L.push("====================================");
-    const w = window.open("", "_blank", "width=380,height=600");
-    w.document.write(`<pre style="font:12px/1.5 monospace;padding:12px;white-space:pre-wrap">${L.join("\n")}</pre>`);
+    L.push("");
+    L.push(en ? "Sent from Mon Partenaire POS" : "Envoyé depuis Mon Partenaire POS");
+    return L.join("\n");
+  };
+
+  const printLedger = () => {
+    const txt = buildLedgerText();
+    if (!txt) return;
+    const w = window.open("", "_blank", "width=380,height=620");
+    w.document.write(`<pre style="font:12px/1.5 monospace;padding:12px;white-space:pre-wrap">${txt.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</pre>`);
     w.document.close(); w.focus(); setTimeout(() => { w.print(); }, 250);
   };
 
   const exportLedgerCSV = () => {
     if (!ledger) return;
+    const ps = ledger.product_sales    || { total: 0, items: [] };
+    const dc = ledger.debt_collections || { total: 0, items: [] };
+    const rf = ledger.refunds          || { total: 0, items: [] };
+    const ex = ledger.expenses         || { total: 0, items: [] };
+    const dr = ledger.drawer || null;
+    const tot = ledger.totals || { argent_recu: 0, net_cash_real: 0 };
+
     const rows = [["section", "description", "qty", "unit_price", "amount"]];
-    ledger.sales_by_product.forEach(g => rows.push(["sale", g.product_name, g.qty, g.unit_price, g.line_total]));
-    rows.push(["", "Total sales", "", "", ledger.gross_sales]);
-    ledger.returns_today.forEach(r => rows.push(["return", `${r.ret_ref} ${r.items_summary}`, "", "", -r.refund_amount]));
-    if (ledger.returns_total > 0) {
-      rows.push(["", "Total returns", "", "", -ledger.returns_total]);
-      rows.push(["", "Net sales", "", "", ledger.net_sales]);
+    ps.items.forEach(g => rows.push(["product_sale", g.product_name, g.qty, g.unit_price, g.line_total]));
+    rows.push(["", "Sub-total product sales", "", "", ps.total]);
+    dc.items.forEach(d => rows.push(["debt_collection", `Recouvrement — ${d.customer_name}${d.sale_number ? ` (${d.sale_number})` : ""}`, "", "", d.amount]));
+    rows.push(["", "Sub-total debt collections", "", "", dc.total]);
+    rf.items.forEach(r => rows.push(["refund", `${r.ret_ref || ""} ${r.customer_name || ""} ${r.items_summary || ""}`.trim(), "", "", -r.refund_amount]));
+    if (rf.total > 0) rows.push(["", "Sub-total refunds", "", "", -rf.total]);
+    ex.items.forEach(e => rows.push(["expense", `${e.category ? e.category + " — " : ""}${e.description}`, "", "", -e.amount]));
+    if (ex.total > 0) rows.push(["", "Sub-total expenses", "", "", -ex.total]);
+    rows.push(["", "ARGENT REÇU", "", "", tot.argent_recu]);
+    rows.push(["", "NET CASH (after refunds + expenses)", "", "", tot.net_cash_real]);
+    if (dr) {
+      rows.push(["drawer", "Opening float", "", "", dr.opening_float]);
+      rows.push(["drawer", "Expected drawer", "", "", dr.expected]);
+      if (dr.actual != null) rows.push(["drawer", "Actual cash", "", "", dr.actual]);
+      if (dr.variance != null) rows.push(["drawer", "Variance", "", "", dr.variance]);
     }
-    ledger.expenses.forEach(e => rows.push(["expense", `${e.category ? e.category + " - " : ""}${e.description}`, "", "", -e.amount]));
-    if (ledger.expenses_total > 0) rows.push(["", "Total expenses", "", "", -ledger.expenses_total]);
-    rows.push(["", "CASH BALANCE", "", "", ledger.cash_balance]);
     const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
@@ -166,41 +206,31 @@ export default function ReportsPage() {
   };
 
   const shareLedgerWhatsApp = () => {
-    if (!ledger) return;
-    const en = lang === "en";
-    const n = (x) => Number(x || 0).toLocaleString(en ? "en-US" : "fr-FR");
-    const locName = ledger.location ? ledger.location.name : (en ? "All locations" : "Tous les sites");
-    const longDate = new Date(ledger.date + "T00:00:00").toLocaleDateString(en ? "en-GB" : "fr-FR",
-      { day: "numeric", month: "long", year: "numeric" });
-    const L = [];
-    L.push(`📊 ${en ? "Daily Ledger" : "Journal de Caisse"} — ${locName}`);
-    L.push(longDate);
-    L.push("");
-    L.push(en ? "SALES" : "VENTES");
-    ledger.sales_by_product.forEach(g =>
-      L.push(`• ${g.product_name}  ${g.qty} × ${n(g.unit_price)} = ${n(g.line_total)}`));
-    L.push(`${en ? "Total sales" : "Total ventes"}: ${n(ledger.gross_sales)} FCFA`);
-    if (ledger.returns_total > 0) {
-      L.push("");
-      L.push(en ? "RETURNS" : "RETOURS");
-      ledger.returns_today.forEach(r =>
-        L.push(`• ${r.ret_ref} ${r.items_summary}  -${n(r.refund_amount)}`));
-      L.push(`${en ? "Total returns" : "Total retours"}: -${n(ledger.returns_total)} FCFA`);
+    const txt = buildLedgerText();
+    if (!txt) return;
+    window.open(`https://wa.me/?text=${encodeURIComponent(txt)}`, "_blank");
+  };
+
+  // MP-LEDGER-CLARITY: "Envoyer au propriétaire" copy-to-clipboard.
+  // Uses the same plain-text body as printLedger / shareLedgerWhatsApp
+  // so what the boss receives matches what's on screen byte-for-byte.
+  const copyLedgerToClipboard = async () => {
+    const txt = buildLedgerText();
+    if (!txt) return;
+    try {
+      await navigator.clipboard.writeText(txt);
+      toast.success(lang === "en" ? "Report copied — paste into WhatsApp / SMS" : "Rapport copié — collez dans WhatsApp / SMS");
+    } catch {
+      // Older browsers / non-secure contexts: fall back to a hidden
+      // textarea + execCommand. The toast still tells the user what
+      // happened.
+      const ta = document.createElement("textarea");
+      ta.value = txt; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); toast.success(lang === "en" ? "Report copied" : "Rapport copié"); }
+      catch { toast.error(lang === "en" ? "Copy failed — long-press to copy from the report below" : "Copie échouée — touchez-presser sur le rapport ci-dessous"); }
+      finally { document.body.removeChild(ta); }
     }
-    if (ledger.expenses_total > 0) {
-      L.push("");
-      L.push(en ? "EXPENSES" : "DÉPENSES");
-      ledger.expenses.forEach(e =>
-        L.push(`• ${e.category ? e.category + " (" + e.description + ")" : e.description}  -${n(e.amount)}`));
-      L.push(`${en ? "Total expenses" : "Total dépenses"}: -${n(ledger.expenses_total)} FCFA`);
-    }
-    L.push("");
-    L.push("═════════════════════");
-    L.push(`${en ? "Cash balance" : "Solde caisse"}: ${n(ledger.cash_balance)} FCFA`);
-    L.push("═════════════════════");
-    L.push("");
-    L.push(en ? "Sent from Mon Partenaire POS" : "Envoyé depuis Mon Partenaire POS");
-    window.open(`https://wa.me/?text=${encodeURIComponent(L.join("\n"))}`, "_blank");
   };
 
   const { data: returnsData, isLoading: returnsLoading } = useQuery({
@@ -911,71 +941,191 @@ export default function ReportsPage() {
               {ledgerLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
             <div style={{ flex: 1 }} />
-            <button className="btn btn-secondary" onClick={printLedger} disabled={!ledger}>🖨 {lang === "en" ? "Print" : "Imprimer"}</button>
+            <button className="btn btn-primary" onClick={copyLedgerToClipboard} disabled={!ledger}
+              title={lang === "en" ? "Copy plain-text report — paste into WhatsApp / SMS" : "Copier le rapport — collez dans WhatsApp / SMS"}>
+              📋 {lang === "en" ? "Send to owner" : "Envoyer au propriétaire"}
+            </button>
+            <button className="btn btn-secondary" onClick={printLedger}      disabled={!ledger}>🖨 {lang === "en" ? "Print" : "Imprimer"}</button>
             <button className="btn btn-secondary" onClick={exportLedgerCSV} disabled={!ledger}>📊 CSV</button>
             <button onClick={shareLedgerWhatsApp} disabled={!ledger}
               style={{ background: "#25D366", border: "none", color: "#fff", borderRadius: 8, padding: "8px 14px", cursor: ledger ? "pointer" : "not-allowed", fontWeight: 700, fontSize: 13, opacity: ledger ? 1 : 0.6 }}>
-              📱 {lang === "en" ? "Share via WhatsApp" : "Partager via WhatsApp"}
+              📱 WhatsApp
             </button>
           </div>
           {ledgerLoading || !ledger ? (
             <div style={{ padding: 30, textAlign: "center", color: "var(--text-muted)" }}>{lang === "en" ? "Loading…" : "Chargement…"}</div>
-          ) : (
-            <div className="card" style={{ maxWidth: 560, margin: "0 auto", padding: "18px 20px" }}>
-              <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 12 }}>
-                {lang === "en" ? "Sales" : "Ventes"}
-              </div>
-              {ledger.sales_by_product.length === 0 ? (
-                <div style={{ color: "var(--text-muted)", fontSize: 13, padding: "6px 0" }}>{lang === "en" ? "No sales this day." : "Aucune vente ce jour."}</div>
-              ) : ledger.sales_by_product.map((g, i) => (
-                <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "5px 0", borderBottom: "1px solid var(--border)" }}>
-                  <span>{g.product_name} <span style={{ color: "var(--text-muted)" }}>{g.qty} × {formatCFA(g.unit_price)}</span></span>
-                  <span style={{ fontWeight: 600 }}>{formatCFA(g.line_total)}</span>
+          ) : (() => {
+            // MP-LEDGER-CLARITY: sectioned read for a boss-on-WhatsApp.
+            // Product sales separate from debt collections so "revenue"
+            // and "receivables collected" don't get added together
+            // unexpectedly. Drawer math at the bottom when a shift
+            // exists at this location for this date.
+            const ps  = ledger.product_sales    || { total: 0, items: [] };
+            const dc  = ledger.debt_collections || { total: 0, items: [] };
+            const rf  = ledger.refunds          || { total: 0, items: [] };
+            const ex  = ledger.expenses         || { total: 0, items: [] };
+            const dr  = ledger.drawer || null;
+            const tot = ledger.totals || { argent_recu: 0, net_cash_real: 0 };
+
+            const SectionHeader = ({ icon, title, count, color }) => (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 18, marginBottom: 6 }}>
+                <div style={{ fontWeight: 800, fontSize: 14, color }}>
+                  {icon} {title} <span style={{ color: "var(--text-muted)", fontWeight: 500, fontSize: 12 }}>({count})</span>
                 </div>
-              ))}
-              <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, padding: "8px 0", borderTop: "2px solid var(--border)", marginTop: 4 }}>
-                <span>{lang === "en" ? "Total sales" : "Total ventes"}</span>
-                <span style={{ color: "var(--brand-light)" }}>{formatCFA(ledger.gross_sales)}</span>
               </div>
-
-              {ledger.returns_total > 0 && (
-                <>
-                  <div style={{ fontWeight: 800, fontSize: 15, margin: "16px 0 8px" }}>{lang === "en" ? "Returns" : "Retours"}</div>
-                  {ledger.returns_today.map((r, i) => (
-                    <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "5px 0", borderBottom: "1px solid var(--border)" }}>
-                      <span><span style={{ fontFamily: "monospace" }}>{r.ret_ref}</span> <span style={{ color: "var(--text-muted)" }}>{r.items_summary}</span></span>
-                      <span style={{ color: "#f87171" }}>-{formatCFA(r.refund_amount)}</span>
-                    </div>
-                  ))}
-                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, padding: "8px 0", borderTop: "2px solid var(--border)" }}>
-                    <span>{lang === "en" ? "Net sales" : "Ventes nettes"}</span>
-                    <span style={{ color: "var(--brand-light)" }}>{formatCFA(ledger.net_sales)}</span>
-                  </div>
-                </>
-              )}
-
-              {ledger.expenses_total > 0 && (
-                <>
-                  <div style={{ fontWeight: 800, fontSize: 15, margin: "16px 0 8px" }}>{lang === "en" ? "Expenses" : "Dépenses"}</div>
-                  {ledger.expenses.map((e, i) => (
-                    <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "5px 0", borderBottom: "1px solid var(--border)" }}>
-                      <span>{e.category ? e.category + " - " : ""}{e.description}</span>
-                      <span style={{ color: "#f87171" }}>-{formatCFA(e.amount)}</span>
-                    </div>
-                  ))}
-                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, padding: "8px 0", borderTop: "2px solid var(--border)" }}>
-                    <span>{lang === "en" ? "Total expenses" : "Total dépenses"}</span>
-                    <span style={{ color: "#f87171" }}>-{formatCFA(ledger.expenses_total)}</span>
-                  </div>
-                </>
-              )}
-
-              <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: 17, padding: "12px 0", borderTop: "3px double var(--border)", borderBottom: "3px double var(--border)", marginTop: 14 }}>
-                <span>{lang === "en" ? "Cash balance (expected)" : "Solde caisse (attendu)"}</span>
-                <span style={{ color: ledger.cash_balance < 0 ? "#f87171" : "#34d399" }}>{formatCFA(ledger.cash_balance)}</span>
+            );
+            const Subtotal = ({ label, value, color }) => (
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderTop: "1px solid var(--border)", fontWeight: 700, fontSize: 13 }}>
+                <span>{lang === "en" ? "Sub-total" : "Sous-total"} — {label}</span>
+                <span style={{ color }}>{formatCFA(value)}</span>
               </div>
-            </div>
-          )}
+            );
+
+            return (
+              <div className="card" style={{ maxWidth: 620, margin: "0 auto", padding: "20px 22px" }}>
+
+                {/* ── NEW PRODUCT SALES ───────────────────────── */}
+                <SectionHeader icon="🛒"
+                  title={lang === "en" ? "New product sales" : "Ventes produits"}
+                  count={ps.items.length} color="var(--text-primary)" />
+                {ps.items.length === 0 ? (
+                  <div style={{ color: "var(--text-muted)", fontSize: 13, padding: "6px 0" }}>—</div>
+                ) : ps.items.map((g, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "5px 0", borderBottom: "1px solid var(--border)" }}>
+                    <span>{g.product_name} <span style={{ color: "var(--text-muted)" }}>{g.qty} × {formatCFA(g.unit_price)}</span></span>
+                    <span style={{ fontWeight: 600 }}>{formatCFA(g.line_total)}</span>
+                  </div>
+                ))}
+                <Subtotal label={lang === "en" ? "product sales" : "ventes produits"} value={ps.total} color="var(--brand-light)" />
+
+                {/* ── DEBT COLLECTIONS ────────────────────────── */}
+                <SectionHeader icon="💰"
+                  title={lang === "en" ? "Debt collections" : "Recouvrements"}
+                  count={dc.items.length} color="var(--text-primary)" />
+                {dc.items.length === 0 ? (
+                  <div style={{ color: "var(--text-muted)", fontSize: 13, padding: "6px 0" }}>—</div>
+                ) : dc.items.map((d, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "5px 0", borderBottom: "1px solid var(--border)" }}>
+                    <span>
+                      {lang === "en" ? "Debt collection" : "Recouvrement"} — <strong>{d.customer_name}</strong>
+                      {d.sale_number && <span style={{ color: "var(--text-muted)", fontFamily: "monospace", marginLeft: 6, fontSize: 11 }}>{d.sale_number}</span>}
+                    </span>
+                    <span style={{ fontWeight: 600, color: "#34d399" }}>{formatCFA(d.amount)}</span>
+                  </div>
+                ))}
+                <Subtotal label={lang === "en" ? "debt collections" : "recouvrements"} value={dc.total} color="#34d399" />
+
+                {/* ── REFUNDS (only if > 0) ──────────────────── */}
+                {rf.total > 0 && (
+                  <>
+                    <SectionHeader icon="↩"
+                      title={lang === "en" ? "Refunds" : "Remboursements"}
+                      count={rf.items.length} color="var(--text-primary)" />
+                    {rf.items.map((r, i) => (
+                      <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "5px 0", borderBottom: "1px solid var(--border)" }}>
+                        <span>
+                          <span style={{ fontFamily: "monospace", fontSize: 11 }}>{r.ret_ref || ""}</span>
+                          {r.sale_number && <span style={{ color: "var(--text-muted)", marginLeft: 6 }}>{r.sale_number}</span>}
+                          {r.customer_name && <span style={{ marginLeft: 6 }}>{r.customer_name}</span>}
+                          {r.items_summary && <span style={{ color: "var(--text-muted)", marginLeft: 6 }}>— {r.items_summary}</span>}
+                        </span>
+                        <span style={{ color: "#f87171", fontWeight: 600 }}>−{formatCFA(r.refund_amount)}</span>
+                      </div>
+                    ))}
+                    <Subtotal label={lang === "en" ? "refunds" : "remboursements"} value={-rf.total} color="#f87171" />
+                  </>
+                )}
+
+                {/* ── EXPENSES (only if > 0) ─────────────────── */}
+                {ex.total > 0 && (
+                  <>
+                    <SectionHeader icon="💸"
+                      title={lang === "en" ? "Expenses" : "Dépenses"}
+                      count={ex.items.length} color="var(--text-primary)" />
+                    {ex.items.map((e, i) => (
+                      <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "5px 0", borderBottom: "1px solid var(--border)" }}>
+                        <span>
+                          {e.category && <strong>{e.category}</strong>}
+                          {e.category && e.description ? " — " : ""}
+                          {e.description}
+                        </span>
+                        <span style={{ color: "#f87171", fontWeight: 600 }}>−{formatCFA(e.amount)}</span>
+                      </div>
+                    ))}
+                    <Subtotal label={lang === "en" ? "expenses" : "dépenses"} value={-ex.total} color="#f87171" />
+                  </>
+                )}
+
+                {/* ── ARGENT REÇU (highlighted) ─────────────── */}
+                <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: 16, padding: "14px 0", borderTop: "3px double var(--border)", borderBottom: "3px double var(--border)", marginTop: 18 }}>
+                  <div>
+                    <div>{lang === "en" ? "CASH RECEIVED" : "ARGENT REÇU"}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 500, marginTop: 2 }}>
+                      ({lang === "en" ? "Sales" : "Ventes"} {formatCFA(ps.total)} + {lang === "en" ? "Collections" : "Recouvrements"} {formatCFA(dc.total)})
+                    </div>
+                  </div>
+                  <span style={{ color: "var(--brand-light)" }}>{formatCFA(tot.argent_recu)}</span>
+                </div>
+
+                {/* ── DRAWER MATH (only when a shift exists for this loc+date) */}
+                {dr ? (
+                  <div style={{ marginTop: 18, padding: "12px 14px", background: "var(--bg-elevated)", borderRadius: 10, border: "1px solid var(--border)" }}>
+                    <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>
+                      💼 {lang === "en" ? "Cash drawer" : "Caisse"} <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>· {dr.cashier_name || "—"}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
+                      <span style={{ color: "var(--text-muted)" }}>{lang === "en" ? "Opening float" : "Solde d'ouverture"}</span>
+                      <span>{formatCFA(dr.opening_float)}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
+                      <span style={{ color: "var(--text-muted)" }}>+ {lang === "en" ? "Cash received" : "Argent reçu"}</span>
+                      <span style={{ color: "#34d399" }}>{formatCFA(tot.argent_recu)}</span>
+                    </div>
+                    {rf.total > 0 && (
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
+                        <span style={{ color: "var(--text-muted)" }}>− {lang === "en" ? "Refunds" : "Remboursements"}</span>
+                        <span style={{ color: "#f87171" }}>−{formatCFA(rf.total)}</span>
+                      </div>
+                    )}
+                    {ex.total > 0 && (
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
+                        <span style={{ color: "var(--text-muted)" }}>− {lang === "en" ? "Expenses" : "Dépenses"}</span>
+                        <span style={{ color: "#f87171" }}>−{formatCFA(ex.total)}</span>
+                      </div>
+                    )}
+                    <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 14, padding: "8px 0 4px", borderTop: "2px solid var(--border)", marginTop: 4 }}>
+                      <span>{lang === "en" ? "Expected drawer" : "Caisse attendue"}</span>
+                      <span style={{ color: "var(--brand-light)" }}>{formatCFA(dr.expected)}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "6px 0 2px" }}>
+                      <span style={{ color: "var(--text-muted)" }}>{lang === "en" ? "Actual cash" : "Caisse réelle"}</span>
+                      <span style={{ fontWeight: 600 }}>
+                        {dr.actual != null ? formatCFA(dr.actual) : <em style={{ color: "var(--text-muted)" }}>{lang === "en" ? "to count at close" : "à compter à la clôture"}</em>}
+                      </span>
+                    </div>
+                    {dr.actual != null && (
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "2px 0", fontWeight: 700 }}>
+                        <span>{lang === "en" ? "Variance" : "Écart"}</span>
+                        <span style={{ color: (dr.variance || 0) === 0 ? "#34d399" : (dr.variance || 0) > 0 ? "#fbbf24" : "#f87171" }}>
+                          {(dr.variance || 0) === 0
+                            ? `${formatCFA(0)} ${lang === "en" ? "(Exact)" : "(Exact)"}`
+                            : (dr.variance || 0) > 0
+                              ? `+${formatCFA(dr.variance)} ${lang === "en" ? "(Surplus)" : "(Excédent)"}`
+                              : `−${formatCFA(Math.abs(dr.variance))} ${lang === "en" ? "(Shortage)" : "(Manquant)"}`}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ) : ledgerLoc !== "all" && (
+                  <div style={{ marginTop: 18, padding: "10px 14px", fontSize: 12, color: "var(--text-muted)", background: "var(--bg-elevated)", borderRadius: 10, border: "1px dashed var(--border)" }}>
+                    {lang === "en"
+                      ? "No cash shift was opened at this location on this day — drawer math unavailable."
+                      : "Aucun poste de caisse ouvert à cet emplacement ce jour — math caisse indisponible."}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
       {voidSale && (
