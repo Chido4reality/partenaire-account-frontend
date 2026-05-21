@@ -148,8 +148,12 @@ export default function ReportsPage() {
     L.push("");
     L.push(`💵 ${en ? "Cash received" : "Argent reçu"}: ${n(tot.argent_recu)} FCFA`);
     if (dr) {
+      // MP-LEDGER-DRAWER-MATH-FIX: shift-scoped figures, and only
+      // surface actual/variance when the shift is closed AND
+      // counted. Mirror the on-screen drawer panel exactly.
       L.push(`📦 ${en ? "Expected drawer" : "Caisse attendue"}: ${n(dr.expected)} FCFA (${en ? "with opening float" : "avec solde d'ouverture"} ${n(dr.opening_float)})`);
-      if (dr.actual != null) {
+      const drIsClosed = dr.status === "closed" && dr.actual != null;
+      if (drIsClosed) {
         L.push(`💼 ${en ? "Actual cash" : "Solde réel"}: ${n(dr.actual)} FCFA`);
         const v = Number(dr.variance || 0);
         const label = v === 0
@@ -158,6 +162,8 @@ export default function ReportsPage() {
             ? (en ? `+${n(v)} (Surplus)` : `+${n(v)} (Excédent)`)
             : (en ? `−${n(Math.abs(v))} (Shortage)` : `−${n(Math.abs(v))} (Manquant)`);
         L.push(`⚖ ${en ? "Variance" : "Écart"}: ${label}`);
+      } else {
+        L.push(`💼 ${en ? "Actual cash" : "Solde réel"}: — ${en ? "(count at end of shift)" : "(à compter en fin de poste)"}`);
       }
     }
     L.push("");
@@ -1067,56 +1073,81 @@ export default function ReportsPage() {
                   <span style={{ color: "var(--brand-light)" }}>{formatCFA(tot.argent_recu)}</span>
                 </div>
 
-                {/* ── DRAWER MATH (only when a shift exists for this loc+date) */}
-                {dr ? (
-                  <div style={{ marginTop: 18, padding: "12px 14px", background: "var(--bg-elevated)", borderRadius: 10, border: "1px solid var(--border)" }}>
-                    <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>
-                      💼 {lang === "en" ? "Cash drawer" : "Caisse"} <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>· {dr.cashier_name || "—"}</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
-                      <span style={{ color: "var(--text-muted)" }}>{lang === "en" ? "Opening float" : "Solde d'ouverture"}</span>
-                      <span>{formatCFA(dr.opening_float)}</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
-                      <span style={{ color: "var(--text-muted)" }}>+ {lang === "en" ? "Cash received" : "Argent reçu"}</span>
-                      <span style={{ color: "#34d399" }}>{formatCFA(tot.argent_recu)}</span>
-                    </div>
-                    {rf.total > 0 && (
+                {/* ── DRAWER MATH (only when a shift exists for this loc+date) ───
+                    MP-LEDGER-DRAWER-MATH-FIX: all numbers in this box are
+                    SHIFT-scoped (dr.cash_sales_received / dr.cash_refunds /
+                    dr.cash_expenses) — not day-wide totals. Actual cash +
+                    variance render ONLY when the shift is closed AND the
+                    cashier has counted (dr.actual != null). For an open
+                    shift the actual line shows "à compter en fin de poste"
+                    and no variance is displayed (the cashier hasn't done
+                    the count yet — anything we'd show would be made up). */}
+                {dr ? (() => {
+                  const drIsClosed = dr.status === "closed" && dr.actual != null;
+                  const openedTime = new Date(dr.opened_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+                  const closedTime = dr.closed_at
+                    ? new Date(dr.closed_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+                    : null;
+                  const heading = dr.status === "closed"
+                    ? (lang === "en"
+                        ? `Cash drawer — shift closed at ${closedTime || openedTime}${dr.cashier_name ? " — " + dr.cashier_name : ""}`
+                        : `Caisse — poste fermé à ${closedTime || openedTime}${dr.cashier_name ? " — " + dr.cashier_name : ""}`)
+                    : (lang === "en"
+                        ? `Cash drawer — shift open since ${openedTime}${dr.cashier_name ? " — " + dr.cashier_name : ""}`
+                        : `Caisse — poste ouvert depuis ${openedTime}${dr.cashier_name ? " — " + dr.cashier_name : ""}`);
+                  const sCash = Number(dr.cash_sales_received) || 0;
+                  const sRef  = Number(dr.cash_refunds)        || 0;
+                  const sExp  = Number(dr.cash_expenses)       || 0;
+                  return (
+                    <div style={{ marginTop: 18, padding: "12px 14px", background: "var(--bg-elevated)", borderRadius: 10, border: "1px solid var(--border)" }}>
+                      <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>💼 {heading}</div>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
-                        <span style={{ color: "var(--text-muted)" }}>− {lang === "en" ? "Refunds" : "Remboursements"}</span>
-                        <span style={{ color: "#f87171" }}>−{formatCFA(rf.total)}</span>
+                        <span style={{ color: "var(--text-muted)" }}>{lang === "en" ? "Opening float" : "Solde d'ouverture"}</span>
+                        <span>{formatCFA(dr.opening_float)}</span>
                       </div>
-                    )}
-                    {ex.total > 0 && (
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
-                        <span style={{ color: "var(--text-muted)" }}>− {lang === "en" ? "Expenses" : "Dépenses"}</span>
-                        <span style={{ color: "#f87171" }}>−{formatCFA(ex.total)}</span>
+                        <span style={{ color: "var(--text-muted)" }}>+ {lang === "en" ? "Cash sales this shift" : "Ventes espèces ce poste"}</span>
+                        <span style={{ color: "#34d399" }}>{formatCFA(sCash)}</span>
                       </div>
-                    )}
-                    <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 14, padding: "8px 0 4px", borderTop: "2px solid var(--border)", marginTop: 4 }}>
-                      <span>{lang === "en" ? "Expected drawer" : "Caisse attendue"}</span>
-                      <span style={{ color: "var(--brand-light)" }}>{formatCFA(dr.expected)}</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "6px 0 2px" }}>
-                      <span style={{ color: "var(--text-muted)" }}>{lang === "en" ? "Actual cash" : "Caisse réelle"}</span>
-                      <span style={{ fontWeight: 600 }}>
-                        {dr.actual != null ? formatCFA(dr.actual) : <em style={{ color: "var(--text-muted)" }}>{lang === "en" ? "to count at close" : "à compter à la clôture"}</em>}
-                      </span>
-                    </div>
-                    {dr.actual != null && (
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "2px 0", fontWeight: 700 }}>
-                        <span>{lang === "en" ? "Variance" : "Écart"}</span>
-                        <span style={{ color: (dr.variance || 0) === 0 ? "#34d399" : (dr.variance || 0) > 0 ? "#fbbf24" : "#f87171" }}>
-                          {(dr.variance || 0) === 0
-                            ? `${formatCFA(0)} ${lang === "en" ? "(Exact)" : "(Exact)"}`
-                            : (dr.variance || 0) > 0
-                              ? `+${formatCFA(dr.variance)} ${lang === "en" ? "(Surplus)" : "(Excédent)"}`
-                              : `−${formatCFA(Math.abs(dr.variance))} ${lang === "en" ? "(Shortage)" : "(Manquant)"}`}
+                      {sRef > 0 && (
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
+                          <span style={{ color: "var(--text-muted)" }}>− {lang === "en" ? "Refunds this shift" : "Remboursements ce poste"}</span>
+                          <span style={{ color: "#f87171" }}>−{formatCFA(sRef)}</span>
+                        </div>
+                      )}
+                      {sExp > 0 && (
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
+                          <span style={{ color: "var(--text-muted)" }}>− {lang === "en" ? "Expenses this shift" : "Dépenses ce poste"}</span>
+                          <span style={{ color: "#f87171" }}>−{formatCFA(sExp)}</span>
+                        </div>
+                      )}
+                      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 14, padding: "8px 0 4px", borderTop: "2px solid var(--border)", marginTop: 4 }}>
+                        <span>{lang === "en" ? "Expected drawer" : "Caisse attendue"}</span>
+                        <span style={{ color: "var(--brand-light)" }}>{formatCFA(dr.expected)}</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "6px 0 2px" }}>
+                        <span style={{ color: "var(--text-muted)" }}>{lang === "en" ? "Actual cash" : "Caisse réelle"}</span>
+                        <span style={{ fontWeight: 600 }}>
+                          {drIsClosed
+                            ? formatCFA(dr.actual)
+                            : <em style={{ color: "var(--text-muted)" }}>— {lang === "en" ? "(count at end of shift)" : "(à compter en fin de poste)"}</em>}
                         </span>
                       </div>
-                    )}
-                  </div>
-                ) : ledgerLoc !== "all" && (
+                      {drIsClosed && (
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "2px 0", fontWeight: 700 }}>
+                          <span>{lang === "en" ? "Variance" : "Écart"}</span>
+                          <span style={{ color: (dr.variance || 0) === 0 ? "#34d399" : (dr.variance || 0) > 0 ? "#fbbf24" : "#f87171" }}>
+                            {(dr.variance || 0) === 0
+                              ? `${formatCFA(0)} ${lang === "en" ? "(Exact)" : "(Exact)"}`
+                              : (dr.variance || 0) > 0
+                                ? `+${formatCFA(dr.variance)} ${lang === "en" ? "(Surplus)" : "(Excédent)"}`
+                                : `−${formatCFA(Math.abs(dr.variance))} ${lang === "en" ? "(Shortage)" : "(Manquant)"}`}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })() : ledgerLoc !== "all" && (
                   <div style={{ marginTop: 18, padding: "10px 14px", fontSize: 12, color: "var(--text-muted)", background: "var(--bg-elevated)", borderRadius: 10, border: "1px dashed var(--border)" }}>
                     {lang === "en"
                       ? "No cash shift was opened at this location on this day — drawer math unavailable."
