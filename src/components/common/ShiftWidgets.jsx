@@ -1,0 +1,424 @@
+// MP-CASH-SHIFTS-UI — shared widgets for the cash-shift contract
+// shipped in aa71d81. Exports:
+//
+//   <ActiveShiftIndicator />       — self-contained banner (queries
+//                                    /shifts/current, hosts open/close
+//                                    modals, refetches every 30s).
+//                                    Drop into POSPage / Dashboard /
+//                                    ShiftsPage above the main content.
+//
+//   <OpenShiftModal />             — POST /shifts/open. Validates
+//                                    location + non-negative float,
+//                                    surfaces 409 inline so the user
+//                                    can keep their input.
+//
+//   <CloseShiftModal shift={...}/> — POST /shifts/:id/close. Renders
+//                                    the drawer breakdown read from
+//                                    /shifts/current, live variance
+//                                    preview, confirm-on-variance.
+//
+// All three share invalidation of  ["current-shift", location_id] and
+// ["shifts-history", ...]. They also invalidate the legacy keys
+// ["my-shift"] / ["all-shifts"] so the legacy ShiftsPage section keeps
+// agreeing with the new endpoints until Stage 2 retires that path.
+
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import toast from "react-hot-toast";
+import { useAuthStore, useLangStore, useSettingsStore } from "../../store";
+import api, { formatCFA } from "../../utils/api";
+
+// ── ModalShell — same overlay pattern as the rest of the app ─────
+function ModalShell({ children, onClose, busy }) {
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+      onClick={() => { if (!busy) onClose(); }}
+    >
+      <div onClick={e => e.stopPropagation()}
+        style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, maxWidth: 440, width: "100%", boxShadow: "0 24px 60px rgba(0,0,0,0.6)" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Row({ label, value, positive, negative }) {
+  const color = positive ? "#34d399" : negative ? "#f87171" : "var(--text-primary)";
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", fontSize: 13 }}>
+      <span style={{ color: "var(--text-muted)" }}>{label}</span>
+      <span style={{ color, fontWeight: 600 }}>{value}</span>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// OPEN MODAL
+// ─────────────────────────────────────────────────────────────────
+export function OpenShiftModal({ open, onClose, onOpened }) {
+  const { lang } = useLangStore();
+  const { user } = useAuthStore();
+  const { selectedLocation } = useSettingsStore();
+  const qc = useQueryClient();
+
+  const [openingFloat, setOpeningFloat] = useState("");
+  const [notes, setNotes]               = useState("");
+  const [error, setError]               = useState(null);
+
+  const fl = Number(openingFloat);
+  const validInput = openingFloat !== "" && Number.isFinite(fl) && fl >= 0;
+  const hasLoc     = !!selectedLocation?.id;
+
+  const m = useMutation({
+    mutationFn: () => api.post("/shifts/open", {
+      location_id:   selectedLocation?.id,
+      opening_float: fl,
+      notes:         notes || null,
+    }),
+    onSuccess: (res) => {
+      const d = res?.data?.data || {};
+      toast.success(lang === "fr"
+        ? `Poste ouvert avec ${formatCFA(d.opening_float)}`
+        : `Shift opened with ${formatCFA(d.opening_float)}`);
+      // New keys (canonical) + legacy keys (still read by the
+      // bridge ShiftsPage table until Stage 2 swap completes).
+      qc.invalidateQueries({ queryKey: ["current-shift"] });
+      qc.invalidateQueries({ queryKey: ["shifts-history"] });
+      qc.invalidateQueries({ queryKey: ["my-shift"] });
+      qc.invalidateQueries({ queryKey: ["all-shifts"] });
+      setOpeningFloat(""); setNotes(""); setError(null);
+      onClose(); onOpened?.(d);
+    },
+    onError: (err) => {
+      const r = err.response;
+      if (r?.status === 409) {
+        setError(lang === "fr"
+          ? "Un poste est déjà ouvert à cet emplacement. Fermez-le d'abord."
+          : "A shift is already open at this location. Close it first.");
+      } else if (r?.data?.message) {
+        setError(r.data.message);
+      } else {
+        setError(lang === "fr" ? "Erreur réseau. Réessayez." : "Network error. Retry.");
+      }
+    }
+  });
+
+  if (!open) return null;
+
+  return (
+    <ModalShell onClose={() => { setError(null); onClose(); }} busy={m.isPending}>
+      <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>
+        🔓 {lang === "fr" ? "Ouvrir le poste de caisse" : "Open cash shift"}
+      </div>
+      <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
+        {lang === "fr" ? "Comptez le fond de caisse au démarrage." : "Count the opening float."}
+      </div>
+
+      <div style={{ background: "var(--bg-card)", borderRadius: 10, padding: "10px 14px", marginBottom: 14 }}>
+        <Row label={lang === "fr" ? "Emplacement" : "Location"}
+             value={selectedLocation?.name || (lang === "fr" ? "Aucun" : "None")}
+             negative={!hasLoc} />
+        <Row label={lang === "fr" ? "Caissier" : "Cashier"}
+             value={user?.full_name || user?.name || "—"} />
+      </div>
+
+      <div className="form-group">
+        <label className="label">
+          {lang === "fr" ? "Solde d'ouverture (FCFA) *" : "Opening float (FCFA) *"}
+        </label>
+        <input className="input" type="number" min="0" step="1"
+          value={openingFloat}
+          onChange={e => { setOpeningFloat(e.target.value); setError(null); }}
+          placeholder="0"
+          autoFocus
+          style={{ fontSize: 18, fontWeight: 700, textAlign: "center" }} />
+        {openingFloat !== "" && !validInput && (
+          <div style={{ fontSize: 11, color: "#f87171", marginTop: 4, fontWeight: 600 }}>
+            {lang === "fr" ? "Doit être un nombre ≥ 0" : "Must be a number ≥ 0"}
+          </div>
+        )}
+      </div>
+
+      <div className="form-group">
+        <label className="label">{lang === "fr" ? "Notes (optionnel)" : "Notes (optional)"}</label>
+        <textarea className="input" rows={2}
+          value={notes} onChange={e => setNotes(e.target.value)}
+          placeholder={lang === "fr" ? "Commentaire éventuel" : "Optional comment"} />
+      </div>
+
+      {!hasLoc && (
+        <div style={{ background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: "#f87171" }}>
+          {lang === "fr"
+            ? "Aucun emplacement sélectionné. Choisissez-en un via la barre du haut."
+            : "No location selected. Pick one in the top bar."}
+        </div>
+      )}
+      {error && (
+        <div style={{ background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: "#f87171" }}>
+          {error}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn btn-secondary" style={{ flex: 1 }} disabled={m.isPending}
+          onClick={() => { setError(null); onClose(); }}>
+          {lang === "fr" ? "Annuler" : "Cancel"}
+        </button>
+        <button className="btn btn-primary" style={{ flex: 2 }}
+          disabled={!validInput || !hasLoc || m.isPending}
+          onClick={() => m.mutate()}>
+          {m.isPending ? "..." : (lang === "fr" ? "✓ Ouvrir le poste" : "✓ Open shift")}
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// CLOSE MODAL
+// ─────────────────────────────────────────────────────────────────
+export function CloseShiftModal({ open, onClose, shift, onClosed }) {
+  const { lang } = useLangStore();
+  const qc = useQueryClient();
+
+  const [actual, setActual]         = useState("");
+  const [notes, setNotes]           = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError]           = useState(null);
+
+  const expected = Number(shift?.expected_drawer || 0);
+  const amt      = actual === "" ? null : Number(actual);
+  const validAmt = amt !== null && Number.isFinite(amt) && amt >= 0;
+  const variance = validAmt ? amt - expected : null;
+
+  const m = useMutation({
+    mutationFn: () => api.post(`/shifts/${shift.shift_id}/close`, {
+      actual_cash: amt,
+      notes:       notes || null,
+    }),
+    onSuccess: (res) => {
+      const d = res?.data?.data || {};
+      const v = Number(d.variance || 0);
+      const msg = v === 0
+        ? (lang === "fr" ? "Poste fermé. Caisse exacte ✓" : "Shift closed. Drawer exact ✓")
+        : v > 0
+          ? (lang === "fr" ? `Poste fermé. Excédent : +${formatCFA(v)}` : `Shift closed. Surplus: +${formatCFA(v)}`)
+          : (lang === "fr" ? `Poste fermé. Manquant : ${formatCFA(v)}` : `Shift closed. Shortage: ${formatCFA(v)}`);
+      toast.success(msg);
+      qc.invalidateQueries({ queryKey: ["current-shift"] });
+      qc.invalidateQueries({ queryKey: ["shifts-history"] });
+      qc.invalidateQueries({ queryKey: ["my-shift"] });
+      qc.invalidateQueries({ queryKey: ["all-shifts"] });
+      setActual(""); setNotes(""); setConfirming(false); setError(null);
+      onClose(); onClosed?.(d);
+    },
+    onError: (err) => {
+      setError(err.response?.data?.message
+        || (lang === "fr" ? "Erreur réseau. Réessayez." : "Network error. Retry."));
+      setConfirming(false);
+    }
+  });
+
+  if (!open || !shift) return null;
+
+  const handleSubmit = () => {
+    if (!validAmt || m.isPending) return;
+    // Two-step submit when variance ≠ 0 so the cashier can't
+    // accidentally lock in a wrong count.
+    if (variance !== 0 && !confirming) { setConfirming(true); return; }
+    m.mutate();
+  };
+
+  let varText, varColor;
+  if (amt === null) {
+    varText  = lang === "fr" ? "Entrez le solde réel pour voir l'écart" : "Enter actual cash to see variance";
+    varColor = "var(--text-muted)";
+  } else if (variance === 0) {
+    varText  = lang === "fr" ? "Écart : 0 FCFA — Caisse exacte" : "Variance: 0 FCFA — Drawer exact";
+    varColor = "#34d399";
+  } else if (variance > 0) {
+    varText  = lang === "fr" ? `Écart : +${formatCFA(variance)} — Excédent` : `Variance: +${formatCFA(variance)} — Surplus`;
+    varColor = "#fbbf24";
+  } else {
+    varText  = lang === "fr" ? `Écart : −${formatCFA(Math.abs(variance))} — Manquant` : `Variance: −${formatCFA(Math.abs(variance))} — Shortage`;
+    varColor = "#f87171";
+  }
+
+  return (
+    <ModalShell onClose={() => { setError(null); setConfirming(false); onClose(); }} busy={m.isPending}>
+      <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>
+        🔒 {lang === "fr" ? "Fermer le poste de caisse" : "Close cash shift"}
+      </div>
+      <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
+        {lang === "fr" ? "Comptez l'argent dans la caisse et entrez le total." : "Count the cash and enter the total."}
+      </div>
+
+      <div style={{ background: "var(--bg-card)", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
+        <Row label={lang === "fr" ? "Solde d'ouverture"          : "Opening float"}
+             value={formatCFA(shift.opening_float || 0)} />
+        <Row label={lang === "fr" ? "+ Ventes en espèces"        : "+ Cash sales"}
+             value={formatCFA(shift.cash_sales_received || 0)} positive />
+        <Row label={lang === "fr" ? "− Remboursements espèces"   : "− Cash refunds"}
+             value={formatCFA(shift.cash_refunds || 0)} negative />
+        <Row label={lang === "fr" ? "− Dépenses espèces"         : "− Cash expenses"}
+             value={formatCFA(shift.cash_expenses || 0)} negative />
+        <div style={{ height: 1, background: "var(--border)", margin: "8px 0" }} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontWeight: 700 }}>{lang === "fr" ? "Caisse attendue" : "Expected drawer"}</span>
+          <strong style={{ fontSize: 18, color: "var(--brand-light)" }}>{formatCFA(expected)}</strong>
+        </div>
+      </div>
+
+      <div className="form-group">
+        <label className="label">
+          {lang === "fr" ? "Solde réel comptabilisé (FCFA) *" : "Actual cash counted (FCFA) *"}
+        </label>
+        <input className="input" type="number" min="0" step="1"
+          value={actual}
+          onChange={e => { setActual(e.target.value); setError(null); setConfirming(false); }}
+          autoFocus
+          style={{ fontSize: 18, fontWeight: 700, textAlign: "center" }} />
+        <div style={{ fontSize: 12, fontWeight: 700, color: varColor, marginTop: 8, textAlign: "center" }}>
+          {varText}
+        </div>
+      </div>
+
+      <div className="form-group">
+        <label className="label">
+          {lang === "fr" ? "Notes de fermeture (optionnel)" : "Closing notes (optional)"}
+        </label>
+        <textarea className="input" rows={2}
+          value={notes} onChange={e => setNotes(e.target.value)}
+          placeholder={lang === "fr" ? "Ex : client a payé en pièces" : "e.g. customer paid in coins"} />
+      </div>
+
+      {confirming && variance !== 0 && (
+        <div style={{ background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.3)", borderRadius: 8, padding: "10px 12px", marginBottom: 12, fontSize: 12, color: "#fbbf24" }}>
+          {lang === "fr"
+            ? "L'écart sera enregistré dans l'historique. Voulez-vous continuer ?"
+            : "The variance will be recorded in history. Continue?"}
+        </div>
+      )}
+      {error && (
+        <div style={{ background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: "#f87171" }}>
+          {error}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn btn-secondary" style={{ flex: 1 }} disabled={m.isPending}
+          onClick={() => { setError(null); setConfirming(false); onClose(); }}>
+          {lang === "fr" ? "Annuler" : "Cancel"}
+        </button>
+        <button className="btn btn-primary" style={{ flex: 2, ...(confirming && variance !== 0 ? { background: "#fbbf24", borderColor: "#fbbf24" } : {}) }}
+          disabled={!validAmt || m.isPending}
+          onClick={handleSubmit}>
+          {m.isPending
+            ? "..."
+            : confirming && variance !== 0
+              ? (lang === "fr" ? "✓ Confirmer la fermeture" : "✓ Confirm close")
+              : (lang === "fr" ? "✓ Fermer le poste" : "✓ Close shift")}
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// INDICATOR (self-contained: queries /current, hosts both modals)
+// ─────────────────────────────────────────────────────────────────
+export function ActiveShiftIndicator() {
+  const { lang } = useLangStore();
+  const { selectedLocation } = useSettingsStore();
+  const locId = selectedLocation?.id || null;
+
+  const [showOpen, setShowOpen]   = useState(false);
+  const [showClose, setShowClose] = useState(false);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["current-shift", locId],
+    queryFn: () => api.get(`/shifts/current?location_id=${locId}`).then(r => r.data?.data),
+    enabled: !!locId,
+    refetchInterval: 30000,
+  });
+
+  // Without a location, the backend can't resolve a shift. Show a
+  // slim hint so the cashier knows what to do next, but don't
+  // pretend there's no shift open elsewhere.
+  if (!locId) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderRadius: 10, background: "rgba(100,100,100,0.08)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-muted)" }}>
+        📍 {lang === "fr"
+          ? "Sélectionnez un emplacement pour voir le poste de caisse."
+          : "Select a location to see the cash shift."}
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div style={{ padding: "10px 14px", borderRadius: 10, background: "var(--bg-card)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-muted)" }}>
+        {lang === "fr" ? "Chargement du poste…" : "Loading shift…"}
+      </div>
+    );
+  }
+
+  const isOpen   = !!(data && data.shift_id);
+  const opened   = isOpen && new Date(data.opened_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  const expected = Number(data?.expected_drawer || 0);
+
+  return (
+    <>
+      {isOpen ? (
+        <div role="button" tabIndex={0}
+          onClick={() => setShowClose(true)}
+          onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setShowClose(true); } }}
+          style={{
+            display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+            padding: "10px 14px", borderRadius: 10,
+            background: "rgba(16,185,129,0.10)", border: "1px solid rgba(16,185,129,0.35)",
+            cursor: "pointer", transition: "background 0.15s",
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = "rgba(16,185,129,0.16)"}
+          onMouseLeave={e => e.currentTarget.style.background = "rgba(16,185,129,0.10)"}
+          title={lang === "fr" ? "Cliquer pour fermer le poste" : "Click to close the shift"}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: "#34d399" }}>
+            🟢 {lang === "fr" ? `Poste ouvert depuis ${opened}` : `Shift open since ${opened}`}
+          </span>
+          <span style={{ color: "var(--text-muted)", fontSize: 12 }}>•</span>
+          <span style={{ fontSize: 13 }}>
+            {lang === "fr" ? "Caisse attendue : " : "Expected drawer: "}
+            <strong style={{ color: "var(--brand-light)" }}>{formatCFA(expected)}</strong>
+          </span>
+          {data?.cashier_name && (
+            <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: "auto" }}>
+              👤 {data.cashier_name}
+            </span>
+          )}
+        </div>
+      ) : (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+          padding: "10px 14px", borderRadius: 10,
+          background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.30)",
+        }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: "#f87171" }}>
+            🔴 {lang === "fr" ? "Aucun poste de caisse ouvert" : "No cash shift open"}
+          </span>
+          <button onClick={() => setShowOpen(true)}
+            style={{
+              marginLeft: "auto", padding: "6px 12px", borderRadius: 8,
+              border: "1px solid var(--brand)", background: "var(--brand)",
+              color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer",
+            }}>
+            {lang === "fr" ? "Ouvrir le poste" : "Open shift"}
+          </button>
+        </div>
+      )}
+
+      <OpenShiftModal  open={showOpen}  onClose={() => setShowOpen(false)} />
+      <CloseShiftModal open={showClose} onClose={() => setShowClose(false)} shift={data} />
+    </>
+  );
+}

@@ -8,6 +8,7 @@ import api, { formatCFA } from "../utils/api";
 import { cacheData, getCachedData } from "../utils/offlineStore";
 import CameraScanner from "../components/common/CameraScanner";
 import { genSaleCodes } from "../utils/receiptCodes";
+import { ActiveShiftIndicator } from "../components/common/ShiftWidgets";
 
 const PAYMENT_MODES = [
   { key: "paid",    en: "Full Payment",  fr: "Paiement total",   color: "#10b981", icon: "✓" },
@@ -846,7 +847,13 @@ export default function POSPage() {
         <CameraScanner lang={lang} onScan={(code) => { setShowCamera(false); scanBarcode(code); }} onClose={() => setShowCamera(false)} />
       )}
 
-      <div style={{ display: "flex", height: "100%", flexDirection: mobile ? "column" : "row", background: "var(--bg-base)" }}>
+      {/* MP-CASH-SHIFTS-UI: outer column so the shift indicator sits
+          on top without breaking the left/right panel layout. */}
+      <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--bg-base)" }}>
+        <div style={{ padding: "10px 14px 0 14px" }}>
+          <ActiveShiftIndicator />
+        </div>
+        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: mobile ? "column" : "row" }}>
 
         {/* ██ LEFT PANEL ████████████████████████████████████████ */}
         <div style={{ flex: 1, padding: mobile ? 12 : 20, overflowY: "auto", borderRight: mobile ? "none" : "1px solid var(--border)" }}>
@@ -1216,6 +1223,7 @@ export default function POSPage() {
           </div>
         </div>
       </div>
+      </div>{/* /MP-CASH-SHIFTS-UI outer column */}
       {/* ── BUG 2: HARD BLOCK — product not stocked at this location ── */}
       {blockModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000, padding: 16 }}>

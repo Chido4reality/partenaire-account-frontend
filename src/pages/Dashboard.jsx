@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore, useLangStore } from '../store';
 import api, { formatCFA, formatDate, getGreeting } from '../utils/api';
+import { ActiveShiftIndicator } from '../components/common/ShiftWidgets';
 
 const StatCard = ({ label, value, sub, color = 'var(--brand-light)', icon, onClick }) => (
   <div className="stat-card" onClick={onClick} style={{ cursor: onClick ? 'pointer' : 'default' }}>
@@ -107,6 +108,12 @@ export default function Dashboard() {
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
+      {/* MP-CASH-SHIFTS-UI: live indicator. Uses the global
+          selectedLocation; hosts the open/close modals internally. */}
+      <div style={{ marginBottom: 16 }}>
+        <ActiveShiftIndicator />
+      </div>
+
       {/* Header */}
       <div className="page-header" style={{ marginBottom: 28 }}>
         <div>
