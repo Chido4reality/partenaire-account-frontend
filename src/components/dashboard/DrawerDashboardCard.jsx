@@ -19,7 +19,7 @@
 // Reuses OpenShiftModal / CloseShiftModal exported from
 // components/common/ShiftWidgets.jsx (Stage 2) — no duplication.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLangStore, useSettingsStore } from "../../store";
 import api, { formatCFA } from "../../utils/api";
@@ -168,19 +168,75 @@ function DetailModal({ kind, shiftId, onClose }) {
   );
 }
 
-// ── Card shell (used by every state) ──────────────────────────────
-function Shell({ title, sub, children }) {
+// ── Card shell (always renders the slim header row; conditional
+//    expandable body via maxHeight + opacity transition). The body
+//    children stay MOUNTED while collapsed (display preserved via
+//    overflow:hidden) so drilldown / shift queries don't refetch on
+//    every toggle. ────────────────────────────────────────────────
+function Shell({ shellRef, header, children, expandable, isExpanded }) {
   return (
-    <div style={{
+    <div ref={shellRef} style={{
       background: "var(--bg-card)", border: "1px solid var(--border)",
-      borderRadius: 14, padding: 16, width: "100%", maxWidth: 560,
-      display: "flex", flexDirection: "column", gap: 4,
+      borderRadius: 14, width: "100%", maxWidth: 560,
+      overflow: "hidden",
     }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
-        <div style={{ fontWeight: 800, fontSize: 15 }}>{title}</div>
-        {sub && <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{sub}</div>}
+      {header}
+      {expandable && (
+        <div style={{
+          maxHeight: isExpanded ? 800 : 0,
+          opacity:   isExpanded ? 1   : 0,
+          overflow:  "hidden",
+          transition: "max-height 250ms ease, opacity 200ms ease",
+          // Keep the children mounted to preserve query state; the
+          // outer maxHeight + opacity hide them visually.
+        }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Header row builder (the always-visible slim summary line) ────
+// Renders a single row with summary info on the left + optional
+// trailing action button + chevron/× on the right. Whole row is
+// the click target when `onToggle` is provided.
+function Header({ onToggle, isExpanded, leading, trailing, action }) {
+  const clickable = !!onToggle;
+  return (
+    <div
+      onClick={clickable ? onToggle : undefined}
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onKeyDown={clickable ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } } : undefined}
+      style={{
+        display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+        padding: "12px 14px",
+        cursor: clickable ? "pointer" : "default",
+        userSelect: "none",
+        minHeight: 48,
+      }}
+      title={clickable ? (isExpanded ? "Refermer" : "Détails") : undefined}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0, flexWrap: "wrap" }}>
+        {leading}
       </div>
-      {children}
+      {trailing}
+      {action && (
+        <span onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex" }}>
+          {action}
+        </span>
+      )}
+      {clickable && (
+        <span style={{
+          marginLeft: 4,
+          fontSize: isExpanded ? 20 : 12,
+          lineHeight: 1,
+          color: "var(--text-muted)",
+          width: 18, textAlign: "center",
+        }}>
+          {isExpanded ? "×" : "▼"}
+        </span>
+      )}
     </div>
   );
 }
@@ -203,8 +259,7 @@ export default function DrawerDashboardCard() {
   });
 
   // For state 3 — peek at the most recent closed shift to see if it
-  // was today. Shares cache key with ShiftsPage history (limit 20)?
-  // No — different limit; use a dedicated key.
+  // was today. Dedicated key (different limit from ShiftsPage's table).
   const { data: history } = useQuery({
     queryKey: ["shifts-history", locId, 1, 0],
     queryFn: () => api.get(`/shifts/history?location_id=${locId}&limit=1&offset=0`).then(r => r.data?.data),
@@ -212,9 +267,10 @@ export default function DrawerDashboardCard() {
     refetchInterval: 30000,
   });
 
-  const [showOpen, setShowOpen]   = useState(false);
-  const [showClose, setShowClose] = useState(false);
-  const [drill, setDrill]         = useState(null); // 'sales' | 'refunds' | 'expenses'
+  const [showOpen, setShowOpen]     = useState(false);
+  const [showClose, setShowClose]   = useState(false);
+  const [drill, setDrill]           = useState(null); // 'sales' | 'refunds' | 'expenses'
+  const [isExpanded, setIsExpanded] = useState(false);
 
   // ── Resolve state ───────────────────────────────────────────────
   const hasOpenShift = !!(current && current.shift_id);
@@ -225,130 +281,214 @@ export default function DrawerDashboardCard() {
                     && recentClosed.status === "closed";
   const shift        = hasOpenShift ? current : (closedToday ? recentClosed : null);
 
-  // ── State 0: no location selected ───────────────────────────────
+  // ── Click-outside + ESC to collapse. Guarded against modals so
+  //    clicking inside a drilldown / open-shift / close-shift modal
+  //    doesn't accidentally collapse the card behind them. ────────
+  const cardRef       = useRef(null);
+  const anyModalOpen  = showOpen || showClose || !!drill;
+  useEffect(() => {
+    if (!isExpanded) return;
+    const onDown = (e) => {
+      if (anyModalOpen) return;
+      if (cardRef.current && !cardRef.current.contains(e.target)) {
+        setIsExpanded(false);
+      }
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape" && !anyModalOpen) setIsExpanded(false);
+    };
+    document.addEventListener("mousedown",  onDown);
+    document.addEventListener("touchstart", onDown);
+    document.addEventListener("keydown",    onKey);
+    return () => {
+      document.removeEventListener("mousedown",  onDown);
+      document.removeEventListener("touchstart", onDown);
+      document.removeEventListener("keydown",    onKey);
+    };
+  }, [isExpanded, anyModalOpen]);
+
+  const expanded = isExpanded;
+  const toggle   = () => setIsExpanded(v => !v);
+
+  // ── State 0: no location — slim hint, not expandable ────────────
   if (!locId) {
     return (
-      <Shell title={fr ? "Caisse du jour" : "Today's drawer"}>
-        <div style={{ padding: "14px 14px 8px", fontSize: 13, color: "var(--text-muted)" }}>
-          📍 {fr
-            ? "Sélectionnez un emplacement pour voir la caisse."
-            : "Select a location to see the drawer."}
-        </div>
-      </Shell>
+      <Shell shellRef={cardRef}
+        header={<Header leading={
+          <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
+            📍 {fr ? "Sélectionnez un emplacement pour voir la caisse." : "Select a location to see the drawer."}
+          </span>
+        } />}
+      />
     );
   }
 
-  // ── State loading ───────────────────────────────────────────────
+  // ── Loading — slim placeholder, not expandable ──────────────────
   if (isLoading) {
     return (
-      <Shell title={fr ? "Caisse du jour" : "Today's drawer"}>
-        <div style={{ padding: "14px 14px 8px", fontSize: 13, color: "var(--text-muted)" }}>Loading…</div>
-      </Shell>
+      <Shell shellRef={cardRef}
+        header={<Header leading={
+          <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
+            💰 {fr ? "Caisse du jour" : "Today's drawer"} · Loading…
+          </span>
+        } />}
+      />
     );
   }
 
-  // ── State 1: no open shift, no closed-today either ──────────────
+  // ── State 1: no shift today — slim row + Open button. NOT
+  //    expandable (no extra detail to reveal — collapsed row IS the
+  //    whole card per task spec). ──────────────────────────────────
   if (!shift) {
     return (
       <>
-        <Shell title={fr ? "Caisse du jour" : "Today's drawer"}>
-          <div style={{ padding: "14px 14px 8px", fontSize: 13, color: "var(--text-muted)" }}>
-            🔴 {fr ? "Aucun poste ouvert aujourd'hui" : "No shift open today"}
-          </div>
-          <div style={{ padding: "0 14px 8px" }}>
-            <button onClick={() => setShowOpen(true)}
-              style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid var(--brand)", background: "var(--brand)", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
-              {fr ? "Ouvrir le poste" : "Open shift"}
-            </button>
-          </div>
-        </Shell>
+        <Shell shellRef={cardRef}
+          header={<Header
+            leading={
+              <span style={{ fontSize: 14, fontWeight: 700, color: "#f87171" }}>
+                💰 {fr ? "Aucun poste de caisse aujourd'hui" : "No cash shift today"}
+              </span>
+            }
+            action={
+              <button onClick={() => setShowOpen(true)}
+                style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid var(--brand)", background: "var(--brand)", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                {fr ? "Ouvrir le poste" : "Open shift"}
+              </button>
+            }
+          />}
+        />
         <OpenShiftModal open={showOpen} onClose={() => setShowOpen(false)} />
       </>
     );
   }
 
-  // ── States 2 & 3: shift exists (open or closed-today) ───────────
+  // ── States 2 & 3: shift exists — collapsible card ───────────────
   const openedAt = new Date(shift.opened_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-  const sub = hasOpenShift
-    ? (fr ? `Poste ouvert depuis ${openedAt}` : `Shift open since ${openedAt}`)
-    : (fr ? `Poste fermé · ouvert à ${openedAt}` : `Shift closed · opened at ${openedAt}`);
+  const closedAt = closedToday
+    ? new Date(shift.closed_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+    : null;
 
-  const variance     = closedToday ? Number(shift.variance || 0) : null;
+  const variance      = closedToday ? Number(shift.variance || 0) : null;
   const varianceColor = variance == null ? "var(--text-primary)"
                       : variance === 0   ? "#34d399"
                       : variance > 0     ? "#fbbf24"
                                          : "#f87171";
+  const expected      = Number(shift.expected_drawer || 0);
+
+  // Headline (right-side summary number) varies by state.
+  const headline = hasOpenShift
+    ? (
+      <span style={{ fontSize: 13 }}>
+        {fr ? "Attendu : " : "Expected: "}
+        <strong style={{ color: "var(--brand-light)" }}>{formatCFA(expected)}</strong>
+      </span>
+    )
+    : (
+      <span style={{ fontSize: 13 }}>
+        {fr ? "Écart : " : "Variance: "}
+        <strong style={{ color: varianceColor }}>
+          {variance === 0
+            ? `${formatCFA(0)} ${fr ? "(Exact)" : "(Exact)"}`
+            : variance > 0
+              ? `+${formatCFA(variance)} ${fr ? "(Excédent)" : "(Surplus)"}`
+              : `−${formatCFA(Math.abs(variance))} ${fr ? "(Manquant)" : "(Shortage)"}`}
+        </strong>
+      </span>
+    );
+
+  // Leading text — emoji + title + "open since" / "closed at" sub.
+  const leading = (
+    <>
+      <span style={{ fontSize: 14, fontWeight: 700 }}>
+        💰 {fr ? "Caisse du jour" : "Today's drawer"}
+      </span>
+      <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+        ·{" "}{hasOpenShift
+          ? (fr ? `Ouvert depuis ${openedAt}` : `Open since ${openedAt}`)
+          : (fr ? `Fermé à ${closedAt || openedAt}` : `Closed at ${closedAt || openedAt}`)}
+      </span>
+    </>
+  );
 
   return (
     <>
-      <Shell title={fr ? "Caisse du jour" : "Today's drawer"} sub={sub}>
-        <StaticRow
-          label={fr ? "Solde d'ouverture" : "Opening float"}
-          value={formatCFA(Number(shift.opening_float || 0))} />
+      <Shell shellRef={cardRef} expandable isExpanded={expanded}
+        header={<Header
+          onToggle={toggle}
+          isExpanded={expanded}
+          leading={leading}
+          trailing={headline}
+        />}>
+        {/* ── Expanded body ────────────────────────────────────── */}
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: 6 }}>
+          <StaticRow
+            label={fr ? "Solde d'ouverture" : "Opening float"}
+            value={formatCFA(Number(shift.opening_float || 0))} />
 
-        <ClickRow
-          label={fr ? "+ Ventes en espèces" : "+ Cash sales"}
-          value={formatCFA(Number(shift.cash_sales_received || 0))}
-          valueColor="#34d399"
-          onClick={() => setDrill("sales")}
-          title={fr ? "Cliquer pour le détail" : "Click for detail"} />
+          <ClickRow
+            label={fr ? "+ Ventes en espèces" : "+ Cash sales"}
+            value={formatCFA(Number(shift.cash_sales_received || 0))}
+            valueColor="#34d399"
+            onClick={() => setDrill("sales")}
+            title={fr ? "Cliquer pour le détail" : "Click for detail"} />
 
-        <ClickRow
-          label={fr ? "− Remboursements espèces" : "− Cash refunds"}
-          value={formatCFA(Number(shift.cash_refunds || 0))}
-          valueColor="#f87171"
-          onClick={() => setDrill("refunds")}
-          title={fr ? "Cliquer pour le détail" : "Click for detail"} />
+          <ClickRow
+            label={fr ? "− Remboursements espèces" : "− Cash refunds"}
+            value={formatCFA(Number(shift.cash_refunds || 0))}
+            valueColor="#f87171"
+            onClick={() => setDrill("refunds")}
+            title={fr ? "Cliquer pour le détail" : "Click for detail"} />
 
-        <ClickRow
-          label={fr ? "− Dépenses espèces" : "− Cash expenses"}
-          value={formatCFA(Number(shift.cash_expenses || 0))}
-          valueColor="#f87171"
-          onClick={() => setDrill("expenses")}
-          title={fr ? "Cliquer pour le détail" : "Click for detail"} />
+          <ClickRow
+            label={fr ? "− Dépenses espèces" : "− Cash expenses"}
+            value={formatCFA(Number(shift.cash_expenses || 0))}
+            valueColor="#f87171"
+            onClick={() => setDrill("expenses")}
+            title={fr ? "Cliquer pour le détail" : "Click for detail"} />
 
-        <div style={{ height: 1, background: "var(--border)", margin: "6px 14px" }} />
+          <div style={{ height: 1, background: "var(--border)", margin: "6px 14px" }} />
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px" }}>
-          <span style={{ fontWeight: 800, fontSize: 14 }}>
-            {fr ? "Caisse attendue" : "Expected drawer"}
-          </span>
-          <strong style={{ fontSize: 20, color: "var(--brand-light)" }}>
-            {formatCFA(Number(shift.expected_drawer || 0))}
-          </strong>
-        </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px" }}>
+            <span style={{ fontWeight: 800, fontSize: 14 }}>
+              {fr ? "Caisse attendue" : "Expected drawer"}
+            </span>
+            <strong style={{ fontSize: 20, color: "var(--brand-light)" }}>
+              {formatCFA(expected)}
+            </strong>
+          </div>
 
-        {closedToday && (
-          <>
-            <div style={{ height: 1, background: "var(--border)", margin: "0 14px 6px" }} />
-            <StaticRow
-              label={fr ? "Solde réel" : "Actual cash"}
-              value={formatCFA(Number(shift.actual_cash || 0))} />
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 14px", fontSize: 13 }}>
-              <span style={{ color: "var(--text-muted)" }}>{fr ? "Écart" : "Variance"}</span>
-              <strong style={{ color: varianceColor, fontWeight: 700 }}>
-                {variance === 0
-                  ? `${formatCFA(0)} ${fr ? "(Exact)" : "(Exact)"}`
-                  : variance > 0
-                    ? `+${formatCFA(variance)} ${fr ? "(Excédent)" : "(Surplus)"}`
-                    : `−${formatCFA(Math.abs(variance))} ${fr ? "(Manquant)" : "(Shortage)"}`}
-              </strong>
-            </div>
-          </>
-        )}
-
-        <div style={{ padding: "10px 14px 4px" }}>
-          {hasOpenShift ? (
-            <button onClick={() => setShowClose(true)}
-              style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid #ef4444", background: "#ef4444", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
-              🔒 {fr ? "Fermer le poste" : "Close shift"}
-            </button>
-          ) : (
-            <button onClick={() => setShowOpen(true)}
-              style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid var(--brand)", background: "var(--brand)", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
-              🔓 {fr ? "Ouvrir un nouveau poste" : "Open new shift"}
-            </button>
+          {closedToday && (
+            <>
+              <div style={{ height: 1, background: "var(--border)", margin: "0 14px 6px" }} />
+              <StaticRow
+                label={fr ? "Solde réel" : "Actual cash"}
+                value={formatCFA(Number(shift.actual_cash || 0))} />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 14px", fontSize: 13 }}>
+                <span style={{ color: "var(--text-muted)" }}>{fr ? "Écart" : "Variance"}</span>
+                <strong style={{ color: varianceColor, fontWeight: 700 }}>
+                  {variance === 0
+                    ? `${formatCFA(0)} ${fr ? "(Exact)" : "(Exact)"}`
+                    : variance > 0
+                      ? `+${formatCFA(variance)} ${fr ? "(Excédent)" : "(Surplus)"}`
+                      : `−${formatCFA(Math.abs(variance))} ${fr ? "(Manquant)" : "(Shortage)"}`}
+                </strong>
+              </div>
+            </>
           )}
+
+          <div style={{ padding: "10px 14px 12px" }}>
+            {hasOpenShift ? (
+              <button onClick={() => setShowClose(true)}
+                style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid #ef4444", background: "#ef4444", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                🔒 {fr ? "Fermer le poste" : "Close shift"}
+              </button>
+            ) : (
+              <button onClick={() => setShowOpen(true)}
+                style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid var(--brand)", background: "var(--brand)", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                🔓 {fr ? "Ouvrir un nouveau poste" : "Open new shift"}
+              </button>
+            )}
+          </div>
         </div>
       </Shell>
 
