@@ -143,15 +143,19 @@ export default function ReportsPage() {
     L.push("");
     L.push(`🛒 ${en ? "Product sales" : "Ventes produits"}: ${n(ps.total)} FCFA (${ps.items.length} ${ps.items.length === 1 ? (en ? "transaction" : "transaction") : (en ? "transactions" : "transactions")})`);
     L.push(`💰 ${en ? "Debt collections" : "Recouvrements"}: ${n(dc.total)} FCFA (${dc.items.length} ${dc.items.length === 1 ? "transaction" : "transactions"})`);
+    L.push(`📚 ${en ? "Daily activity" : "Activité du jour"}: ${n(tot.activite_du_jour ?? tot.argent_recu ?? 0)} FCFA`);
+    if (Number(tot.impaye_aujourdhui || 0) > 0) {
+      L.push(`🔴 ${en ? "of which unpaid" : "dont impayé"}: ${n(tot.impaye_aujourdhui)} FCFA`);
+    }
     L.push(`↩ ${en ? "Refunds" : "Remboursements"}: ${n(rf.total)} FCFA${rf.total > 0 ? ` (${rf.items.length})` : ""}`);
     L.push(`💸 ${en ? "Expenses" : "Dépenses"}: ${n(ex.total)} FCFA${ex.total > 0 ? ` (${ex.items.length})` : ""}`);
     L.push("");
-    L.push(`💵 ${en ? "Cash received" : "Argent reçu"}: ${n(tot.argent_recu)} FCFA`);
+    L.push(`💵 ${en ? "Cash received today" : "Argent reçu aujourd'hui"}: ${n(tot.argent_recu_reel ?? tot.argent_recu ?? 0)} FCFA`);
     if (dr) {
       // MP-LEDGER-DRAWER-MATH-FIX: shift-scoped figures, and only
       // surface actual/variance when the shift is closed AND
       // counted. Mirror the on-screen drawer panel exactly.
-      L.push(`📦 ${en ? "Expected drawer" : "Caisse attendue"}: ${n(dr.expected)} FCFA (${en ? "with opening float" : "avec solde d'ouverture"} ${n(dr.opening_float)})`);
+      L.push(`📦 ${en ? "Expected drawer (current shift)" : "Caisse attendue (poste actuel)"}: ${n(dr.expected)} FCFA (${en ? "with opening float" : "avec solde d'ouverture"} ${n(dr.opening_float)})`);
       const drIsClosed = dr.status === "closed" && dr.actual != null;
       if (drIsClosed) {
         L.push(`💼 ${en ? "Actual cash" : "Solde réel"}: ${n(dr.actual)} FCFA`);
@@ -1062,15 +1066,44 @@ export default function ReportsPage() {
                   </>
                 )}
 
-                {/* ── ARGENT REÇU (highlighted) ─────────────── */}
-                <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: 16, padding: "14px 0", borderTop: "3px double var(--border)", borderBottom: "3px double var(--border)", marginTop: 18 }}>
-                  <div>
-                    <div>{lang === "en" ? "CASH RECEIVED" : "ARGENT REÇU"}</div>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 500, marginTop: 2 }}>
-                      ({lang === "en" ? "Sales" : "Ventes"} {formatCFA(ps.total)} + {lang === "en" ? "Collections" : "Recouvrements"} {formatCFA(dc.total)})
-                    </div>
+                {/* ── ACTIVITÉ + ARGENT REÇU (separated per MP-LEDGER-LABEL-FIX)
+                    Two distinct numbers: ACTIVITY (book value of today's
+                    sales + collections, includes credit lines) and CASH
+                    RECEIVED (real money in pa_payments today). Used to be
+                    one line labelled "ARGENT REÇU" which conflated them. */}
+                <div style={{ marginTop: 18, padding: "14px 0", borderTop: "3px double var(--border)", borderBottom: "3px double var(--border)" }}>
+                  <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>
+                    📚 {lang === "en" ? "DAILY ACTIVITY" : "ACTIVITÉ DU JOUR"}
                   </div>
-                  <span style={{ color: "var(--brand-light)" }}>{formatCFA(tot.argent_recu)}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
+                    <span style={{ color: "var(--text-muted)" }}>{lang === "en" ? "Product sales" : "Ventes produits"}</span>
+                    <span>{formatCFA(ps.total)}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
+                    <span style={{ color: "var(--text-muted)" }}>{lang === "en" ? "Debt collections" : "Recouvrements"}</span>
+                    <span>{formatCFA(dc.total)}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 800, padding: "6px 0", borderTop: "1px solid var(--border)", marginTop: 4 }}>
+                    <span>{lang === "en" ? "Sub-total" : "Sous-total"}</span>
+                    <span style={{ color: "var(--brand-light)" }}>{formatCFA(tot.activite_du_jour ?? tot.argent_recu ?? 0)}</span>
+                  </div>
+                  {Number(tot.impaye_aujourdhui || 0) > 0 && (
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0 0", color: "#f87171" }}>
+                      <span>{lang === "en" ? "of which still unpaid" : "dont impayé"}</span>
+                      <span>−{formatCFA(tot.impaye_aujourdhui)}</span>
+                    </div>
+                  )}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontWeight: 900, fontSize: 16, padding: "12px 0 0", borderTop: "2px solid var(--border)", marginTop: 10 }}>
+                    <div>
+                      <div>💵 {lang === "en" ? "CASH RECEIVED TODAY" : "ARGENT REÇU AUJOURD'HUI"}</div>
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500, marginTop: 2 }}>
+                        {lang === "en"
+                          ? "all payment methods, all sales touched today"
+                          : "tous modes de paiement, toutes ventes touchées ce jour"}
+                      </div>
+                    </div>
+                    <span style={{ color: "#34d399" }}>{formatCFA(tot.argent_recu_reel ?? tot.argent_recu ?? 0)}</span>
+                  </div>
                 </div>
 
                 {/* ── DRAWER MATH (only when a shift exists for this loc+date) ───
