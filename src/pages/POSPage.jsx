@@ -1499,6 +1499,19 @@ function ReceiptModal({ sale, org, lang, onClose }) {
     return () => { cancelled = true; };
   }, [sale.sale_number]);
 
+  // MP-RECEIPT-MODAL-MOBILE-FIX: ESC closes. Click-outside (on the
+  // overlay) handled inline on the overlay div via onClick + an
+  // e.stopPropagation on the inner panel. Without these, a phone
+  // user with a tall partial-pay receipt (many items + customer +
+  // barcode + 3 footer buttons) could grow past the viewport and
+  // the only escape was force-quit. Now: ESC, overlay tap, sticky
+  // top-right ✕, AND the existing bottom "Close" button all work.
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   // Build WhatsApp message
   const buildWhatsAppMessage = () => {
     const shopName = org.name || "Notre boutique";
@@ -1615,20 +1628,48 @@ ${footer}
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, maxWidth: 400, width: "100%", boxShadow: "0 24px 60px rgba(0,0,0,0.6)" }}>
+    // MP-RECEIPT-MODAL-MOBILE-FIX: overlay click-to-close + sticky
+    // header (with ✕) + scrollable body + sticky footer. Container
+    // capped at 90vh so the modal never grows past the viewport on
+    // phones; previously the bottom Close button could fall off-
+    // screen and the only escape was force-quitting the app.
+    <div
+      style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+      onClick={onClose}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: "var(--bg-elevated)", border: "1px solid var(--border)",
+          borderRadius: 16, maxWidth: 400, width: "100%",
+          maxHeight: "90vh", display: "flex", flexDirection: "column",
+          boxShadow: "0 24px 60px rgba(0,0,0,0.6)",
+        }}
+      >
 
-        {/* Success header */}
-        <div style={{ textAlign: "center", marginBottom: 20 }}>
-          <div style={{ fontSize: 40, marginBottom: 8 }}>✅</div>
-          <div style={{ fontWeight: 800, fontSize: 18, color: "#10b981" }}>
+        {/* ── Sticky header ─────────────────────────────────── */}
+        <div style={{ position: "relative", flexShrink: 0, padding: "20px 24px 12px", textAlign: "center", borderBottom: "1px solid var(--border)" }}>
+          <button onClick={onClose} aria-label={lang === "en" ? "Close" : "Fermer"}
+            style={{
+              position: "absolute", top: 10, right: 10,
+              width: 32, height: 32, borderRadius: 16,
+              background: "var(--bg-card)", border: "1px solid var(--border)",
+              color: "var(--text-secondary)", cursor: "pointer",
+              fontSize: 16, fontWeight: 700, lineHeight: 1,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>✕</button>
+          <div style={{ fontSize: 32, marginBottom: 4 }}>✅</div>
+          <div style={{ fontWeight: 800, fontSize: 17, color: "#10b981" }}>
             {lang === "en" ? "Sale Recorded!" : "Vente enregistrée!"}
           </div>
           {sale.sale_number && <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>{sale.sale_number}</div>}
         </div>
 
+        {/* ── Scrollable body ─────────────────────────────── */}
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 24px" }}>
+
         {/* Receipt preview */}
-        <div style={{ background: "var(--bg-card)", borderRadius: 12, padding: 16, marginBottom: 20, fontSize: 13 }}>
+        <div style={{ background: "var(--bg-card)", borderRadius: 12, padding: 16, marginBottom: 4, fontSize: 13 }}>
           <div style={{ fontWeight: 700, textAlign: "center", marginBottom: 8 }}>{org.name || "Boutique"}</div>
           {sale.customer?.name && <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", marginBottom: 4 }}>👤 {sale.customer.name}</div>}
           {/* Payment status badge */}
@@ -1668,26 +1709,28 @@ ${footer}
           )}
         </div>
 
-        {/* Action buttons */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        </div>{/* /scrollable body */}
+
+        {/* ── Sticky footer ─────────────────────────────── */}
+        <div style={{ flexShrink: 0, padding: "12px 24px 16px", borderTop: "1px solid var(--border)", background: "var(--bg-elevated)", display: "flex", flexDirection: "column", gap: 8 }}>
           {sale.customer?.phone && (
             <button onClick={sendWhatsApp}
-              style={{ width: "100%", padding: "12px", background: "#25D366", border: "none", color: "#fff", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              style={{ width: "100%", padding: "11px", background: "#25D366", border: "none", color: "#fff", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
               📱 {lang === "en" ? "Send Receipt via WhatsApp" : "Envoyer reçu par WhatsApp"}
             </button>
           )}
           {!sale.customer?.phone && (
             <button onClick={sendWhatsApp}
-              style={{ width: "100%", padding: "12px", background: "#25D366", border: "none", color: "#fff", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              style={{ width: "100%", padding: "11px", background: "#25D366", border: "none", color: "#fff", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
               📱 {lang === "en" ? "Share via WhatsApp" : "Partager par WhatsApp"}
             </button>
           )}
           <button onClick={printReceipt}
-            style={{ width: "100%", padding: "12px", background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-primary)", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            style={{ width: "100%", padding: "11px", background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-primary)", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
             🖨️ {lang === "en" ? "Print Receipt" : "Imprimer reçu"}
           </button>
           <button onClick={onClose}
-            style={{ width: "100%", padding: "10px", background: "transparent", border: "none", color: "var(--text-muted)", borderRadius: 12, fontSize: 13, cursor: "pointer" }}>
+            style={{ width: "100%", padding: "9px", background: "transparent", border: "none", color: "var(--text-muted)", borderRadius: 12, fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
             {lang === "en" ? "Close" : "Fermer"}
           </button>
         </div>
