@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore, useLangStore } from '../store';
 import api, { formatCFA, formatDate, getGreeting } from '../utils/api';
 import { ActiveShiftIndicator } from '../components/common/ShiftWidgets';
+import DrawerDashboardCard from '../components/dashboard/DrawerDashboardCard';
 
 const StatCard = ({ label, value, sub, color = 'var(--brand-light)', icon, onClick }) => (
   <div className="stat-card" onClick={onClick} style={{ cursor: onClick ? 'pointer' : 'default' }}>
@@ -112,6 +113,14 @@ export default function Dashboard() {
           selectedLocation; hosts the open/close modals internally. */}
       <div style={{ marginBottom: 16 }}>
         <ActiveShiftIndicator />
+      </div>
+
+      {/* MP-DRAWER-DASHBOARD-CARD: detailed breakdown with click-through
+          drilldowns into cash sales / refunds / expenses. Shares the
+          ["current-shift", locId] cache with the indicator so they
+          stay in sync without a duplicate request. */}
+      <div style={{ marginBottom: 24 }}>
+        <DrawerDashboardCard />
       </div>
 
       {/* Header */}
