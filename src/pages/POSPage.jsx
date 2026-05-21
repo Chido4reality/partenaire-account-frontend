@@ -442,8 +442,25 @@ export default function POSPage() {
 
   const saleMutation = useMutation({
     mutationFn: async () => {
-      const debtItem = cart.find(i => i.product_id === "__DEBT__");
-      if (debtItem) {
+      // MP-CART-INVOICE-PRODUCT-BUG: the legacy invoice-settle path
+      // (POST /sales/:id/payment per invoice) is ONLY correct when
+      // the cart is a pure invoice-settle action — a single __DEBT__
+      // line aggregating selected invoices and nothing else. If the
+      // cart ALSO has product lines or new debt_payment lines, take
+      // Path A (create a new sale) so:
+      //   - products land in pa_sale_items / decrement stock
+      //   - the partial-pay amount the user typed is honoured
+      //   - the __DEBT__ line converts to a generic debt_payment
+      //     line on the new sale, reducing customer.total_debt
+      //     without settling the specific source invoices (they
+      //     stay open at their per-invoice balance — same model
+      //     the verify spec describes).
+      const debtItem        = cart.find(i => i.product_id === "__DEBT__");
+      const productItems    = cart.filter(i => i.product_id && i.product_id !== "__DEBT__" && i.type !== "debt_payment");
+      const newDebtItems    = cart.filter(i => i.type === "debt_payment");
+      const isPureInvoiceSettle = !!debtItem && productItems.length === 0 && newDebtItems.length === 0;
+
+      if (isPureInvoiceSettle) {
         const totalDebt  = debtItem.debtAmount;
         const amountToPay = debtPayAmt ? Math.min(parseFloat(debtPayAmt), totalDebt) : totalDebt;
         let remaining = amountToPay;
@@ -461,13 +478,23 @@ export default function POSPage() {
       const salePayload = {
         location_id:    selectedLocation?.id,
         customer_id:    customer?.id || null,
-        // MP-POS-DEBT-CART-FLOW: debt lines go with product_id:null +
-        // type so the backend never runs them through stock/min-price/
-        // pa_sale_items; it reduces total_debt + writes a sale-linked
-        // payment instead.
-        items:          cart.map(i => i.type === "debt_payment"
-                          ? ({ type: "debt_payment", product_id: null, quantity: 1, unit_price: Number(i.unit_price) || 0, customer_id: i.customer_id })
-                          : ({ product_id: i.product_id, quantity: Number(i.quantity) || 1, unit_price: Number(i.unit_price) || 0, cost_price: i.cost_price })),
+        // MP-POS-DEBT-CART-FLOW + MP-CART-INVOICE-PRODUCT-BUG: every
+        // non-product cart line goes to the backend as a
+        // debt_payment line. That includes the legacy __DEBT__
+        // sentinel when it appears alongside products (the mixed
+        // cart case fixed here) — it is converted into the generic
+        // debt_payment shape so the backend reduces total_debt
+        // generically. product_id:null + type so the backend never
+        // runs them through stock / min-price / pa_sale_items.
+        items:          cart.map(i => {
+                          if (i.type === "debt_payment") {
+                            return { type: "debt_payment", product_id: null, quantity: 1, unit_price: Number(i.unit_price) || 0, customer_id: i.customer_id };
+                          }
+                          if (i.product_id === "__DEBT__") {
+                            return { type: "debt_payment", product_id: null, quantity: 1, unit_price: Number(i.unit_price) || 0, customer_id: customer?.id };
+                          }
+                          return { product_id: i.product_id, quantity: Number(i.quantity) || 1, unit_price: Number(i.unit_price) || 0, cost_price: i.cost_price };
+                        }),
         payment_method: payMethod,
         paid_amount:    paid,
         due_date:       dueDate || null,
@@ -537,8 +564,13 @@ export default function POSPage() {
           ...(data?.data || data),
           customer,
           items: cart,
-          paid_amount: hasDebt ? total : paid,
-          balance_due: hasDebt ? 0 : balance,
+          // MP-CART-INVOICE-PRODUCT-BUG: the legacy `hasDebt ? total
+          // : paid` ternary lied for mixed-cart Path A — it claimed
+          // paid_amount = total whenever the cart had a __DEBT__
+          // line, masking the user's actual partial payment. Use
+          // the real values; backend sets the same on pa_sales.
+          paid_amount: paid,
+          balance_due: balance,
           payment_method: payMethod,
           payment_status: payMode,
         });
