@@ -1,8 +1,14 @@
 ﻿import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
-import { useLangStore } from "../store";
+import { useLangStore, useSettingsStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
+
+const PAYMENT_METHODS = [
+  { key: "cash",         icon: "💵", en: "Cash",        fr: "Espèces" },
+  { key: "mobile_money", icon: "📱", en: "Mobile Money", fr: "Mobile Money" },
+  { key: "bank",         icon: "🏦", en: "Bank",        fr: "Banque" },
+];
 
 const TYPES = [
   { value: "retail",    en: "Retail",     fr: "Detail" },
@@ -13,6 +19,7 @@ const TYPES = [
 
 export default function CustomersPage() {
   const { lang } = useLangStore();
+  const { selectedLocation } = useSettingsStore();
   const qc = useQueryClient();
 
   const [search, setSearch]         = useState("");
@@ -23,6 +30,14 @@ export default function CustomersPage() {
   const [confirmDel, setConfirmDel] = useState(null); // MP-CUSTOMER-DELETE: customer pending delete
   const [delError, setDelError]     = useState(null); // 409 message shown in the modal
   const [form, setForm]             = useState({ name: "", phone: "", address: "", customer_type: "retail", credit_limit: "", notes: "", total_debt: "" });
+  // MP-COLLECT-DEBT-NO-INVOICE: separate concern from the edit form.
+  // Edit form = admin correction of the balance number; this = cashier
+  // recording real money received (creates pa_sales + pa_payments +
+  // audit). Modal stays open across submits — closed only on success or
+  // cancel.
+  const [showCollectDebt, setShowCollectDebt] = useState(false);
+  const [collectForm, setCollectForm]         = useState({ amount: "", payment_method: "cash", notes: "" });
+  const [collectError, setCollectError]       = useState(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["customers", search, typeFilter, debtOnly],
@@ -101,6 +116,40 @@ export default function CustomersPage() {
       qc.invalidateQueries(["pos-customers"]);
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
+  });
+
+  // MP-COLLECT-DEBT-NO-INVOICE: POST /customers/:id/collect-debt.
+  // RPC-backed (collect_debt_no_invoice) so all 4 table writes are
+  // atomic. On 400/404 we surface the message inline in the modal
+  // (no toast, so the cashier can correct and retry). On success we
+  // close, toast the new balance, and invalidate the same key set as
+  // customer-edit + the daily-summary key so the dashboard refreshes.
+  const collectMutation = useMutation({
+    mutationFn: () => api.post(`/customers/${selected.id}/collect-debt`, {
+      amount:         +collectForm.amount || 0,
+      payment_method: collectForm.payment_method,
+      location_id:    selectedLocation?.id,
+      notes:          collectForm.notes || null,
+    }),
+    onSuccess: (res) => {
+      const d = res?.data?.data || {};
+      toast.success(lang === "en"
+        ? `Collected ${formatCFA(d.amount)} — debt now ${formatCFA(d.debt_after)}`
+        : `Encaissé ${formatCFA(d.amount)} — dette: ${formatCFA(d.debt_after)}`);
+      setShowCollectDebt(false);
+      setCollectForm({ amount: "", payment_method: "cash", notes: "" });
+      setCollectError(null);
+      qc.invalidateQueries(["customers"]);
+      qc.invalidateQueries(["customer-summary"]);
+      qc.invalidateQueries(["customer-detail", selected.id]);
+      qc.invalidateQueries(["customer-debt", selected.id]);
+      qc.invalidateQueries(["pos-customers"]);
+      qc.invalidateQueries(["dashboard"]);
+      qc.invalidateQueries(["daily-summary"]);
+    },
+    onError: (err) => {
+      setCollectError(err.response?.data?.message || "Error");
+    }
   });
 
   // MP-CUSTOMER-DELETE: hard delete (backend 409s if the customer has
@@ -254,6 +303,57 @@ export default function CustomersPage() {
             <div style={{ fontWeight: 700, fontSize: 16 }}>{selected.name}</div>
             <button onClick={() => setSelected(null)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 18 }}>x</button>
           </div>
+
+          {/* MP-COLLECT-DEBT-NO-INVOICE: debt headline + Encaisser
+              button. Sits ABOVE the Edit form so cashiers don't
+              accidentally edit the balance when they meant to record
+              cash. Button disabled when total_debt = 0 OR no location
+              is selected (we need location_id for the sale). */}
+          {(() => {
+            const curDebt = Number(detail?.data?.total_debt ?? selected.total_debt ?? 0);
+            const hasDebt = curDebt > 0;
+            const noLoc   = !selectedLocation?.id;
+            const disabled = !hasDebt || noLoc;
+            const tooltip = !hasDebt
+              ? (lang === "en" ? "No debt to collect" : "Pas de dette à encaisser")
+              : noLoc
+                ? (lang === "en" ? "Select a location first" : "Sélectionnez d'abord un emplacement")
+                : "";
+            return (
+              <div style={{ background: hasDebt ? "rgba(239,68,68,0.08)" : "var(--bg-card)", border: `1px solid ${hasDebt ? "rgba(239,68,68,0.3)" : "var(--border)"}`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>
+                      💰 {lang === "en" ? "Current debt" : "Dette actuelle"}
+                    </div>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: hasDebt ? "#f87171" : "var(--text-primary)" }}>
+                      {formatCFA(curDebt)}
+                    </div>
+                  </div>
+                  <button
+                    title={tooltip}
+                    disabled={disabled}
+                    onClick={() => {
+                      setCollectError(null);
+                      setCollectForm({ amount: "", payment_method: "cash", notes: "" });
+                      setShowCollectDebt(true);
+                    }}
+                    style={{
+                      padding: "10px 14px", borderRadius: 10,
+                      border: `1px solid ${disabled ? "var(--border)" : "var(--brand)"}`,
+                      background: disabled ? "var(--bg-elevated)" : "var(--brand)",
+                      color: disabled ? "var(--text-muted)" : "#fff",
+                      fontWeight: 700, fontSize: 13,
+                      cursor: disabled ? "not-allowed" : "pointer",
+                      opacity: disabled ? 0.6 : 1,
+                      whiteSpace: "nowrap"
+                    }}>
+                    💵 {lang === "en" ? "Collect debt" : "Encaisser dette"}
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Edit form */}
           <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 16, marginBottom: 16 }}>
@@ -414,6 +514,121 @@ export default function CustomersPage() {
           </div>
         </div>
       )}
+
+      {/* MP-COLLECT-DEBT-NO-INVOICE: collect modal */}
+      {showCollectDebt && selected && (() => {
+        const curDebt   = Number(detail?.data?.total_debt ?? selected.total_debt ?? 0);
+        const amt       = Number(collectForm.amount) || 0;
+        const overMax   = amt > curDebt;
+        const newDebt   = Math.max(0, curDebt - amt);
+        const canSubmit = amt > 0 && !overMax && !collectMutation.isPending && selectedLocation?.id;
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}
+            onClick={() => { if (!collectMutation.isPending) setShowCollectDebt(false); }}>
+            <div onClick={e => e.stopPropagation()}
+              style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 14, padding: 20, maxWidth: 440, width: "100%" }}>
+              <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>
+                💵 {lang === "en" ? "Collect debt" : "Encaisser dette"} — {selected.name}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 14 }}>
+                {lang === "en"
+                  ? "Records cash received against ghost debt (no open invoice required). Creates a sale + payment + audit entry."
+                  : "Enregistre l'argent reçu sur une dette sans facture ouverte. Crée une vente + paiement + audit."}
+              </div>
+
+              {/* Current debt — read-only */}
+              <div style={{ background: "var(--bg-elevated)", borderRadius: 10, padding: "10px 14px", marginBottom: 12, display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--text-muted)", fontSize: 12 }}>
+                  {lang === "en" ? "Current debt" : "Dette actuelle"}
+                </span>
+                <strong style={{ color: "#f87171", fontSize: 14 }}>{formatCFA(curDebt)}</strong>
+              </div>
+
+              {/* Amount */}
+              <div className="form-group">
+                <label className="label">{lang === "en" ? "Amount to collect (FCFA)" : "Montant à encaisser (FCFA)"}</label>
+                <input className="input" type="number" min="0" max={curDebt}
+                  value={collectForm.amount}
+                  onChange={e => { setCollectForm(f => ({ ...f, amount: e.target.value })); setCollectError(null); }}
+                  autoFocus placeholder="0" />
+                {overMax && (
+                  <div style={{ fontSize: 11, color: "#f87171", marginTop: 4, fontWeight: 600 }}>
+                    {lang === "en" ? `Maximum: ${formatCFA(curDebt)}` : `Maximum: ${formatCFA(curDebt)}`}
+                  </div>
+                )}
+              </div>
+
+              {/* Payment method picker */}
+              <div className="form-group">
+                <label className="label">{lang === "en" ? "Payment method" : "Mode de paiement"}</label>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                  {PAYMENT_METHODS.map(m => (
+                    <button key={m.key}
+                      onClick={() => setCollectForm(f => ({ ...f, payment_method: m.key }))}
+                      style={{ padding: "8px 4px", borderRadius: 8,
+                               border: `1.5px solid ${collectForm.payment_method === m.key ? "var(--brand)" : "var(--border)"}`,
+                               background: collectForm.payment_method === m.key ? "rgba(79,70,229,0.12)" : "transparent",
+                               color: collectForm.payment_method === m.key ? "var(--brand-light)" : "var(--text-secondary)",
+                               cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
+                      <div style={{ fontSize: 14 }}>{m.icon}</div>
+                      <div style={{ marginTop: 2 }}>{lang === "en" ? m.en : m.fr}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Location (read-only, follows the global selector) */}
+              <div className="form-group">
+                <label className="label">{lang === "en" ? "Location" : "Emplacement"}</label>
+                <div style={{ padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--bg-elevated)", fontSize: 13, color: selectedLocation?.id ? "var(--text-primary)" : "#f87171" }}>
+                  {selectedLocation?.name || (lang === "en" ? "No location selected — switch via the top bar" : "Aucun emplacement — changer via la barre du haut")}
+                </div>
+              </div>
+
+              {/* Notes (optional) */}
+              <div className="form-group">
+                <label className="label">{lang === "en" ? "Notes (optional)" : "Notes (optionnel)"}</label>
+                <input className="input" value={collectForm.notes}
+                  onChange={e => setCollectForm(f => ({ ...f, notes: e.target.value }))}
+                  placeholder={lang === "en" ? "e.g. settled in person" : "ex: réglé en main propre"} />
+              </div>
+
+              {/* Computed new debt */}
+              <div style={{ background: "var(--bg-elevated)", borderRadius: 10, padding: "10px 14px", marginBottom: 12, display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--text-muted)", fontSize: 12 }}>
+                  {lang === "en" ? "New debt after collection" : "Nouvelle dette"}
+                </span>
+                <strong style={{ color: newDebt === 0 ? "#34d399" : "var(--text-primary)", fontSize: 14 }}>
+                  {formatCFA(newDebt)}
+                </strong>
+              </div>
+
+              {/* Inline server error (e.g. amount > debt server-side, customer not found) */}
+              {collectError && (
+                <div style={{ background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: "#f87171" }}>
+                  {collectError}
+                </div>
+              )}
+
+              {/* Actions */}
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-secondary" style={{ flex: 1 }}
+                  disabled={collectMutation.isPending}
+                  onClick={() => { setShowCollectDebt(false); setCollectError(null); }}>
+                  {lang === "en" ? "Cancel" : "Annuler"}
+                </button>
+                <button className="btn btn-primary" style={{ flex: 2 }}
+                  disabled={!canSubmit}
+                  onClick={() => collectMutation.mutate()}>
+                  {collectMutation.isPending
+                    ? "..."
+                    : `💵 ${lang === "en" ? "Collect" : "Encaisser"}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* MP-CUSTOMER-DELETE: confirm / 409-reason modal */}
       {confirmDel && (
