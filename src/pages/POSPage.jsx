@@ -3,7 +3,10 @@ import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
-import OwnerPIN from "../components/common/OwnerPIN";
+// MP-MIN-PRICE-PIN-UX Option B: OwnerPIN import dropped — the PIN
+// override flow was dead code (imported, state set, never rendered).
+// Staff who attempt a sub-min price now get a toast.error explaining
+// why; the backend at sales.js:46-62 is the source of truth either way.
 import api, { formatCFA } from "../utils/api";
 import { cacheData, getCachedData } from "../utils/offlineStore";
 import CameraScanner from "../components/common/CameraScanner";
@@ -59,10 +62,12 @@ export default function POSPage() {
   const [scanning, setScanning]           = useState(false);
   const [lastScan, setLastScan]           = useState(null);
   const [showDebtModal, setShowDebtModal]     = useState(false);
-  const [showPIN, setShowPIN]               = useState(false);
+  // MP-MIN-PRICE-PIN-UX: showPIN / pinItem state removed — they were
+  // set by the price-edit handler but never read anywhere (the
+  // OwnerPIN modal that would have consumed them was never rendered).
+  // Staff now get a toast.error inline; no override mechanism.
   const [showReceipt, setShowReceipt]       = useState(false);
   const [lastSale, setLastSale]             = useState(null);
-  const [pinItem, setPinItem]               = useState(null); // {idx, price} pending PIN approval
   const [debtInvoices, setDebtInvoices]       = useState([]);
   const [selectedDebtIds, setSelectedDebtIds] = useState(new Set());
   const [debtPayAmt, setDebtPayAmt]           = useState(""); // partial debt payment amount
@@ -380,10 +385,14 @@ export default function POSPage() {
       setCart(c => c.map((it, i) => i === idx ? { ...it, unit_price: newPrice } : it));
       return;
     }
-    // Staff: block below min price, require PIN
+    // Staff: block below min price with an explicit toast so the
+    // cashier knows WHY the price reverted. Backend at sales.js:46-62
+    // would also reject — this just gives clearer feedback before
+    // they get to checkout. No override path; owner must intervene.
     if (minPrice > 0 && newPrice < minPrice) {
-      setPinItem({ idx, price: newPrice });
-      setShowPIN(true);
+      toast.error(lang === "en"
+        ? `Minimum price: ${minPrice.toLocaleString()} FCFA — ask the owner`
+        : `Prix minimum: ${minPrice.toLocaleString()} FCFA — demandez au propriétaire`);
       return;
     }
     setCart(c => c.map((it, i) => i === idx ? { ...it, unit_price: newPrice } : it));
