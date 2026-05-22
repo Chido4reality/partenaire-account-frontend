@@ -510,8 +510,13 @@ export default function POSPage() {
         notes:          notes || null,
       };
 
-      // The service worker intercepts this request, applies a 4-second
-      // timeout, and returns {success:true,offline:true} when offline.
+      // MP-OFFLINE-WARNING-FALSE-POSITIVE: the SW used to intercept
+      // this with a 2s timeout and return {offline:true} on slow
+      // responses, which caused successful-but-slow sales to be
+      // misclassified as offline (yellow warning, no receipt). The
+      // SW intercept is now a no-op (public/sw-offline-sales.js
+      // header comment explains why); requests go straight to the
+      // network and real failures land in onError below.
       const result = await api.post("/sales", salePayload).then(r => r.data);
       return result;
     },
@@ -524,18 +529,9 @@ export default function POSPage() {
         setOnlineCtx(null);
       };
 
-      if (data?.offline) {
-        toast(`📥 ${lang === "en" ? "Saved offline — will sync when connected" : "Sauvé hors ligne — sync à la reconnexion"}`, {
-          duration: 4000,
-          style: { background: "#451a03", color: "#fbbf24", border: "1px solid #92400e" }
-        });
-        resetCart();
-        // Required: without reset(), the success state lingers and the next
-        // mutate() call can appear stuck — the symptom previously seen as
-        // "second sale hangs" after a successful first offline sale.
-        saleMutation.reset();
-        return;
-      }
+      // (Previous data?.offline branch removed — see fetch comment
+      // above. The SW no longer returns the fake offline shape, so
+      // any response landing here is a genuine backend response.)
       if (data?.isDebt) {
         toast.success(lang === "en" ? "✓ Debt payment recorded!" : "✓ Remboursement enregistré!", { duration: 2000 });
       } else {
@@ -619,6 +615,18 @@ export default function POSPage() {
           products: (d.products || []).map(p => p.name).filter(Boolean),
           message: d.message
         });
+        return;
+      }
+      // MP-OFFLINE-WARNING-FALSE-POSITIVE: no err.response means the
+      // request never reached the server (network down, DNS failure,
+      // CORS). Be honest about it — don't pretend it was saved
+      // offline, because the SW's offline-queue is disabled until
+      // it's redesigned safely. The cashier should retry.
+      if (!err.response) {
+        toast.error(lang === "en"
+          ? "Network error — check your connection and retry"
+          : "Erreur réseau — vérifiez votre connexion et réessayez",
+          { duration: 5000 });
         return;
       }
       toast.error(d?.message || "Error");

@@ -121,13 +121,46 @@
     }
   }
 
-  self.addEventListener('fetch', e => {
-    if (e.request.method !== 'POST') return;
-    if (!SALE_RE.test(e.request.url))  return;
-    e.respondWith(handleSale(e.request));
+  // MP-OFFLINE-WARNING-FALSE-POSITIVE: POST /api/sales interception
+  // is DISABLED. Two compounding bugs made the queue more harmful
+  // than helpful:
+  //   (a) The 2-second AbortController timeout in handleSale() fired
+  //       on legit slow-but-successful sales (cold-start, slow
+  //       mobile network, FIFO loops on debt-payment carts). The
+  //       backend completed the transaction successfully but the
+  //       SW already gave up and returned a fake {offline:true}
+  //       response, triggering a misleading "Saved offline" toast.
+  //   (b) The Background Sync replay path posted
+  //       JSON.stringify(rec.payload) which never carried the SW-
+  //       generated local_id. Backend dedupe keys on pa_sales.
+  //       local_id, so replays of slow-but-successful sales would
+  //       have created DUPLICATE rows in the DB.
+  //
+  // The handleSale / savePending / getPending / markSynced / syncAll
+  // helpers are kept on disk as reference for a future proper
+  // offline implementation. To revive it safely, the redesign must:
+  //   - Distinguish navigator.onLine === false (queue immediately)
+  //     from "request slow but online" (let it complete with a much
+  //     larger timeout, e.g. 30s).
+  //   - Include local_id in the payload itself so backend dedupe
+  //     works on replay (current pa_sales schema supports it).
+  //   - Reconcile any pre-existing pending entries in IndexedDB
+  //     (created by the old buggy version) before re-enabling
+  //     replay — otherwise they would duplicate today's data.
+  //
+  // For now: pass through every request. Real network failures
+  // surface to POSPage's saleMutation.onError as normal toasts.
+  self.addEventListener('fetch', () => {
+    // Intentional no-op — do not call respondWith().
+    return;
   });
 
-  // ── Background Sync ─────────────────────────────────────────────────────────
+  self.addEventListener('sync', () => {
+    // Replay disabled — see comment block above.
+    return;
+  });
+
+  // ── Reference helpers (kept for future revival) ───────────────────────────
 
   async function syncAll() {
     const pending = await getPending();
@@ -156,7 +189,7 @@
     }
   }
 
-  self.addEventListener('sync', e => {
-    if (e.tag === SYNC_TAG) e.waitUntil(syncAll());
-  });
+  // Silence unused warnings on the helpers we're intentionally
+  // keeping around for future revival.
+  void handleSale; void syncAll; void SYNC_TAG; void SALE_RE;
 })();
