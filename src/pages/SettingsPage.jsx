@@ -438,8 +438,13 @@ export default function SettingsPage() {
                 <input className="input" value={shopForm.phone} onChange={e => setFF("phone", e.target.value)} placeholder="6XXXXXXXX" />
               </div>
               <div className="form-group">
-                <label className="label">WhatsApp {lang === "en" ? "(boss alerts)" : "(alertes patron)"}</label>
+                <label className="label">{lang === "en" ? "Owner WhatsApp number" : "WhatsApp du propriétaire"}</label>
                 <input className="input" value={shopForm.whatsapp_number} onChange={e => setFF("whatsapp_number", e.target.value)} placeholder="237XXXXXXXXX" />
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                  {lang === "en"
+                    ? "Receives the daily report when shifts are closed. Include country code (237 for Cameroon)."
+                    : "Reçoit le rapport quotidien à la fermeture du poste. Inclure l'indicatif (237 pour Cameroun)."}
+                </div>
               </div>
               <div className="form-group">
                 <label className="label">{lang === "en" ? "Address" : "Adresse"}</label>
@@ -483,8 +488,10 @@ export default function SettingsPage() {
 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--bg-elevated)", borderRadius: 10, marginBottom: 12 }}>
               <div>
-                <div style={{ fontWeight: 600, fontSize: 13 }}>{lang === "en" ? "Daily boss summary" : "Résumé quotidien patron"}</div>
-                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en" ? "Sent automatically every day" : "Envoyé automatiquement chaque jour"}</div>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{lang === "en" ? "Auto-send daily report" : "Envoi auto rapport du jour"}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en"
+                  ? "Prompts WhatsApp send to owner when a shift is closed"
+                  : "Propose l'envoi WhatsApp au propriétaire à la fermeture d'un poste"}</div>
               </div>
               <label style={{ position: "relative", width: 44, height: 24, cursor: "pointer" }}>
                 <input type="checkbox" checked={shopForm.daily_summary_enabled} onChange={e => setFF("daily_summary_enabled", e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
@@ -493,13 +500,11 @@ export default function SettingsPage() {
                 </span>
               </label>
             </div>
-
-            {shopForm.daily_summary_enabled && (
-              <div className="form-group" style={{ maxWidth: 200, marginBottom: 12 }}>
-                <label className="label">{lang === "en" ? "Send time" : "Heure d'envoi"}</label>
-                <input className="input" type="time" value={shopForm.daily_summary_time} onChange={e => setFF("daily_summary_time", e.target.value)} />
-              </div>
-            )}
+            {/* MP-REPORT-SIMPLIFY-AND-AUTOSEND: the previous "Send time"
+                input drove the 17:30 cron that has been disabled.
+                Trigger is now shift-close, not a scheduled time, so
+                the input is hidden. daily_summary_time stays in the
+                schema for safety in case rollback is needed. */}
 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--bg-elevated)", borderRadius: 10 }}>
               <div>

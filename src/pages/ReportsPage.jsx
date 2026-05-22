@@ -5,6 +5,7 @@ import { useLangStore, useAuthStore, useSettingsStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
 import VoidReturnModal from "../components/common/VoidReturnModal";
 import { genSaleCodes } from "../utils/receiptCodes";
+import { buildLedgerText as buildLedgerTextUtil, buildWeeklyText as buildWeeklyTextUtil } from "../utils/reportText";
 
 // MP-DEBT-LINE-FULL-VISIBILITY: pa_sale_items can now hold debt-payment
 // rows (line_type='debt_payment', product_id=NULL). Helpers to keep
@@ -114,66 +115,15 @@ export default function ReportsPage() {
   });
   const ledger = ledgerData?.data || null;
 
-  // MP-LEDGER-CLARITY: the three helpers below all consume the new
-  // sectioned shape from /reports/daily-ledger:
-  //   ledger.product_sales    { total, items: [{product_name, qty, unit_price, line_total}] }
-  //   ledger.debt_collections { total, items: [{customer_name, amount, sale_number, time}] }
-  //   ledger.refunds          { total, items: [{ret_ref, sale_number, customer_name, refund_amount, items_summary}] }
-  //   ledger.expenses         { total, items: [{category, description, amount}] }
-  //   ledger.drawer           { opening_float, expected, actual, variance, status, cashier_name } | null
-  //   ledger.totals           { argent_recu, net_cash_real }
-  // Helper: build the shared plain-text body for print / copy / WA.
-  const buildLedgerText = () => {
-    if (!ledger) return "";
-    const en   = lang === "en";
-    const n    = (x) => Number(x || 0).toLocaleString(en ? "en-US" : "fr-FR");
-    const ps   = ledger.product_sales    || { total: 0, items: [] };
-    const dc   = ledger.debt_collections || { total: 0, items: [] };
-    const rf   = ledger.refunds          || { total: 0, items: [] };
-    const ex   = ledger.expenses         || { total: 0, items: [] };
-    const dr   = ledger.drawer || null;
-    const tot  = ledger.totals || { argent_recu: 0, net_cash_real: 0 };
-    const locName = ledger.location ? ledger.location.name : (en ? "All locations" : "Tous les sites");
-    const longDate = new Date(ledger.date + "T00:00:00").toLocaleDateString(en ? "en-GB" : "fr-FR",
-      { day: "numeric", month: "long", year: "numeric" });
-
-    const L = [];
-    L.push(`📊 ${en ? "Daily Report" : "Rapport du jour"} — ${locName}`);
-    L.push(`${longDate}${dr?.cashier_name ? " — " + dr.cashier_name : ""}`);
-    L.push("");
-    L.push(`🛒 ${en ? "Product sales" : "Ventes produits"}: ${n(ps.total)} FCFA (${ps.items.length} ${ps.items.length === 1 ? (en ? "transaction" : "transaction") : (en ? "transactions" : "transactions")})`);
-    L.push(`💰 ${en ? "Debt collections" : "Recouvrements"}: ${n(dc.total)} FCFA (${dc.items.length} ${dc.items.length === 1 ? "transaction" : "transactions"})`);
-    L.push(`📚 ${en ? "Daily activity" : "Activité du jour"}: ${n(tot.activite_du_jour ?? tot.argent_recu ?? 0)} FCFA`);
-    if (Number(tot.impaye_aujourdhui || 0) > 0) {
-      L.push(`🔴 ${en ? "of which unpaid" : "dont impayé"}: ${n(tot.impaye_aujourdhui)} FCFA`);
-    }
-    L.push(`↩ ${en ? "Refunds" : "Remboursements"}: ${n(rf.total)} FCFA${rf.total > 0 ? ` (${rf.items.length})` : ""}`);
-    L.push(`💸 ${en ? "Expenses" : "Dépenses"}: ${n(ex.total)} FCFA${ex.total > 0 ? ` (${ex.items.length})` : ""}`);
-    L.push("");
-    L.push(`💵 ${en ? "Cash received today" : "Argent reçu aujourd'hui"}: ${n(tot.argent_recu_reel ?? tot.argent_recu ?? 0)} FCFA`);
-    if (dr) {
-      // MP-LEDGER-DRAWER-MATH-FIX: shift-scoped figures, and only
-      // surface actual/variance when the shift is closed AND
-      // counted. Mirror the on-screen drawer panel exactly.
-      L.push(`📦 ${en ? "Expected drawer (current shift)" : "Caisse attendue (poste actuel)"}: ${n(dr.expected)} FCFA (${en ? "with opening float" : "avec solde d'ouverture"} ${n(dr.opening_float)})`);
-      const drIsClosed = dr.status === "closed" && dr.actual != null;
-      if (drIsClosed) {
-        L.push(`💼 ${en ? "Actual cash" : "Solde réel"}: ${n(dr.actual)} FCFA`);
-        const v = Number(dr.variance || 0);
-        const label = v === 0
-          ? (en ? "(Exact)" : "(Exact)")
-          : v > 0
-            ? (en ? `+${n(v)} (Surplus)` : `+${n(v)} (Excédent)`)
-            : (en ? `−${n(Math.abs(v))} (Shortage)` : `−${n(Math.abs(v))} (Manquant)`);
-        L.push(`⚖ ${en ? "Variance" : "Écart"}: ${label}`);
-      } else {
-        L.push(`💼 ${en ? "Actual cash" : "Solde réel"}: — ${en ? "(count at end of shift)" : "(à compter en fin de poste)"}`);
-      }
-    }
-    L.push("");
-    L.push(en ? "Sent from Mon Partenaire POS" : "Envoyé depuis Mon Partenaire POS");
-    return L.join("\n");
-  };
+  // MP-REPORT-SIMPLIFY-AND-AUTOSEND: text body is built by the
+  // shared util so the shift-close prompt in ShiftWidgets produces
+  // the same bytes. Page-local wrapper keeps the (ledger, lang)
+  // args implicit for the print/copy/WA buttons below.
+  const buildLedgerText = () => buildLedgerTextUtil(ledger, lang);
+  // buildWeeklyText is also available from the util (used by the
+  // shift-close prompt); ReportsPage doesn't currently render
+  // weekly data in the Ledger tab, so we don't expose it here yet.
+  void buildWeeklyTextUtil;
 
   const printLedger = () => {
     const txt = buildLedgerText();
@@ -991,8 +941,77 @@ export default function ReportsPage() {
               </div>
             );
 
+            // MP-REPORT-SIMPLIFY-AND-AUTOSEND: simplified summary
+            // block — same math as buildLedgerText so the on-screen
+            // panel and the WhatsApp message match. Shown at the top
+            // of the card; per-section item lists below are the
+            // cashier audit trail.
+            const totalReceived = (Number(ps.total) || 0) + (Number(dc.total) || 0);
+            const debtIssued    = Number(tot.impaye_aujourdhui || 0);
+            const drCounted     = dr && dr.actual != null ? Number(dr.actual) : null;
+            const drVariance    = dr && dr.variance != null ? Number(dr.variance) : null;
+            const cashAtHand    = drCounted != null ? drCounted - Number(ex.total || 0) : null;
+            const SimpleRow = ({ label, value, bold, color }) => (
+              <div style={{ display: "flex", justifyContent: "space-between", padding: bold ? "8px 0 4px" : "4px 0", fontSize: bold ? 15 : 13, fontWeight: bold ? 800 : 500 }}>
+                <span style={{ color: color || (bold ? "var(--text-primary)" : "var(--text-muted)") }}>{label}</span>
+                <span style={{ color: color || (bold ? "var(--brand-light)" : "var(--text-primary)") }}>{value}</span>
+              </div>
+            );
+
             return (
               <div className="card" style={{ maxWidth: 620, margin: "0 auto", padding: "20px 22px" }}>
+
+                {/* ── SIMPLIFIED SUMMARY (boss view, top of card) ─ */}
+                <div style={{ marginBottom: 22, padding: "16px 18px", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 12 }}>
+                  <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10, textAlign: "center", letterSpacing: "0.3px" }}>
+                    {lang === "en" ? "DAILY REPORT" : "RAPPORT DU JOUR"}
+                    {ledger.location?.name && <span style={{ color: "var(--text-muted)", fontWeight: 500 }}> — {ledger.location.name}</span>}
+                  </div>
+                  <SimpleRow label={lang === "en" ? "Amount sold"    : "Ventes du jour"}   value={formatCFA(ps.total)} />
+                  <SimpleRow label={lang === "en" ? "Debt collected" : "Dette encaissée"} value={formatCFA(dc.total)} />
+                  <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
+                  <SimpleRow label={lang === "en" ? "Total money received" : "Total reçu"}
+                    value={formatCFA(totalReceived)} bold />
+
+                  {drCounted != null && (
+                    <>
+                      <div style={{ height: 12 }} />
+                      <SimpleRow label={lang === "en" ? "Counted in drawer" : "Caisse comptée"}
+                        value={formatCFA(drCounted)} />
+                      {drVariance != null && drVariance < 0 && (
+                        <SimpleRow label={lang === "en" ? "Lost (drawer short)" : "Manquant"}
+                          value={formatCFA(Math.abs(drVariance))} color="#f87171" />
+                      )}
+                      {drVariance != null && drVariance > 0 && (
+                        <SimpleRow label={lang === "en" ? "Drawer surplus" : "Excédent caisse"}
+                          value={`+${formatCFA(drVariance)}`} color="#fbbf24" />
+                      )}
+                      {Number(ex.total) > 0 && (
+                        <SimpleRow label={lang === "en" ? "Expenses" : "Dépenses"}
+                          value={formatCFA(ex.total)} color="#f87171" />
+                      )}
+                      <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
+                      <SimpleRow label={lang === "en" ? "Cash at hand" : "Cash en main"}
+                        value={formatCFA(cashAtHand)} bold color={cashAtHand < 0 ? "#f87171" : "#34d399"} />
+                    </>
+                  )}
+                  {drCounted == null && dr && (
+                    <div style={{ marginTop: 10, padding: "8px 10px", fontSize: 12, color: "var(--text-muted)", background: "var(--bg-card)", border: "1px dashed var(--border)", borderRadius: 8 }}>
+                      {lang === "en"
+                        ? "Drawer not counted yet — shift still open"
+                        : "Caisse non comptée — poste encore ouvert"}
+                    </div>
+                  )}
+                  {debtIssued > 0 && (
+                    <>
+                      <div style={{ height: 12 }} />
+                      <SimpleRow label={lang === "en" ? "Debt issued (on credit)" : "Crédit du jour"}
+                        value={formatCFA(debtIssued)} color="#fbbf24" />
+                    </>
+                  )}
+                </div>
+
+                {/* ── Detail sections below (cashier audit trail) ── */}
 
                 {/* ── NEW PRODUCT SALES ───────────────────────── */}
                 <SectionHeader icon="🛒"
@@ -1066,45 +1085,10 @@ export default function ReportsPage() {
                   </>
                 )}
 
-                {/* ── ACTIVITÉ + ARGENT REÇU (separated per MP-LEDGER-LABEL-FIX)
-                    Two distinct numbers: ACTIVITY (book value of today's
-                    sales + collections, includes credit lines) and CASH
-                    RECEIVED (real money in pa_payments today). Used to be
-                    one line labelled "ARGENT REÇU" which conflated them. */}
-                <div style={{ marginTop: 18, padding: "14px 0", borderTop: "3px double var(--border)", borderBottom: "3px double var(--border)" }}>
-                  <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>
-                    📚 {lang === "en" ? "DAILY ACTIVITY" : "ACTIVITÉ DU JOUR"}
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
-                    <span style={{ color: "var(--text-muted)" }}>{lang === "en" ? "Product sales" : "Ventes produits"}</span>
-                    <span>{formatCFA(ps.total)}</span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
-                    <span style={{ color: "var(--text-muted)" }}>{lang === "en" ? "Debt collections" : "Recouvrements"}</span>
-                    <span>{formatCFA(dc.total)}</span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 800, padding: "6px 0", borderTop: "1px solid var(--border)", marginTop: 4 }}>
-                    <span>{lang === "en" ? "Sub-total" : "Sous-total"}</span>
-                    <span style={{ color: "var(--brand-light)" }}>{formatCFA(tot.activite_du_jour ?? tot.argent_recu ?? 0)}</span>
-                  </div>
-                  {Number(tot.impaye_aujourdhui || 0) > 0 && (
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0 0", color: "#f87171" }}>
-                      <span>{lang === "en" ? "of which still unpaid" : "dont impayé"}</span>
-                      <span>−{formatCFA(tot.impaye_aujourdhui)}</span>
-                    </div>
-                  )}
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontWeight: 900, fontSize: 16, padding: "12px 0 0", borderTop: "2px solid var(--border)", marginTop: 10 }}>
-                    <div>
-                      <div>💵 {lang === "en" ? "CASH RECEIVED TODAY" : "ARGENT REÇU AUJOURD'HUI"}</div>
-                      <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500, marginTop: 2 }}>
-                        {lang === "en"
-                          ? "all payment methods, all sales touched today"
-                          : "tous modes de paiement, toutes ventes touchées ce jour"}
-                      </div>
-                    </div>
-                    <span style={{ color: "#34d399" }}>{formatCFA(tot.argent_recu_reel ?? tot.argent_recu ?? 0)}</span>
-                  </div>
-                </div>
+                {/* MP-REPORT-SIMPLIFY-AND-AUTOSEND: the old
+                    "ACTIVITÉ + ARGENT REÇU" double block was removed
+                    here — its info is now in the simplified summary
+                    above the per-section lists. */}
 
                 {/* ── DRAWER MATH (only when a shift exists for this loc+date) ───
                     MP-LEDGER-DRAWER-MATH-FIX: all numbers in this box are

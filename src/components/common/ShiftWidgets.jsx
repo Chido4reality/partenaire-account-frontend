@@ -22,11 +22,12 @@
 // ["my-shift"] / ["all-shifts"] so the legacy ShiftsPage section keeps
 // agreeing with the new endpoints until Stage 2 retires that path.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useAuthStore, useLangStore, useSettingsStore } from "../../store";
 import api, { formatCFA } from "../../utils/api";
+import { buildLedgerText, buildWeeklyText } from "../../utils/reportText";
 
 // ── ModalShell — same overlay pattern as the rest of the app ─────
 function ModalShell({ children, onClose, busy }) {
@@ -326,6 +327,140 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// SEND REPORT PROMPT (MP-REPORT-SIMPLIFY-AND-AUTOSEND)
+//
+// Pops after CloseShiftModal succeeds, IF the org has opted into
+// auto-send (daily_summary_enabled) AND has an owner WhatsApp set
+// (whatsapp_number). Otherwise self-dismisses (with a toast nudge
+// when phone is missing but auto-send is on).
+//
+// Pulls /reports/daily-ledger for today + location, builds the
+// simplified plain-text body via buildLedgerText (shared util), and
+// on Saturdays appends the weekly summary from /reports/weekly-
+// ledger. Opens a wa.me deep link — one-tap design per spec; we do
+// NOT auto-deliver (would require WhatsApp Business API).
+// ─────────────────────────────────────────────────────────────────
+function SendReportPromptModal({ locationId, onClose }) {
+  const { lang } = useLangStore();
+  const fr = lang === "fr";
+
+  // Org settings: existing /settings endpoint, response is
+  // { success, data: { whatsapp_number, daily_summary_enabled, ... } }.
+  const { data: settingsResp, isLoading: settingsLoading } = useQuery({
+    queryKey: ["org-settings"],
+    queryFn: () => api.get("/settings").then(r => r.data),
+  });
+  const settings = settingsResp?.data || null;
+  const autoSendEnabled = settings ? settings.daily_summary_enabled !== false : true; // default ON per task
+  const phoneRaw   = settings?.whatsapp_number || "";
+  const phoneDigits = phoneRaw.toString().replace(/\D/g, "");
+  const phoneOk    = phoneDigits.length >= 8;
+  const phoneWithCode = phoneDigits.startsWith("237") ? phoneDigits : "237" + phoneDigits;
+
+  const today    = new Date().toISOString().slice(0, 10);
+  const isSaturday = new Date(today + "T00:00:00").getUTCDay() === 6;
+
+  // Daily ledger (only enabled once we know auto-send is on + phone OK).
+  const fetchEnabled = !!locationId && !settingsLoading && autoSendEnabled && phoneOk;
+  const { data: ledgerResp, isLoading: ledgerLoading } = useQuery({
+    queryKey: ["report-prompt-daily", today, locationId],
+    queryFn: () => api.get(`/reports/daily-ledger?date=${today}&location_id=${locationId}`).then(r => r.data),
+    enabled: fetchEnabled,
+  });
+  const ledger = ledgerResp?.data || null;
+
+  // Weekly summary only on Saturdays. Endpoint requires a specific
+  // location (no all-shops aggregation).
+  const { data: weeklyResp } = useQuery({
+    queryKey: ["report-prompt-weekly", today, locationId],
+    queryFn: () => api.get(`/reports/weekly-ledger?week_ending=${today}&location_id=${locationId}`).then(r => r.data),
+    enabled: fetchEnabled && isSaturday,
+  });
+  const weekly = weeklyResp?.data || null;
+
+  // Auto-dismiss + nudge branches. Effects run AFTER render so the
+  // modal mounts briefly even when self-dismissing — acceptable
+  // for the small UX cost; alternative would mean lifting all this
+  // logic into the parent.
+  useEffect(() => {
+    if (settingsLoading || !settings) return;
+    if (!autoSendEnabled) {
+      // Toggle off — no prompt, no toast (spec: "Skip prompt entirely.
+      // Normal shift-close success toast.")
+      onClose();
+      return;
+    }
+    if (!phoneOk) {
+      toast(
+        fr
+          ? "Numéro WhatsApp du propriétaire non configuré — réglez dans Paramètres pour activer l'envoi auto."
+          : "Owner WhatsApp number not set — configure in Settings to enable auto-send.",
+        { duration: 5500 }
+      );
+      onClose();
+      return;
+    }
+  }, [settingsLoading, settings, autoSendEnabled, phoneOk, onClose, fr]);
+
+  if (settingsLoading || !settings) return null;
+  if (!autoSendEnabled || !phoneOk) return null;
+
+  // Compose the text body. Daily always; weekly appended on Sat.
+  const dailyTxt  = ledger ? buildLedgerText(ledger, lang) : "";
+  const weeklyTxt = (isSaturday && weekly) ? buildWeeklyText(weekly, lang) : "";
+  const fullText  = dailyTxt + weeklyTxt;
+
+  const handleSend = () => {
+    if (!fullText) return;
+    const url = `https://wa.me/${phoneWithCode}?text=${encodeURIComponent(fullText)}`;
+    window.open(url, "_blank");
+    toast.success(fr ? "WhatsApp ouvert — tapez Envoyer pour livrer" : "WhatsApp opened — tap Send to deliver");
+    onClose();
+  };
+
+  const previewLines = fullText ? fullText.split("\n") : [];
+
+  return (
+    <ModalShell onClose={onClose}>
+      <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>
+        📤 {fr ? "Envoyer le rapport au propriétaire ?" : "Send daily report to owner?"}
+      </div>
+      <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
+        {fr ? "Destinataire" : "Recipient"}: <strong>+{phoneWithCode}</strong>
+        {isSaturday && (
+          <span style={{ marginLeft: 8, padding: "1px 8px", borderRadius: 8, background: "rgba(79,70,229,0.15)", color: "var(--brand-light)", fontSize: 11, fontWeight: 700 }}>
+            {fr ? "Inclut résumé hebdo" : "Includes weekly recap"}
+          </span>
+        )}
+      </div>
+
+      <div style={{
+        background: "var(--bg-card)", border: "1px solid var(--border)",
+        borderRadius: 10, padding: "10px 12px", marginBottom: 12,
+        maxHeight: 280, overflowY: "auto",
+        fontSize: 12, fontFamily: "monospace", whiteSpace: "pre-wrap",
+        color: "var(--text-secondary)",
+      }}>
+        {ledgerLoading || !fullText
+          ? <em style={{ color: "var(--text-muted)" }}>{fr ? "Préparation du message…" : "Preparing message…"}</em>
+          : previewLines.join("\n")}
+      </div>
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onClose}>
+          {fr ? "Passer" : "Skip"}
+        </button>
+        <button className="btn btn-primary" style={{ flex: 2, background: "#25D366", border: "none", color: "#fff" }}
+          disabled={!fullText}
+          onClick={handleSend}>
+          📱 {fr ? "Envoyer via WhatsApp" : "Send via WhatsApp"}
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
 // INDICATOR (self-contained: queries /current, hosts both modals)
 // ─────────────────────────────────────────────────────────────────
 export function ActiveShiftIndicator() {
@@ -335,6 +470,10 @@ export function ActiveShiftIndicator() {
 
   const [showOpen, setShowOpen]   = useState(false);
   const [showClose, setShowClose] = useState(false);
+  // MP-REPORT-SIMPLIFY-AND-AUTOSEND: when a close succeeds, capture
+  // the location_id so SendReportPromptModal knows what to fetch.
+  // null = no prompt pending.
+  const [reportPromptLoc, setReportPromptLoc] = useState(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["current-shift", locId],
@@ -418,7 +557,24 @@ export function ActiveShiftIndicator() {
       )}
 
       <OpenShiftModal  open={showOpen}  onClose={() => setShowOpen(false)} />
-      <CloseShiftModal open={showClose} onClose={() => setShowClose(false)} shift={data} />
+      <CloseShiftModal
+        open={showClose}
+        onClose={() => setShowClose(false)}
+        shift={data}
+        onClosed={() => {
+          // MP-REPORT-SIMPLIFY-AND-AUTOSEND: trigger the report
+          // prompt after the close succeeds. SendReportPromptModal
+          // self-dismisses if auto-send is disabled or the owner
+          // phone isn't set.
+          if (locId) setReportPromptLoc(locId);
+        }}
+      />
+      {reportPromptLoc && (
+        <SendReportPromptModal
+          locationId={reportPromptLoc}
+          onClose={() => setReportPromptLoc(null)}
+        />
+      )}
     </>
   );
 }

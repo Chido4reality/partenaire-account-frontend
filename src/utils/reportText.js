@@ -1,0 +1,120 @@
+// MP-REPORT-SIMPLIFY-AND-AUTOSEND: shared plain-text builders for
+// the daily ledger + weekly summary. Used by the Ledger tab
+// (clipboard / print / WhatsApp buttons in ReportsPage) AND the
+// shift-close trigger (SendReportPromptModal in ShiftWidgets).
+// Centralising here keeps both surfaces byte-identical — what the
+// boss receives must match what the cashier sees on screen.
+//
+// Math rules (simplified for non-technical readers):
+//   Amount sold          = product_sales.total           (book value)
+//   Debt collected       = debt_collections.total        (book value)
+//   Total money received = Amount sold + Debt collected  (book value)
+//   Counted in drawer    = drawer.actual                 (when shift closed)
+//   Lost (drawer short)  = |variance| when variance < 0; omit at 0
+//   Drawer surplus       = +variance when variance > 0; omit at 0
+//   Expenses             = expenses.total                (today)
+//   Cash at hand         = drawer.actual − expenses.total
+//   Debt issued          = totals.impaye_aujourdhui      (today open balance)
+
+const fmt = (x, en) => Number(x || 0).toLocaleString(en ? "en-US" : "fr-FR");
+
+export function buildLedgerText(ledger, lang) {
+  if (!ledger) return "";
+  const en   = lang === "en";
+  const n    = (x) => fmt(x, en);
+  const ps   = ledger.product_sales    || { total: 0, items: [] };
+  const dc   = ledger.debt_collections || { total: 0, items: [] };
+  const ex   = ledger.expenses         || { total: 0, items: [] };
+  const dr   = ledger.drawer || null;
+  const tot  = ledger.totals || {};
+  const locName  = ledger.location ? ledger.location.name : (en ? "all locations" : "tous les sites");
+  const longDate = new Date(ledger.date + "T00:00:00").toLocaleDateString(en ? "en-GB" : "fr-FR",
+    { day: "numeric", month: "long", year: "numeric" });
+
+  const totalReceived = (Number(ps.total) || 0) + (Number(dc.total) || 0);
+  const debtIssued    = Number(tot.impaye_aujourdhui || 0);
+  const drCounted     = dr && dr.actual != null ? Number(dr.actual) : null;
+  const drVariance    = dr && dr.variance != null ? Number(dr.variance) : null;
+  const cashAtHand    = drCounted != null ? drCounted - Number(ex.total || 0) : null;
+
+  const L = [];
+  L.push(`*${en ? "DAILY REPORT" : "RAPPORT DU JOUR"} — ${locName}*`);
+  L.push(`${longDate}${dr?.cashier_name ? " — " + dr.cashier_name : ""}`);
+  L.push("");
+  L.push(`${en ? "Amount sold"    : "Ventes du jour"}: ${n(ps.total)} FCFA`);
+  L.push(`${en ? "Debt collected" : "Dette encaissée"}: ${n(dc.total)} FCFA`);
+  L.push("─────────────────────────");
+  L.push(`*${en ? "Total money received" : "Total reçu"}: ${n(totalReceived)} FCFA*`);
+
+  if (drCounted != null) {
+    L.push("");
+    L.push(`${en ? "Counted in drawer" : "Caisse comptée"}: ${n(drCounted)} FCFA`);
+    if (drVariance != null && drVariance < 0) {
+      L.push(`${en ? "Lost (drawer short)" : "Manquant"}: ${n(Math.abs(drVariance))} FCFA`);
+    } else if (drVariance != null && drVariance > 0) {
+      L.push(`${en ? "Drawer surplus" : "Excédent caisse"}: +${n(drVariance)} FCFA`);
+    }
+    if (Number(ex.total) > 0) {
+      L.push(`${en ? "Expenses" : "Dépenses"}: ${n(ex.total)} FCFA`);
+    }
+    L.push("─────────────────────────");
+    L.push(`*${en ? "Cash at hand" : "Cash en main"}: ${n(cashAtHand)} FCFA*`);
+  } else if (dr) {
+    L.push("");
+    L.push(en ? "Drawer not counted yet — shift still open" : "Caisse non comptée — poste encore ouvert");
+    if (Number(ex.total) > 0) {
+      L.push(`${en ? "Expenses today" : "Dépenses du jour"}: ${n(ex.total)} FCFA`);
+    }
+  }
+
+  if (debtIssued > 0) {
+    L.push("");
+    L.push(`${en ? "Debt issued (on credit)" : "Crédit du jour"}: ${n(debtIssued)} FCFA`);
+  }
+
+  L.push("");
+  L.push("— Mon Partenaire POS");
+  return L.join("\n");
+}
+
+// Weekly section appended on Saturdays (or whenever weekly data is
+// available). Best-X lines are skipped when null so quiet weeks
+// don't get empty bullets in the message.
+export function buildWeeklyText(w, lang) {
+  if (!w) return "";
+  const en = lang === "en";
+  const n  = (x) => fmt(x, en);
+  const dfmt = (d) => new Date(d + "T00:00:00").toLocaleDateString(en ? "en-GB" : "fr-FR",
+    { day: "numeric", month: "short" });
+  const L = [];
+  L.push("");
+  L.push("────────────────────────");
+  L.push(`*${en ? "WEEKLY SUMMARY" : "RÉSUMÉ DE LA SEMAINE"} (${dfmt(w.week_start)} – ${dfmt(w.week_end)})*`);
+  L.push("");
+  L.push(`${en ? "Total sales"     : "Total ventes"}: ${n(w.total_sales)} FCFA`);
+  L.push(`${en ? "Total refunds"   : "Total remboursements"}: ${n(w.total_refunds)} FCFA`);
+  L.push(`${en ? "Cash in (real)"  : "Argent reçu (réel)"}: ${n(w.cash_in_real)} FCFA`);
+  L.push(`${en ? "New debt issued" : "Crédit accordé"}: ${n(w.new_debt_issued)} FCFA`);
+  if (w.best_customer) {
+    L.push("");
+    L.push(en ? "Best customer this week" : "Meilleur client de la semaine");
+    L.push(`  ${w.best_customer.customer_name} — ${n(w.best_customer.total_paid)} FCFA ${en ? "paid" : "payé"}`);
+  }
+  if (w.best_product) {
+    L.push("");
+    L.push(en ? "Best-selling product" : "Meilleur produit");
+    L.push(`  ${w.best_product.product_name} — ${w.best_product.total_qty} ${en ? "units sold" : "unités vendues"}`);
+  }
+  if (w.highest_expense) {
+    L.push("");
+    L.push(en ? "Highest expense" : "Dépense la plus élevée");
+    L.push(`  ${w.highest_expense.description || w.highest_expense.category || "?"} — ${n(w.highest_expense.amount)} FCFA${w.highest_expense.date ? " (" + dfmt(w.highest_expense.date) + ")" : ""}`);
+  }
+  if (w.trend_pct != null) {
+    const sign = w.trend_pct > 0 ? "📈" : w.trend_pct < 0 ? "📉" : "➡";
+    const pct  = (w.trend_pct >= 0 ? "+" : "") + Math.round(w.trend_pct) + "%";
+    L.push("");
+    L.push(`${sign} ${en ? "vs last week" : "vs semaine dernière"}: ${pct}`);
+  }
+  return L.join("\n");
+}
