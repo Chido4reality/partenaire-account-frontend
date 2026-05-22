@@ -500,7 +500,22 @@ export default function POSPage() {
                             return { type: "debt_payment", product_id: null, quantity: 1, unit_price: Number(i.unit_price) || 0, customer_id: i.customer_id };
                           }
                           if (i.product_id === "__DEBT__") {
-                            return { type: "debt_payment", product_id: null, quantity: 1, unit_price: Number(i.unit_price) || 0, customer_id: customer?.id };
+                            // MP-CART-DEBT-LINE-FIFO-APPLY: preserve the
+                            // Open Invoices modal's checkbox selection.
+                            // Backend applies the debt-collection to
+                            // these invoice IDs in this exact order
+                            // (then FIFO fallback over the customer's
+                            // other open invoices for any remainder).
+                            return {
+                              type: "debt_payment",
+                              product_id: null,
+                              quantity: 1,
+                              unit_price: Number(i.unit_price) || 0,
+                              customer_id: customer?.id,
+                              target_sale_ids: Array.isArray(i.debtSaleIds) && i.debtSaleIds.length
+                                ? i.debtSaleIds
+                                : undefined,
+                            };
                           }
                           return { product_id: i.product_id, quantity: Number(i.quantity) || 1, unit_price: Number(i.unit_price) || 0, cost_price: i.cost_price };
                         }),
