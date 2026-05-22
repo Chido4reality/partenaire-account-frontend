@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
+import { useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
 
 const PAYMENT_METHODS = [
   { key: "cash",         icon: "💵", en: "Cash",        fr: "Espèces" },
@@ -21,6 +22,10 @@ export default function CustomersPage() {
   const { lang } = useLangStore();
   const { selectedLocation } = useSettingsStore();
   const qc = useQueryClient();
+  // MP-REQUIRE-OPEN-SHIFT Phase 3: Encaisser dette is a cash event
+  // and gets gated. The customer CRUD form below is intentionally
+  // NOT gated (admin operation per Decision 1's lenient list).
+  const { hasShift: shiftIsOpen } = useActiveShift();
 
   const [search, setSearch]         = useState("");
   const [typeFilter, setTypeFilter] = useState("");
@@ -313,12 +318,17 @@ export default function CustomersPage() {
             const curDebt = Number(detail?.data?.total_debt ?? selected.total_debt ?? 0);
             const hasDebt = curDebt > 0;
             const noLoc   = !selectedLocation?.id;
-            const disabled = !hasDebt || noLoc;
+            const disabled = !hasDebt || noLoc || !shiftIsOpen;
+            // Priority order matches what the user can actually do
+            // about it: pick a location, then open a shift, then
+            // (the no-debt case is just informational).
             const tooltip = !hasDebt
               ? (lang === "en" ? "No debt to collect" : "Pas de dette à encaisser")
               : noLoc
                 ? (lang === "en" ? "Select a location first" : "Sélectionnez d'abord un emplacement")
-                : "";
+                : !shiftIsOpen
+                  ? noShiftHint(lang)
+                  : "";
             return (
               <div style={{ background: hasDebt ? "rgba(239,68,68,0.08)" : "var(--bg-card)", border: `1px solid ${hasDebt ? "rgba(239,68,68,0.3)" : "var(--border)"}`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
@@ -521,7 +531,10 @@ export default function CustomersPage() {
         const amt       = Number(collectForm.amount) || 0;
         const overMax   = amt > curDebt;
         const newDebt   = Math.max(0, curDebt - amt);
-        const canSubmit = amt > 0 && !overMax && !collectMutation.isPending && selectedLocation?.id;
+        // MP-REQUIRE-OPEN-SHIFT Phase 3: shiftIsOpen also gates submit
+        // — if the shift closes from another device while the modal is
+        // open, the button locks immediately on the next 30s refetch.
+        const canSubmit = amt > 0 && !overMax && !collectMutation.isPending && selectedLocation?.id && shiftIsOpen;
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}
             onClick={() => { if (!collectMutation.isPending) setShowCollectDebt(false); }}>
@@ -607,6 +620,15 @@ export default function CustomersPage() {
               {collectError && (
                 <div style={{ background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: "#f87171" }}>
                   {collectError}
+                </div>
+              )}
+
+              {/* MP-REQUIRE-OPEN-SHIFT Phase 3: inline hint when the
+                  cashier has no open drawer. Visible inside the modal
+                  so they know exactly why submit is locked. */}
+              {!shiftIsOpen && (
+                <div style={{ background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.35)", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: "#fbbf24", fontWeight: 600, textAlign: "center" }}>
+                  {noShiftHint(lang)}
                 </div>
               )}
 

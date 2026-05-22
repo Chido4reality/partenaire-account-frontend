@@ -11,7 +11,7 @@ import api, { formatCFA } from "../utils/api";
 import { cacheData, getCachedData } from "../utils/offlineStore";
 import CameraScanner from "../components/common/CameraScanner";
 import { genSaleCodes } from "../utils/receiptCodes";
-import { ActiveShiftIndicator } from "../components/common/ShiftWidgets";
+import { ActiveShiftIndicator, useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
 
 const PAYMENT_MODES = [
   { key: "paid",    en: "Full Payment",  fr: "Paiement total",   color: "#10b981", icon: "✓" },
@@ -45,6 +45,10 @@ export default function POSPage() {
   const { user } = useAuthStore();
   const qc = useQueryClient();
   const isOwner = user?.role === "owner";
+  // MP-REQUIRE-OPEN-SHIFT Phase 3: shared with <ActiveShiftIndicator />
+  // via the ["current-shift", locId] cache, so this hook does not
+  // trigger a second network request.
+  const { hasShift: shiftIsOpen } = useActiveShift();
 
   const [cart, setCart]                   = useState([]);
   const [search, setSearch]               = useState("");
@@ -1283,6 +1287,11 @@ export default function POSPage() {
                     </div>
                   )}
                 </div>
+                {!shiftIsOpen && (
+                  <div style={{ padding: "8px 12px", background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.35)", borderRadius: 8, fontSize: 12, color: "#fbbf24", fontWeight: 600, marginBottom: 8, textAlign: "center" }}>
+                    {noShiftHint(lang)}
+                  </div>
+                )}
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={() => setShowPayment(false)} className="btn btn-secondary" style={{ flex: 1 }}>← {lang === "en" ? "Back" : "Retour"}</button>
                   {(payMode === "credit" || payMode === "partial") && !customer && (
@@ -1290,7 +1299,7 @@ export default function POSPage() {
                       ⚠️ {lang === "en" ? "A registered customer is required for credit or partial sales." : "Un client enregistré est requis pour les ventes à crédit ou partielles."}
                     </div>
                   )}
-                  <button onClick={attemptCheckout} disabled={saleMutation.isPending || (!hasDebt && payMode === "partial" && !paidAmt) || ((payMode === "credit" || payMode === "partial") && !customer)} className="btn btn-success" style={{ flex: 2, fontWeight: 700 }}>
+                  <button onClick={attemptCheckout} disabled={!shiftIsOpen || saleMutation.isPending || (!hasDebt && payMode === "partial" && !paidAmt) || ((payMode === "credit" || payMode === "partial") && !customer)} title={!shiftIsOpen ? noShiftHint(lang) : ""} className="btn btn-success" style={{ flex: 2, fontWeight: 700 }}>
                     {saleMutation.isPending ? "⏳" : (lang === "en" ? "✓ Confirm" : "✓ Valider")}
                   </button>
                 </div>
@@ -1354,7 +1363,7 @@ export default function POSPage() {
               <button onClick={() => setOversellModal(null)} className="btn btn-secondary" style={{ flex: 1 }}>
                 {lang === "en" ? "Cancel" : "Annuler"}
               </button>
-              <button onClick={runCheckout} disabled={saleMutation.isPending} className="btn btn-success" style={{ flex: 2, fontWeight: 700 }}>
+              <button onClick={runCheckout} disabled={!shiftIsOpen || saleMutation.isPending} title={!shiftIsOpen ? noShiftHint(lang) : ""} className="btn btn-success" style={{ flex: 2, fontWeight: 700 }}>
                 {lang === "en" ? "Sell anyway" : "Vendre quand même"}
               </button>
             </div>

@@ -17,6 +17,22 @@
 //                                    /shifts/current, live variance
 //                                    preview, confirm-on-variance.
 //
+// MP-REQUIRE-OPEN-SHIFT Phase 3 additions:
+//
+//   useActiveShift()               — hook: { locId, hasShift, isLoading,
+//                                    data, locationName }. Reuses the
+//                                    same ["current-shift", locId] key
+//                                    so the indicator + every blocker
+//                                    share one cache (no duplicate
+//                                    network calls).
+//
+//   <ShiftRequiredBlocker />       — centered card surfaced when no
+//                                    shift is open. Hosts OpenShiftModal
+//                                    on demand. Renders nothing when a
+//                                    shift IS open. Mount it on pages
+//                                    whose entire purpose is money
+//                                    operations (RefundsPage).
+//
 // All three share invalidation of  ["current-shift", location_id] and
 // ["shifts-history", ...]. They also invalidate the legacy keys
 // ["my-shift"] / ["all-shifts"] so the legacy ShiftsPage section keeps
@@ -577,4 +593,92 @@ export function ActiveShiftIndicator() {
       )}
     </>
   );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// MP-REQUIRE-OPEN-SHIFT Phase 3 — useActiveShift + blocker
+// ─────────────────────────────────────────────────────────────────
+
+// Shared hook so every consumer (indicator, blocker, disabled
+// submit buttons) reads from the SAME react-query cache. The key
+// matches what ActiveShiftIndicator uses above so a single
+// /shifts/current request serves every consumer at this location.
+//
+// The backend's /shifts/current is now cashier-scoped (Phase 2
+// granularity flip), so `hasShift === true` means THIS cashier
+// has THEIR drawer open at THIS location.
+export function useActiveShift() {
+  const { selectedLocation } = useSettingsStore();
+  const locId = selectedLocation?.id || null;
+  const { data, isLoading } = useQuery({
+    queryKey: ["current-shift", locId],
+    queryFn: () => api.get(`/shifts/current?location_id=${locId}`).then(r => r.data?.data),
+    enabled: !!locId,
+    refetchInterval: 30000,
+  });
+  return {
+    locId,
+    locationName: selectedLocation?.name || null,
+    isLoading,
+    data,
+    hasShift: !!(data && data.shift_id),
+  };
+}
+
+// Centered blocker card. Use either as a self-rendering wall
+// (returns null when a shift IS open) or as a children-gating
+// wrapper:
+//
+//   <ShiftRequiredBlocker><RefundList /></ShiftRequiredBlocker>
+//
+// While the active-shift query is loading, children render
+// optimistically — the backend is the authoritative gate, so the
+// worst case is a 400 NO_OPEN_SHIFT that the axios interceptor
+// turns into a localized toast. When there's no selectedLocation
+// (a state the rest of the app already handles upstream), we also
+// pass through to children.
+export function ShiftRequiredBlocker({ children }) {
+  const { lang } = useLangStore();
+  const fr = lang === "fr";
+  const { locId, hasShift, isLoading } = useActiveShift();
+  const [showOpen, setShowOpen] = useState(false);
+
+  if (!locId)         return children || null;
+  if (isLoading)      return children || null;
+  if (hasShift)       return children || null;
+
+  return (
+    <>
+      <div style={{
+        display: "flex", flexDirection: "column", alignItems: "center",
+        justifyContent: "center", padding: "36px 24px", textAlign: "center",
+        background: "var(--bg-card)", border: "1px solid var(--border)",
+        borderRadius: 16, maxWidth: 480, margin: "32px auto",
+        boxShadow: "0 8px 30px rgba(0,0,0,0.25)",
+      }}>
+        <div style={{ fontSize: 40, marginBottom: 10 }}>🔒</div>
+        <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 8 }}>
+          {fr ? "Ouvrez votre caisse pour continuer" : "Open your shift to continue"}
+        </div>
+        <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 20, lineHeight: 1.5 }}>
+          {fr
+            ? "Toute opération qui touche l'argent (ventes, remboursements, dépenses, encaissement de dette) nécessite un poste de caisse ouvert."
+            : "Every money operation (sales, refunds, expenses, debt collection) requires an open cash shift."}
+        </div>
+        <button className="btn btn-primary" onClick={() => setShowOpen(true)}>
+          🔓 {fr ? "Ouvrir la caisse" : "Open shift now"}
+        </button>
+      </div>
+      <OpenShiftModal open={showOpen} onClose={() => setShowOpen(false)} />
+    </>
+  );
+}
+
+// Helper: short EN/FR hint string to render next to a disabled
+// submit button. Centralised so the wording stays consistent
+// across POSPage, CustomersPage, ExpenditurePage, RefundsPage.
+export function noShiftHint(lang) {
+  return lang === "fr"
+    ? "🔒 Ouvrez la caisse pour confirmer"
+    : "🔒 Open shift to confirm";
 }

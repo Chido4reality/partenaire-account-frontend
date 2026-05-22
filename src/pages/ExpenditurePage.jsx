@@ -3,10 +3,20 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useLangStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
+import { useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
 
 export default function ExpenditurePage() {
   const { lang } = useLangStore();
   const qc = useQueryClient();
+  // MP-REQUIRE-OPEN-SHIFT Phase 3: the modal's location picker may
+  // differ from the cashier's currently-selected location. The
+  // hook reads (cashier × selectedLocation); the backend gate uses
+  // (cashier × body.location_id), so a cashier expensing for a
+  // location where they DON'T have a shift open will still 400
+  // server-side and surface via the interceptor's localized toast.
+  // Frontend disables submit only when there's no shift at the
+  // currently selected location — the common case.
+  const { hasShift: shiftIsOpen } = useActiveShift();
 
   const [showAdd, setShowAdd] = useState(false);
   const [dateFilter, setDateFilter] = useState(new Date().toISOString().split("T")[0]);
@@ -55,7 +65,9 @@ export default function ExpenditurePage() {
             {lang === "en" ? "Total today:" : "Total aujourd hui:"} {formatCFA(totalToday)}
           </div>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
+        <button className="btn btn-primary" onClick={() => setShowAdd(true)}
+          disabled={!shiftIsOpen}
+          title={!shiftIsOpen ? noShiftHint(lang) : ""}>
           + {lang === "en" ? "New Expense" : "Nouvelle depense"}
         </button>
       </div>
@@ -74,7 +86,9 @@ export default function ExpenditurePage() {
         <div className="empty-state">
           <div style={{ fontSize: 28, marginBottom: 12, opacity: 0.4 }}>[ ]</div>
           <div style={{ fontWeight: 600, marginBottom: 6 }}>{lang === "en" ? "No expenses for this date" : "Aucune depense pour cette date"}</div>
-          <button className="btn btn-primary" onClick={() => setShowAdd(true)} style={{ marginTop: 12 }}>
+          <button className="btn btn-primary" onClick={() => setShowAdd(true)} style={{ marginTop: 12 }}
+            disabled={!shiftIsOpen}
+            title={!shiftIsOpen ? noShiftHint(lang) : ""}>
             + {lang === "en" ? "Add expense" : "Ajouter une depense"}
           </button>
         </div>
@@ -151,12 +165,18 @@ export default function ExpenditurePage() {
               <label className="label">{lang === "en" ? "Date" : "Date"}</label>
               <input className="input" type="date" value={form.exp_date} onChange={e => setF("exp_date", e.target.value)} />
             </div>
+            {!shiftIsOpen && (
+              <div style={{ background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.35)", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: "#fbbf24", fontWeight: 600, textAlign: "center" }}>
+                {noShiftHint(lang)}
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowAdd(false)}>
                 {lang === "en" ? "Cancel" : "Annuler"}
               </button>
               <button className="btn btn-primary" style={{ flex: 2 }}
-                disabled={!form.description || !form.amount || !form.location_id || addMutation.isPending}
+                disabled={!shiftIsOpen || !form.description || !form.amount || !form.location_id || addMutation.isPending}
+                title={!shiftIsOpen ? noShiftHint(lang) : ""}
                 onClick={() => addMutation.mutate()}>
                 {addMutation.isPending ? "..." : (lang === "en" ? "Save expense" : "Enregistrer")}
               </button>

@@ -26,10 +26,15 @@ import { useQuery } from "@tanstack/react-query";
 import { useLangStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
 import VoidReturnModal from "../components/common/VoidReturnModal";
+import { ShiftRequiredBlocker, useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
 
 export default function RefundsPage() {
   const { lang } = useLangStore();
   const fr = lang === "fr";
+  // MP-REQUIRE-OPEN-SHIFT Phase 3: per-row Refund button needs to
+  // know if the cashier has a drawer open; backend rejects otherwise.
+  // Shared cache with the slim banner below.
+  const { hasShift: shiftIsOpen } = useActiveShift();
 
   const today = new Date().toISOString().slice(0, 10);
   const [date, setDate]       = useState(today);
@@ -84,6 +89,16 @@ export default function RefundsPage() {
           </div>
         </div>
       </div>
+
+      {/* MP-REQUIRE-OPEN-SHIFT Phase 3: blocker card surfaced when the
+          cashier has no open shift. Renders nothing when a shift is
+          open. The sales list stays browsable either way (cashier
+          may want to look up a sale # for reference); per-row
+          Refund buttons below disable independently as a
+          belt-and-suspenders. The blocker hosts its own
+          OpenShiftModal so the cashier never has to navigate away
+          to start a drawer. */}
+      <ShiftRequiredBlocker />
 
       {/* Filters */}
       <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap", alignItems: "center" }}>
@@ -160,15 +175,16 @@ export default function RefundsPage() {
                       <td style={{ textAlign: "right" }}>
                         <button
                           onClick={() => handleRefund(s.id)}
-                          disabled={isVoided || loadingSale === s.id}
+                          disabled={isVoided || loadingSale === s.id || !shiftIsOpen}
+                          title={!shiftIsOpen ? noShiftHint(lang) : ""}
                           style={{
                             padding: "6px 12px", borderRadius: 8,
                             border: "1px solid rgba(251,191,36,0.4)",
-                            background: isVoided ? "var(--bg-elevated)" : "rgba(251,191,36,0.10)",
-                            color: isVoided ? "var(--text-muted)" : "#fbbf24",
+                            background: (isVoided || !shiftIsOpen) ? "var(--bg-elevated)" : "rgba(251,191,36,0.10)",
+                            color: (isVoided || !shiftIsOpen) ? "var(--text-muted)" : "#fbbf24",
                             fontWeight: 700, fontSize: 12,
-                            cursor: isVoided ? "not-allowed" : "pointer",
-                            opacity: isVoided ? 0.6 : 1,
+                            cursor: (isVoided || !shiftIsOpen) ? "not-allowed" : "pointer",
+                            opacity: (isVoided || !shiftIsOpen) ? 0.6 : 1,
                           }}>
                           {loadingSale === s.id
                             ? "…"

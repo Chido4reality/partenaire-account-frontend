@@ -1,5 +1,5 @@
 import axios from "axios";
-import { useAuthStore } from "../store";
+import { useAuthStore, useLangStore } from "../store";
 
 // Timeout intentionally generous: the service worker has its own 4s abort timer
 // for offline detection, then writes to IndexedDB and posts a message. A short
@@ -18,6 +18,24 @@ api.interceptors.response.use(res => res, err => {
   // PaywallModal. Layout listens for this event so individual pages don't
   // each have to handle the response shape. Rejection still propagates so
   // local error handlers can stay tight if they want to.
+  // MP-REQUIRE-OPEN-SHIFT Phase 3: backend gates every money-event
+  // POST with 400 { code:"NO_OPEN_SHIFT", message:"Ouvrez votre…" }
+  // when the caller has no open pa_cash_shifts row. Rewrite the
+  // message in-place to the user's language so the dozens of
+  // existing `toast.error(err.response?.data?.message || "Error")`
+  // handlers across pages surface the right text — no per-page
+  // special-case needed. The proactive blocker card + disabled
+  // submit buttons cover the happy path; this is the backstop for
+  // a cashier who clicks faster than the 30s shift-status refetch
+  // (or whose shift was closed from another device mid-action).
+  if (err.response?.status === 400 && err.response?.data?.code === "NO_OPEN_SHIFT") {
+    try {
+      const lang = useLangStore.getState().lang;
+      err.response.data.message = lang === "fr"
+        ? "Ouvrez votre caisse avant de continuer."
+        : "Open your shift before continuing.";
+    } catch (_) { /* SSR / store not initialised */ }
+  }
   if (err.response?.status === 403 && err.response?.data?.error === "upgrade_required") {
     const d = err.response.data;
     try {
