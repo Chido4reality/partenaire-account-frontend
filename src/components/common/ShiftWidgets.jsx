@@ -548,7 +548,13 @@ export function ActiveShiftIndicator() {
           </span>
           {data?.cashier_name && (
             <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: "auto" }}>
-              👤 {data.cashier_name}
+              {/* MP-DRAWER-MODE-TOGGLE: in shared mode the listed
+                  cashier is the SHIFT OPENER, not necessarily the
+                  current viewer. Relabel so cashiers don't mistake
+                  it for "you". */}
+              {data.drawer_mode === "shared"
+                ? `🔑 ${lang === "fr" ? "Ouvert par" : "Opened by"} : ${data.cashier_name}`
+                : `👤 ${data.cashier_name}`}
             </span>
           )}
         </div>

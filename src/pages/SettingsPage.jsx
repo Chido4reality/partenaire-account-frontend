@@ -41,7 +41,8 @@ export default function SettingsPage() {
   const [shopForm, setShopForm] = useState({
     name: "", phone: "", address: "", city: "", country: "Cameroun",
     whatsapp_number: "", receipt_footer: "", daily_summary_time: "17:30",
-    daily_summary_enabled: true, low_stock_alerts_enabled: true
+    daily_summary_enabled: true, low_stock_alerts_enabled: true,
+    drawer_mode: "shared"
   });
   const [pinForm, setPinForm]     = useState({ current_pin: "", new_pin: "", confirm_pin: "" });
   const [showPinSection, setShowPinSection] = useState(false);
@@ -109,9 +110,25 @@ export default function SettingsPage() {
       daily_summary_time:       d.daily_summary_time || "17:30",
       daily_summary_enabled:    d.daily_summary_enabled ?? true,
       low_stock_alerts_enabled: d.low_stock_alerts_enabled ?? true,
+      drawer_mode:              d.drawer_mode || "shared",
     });
     setShopLoaded(true);
   }, [shopResp, shopLoaded]);
+
+  // MP-DRAWER-MODE-TOGGLE: open shifts in the org gate the
+  // drawer_mode flip. Enabled only on the shop tab (the only place
+  // the radio lives). Backend 409 is the authoritative check; this
+  // is the UX guard so the user doesn't try-and-fail.
+  const { data: openShiftsResp } = useQuery({
+    queryKey: ["shifts-open-in-org"],
+    queryFn: () => api.get("/shifts/open-in-org").then(r => r.data),
+    enabled: tab === "shop" && isOwner,
+    refetchInterval: 15000,
+  });
+  const openShifts = openShiftsResp?.data?.shifts || [];
+  const savedDrawerMode = shopResp?.data?.drawer_mode || "shared";
+  const drawerModeChanged = shopForm.drawer_mode !== savedDrawerMode;
+  const drawerModeBlocked = drawerModeChanged && openShifts.length > 0;
 
   // ── LOCATION MUTATIONS ─────────────────────────────────────────────────────
   const addLocMutation = useMutation({
@@ -177,8 +194,19 @@ export default function SettingsPage() {
     onSuccess: () => {
       toast.success(lang === "en" ? "✓ Settings saved!" : "✓ Paramètres sauvegardés!", { duration: 3000 });
       qc.invalidateQueries(["org-settings"]);
+      // Mode flip changes shift-resolution semantics across the
+      // app; invalidate current-shift + open-in-org so the
+      // indicator and warning panel reflect the new mode.
+      qc.invalidateQueries({ queryKey: ["current-shift"] });
+      qc.invalidateQueries({ queryKey: ["shifts-open-in-org"] });
     },
-    onError: (err) => toast.error(err.response?.data?.message || "Error")
+    onError: (err) => {
+      const d = err.response?.data;
+      if (err.response?.status === 409 && d?.code === "SHIFTS_STILL_OPEN") {
+        qc.invalidateQueries({ queryKey: ["shifts-open-in-org"] });
+      }
+      toast.error(d?.message || "Error");
+    }
   });
 
   const pinMutation = useMutation({
@@ -461,6 +489,76 @@ export default function SettingsPage() {
                 <label className="label">{lang === "en" ? "City" : "Ville"}</label>
                 <input className="input" value={shopForm.city} onChange={e => setFF("city", e.target.value)} placeholder="Douala" />
               </div>
+              {/* MP-DRAWER-MODE-TOGGLE: drawer mode radio. Spans full
+                  width. Save is disabled (with a warning) when the
+                  selection differs from saved value AND shifts are
+                  still open in the org — flipping mid-shift would
+                  produce a mismatched shift-resolution scope. */}
+              <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+                <label className="label">
+                  {lang === "en" ? "Cash drawer mode" : "Mode de caisse"}
+                </label>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 6 }}>
+                  {[
+                    { value: "shared",       en: "Shared drawer",       fr: "Caisse partagée",
+                      enHint: "Recommended — one physical till, multiple cashiers share it (one daily count)",
+                      frHint: "Recommandé — une seule caisse physique partagée par plusieurs caissiers (un seul comptage par jour)" },
+                    { value: "per_cashier",  en: "Per-cashier drawer",  fr: "Caisse par caissier",
+                      enHint: "Each cashier has their own till at this location (multiple drawers in parallel)",
+                      frHint: "Chaque caissier dispose de sa propre caisse (plusieurs tiroirs en parallèle)" },
+                  ].map(opt => {
+                    const checked = shopForm.drawer_mode === opt.value;
+                    return (
+                      <label key={opt.value}
+                        style={{
+                          display: "flex", alignItems: "flex-start", gap: 10,
+                          padding: "10px 14px", borderRadius: 10, cursor: "pointer",
+                          background: checked ? "rgba(79,70,229,0.10)" : "var(--bg-elevated)",
+                          border: `1px solid ${checked ? "rgba(79,70,229,0.40)" : "var(--border)"}`,
+                          transition: "background 0.15s, border-color 0.15s",
+                        }}>
+                        <input type="radio" name="drawer_mode"
+                          checked={checked}
+                          onChange={() => setFF("drawer_mode", opt.value)}
+                          style={{ marginTop: 3 }} />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 700, fontSize: 13 }}>
+                            {lang === "en" ? opt.en : opt.fr}
+                            {opt.value === savedDrawerMode && (
+                              <span style={{ marginLeft: 8, fontSize: 10, padding: "1px 8px", borderRadius: 8, background: "rgba(16,185,129,0.15)", color: "#34d399", fontWeight: 700 }}>
+                                {lang === "en" ? "Current" : "Actuel"}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3, lineHeight: 1.4 }}>
+                            {lang === "en" ? opt.enHint : opt.frHint}
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+                {drawerModeBlocked && (
+                  <div style={{
+                    marginTop: 10,
+                    background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.35)",
+                    borderRadius: 10, padding: "10px 14px", fontSize: 12, color: "#fbbf24",
+                  }}>
+                    <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                      ⚠ {lang === "en"
+                        ? "Close all open shifts before changing this setting."
+                        : "Fermez tous les postes ouverts avant de changer ce paramètre."}
+                    </div>
+                    <div style={{ color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                      {lang === "en" ? "Open shifts: " : "Postes ouverts : "}
+                      <strong>
+                        {openShifts.map(s => s.cashier_name || "?").join(", ")}
+                      </strong>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Sprint A: receipt_footer is part of receipt_branding —
                   Premium only. Non-Premium plans see the input disabled
                   with a lock badge; click opens the paywall modal. */}
@@ -573,9 +671,14 @@ export default function SettingsPage() {
           </div>
 
           {/* Save button */}
-          <button onClick={() => saveShopMutation.mutate()} disabled={saveShopMutation.isPending}
+          <button onClick={() => saveShopMutation.mutate()}
+            disabled={saveShopMutation.isPending || drawerModeBlocked}
             className="btn btn-primary" style={{ height: 48, fontSize: 15, fontWeight: 700 }}>
-            {saveShopMutation.isPending ? "..." : (lang === "en" ? "✓ Save Settings" : "✓ Sauvegarder")}
+            {saveShopMutation.isPending
+              ? "..."
+              : drawerModeBlocked
+                ? (lang === "en" ? "🔒 Close shifts to save" : "🔒 Fermez les postes pour sauvegarder")
+                : (lang === "en" ? "✓ Save Settings" : "✓ Sauvegarder")}
           </button>
         </div>
       )}
