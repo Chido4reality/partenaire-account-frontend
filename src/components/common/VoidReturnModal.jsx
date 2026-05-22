@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import api, { formatCFA } from "../../utils/api";
 import OwnerPIN from "./OwnerPIN";
-import { useSettingsStore } from "../../store";
+import { useSettingsStore, useAuthStore } from "../../store";
 
 /**
  * VoidReturnModal — handles void, refund, exchange
@@ -15,6 +15,14 @@ import { useSettingsStore } from "../../store";
 export default function VoidReturnModal({ sale, onClose, lang = "fr" }) {
   const qc = useQueryClient();
   const { selectedLocation } = useSettingsStore();
+  // MP-REFUNDS-STAFF-ACCESS: cashier is allowed to see this modal
+  // (refund + exchange flows) but NOT the Void button. Voiding wipes
+  // a sale entirely and restores stock — fraud vector if a cashier
+  // could do it alone. Backend mirrors this gate
+  // (returns.js: /void requires owner/manager; /return + /exchange
+  // open to cashier).
+  const { user } = useAuthStore();
+  const canVoid = user?.role === "owner" || user?.role === "manager";
   // The return inherits the sale's location. Some report payloads
   // don't include location_id (pre-multi-location / trimmed select),
   // so fall back to the cashier's currently selected location.
@@ -198,13 +206,15 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr" }) {
             <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 4 }}>
               {lang === "en" ? "What do you want to do?" : "Que souhaitez-vous faire?"}
             </div>
-            <button onClick={() => setMode("void")}
-              style={{ padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.08)", color: "#f87171", cursor: "pointer", textAlign: "left", fontWeight: 600 }}>
-              ⚠️ {lang === "en" ? "Void sale (full cancellation, stock restored)" : "Annuler la vente (annulation totale, stock restauré)"}
-              <div style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)", marginTop: 3 }}>
-                {lang === "en" ? "For same-day mistakes" : "Pour les erreurs du jour"}
-              </div>
-            </button>
+            {canVoid && (
+              <button onClick={() => setMode("void")}
+                style={{ padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.08)", color: "#f87171", cursor: "pointer", textAlign: "left", fontWeight: 600 }}>
+                ⚠️ {lang === "en" ? "Void sale (full cancellation, stock restored)" : "Annuler la vente (annulation totale, stock restauré)"}
+                <div style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)", marginTop: 3 }}>
+                  {lang === "en" ? "For same-day mistakes — owner/manager only" : "Pour les erreurs du jour — propriétaire/manager seulement"}
+                </div>
+              </button>
+            )}
             <button onClick={() => setMode("refund")}
               style={{ padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(251,191,36,0.4)", background: "rgba(251,191,36,0.08)", color: "#fbbf24", cursor: "pointer", textAlign: "left", fontWeight: 600 }}>
               ↩️ {lang === "en" ? "Return + Refund (full or partial)" : "Retour + Remboursement (total ou partiel)"}

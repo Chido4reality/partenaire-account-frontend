@@ -12,6 +12,7 @@ import Dashboard from "./pages/Dashboard";
 import POSPage from "./pages/POSPage";
 import OnlineCartPage from "./pages/OnlineCartPage";
 import ReportsPage from "./pages/ReportsPage";
+import RefundsPage from "./pages/RefundsPage";
 import TransfersPage from "./pages/TransfersPage";
 import ExpenditurePage from "./pages/ExpenditurePage";
 import CreditsPage from "./pages/CreditsPage";
@@ -57,6 +58,11 @@ const ROUTE_ACCESS = {
   "/transfers":    ["owner", "manager", "warehouse"],
   "/expenditures": ["owner", "manager"],
   "/reports":      ["owner", "manager"],
+  // MP-REFUNDS-STAFF-ACCESS: refunds/exchanges are operational —
+  // every role that can sell must also be able to process a return.
+  // Backend mirror in returns.js: /return + /exchange open to
+  // cashier, /void stays owner/manager.
+  "/refunds":      ["owner", "manager", "cashier"],
   "/settings":     ["owner", "manager"],
   "/shifts":       ["owner", "manager", "cashier"],
   "/stock-count":  ["owner", "manager", "warehouse"],
@@ -84,7 +90,10 @@ function RoleGuard({ path, children }) {
   return children;
 }
 
-const SILVER_ALLOWED = ["/", "/pos", "/inventory", "/shifts"];
+// MP-REFUNDS-STAFF-ACCESS: /refunds is on the Silver allowlist so
+// Silver-tier shops (which don't have the Reports section) can
+// still process customer returns. Operational, not analytical.
+const SILVER_ALLOWED = ["/", "/pos", "/inventory", "/shifts", "/refunds"];
 
 function PlanGuard({ path, children }) {
   const isAuth = useAuthStore(s => s.isAuthenticated);
@@ -248,6 +257,9 @@ export default function App() {
             <Route path="transfers"    element={<RoleGuard path="/transfers"><PlanGuard path="/transfers"><TransfersPage /></PlanGuard></RoleGuard>} />
             <Route path="expenditures" element={<RoleGuard path="/expenditures"><PlanGuard path="/expenditures"><ExpenditurePage /></PlanGuard></RoleGuard>} />
             <Route path="reports"      element={<RoleGuard path="/reports"><PlanGuard path="/reports"><ReportsPage /></PlanGuard></RoleGuard>} />
+            {/* MP-REFUNDS-STAFF-ACCESS: no PlanGuard — refunds are
+                operational and must work on every plan tier. */}
+            <Route path="refunds"      element={<RoleGuard path="/refunds"><RefundsPage /></RoleGuard>} />
             <Route path="settings"     element={<RoleGuard path="/settings"><PlanGuard path="/settings"><SettingsPage /></PlanGuard></RoleGuard>} />
             <Route path="shifts"       element={<RoleGuard path="/shifts"><ShiftsPage /></RoleGuard>} />
             <Route path="stock-count"  element={<RoleGuard path="/stock-count"><PlanGuard path="/stock-count"><StockCountPage /></PlanGuard></RoleGuard>} />

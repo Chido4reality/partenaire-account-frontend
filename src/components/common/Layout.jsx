@@ -22,6 +22,11 @@ const NAV = [
   { to: "/pos",          en: "Sales",      fr: "Ventes",          icon: "🛒", roles: ["owner","manager","cashier"],            section: "sales" },
   { to: "/online-cart",  en: "Online Cart",fr: "Panier en ligne", icon: "📥", roles: ["owner","manager","cashier"],            section: "online_cart", badge: "online_cart" },
   { to: "/shifts",       en: "Cash",       fr: "Caisse",          icon: "💰", roles: ["owner","manager","cashier"],            section: "cashflow" },
+  // MP-REFUNDS-STAFF-ACCESS: refunds are operational (cashier
+  // hands back cash to a customer returning goods). Visible to all
+  // sale-capable roles, not gated by plan section (refunds work
+  // on every tier — see SILVER_ALLOWED in App.jsx).
+  { to: "/refunds",      en: "Refunds",    fr: "Remboursements",  icon: "↩",  roles: ["owner","manager","cashier"],            section: "sales" },
   { to: "/stock-count",  en: "Count",      fr: "Comptage",        icon: "🔢", roles: ["owner","manager","warehouse"],          section: "count" },
   { to: "/barcodes",     en: "Labels",     fr: "Étiquettes",      icon: "🏷️", roles: ["owner","manager","warehouse"],          section: "labels" },
   { to: "/inventory",    en: "Inventory",  fr: "Inventaire",      icon: "📦", roles: ["owner","manager","warehouse"],          section: "inventory" },
