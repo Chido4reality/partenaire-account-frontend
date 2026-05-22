@@ -1,72 +1,141 @@
-// MP-REFUNDS-STAFF-ACCESS
+// MP-REFUNDS-STAFF-ACCESS — operational refund/exchange page open
+// to all roles (owner / manager / cashier).
 //
-// Operational refund/exchange page open to all roles
-// (owner / manager / cashier). Previously refunds lived inside
-// Reports → Sales Detail tab, which was owner/manager-only via
-// nav RoleGuard, so cashiers couldn't process a customer return.
+// MP-REFUND-SEARCH-ENHANCED — multi-mode search:
+//   🔍 Receipt number  — exact sale_number lookup, auto-detects
+//                        VNT-… → search_by=number,
+//                        DOZ-… → search_by=dozie_ref. Includes
+//                        voided sales (badged) so the cashier
+//                        can see "this was already voided".
+//   💰 Amount          — find every receipt matching paid_amount
+//                        OR total_amount across all dates.
+//   📷 Scan QR         — reuses <CameraScanner /> (zxing handles
+//                        QR + barcodes). Decoded string runs
+//                        through the same auto-detect as the
+//                        receipt-number tab.
+//   📅 By date         — legacy daily list. include_online=true
+//                        so online (Dozie) sales mix in with a
+//                        channel badge.
 //
-// This page is intentionally minimal: today's sales by default
-// (most recent first), with a search-by-sale-number box and a
-// "Refund" button per row that opens the existing
-// VoidReturnModal with the sale loaded via GET /api/sales/:id.
+// Channel detection comes from the backend (pa_sales row joined
+// to pa_online_cart). Online sales show a banner inside the
+// refund modal explaining the cash-from-till + boss-handles-
+// original-channel refund flow ("Simple" approach; channel-
+// aware refund routing is future work).
 //
-// Endpoints used (both already exist, neither is role-gated):
-//   GET /api/sales?date=YYYY-MM-DD&limit=&page=
-//   GET /api/sales/:id  (returns sale with pa_sale_items)
-// No new backend route needed; no plan gate (refunds are
-// operational, not analytical — every shop needs them).
-//
-// VoidReturnModal hides the Void mode button when the user's
+// VoidReturnModal still hides the Void button when the user's
 // role !== owner/manager (see canVoid in that component).
-// Backend mirror: returns.js opens /return + /exchange to
-// cashier; /void stays owner/manager.
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLangStore } from "../store";
-import api, { formatCFA, formatDate } from "../utils/api";
+import api, { formatCFA } from "../utils/api";
 import VoidReturnModal from "../components/common/VoidReturnModal";
+import CameraScanner from "../components/common/CameraScanner";
 import { ShiftRequiredBlocker, useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
+
+// Auto-detect the lookup mode from a free-text sale reference.
+// VNT-YYYYMMDD-NNNN → POS sale; anything else (DOZ-…, or future
+// online prefixes) → Dozie ref. Strings the user pastes from a
+// printed receipt get .trim()'d upstream.
+function detectRefMode(value) {
+  const v = String(value || "").trim().toUpperCase();
+  if (v.startsWith("VNT-")) return "number";
+  return "dozie_ref"; // DOZ-… or unknown prefix → try the online cart table
+}
 
 export default function RefundsPage() {
   const { lang } = useLangStore();
   const fr = lang === "fr";
   // MP-REQUIRE-OPEN-SHIFT Phase 3: per-row Refund button needs to
   // know if the cashier has a drawer open; backend rejects otherwise.
-  // Shared cache with the slim banner below.
   const { hasShift: shiftIsOpen } = useActiveShift();
 
   const today = new Date().toISOString().slice(0, 10);
-  const [date, setDate]       = useState(today);
-  const [search, setSearch]   = useState("");
-  const [page, setPage]       = useState(1);
-  const [selected, setSelected] = useState(null); // hydrated sale for the modal
-  const [loadingSale, setLoadingSale] = useState(null); // sale id being fetched
+  const [tab, setTab] = useState("date"); // "number" | "amount" | "scan" | "date"
+  const [date, setDate] = useState(today);
+  const [page, setPage] = useState(1);
 
-  const PAGE_LIMIT = 30;
-  // Reuse GET /api/sales — paginated by date, returns sale + customer
-  // (not items). Items hydrate on click via GET /:id.
-  const { data: salesResp, isLoading, refetch } = useQuery({
-    queryKey: ["refunds-sales-list", date, page, PAGE_LIMIT],
-    queryFn: () => api.get(`/sales?date=${date}&limit=${PAGE_LIMIT}&page=${page}`).then(r => r.data),
+  // Search inputs (per-tab; each tab's submitted value lives in
+  // its own state so switching tabs doesn't clobber a typed query).
+  const [numberInput, setNumberInput] = useState("");
+  const [amountInput, setAmountInput] = useState("");
+  const [scannerOpen, setScannerOpen] = useState(false);
+
+  // Submitted queries — drive the active useQuery key.
+  const [activeQuery, setActiveQuery] = useState(null);
+  // shape: { by: "number"|"amount"|"dozie_ref", value: string }
+
+  const [selected, setSelected] = useState(null);          // hydrated sale for modal
+  const [loadingSale, setLoadingSale] = useState(null);    // id being fetched
+
+  const PAGE_LIMIT = 50;
+
+  // Search query — only fires when activeQuery is set.
+  const { data: searchResp, isLoading: searchLoading, refetch: refetchSearch } = useQuery({
+    queryKey: ["refunds-search", activeQuery],
+    queryFn: () => {
+      const { by, value } = activeQuery;
+      const params = new URLSearchParams({ search_by: by, value, limit: String(PAGE_LIMIT) });
+      return api.get(`/sales?${params.toString()}`).then(r => r.data);
+    },
+    enabled: !!activeQuery,
   });
-  const sales = salesResp?.data || [];
-  const total = salesResp?.total || 0;
-  const hasNext = page * PAGE_LIMIT < total;
 
-  // Client-side search-by-sale-number on top of the fetched page.
-  // For the common case (today's 10–50 sales), the page already
-  // holds everything; if the user types a number from a different
-  // day, they switch the date filter.
-  const visible = search.trim()
-    ? sales.filter(s => (s.sale_number || "").toLowerCase().includes(search.trim().toLowerCase()))
-    : sales;
+  // Date-list query — drives the "By date" tab. include_online=true
+  // so the cashier sees both channels in one list (POS + online).
+  const { data: dateResp, isLoading: dateLoading, refetch: refetchDate } = useQuery({
+    queryKey: ["refunds-by-date", date, page, PAGE_LIMIT],
+    queryFn: () =>
+      api.get(`/sales?date=${date}&include_online=true&limit=${PAGE_LIMIT}&page=${page}`)
+        .then(r => r.data),
+    enabled: tab === "date",
+  });
+
+  // Pick which list is currently active for rendering.
+  const isSearching = tab !== "date";
+  const sales = (isSearching ? searchResp?.data : dateResp?.data) || [];
+  const total = (isSearching ? searchResp?.total : dateResp?.total) || 0;
+  const isLoading = isSearching ? searchLoading : dateLoading;
+  const hasNext = !isSearching && (page * PAGE_LIMIT < total);
+
+  const refetch = () => { isSearching ? refetchSearch() : refetchDate(); };
+
+  // Reset pagination + clear any active search when the user
+  // switches tabs — keeps the visible list aligned with the tab.
+  useEffect(() => {
+    setPage(1);
+    if (tab === "date") setActiveQuery(null);
+  }, [tab]);
+
+  const runNumberSearch = () => {
+    const v = numberInput.trim();
+    if (!v) return;
+    setActiveQuery({ by: detectRefMode(v), value: v });
+  };
+  const runAmountSearch = () => {
+    const v = amountInput.trim();
+    if (!v || !Number.isFinite(Number(v)) || Number(v) < 0) return;
+    setActiveQuery({ by: "amount", value: v });
+  };
+  const onScanResult = (code) => {
+    setScannerOpen(false);
+    const v = String(code || "").trim();
+    if (!v) return;
+    // Scanner can produce either a sale_number string or a dozie_ref
+    // string depending on which receipt the cashier scanned. Funnel
+    // through the same auto-detect.
+    setActiveQuery({ by: detectRefMode(v), value: v });
+    // Surface the decoded value in the receipt-number input box so
+    // the cashier sees what was scanned and can edit if needed.
+    setTab("number");
+    setNumberInput(v);
+  };
 
   const handleRefund = async (saleId) => {
     setLoadingSale(saleId);
     try {
       const { data } = await api.get(`/sales/${saleId}`);
-      // /api/sales/:id returns { success, data: fullSale }
       const sale = data?.data || data;
       if (!sale || !sale.id) throw new Error("Sale not found");
       setSelected(sale);
@@ -77,6 +146,19 @@ export default function RefundsPage() {
     }
   };
 
+  // ── Search header tabs ─────────────────────────────────────
+  const TABS = [
+    { key: "number", emoji: "🔍", en: "Receipt #", fr: "N° Reçu" },
+    { key: "amount", emoji: "💰", en: "Amount",    fr: "Montant" },
+    { key: "scan",   emoji: "📷", en: "Scan QR",   fr: "Scanner" },
+    { key: "date",   emoji: "📅", en: "By date",   fr: "Par date" },
+  ];
+
+  // Open the scanner immediately when the user picks the scan tab.
+  useEffect(() => {
+    if (tab === "scan") setScannerOpen(true);
+  }, [tab]);
+
   return (
     <div style={{ padding: 24, maxWidth: 1000, margin: "0 auto" }}>
       <div className="page-header">
@@ -84,84 +166,201 @@ export default function RefundsPage() {
           <h1 className="page-title">↩ {fr ? "Remboursements" : "Refunds"}</h1>
           <div className="page-sub">
             {fr
-              ? "Sélectionnez la vente du client pour traiter un remboursement ou un échange."
-              : "Pick the customer's sale to process a refund or exchange."}
+              ? "Cherchez un reçu par N°, montant, scan QR ou par date."
+              : "Find a receipt by number, amount, QR scan or by date."}
           </div>
         </div>
       </div>
 
-      {/* MP-REQUIRE-OPEN-SHIFT Phase 3: blocker card surfaced when the
-          cashier has no open shift. Renders nothing when a shift is
-          open. The sales list stays browsable either way (cashier
-          may want to look up a sale # for reference); per-row
-          Refund buttons below disable independently as a
-          belt-and-suspenders. The blocker hosts its own
-          OpenShiftModal so the cashier never has to navigate away
-          to start a drawer. */}
+      {/* MP-REQUIRE-OPEN-SHIFT Phase 3 blocker */}
       <ShiftRequiredBlocker />
 
-      {/* Filters */}
-      <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap", alignItems: "center" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <label className="label" style={{ margin: 0 }}>{fr ? "Date" : "Date"}</label>
-          <input className="input" type="date" value={date}
-            onChange={e => { setDate(e.target.value); setPage(1); }}
-            style={{ width: 160 }} />
-        </div>
-        <button className="btn btn-secondary"
-          onClick={() => { setDate(today); setPage(1); }}
-          disabled={date === today}>
-          {fr ? "Aujourd'hui" : "Today"}
-        </button>
-        <input className="input" placeholder={fr ? "Chercher N° vente (VNT-…)" : "Search sale # (VNT-…)"}
-          value={search} onChange={e => setSearch(e.target.value)}
-          style={{ flex: 1, minWidth: 200 }} />
+      {/* Tab selector */}
+      <div style={{
+        display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap",
+        background: "var(--bg-card)", border: "1px solid var(--border)",
+        borderRadius: 12, padding: 6,
+      }}>
+        {TABS.map(t => {
+          const active = tab === t.key;
+          return (
+            <button key={t.key}
+              onClick={() => setTab(t.key)}
+              style={{
+                flex: "1 1 120px", padding: "10px 12px",
+                background: active ? "var(--brand)" : "transparent",
+                color: active ? "#fff" : "var(--text-secondary)",
+                border: "none", borderRadius: 8,
+                fontWeight: 700, fontSize: 13, cursor: "pointer",
+                transition: "background 0.15s, color 0.15s",
+              }}>
+              {t.emoji} {fr ? t.fr : t.en}
+            </button>
+          );
+        })}
       </div>
 
-      {/* List */}
+      {/* Per-tab input row */}
+      <div style={{ marginBottom: 18 }}>
+        {tab === "number" && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <input
+              className="input"
+              placeholder="VNT-20260522-0007 / DOZ-…"
+              value={numberInput}
+              onChange={e => setNumberInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") runNumberSearch(); }}
+              autoFocus
+              style={{ flex: 1, minWidth: 240, fontFamily: "monospace" }}
+            />
+            <button className="btn btn-primary" onClick={runNumberSearch} disabled={!numberInput.trim()}>
+              🔍 {fr ? "Chercher" : "Search"}
+            </button>
+          </div>
+        )}
+
+        {tab === "amount" && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <input
+              className="input"
+              type="number" min="0" step="1"
+              placeholder={fr ? "Ex : 1500" : "e.g. 1500"}
+              value={amountInput}
+              onChange={e => setAmountInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") runAmountSearch(); }}
+              autoFocus
+              style={{ flex: 1, minWidth: 200, textAlign: "center", fontWeight: 700, fontSize: 16 }}
+            />
+            <span style={{ color: "var(--text-muted)", fontSize: 13 }}>FCFA</span>
+            <button className="btn btn-primary" onClick={runAmountSearch} disabled={!amountInput.trim()}>
+              💰 {fr ? "Chercher" : "Search"}
+            </button>
+          </div>
+        )}
+
+        {tab === "scan" && (
+          <div style={{
+            background: "var(--bg-card)", border: "1px solid var(--border)",
+            borderRadius: 10, padding: "14px 18px",
+            display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+          }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ fontWeight: 700, fontSize: 13 }}>
+                📷 {fr ? "Pointez la caméra sur le QR du reçu" : "Point the camera at the receipt QR"}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                {fr
+                  ? "Le code décodé sera utilisé pour retrouver la vente. Fonctionne aussi avec les codes-barres."
+                  : "The decoded code will be used to find the sale. Works with barcodes too."}
+              </div>
+            </div>
+            <button className="btn btn-primary" onClick={() => setScannerOpen(true)}>
+              📷 {fr ? "Ouvrir la caméra" : "Open camera"}
+            </button>
+          </div>
+        )}
+
+        {tab === "date" && (
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <label className="label" style={{ margin: 0 }}>{fr ? "Date" : "Date"}</label>
+            <input className="input" type="date" value={date}
+              onChange={e => { setDate(e.target.value); setPage(1); }}
+              style={{ width: 180 }} />
+            <button className="btn btn-secondary"
+              onClick={() => { setDate(today); setPage(1); }}
+              disabled={date === today}>
+              {fr ? "Aujourd'hui" : "Today"}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Result count line for search modes */}
+      {isSearching && activeQuery && !isLoading && (
+        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>
+          {sales.length === 0
+            ? (fr ? "Aucun reçu trouvé." : "No receipt found.")
+            : activeQuery.by === "amount"
+              ? (fr
+                  ? `${sales.length} reçu(s) de ${formatCFA(Number(activeQuery.value))}.`
+                  : `${sales.length} receipt(s) of ${formatCFA(Number(activeQuery.value))}.`)
+              : (fr
+                  ? `${sales.length} résultat(s) pour « ${activeQuery.value} ».`
+                  : `${sales.length} result(s) for "${activeQuery.value}".`)
+          }
+        </div>
+      )}
+
+      {/* Result list */}
       {isLoading ? (
         <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>
           {fr ? "Chargement…" : "Loading…"}
         </div>
-      ) : visible.length === 0 ? (
+      ) : sales.length === 0 ? (
         <div className="empty-state" style={{ padding: 40, textAlign: "center", color: "var(--text-muted)", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12 }}>
           <div style={{ fontSize: 28, marginBottom: 10, opacity: 0.5 }}>🧾</div>
           <div style={{ fontWeight: 600 }}>
-            {search.trim()
-              ? (fr ? "Aucune vente correspondante" : "No matching sale")
+            {isSearching && activeQuery
+              ? (fr ? "Aucun reçu trouvé" : "No receipt found")
               : (fr ? "Aucune vente ce jour" : "No sales on this day")}
           </div>
         </div>
       ) : (
         <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
           <div style={{ overflowX: "auto" }}>
-            <table className="table" style={{ minWidth: 720 }}>
+            <table className="table" style={{ minWidth: 820 }}>
               <thead>
                 <tr>
+                  <th>{fr ? "Date" : "Date"}</th>
                   <th>{fr ? "N° vente" : "Sale #"}</th>
-                  <th>{fr ? "Heure" : "Time"}</th>
                   <th>{fr ? "Client" : "Customer"}</th>
                   <th style={{ textAlign: "right" }}>{fr ? "Total" : "Total"}</th>
+                  <th style={{ textAlign: "right" }}>{fr ? "Payé" : "Paid"}</th>
+                  <th>{fr ? "Canal" : "Channel"}</th>
                   <th>{fr ? "Statut" : "Status"}</th>
                   <th style={{ textAlign: "right" }}>{fr ? "Action" : "Action"}</th>
                 </tr>
               </thead>
               <tbody>
-                {visible.map(s => {
+                {sales.map(s => {
+                  const dateStr = s.created_at
+                    ? new Date(s.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })
+                    : "—";
                   const timeStr = s.created_at
                     ? new Date(s.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
-                    : "—";
+                    : "";
                   const statusColor = s.payment_status === "paid"   ? "#34d399"
                                     : s.payment_status === "partial" ? "#fbbf24"
                                     : s.payment_status === "credit"  ? "#f87171"
                                     : "var(--text-muted)";
                   const isVoided = s.is_voided;
+                  const isOnline = s.channel === "online";
+                  const hasRefund = s.has_existing_refund;
                   return (
                     <tr key={s.id}>
-                      <td style={{ fontFamily: "monospace", fontWeight: 600 }}>{s.sale_number}</td>
-                      <td style={{ color: "var(--text-muted)", fontSize: 12 }}>{timeStr}</td>
-                      <td>{s.pa_customers?.name || (fr ? "Comptoir" : "Walk-in")}</td>
+                      <td style={{ color: "var(--text-muted)", fontSize: 12, whiteSpace: "nowrap" }}>
+                        {dateStr} <span style={{ opacity: 0.6 }}>{timeStr}</span>
+                      </td>
+                      <td style={{ fontFamily: "monospace", fontWeight: 600 }}>
+                        {s.sale_number}
+                        {isOnline && s.dozie_order_ref && (
+                          <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+                            {s.dozie_order_ref}
+                          </div>
+                        )}
+                      </td>
+                      <td>{s.customer_name || s.pa_customers?.name || (fr ? "Comptoir" : "Walk-in")}</td>
                       <td style={{ textAlign: "right", fontWeight: 600 }}>{formatCFA(s.total_amount)}</td>
+                      <td style={{ textAlign: "right" }}>{formatCFA(s.paid_amount)}</td>
+                      <td>
+                        <span style={{
+                          fontSize: 11, padding: "2px 8px", borderRadius: 10, fontWeight: 700,
+                          background: isOnline ? "rgba(249,115,22,0.15)" : "rgba(59,130,246,0.15)",
+                          color: isOnline ? "#f97316" : "#60a5fa",
+                        }}>
+                          {isOnline ? (fr ? "EN LIGNE" : "ONLINE") : "POS"}
+                        </span>
+                      </td>
                       <td>
                         <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: `${statusColor}22`, color: statusColor, fontWeight: 600 }}>
                           {s.payment_status}
@@ -169,6 +368,12 @@ export default function RefundsPage() {
                         {isVoided && (
                           <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: "rgba(100,100,100,0.15)", color: "var(--text-muted)", fontWeight: 600, marginLeft: 4 }}>
                             {fr ? "annulée" : "voided"}
+                          </span>
+                        )}
+                        {hasRefund && !isVoided && (
+                          <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: "rgba(168,85,247,0.15)", color: "#a78bfa", fontWeight: 600, marginLeft: 4 }}
+                            title={fr ? "Cette vente a déjà été remboursée au moins une fois" : "This sale has already been refunded at least once"}>
+                            ↩ {fr ? "déjà rembours." : "refunded"}
                           </span>
                         )}
                       </td>
@@ -198,7 +403,8 @@ export default function RefundsPage() {
             </table>
           </div>
 
-          {(page > 1 || hasNext) && (
+          {/* Pagination only on date tab — search modes are capped at PAGE_LIMIT */}
+          {tab === "date" && (page > 1 || hasNext) && (
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderTop: "1px solid var(--border)" }}>
               <button className="btn btn-secondary"
                 disabled={page <= 1}
@@ -215,7 +421,28 @@ export default function RefundsPage() {
               </button>
             </div>
           )}
+          {/* Hint when search hit the cap — backend caps responses at 100,
+              we ask for PAGE_LIMIT=50, so this rarely triggers; cashier
+              should narrow the query rather than paginate. */}
+          {isSearching && sales.length >= PAGE_LIMIT && (
+            <div style={{ padding: "10px 14px", borderTop: "1px solid var(--border)", fontSize: 12, color: "var(--text-muted)", textAlign: "center" }}>
+              {fr
+                ? `Affichage des ${PAGE_LIMIT} premiers résultats — affinez votre recherche pour voir d'autres reçus.`
+                : `Showing first ${PAGE_LIMIT} results — narrow your search to see more.`}
+            </div>
+          )}
         </div>
+      )}
+
+      {scannerOpen && (
+        <CameraScanner
+          lang={lang}
+          title={fr ? "Scanner le reçu" : "Scan receipt"}
+          placeholder={fr ? "Saisir N° de reçu…" : "Type receipt #…"}
+          inputMode="text"
+          onScan={onScanResult}
+          onClose={() => { setScannerOpen(false); if (tab === "scan") setTab("number"); }}
+        />
       )}
 
       {selected && (

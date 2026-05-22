@@ -1,6 +1,13 @@
 ﻿import { useEffect, useRef, useState } from "react";
 
-export default function CameraScanner({ onScan, onClose, lang }) {
+// MP-REFUND-SEARCH-ENHANCED: optional title / placeholder /
+// inputMode props let consumers reuse the scanner for non-product
+// codes (e.g. alphanumeric sale numbers VNT-…, DOZ-…). Defaults
+// preserve the product-barcode behaviour of all existing callers.
+export default function CameraScanner({
+  onScan, onClose, lang,
+  title, placeholder, inputMode = "numeric"
+}) {
   const videoRef    = useRef(null);
   const streamRef   = useRef(null);
   const readerRef   = useRef(null);
@@ -89,7 +96,7 @@ export default function CameraScanner({ onScan, onClose, lang }) {
       {/* Header */}
       <div style={{ padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(0,0,0,0.8)", flexShrink: 0, paddingTop: "max(14px, env(safe-area-inset-top))" }}>
         <span style={{ color: "#fff", fontWeight: 600, fontSize: 16 }}>
-          {lang === "en" ? "Scan Barcode" : "Scanner le code-barres"}
+          {title || (lang === "en" ? "Scan Barcode" : "Scanner le code-barres")}
         </span>
         <button onClick={() => { cleanup(); onClose(); }} style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
           {lang === "en" ? "Cancel" : "Annuler"}
@@ -115,7 +122,7 @@ export default function CameraScanner({ onScan, onClose, lang }) {
           <input value={manualCode} onChange={e => setManualCode(e.target.value)}
             onKeyDown={e => e.key === "Enter" && handleManualSubmit()}
             style={{ background: "rgba(255,255,255,0.1)", border: "2px solid rgba(255,255,255,0.3)", borderRadius: 12, padding: "14px", color: "#fff", fontSize: 18, width: "100%", maxWidth: 300, textAlign: "center", letterSpacing: 3, marginBottom: 12 }}
-            placeholder="0000000000" autoFocus inputMode="numeric" />
+            placeholder={placeholder || "0000000000"} autoFocus inputMode={inputMode} />
           <button onClick={handleManualSubmit} disabled={!manualCode.trim()}
             style={{ background: "#4f46e5", border: "none", borderRadius: 12, padding: "14px 40px", color: "#fff", cursor: "pointer", fontSize: 16, fontWeight: 600, opacity: manualCode.trim() ? 1 : 0.4 }}>
             {lang === "en" ? "Search Product" : "Rechercher"}
@@ -149,8 +156,8 @@ export default function CameraScanner({ onScan, onClose, lang }) {
               <input value={manualCode} onChange={e => setManualCode(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && handleManualSubmit()}
                 style={{ flex: 1, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 10, padding: "10px 14px", color: "#fff", fontSize: 14 }}
-                placeholder={lang === "en" ? "Type barcode..." : "Saisir code-barres..."}
-                inputMode="numeric" />
+                placeholder={placeholder || (lang === "en" ? "Type barcode..." : "Saisir code-barres...")}
+                inputMode={inputMode} />
               <button onClick={handleManualSubmit} style={{ background: "#4f46e5", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", cursor: "pointer", fontWeight: 600 }}>
                 {lang === "en" ? "Go" : "OK"}
               </button>

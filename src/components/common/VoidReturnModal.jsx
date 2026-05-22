@@ -198,7 +198,37 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr" }) {
         <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 20 }}>
           {sale.sale_number} · {formatCFA(total)}
           {sale.pa_customers?.name && ` · ${sale.pa_customers.name}`}
+          {sale.channel === "online" && sale.dozie_order_ref && (
+            <> · <span style={{ fontFamily: "monospace" }}>{sale.dozie_order_ref}</span></>
+          )}
         </div>
+
+        {/* MP-REFUND-SEARCH-ENHANCED: online-channel warning. Cashier
+            refunds CASH from the till; original-channel re-refund
+            (Mobile Money / card) is the owner's manual job. Proper
+            channel-aware refund routing is deferred to a future
+            task. */}
+        {sale.channel === "online" && (
+          <div style={{
+            background: "rgba(249,115,22,0.10)", border: "1px solid rgba(249,115,22,0.40)",
+            borderRadius: 10, padding: "10px 14px", marginBottom: 16,
+            fontSize: 12, color: "#fb923c", lineHeight: 1.5,
+          }}>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>
+              ⚠ {lang === "en" ? "Online sale" : "Vente en ligne"}
+              {sale.dozie_payment_mode && (
+                <span style={{ marginLeft: 8, padding: "1px 8px", borderRadius: 8, background: "rgba(249,115,22,0.15)", fontSize: 11, textTransform: "uppercase" }}>
+                  {sale.dozie_payment_mode}
+                </span>
+              )}
+            </div>
+            <div style={{ color: "var(--text-secondary)" }}>
+              {lang === "en"
+                ? "Refund will be processed as cash from the till. The owner needs to refund the customer on the original channel (Mobile Money / card) separately."
+                : "Le remboursement sera traité en espèces depuis la caisse. Le propriétaire devra rembourser le client sur le canal d'origine (Mobile Money / carte) séparément."}
+            </div>
+          </div>
+        )}
 
         {/* Mode selection */}
         {!mode && (
