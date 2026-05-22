@@ -577,7 +577,19 @@ export default function POSPage() {
           paid_amount: paid,
           balance_due: balance,
           payment_method: payMethod,
-          payment_status: payMode,
+          // MP-RECEIPT-PAID-IN-FULL-BUG: don't use payMode here.
+          // For debt-only carts the 3-mode picker is hidden and
+          // payMode stays at the default "paid" — even when the
+          // cashier partial-paid via AMOUNT TO COLLECT — so the
+          // status badge in the receipt modal said "PAID IN FULL"
+          // for genuine partials. Compute from paid vs total so
+          // the badge can never disagree with the rendered
+          // amounts below it. Matches the backend's own derivation
+          // and the values backend writes to pa_sales.
+          payment_status:
+            paid >= total ? "paid" :
+            paid > 0      ? "partial" :
+                            "credit",
         });
         setShowReceipt(true);
       }
