@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useAuthStore, useLangStore, useSettingsStore } from "../store";
@@ -82,29 +82,36 @@ export default function SettingsPage() {
     enabled: tab === "staff"
   });
 
-  useQuery({
+  // MP-SETTINGS-WIPE-BUG: React Query v5 removed the `onSuccess`
+  // callback from useQuery. The previous code relied on it to
+  // populate shopForm from the server response — so the callback
+  // never fired, the form stayed at its empty defaults from
+  // useState, and Save would PATCH "" for every text field,
+  // wiping the DB. The v5-correct pattern is a useEffect watching
+  // the query data. shopLoaded guard preserves the original
+  // "populate once, then don't clobber user edits" semantics.
+  const { data: shopResp } = useQuery({
     queryKey: ["org-settings"],
     queryFn: () => api.get("/settings").then(r => r.data),
-    enabled: tab === "shop" && !shopLoaded,
-    onSuccess: (data) => {
-      if (data?.data && !shopLoaded) {
-        const d = data.data;
-        setShopForm({
-          name: d.name || "",
-          phone: d.phone || "",
-          address: d.address || "",
-          city: d.city || "",
-          country: d.country || "Cameroun",
-          whatsapp_number: d.whatsapp_number || "",
-          receipt_footer: d.receipt_footer || "",
-          daily_summary_time: d.daily_summary_time || "17:30",
-          daily_summary_enabled: d.daily_summary_enabled ?? true,
-          low_stock_alerts_enabled: d.low_stock_alerts_enabled ?? true,
-        });
-        setShopLoaded(true);
-      }
-    }
+    enabled: tab === "shop",
   });
+  useEffect(() => {
+    const d = shopResp?.data;
+    if (!d || shopLoaded) return;
+    setShopForm({
+      name:                     d.name || "",
+      phone:                    d.phone || "",
+      address:                  d.address || "",
+      city:                     d.city || "",
+      country:                  d.country || "Cameroun",
+      whatsapp_number:          d.whatsapp_number || "",
+      receipt_footer:           d.receipt_footer || "",
+      daily_summary_time:       d.daily_summary_time || "17:30",
+      daily_summary_enabled:    d.daily_summary_enabled ?? true,
+      low_stock_alerts_enabled: d.low_stock_alerts_enabled ?? true,
+    });
+    setShopLoaded(true);
+  }, [shopResp, shopLoaded]);
 
   // ── LOCATION MUTATIONS ─────────────────────────────────────────────────────
   const addLocMutation = useMutation({
