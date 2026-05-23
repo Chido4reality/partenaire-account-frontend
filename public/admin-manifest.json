@@ -1,0 +1,14 @@
+{
+  "name": "Partenaire Admin",
+  "short_name": "P. Admin",
+  "description": "Admin portal for the Partenaire ecosystem (verifier, finance, master-admin).",
+  "start_url": "/admin.html",
+  "scope": "/admin.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

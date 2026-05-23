@@ -9,6 +9,15 @@
   <link rel="icon" href="/icon.svg" />
   <link rel="apple-touch-icon" href="/icon.svg" />
 
+  <!-- MP-ADMIN-PWA-V1: PWA bootstrap. Manifest declares the Add-to-
+       Home-Screen metadata; the apple-mobile-web-app-* metas tell
+       iOS Safari to render in standalone mode after install. The
+       service worker registers below in the bootstrap block. -->
+  <link rel="manifest" href="/admin-manifest.json" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="P. Admin" />
+
   <!-- Chart.js — used by the MP Finance section. defer so it doesn't block
        theme/auth bootstrap. Charts wait on window.Chart in their loader. -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
@@ -5198,6 +5207,196 @@
       bootstrap();
     });
   })();
+  </script>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       MP-ADMIN-PWA-V1: service-worker registration + Add-to-Home-
+       Screen prompts. Runs as the last script so it doesn't compete
+       with the auth/bootstrap above for first paint.
+
+       Three install paths:
+         Android Chrome / Edge — captures beforeinstallprompt, shows
+           our own banner with an [Install] button that calls
+           prompt() on user gesture (browsers require a gesture).
+         iOS Safari — no beforeinstallprompt support; UA-detect
+           and show the "Tap Share → Add to Home Screen" overlay.
+         Already-installed — both surfaces hide if the app is
+           launched standalone or the user previously dismissed.
+
+       Dismissal is persisted in localStorage so the banner doesn't
+       nag every visit. Push notifications + permission flow ship
+       in MP-ADMIN-PWA-V1.1 (separate work item).
+       ───────────────────────────────────────────────────────── -->
+  <style>
+    .pwa-install-banner {
+      position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 9999;
+      background: var(--bg-secondary, #1e293b);
+      border: 1px solid var(--accent, #c9a84c);
+      border-radius: var(--radius, 12px);
+      padding: 12px 14px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+      display: flex; align-items: center; gap: 12px;
+      max-width: 460px; margin: 0 auto;
+      font-size: 13px; color: var(--text-primary, #f8fafc);
+      transform: translateY(140%); transition: transform 220ms ease-out;
+    }
+    .pwa-install-banner.show { transform: translateY(0); }
+    .pwa-install-banner .icon { font-size: 22px; flex-shrink: 0; }
+    .pwa-install-banner .text { flex: 1; min-width: 0; line-height: 1.35; }
+    .pwa-install-banner .text strong { color: var(--accent, #c9a84c); }
+    .pwa-install-banner button {
+      border: none; padding: 8px 14px; border-radius: 8px;
+      font-weight: 700; font-size: 12px; cursor: pointer; white-space: nowrap;
+    }
+    .pwa-install-banner .install-btn {
+      background: var(--accent, #c9a84c); color: #0f172a;
+    }
+    .pwa-install-banner .dismiss-btn {
+      background: transparent; color: var(--text-muted, #94a3b8);
+      padding: 8px 8px;
+    }
+    .pwa-ios-overlay {
+      position: fixed; inset: 0; z-index: 10000;
+      background: rgba(0,0,0,0.7);
+      display: flex; align-items: flex-end;
+      animation: pwa-fade 180ms ease-out;
+    }
+    @keyframes pwa-fade { from { opacity: 0; } to { opacity: 1; } }
+    .pwa-ios-overlay .sheet {
+      background: var(--bg-secondary, #1e293b);
+      width: 100%; max-width: 520px; margin: 0 auto;
+      border-radius: 16px 16px 0 0;
+      padding: 20px 22px 28px;
+      color: var(--text-primary, #f8fafc);
+    }
+    .pwa-ios-overlay h3 {
+      margin: 0 0 6px; font-size: 16px; color: var(--accent, #c9a84c);
+    }
+    .pwa-ios-overlay p { margin: 0 0 12px; font-size: 13px; color: var(--text-secondary, #cbd5e1); }
+    .pwa-ios-overlay ol { padding-left: 22px; font-size: 13px; line-height: 1.7; color: var(--text-secondary, #cbd5e1); }
+    .pwa-ios-overlay ol b { color: var(--text-primary, #f8fafc); }
+    .pwa-ios-overlay .close-btn {
+      margin-top: 14px; width: 100%; padding: 10px;
+      border: 1px solid var(--border, #334155); background: transparent;
+      color: var(--text-primary, #f8fafc); border-radius: 10px;
+      font-weight: 600; cursor: pointer;
+    }
+  </style>
+
+  <script>
+    (function () {
+      // ── Service worker ──────────────────────────────────────
+      if ('serviceWorker' in navigator) {
+        // Scope:/admin.html so this SW only controls the admin shell;
+        // the MP service worker registered from index.html keeps its
+        // own scope. Browsers honour `scope` when the SW file is served
+        // at root (or with a Service-Worker-Allowed header). The
+        // backend serves both from /public so the script path doubles
+        // as the scope ceiling — we set scope explicitly anyway.
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw-admin.js', { scope: '/admin.html' })
+            .catch(err => console.warn('[admin SW] register failed:', err));
+        });
+      }
+
+      // ── State ───────────────────────────────────────────────
+      var DISMISS_KEY = 'admin_pwa_install_dismissed';
+      var dismissed = false;
+      try { dismissed = localStorage.getItem(DISMISS_KEY) === '1'; } catch (_) {}
+
+      // standalone = launched from the home screen icon, no chrome.
+      // matchMedia is the modern check; navigator.standalone is iOS legacy.
+      var isStandalone =
+        (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+        window.navigator.standalone === true;
+      if (isStandalone || dismissed) return;
+
+      // ── Android (Chrome / Edge) install path ────────────────
+      var deferredPrompt = null;
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault(); // we surface our own banner
+        deferredPrompt = e;
+        showAndroidBanner();
+      });
+      window.addEventListener('appinstalled', () => {
+        try { localStorage.setItem(DISMISS_KEY, '1'); } catch (_) {}
+        hideBanner();
+      });
+
+      function showAndroidBanner() {
+        if (document.getElementById('pwa-install-banner')) return;
+        var b = document.createElement('div');
+        b.id = 'pwa-install-banner';
+        b.className = 'pwa-install-banner';
+        b.innerHTML = ''
+          + '<span class="icon" aria-hidden="true">📲</span>'
+          + '<div class="text">'
+          +   '<strong>Install Partenaire Admin</strong><br />'
+          +   '<span style="color:var(--text-muted,#94a3b8);font-size:12px">Quick access from your home screen.</span>'
+          + '</div>'
+          + '<button class="install-btn" id="pwa-install-btn">Install</button>'
+          + '<button class="dismiss-btn" id="pwa-dismiss-btn" aria-label="Dismiss">✕</button>';
+        document.body.appendChild(b);
+        requestAnimationFrame(() => b.classList.add('show'));
+        document.getElementById('pwa-install-btn').addEventListener('click', async () => {
+          if (!deferredPrompt) return;
+          deferredPrompt.prompt();
+          try { await deferredPrompt.userChoice; } catch (_) {}
+          deferredPrompt = null;
+          hideBanner();
+        });
+        document.getElementById('pwa-dismiss-btn').addEventListener('click', () => {
+          try { localStorage.setItem(DISMISS_KEY, '1'); } catch (_) {}
+          hideBanner();
+        });
+      }
+
+      function hideBanner() {
+        var b = document.getElementById('pwa-install-banner');
+        if (!b) return;
+        b.classList.remove('show');
+        setTimeout(() => b.remove(), 250);
+      }
+
+      // ── iOS Safari install path ─────────────────────────────
+      // beforeinstallprompt isn't supported. Show an instructional
+      // overlay once per user (until dismissed) that walks the user
+      // through Safari's Share → Add to Home Screen flow.
+      var ua = navigator.userAgent || '';
+      var isIos = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+      var isIosSafari = isIos && /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
+      if (isIosSafari) {
+        // Defer slightly so the admin app has a chance to bootstrap
+        // before we overlay it. A first-visit overlay-on-load is
+        // jarring; 1.5s gives the user a moment of orientation.
+        setTimeout(showIosOverlay, 1500);
+      }
+
+      function showIosOverlay() {
+        if (document.getElementById('pwa-ios-overlay')) return;
+        var o = document.createElement('div');
+        o.id = 'pwa-ios-overlay';
+        o.className = 'pwa-ios-overlay';
+        o.innerHTML = ''
+          + '<div class="sheet">'
+          +   '<h3>📲 Install Partenaire Admin</h3>'
+          +   '<p>Tap below to add the admin portal to your home screen for quick access — works just like a native app.</p>'
+          +   '<ol>'
+          +     '<li>Tap the <b>Share</b> icon at the bottom of Safari (the square with an arrow).</li>'
+          +     '<li>Scroll down, then tap <b>Add to Home Screen</b>.</li>'
+          +     '<li>Tap <b>Add</b> in the top-right.</li>'
+          +   '</ol>'
+          +   '<button class="close-btn" id="pwa-ios-close">Got it</button>'
+          + '</div>';
+        document.body.appendChild(o);
+        var close = () => {
+          try { localStorage.setItem(DISMISS_KEY, '1'); } catch (_) {}
+          o.remove();
+        };
+        document.getElementById('pwa-ios-close').addEventListener('click', close);
+        o.addEventListener('click', (e) => { if (e.target === o) close(); });
+      }
+    })();
   </script>
 </body>
 </html>
