@@ -97,6 +97,18 @@ export default function Dashboard() {
     enabled: isOwner || isManager
   });
 
+  // MP-DOZIE-INVENTORY-PUBLISH-UI: zero-listings nudge for owners.
+  // Surfaces a banner when the org has 0 Dozie publications, linking
+  // straight to /inventory. Owner/manager only — cashier doesn't
+  // publish.
+  const { data: dozieListings } = useQuery({
+    queryKey: ['dozie-listings'],
+    queryFn: () => api.get('/dozie-listings').then(r => r.data?.data || []),
+    enabled: isOwner || isManager,
+    staleTime: 60000,
+  });
+  const hasZeroDozieListings = (isOwner || isManager) && Array.isArray(dozieListings) && dozieListings.length === 0;
+
   const s = summary?.data || {};
   const overdueCount = credits?.data?.filter(c => c.earliest_due && new Date(c.earliest_due) < new Date())?.length || 0;
   const lowStockCount = alerts?.data?.length || 0;
@@ -114,6 +126,40 @@ export default function Dashboard() {
       <div style={{ marginBottom: 16 }}>
         <ActiveShiftIndicator />
       </div>
+
+      {/* MP-DOZIE-INVENTORY-PUBLISH-UI: zero-listings nudge. Owners
+          who haven't published anything yet land here with no signal
+          that the connection exists at all — this banner closes that
+          loop. Click → /inventory where the 🛒 buttons on each row
+          start the publish flow. */}
+      {hasZeroDozieListings && (
+        <div style={{
+          marginBottom: 16, padding: "12px 16px",
+          background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.35)",
+          borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "space-between",
+          gap: 12, flexWrap: "wrap",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1 }}>
+            <span style={{ fontSize: 20 }}>🛒</span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 13 }}>
+                {lang === 'en'
+                  ? "Your shop is connected to Partenaire Dozie, but you haven't published any products yet."
+                  : "Votre boutique est connectée à Partenaire Dozie, mais aucun produit n'est encore publié."}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                {lang === 'en'
+                  ? "Open Inventory and tap the 🛒 button on any product to publish it to the marketplace."
+                  : "Ouvrez Inventaire et appuyez sur 🛒 sur un produit pour le publier sur le marché."}
+              </div>
+            </div>
+          </div>
+          <button onClick={() => navigate('/inventory')}
+            style={{ padding: "8px 14px", border: "none", borderRadius: 8, background: "#6366f1", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
+            {lang === 'en' ? "Publish products →" : "Publier des produits →"}
+          </button>
+        </div>
+      )}
 
       {/* MP-DRAWER-DASHBOARD-CARD: detailed breakdown with click-through
           drilldowns into cash sales / refunds / expenses. Shares the

@@ -9,6 +9,7 @@ import api, { formatCFA } from "../utils/api";
 import OwnerPIN from "../components/common/OwnerPIN";
 import PhotoUploadButtons from "../components/common/PhotoUploadButtons";
 import PaywallModal from "../components/common/PaywallModal";
+import DoziePublishModal from "../components/common/DoziePublishModal";
 import { getCapabilities, isAtCap } from "../utils/planCapabilities";
 
 // Sprint C — shared helper for the 4 product entry paths. Reads a File
@@ -108,6 +109,8 @@ export default function InventoryPage() {
   const [showReceive, setShowReceive] = useState(false);
   const [showAdjust, setShowAdjust] = useState(false);
   const [showEditProduct, setShowEditProduct] = useState(false);
+  // MP-DOZIE-INVENTORY-PUBLISH-UI: per-product publish/edit modal.
+  const [doziePublishCtx, setDoziePublishCtx] = useState(null); // { productId, productName, defaultPrice, totalStock }
   const [showArchived, setShowArchived] = useState(false); // ARCHIVE-RESTORE-UI: Products-tab toggle
   const [showRapidEntry, setShowRapidEntry] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -224,6 +227,30 @@ export default function InventoryPage() {
   const products = productsData?.data || [];
   const locations = locationsData?.data || [];
   const allStock = allStockData?.data || [];
+
+  // MP-DOZIE-INVENTORY-PUBLISH-UI: org's Dozie listings, indexed by
+  // product_id so the inventory row can render the publish button's
+  // state (none / live / paused) in one lookup. allStock above is
+  // location-scoped to the selected location; for total-stock-by-
+  // product we sum across allStock when on "overview", or just use
+  // the current stock list otherwise — out-of-stock surfacing on the
+  // publish modal is best-effort and the modal also shows the warning.
+  const { data: dozieListingsData } = useQuery({
+    queryKey: ["dozie-listings"],
+    queryFn:  () => api.get("/dozie-listings").then(r => r.data?.data || []),
+    enabled:  isOwner || (user?.role === "manager"),
+    staleTime: 30000,
+  });
+  const dozieListings = dozieListingsData || [];
+  const dozieListingByProductId = new Map(
+    dozieListings.map(l => [l.product_id, l]));
+  const stockByProductId = (() => {
+    const map = new Map();
+    for (const s of stock) {
+      map.set(s.product_id, (map.get(s.product_id) || 0) + (Number(s.quantity) || 0));
+    }
+    return map;
+  })();
 
   // Backend handles search globally, just use data as-is
   const filtered = stock;
@@ -749,9 +776,19 @@ export default function InventoryPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(s => {
+                {(() => {
+                  // MP-DOZIE-INVENTORY-PUBLISH-UI: track which product
+                  // IDs we've already rendered a Dozie button for in
+                  // this list — the same product shows up on every
+                  // location row, so the button surfaces on the FIRST
+                  // occurrence only to avoid duplicate publish controls.
+                  const dozieButtonSeen = new Set();
+                  return filtered.map(s => {
                   const isLow = s.quantity <= s.min_quantity;
                   const p = s.pa_products;
+                  const dozieListing = dozieListingByProductId.get(s.product_id) || null;
+                  const dozieFirst = !dozieButtonSeen.has(s.product_id);
+                  if (dozieFirst) dozieButtonSeen.add(s.product_id);
                   return (
                     <tr key={s.id}>
                       <td>
@@ -788,12 +825,41 @@ export default function InventoryPage() {
                           <div style={{ display: "flex", gap: 6 }}>
                             <button className="btn btn-secondary btn-sm" onClick={() => { setSelectedStockRow(s); setShowAdjust(true); }}>{lang === "en" ? "Adjust" : "Ajuster"}</button>
                             {isOwner && <button className="btn btn-secondary btn-sm" onClick={() => { setEditProduct({ ...p, id: s.product_id }); setShowEditProduct(true); }} style={{ color: "var(--brand-light)" }}>✏️</button>}
+                            {/* MP-DOZIE-INVENTORY-PUBLISH-UI: per-product
+                                Dozie publish action. Renders only on the
+                                first stock-row for each product_id so we
+                                don't repeat the button across location
+                                rows. Owner+manager only (gated upstream
+                                via canAdjustStock OR explicit isOwner). */}
+                            {dozieFirst && (isOwner || user?.role === "manager") && (
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => setDoziePublishCtx({
+                                  productId:    s.product_id,
+                                  productName:  p?.name || "?",
+                                  defaultPrice: Number(p?.sell_price) || 0,
+                                  totalStock:   stockByProductId.get(s.product_id) || 0,
+                                })}
+                                title={dozieListing
+                                  ? (dozieListing.is_visible
+                                      ? (lang === "en" ? "🟢 Live on Dozie — click to edit" : "🟢 En ligne sur Dozie — cliquer pour modifier")
+                                      : (lang === "en" ? "⏸ Paused on Dozie — click to edit" : "⏸ En pause sur Dozie — cliquer pour modifier"))
+                                  : (lang === "en" ? "Publish to Dozie marketplace" : "Publier sur Dozie")}
+                                style={{
+                                  color: dozieListing
+                                    ? (dozieListing.is_visible ? "#34d399" : "#fbbf24")
+                                    : "var(--text-muted)",
+                                }}>
+                                🛒
+                              </button>
+                            )}
                           </div>
                         </td>
                       )}
                     </tr>
                   );
-                })}
+                  });
+                })()}
               </tbody>
               {isOwner && (
                 <tfoot>
@@ -1609,6 +1675,21 @@ export default function InventoryPage() {
           </div>
         );
       })()}
+
+      {/* MP-DOZIE-INVENTORY-PUBLISH-UI: per-product Dozie publish modal.
+          Mounted once at page level; opens on 🛒 button click in the
+          Inventory actions column. */}
+      {doziePublishCtx && (
+        <DoziePublishModal
+          productId={doziePublishCtx.productId}
+          productName={doziePublishCtx.productName}
+          defaultPrice={doziePublishCtx.defaultPrice}
+          defaultCity={user?.org_city || user?.city || ""}
+          totalStock={doziePublishCtx.totalStock}
+          lang={lang}
+          onClose={() => setDoziePublishCtx(null)}
+        />
+      )}
     </div>
   );
 }
