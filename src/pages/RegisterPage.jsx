@@ -26,13 +26,21 @@ const CATS = [
 export default function RegisterPage() {
   const [form, setForm] = useState({ org_name: "", full_name: "", phone: "", password: "", category: "moto_parts" });
   const [loading, setLoading] = useState(false);
+  // MP-REGISTER-DUP-PHONE-HANDLING: inline error under the phone
+  // field for the 409 PHONE_ALREADY_REGISTERED response. Cleared
+  // when the user edits the phone input.
+  const [phoneError, setPhoneError] = useState("");
   const { login } = useAuthStore();
   const { lang, setLang } = useLangStore();
   const navigate = useNavigate();
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const set = (k, v) => {
+    setForm(f => ({ ...f, [k]: v }));
+    if (k === "phone" && phoneError) setPhoneError("");
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setPhoneError("");
     setLoading(true);
     try {
       const res = await api.post("/auth/register", form);
@@ -40,7 +48,18 @@ export default function RegisterPage() {
       toast.success(lang === "en" ? "Account created!" : "Compte créé!");
       navigate("/");
     } catch (err) {
-      toast.error(err.response?.data?.message || "Error");
+      const data = err.response?.data;
+      if (err.response?.status === 409 && data?.error === "PHONE_ALREADY_REGISTERED") {
+        const msg = (lang === "en" ? data.message_en : data.message_fr)
+          || data.message
+          || (lang === "en"
+            ? "This phone number is already registered."
+            : "Ce numéro de téléphone est déjà enregistré.");
+        setPhoneError(msg);
+        toast.error(msg);
+      } else {
+        toast.error(data?.message || "Error");
+      }
     } finally { setLoading(false); }
   };
 
@@ -61,13 +80,24 @@ export default function RegisterPage() {
               { key: "full_name", en: "Your full name", fr: "Votre nom complet",  type: "text",     ph: "Jean Dupont" },
               { key: "phone",     en: "Phone number",   fr: "Téléphone",          type: "tel",      ph: "6XXXXXXXX" },
               { key: "password",  en: "Password",       fr: "Mot de passe",       type: "password", ph: lang === "en" ? "Min. 6 characters" : "Min. 6 caractères" },
-            ].map(f => (
-              <div className="form-group" key={f.key}>
-                <label className="label">{lang === "en" ? f.en : f.fr}</label>
-                <input className="input" type={f.type} value={form[f.key]}
-                  onChange={e => set(f.key, e.target.value)} required placeholder={f.ph} />
-              </div>
-            ))}
+            ].map(f => {
+              const isPhone = f.key === "phone";
+              const hasError = isPhone && !!phoneError;
+              return (
+                <div className="form-group" key={f.key}>
+                  <label className="label">{lang === "en" ? f.en : f.fr}</label>
+                  <input className="input" type={f.type} value={form[f.key]}
+                    onChange={e => set(f.key, e.target.value)} required placeholder={f.ph}
+                    style={hasError ? { borderColor: "#f87171" } : undefined}
+                    aria-invalid={hasError || undefined} />
+                  {hasError && (
+                    <div style={{ color: "#f87171", fontSize: 12, marginTop: 6, lineHeight: 1.4 }}>
+                      {phoneError}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
 
             <div className="form-group">
               <label className="label">{lang === "en" ? "Business category" : "Secteur d'activité"}</label>
