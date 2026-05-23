@@ -263,6 +263,53 @@ export function OpenShiftModal({ open, onClose, onOpened }) {
 // ─────────────────────────────────────────────────────────────────
 // CLOSE MODAL
 // ─────────────────────────────────────────────────────────────────
+// MP-VOID-AS-RETURN-AND-OWNER-REPORT Unit 3: collapsible category
+// row for the close-shift breakdown. Children render below when
+// the row is expanded; clicking the row header toggles. Negative
+// sign auto-prefixed for the four debit categories.
+function CategoryRow({ label, total, count, sign, children, color }) {
+  const [open, setOpen] = useState(false);
+  const isNeg = sign === "−";
+  const amountColor = color
+    || (isNeg ? "#f87171" : total > 0 ? "#34d399" : "var(--text-muted)");
+  const hasDrill = count > 0;
+  return (
+    <div style={{ borderBottom: "1px solid var(--border)" }}>
+      <div
+        onClick={() => hasDrill && setOpen(o => !o)}
+        style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "8px 0", fontSize: 13,
+          cursor: hasDrill ? "pointer" : "default",
+          opacity: hasDrill ? 1 : 0.55,
+        }}>
+        <span style={{ color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6 }}>
+          {hasDrill && (
+            <span style={{ fontSize: 10, color: "var(--text-muted)", width: 10, display: "inline-block" }}>
+              {open ? "▾" : "▸"}
+            </span>
+          )}
+          {!hasDrill && <span style={{ width: 10 }} />}
+          {label}
+          {count > 0 && (
+            <span style={{ fontSize: 10, color: "var(--text-muted)", marginLeft: 4 }}>
+              ({count})
+            </span>
+          )}
+        </span>
+        <span style={{ color: amountColor, fontWeight: 700, fontFamily: "monospace" }}>
+          {sign}{formatCFA(Math.abs(total))}
+        </span>
+      </div>
+      {open && hasDrill && (
+        <div style={{ padding: "4px 0 10px 16px", fontSize: 11, color: "var(--text-muted)" }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function CloseShiftModal({ open, onClose, shift, onClosed }) {
   const { lang } = useLangStore();
   const qc = useQueryClient();
@@ -273,6 +320,20 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
   const [error, setError]           = useState(null);
 
   const expected = Number(shift?.expected_drawer || 0);
+
+  // MP-VOID-AS-RETURN-AND-OWNER-REPORT Unit 3: fetch the
+  // categorized drawer breakdown for the per-category modal view.
+  // pa_drawer_ledger gives coarse totals; this endpoint slices
+  // them into sales_cash / debt_collection / void_refunds / etc.
+  // Each category carries a transactions[] drilldown so expand
+  // is no-fetch.
+  const { data: catResp } = useQuery({
+    queryKey: ["shift-categorized", shift?.shift_id],
+    queryFn: () => api.get(`/shifts/${shift.shift_id}/categorized`).then(r => r.data?.data),
+    enabled: open && !!shift?.shift_id,
+  });
+  const cat = catResp || null;
+  const fr  = lang === "fr";
   const amt      = actual === "" ? null : Number(actual);
   const validAmt = amt !== null && Number.isFinite(amt) && amt >= 0;
   const variance = validAmt ? amt - expected : null;
@@ -340,17 +401,105 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
       </div>
 
       <div style={{ background: "var(--bg-card)", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
-        <Row label={lang === "fr" ? "Solde d'ouverture"          : "Opening float"}
+        {/* Opening float — always shown, single line. */}
+        <Row label={fr ? "Solde d'ouverture" : "Opening float"}
              value={formatCFA(shift.opening_float || 0)} />
-        <Row label={lang === "fr" ? "+ Ventes en espèces"        : "+ Cash sales"}
-             value={formatCFA(shift.cash_sales_received || 0)} positive />
-        <Row label={lang === "fr" ? "− Remboursements espèces"   : "− Cash refunds"}
-             value={formatCFA(shift.cash_refunds || 0)} negative />
-        <Row label={lang === "fr" ? "− Dépenses espèces"         : "− Cash expenses"}
-             value={formatCFA(shift.cash_expenses || 0)} negative />
+
+        {/* MP-VOID-AS-RETURN-AND-OWNER-REPORT Unit 3: per-category
+            breakdown with expand-on-click drilldowns. Falls back
+            to the simple lump-sum view if the categorized fetch
+            hasn't loaded or failed (best-effort UX). */}
+        {cat ? (
+          <>
+            <div style={{ height: 1, background: "var(--border)", margin: "8px 0" }} />
+            <CategoryRow
+              label={fr ? "Ventes en espèces" : "Cash sales"}
+              total={cat.sales_cash.total} count={cat.sales_cash.count} sign="+">
+              {cat.sales_cash.transactions.map(tx => (
+                <div key={tx.payment_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
+                  <span>{tx.sale_number || "—"} {tx.customer_name ? `· ${tx.customer_name}` : ""}</span>
+                  <span style={{ fontFamily: "monospace" }}>{formatCFA(tx.amount)}</span>
+                </div>
+              ))}
+            </CategoryRow>
+            <CategoryRow
+              label={fr ? "Encaissements dette" : "Debt collections"}
+              total={cat.debt_collection.total} count={cat.debt_collection.count} sign="+">
+              {cat.debt_collection.transactions.map(tx => (
+                <div key={tx.payment_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
+                  <span>{tx.sale_number || "—"} {tx.customer_name ? `· ${tx.customer_name}` : ""}</span>
+                  <span style={{ fontFamily: "monospace" }}>{formatCFA(tx.amount)}</span>
+                </div>
+              ))}
+            </CategoryRow>
+            <CategoryRow
+              label={fr ? "Échanges (entrée)" : "Exchanges (in)"}
+              total={cat.exchange_in.total} count={cat.exchange_in.count} sign="+">
+              {cat.exchange_in.transactions.map(tx => (
+                <div key={tx.return_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
+                  <span>{tx.return_ref || tx.sale_number || "—"} {tx.customer_name ? `· ${tx.customer_name}` : ""}</span>
+                  <span style={{ fontFamily: "monospace" }}>{formatCFA(tx.price_difference)}</span>
+                </div>
+              ))}
+            </CategoryRow>
+            <CategoryRow
+              label={fr ? "Remboursements" : "Refunds"}
+              total={cat.refunds.total} count={cat.refunds.count} sign="−">
+              {cat.refunds.transactions.map(tx => (
+                <div key={tx.return_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
+                  <span>{tx.return_ref || "—"} ← {tx.sale_number || "?"} {tx.customer_name ? `· ${tx.customer_name}` : ""}</span>
+                  <span style={{ fontFamily: "monospace" }}>{formatCFA(tx.refund_amount)}</span>
+                </div>
+              ))}
+            </CategoryRow>
+            <CategoryRow
+              label={fr ? "Annulations — espèces rendues" : "Voids — cash refunded"}
+              total={cat.void_refunds.total} count={cat.void_refunds.count} sign="−">
+              {cat.void_refunds.transactions.map(tx => (
+                <div key={tx.return_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
+                  <span>{tx.return_ref || "—"} ← {tx.sale_number || "?"} {tx.customer_name ? `· ${tx.customer_name}` : ""}</span>
+                  <span style={{ fontFamily: "monospace" }}>{formatCFA(tx.refund_amount)}</span>
+                </div>
+              ))}
+            </CategoryRow>
+            <CategoryRow
+              label={fr ? "Échanges (sortie)" : "Exchanges (out)"}
+              total={cat.exchange_out.total} count={cat.exchange_out.count} sign="−">
+              {cat.exchange_out.transactions.map(tx => (
+                <div key={tx.return_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
+                  <span>{tx.return_ref || tx.sale_number || "—"} {tx.customer_name ? `· ${tx.customer_name}` : ""}</span>
+                  <span style={{ fontFamily: "monospace" }}>{formatCFA(Math.abs(tx.price_difference))}</span>
+                </div>
+              ))}
+            </CategoryRow>
+            <CategoryRow
+              label={fr ? "Dépenses" : "Expenses"}
+              total={cat.expenses.total} count={cat.expenses.count} sign="−">
+              {cat.expenses.transactions.map(tx => (
+                <div key={tx.expense_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
+                  <span>{tx.category || "—"} {tx.description ? `· ${tx.description}` : ""}</span>
+                  <span style={{ fontFamily: "monospace" }}>{formatCFA(tx.amount)}</span>
+                </div>
+              ))}
+            </CategoryRow>
+          </>
+        ) : (
+          /* Fallback: pa_drawer_ledger lump sums while categorized
+             fetch is loading or if it failed. Same fields the
+             modal showed pre-Unit-3. */
+          <>
+            <Row label={fr ? "+ Ventes en espèces"      : "+ Cash sales"}
+                 value={formatCFA(shift.cash_sales_received || 0)} positive />
+            <Row label={fr ? "− Remboursements espèces" : "− Cash refunds"}
+                 value={formatCFA(shift.cash_refunds || 0)} negative />
+            <Row label={fr ? "− Dépenses espèces"       : "− Cash expenses"}
+                 value={formatCFA(shift.cash_expenses || 0)} negative />
+          </>
+        )}
+
         <div style={{ height: 1, background: "var(--border)", margin: "8px 0" }} />
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontWeight: 700 }}>{lang === "fr" ? "Caisse attendue" : "Expected drawer"}</span>
+          <span style={{ fontWeight: 700 }}>{fr ? "Caisse attendue" : "Expected drawer"}</span>
           <strong style={{ fontSize: 18, color: "var(--brand-light)" }}>{formatCFA(expected)}</strong>
         </div>
       </div>
