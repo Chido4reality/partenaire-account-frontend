@@ -18,6 +18,30 @@
 
 const fmt = (x, en) => Number(x || 0).toLocaleString(en ? "en-US" : "fr-FR");
 
+// MP-REFUNDS-LIST-TYPED-LABELS — primary kind label per pa_returns
+// classification (kind field added server-side in /daily-ledger).
+// Secondary modifier "credit split" appended by the caller when
+// has_credit_split is true. The compact form ("credit split") is for
+// WhatsApp; the in-app uses the longer "with credit split".
+export function refundKindLabel(kind, lang) {
+  const en = lang === "en";
+  switch (kind) {
+    case "void_refund":     return en ? "Void refund"             : "Annulation remboursée";
+    case "refund_full":     return en ? "Refund (full)"           : "Remboursement (total)";
+    case "refund_partial":  return en ? "Refund (partial)"        : "Remboursement (partiel)";
+    case "exchange_same":   return en ? "Exchange (same item)"    : "Échange (même article)";
+    case "exchange_diff":   return en ? "Exchange (different item)" : "Échange (article différent)";
+    default:                return en ? "Refund"                  : "Remboursement";
+  }
+}
+
+// "RET-20260523-0009" → "RET-0009" (last segment) for compact display.
+export function shortRetRef(ref) {
+  if (!ref) return "";
+  const m = /-(\d+)$/.exec(String(ref));
+  return m ? `RET-${m[1]}` : String(ref);
+}
+
 export function buildLedgerText(ledger, lang) {
   if (!ledger) return "";
   const en   = lang === "en";
@@ -170,6 +194,42 @@ export function buildLedgerTextV2(ledger, lang) {
   L.push(`*3. ${en ? "OUTSTANDING" : "EN SUSPENS"}*`);
   L.push(`${en ? "Debt issued today" : "Crédit accordé aujourd'hui"}: ${n(ou.debt_issued_today)} FCFA`);
   L.push(`${en ? "Total customer debt (all time)" : "Dette client totale (tous comptes)"}: ${n(ou.total_customer_debt_all_time)} FCFA`);
+
+  // ── REFUNDS DETAIL — typed list, compact form (only when any) ───
+  //   MP-REFUNDS-LIST-TYPED-LABELS. Each row carries its kind label
+  //   (refund/exchange/void) + credit-split modifier when present.
+  //   Skip entirely when no refunds so quiet days aren't padded.
+  const refs = ledger.refunds?.items || [];
+  if (refs.length) {
+    L.push("");
+    L.push(`*${en ? "REFUNDS TODAY" : "REMBOURSEMENTS DU JOUR"}*`);
+    refs.forEach(r => {
+      const label = refundKindLabel(r.kind, lang);
+      const modif = r.has_credit_split
+        ? (en ? " · credit split" : " · split crédit")
+        : "";
+      L.push(`${shortRetRef(r.ret_ref)}  ${label}${modif}`);
+      const who   = r.customer_name || (en ? "Walk-in" : "Client occasionnel");
+      const what  = r.items_summary || "—";
+      L.push(`  ${who} · ${what}`);
+      if (r.kind === "exchange_diff" && Number(r.price_difference)) {
+        const pd = Number(r.price_difference);
+        const pdLine = pd > 0
+          ? (en ? `+${n(pd)} cash back to customer` : `+${n(pd)} rendu au client`)
+          : (en ? `${n(pd)} customer paid`          : `${n(pd)} payé par le client`);
+        L.push(`  ${pdLine}`);
+      }
+      const amt = Number(r.refund_amount) || 0;
+      let amtLine = `  -${n(amt)} FCFA`;
+      if (r.has_credit_split) {
+        amtLine += en
+          ? ` (${n(r.credit_portion)} credit / ${n(r.cash_portion)} cash)`
+          : ` (${n(r.credit_portion)} crédit / ${n(r.cash_portion)} cash)`;
+      }
+      L.push(amtLine);
+      if (r.reason) L.push(`  ${en ? "Reason" : "Motif"}: ${r.reason}`);
+    });
+  }
 
   L.push("");
   L.push("— Mon Partenaire POS");

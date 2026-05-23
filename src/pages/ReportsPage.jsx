@@ -5,7 +5,8 @@ import { useLangStore, useAuthStore, useSettingsStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
 import VoidReturnModal from "../components/common/VoidReturnModal";
 import { genSaleCodes } from "../utils/receiptCodes";
-import { buildLedgerTextV2 as buildLedgerTextUtil, buildWeeklyText as buildWeeklyTextUtil } from "../utils/reportText";
+import { buildLedgerTextV2 as buildLedgerTextUtil, buildWeeklyText as buildWeeklyTextUtil,
+  refundKindLabel, shortRetRef } from "../utils/reportText";
 
 // MP-DEBT-LINE-FULL-VISIBILITY: pa_sale_items can now hold debt-payment
 // rows (line_type='debt_payment', product_id=NULL). Helpers to keep
@@ -40,6 +41,9 @@ export default function ReportsPage() {
   const { selectedLocation } = useSettingsStore();
   const [ledgerDate, setLedgerDate] = useState(new Date().toISOString().split("T")[0]);
   const [ledgerLoc, setLedgerLoc] = useState(selectedLocation?.id || "all");
+  // MP-REFUNDS-LIST-TYPED-LABELS: filter chips above the refunds list
+  // in the daily report. Pure client-side narrowing of ledger.refunds.items.
+  const [refundFilter, setRefundFilter] = useState("all"); // all | refunds | exchanges | voids
 
   // Deep-link from the global order search: /reports?sale=<id>&on=<YYYY-MM-DD>.
   // Jump to the Sales Detail tab, widen the range to that day so the
@@ -1165,26 +1169,127 @@ export default function ReportsPage() {
                 ))}
                 <Subtotal label={lang === "en" ? "debt collections" : "recouvrements"} value={dc.total} color="#34d399" />
 
-                {/* ── REFUNDS (only if > 0) ──────────────────── */}
-                {rf.total > 0 && (
-                  <>
-                    <SectionHeader icon="↩"
-                      title={lang === "en" ? "Refunds" : "Remboursements"}
-                      count={rf.items.length} color="var(--text-primary)" />
-                    {rf.items.map((r, i) => (
-                      <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "5px 0", borderBottom: "1px solid var(--border)" }}>
-                        <span>
-                          <span style={{ fontFamily: "monospace", fontSize: 11 }}>{r.ret_ref || ""}</span>
-                          {r.sale_number && <span style={{ color: "var(--text-muted)", marginLeft: 6 }}>{r.sale_number}</span>}
-                          {r.customer_name && <span style={{ marginLeft: 6 }}>{r.customer_name}</span>}
-                          {r.items_summary && <span style={{ color: "var(--text-muted)", marginLeft: 6 }}>— {r.items_summary}</span>}
-                        </span>
-                        <span style={{ color: "#f87171", fontWeight: 600 }}>−{formatCFA(r.refund_amount)}</span>
+                {/* ── REFUNDS (typed labels + filter chips) ───────
+                    MP-REFUNDS-LIST-TYPED-LABELS. Each row carries its
+                    primary kind label; secondary "with credit split"
+                    appended when has_credit_split. Filter chips above
+                    narrow by primary category (Refunds / Exchanges /
+                    Voids). Old responses (kind unset) fall under
+                    "Refunds" so legacy data isn't dropped. */}
+                {rf.total > 0 && (() => {
+                  const filterMatch = (kind) => {
+                    if (refundFilter === "all") return true;
+                    if (refundFilter === "voids")     return kind === "void_refund";
+                    if (refundFilter === "exchanges") return kind === "exchange_same" || kind === "exchange_diff";
+                    if (refundFilter === "refunds")   return kind === "refund_full" || kind === "refund_partial" || !kind;
+                    return true;
+                  };
+                  const filteredItems = rf.items.filter(r => filterMatch(r.kind));
+                  const filteredTotal = filteredItems.reduce((s, r) => s + (Number(r.refund_amount) || 0), 0);
+                  const chips = [
+                    { id: "all",       label: lang === "en" ? "All"       : "Tous"    },
+                    { id: "refunds",   label: lang === "en" ? "Refunds"   : "Remboursements" },
+                    { id: "exchanges", label: lang === "en" ? "Exchanges" : "Échanges" },
+                    { id: "voids",     label: lang === "en" ? "Voids"     : "Annulations" },
+                  ];
+                  return (
+                    <>
+                      <SectionHeader icon="↩"
+                        title={lang === "en" ? "Refunds" : "Remboursements"}
+                        count={rf.items.length} color="var(--text-primary)" />
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "4px 0 10px" }}>
+                        {chips.map(c => {
+                          const active = refundFilter === c.id;
+                          return (
+                            <button key={c.id} type="button" onClick={() => setRefundFilter(c.id)}
+                              style={{
+                                padding: "4px 10px", fontSize: 11, fontWeight: 600,
+                                borderRadius: 999, cursor: "pointer",
+                                border: `1px solid ${active ? "var(--brand-light)" : "var(--border)"}`,
+                                background: active ? "var(--brand-light)" : "var(--bg-card)",
+                                color: active ? "#0b1220" : "var(--text-primary)",
+                              }}>{c.label}</button>
+                          );
+                        })}
                       </div>
-                    ))}
-                    <Subtotal label={lang === "en" ? "refunds" : "remboursements"} value={-rf.total} color="#f87171" />
-                  </>
-                )}
+                      {filteredItems.length === 0 ? (
+                        <div style={{ color: "var(--text-muted)", fontSize: 12, padding: "8px 0", fontStyle: "italic" }}>
+                          {lang === "en" ? "No rows match this filter." : "Aucune ligne ne correspond à ce filtre."}
+                        </div>
+                      ) : filteredItems.map((r, i) => {
+                        const primary  = refundKindLabel(r.kind, lang);
+                        const splitTag = r.has_credit_split
+                          ? (lang === "en" ? " · with credit split" : " · split crédit")
+                          : "";
+                        const isVoid   = r.kind === "void_refund";
+                        const tStr = r.created_at
+                          ? new Date(r.created_at).toLocaleTimeString(lang === "en" ? "en-GB" : "fr-FR",
+                              { hour: "2-digit", minute: "2-digit" })
+                          : "";
+                        return (
+                          <div key={i} style={{ padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
+                              <div style={{ fontSize: 12 }}>
+                                <span style={{ fontFamily: "monospace", color: "var(--text-muted)" }}>{shortRetRef(r.ret_ref)}</span>
+                                <span style={{ marginLeft: 8, fontWeight: 700,
+                                               color: isVoid ? "#fbbf24" : "var(--text-primary)" }}>
+                                  {primary}{splitTag}
+                                </span>
+                              </div>
+                              <div style={{ color: "#f87171", fontWeight: 700, fontSize: 13 }}>
+                                −{formatCFA(r.refund_amount)}
+                              </div>
+                            </div>
+                            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                              {isVoid && <span style={{ color: "#fbbf24" }}>{lang === "en" ? "Void of sale " : "Annulation de "}</span>}
+                              {r.customer_name && <strong style={{ color: "var(--text-primary)" }}>{r.customer_name}</strong>}
+                              {r.customer_name && r.sale_number && " — "}
+                              {r.sale_number && <span style={{ fontFamily: "monospace" }}>{r.sale_number}</span>}
+                            </div>
+                            {r.items_summary && (
+                              <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{r.items_summary}</div>
+                            )}
+                            {(r.kind === "exchange_same" || r.kind === "exchange_diff") && r.replacement_summary && (
+                              <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                                ↪ {lang === "en" ? "Replaced with" : "Remplacé par"}: {r.replacement_summary}
+                                {Number(r.price_difference) !== 0 && (
+                                  <span style={{ marginLeft: 8, color: r.price_difference > 0 ? "#34d399" : "#fbbf24" }}>
+                                    {r.price_difference > 0
+                                      ? (lang === "en" ? `+${formatCFA(r.price_difference)} cash back` : `+${formatCFA(r.price_difference)} rendu`)
+                                      : (lang === "en" ? `${formatCFA(r.price_difference)} customer paid` : `${formatCFA(r.price_difference)} payé par client`)}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            {r.has_credit_split && (
+                              <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3, paddingLeft: 12 }}>
+                                ↳ {formatCFA(r.credit_portion)} {lang === "en" ? "to credit account" : "au compte crédit"},
+                                {" "}{formatCFA(r.cash_portion)} {lang === "en" ? "cash out" : "en espèces"}
+                              </div>
+                            )}
+                            {r.reason && (
+                              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, fontStyle: "italic" }}>
+                                {lang === "en" ? "Reason" : "Motif"}: {r.reason}
+                              </div>
+                            )}
+                            {(r.processed_by || tStr) && (
+                              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                                {r.processed_by && (lang === "en" ? `Cashier ${r.processed_by}` : `Caissier ${r.processed_by}`)}
+                                {r.processed_by && tStr && " · "}
+                                {tStr}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      <Subtotal
+                        label={refundFilter === "all"
+                          ? (lang === "en" ? "refunds" : "remboursements")
+                          : (lang === "en" ? `refunds (${chips.find(c=>c.id===refundFilter)?.label.toLowerCase()})` : `remboursements (${chips.find(c=>c.id===refundFilter)?.label.toLowerCase()})`)}
+                        value={-filteredTotal} color="#f87171" />
+                    </>
+                  );
+                })()}
 
                 {/* ── EXPENSES (only if > 0) ─────────────────── */}
                 {ex.total > 0 && (
