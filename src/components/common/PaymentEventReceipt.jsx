@@ -24,8 +24,46 @@
 // genSaleCodes) is picked by the config: sale_number for
 // sale/debt_collection/void, return_ref for refund.
 
-import { useEffect, useState } from "react";
+import { Component, useEffect, useState } from "react";
 import { genSaleCodes } from "../../utils/receiptCodes";
+
+// MP-VOID-PARTIAL-COMMIT-FIX: scoped error boundary so a render
+// crash in the receipt (bad payload shape, missing field, etc.)
+// doesn't leave the cashier stuck. The wrapped operation has
+// ALREADY completed on the backend by the time we mount; a
+// render failure here is purely UI. Show a minimal fallback +
+// Close button so the cashier can move on, then they can find
+// the operation in the audit log / customer detail if needed.
+class _ReceiptErrorBoundary extends Component {
+  state = { error: null };
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error("[PaymentEventReceipt]", error, info); }
+  render() {
+    if (!this.state.error) return this.props.children;
+    const en = this.props.lang === "en";
+    return (
+      <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+        onClick={this.props.onClose}>
+        <div onClick={e => e.stopPropagation()}
+          style={{ background: "var(--bg-elevated)", border: "1px solid rgba(251,191,36,0.4)", borderRadius: 16, padding: 24, maxWidth: 420, width: "100%", boxShadow: "0 24px 60px rgba(0,0,0,0.6)", textAlign: "center" }}>
+          <div style={{ fontSize: 32, marginBottom: 8 }}>⚠️</div>
+          <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 6, color: "#fbbf24" }}>
+            {en ? "Receipt couldn't render" : "Reçu non affiché"}
+          </div>
+          <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 18, lineHeight: 1.5 }}>
+            {en
+              ? "The operation completed successfully — only the receipt display failed. You can find the record in customer history or the audit log."
+              : "L'opération a réussi — seul l'affichage du reçu a échoué. Vous pouvez retrouver l'enregistrement dans l'historique client ou le journal d'audit."}
+          </div>
+          <button onClick={this.props.onClose}
+            style={{ padding: "10px 24px", borderRadius: 10, background: "var(--brand)", border: "none", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 14 }}>
+            {en ? "Close" : "Fermer"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+}
 
 const fmtAmt = n => (Number(n) || 0).toLocaleString();
 
@@ -208,8 +246,28 @@ function buildBodyLines(eventType, data, lang, org) {
 
 // ── COMPONENT ───────────────────────────────────────────────────
 
-export default function PaymentEventReceipt({ eventType, data, org, lang, onClose }) {
+function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
   const en = lang === "en";
+  // Defensive: callers should always pass a data object, but a
+  // missing/null one shouldn't take down the modal stack. The
+  // outer ErrorBoundary catches real render errors; this is the
+  // cheap up-front guard.
+  if (!data) {
+    return (
+      <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+        onClick={onClose}>
+        <div onClick={e => e.stopPropagation()}
+          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, maxWidth: 360 }}>
+          <div style={{ fontSize: 13, color: "var(--text-muted)", textAlign: "center", marginBottom: 14 }}>
+            {en ? "No receipt data to display." : "Aucune donnée de reçu à afficher."}
+          </div>
+          <button onClick={onClose} style={{ width: "100%", padding: 10, borderRadius: 10, background: "var(--brand)", color: "#fff", border: "none", fontWeight: 700, cursor: "pointer" }}>
+            {en ? "Close" : "Fermer"}
+          </button>
+        </div>
+      </div>
+    );
+  }
   const header = HEADER_BY_TYPE[eventType] || HEADER_BY_TYPE.sale;
   const reference = referenceFor(eventType, data);
   const { dateStr, timeStr } = nowLocale(lang);
@@ -423,5 +481,16 @@ export default function PaymentEventReceipt({ eventType, data, org, lang, onClos
         </div>
       </div>
     </div>
+  );
+}
+
+// Default export wraps the inner render in the error boundary so
+// a render-time crash shows the fallback notice instead of an
+// unmounted blank screen. Props pass through transparently.
+export default function PaymentEventReceipt(props) {
+  return (
+    <_ReceiptErrorBoundary lang={props.lang} onClose={props.onClose}>
+      <PaymentEventReceiptInner {...props} />
+    </_ReceiptErrorBoundary>
   );
 }
