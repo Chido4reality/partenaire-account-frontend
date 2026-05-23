@@ -1527,7 +1527,14 @@ function ReceiptModal({ sale, org, lang, onClose }) {
 
   const items = sale.items || [];
   const total = items.reduce((s, i) => s + i.quantity * i.unit_price, 0);
-  const paid = sale.paid_amount || total;
+  // MP-RECEIPT-BODY-PAID-AMOUNT-BUG: nullish-coalesce instead of
+  // `|| total`. For credit sales paid_amount IS 0 (a valid value,
+  // not a missing one) and `|| total` was falling back to the
+  // sale total — producing a receipt body that read "Paid: 5,000"
+  // directly under the "FULL CREDIT — NO PAYMENT" banner. The
+  // total fallback is preserved only when paid_amount is genuinely
+  // absent (e.g. older receipts missing the field).
+  const paid = Number(sale.paid_amount ?? total) || 0;
   const balance = total - paid;
 
   // Sprint K: Code128 + QR of the sale number, both rendered from
