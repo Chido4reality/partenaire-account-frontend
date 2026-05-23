@@ -26,6 +26,7 @@
 
 import { Component, useEffect, useState } from "react";
 import { genSaleCodes } from "../../utils/receiptCodes";
+import { buildMonospaceReceipt, wrapMonospaceFence } from "../../utils/receiptText";
 
 // MP-VOID-PARTIAL-COMMIT-FIX: scoped error boundary so a render
 // crash in the receipt (bad payload shape, missing field, etc.)
@@ -398,20 +399,19 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
     return p;
   })();
 
-  // WhatsApp message: shop header + body lines + footer.
+  // MP-WHATSAPP-RECEIPT-RICH-FORMAT (Path A): WhatsApp receipts are
+  // now a fixed-width 35-char monospace block wrapped in a triple-
+  // backtick code fence so WA renders them in its monospace font on
+  // both Android and iOS — same column alignment, separators, header
+  // and ASCII barcode strip the printable receipt uses. Built in
+  // utils/receiptText.js so a future Path B (image + scannable
+  // Code-128) can reuse the per-event data extraction.
   const buildWhatsApp = () => {
-    const shopName = org?.name || "Notre boutique";
-    const footer = org?.receipt_footer || (en ? "Thank you for your business!" : "Merci pour votre achat!");
+    const body = buildMonospaceReceipt(eventType, data, lang, org);
     const title = en ? header.titleEn : header.titleFr;
-    let msg = `${header.emoji} *${title} — ${shopName}*\n`;
-    msg += `📅 ${dateStr} ${en ? "at" : "à"} ${timeStr}\n`;
-    if (reference) msg += `N° ${reference}\n`;
-    msg += `─────────────────────\n`;
-    msg += bodyLines.join("\n") + "\n";
-    msg += `\n${footer}\n— ${shopName}`;
-    if (org?.address) msg += `\n📍 ${org.address}${org.city ? ", " + org.city : ""}`;
-    if (org?.phone) msg += `\n📞 ${org.phone}`;
-    return msg;
+    // Lead with one un-fenced status line so the recipient sees the
+    // event type + emoji in WhatsApp's preview before tapping in.
+    return `${header.emoji} ${title}\n${wrapMonospaceFence(body)}`;
   };
 
   const sendWhatsApp = () => {
