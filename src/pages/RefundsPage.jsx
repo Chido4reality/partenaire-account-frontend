@@ -28,10 +28,11 @@
 
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useLangStore } from "../store";
+import { useLangStore, useAuthStore } from "../store";
 import api, { formatCFA } from "../utils/api";
 import VoidReturnModal from "../components/common/VoidReturnModal";
 import CameraScanner from "../components/common/CameraScanner";
+import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 import { ShiftRequiredBlocker, useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
 
 // Auto-detect the lookup mode from a free-text sale reference.
@@ -68,6 +69,22 @@ export default function RefundsPage() {
 
   const [selected, setSelected] = useState(null);          // hydrated sale for modal
   const [loadingSale, setLoadingSale] = useState(null);    // id being fetched
+
+  // MP-PAYMENT-EVENT-RECEIPTS Phase 3: receipt modal opens after
+  // VoidReturnModal succeeds. Mapping:
+  //   void mode     → eventType: 'void'
+  //   refund mode   → eventType: 'refund'
+  //   exchange mode → eventType: 'refund' (refund + replacement,
+  //                   the receipt focuses on the refund side; the
+  //                   replacement-out is documented in the audit
+  //                   log and matters less to the customer)
+  const [receiptEvent, setReceiptEvent] = useState(null);
+  const { org } = useAuthStore();
+  const { data: orgSettingsResp } = useQuery({
+    queryKey: ["org-settings"],
+    queryFn: () => api.get("/settings").then(r => r.data),
+  });
+  const orgSettings = orgSettingsResp?.data || org || {};
 
   const PAGE_LIMIT = 50;
 
@@ -449,7 +466,26 @@ export default function RefundsPage() {
         <VoidReturnModal
           sale={selected}
           lang={lang}
+          onSuccess={({ mode, data }) => {
+            // mode: 'void' | 'refund' | 'exchange' — exchange folds
+            // into the 'refund' event type (refund + replacement).
+            const eventType = mode === "void" ? "void" : "refund";
+            setReceiptEvent({ eventType, data });
+          }}
           onClose={() => { setSelected(null); refetch(); }}
+        />
+      )}
+
+      {/* MP-PAYMENT-EVENT-RECEIPTS Phase 3: receipt modal for
+          refund + void. Same shared component the POS sale and
+          debt-collection flows use. */}
+      {receiptEvent && (
+        <PaymentEventReceipt
+          eventType={receiptEvent.eventType}
+          data={receiptEvent.data}
+          org={orgSettings}
+          lang={lang}
+          onClose={() => setReceiptEvent(null)}
         />
       )}
     </div>

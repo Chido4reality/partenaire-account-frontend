@@ -1,9 +1,10 @@
 ﻿import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
-import { useLangStore, useSettingsStore } from "../store";
+import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
 import { useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
+import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 
 const PAYMENT_METHODS = [
   { key: "cash",         icon: "💵", en: "Cash",        fr: "Espèces" },
@@ -21,7 +22,24 @@ const TYPES = [
 export default function CustomersPage() {
   const { lang } = useLangStore();
   const { selectedLocation } = useSettingsStore();
+  const { org } = useAuthStore();
   const qc = useQueryClient();
+
+  // MP-PAYMENT-EVENT-RECEIPTS Phase 3: post-success receipt modal
+  // for Encaisser dette. Capture the response shape from the
+  // collect-debt mutation; the shared PaymentEventReceipt
+  // component renders + lets the cashier print or share via
+  // WhatsApp before they dismiss.
+  const [receiptEvent, setReceiptEvent] = useState(null);
+
+  // Org settings power the receipt header (shop name, address,
+  // receipt_footer). Cached under the existing ["org-settings"]
+  // key so this is typically a cache hit.
+  const { data: orgSettingsResp } = useQuery({
+    queryKey: ["org-settings"],
+    queryFn: () => api.get("/settings").then(r => r.data),
+  });
+  const orgSettings = orgSettingsResp?.data || org || {};
   // MP-REQUIRE-OPEN-SHIFT Phase 3: Encaisser dette is a cash event
   // and gets gated. The customer CRUD form below is intentionally
   // NOT gated (admin operation per Decision 1's lenient list).
@@ -151,6 +169,11 @@ export default function CustomersPage() {
       qc.invalidateQueries(["pos-customers"]);
       qc.invalidateQueries(["dashboard"]);
       qc.invalidateQueries(["daily-summary"]);
+      // MP-PAYMENT-EVENT-RECEIPTS Phase 3: surface the receipt for
+      // the customer. Backend already enriched the response with
+      // applied_to_invoices, ghost_portion, customer/cashier/
+      // location fields — no follow-up fetch.
+      setReceiptEvent({ eventType: "debt_collection", data: d });
     },
     onError: (err) => {
       setCollectError(err.response?.data?.message || "Error");
@@ -699,6 +722,20 @@ export default function CustomersPage() {
             )}
           </div>
         </div>
+      )}
+
+      {/* MP-PAYMENT-EVENT-RECEIPTS Phase 3: receipt modal for
+          Encaisser dette. Stays mounted until the cashier
+          explicitly dismisses (or hits ESC / overlay tap), so
+          they have time to print or share. */}
+      {receiptEvent && (
+        <PaymentEventReceipt
+          eventType={receiptEvent.eventType}
+          data={receiptEvent.data}
+          org={orgSettings}
+          lang={lang}
+          onClose={() => setReceiptEvent(null)}
+        />
       )}
     </div>
   );

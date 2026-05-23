@@ -12,7 +12,11 @@ import { useSettingsStore, useAuthStore } from "../../store";
  *   onClose: function
  *   lang: "en" | "fr"
  */
-export default function VoidReturnModal({ sale, onClose, lang = "fr" }) {
+// MP-PAYMENT-EVENT-RECEIPTS Phase 3: onSuccess({ mode, data })
+// bubbles the response back up so the parent page can open a
+// PaymentEventReceipt. mode is 'void' / 'refund' / 'exchange';
+// data is the backend's enriched response payload.
+export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess }) {
   const qc = useQueryClient();
   const { selectedLocation } = useSettingsStore();
   // MP-REFUNDS-STAFF-ACCESS: cashier is allowed to see this modal
@@ -165,20 +169,20 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr" }) {
         ? (lang === "en" ? `✓ Return ${ref} recorded` : `✓ Retour ${ref} enregistré`)
         : (lang === "en" ? "✓ Done!" : "✓ Effectué!"));
 
-      // Show WhatsApp option
-      if (res?.data?.data?.wa_message) {
-        const msg = res.data.data.wa_message;
-        setTimeout(() => {
-          if (window.confirm(lang === "en" ? "Send WhatsApp alert to boss?" : "Envoyer alerte WhatsApp au patron?")) {
-            window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
-          }
-        }, 500);
-      }
+      // MP-PAYMENT-EVENT-RECEIPTS Phase 3: the old wa_message
+      // confirm-dialog flow (window.confirm → wa.me deeplink) is
+      // replaced by the parent's PaymentEventReceipt modal, which
+      // owns both print + WhatsApp share. Bubble the response up
+      // so the parent can mount the receipt; the parent decides
+      // when to close THIS modal.
 
       qc.invalidateQueries(["reports-sales-detail"]);
       qc.invalidateQueries(["reports-returns"]);
       qc.invalidateQueries(["stock"]);
       qc.invalidateQueries(["pos-customers"]);
+
+      const payload = res?.data?.data || {};
+      if (onSuccess) onSuccess({ mode, data: payload });
       onClose();
     } catch (err) {
       const msg = err.response?.data?.message || "Error";

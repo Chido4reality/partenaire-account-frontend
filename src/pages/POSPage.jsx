@@ -12,6 +12,7 @@ import { cacheData, getCachedData } from "../utils/offlineStore";
 import CameraScanner from "../components/common/CameraScanner";
 import { genSaleCodes } from "../utils/receiptCodes";
 import { ActiveShiftIndicator, useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
+import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 
 const PAYMENT_MODES = [
   { key: "paid",    en: "Full Payment",  fr: "Paiement total",   color: "#10b981", icon: "✓" },
@@ -1372,9 +1373,15 @@ export default function POSPage() {
       )}
 
       {/* ── RECEIPT MODAL ────────────────────────────────────────────── */}
+      {/* MP-PAYMENT-EVENT-RECEIPTS Phase 2: shared component now
+          renders the sale receipt. lastSale's shape (.items,
+          .paid_amount, .payment_status, nested .customer) maps
+          1:1 to the sale event-type body — no payload change
+          needed at this call site. */}
       {showReceipt && lastSale && (
-        <ReceiptModal
-          sale={lastSale}
+        <PaymentEventReceipt
+          eventType="sale"
+          data={lastSale}
           org={orgSettings}
           lang={lang}
           onClose={() => setShowReceipt(false)}
@@ -1505,290 +1512,13 @@ export default function POSPage() {
   );
 }
 
-// ── RECEIPT MODAL COMPONENT ───────────────────────────────────────────────────
-function ReceiptModal({ sale, org, lang, onClose }) {
-  const en = lang === "en";
-  const loc = en ? "en-US" : "fr-FR";
-  const today = new Date();
-  const dateStr = today.toLocaleDateString(loc, { day: "2-digit", month: "2-digit", year: "numeric" });
-  const timeStr = today.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
-  // Receipt copy localised by the UI language. The shop tagline
-  // (org.receipt_footer) stays user-controlled in both locales.
-  const RT = {
-    title:   en ? "Receipt" : "Reçu",
-    client:  en ? "Customer" : "Client",
-    paid:    en ? "PAID" : "PAYÉ",
-    credit:  en ? "FULL CREDIT" : "CRÉDIT TOTAL",
-    due:     en ? "DUE" : "DÛ",
-    partial: en ? "PARTIAL — Paid" : "PARTIEL — Payé",
-    balance: en ? "Balance due" : "Reste dû",
-    totalDue:en ? "Total amount due" : "Montant total dû",
-  };
-
-  const items = sale.items || [];
-  const total = items.reduce((s, i) => s + i.quantity * i.unit_price, 0);
-  // MP-RECEIPT-BODY-PAID-AMOUNT-BUG: nullish-coalesce instead of
-  // `|| total`. For credit sales paid_amount IS 0 (a valid value,
-  // not a missing one) and `|| total` was falling back to the
-  // sale total — producing a receipt body that read "Paid: 5,000"
-  // directly under the "FULL CREDIT — NO PAYMENT" banner. The
-  // total fallback is preserved only when paid_amount is genuinely
-  // absent (e.g. older receipts missing the field).
-  const paid = Number(sale.paid_amount ?? total) || 0;
-  const balance = total - paid;
-
-  // Sprint K: Code128 + QR of the sale number, both rendered from
-  // locally-bundled libs (CSP blocks external scripts) → data URLs
-  // so they print cleanly and embed in the print window HTML.
-  const [codes, setCodes] = useState({ barcode: "", qr: "" });
-  useEffect(() => {
-    if (!sale.sale_number) return;
-    let cancelled = false;
-    genSaleCodes(sale.sale_number)
-      .then(c => { if (!cancelled) setCodes(c); })
-      .catch(() => { if (!cancelled) setCodes({ barcode: "", qr: "" }); });
-    return () => { cancelled = true; };
-  }, [sale.sale_number]);
-
-  // MP-RECEIPT-MODAL-MOBILE-FIX: ESC closes. Click-outside (on the
-  // overlay) handled inline on the overlay div via onClick + an
-  // e.stopPropagation on the inner panel. Without these, a phone
-  // user with a tall partial-pay receipt (many items + customer +
-  // barcode + 3 footer buttons) could grow past the viewport and
-  // the only escape was force-quit. Now: ESC, overlay tap, sticky
-  // top-right ✕, AND the existing bottom "Close" button all work.
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  // Build WhatsApp message
-  const buildWhatsAppMessage = () => {
-    const shopName = org.name || "Notre boutique";
-    const footer = org.receipt_footer || "Merci pour votre achat!";
-    const status = sale.payment_status;
-    let msg = `🧾 *Reçu — ${shopName}*
-`;
-    msg += `📅 ${dateStr} à ${timeStr}
-`;
-    if (sale.sale_number) msg += `N° ${sale.sale_number}
-`;
-    msg += `─────────────────────
-`;
-    // MP-DEBT-LINE-FULL-VISIBILITY: debt-payment cart lines render
-    // with a 💰 prefix and no "× qty" (qty is always 1 and meaningless).
-    items.forEach(i => {
-      if (i.type === "debt_payment") {
-        msg += `💰 ${i.name} ........ ${(Number(i.unit_price) || 0).toLocaleString()} F
-`;
-      } else {
-        msg += `${i.name} × ${i.quantity} ........ ${(i.quantity * i.unit_price).toLocaleString()} F
-`;
-      }
-    });
-    msg += `─────────────────────
-`;
-    msg += `*Total: ${total.toLocaleString()} FCFA*
-`;
-    if (status === "paid") {
-      msg += `✅ *PAYÉ INTÉGRALEMENT: ${paid.toLocaleString()} FCFA*
-`;
-    } else if (status === "credit") {
-      msg += `🔴 *CRÉDIT TOTAL — Aucun paiement reçu*
-`;
-      msg += `*Montant dû: ${total.toLocaleString()} FCFA*
-`;
-    } else if (status === "partial") {
-      msg += `🟡 *PAIEMENT PARTIEL*
-`;
-      msg += `Payé: ${paid.toLocaleString()} FCFA
-`;
-      msg += `*Reste dû: ${balance.toLocaleString()} FCFA*
-`;
-    }
-    msg += `
-${footer}
-— ${shopName}`;
-    if (org.address) msg += `
-📍 ${org.address}, ${org.city || ""}`;
-    if (org.phone) msg += `
-📞 ${org.phone}`;
-    return msg;
-  };
-
-  const sendWhatsApp = () => {
-    const customer = sale.customer;
-    if (!customer?.phone) {
-      // No customer phone — open wa.me with shop number
-      const msg = buildWhatsAppMessage();
-      window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
-      return;
-    }
-    let phone = customer.phone.toString().replace(/\s+/g, "").replace(/^0/, "");
-    if (!phone.startsWith("237")) phone = "237" + phone;
-    const msg = buildWhatsAppMessage();
-    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
-  };
-
-  const printReceipt = () => {
-    const status = sale.payment_status;
-    const shopName = org.name || "Notre boutique";
-    const footer = org.receipt_footer || "Merci pour votre achat!";
-    const printContent = `
-      <html><head><title>${RT.title}</title><style>
-        body { font-family: monospace; font-size: 12px; width: 300px; margin: 0 auto; }
-        h2 { text-align: center; font-size: 14px; margin: 4px 0; }
-        .center { text-align: center; }
-        .line { border-top: 1px dashed #000; margin: 6px 0; }
-        .row { display: flex; justify-content: space-between; }
-        .total { font-weight: bold; font-size: 14px; }
-        .footer { text-align: center; margin-top: 10px; font-size: 11px; }
-      </style></head><body>
-        <h2>${shopName}</h2>
-        <div class="center">${org.address || ""} ${org.city || ""}</div>
-        <div class="center">${org.phone || ""}</div>
-        <div class="line"></div>
-        <div class="center">${dateStr} ${timeStr}</div>
-        ${sale.sale_number ? `<div class="center" style="font-size:15px;font-weight:bold;margin:4px 0">${sale.sale_number}</div>` : ""}
-        ${sale.customer?.name ? `<div class="center">${RT.client}: ${sale.customer.name}</div>` : ""}
-        <div class="line"></div>
-        ${items.map(i => i.type === "debt_payment"
-            ? `<div class="row"><span>💰 ${i.name}</span><span>${(Number(i.unit_price) || 0).toLocaleString()} F</span></div>`
-            : `<div class="row"><span>${i.name} ×${i.quantity}</span><span>${(i.quantity * i.unit_price).toLocaleString()} F</span></div>`).join("")}
-        <div class="line"></div>
-        <div class="row total"><span>TOTAL</span><span>${total.toLocaleString()} FCFA</span></div>
-        ${status === "paid" ? `<div class="row" style="color:green;font-weight:bold"><span>✅ ${RT.paid}</span><span>${paid.toLocaleString()} FCFA</span></div>` : ""}
-        ${status === "credit" ? `<div class="row" style="color:red;font-weight:bold"><span>🔴 ${RT.credit}</span><span>${total.toLocaleString()} FCFA ${RT.due}</span></div>` : ""}
-        ${status === "partial" ? `<div class="row" style="color:orange;font-weight:bold"><span>🟡 ${RT.partial}</span><span>${paid.toLocaleString()} FCFA</span></div>` : ""}
-        ${balance > 0 && status !== "credit" ? `<div class="row" style="color:red"><span>${RT.balance}</span><span>${balance.toLocaleString()} FCFA</span></div>` : ""}
-        ${status === "credit" ? `<div class="row" style="color:red"><span>${RT.totalDue}</span><span>${total.toLocaleString()} FCFA</span></div>` : ""}
-        <div class="line"></div>
-        ${sale.sale_number && codes.barcode ? `<div class="center"><img src="${codes.barcode}" style="height:44px;image-rendering:pixelated"/></div>` : ""}
-        ${sale.sale_number && codes.qr ? `<div class="center"><img src="${codes.qr}" style="width:110px;height:110px"/></div>` : ""}
-        ${sale.sale_number ? `<div class="center" style="font-size:11px">${sale.sale_number}</div>` : ""}
-        <div class="footer">${footer}</div>
-        <div class="footer">— ${shopName}</div>
-      </body></html>
-    `;
-    const w = window.open("", "_blank", "width=350,height=500");
-    w.document.write(printContent);
-    w.document.close();
-    w.focus();
-    setTimeout(() => { w.print(); w.close(); }, 300);
-  };
-
-  return (
-    // MP-RECEIPT-MODAL-MOBILE-FIX: overlay click-to-close + sticky
-    // header (with ✕) + scrollable body + sticky footer. Container
-    // capped at 90vh so the modal never grows past the viewport on
-    // phones; previously the bottom Close button could fall off-
-    // screen and the only escape was force-quitting the app.
-    <div
-      style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
-      onClick={onClose}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          background: "var(--bg-elevated)", border: "1px solid var(--border)",
-          borderRadius: 16, maxWidth: 400, width: "100%",
-          maxHeight: "90vh", display: "flex", flexDirection: "column",
-          boxShadow: "0 24px 60px rgba(0,0,0,0.6)",
-        }}
-      >
-
-        {/* ── Sticky header ─────────────────────────────────── */}
-        <div style={{ position: "relative", flexShrink: 0, padding: "20px 24px 12px", textAlign: "center", borderBottom: "1px solid var(--border)" }}>
-          <button onClick={onClose} aria-label={lang === "en" ? "Close" : "Fermer"}
-            style={{
-              position: "absolute", top: 10, right: 10,
-              width: 32, height: 32, borderRadius: 16,
-              background: "var(--bg-card)", border: "1px solid var(--border)",
-              color: "var(--text-secondary)", cursor: "pointer",
-              fontSize: 16, fontWeight: 700, lineHeight: 1,
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>✕</button>
-          <div style={{ fontSize: 32, marginBottom: 4 }}>✅</div>
-          <div style={{ fontWeight: 800, fontSize: 17, color: "#10b981" }}>
-            {lang === "en" ? "Sale Recorded!" : "Vente enregistrée!"}
-          </div>
-          {sale.sale_number && <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>{sale.sale_number}</div>}
-        </div>
-
-        {/* ── Scrollable body ─────────────────────────────── */}
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 24px" }}>
-
-        {/* Receipt preview */}
-        <div style={{ background: "var(--bg-card)", borderRadius: 12, padding: 16, marginBottom: 4, fontSize: 13 }}>
-          <div style={{ fontWeight: 700, textAlign: "center", marginBottom: 8 }}>{org.name || "Boutique"}</div>
-          {sale.customer?.name && <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", marginBottom: 4 }}>👤 {sale.customer.name}</div>}
-          {/* Payment status badge */}
-          <div style={{ textAlign: "center", marginBottom: 10 }}>
-            {sale.payment_status === "paid" && <span style={{ fontSize: 12, fontWeight: 700, background: "rgba(16,185,129,0.15)", color: "#34d399", padding: "3px 12px", borderRadius: 20 }}>✅ {en ? "PAID IN FULL" : "PAYÉ INTÉGRALEMENT"}</span>}
-            {sale.payment_status === "credit" && <span style={{ fontSize: 12, fontWeight: 700, background: "rgba(239,68,68,0.15)", color: "#f87171", padding: "3px 12px", borderRadius: 20 }}>🔴 {en ? "FULL CREDIT — NO PAYMENT" : "CRÉDIT TOTAL — AUCUN PAIEMENT"}</span>}
-            {sale.payment_status === "partial" && <span style={{ fontSize: 12, fontWeight: 700, background: "rgba(245,158,11,0.15)", color: "#fbbf24", padding: "3px 12px", borderRadius: 20 }}>🟡 {en ? "PARTIAL PAYMENT" : "PAIEMENT PARTIEL"}</span>}
-          </div>
-          <div style={{ borderTop: "1px dashed var(--border)", paddingTop: 8, marginBottom: 8 }}>
-            {items.slice(0, 4).map((i, idx) => (
-              <div key={idx} style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 12 }}>
-                <span style={{ color: "var(--text-secondary)" }}>{i.name} ×{i.quantity}</span>
-                <span style={{ fontWeight: 600 }}>{(i.quantity * i.unit_price).toLocaleString()} F</span>
-              </div>
-            ))}
-            {items.length > 4 && <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>...+{items.length - 4} more</div>}
-          </div>
-          <div style={{ borderTop: "1px dashed var(--border)", paddingTop: 8 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 15 }}>
-              <span>Total</span><span style={{ color: "var(--brand-light)" }}>{total.toLocaleString()} F</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#10b981" }}>
-              <span>{lang === "en" ? "Paid" : "Payé"}</span><span>{paid.toLocaleString()} F</span>
-            </div>
-            {balance > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#f87171", fontWeight: 600 }}>
-                <span>{lang === "en" ? "Balance due" : "Reste dû"}</span><span>{balance.toLocaleString()} F</span>
-              </div>
-            )}
-          </div>
-          {sale.sale_number && (codes.barcode || codes.qr) && (
-            <div style={{ borderTop: "1px dashed var(--border)", marginTop: 8, paddingTop: 10, textAlign: "center", background: "#fff", borderRadius: 8, padding: "10px 0" }}>
-              {codes.barcode && <img src={codes.barcode} alt="barcode" style={{ height: 44, maxWidth: "90%" }} />}
-              {codes.qr && <div><img src={codes.qr} alt="qr" style={{ width: 96, height: 96 }} /></div>}
-              <div style={{ fontSize: 11, color: "#000", fontFamily: "monospace", fontWeight: 700 }}>{sale.sale_number}</div>
-            </div>
-          )}
-        </div>
-
-        </div>{/* /scrollable body */}
-
-        {/* ── Sticky footer ─────────────────────────────── */}
-        <div style={{ flexShrink: 0, padding: "12px 24px 16px", borderTop: "1px solid var(--border)", background: "var(--bg-elevated)", display: "flex", flexDirection: "column", gap: 8 }}>
-          {sale.customer?.phone && (
-            <button onClick={sendWhatsApp}
-              style={{ width: "100%", padding: "11px", background: "#25D366", border: "none", color: "#fff", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              📱 {lang === "en" ? "Send Receipt via WhatsApp" : "Envoyer reçu par WhatsApp"}
-            </button>
-          )}
-          {!sale.customer?.phone && (
-            <button onClick={sendWhatsApp}
-              style={{ width: "100%", padding: "11px", background: "#25D366", border: "none", color: "#fff", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              📱 {lang === "en" ? "Share via WhatsApp" : "Partager par WhatsApp"}
-            </button>
-          )}
-          <button onClick={printReceipt}
-            style={{ width: "100%", padding: "11px", background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-primary)", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-            🖨️ {lang === "en" ? "Print Receipt" : "Imprimer reçu"}
-          </button>
-          <button onClick={onClose}
-            style={{ width: "100%", padding: "9px", background: "transparent", border: "none", color: "var(--text-muted)", borderRadius: 12, fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
-            {lang === "en" ? "Close" : "Fermer"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// MP-PAYMENT-EVENT-RECEIPTS Phase 2: the inline ReceiptModal that
+// used to live here was extracted to components/common/Payment
+// EventReceipt.jsx (single source for sale + debt_collection +
+// refund + void). Call site updated above to:
+//   <PaymentEventReceipt eventType="sale" data={lastSale} ... />
+// MP-RECEIPT-PAID-IN-FULL-BUG + MP-RECEIPT-BODY-PAID-AMOUNT-BUG
+// fixes are preserved by the shared component.
 
 // ── HOLD TICKET COMPONENT ─────────────────────────────────────────────────────
 // Thermal-friendly slip the customer keeps. Code128B + QR of the
