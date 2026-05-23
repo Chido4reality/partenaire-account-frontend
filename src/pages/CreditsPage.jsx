@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useAuthStore, useLangStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
+import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 
 export default function CreditsPage() {
   const { lang } = useLangStore();
@@ -14,6 +15,18 @@ export default function CreditsPage() {
   const [selected, setSelected] = useState(null);
   const [payForm, setPayForm]   = useState({ amount: "", payment_method: "cash", reference: "", notes: "" });
   const [showPay, setShowPay]   = useState(false);
+
+  // MP-PAYMENT-EVENT-RECEIPTS Bug 2: receipt modal on invoice
+  // payment success. Backend POST /sales/:id/payment now returns
+  // a rich payload (sale + customer + cashier + location + debt
+  // before/after) that the shared receipt component renders as
+  // eventType='invoice_payment'.
+  const [receiptEvent, setReceiptEvent] = useState(null);
+  const { data: orgSettingsResp } = useQuery({
+    queryKey: ["org-settings"],
+    queryFn: () => api.get("/settings").then(r => r.data),
+  });
+  const orgSettings = orgSettingsResp?.data || org || {};
 
   // ── Fetch all customers with debt (summary list) ──────────────────────────
   const { data, isLoading } = useQuery({
@@ -40,13 +53,20 @@ export default function CreditsPage() {
       reference: payForm.reference || null,
       notes: payForm.notes || null
     }),
-    onSuccess: () => {
+    onSuccess: (res) => {
+      const d = res?.data?.data || {};
       toast.success(lang === "en" ? "✓ Payment recorded!" : "✓ Paiement enregistré!");
       setShowPay(false);
       setPayForm({ amount: "", payment_method: "cash", reference: "", notes: "" });
       qc.invalidateQueries(["credits"]);
       qc.invalidateQueries(["customer-debt", selected?.id]);
       qc.invalidateQueries(["daily-summary"]);
+      // MP-PAYMENT-EVENT-RECEIPTS Bug 2: surface the receipt so
+      // the cashier can print/share + the customer gets proof
+      // of payment. Same UX as POS sale / refund / void / debt
+      // collection — all five cash-movement events now produce
+      // a receipt.
+      setReceiptEvent({ eventType: "invoice_payment", data: d });
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
@@ -355,6 +375,19 @@ export default function CreditsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* MP-PAYMENT-EVENT-RECEIPTS Bug 2: receipt for invoice
+          payments. Same shared component every other money-event
+          flow uses. */}
+      {receiptEvent && (
+        <PaymentEventReceipt
+          eventType={receiptEvent.eventType}
+          data={receiptEvent.data}
+          org={orgSettings}
+          lang={lang}
+          onClose={() => setReceiptEvent(null)}
+        />
       )}
     </div>
   );

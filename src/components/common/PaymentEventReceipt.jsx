@@ -97,6 +97,16 @@ const HEADER_BY_TYPE = {
     titleEn: "Sale Voided",
     titleFr: "Vente annulée",
   },
+  // MP-PAYMENT-EVENT-RECEIPTS Bug 2 fix — POST /sales/:id/payment
+  // (action='debt_payment_against_sale'). Distinct from
+  // debt_collection because shape is single-invoice not
+  // applied_to_invoices array, and the original sale is the
+  // anchor (sale_number is the reference for QR/barcode).
+  invoice_payment: {
+    emoji: "💵", color: "#34d399",
+    titleEn: "Invoice Payment",
+    titleFr: "Paiement de facture",
+  },
 };
 
 // Pick the "reference" string for QR/barcode + sub-header per type.
@@ -192,6 +202,38 @@ function buildBodyLines(eventType, data, lang, org) {
     }
     if (data.debt_after != null) {
       lines.push(`*${en ? "New balance" : "Nouveau solde"}: ${fmtAmt(data.debt_after)} FCFA*`);
+    }
+  }
+
+  if (eventType === "invoice_payment") {
+    if (customerLine) lines.push(customerLine);
+    if (data.sale_number) {
+      lines.push(`${en ? "Invoice" : "Facture"}: ${data.sale_number}`);
+    }
+    lines.push("─────────────────────");
+    lines.push(`${en ? "Amount paid" : "Montant payé"}: ${fmtAmt(data.amount)} FCFA`);
+    if (data.payment_method) lines.push(`${en ? "Method" : "Mode"}: ${data.payment_method}`);
+    lines.push("─────────────────────");
+    if (data.sale_total != null) {
+      lines.push(`${en ? "Invoice total" : "Total facture"}: ${fmtAmt(data.sale_total)} FCFA`);
+    }
+    if (data.sale_paid_before != null && data.sale_paid_after != null) {
+      lines.push(`${en ? "Paid before" : "Payé avant"}: ${fmtAmt(data.sale_paid_before)} FCFA`);
+      lines.push(`${en ? "Paid after" : "Payé après"}: ${fmtAmt(data.sale_paid_after)} FCFA`);
+    }
+    if (data.balance_after != null) {
+      const balanceLabel = data.payment_status === "paid"
+        ? (en ? "Settled — no balance remaining" : "Soldée — aucun reste dû")
+        : `${en ? "Remaining balance" : "Reste dû"}: ${fmtAmt(data.balance_after)} FCFA`;
+      lines.push(data.payment_status === "paid" ? `✅ ${balanceLabel}` : balanceLabel);
+    }
+    // Customer-level totals (only when a registered customer was
+    // attached to the sale; walk-in invoice payments are rare but
+    // possible if the original sale predated customer linking).
+    if (data.debt_before != null && data.debt_after != null) {
+      lines.push("─────────────────────");
+      lines.push(`${en ? "Customer debt before" : "Dette client avant"}: ${fmtAmt(data.debt_before)} FCFA`);
+      lines.push(`*${en ? "Customer debt after" : "Dette client après"}: ${fmtAmt(data.debt_after)} FCFA*`);
     }
   }
 
