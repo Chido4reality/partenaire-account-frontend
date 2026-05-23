@@ -77,6 +77,105 @@ export function buildLedgerText(ledger, lang) {
   return L.join("\n");
 }
 
+// MP-DAILY-REPORT-PROFESSIONAL-REDESIGN — three-block boss-facing
+// daily report. Reads ledger.blocks (new field from /daily-ledger)
+// and falls back to buildLedgerText if the field isn't present so a
+// stale frontend against a fresh backend or vice-versa stays readable.
+//
+// Block 1 Day Flow      — sales / debt collected / refunds / expenses
+//                         / net cash flow, with method splits
+// Block 2 Shifts        — one block per shift (drawer-grade breakdown)
+// Block 3 Outstanding   — today's new debt + all-time customer debt
+//
+// Localisation parallels buildLedgerText.
+export function buildLedgerTextV2(ledger, lang) {
+  if (!ledger) return "";
+  if (!ledger.blocks) return buildLedgerText(ledger, lang); // back-compat
+  const en = lang === "en";
+  const n  = (x) => fmt(x, en);
+  const b  = ledger.blocks;
+  const df = b.day_flow      || {};
+  const sh = b.shifts        || [];
+  const ou = b.outstanding   || {};
+  const sales = df.sales          || {};
+  const dcol  = df.debt_collected || {};
+  const locName  = ledger.location ? ledger.location.name : (en ? "all locations" : "tous les sites");
+  const longDate = new Date(ledger.date + "T00:00:00").toLocaleDateString(en ? "en-GB" : "fr-FR",
+    { day: "numeric", month: "long", year: "numeric" });
+  const tfmt = (iso) => iso
+    ? new Date(iso).toLocaleTimeString(en ? "en-GB" : "fr-FR",
+        { hour: "2-digit", minute: "2-digit" })
+    : "—";
+
+  const L = [];
+  L.push(`*${en ? "DAILY REPORT" : "RAPPORT DU JOUR"} — ${locName}*`);
+  L.push(longDate);
+  L.push("");
+
+  // ── BLOCK 1 — DAY FLOW ──────────────────────────────────────
+  L.push(`*1. ${en ? "DAY FLOW" : "MOUVEMENT DU JOUR"}*`);
+  L.push(`${en ? "Sales today" : "Ventes du jour"}: ${n(sales.total)} FCFA`);
+  L.push(`  • ${en ? "Paid cash" : "Payé espèces"}: ${n(sales.paid_cash)} FCFA`);
+  L.push(`  • ${en ? "Paid MoMo" : "Payé MoMo"}: ${n(sales.paid_momo)} FCFA`);
+  L.push(`  • ${en ? "Paid bank" : "Payé banque"}: ${n(sales.paid_bank)} FCFA`);
+  L.push(`  • ${en ? "On credit" : "À crédit"}: ${n(sales.on_credit)} FCFA`);
+  L.push("");
+  L.push(`${en ? "Debt collected" : "Dette encaissée"}: ${n(dcol.total)} FCFA`);
+  L.push(`  • ${en ? "Cash" : "Espèces"}: ${n(dcol.cash)} FCFA`);
+  L.push(`  • MoMo: ${n(dcol.momo)} FCFA`);
+  L.push(`  • ${en ? "Bank" : "Banque"}: ${n(dcol.bank)} FCFA`);
+  L.push("");
+  L.push(`${en ? "Refunds & voids (cash out)" : "Remboursements & annulations (sortie)"}: ${n(df.refunds_voids_cash_out)} FCFA`);
+  L.push(`${en ? "Expenses" : "Dépenses"}: ${n(df.expenses)} FCFA`);
+  L.push("─────────────────────────");
+  L.push(`*${en ? "Net cash flow" : "Flux net espèces"}: ${n(df.net_cash_flow)} FCFA*`);
+  L.push("");
+
+  // ── BLOCK 2 — SHIFTS ────────────────────────────────────────
+  L.push(`*2. ${en ? "SHIFTS" : "POSTES"}*`);
+  if (!sh.length) {
+    L.push(en ? "No shift opened today." : "Aucun poste ouvert aujourd'hui.");
+  } else {
+    sh.forEach((s, i) => {
+      const closed = !!s.closed_at;
+      const head = `${s.cashier_name || "—"}${s.location_name ? " · " + s.location_name : ""}` +
+                   ` (${tfmt(s.opened_at)} → ${closed ? tfmt(s.closed_at) : (en ? "open" : "ouvert")})`;
+      L.push(`▸ ${en ? "Shift" : "Poste"} ${i + 1}: ${head}`);
+      L.push(`  ${en ? "Opening float" : "Fond d'ouverture"}: ${n(s.opening_float)} FCFA`);
+      L.push(`  ${en ? "Cash sales" : "Ventes espèces"}: ${n(s.cash_sales)} FCFA`);
+      L.push(`  ${en ? "Debt collected (cash)" : "Dette encaissée (espèces)"}: ${n(s.debt_collected_cash)} FCFA`);
+      L.push(`  ${en ? "Cash refunds" : "Remboursements espèces"}: ${n(s.cash_refunds)} FCFA`);
+      L.push(`  ${en ? "Expenses" : "Dépenses"}: ${n(s.expenses)} FCFA`);
+      L.push(`  ${en ? "Expected drawer" : "Caisse attendue"}: ${n(s.expected_drawer)} FCFA`);
+      if (closed && s.counted_at_close != null) {
+        L.push(`  ${en ? "Counted at close" : "Comptée à la clôture"}: ${n(s.counted_at_close)} FCFA`);
+        if (s.variance != null) {
+          if (s.variance < 0) {
+            L.push(`  ${en ? "Variance (short)" : "Écart (manquant)"}: −${n(Math.abs(s.variance))} FCFA`);
+          } else if (s.variance > 0) {
+            L.push(`  ${en ? "Variance (surplus)" : "Écart (excédent)"}: +${n(s.variance)} FCFA`);
+          } else {
+            L.push(`  ${en ? "Variance" : "Écart"}: 0 FCFA`);
+          }
+        }
+      } else {
+        L.push(`  ${en ? "Status" : "Statut"}: ${en ? "open — not yet counted" : "ouvert — pas encore compté"}`);
+      }
+      if (i < sh.length - 1) L.push("");
+    });
+  }
+  L.push("");
+
+  // ── BLOCK 3 — OUTSTANDING ───────────────────────────────────
+  L.push(`*3. ${en ? "OUTSTANDING" : "EN SUSPENS"}*`);
+  L.push(`${en ? "Debt issued today" : "Crédit accordé aujourd'hui"}: ${n(ou.debt_issued_today)} FCFA`);
+  L.push(`${en ? "Total customer debt (all time)" : "Dette client totale (tous comptes)"}: ${n(ou.total_customer_debt_all_time)} FCFA`);
+
+  L.push("");
+  L.push("— Mon Partenaire POS");
+  return L.join("\n");
+}
+
 // Weekly section appended on Saturdays (or whenever weekly data is
 // available). Best-X lines are skipped when null so quiet weeks
 // don't get empty bullets in the message.

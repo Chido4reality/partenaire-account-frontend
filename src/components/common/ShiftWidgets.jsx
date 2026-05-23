@@ -43,7 +43,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useAuthStore, useLangStore, useSettingsStore } from "../../store";
 import api, { formatCFA } from "../../utils/api";
-import { buildLedgerText, buildWeeklyText } from "../../utils/reportText";
+import { buildLedgerTextV2 as buildLedgerText, buildWeeklyText } from "../../utils/reportText";
 
 // ── ModalShell — same overlay pattern as the rest of the app ─────
 function ModalShell({ children, onClose, busy }) {

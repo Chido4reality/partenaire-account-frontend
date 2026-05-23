@@ -5,7 +5,7 @@ import { useLangStore, useAuthStore, useSettingsStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
 import VoidReturnModal from "../components/common/VoidReturnModal";
 import { genSaleCodes } from "../utils/receiptCodes";
-import { buildLedgerText as buildLedgerTextUtil, buildWeeklyText as buildWeeklyTextUtil } from "../utils/reportText";
+import { buildLedgerTextV2 as buildLedgerTextUtil, buildWeeklyText as buildWeeklyTextUtil } from "../utils/reportText";
 
 // MP-DEBT-LINE-FULL-VISIBILITY: pa_sale_items can now hold debt-payment
 // rows (line_type='debt_payment', product_id=NULL). Helpers to keep
@@ -958,58 +958,179 @@ export default function ReportsPage() {
               </div>
             );
 
+            // MP-DAILY-REPORT-PROFESSIONAL-REDESIGN: in-app 3-block
+            // render. Reads ledger.blocks; if absent (older backend),
+            // falls back to the legacy SimpleRow summary so a stale
+            // backend doesn't blank the page.
+            const bl = ledger.blocks || null;
+            const tfmt = (iso) => iso
+              ? new Date(iso).toLocaleTimeString(lang === "en" ? "en-GB" : "fr-FR",
+                  { hour: "2-digit", minute: "2-digit" })
+              : "—";
+            const BlockRow = ({ label, value, indent, bold, color, sign }) => (
+              <div style={{ display: "flex", justifyContent: "space-between",
+                            padding: bold ? "8px 0 4px" : "3px 0",
+                            paddingLeft: indent ? 14 : 0,
+                            fontSize: bold ? 15 : 13, fontWeight: bold ? 800 : 500 }}>
+                <span style={{ color: color || (bold ? "var(--text-primary)" : "var(--text-muted)") }}>{label}</span>
+                <span style={{ color: color || (bold ? "var(--brand-light)" : "var(--text-primary)") }}>
+                  {sign === "-" ? "−" : ""}{value}
+                </span>
+              </div>
+            );
+
             return (
               <div className="card" style={{ maxWidth: 620, margin: "0 auto", padding: "20px 22px" }}>
 
-                {/* ── SIMPLIFIED SUMMARY (boss view, top of card) ─ */}
-                <div style={{ marginBottom: 22, padding: "16px 18px", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 12 }}>
-                  <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10, textAlign: "center", letterSpacing: "0.3px" }}>
-                    {lang === "en" ? "DAILY REPORT" : "RAPPORT DU JOUR"}
-                    {ledger.location?.name && <span style={{ color: "var(--text-muted)", fontWeight: 500 }}> — {ledger.location.name}</span>}
-                  </div>
-                  <SimpleRow label={lang === "en" ? "Amount sold"    : "Ventes du jour"}   value={formatCFA(ps.total)} />
-                  <SimpleRow label={lang === "en" ? "Debt collected" : "Dette encaissée"} value={formatCFA(dc.total)} />
-                  <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
-                  <SimpleRow label={lang === "en" ? "Total money received" : "Total reçu"}
-                    value={formatCFA(totalReceived)} bold />
-
-                  {drCounted != null && (
-                    <>
-                      <div style={{ height: 12 }} />
-                      <SimpleRow label={lang === "en" ? "Counted in drawer" : "Caisse comptée"}
-                        value={formatCFA(drCounted)} />
-                      {drVariance != null && drVariance < 0 && (
-                        <SimpleRow label={lang === "en" ? "Lost (drawer short)" : "Manquant"}
-                          value={formatCFA(Math.abs(drVariance))} color="#f87171" />
-                      )}
-                      {drVariance != null && drVariance > 0 && (
-                        <SimpleRow label={lang === "en" ? "Drawer surplus" : "Excédent caisse"}
-                          value={`+${formatCFA(drVariance)}`} color="#fbbf24" />
-                      )}
-                      {Number(ex.total) > 0 && (
-                        <SimpleRow label={lang === "en" ? "Expenses" : "Dépenses"}
-                          value={formatCFA(ex.total)} color="#f87171" />
-                      )}
-                      <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
-                      <SimpleRow label={lang === "en" ? "Cash at hand" : "Cash en main"}
-                        value={formatCFA(cashAtHand)} bold color={cashAtHand < 0 ? "#f87171" : "#34d399"} />
-                    </>
-                  )}
-                  {drCounted == null && dr && (
-                    <div style={{ marginTop: 10, padding: "8px 10px", fontSize: 12, color: "var(--text-muted)", background: "var(--bg-card)", border: "1px dashed var(--border)", borderRadius: 8 }}>
-                      {lang === "en"
-                        ? "Drawer not counted yet — shift still open"
-                        : "Caisse non comptée — poste encore ouvert"}
+                {/* ── 3-BLOCK PROFESSIONAL REPORT (when backend provides blocks) ── */}
+                {bl ? (
+                  <>
+                    <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 12, textAlign: "center", letterSpacing: "0.3px" }}>
+                      {lang === "en" ? "DAILY REPORT" : "RAPPORT DU JOUR"}
+                      {ledger.location?.name && <span style={{ color: "var(--text-muted)", fontWeight: 500 }}> — {ledger.location.name}</span>}
                     </div>
-                  )}
-                  {debtIssued > 0 && (
-                    <>
-                      <div style={{ height: 12 }} />
-                      <SimpleRow label={lang === "en" ? "Debt issued (on credit)" : "Crédit du jour"}
-                        value={formatCFA(debtIssued)} color="#fbbf24" />
-                    </>
-                  )}
-                </div>
+
+                    {/* ── BLOCK 1 — DAY FLOW ─────────────────── */}
+                    <div style={{ padding: "14px 16px", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 12, marginBottom: 14 }}>
+                      <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8, color: "var(--brand-light)" }}>
+                        1. {lang === "en" ? "DAY FLOW" : "MOUVEMENT DU JOUR"}
+                      </div>
+                      <BlockRow label={lang === "en" ? "Sales today" : "Ventes du jour"} value={formatCFA(bl.day_flow.sales.total)} bold />
+                      <BlockRow indent label={lang === "en" ? "Paid cash" : "Payé espèces"} value={formatCFA(bl.day_flow.sales.paid_cash)} />
+                      <BlockRow indent label={lang === "en" ? "Paid MoMo" : "Payé MoMo"} value={formatCFA(bl.day_flow.sales.paid_momo)} />
+                      <BlockRow indent label={lang === "en" ? "Paid bank" : "Payé banque"} value={formatCFA(bl.day_flow.sales.paid_bank)} />
+                      <BlockRow indent label={lang === "en" ? "On credit" : "À crédit"} value={formatCFA(bl.day_flow.sales.on_credit)} color="#fbbf24" />
+                      <div style={{ height: 8 }} />
+                      <BlockRow label={lang === "en" ? "Debt collected" : "Dette encaissée"} value={formatCFA(bl.day_flow.debt_collected.total)} bold />
+                      <BlockRow indent label={lang === "en" ? "Cash" : "Espèces"} value={formatCFA(bl.day_flow.debt_collected.cash)} />
+                      <BlockRow indent label="MoMo" value={formatCFA(bl.day_flow.debt_collected.momo)} />
+                      <BlockRow indent label={lang === "en" ? "Bank" : "Banque"} value={formatCFA(bl.day_flow.debt_collected.bank)} />
+                      <div style={{ height: 8 }} />
+                      <BlockRow label={lang === "en" ? "Refunds & voids (cash out)" : "Remboursements & annulations (sortie)"}
+                                value={formatCFA(bl.day_flow.refunds_voids_cash_out)}
+                                color={bl.day_flow.refunds_voids_cash_out > 0 ? "#f87171" : undefined}
+                                sign={bl.day_flow.refunds_voids_cash_out > 0 ? "-" : ""} />
+                      <BlockRow label={lang === "en" ? "Expenses" : "Dépenses"}
+                                value={formatCFA(bl.day_flow.expenses)}
+                                color={bl.day_flow.expenses > 0 ? "#f87171" : undefined}
+                                sign={bl.day_flow.expenses > 0 ? "-" : ""} />
+                      <div style={{ height: 1, background: "var(--border)", margin: "8px 0 4px" }} />
+                      <BlockRow label={lang === "en" ? "Net cash flow" : "Flux net espèces"}
+                                value={formatCFA(bl.day_flow.net_cash_flow)} bold
+                                color={bl.day_flow.net_cash_flow < 0 ? "#f87171" : "#34d399"} />
+                    </div>
+
+                    {/* ── BLOCK 2 — SHIFTS ───────────────────── */}
+                    <div style={{ padding: "14px 16px", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 12, marginBottom: 14 }}>
+                      <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8, color: "var(--brand-light)" }}>
+                        2. {lang === "en" ? "SHIFTS" : "POSTES"}
+                      </div>
+                      {bl.shifts.length === 0 ? (
+                        <div style={{ color: "var(--text-muted)", fontSize: 13, padding: "6px 0" }}>
+                          {lang === "en" ? "No shift opened today." : "Aucun poste ouvert aujourd'hui."}
+                        </div>
+                      ) : bl.shifts.map((s, i) => {
+                        const closed = !!s.closed_at;
+                        return (
+                          <div key={s.shift_id} style={{ padding: "8px 0", borderTop: i > 0 ? "1px dashed var(--border)" : "none" }}>
+                            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>
+                              ▸ {lang === "en" ? "Shift" : "Poste"} {i + 1}: {s.cashier_name || "—"}
+                              {s.location_name && <span style={{ color: "var(--text-muted)", fontWeight: 500 }}> · {s.location_name}</span>}
+                              <span style={{ color: "var(--text-muted)", fontWeight: 500, fontSize: 12, marginLeft: 6 }}>
+                                ({tfmt(s.opened_at)} → {closed ? tfmt(s.closed_at) : (lang === "en" ? "open" : "ouvert")})
+                              </span>
+                            </div>
+                            <BlockRow indent label={lang === "en" ? "Opening float" : "Fond d'ouverture"} value={formatCFA(s.opening_float)} />
+                            <BlockRow indent label={lang === "en" ? "Cash sales" : "Ventes espèces"} value={formatCFA(s.cash_sales)} />
+                            <BlockRow indent label={lang === "en" ? "Debt collected (cash)" : "Dette encaissée (espèces)"} value={formatCFA(s.debt_collected_cash)} />
+                            <BlockRow indent label={lang === "en" ? "Cash refunds" : "Remboursements espèces"} value={formatCFA(s.cash_refunds)} color={s.cash_refunds > 0 ? "#f87171" : undefined} sign={s.cash_refunds > 0 ? "-" : ""} />
+                            <BlockRow indent label={lang === "en" ? "Expenses" : "Dépenses"} value={formatCFA(s.expenses)} color={s.expenses > 0 ? "#f87171" : undefined} sign={s.expenses > 0 ? "-" : ""} />
+                            <BlockRow indent label={lang === "en" ? "Expected drawer" : "Caisse attendue"} value={formatCFA(s.expected_drawer)} bold />
+                            {closed && s.counted_at_close != null && (
+                              <>
+                                <BlockRow indent label={lang === "en" ? "Counted at close" : "Comptée à la clôture"} value={formatCFA(s.counted_at_close)} />
+                                {s.variance != null && s.variance !== 0 && (
+                                  <BlockRow indent
+                                    label={s.variance < 0
+                                      ? (lang === "en" ? "Variance (short)" : "Écart (manquant)")
+                                      : (lang === "en" ? "Variance (surplus)" : "Écart (excédent)")}
+                                    value={`${s.variance > 0 ? "+" : "−"}${formatCFA(Math.abs(s.variance))}`}
+                                    color={s.variance < 0 ? "#f87171" : "#fbbf24"} />
+                                )}
+                              </>
+                            )}
+                            {!closed && (
+                              <BlockRow indent label={lang === "en" ? "Status" : "Statut"}
+                                value={lang === "en" ? "open — not counted" : "ouvert — pas compté"}
+                                color="var(--text-muted)" />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* ── BLOCK 3 — OUTSTANDING ──────────────── */}
+                    <div style={{ padding: "14px 16px", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 12, marginBottom: 18 }}>
+                      <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8, color: "var(--brand-light)" }}>
+                        3. {lang === "en" ? "OUTSTANDING" : "EN SUSPENS"}
+                      </div>
+                      <BlockRow label={lang === "en" ? "Debt issued today" : "Crédit accordé aujourd'hui"}
+                                value={formatCFA(bl.outstanding.debt_issued_today)}
+                                color={bl.outstanding.debt_issued_today > 0 ? "#fbbf24" : undefined} />
+                      <BlockRow label={lang === "en" ? "Total customer debt (all time)" : "Dette client totale (tous comptes)"}
+                                value={formatCFA(bl.outstanding.total_customer_debt_all_time)} bold />
+                    </div>
+                  </>
+                ) : (
+                  /* ── FALLBACK: legacy SimpleRow summary (back-compat with older backends) ── */
+                  <div style={{ marginBottom: 22, padding: "16px 18px", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 12 }}>
+                    <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10, textAlign: "center", letterSpacing: "0.3px" }}>
+                      {lang === "en" ? "DAILY REPORT" : "RAPPORT DU JOUR"}
+                      {ledger.location?.name && <span style={{ color: "var(--text-muted)", fontWeight: 500 }}> — {ledger.location.name}</span>}
+                    </div>
+                    <SimpleRow label={lang === "en" ? "Amount sold"    : "Ventes du jour"}   value={formatCFA(ps.total)} />
+                    <SimpleRow label={lang === "en" ? "Debt collected" : "Dette encaissée"} value={formatCFA(dc.total)} />
+                    <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
+                    <SimpleRow label={lang === "en" ? "Total money received" : "Total reçu"}
+                      value={formatCFA(totalReceived)} bold />
+                    {drCounted != null && (
+                      <>
+                        <div style={{ height: 12 }} />
+                        <SimpleRow label={lang === "en" ? "Counted in drawer" : "Caisse comptée"}
+                          value={formatCFA(drCounted)} />
+                        {drVariance != null && drVariance < 0 && (
+                          <SimpleRow label={lang === "en" ? "Lost (drawer short)" : "Manquant"}
+                            value={formatCFA(Math.abs(drVariance))} color="#f87171" />
+                        )}
+                        {drVariance != null && drVariance > 0 && (
+                          <SimpleRow label={lang === "en" ? "Drawer surplus" : "Excédent caisse"}
+                            value={`+${formatCFA(drVariance)}`} color="#fbbf24" />
+                        )}
+                        {Number(ex.total) > 0 && (
+                          <SimpleRow label={lang === "en" ? "Expenses" : "Dépenses"}
+                            value={formatCFA(ex.total)} color="#f87171" />
+                        )}
+                        <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
+                        <SimpleRow label={lang === "en" ? "Cash at hand" : "Cash en main"}
+                          value={formatCFA(cashAtHand)} bold color={cashAtHand < 0 ? "#f87171" : "#34d399"} />
+                      </>
+                    )}
+                    {drCounted == null && dr && (
+                      <div style={{ marginTop: 10, padding: "8px 10px", fontSize: 12, color: "var(--text-muted)", background: "var(--bg-card)", border: "1px dashed var(--border)", borderRadius: 8 }}>
+                        {lang === "en"
+                          ? "Drawer not counted yet — shift still open"
+                          : "Caisse non comptée — poste encore ouvert"}
+                      </div>
+                    )}
+                    {debtIssued > 0 && (
+                      <>
+                        <div style={{ height: 12 }} />
+                        <SimpleRow label={lang === "en" ? "Debt issued (on credit)" : "Crédit du jour"}
+                          value={formatCFA(debtIssued)} color="#fbbf24" />
+                      </>
+                    )}
+                  </div>
+                )}
 
                 {/* ── Detail sections below (cashier audit trail) ── */}
 
