@@ -271,18 +271,57 @@ function buildBodyLines(eventType, data, lang, org) {
     if (customerLine) lines.push(customerLine);
     lines.push(`${en ? "Voided sale" : "Vente annulée"}: ${data.sale_number}`);
     lines.push("─────────────────────");
+    // MP-VOID-CASH-AND-RETURNS-HANDLING Gap 2: items_returned
+    // entries now carry effective qty + qty_already_returned.
+    // Surface the "X already returned earlier" subtle hint so the
+    // cashier understands why qty might differ from the original
+    // sale. Skip lines where effective qty is 0 (fully returned
+    // before void — nothing physical to mention).
     (data.items_returned || []).forEach(i => {
+      const qty = Number(i.qty || 0);
+      const priorQty = Number(i.qty_already_returned || 0);
+      const origQty = Number(i.qty_original || qty);
       if (i.line_type === "debt_payment") {
         lines.push(`💰 ${i.name || "?"} ........ ${fmtAmt(i.unit_price)} F`);
-      } else {
-        const total = Number(i.qty || 0) * Number(i.unit_price || 0);
-        lines.push(`${i.name || "?"} × ${i.qty} ........ ${fmtAmt(total)} F`);
+        return;
       }
+      if (qty <= 0) {
+        // Line fully returned before void — informational only.
+        if (priorQty > 0) {
+          lines.push(`${i.name || "?"} × 0 (${en ? "all" : "tout"} ${priorQty} ${en ? "previously returned" : "déjà retourné"})`);
+        }
+        return;
+      }
+      const total = qty * Number(i.unit_price || 0);
+      const note = priorQty > 0
+        ? ` (${en ? "of" : "sur"} ${origQty}, ${priorQty} ${en ? "prev. returned" : "déjà retourné"})`
+        : "";
+      lines.push(`${i.name || "?"} × ${qty} ........ ${fmtAmt(total)} F${note}`);
     });
     lines.push("─────────────────────");
     lines.push(`${en ? "Original total" : "Total d'origine"}: ${fmtAmt(data.original_total_amount)} FCFA`);
     if (Number(data.original_paid_amount || 0) > 0) {
       lines.push(`${en ? "Originally paid" : "Initialement payé"}: ${fmtAmt(data.original_paid_amount)} FCFA`);
+    }
+    // MP-VOID-CASH-AND-RETURNS-HANDLING Gap 1: surface the cash
+    // going back to the customer for THIS void. Effective amount
+    // already accounts for any prior refunds. Drawer reconciliation
+    // picks it up via the synthesised pa_returns row at shift close.
+    const cashRefund = Number(data.cash_refund_amount || 0);
+    const priorRefundTotal = Number(data.prior_refund_total || 0);
+    if (cashRefund > 0) {
+      lines.push(`💵 *${en ? "Cash refund" : "Remboursement espèces"}: ${fmtAmt(cashRefund)} FCFA*`);
+      if (data.cash_refund_method && data.cash_refund_method !== "cash") {
+        lines.push(`   ${en ? "Method" : "Mode"}: ${data.cash_refund_method}`);
+      }
+      if (data.cash_refund_ref) {
+        lines.push(`   ${en ? "Refund ref" : "Réf. remb."}: ${data.cash_refund_ref}`);
+      }
+      if (priorRefundTotal > 0) {
+        lines.push(`   ${en
+          ? `(net of ${fmtAmt(priorRefundTotal)} previously refunded)`
+          : `(net de ${fmtAmt(priorRefundTotal)} déjà remboursé)`}`);
+      }
     }
     if (data.reason) lines.push(`${en ? "Reason" : "Raison"}: ${data.reason}`);
     if (data.customer_new_balance != null) {
