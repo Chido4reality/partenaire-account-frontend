@@ -21,6 +21,7 @@ import SettingsPage from "./pages/SettingsPage";
 import ShiftsPage from "./pages/ShiftsPage";
 import StockCountPage from "./pages/StockCountPage";
 import BarcodePage from "./pages/BarcodePage";
+import OperationsDashboardPage from "./pages/OperationsDashboardPage"; // MP-OWNER-OPERATIONS-DASHBOARD-V1
 
 // MP-INVALIDATE-AFTER-SALE: refetch stale data when the user returns to
 // the tab/app or reconnects (e.g. after making a sale on another device
@@ -65,6 +66,9 @@ const ROUTE_ACCESS = {
   "/transfers":    ["owner", "manager", "warehouse"],
   "/expenditures": ["owner", "manager", "cashier"],
   "/reports":      ["owner", "manager"],
+  // MP-OWNER-OPERATIONS-DASHBOARD-V1: owner statement view (multi-day
+  // signals, anomalies, debt aging). Owner + manager only.
+  "/operations":   ["owner", "manager"],
   // MP-REFUNDS-STAFF-ACCESS: refunds/exchanges are operational —
   // every role that can sell must also be able to process a return.
   // Backend mirror in returns.js: /return + /exchange open to
@@ -274,6 +278,10 @@ export default function App() {
             <Route path="transfers"    element={<RoleGuard path="/transfers"><PlanGuard path="/transfers"><TransfersPage /></PlanGuard></RoleGuard>} />
             <Route path="expenditures" element={<RoleGuard path="/expenditures"><PlanGuard path="/expenditures"><ExpenditurePage /></PlanGuard></RoleGuard>} />
             <Route path="reports"      element={<RoleGuard path="/reports"><PlanGuard path="/reports"><ReportsPage /></PlanGuard></RoleGuard>} />
+            {/* MP-OWNER-OPERATIONS-DASHBOARD-V1: owner/manager deep-view.
+                RoleGuard path matches Layout.NAV; PlanGuard reuses the
+                reports section gate since the data class is the same. */}
+            <Route path="operations"   element={<RoleGuard path="/operations"><PlanGuard path="/reports"><OperationsDashboardPage /></PlanGuard></RoleGuard>} />
             {/* MP-REFUNDS-STAFF-ACCESS: no PlanGuard — refunds are
                 operational and must work on every plan tier. */}
             <Route path="refunds"      element={<RoleGuard path="/refunds"><RefundsPage /></RoleGuard>} />

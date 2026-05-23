@@ -49,6 +49,10 @@ const NAV = [
   // so they only see their own history (not org-wide).
   { to: "/expenditures", en: "Expenses",   fr: "Dépenses",        icon: "💸", roles: ["owner","manager","cashier"],            section: "cashflow" },
   { to: "/reports",      en: "Reports",    fr: "Rapports",        icon: "📋", roles: ["owner","manager"],                       section: "reports" },
+  // MP-OWNER-OPERATIONS-DASHBOARD-V1: multi-day deep view sidecar
+  // to the existing Dashboard at "/". Owner + manager only; reuses
+  // the reports plan-section gate since the data class is the same.
+  { to: "/operations",   en: "Operations", fr: "Opérations",      icon: "📈", roles: ["owner","manager"],                       section: "reports" },
   { to: "/settings",     en: "Settings",   fr: "Paramètres",      icon: "⚙️", roles: ["owner","manager"],                       section: "settings" },
 ];
 
