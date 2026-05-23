@@ -122,6 +122,11 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
     setSelectedItems(prev => prev.map((it, i) => i === idx ? { ...it, returnQty: +qty } : it));
   };
 
+  // MP-VOID-REASON-REQUIRED-FIELD: derived validity for the void
+  // path's reason field. Min 3 trimmed chars matches the backend
+  // 400 VOID_REASON_REQUIRED + DB CHECK void_reason_when_voided.
+  const voidReasonValid = reason.trim().length >= 3;
+
   const handleSubmit = async () => {
     if (!pin || pin.length < 4) { setPinError(lang === "en" ? "PIN required" : "PIN requis"); return; }
     setLoading(true);
@@ -133,6 +138,17 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
       setPinError(lang === "en"
         ? "This sale is past 30 days — an override reason is required."
         : "Vente de plus de 30 jours — une raison de dérogation est requise.");
+      setLoading(false);
+      return;
+    }
+
+    // MP-VOID-REASON-REQUIRED-FIELD: void requires a reason. Frontend
+    // disables Confirm Void until voidReasonValid, but a stray
+    // keyboard-submit could still reach here — backstop.
+    if (mode === "void" && !voidReasonValid) {
+      toast.error(lang === "en"
+        ? "Reason required (helps the owner understand voids)."
+        : "Raison obligatoire (aide le patron à comprendre les annulations).");
       setLoading(false);
       return;
     }
@@ -304,8 +320,8 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
               </div>
             )}
             {mode !== "void" && pastWindow && <WindowBanner days={saleAgeDays} value={overrideReason} setValue={setOverrideReason} lang={lang} />}
-            <PinAndReason pin={pin} setPin={setPin} reason={reason} setReason={setReason} pinError={pinError} lang={lang} />
-            <ActionButtons mode="void" loading={loading} onBack={() => setMode(null)} onConfirm={handleSubmit} lang={lang} />
+            <VoidPinAndReason pin={pin} setPin={setPin} reason={reason} setReason={setReason} pinError={pinError} lang={lang} reasonValid={voidReasonValid} />
+            <ActionButtons mode="void" loading={loading} disabled={!voidReasonValid} onBack={() => setMode(null)} onConfirm={handleSubmit} lang={lang} />
           </div>
         )}
 
@@ -498,6 +514,74 @@ function WindowBanner({ days, value, setValue, lang }) {
   );
 }
 
+// MP-VOID-REASON-REQUIRED-FIELD: void-specific variant of PinAndReason.
+// Surfaces a preset-reason dropdown that pre-fills the text field so
+// the common cases ring through with one tap; "Other" keeps the field
+// editable for free-form context. Validation message renders when the
+// reason isn't yet valid so the cashier knows why Confirm is disabled.
+function VoidPinAndReason({ pin, setPin, reason, setReason, pinError, lang, reasonValid }) {
+  const PRESETS = [
+    { value: "Customer changed mind",   fr: "Le client a changé d'avis" },
+    { value: "Wrong item rung",         fr: "Mauvais article scanné" },
+    { value: "Wrong customer selected", fr: "Mauvais client sélectionné" },
+    { value: "Cashier error",           fr: "Erreur de caissier" },
+    { value: "__other__",               fr: "Autre — saisir manuellement", en: "Other — type manually" },
+  ];
+  const onPresetChange = (v) => {
+    if (!v) return;
+    if (v === "__other__") {
+      // Clear so the cashier types something — "Other" is meaningless
+      // by itself; the actual reason goes into the text field.
+      setReason("");
+      return;
+    }
+    setReason(v);
+  };
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 10 }}>
+        <div className="form-group">
+          <label className="label">🔐 {lang === "en" ? "Manager/Owner PIN *" : "PIN Manager/Patron *"}</label>
+          <input className="input" type="password" inputMode="numeric" maxLength={4}
+            value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+            placeholder="••••" style={{ textAlign: "center", letterSpacing: 6 }} />
+          {pinError && <div style={{ color: "#f87171", fontSize: 11, marginTop: 4 }}>{pinError}</div>}
+        </div>
+        <div className="form-group">
+          <label className="label">
+            {lang === "en" ? "Reason *" : "Raison *"}
+          </label>
+          <select className="input" defaultValue=""
+            onChange={e => onPresetChange(e.target.value)}
+            style={{ marginBottom: 6 }}>
+            <option value="" disabled>
+              {lang === "en" ? "Pick a common reason…" : "Choisir une raison fréquente…"}
+            </option>
+            {PRESETS.map(p => (
+              <option key={p.value} value={p.value}>
+                {p.value === "__other__"
+                  ? (lang === "en" ? p.en : p.fr)
+                  : (lang === "en" ? p.value : p.fr)}
+              </option>
+            ))}
+          </select>
+          <input className="input" value={reason} onChange={e => setReason(e.target.value)}
+            placeholder={lang === "en"
+              ? "Type the reason (min 3 chars)"
+              : "Tapez la raison (min 3 caractères)"} />
+          {!reasonValid && (
+            <div style={{ color: "#fbbf24", fontSize: 11, marginTop: 4 }}>
+              {lang === "en"
+                ? "Reason required (helps the owner understand voids)."
+                : "Raison obligatoire (aide le patron à comprendre les annulations)."}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PinAndReason({ pin, setPin, reason, setReason, pinError, lang }) {
   return (
     <div style={{ marginBottom: 14 }}>
@@ -519,20 +603,24 @@ function PinAndReason({ pin, setPin, reason, setReason, pinError, lang }) {
   );
 }
 
-function ActionButtons({ mode, loading, onBack, onConfirm, lang }) {
+function ActionButtons({ mode, loading, disabled, onBack, onConfirm, lang }) {
   const labels = {
     void: { en: "✓ Confirm Void", fr: "✓ Confirmer l'annulation" },
     refund: { en: "✓ Confirm Refund", fr: "✓ Confirmer le remboursement" },
     exchange: { en: "✓ Confirm Exchange", fr: "✓ Confirmer l'échange" },
   };
+  // MP-VOID-REASON-REQUIRED-FIELD: disabled (vs loading) styles the
+  // button as inert + cursor not-allowed so the cashier sees WHY the
+  // submit isn't firing without needing to click and read the toast.
+  const isDisabled = loading || !!disabled;
   return (
     <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
       <button onClick={onBack}
         style={{ flex: 1, padding: "10px", border: "1px solid var(--border)", borderRadius: 10, background: "transparent", color: "var(--text-secondary)", cursor: "pointer", fontWeight: 600 }}>
         ← {lang === "en" ? "Back" : "Retour"}
       </button>
-      <button onClick={onConfirm} disabled={loading}
-        style={{ flex: 2, padding: "10px", border: "none", borderRadius: 10, background: mode === "void" ? "#ef4444" : mode === "refund" ? "#fbbf24" : "var(--brand)", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 14 }}>
+      <button onClick={onConfirm} disabled={isDisabled}
+        style={{ flex: 2, padding: "10px", border: "none", borderRadius: 10, background: mode === "void" ? "#ef4444" : mode === "refund" ? "#fbbf24" : "var(--brand)", color: "#fff", cursor: isDisabled ? "not-allowed" : "pointer", opacity: isDisabled ? 0.55 : 1, fontWeight: 700, fontSize: 14 }}>
         {loading ? "..." : (lang === "en" ? labels[mode].en : labels[mode].fr)}
       </button>
     </div>
