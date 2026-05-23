@@ -166,10 +166,21 @@ function buildBodyLines(eventType, data, lang, org) {
     if (applied.length || ghost) {
       lines.push("─────────────────────");
       lines.push(en ? "Applied to:" : "Imputé sur :");
+      // MP-DEBT-COLLECTION-RECEIPT-DISPLAY-BUG: the live
+      // collect_debt_no_invoice RPC emits applied_to_invoices
+      // entries shaped { sale_number, applied } — not the
+      // .amount / .applied_amount names this code was reading.
+      // Result: every line rendered "VNT-XXXX — 0 F". Read
+      // .applied first; keep .amount / .applied_amount as
+      // fallbacks for any pre-current-shape entries. Use ??
+      // (not ||) so a legitimate 0 doesn't fall through to a
+      // larger fallback value. Defensive null skip for any
+      // malformed array element.
       applied.forEach(inv => {
+        if (!inv) return;
         const ref = inv.sale_number || inv.sale_id || "?";
-        const amt = fmtAmt(inv.amount || inv.applied_amount || 0);
-        lines.push(`  ${ref} — ${amt} F`);
+        const raw = inv.applied ?? inv.amount ?? inv.applied_amount ?? 0;
+        lines.push(`  ${ref} — ${fmtAmt(raw)} F`);
       });
       if (ghost > 0) {
         lines.push(`  ${en ? "Outstanding debt (no invoice)" : "Dette en cours (sans facture)"} — ${fmtAmt(ghost)} F`);
