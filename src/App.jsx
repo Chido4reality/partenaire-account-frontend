@@ -47,16 +47,23 @@ class ErrorBoundary extends Component {
   }
 }
 
-// Route access rules per role
+// Route access rules per role.
+//
+// MP-CASHIER-ROLE-GATING: cashier role is restricted from org-level
+// views. Dashboard, Reports, Settings, Credits (debt-aging analytics)
+// stay owner+manager only. /customers and /expenditures now allow
+// cashier (the former for debt-collection flows, the latter for
+// drawer-accounted expenses cashier records during a shift — own-data
+// filter applied at backend layer for /expenditures).
 const ROUTE_ACCESS = {
-  "/":             ["owner", "manager", "cashier", "warehouse"],
+  "/":             ["owner", "manager", "warehouse"],
   "/pos":          ["owner", "manager", "cashier"],
   "/online-cart":  ["owner", "manager", "cashier"],
   "/inventory":    ["owner", "manager", "warehouse"],
-  "/customers":    ["owner", "manager"],
+  "/customers":    ["owner", "manager", "cashier"],
   "/credits":      ["owner", "manager"],
   "/transfers":    ["owner", "manager", "warehouse"],
-  "/expenditures": ["owner", "manager"],
+  "/expenditures": ["owner", "manager", "cashier"],
   "/reports":      ["owner", "manager"],
   // MP-REFUNDS-STAFF-ACCESS: refunds/exchanges are operational —
   // every role that can sell must also be able to process a return.
@@ -77,6 +84,16 @@ function RoleGuard({ path, children }) {
   const user = useAuthStore(s => s.user);
   const allowed = ROUTE_ACCESS[path] || ["owner"];
   if (!user || !allowed.includes(user.role)) {
+    // MP-CASHIER-ROLE-GATING: cashier hitting a gated route is
+    // redirected to /pos (their primary workspace) rather than
+    // shown the Access Restricted message — they were never
+    // supposed to navigate there in the first place (nav items
+    // are filtered too). Other roles (warehouse) keep the
+    // explanatory page since they have multiple legitimate
+    // workspaces and a redirect target isn't obvious.
+    if (user?.role === "cashier" && path !== "/pos") {
+      return <Navigate to="/pos" replace />;
+    }
     return (
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", padding: 40, textAlign: "center" }}>
         <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>

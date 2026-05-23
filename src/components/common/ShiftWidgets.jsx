@@ -312,6 +312,7 @@ function CategoryRow({ label, total, count, sign, children, color }) {
 
 export function CloseShiftModal({ open, onClose, shift, onClosed }) {
   const { lang } = useLangStore();
+  const { user } = useAuthStore();
   const qc = useQueryClient();
 
   const [actual, setActual]         = useState("");
@@ -327,10 +328,16 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
   // them into sales_cash / debt_collection / void_refunds / etc.
   // Each category carries a transactions[] drilldown so expand
   // is no-fetch.
+  //
+  // MP-CASHIER-ROLE-GATING: the categorized view is owner+manager
+  // only — backend returns 403 for cashier. Disable the query for
+  // cashier to avoid the 403 noise + render the simple lump-sum
+  // pa_drawer_ledger fallback (which works without this fetch).
+  const canSeeCategorized = user?.role !== "cashier";
   const { data: catResp } = useQuery({
     queryKey: ["shift-categorized", shift?.shift_id],
     queryFn: () => api.get(`/shifts/${shift.shift_id}/categorized`).then(r => r.data?.data),
-    enabled: open && !!shift?.shift_id,
+    enabled: open && !!shift?.shift_id && canSeeCategorized,
   });
   const cat = catResp || null;
   const fr  = lang === "fr";

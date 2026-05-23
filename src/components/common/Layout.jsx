@@ -17,8 +17,14 @@ import toast from "react-hot-toast";
 // tier includes them). Other sections are filtered against the effective
 // plan via hasSection(). `cashier` and `warehouse` role-restricts apply
 // on top of the plan filter.
+// MP-CASHIER-ROLE-GATING: cashier role is restricted from org-level
+// views (Dashboard, Reports, Settings, Credits-analytics) but
+// retains access to operational screens needed for daily till
+// work — POS, Online Cart, Shifts (own only), Refunds, Customers
+// (incl. debt-collection paths), Expenses (own-data only at the
+// backend layer).
 const NAV = [
-  { to: "/",             en: "Dashboard",  fr: "Tableau de bord", icon: "📊", roles: ["owner","manager","cashier","warehouse"], section: "dashboard" },
+  { to: "/",             en: "Dashboard",  fr: "Tableau de bord", icon: "📊", roles: ["owner","manager","warehouse"],          section: "dashboard" },
   { to: "/pos",          en: "Sales",      fr: "Ventes",          icon: "🛒", roles: ["owner","manager","cashier"],            section: "sales" },
   { to: "/online-cart",  en: "Online Cart",fr: "Panier en ligne", icon: "📥", roles: ["owner","manager","cashier"],            section: "online_cart", badge: "online_cart" },
   { to: "/shifts",       en: "Cash",       fr: "Caisse",          icon: "💰", roles: ["owner","manager","cashier"],            section: "cashflow" },
@@ -30,10 +36,17 @@ const NAV = [
   { to: "/stock-count",  en: "Count",      fr: "Comptage",        icon: "🔢", roles: ["owner","manager","warehouse"],          section: "count" },
   { to: "/barcodes",     en: "Labels",     fr: "Étiquettes",      icon: "🏷️", roles: ["owner","manager","warehouse"],          section: "labels" },
   { to: "/inventory",    en: "Inventory",  fr: "Inventaire",      icon: "📦", roles: ["owner","manager","warehouse"],          section: "inventory" },
-  { to: "/customers",    en: "Customers",  fr: "Clients",         icon: "👥", roles: ["owner","manager"],                       section: "customers" },
+  // MP-CASHIER-ROLE-GATING: cashier needs Customers for the
+  // Encaisser-dette flow + on-the-fly customer creation during
+  // sales. Backend collect-debt route already cashier-eligible.
+  { to: "/customers",    en: "Customers",  fr: "Clients",         icon: "👥", roles: ["owner","manager","cashier"],            section: "customers" },
   { to: "/credits",      en: "Credits",    fr: "Crédits",         icon: "💳", roles: ["owner","manager"],                       section: "credits" },
   { to: "/transfers",    en: "Transfers",  fr: "Transferts",      icon: "🔄", roles: ["owner","manager","warehouse"],          section: "transfers" },
-  { to: "/expenditures", en: "Expenses",   fr: "Dépenses",        icon: "💸", roles: ["owner","manager"],                       section: "cashflow" },
+  // MP-CASHIER-ROLE-GATING: cashier records petty-cash expenses
+  // (boss errands, drawer outflows, personal). Backend filters
+  // GET /expenditures by recorded_by=req.user.id for cashier role
+  // so they only see their own history (not org-wide).
+  { to: "/expenditures", en: "Expenses",   fr: "Dépenses",        icon: "💸", roles: ["owner","manager","cashier"],            section: "cashflow" },
   { to: "/reports",      en: "Reports",    fr: "Rapports",        icon: "📋", roles: ["owner","manager"],                       section: "reports" },
   { to: "/settings",     en: "Settings",   fr: "Paramètres",      icon: "⚙️", roles: ["owner","manager"],                       section: "settings" },
 ];
