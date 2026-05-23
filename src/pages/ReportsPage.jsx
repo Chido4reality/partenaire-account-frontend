@@ -1002,25 +1002,25 @@ export default function ReportsPage() {
 
                 {/* ── 3-BLOCK PROFESSIONAL REPORT (when backend provides blocks) ── */}
                 {bl ? (() => {
-                  // MP-DAILY-REPORT-COLLAPSIBLE-BLOCKS: summary lines
-                  // for the collapsed Shifts + Outstanding headers.
-                  // Computed from existing block data — no backend
-                  // change needed. Shows on the right of the header
-                  // when collapsed; hidden when expanded (the user's
-                  // already looking at the full content).
-                  const shiftsList   = bl.shifts || [];
-                  const shiftsClosed = shiftsList.filter(s => !!s.closed_at).length;
-                  const shiftsOpen   = shiftsList.length - shiftsClosed;
-                  const shiftDrawer  = shiftsList.reduce(
+                  // MP-DAILY-REPORT-COLLAPSIBLE-BLOCKS (revised):
+                  // single subtotal number per collapsed block — no
+                  // verbose summary. Computed from existing block data.
+                  //   Block 1: "Day net: ±X FCFA" (net_cash_flow)
+                  //   Block 2: sum(expected_drawer) across shifts
+                  //   Block 3: net new credit extended today
+                  //            (impaye_aujourdhui / debt_issued_today;
+                  //            same value the daily report uses for
+                  //            "Credit issued today").
+                  const shiftsList    = bl.shifts || [];
+                  const shiftDrawer   = shiftsList.reduce(
                     (s, r) => s + (Number(r.expected_drawer) || 0), 0);
-                  const shiftsSummary = shiftsList.length === 0
+                  const dayFlowSubtotal = lang === "en"
+                    ? `Day net: ${formatCFA(bl.day_flow.net_cash_flow)}`
+                    : `Net du jour: ${formatCFA(bl.day_flow.net_cash_flow)}`;
+                  const shiftsSubtotal = shiftsList.length === 0
                     ? (lang === "en" ? "no shifts" : "aucun poste")
-                    : (lang === "en"
-                        ? `${shiftsClosed} closed · ${shiftsOpen} open · drawer ${formatCFA(shiftDrawer)}`
-                        : `${shiftsClosed} fermé · ${shiftsOpen} ouvert · caisse ${formatCFA(shiftDrawer)}`);
-                  const outstandingSummary = lang === "en"
-                    ? `Credit today ${formatCFA(bl.outstanding.debt_issued_today)} · Receivables ${formatCFA(bl.outstanding.total_customer_debt_all_time)}`
-                    : `Crédit du jour ${formatCFA(bl.outstanding.debt_issued_today)} · Créances ${formatCFA(bl.outstanding.total_customer_debt_all_time)}`;
+                    : `${formatCFA(shiftDrawer)} FCFA`;
+                  const outstandingSubtotal = `${formatCFA(bl.outstanding.debt_issued_today)} FCFA`;
                   return (
                   <>
                     <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 12, textAlign: "center", letterSpacing: "0.3px" }}>
@@ -1030,7 +1030,8 @@ export default function ReportsPage() {
 
                     {/* ── BLOCK 1 — DAY FLOW (default expanded) ─ */}
                     <CollapsibleBlock
-                      title={`1. ${lang === "en" ? "DAY FLOW" : "MOUVEMENT DU JOUR"}`}
+                      title={`📊 ${lang === "en" ? "DAY FLOW" : "MOUVEMENT DU JOUR"}`}
+                      subtotalValue={dayFlowSubtotal}
                       expanded={blockExpanded.day_flow}
                       onToggle={toggleBlock("day_flow")}>
                       <BlockRow label={lang === "en" ? "Sales today" : "Ventes du jour"} value={formatCFA(bl.day_flow.sales.total)} bold />
@@ -1060,8 +1061,8 @@ export default function ReportsPage() {
 
                     {/* ── BLOCK 2 — SHIFTS (default collapsed) ── */}
                     <CollapsibleBlock
-                      title={`2. 🗂️ ${lang === "en" ? "SHIFTS" : "POSTES"}`}
-                      summaryLine={shiftsSummary}
+                      title={`🗂️ ${lang === "en" ? "SHIFTS" : "POSTES"}`}
+                      subtotalValue={shiftsSubtotal}
                       expanded={blockExpanded.shifts}
                       onToggle={toggleBlock("shifts")}>
                       {bl.shifts.length === 0 ? (
@@ -1110,8 +1111,8 @@ export default function ReportsPage() {
 
                     {/* ── BLOCK 3 — OUTSTANDING (default collapsed) ── */}
                     <CollapsibleBlock
-                      title={`3. 📒 ${lang === "en" ? "OUTSTANDING" : "EN SUSPENS"}`}
-                      summaryLine={outstandingSummary}
+                      title={`📒 ${lang === "en" ? "OUTSTANDING" : "EN SUSPENS"}`}
+                      subtotalValue={outstandingSubtotal}
                       expanded={blockExpanded.outstanding}
                       onToggle={toggleBlock("outstanding")}>
                       <BlockRow label={lang === "en" ? "Debt issued today" : "Crédit accordé aujourd'hui"}

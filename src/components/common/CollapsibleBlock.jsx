@@ -1,29 +1,39 @@
-// MP-DAILY-REPORT-COLLAPSIBLE-BLOCKS
+// MP-DAILY-REPORT-COLLAPSIBLE-BLOCKS (revised)
 //
-// Generic accordion section. Header with title (left) + summary line
-// (right, only visible when collapsed) + chevron. Entire header is the
-// click target so the tap area is friendly on mobile. Content area
-// animates via max-height + opacity for a smooth open/close.
+// Generic accordion section. Header with title (left) + a single
+// subtotal number (right, collapsed only) + chevron / ✕ icon. Entire
+// header row is the click target so the tap area is friendly on
+// mobile. Content area animates via max-height + opacity for smooth
+// open/close.
+//
+// Visual contract:
+//   collapsed:  [Title]                       [subtotalValue] [▾]
+//   expanded:   [Title]                                       [✕]
+//   ──────────────────────────────────────────────────────────────
+//   {children}
+//
+// The whole header row toggles either way; the ✕ when expanded just
+// gives the user a more obvious "close this" affordance than a
+// chevron alone.
 //
 // Modes:
 //   uncontrolled — pass `defaultExpanded`; the component owns the
-//                  open state. Useful for one-offs.
+//                  open state.
 //   controlled   — pass `expanded` + `onToggle`. State lives in the
 //                  parent so it survives child re-renders / tab
 //                  switches without resetting. The daily-report uses
 //                  this mode (state lifted to ReportsPage so the
 //                  Ledger tab remembers expansions within the session).
 //
-// No new deps — pure inline styles + a CSS transition. The codebase
-// uses inline styles throughout (Tailwind is configured but rarely
-// applied at the component level), so this matches the prevailing
-// pattern.
+// No new deps — pure inline styles + CSS transitions. Inline-styled
+// to match the prevailing pattern in this codebase (Tailwind is
+// configured but rarely applied at the component level).
 
 import { useState } from "react";
 
 export default function CollapsibleBlock({
   title,
-  summaryLine,
+  subtotalValue,
   defaultExpanded = false,
   expanded: controlledExpanded,
   onToggle,
@@ -45,7 +55,7 @@ export default function CollapsibleBlock({
       marginBottom: 14,
       overflow: "hidden",
     }}>
-      {/* Header (always rendered; full row is the click target) */}
+      {/* Header — always rendered; full row is the click target. */}
       <button
         type="button"
         onClick={toggle}
@@ -74,39 +84,58 @@ export default function CollapsibleBlock({
           gap:        10,
           minWidth:   0,
         }}>
-          {!expanded && summaryLine && (
+          {!expanded && subtotalValue && (
+            // Subtotal — single number, right-aligned, prominent enough
+            // to read at a glance but doesn't overshadow the title.
             <span style={{
-              fontSize:    12,
-              color:       "var(--text-muted)",
-              fontWeight:  500,
+              fontSize:    13,
+              fontWeight:  700,
+              color:       "var(--text-primary)",
               minWidth:    0,
               overflow:    "hidden",
               textOverflow: "ellipsis",
               whiteSpace:  "nowrap",
             }}>
-              {summaryLine}
+              {subtotalValue}
             </span>
           )}
-          <span
-            aria-hidden="true"
-            style={{
-              fontSize:   14,
-              color:      "var(--text-muted)",
-              transition: "transform 200ms ease-out",
-              transform:  expanded ? "rotate(180deg)" : "rotate(0deg)",
-              display:    "inline-block",
-              lineHeight: 1,
-            }}
-          >
-            ▾
-          </span>
+          {expanded ? (
+            // ✕ when expanded — explicit "close this" affordance per
+            // the revised spec. Same click target as the rest of the
+            // header (the parent button handles it).
+            <span
+              aria-hidden="true"
+              style={{
+                fontSize:    16,
+                color:       "var(--text-muted)",
+                lineHeight:  1,
+                display:     "inline-block",
+                width:       18,
+                textAlign:   "right",
+              }}
+            >
+              ✕
+            </span>
+          ) : (
+            <span
+              aria-hidden="true"
+              style={{
+                fontSize:   14,
+                color:      "var(--text-muted)",
+                display:    "inline-block",
+                lineHeight: 1,
+              }}
+            >
+              ▾
+            </span>
+          )}
         </span>
       </button>
 
-      {/* Content area — max-height collapse for smooth animation. Using
-          a generous max-height (3000px) since real block content rarely
-          exceeds that; auto would skip the transition because the
-          browser can't interpolate to/from `auto`. */}
+      {/* Content area — max-height collapse for smooth animation. The
+          3000px ceiling is generous since real block content rarely
+          exceeds that; using auto would skip the transition because
+          the browser can't interpolate to/from `auto`. */}
       <div
         style={{
           maxHeight:  expanded ? 3000 : 0,
