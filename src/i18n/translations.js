@@ -1,4 +1,4 @@
-﻿export const translations = {
+export const translations = {
   en: {
     nav:{dashboard:"Dashboard",sales:"Sales",inventory:"Inventory",customers:"Customers",credits:"Credits",transfers:"Transfers",expenditures:"Expenses",reports:"Reports",settings:"Settings"},
     auth:{login:"Sign In",logout:"Sign Out",phone:"Phone number",password:"Password",loginBtn:"Sign In",register:"Create account",creating:"Creating...",logging:"Signing in..."},

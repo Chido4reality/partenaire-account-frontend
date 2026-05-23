@@ -1,4 +1,4 @@
-﻿import { useLangStore } from "../store";
+import { useLangStore } from "../store";
 
 const Shell = ({ icon, titleKey, children }) => {
   const { t } = useLangStore();

@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // MP-REFUND-SEARCH-ENHANCED: optional title / placeholder /
 // inputMode props let consumers reuse the scanner for non-product

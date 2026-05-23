@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import CameraScanner from "./CameraScanner";
 
 // Detect if device is mobile/tablet

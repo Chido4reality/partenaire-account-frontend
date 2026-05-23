@@ -1,1 +1,12 @@
-node_modules/ 
+node_modules/
+dist/
+
+# MP-LOCAL-DEV-FIX-LOGIN-AND-STRIPE: untrack local env files. Each
+# developer points their .env at the backend URL they're running
+# against (local Express vs Render); production env vars live in
+# the Vercel dashboard, not in the repo. .env.example is the
+# tracked placeholder.
+.env
+.env.local
+.env.*.local
+.env.development
