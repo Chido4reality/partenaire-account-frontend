@@ -7,6 +7,7 @@ import VoidReturnModal from "../components/common/VoidReturnModal";
 import { genSaleCodes } from "../utils/receiptCodes";
 import { buildLedgerTextV2 as buildLedgerTextUtil, buildWeeklyText as buildWeeklyTextUtil,
   refundKindLabel, shortRetRef } from "../utils/reportText";
+import CollapsibleBlock from "../components/common/CollapsibleBlock";
 
 // MP-DEBT-LINE-FULL-VISIBILITY: pa_sale_items can now hold debt-payment
 // rows (line_type='debt_payment', product_id=NULL). Helpers to keep
@@ -44,6 +45,19 @@ export default function ReportsPage() {
   // MP-REFUNDS-LIST-TYPED-LABELS: filter chips above the refunds list
   // in the daily report. Pure client-side narrowing of ledger.refunds.items.
   const [refundFilter, setRefundFilter] = useState("all"); // all | refunds | exchanges | voids
+
+  // MP-DAILY-REPORT-COLLAPSIBLE-BLOCKS: accordion expand state for the
+  // 3-block daily report. State lives here (not inside CollapsibleBlock)
+  // so the Ledger tab survives intra-session re-renders + tab switches
+  // without resetting to defaults. Block 1 (Day Flow) defaults open;
+  // Blocks 2 (Shifts) + 3 (Outstanding) default closed.
+  const [blockExpanded, setBlockExpanded] = useState({
+    day_flow:    true,
+    shifts:      false,
+    outstanding: false,
+  });
+  const toggleBlock = (key) => (next) =>
+    setBlockExpanded(prev => ({ ...prev, [key]: typeof next === "boolean" ? next : !prev[key] }));
 
   // Deep-link from the global order search: /reports?sale=<id>&on=<YYYY-MM-DD>.
   // Jump to the Sales Detail tab, widen the range to that day so the
@@ -987,18 +1001,38 @@ export default function ReportsPage() {
               <div className="card" style={{ maxWidth: 620, margin: "0 auto", padding: "20px 22px" }}>
 
                 {/* ── 3-BLOCK PROFESSIONAL REPORT (when backend provides blocks) ── */}
-                {bl ? (
+                {bl ? (() => {
+                  // MP-DAILY-REPORT-COLLAPSIBLE-BLOCKS: summary lines
+                  // for the collapsed Shifts + Outstanding headers.
+                  // Computed from existing block data — no backend
+                  // change needed. Shows on the right of the header
+                  // when collapsed; hidden when expanded (the user's
+                  // already looking at the full content).
+                  const shiftsList   = bl.shifts || [];
+                  const shiftsClosed = shiftsList.filter(s => !!s.closed_at).length;
+                  const shiftsOpen   = shiftsList.length - shiftsClosed;
+                  const shiftDrawer  = shiftsList.reduce(
+                    (s, r) => s + (Number(r.expected_drawer) || 0), 0);
+                  const shiftsSummary = shiftsList.length === 0
+                    ? (lang === "en" ? "no shifts" : "aucun poste")
+                    : (lang === "en"
+                        ? `${shiftsClosed} closed · ${shiftsOpen} open · drawer ${formatCFA(shiftDrawer)}`
+                        : `${shiftsClosed} fermé · ${shiftsOpen} ouvert · caisse ${formatCFA(shiftDrawer)}`);
+                  const outstandingSummary = lang === "en"
+                    ? `Credit today ${formatCFA(bl.outstanding.debt_issued_today)} · Receivables ${formatCFA(bl.outstanding.total_customer_debt_all_time)}`
+                    : `Crédit du jour ${formatCFA(bl.outstanding.debt_issued_today)} · Créances ${formatCFA(bl.outstanding.total_customer_debt_all_time)}`;
+                  return (
                   <>
                     <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 12, textAlign: "center", letterSpacing: "0.3px" }}>
                       {lang === "en" ? "DAILY REPORT" : "RAPPORT DU JOUR"}
                       {ledger.location?.name && <span style={{ color: "var(--text-muted)", fontWeight: 500 }}> — {ledger.location.name}</span>}
                     </div>
 
-                    {/* ── BLOCK 1 — DAY FLOW ─────────────────── */}
-                    <div style={{ padding: "14px 16px", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 12, marginBottom: 14 }}>
-                      <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8, color: "var(--brand-light)" }}>
-                        1. {lang === "en" ? "DAY FLOW" : "MOUVEMENT DU JOUR"}
-                      </div>
+                    {/* ── BLOCK 1 — DAY FLOW (default expanded) ─ */}
+                    <CollapsibleBlock
+                      title={`1. ${lang === "en" ? "DAY FLOW" : "MOUVEMENT DU JOUR"}`}
+                      expanded={blockExpanded.day_flow}
+                      onToggle={toggleBlock("day_flow")}>
                       <BlockRow label={lang === "en" ? "Sales today" : "Ventes du jour"} value={formatCFA(bl.day_flow.sales.total)} bold />
                       <BlockRow indent label={lang === "en" ? "Paid cash" : "Payé espèces"} value={formatCFA(bl.day_flow.sales.paid_cash)} />
                       <BlockRow indent label={lang === "en" ? "Paid MoMo" : "Payé MoMo"} value={formatCFA(bl.day_flow.sales.paid_momo)} />
@@ -1022,13 +1056,14 @@ export default function ReportsPage() {
                       <BlockRow label={lang === "en" ? "Net cash flow" : "Flux net espèces"}
                                 value={formatCFA(bl.day_flow.net_cash_flow)} bold
                                 color={bl.day_flow.net_cash_flow < 0 ? "#f87171" : "#34d399"} />
-                    </div>
+                    </CollapsibleBlock>
 
-                    {/* ── BLOCK 2 — SHIFTS ───────────────────── */}
-                    <div style={{ padding: "14px 16px", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 12, marginBottom: 14 }}>
-                      <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8, color: "var(--brand-light)" }}>
-                        2. {lang === "en" ? "SHIFTS" : "POSTES"}
-                      </div>
+                    {/* ── BLOCK 2 — SHIFTS (default collapsed) ── */}
+                    <CollapsibleBlock
+                      title={`2. 🗂️ ${lang === "en" ? "SHIFTS" : "POSTES"}`}
+                      summaryLine={shiftsSummary}
+                      expanded={blockExpanded.shifts}
+                      onToggle={toggleBlock("shifts")}>
                       {bl.shifts.length === 0 ? (
                         <div style={{ color: "var(--text-muted)", fontSize: 13, padding: "6px 0" }}>
                           {lang === "en" ? "No shift opened today." : "Aucun poste ouvert aujourd'hui."}
@@ -1071,21 +1106,23 @@ export default function ReportsPage() {
                           </div>
                         );
                       })}
-                    </div>
+                    </CollapsibleBlock>
 
-                    {/* ── BLOCK 3 — OUTSTANDING ──────────────── */}
-                    <div style={{ padding: "14px 16px", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 12, marginBottom: 18 }}>
-                      <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8, color: "var(--brand-light)" }}>
-                        3. {lang === "en" ? "OUTSTANDING" : "EN SUSPENS"}
-                      </div>
+                    {/* ── BLOCK 3 — OUTSTANDING (default collapsed) ── */}
+                    <CollapsibleBlock
+                      title={`3. 📒 ${lang === "en" ? "OUTSTANDING" : "EN SUSPENS"}`}
+                      summaryLine={outstandingSummary}
+                      expanded={blockExpanded.outstanding}
+                      onToggle={toggleBlock("outstanding")}>
                       <BlockRow label={lang === "en" ? "Debt issued today" : "Crédit accordé aujourd'hui"}
                                 value={formatCFA(bl.outstanding.debt_issued_today)}
                                 color={bl.outstanding.debt_issued_today > 0 ? "#fbbf24" : undefined} />
                       <BlockRow label={lang === "en" ? "Total customer debt (all time)" : "Dette client totale (tous comptes)"}
                                 value={formatCFA(bl.outstanding.total_customer_debt_all_time)} bold />
-                    </div>
+                    </CollapsibleBlock>
                   </>
-                ) : (
+                  );
+                })() : (
                   /* ── FALLBACK: legacy SimpleRow summary (back-compat with older backends) ── */
                   <div style={{ marginBottom: 22, padding: "16px 18px", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 12 }}>
                     <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10, textAlign: "center", letterSpacing: "0.3px" }}>
