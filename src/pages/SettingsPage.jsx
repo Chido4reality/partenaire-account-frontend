@@ -51,6 +51,13 @@ export default function SettingsPage() {
 
   // Dozie state
   const [dozieForm, setDozieForm] = useState({ dozie_pin: "", city: "Douala", shop_description: "" });
+  // MP-DOZIE-ACTIVATE-UI: dedicated PIN-only form used by both
+  // State B (linked-but-no-PIN) and State C "Change PIN" affordance.
+  // Separate from dozieForm so we don't carry stale city/description
+  // through the PIN-only path.
+  const [doziePinForm, setDoziePinForm] = useState({ new_pin: "", confirm_pin: "" });
+  const [showChangeDoziePin, setShowChangeDoziePin] = useState(false);
+  const [doziePinError, setDoziePinError] = useState("");
 
   // Sprint A: enable unconditionally — we use my-plan for the branding
   // gate and Dozie city restrictions, so it must be available on every
@@ -270,6 +277,40 @@ export default function SettingsPage() {
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
+
+  // MP-DOZIE-ACTIVATE-UI: PIN-only mutation. Used by State B
+  // (initial PIN set on auto-linked org) and State C Change PIN.
+  // Backend /dozie/activate handles both via its SAME-ORG branch —
+  // sends back mode: "initial_pin_set" | "pin_changed" so we can
+  // localize the toast.
+  const setDoziePinMutation = useMutation({
+    mutationFn: () => api.post("/dozie/activate", { dozie_pin: doziePinForm.new_pin }),
+    onSuccess: (res) => {
+      const mode = res?.data?.data?.mode;
+      const msg = mode === "pin_changed"
+        ? (lang === "en" ? "✓ Dozie PIN updated" : "✓ PIN Dozie mis à jour")
+        : (lang === "en" ? "✓ Dozie PIN set — you can now sell on Partenaire Dozie" : "✓ PIN Dozie défini — vous pouvez vendre sur Partenaire Dozie");
+      toast.success(msg);
+      setDoziePinForm({ new_pin: "", confirm_pin: "" });
+      setShowChangeDoziePin(false);
+      setDoziePinError("");
+      qc.invalidateQueries(["dozie-status"]);
+    },
+    onError: (err) => setDoziePinError(err.response?.data?.message || "Error")
+  });
+
+  const handleDoziePinSave = () => {
+    if (doziePinForm.new_pin.length !== 4 || !/^\d{4}$/.test(doziePinForm.new_pin)) {
+      setDoziePinError(lang === "en" ? "PIN must be exactly 4 digits" : "PIN doit être exactement 4 chiffres");
+      return;
+    }
+    if (doziePinForm.new_pin !== doziePinForm.confirm_pin) {
+      setDoziePinError(lang === "en" ? "PINs don't match" : "Les PIN ne correspondent pas");
+      return;
+    }
+    setDoziePinError("");
+    setDoziePinMutation.mutate();
+  };
 
   const locations = locData?.data || [];
   const staff = staffData?.data || [];
@@ -750,6 +791,62 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
+          ) : dozieStatus?.activated && !dozieStatus?.has_pin ? (
+            /* ── State B: auto-linked, owner needs to set a PIN ── */
+            <div style={{ background: "var(--bg-card)", border: "1px solid rgba(79,70,229,0.35)", borderRadius: 16, padding: 24 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <div style={{ fontSize: 28 }}>🔑</div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 15 }}>
+                    {lang === "en"
+                      ? "Set your Dozie PIN"
+                      : "Définissez votre PIN Dozie"}
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2, lineHeight: 1.5 }}>
+                    {lang === "en"
+                      ? "Your shop is already connected to Partenaire Dozie. Set a 4-digit PIN to start selling."
+                      : "Votre boutique est déjà connectée à Partenaire Dozie. Définissez un PIN à 4 chiffres pour commencer à vendre."}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 16 }}>
+                <div className="form-group">
+                  <label className="label">{lang === "en" ? "New PIN (4 digits)" : "Nouveau PIN (4 chiffres)"}</label>
+                  <input className="input" type="password" inputMode="numeric" maxLength={4}
+                    value={doziePinForm.new_pin}
+                    onChange={e => setDoziePinForm(f => ({ ...f, new_pin: e.target.value.replace(/\D/g, "").slice(0, 4) }))}
+                    placeholder="••••" style={{ textAlign: "center", letterSpacing: 6 }} autoFocus />
+                </div>
+                <div className="form-group">
+                  <label className="label">{lang === "en" ? "Confirm PIN" : "Confirmer le PIN"}</label>
+                  <input className="input" type="password" inputMode="numeric" maxLength={4}
+                    value={doziePinForm.confirm_pin}
+                    onChange={e => setDoziePinForm(f => ({ ...f, confirm_pin: e.target.value.replace(/\D/g, "").slice(0, 4) }))}
+                    onKeyDown={e => { if (e.key === "Enter") handleDoziePinSave(); }}
+                    placeholder="••••" style={{ textAlign: "center", letterSpacing: 6 }} />
+                </div>
+              </div>
+
+              {doziePinError && (
+                <div style={{ color: "#f87171", fontSize: 12, marginBottom: 12 }}>{doziePinError}</div>
+              )}
+
+              <button className="btn btn-primary"
+                style={{ width: "100%", height: 46, marginTop: 8 }}
+                disabled={doziePinForm.new_pin.length !== 4 || setDoziePinMutation.isPending}
+                onClick={handleDoziePinSave}>
+                {setDoziePinMutation.isPending
+                  ? "..."
+                  : (lang === "en" ? "✦ Set PIN and start selling" : "✦ Définir le PIN et commencer à vendre")}
+              </button>
+
+              <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: "rgba(79,70,229,0.08)", border: "1px solid rgba(79,70,229,0.2)", fontSize: 12, color: "var(--brand-light)", lineHeight: 1.5 }}>
+                💡 {lang === "en"
+                  ? "After setting your PIN, log into Partenaire Dozie with your registered phone number and this PIN. Your active MP products will be listed automatically."
+                  : "Après avoir défini votre PIN, connectez-vous à Partenaire Dozie avec votre numéro de téléphone et ce PIN. Vos produits MP actifs seront listés automatiquement."}
+              </div>
+            </div>
           ) : dozieStatus?.activated ? (
             <div style={{ background: "var(--bg-card)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: 16, padding: 24 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
@@ -775,6 +872,69 @@ export default function SettingsPage() {
                 💡 {lang === "en"
                   ? "Log in to Partenaire Dozie using your registered phone number and the Dozie PIN you set during activation."
                   : "Connectez-vous à Partenaire Dozie avec votre numéro de téléphone et le code PIN Dozie défini lors de l'activation."}
+              </div>
+
+              {/* MP-DOZIE-ACTIVATE-UI: Change Dozie PIN affordance.
+                  Collapsed by default; expands the same 2-input PIN
+                  form used in State B. Backend /dozie/activate's
+                  SAME-ORG branch handles both initial-set and
+                  change-PIN cases via the same endpoint. */}
+              <div style={{ marginTop: 16, padding: 14, borderRadius: 10, background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: showChangeDoziePin ? 14 : 0 }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>
+                      🔑 {lang === "en" ? "Dozie login PIN" : "PIN de connexion Dozie"}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>
+                      {lang === "en"
+                        ? "Change the 4-digit PIN you use to log into Partenaire Dozie."
+                        : "Modifier le PIN à 4 chiffres utilisé pour se connecter à Partenaire Dozie."}
+                    </div>
+                  </div>
+                  <button onClick={() => {
+                      const next = !showChangeDoziePin;
+                      setShowChangeDoziePin(next);
+                      if (!next) { setDoziePinForm({ new_pin: "", confirm_pin: "" }); setDoziePinError(""); }
+                    }}
+                    style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid var(--border)", background: "transparent", color: "var(--text-secondary)", cursor: "pointer", fontWeight: 600, fontSize: 12 }}>
+                    {showChangeDoziePin
+                      ? (lang === "en" ? "Cancel" : "Annuler")
+                      : (lang === "en" ? "Change PIN" : "Changer PIN")}
+                  </button>
+                </div>
+
+                {showChangeDoziePin && (
+                  <div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                      <div className="form-group">
+                        <label className="label">{lang === "en" ? "New PIN (4 digits)" : "Nouveau PIN (4 chiffres)"}</label>
+                        <input className="input" type="password" inputMode="numeric" maxLength={4}
+                          value={doziePinForm.new_pin}
+                          onChange={e => setDoziePinForm(f => ({ ...f, new_pin: e.target.value.replace(/\D/g, "").slice(0, 4) }))}
+                          placeholder="••••" style={{ textAlign: "center", letterSpacing: 6 }} autoFocus />
+                      </div>
+                      <div className="form-group">
+                        <label className="label">{lang === "en" ? "Confirm PIN" : "Confirmer le PIN"}</label>
+                        <input className="input" type="password" inputMode="numeric" maxLength={4}
+                          value={doziePinForm.confirm_pin}
+                          onChange={e => setDoziePinForm(f => ({ ...f, confirm_pin: e.target.value.replace(/\D/g, "").slice(0, 4) }))}
+                          onKeyDown={e => { if (e.key === "Enter") handleDoziePinSave(); }}
+                          placeholder="••••" style={{ textAlign: "center", letterSpacing: 6 }} />
+                      </div>
+                    </div>
+                    {doziePinError && (
+                      <div style={{ color: "#f87171", fontSize: 12, marginBottom: 12 }}>{doziePinError}</div>
+                    )}
+                    <button className="btn btn-primary"
+                      style={{ minWidth: 180 }}
+                      disabled={doziePinForm.new_pin.length !== 4 || setDoziePinMutation.isPending}
+                      onClick={handleDoziePinSave}>
+                      {setDoziePinMutation.isPending
+                        ? "..."
+                        : (lang === "en" ? "Save new PIN" : "Sauvegarder le nouveau PIN")}
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* FU.5 — Pause / Reopen entire Dozie shop. */}
