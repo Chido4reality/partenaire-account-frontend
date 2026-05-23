@@ -305,9 +305,15 @@ export default function POSPage() {
     : [];
 
   // ── PRICE TIER: auto-apply based on customer type ───────────────────────────
+  // MP-CUSTOMER-TYPE-PRICING-TIER (Bug C): wholesale, vip, AND
+  // garage all use wholesale_price. Only retail (and the Dozie
+  // marketplace flow, which doesn't reach this handler) fall
+  // back to sell_price. Pre-fix: only wholesale picked the tier;
+  // VIP customers were charged sell_price (VNT-0002 repro).
+  const TIER_TYPES = ["wholesale", "vip", "garage"];
+  const isTierCustomer = (cust) => TIER_TYPES.includes(cust?.customer_type);
   const getPrice = (product) => {
-    const customerType = customer?.customer_type || "retail";
-    if (customerType === "wholesale" && product.wholesale_price > 0) {
+    if (isTierCustomer(customer) && product.wholesale_price > 0) {
       return product.wholesale_price;
     }
     return product.sell_price;
@@ -978,9 +984,9 @@ export default function POSPage() {
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 600, fontSize: 13 }}>{customer.name}</div>
                   {customer.phone && <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{customer.phone}</div>}
-                  {customer.customer_type === "wholesale" && (
+                  {isTierCustomer(customer) && (
                     <div style={{ fontSize: 10, background: "rgba(251,191,36,0.15)", color: "#fbbf24", padding: "2px 8px", borderRadius: 10, fontWeight: 700, marginTop: 2, display: "inline-block" }}>
-                      🏭 {lang === "en" ? "Wholesale prices applied" : "Prix gros appliqués"}
+                      🏷 {lang === "en" ? "Tier prices applied" : "Prix préférentiels appliqués"}
                     </div>
                   )}
                   {customer.total_debt > 0 && (
@@ -1126,8 +1132,8 @@ export default function POSPage() {
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
                     <div style={{ fontWeight: 700, color: "var(--brand-light)", fontSize: 14 }}>
-                      {formatCFA(customer?.customer_type === "wholesale" && p.wholesale_price > 0 ? p.wholesale_price : p.sell_price)}
-                      {customer?.customer_type === "wholesale" && p.wholesale_price > 0 && (
+                      {formatCFA(isTierCustomer(customer) && p.wholesale_price > 0 ? p.wholesale_price : p.sell_price)}
+                      {isTierCustomer(customer) && p.wholesale_price > 0 && (
                         <span style={{ fontSize: 9, background: "#fbbf24", color: "#000", borderRadius: 4, padding: "1px 4px", marginLeft: 4, fontWeight: 700 }}>GROS</span>
                       )}
                     </div>
