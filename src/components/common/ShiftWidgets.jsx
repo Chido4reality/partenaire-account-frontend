@@ -76,8 +76,39 @@ function Row({ label, value, positive, negative }) {
 export function OpenShiftModal({ open, onClose, onOpened }) {
   const { lang } = useLangStore();
   const { user } = useAuthStore();
-  const { selectedLocation } = useSettingsStore();
+  const { selectedLocation, setLocation } = useSettingsStore();
   const qc = useQueryClient();
+
+  // MP-OPEN-SHIFT-LOCATION-CLARITY: load the org's locations so
+  // we can render a prominent in-modal dropdown when there's a
+  // real choice. Reuses the ["locations"] react-query key the
+  // rest of the app already populates — likely a cache hit.
+  const { data: locsResp } = useQuery({
+    queryKey: ["locations"],
+    queryFn: () => api.get("/locations").then(r => r.data),
+    enabled: open,
+  });
+  const locations = locsResp?.data || [];
+  const multiLoc = locations.length > 1;
+  const singleLoc = locations.length === 1;
+
+  // Local in-modal selection. Defaults to the store's
+  // selectedLocation (which doubles as "most recently active"
+  // since it persists across sessions), falling back to first
+  // alphabetical when no store value exists.
+  const sortedLocs = [...locations].sort((a, b) =>
+    String(a.name || "").localeCompare(String(b.name || "")));
+  const [chosenLocId, setChosenLocId] = useState(selectedLocation?.id || null);
+  useEffect(() => {
+    if (!open) return;
+    const next = selectedLocation?.id
+      || (sortedLocs[0] && sortedLocs[0].id)
+      || null;
+    setChosenLocId(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, selectedLocation?.id, locations.length]);
+  const chosenLoc = locations.find(l => l.id === chosenLocId) || selectedLocation || null;
+  const chosenName = chosenLoc?.name || (lang === "fr" ? "Aucun" : "None");
 
   const [openingFloat, setOpeningFloat] = useState("");
   const [notes, setNotes]               = useState("");
@@ -85,19 +116,26 @@ export function OpenShiftModal({ open, onClose, onOpened }) {
 
   const fl = Number(openingFloat);
   const validInput = openingFloat !== "" && Number.isFinite(fl) && fl >= 0;
-  const hasLoc     = !!selectedLocation?.id;
+  const hasLoc     = !!chosenLocId;
 
   const m = useMutation({
     mutationFn: () => api.post("/shifts/open", {
-      location_id:   selectedLocation?.id,
+      location_id:   chosenLocId,
       opening_float: fl,
       notes:         notes || null,
     }),
     onSuccess: (res) => {
       const d = res?.data?.data || {};
+      // Sync the global store to whatever was picked so the rest
+      // of the app (sales, refunds, etc.) attributes to the SAME
+      // location the shift was opened at. Without this, the top-
+      // bar location selector could silently disagree.
+      if (chosenLoc && chosenLocId !== selectedLocation?.id) {
+        setLocation(chosenLoc);
+      }
       toast.success(lang === "fr"
-        ? `Poste ouvert avec ${formatCFA(d.opening_float)}`
-        : `Shift opened with ${formatCFA(d.opening_float)}`);
+        ? `Poste ouvert à ${chosenName} avec ${formatCFA(d.opening_float)}`
+        : `Shift opened at ${chosenName} with ${formatCFA(d.opening_float)}`);
       // New keys (canonical) + legacy keys (still read by the
       // bridge ShiftsPage table until Stage 2 swap completes).
       qc.invalidateQueries({ queryKey: ["current-shift"] });
@@ -126,18 +164,48 @@ export function OpenShiftModal({ open, onClose, onOpened }) {
   return (
     <ModalShell onClose={() => { setError(null); onClose(); }} busy={m.isPending}>
       <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>
-        🔓 {lang === "fr" ? "Ouvrir le poste de caisse" : "Open cash shift"}
+        🔓 {multiLoc
+          ? (lang === "fr" ? "Choisir l'emplacement et le fond de caisse" : "Choose location and opening float")
+          : (lang === "fr" ? "Ouvrir le poste de caisse" : "Open cash shift")}
       </div>
       <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
         {lang === "fr" ? "Comptez le fond de caisse au démarrage." : "Count the opening float."}
       </div>
 
-      <div style={{ background: "var(--bg-card)", borderRadius: 10, padding: "10px 14px", marginBottom: 14 }}>
-        <Row label={lang === "fr" ? "Emplacement" : "Location"}
-             value={selectedLocation?.name || (lang === "fr" ? "Aucun" : "None")}
-             negative={!hasLoc} />
-        <Row label={lang === "fr" ? "Caissier" : "Cashier"}
-             value={user?.full_name || user?.name || "—"} />
+      {/* MP-OPEN-SHIFT-LOCATION-CLARITY: prominent in-modal
+          location picker. Read-only display when only one
+          location exists (no real choice to make); full
+          dropdown when there are multiple. Either way, sits
+          at the top of the modal so the cashier sees which
+          till they're committing to before they enter cash. */}
+      <div style={{
+        background: "var(--bg-card)", borderRadius: 10,
+        padding: "12px 14px", marginBottom: 14,
+        border: multiLoc ? "1px solid rgba(79,70,229,0.30)" : "1px solid transparent",
+      }}>
+        <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>
+          {lang === "fr" ? "Ouvrir la caisse à" : "Open shift at"}
+        </div>
+        {multiLoc ? (
+          <select
+            className="input"
+            value={chosenLocId || ""}
+            onChange={e => setChosenLocId(e.target.value)}
+            style={{ fontSize: 15, fontWeight: 700 }}
+            autoFocus>
+            {sortedLocs.map(l => (
+              <option key={l.id} value={l.id}>{l.name}</option>
+            ))}
+          </select>
+        ) : (
+          <div style={{ fontSize: 15, fontWeight: 700, color: hasLoc ? "var(--text-primary)" : "#f87171" }}>
+            📍 {chosenName}
+          </div>
+        )}
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)" }}>
+          <Row label={lang === "fr" ? "Caissier" : "Cashier"}
+               value={user?.full_name || user?.name || "—"} />
+        </div>
       </div>
 
       <div className="form-group">
@@ -148,7 +216,7 @@ export function OpenShiftModal({ open, onClose, onOpened }) {
           value={openingFloat}
           onChange={e => { setOpeningFloat(e.target.value); setError(null); }}
           placeholder="0"
-          autoFocus
+          autoFocus={!multiLoc}
           style={{ fontSize: 18, fontWeight: 700, textAlign: "center" }} />
         {openingFloat !== "" && !validInput && (
           <div style={{ fontSize: 11, color: "#f87171", marginTop: 4, fontWeight: 600 }}>
@@ -522,6 +590,12 @@ export function ActiveShiftIndicator() {
   const isOpen   = !!(data && data.shift_id);
   const opened   = isOpen && new Date(data.opened_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
   const expected = Number(data?.expected_drawer || 0);
+  // MP-OPEN-SHIFT-LOCATION-CLARITY: show WHICH location the
+  // shift is at so cashiers know which till they're committing
+  // to. Backend echoes location_name; fall back to the store's
+  // current selectedLocation name (matches the shift the
+  // /current query was scoped to via location_id param).
+  const locName = data?.location_name || selectedLocation?.name || null;
 
   return (
     <>
@@ -539,7 +613,13 @@ export function ActiveShiftIndicator() {
           onMouseLeave={e => e.currentTarget.style.background = "rgba(16,185,129,0.10)"}
           title={lang === "fr" ? "Cliquer pour fermer le poste" : "Click to close the shift"}>
           <span style={{ fontSize: 14, fontWeight: 700, color: "#34d399" }}>
-            🟢 {lang === "fr" ? `Poste ouvert depuis ${opened}` : `Shift open since ${opened}`}
+            🟢 {locName
+              ? (lang === "fr"
+                  ? `Poste ouvert à ${locName} depuis ${opened}`
+                  : `Shift open at ${locName} since ${opened}`)
+              : (lang === "fr"
+                  ? `Poste ouvert depuis ${opened}`
+                  : `Shift open since ${opened}`)}
           </span>
           <span style={{ color: "var(--text-muted)", fontSize: 12 }}>•</span>
           <span style={{ fontSize: 13 }}>

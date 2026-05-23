@@ -396,11 +396,18 @@ export default function DrawerDashboardCard() {
       </span>
     );
 
-  // Leading text — emoji + title + "open since" / "closed at" sub.
+  // Leading text — emoji + title (with location when known) +
+  // "open since" / "closed at" sub.
+  // MP-OPEN-SHIFT-LOCATION-CLARITY: append "at {location}" to the
+  // title so the cashier knows which till this card is showing.
+  const locName = shift?.location_name || null;
+  const title = locName
+    ? (fr ? `Caisse du jour à ${locName}` : `Today's drawer at ${locName}`)
+    : (fr ? "Caisse du jour" : "Today's drawer");
   const leading = (
     <>
       <span style={{ fontSize: 14, fontWeight: 700 }}>
-        💰 {fr ? "Caisse du jour" : "Today's drawer"}
+        💰 {title}
       </span>
       <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
         ·{" "}{hasOpenShift
