@@ -11,6 +11,14 @@ export default defineConfig({
       srcDir: "src",
       filename: "sw.js",
       includeAssets: ["icon.svg"],
+      // MP-LOCAL-DEV-STILL-BROKEN-AFTER-D5775C1: make the dev contract
+      // explicit — virtual:pwa-register's registerSW() is a no-op in
+      // dev unless devOptions.enabled is true. We never want it true:
+      // dev mode should have ZERO service-worker activity so HMR is
+      // clean, env-var changes propagate without cache surprises, and
+      // a broken SW from a prior session can be cleared once via the
+      // browser's Application tab without re-registering on next load.
+      devOptions: { enabled: false },
       manifest: {
         name:             "Mon Partenaire",
         short_name:       "Partenaire",
