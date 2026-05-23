@@ -8,6 +8,7 @@ import { nukeClientState, hardRedirectToLogin } from "../../utils/authReset";
 import UpgradeModal from "./UpgradeModal";
 import PaywallModal from "./PaywallModal";
 import OfflineBanner from "./OfflineBanner";
+import OnlineOfflineBar from "./OnlineOfflineBar";
 import { startAutoSync, processPendingQueue } from "../../utils/syncService";
 import { hasSection } from "../../utils/planCapabilities";
 import toast from "react-hot-toast";
@@ -593,6 +594,12 @@ export default function Layout() {
   if (isMobile) {
     return (
       <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
+        {/* MP-CAPACITOR Slice 2: connectivity bar at very top of every
+            screen. Collapses to 4px stripe when online+synced so it
+            doesn't burn vertical space; expands to a banner when
+            offline. Slice 3 will pass pendingCount/syncing as the
+            offline queue wakes up. */}
+        <OnlineOfflineBar />
         <ImpersonationBanner />
         <BroadcastBanner />
         <div style={{ background: "var(--bg-surface)", borderBottom: "1px solid var(--border)", padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
@@ -645,6 +652,10 @@ export default function Layout() {
   // ── DESKTOP LAYOUT ────────────────────────────────────────────────────────────
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
+      {/* MP-CAPACITOR Slice 2: connectivity bar at very top — same
+          placement as mobile so the cashier sees the same indicator
+          regardless of viewport. */}
+      <OnlineOfflineBar />
       <ImpersonationBanner />
       <BroadcastBanner />
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
