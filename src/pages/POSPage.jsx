@@ -73,6 +73,12 @@ export default function POSPage() {
   // Staff now get a toast.error inline; no override mechanism.
   const [showReceipt, setShowReceipt]       = useState(false);
   const [lastSale, setLastSale]             = useState(null);
+  // MP-POS-COLLECT-DEBT-CART-NO-RECEIPT (Bug A): separate state
+  // for the debt-cart receipt so the sale receipt + debt-cart
+  // receipt can coexist (one closes, the other opens). Shape:
+  // { data: {...} } compatible with PaymentEventReceipt
+  // eventType='debt_collection'.
+  const [debtReceiptEvent, setDebtReceiptEvent] = useState(null);
   const [debtInvoices, setDebtInvoices]       = useState([]);
   const [selectedDebtIds, setSelectedDebtIds] = useState(new Set());
   const [debtPayAmt, setDebtPayAmt]           = useState(""); // partial debt payment amount
@@ -201,6 +207,12 @@ export default function POSPage() {
     enabled: !!customer?.id && (customer?.total_debt || 0) > 0,
     staleTime: 0,
   });
+  // MP-INVOICE-DISPLAY-NET-OF-RETURNS (Bug B): paper_record_balance
+  // is the slice of customer.total_debt that doesn't have a
+  // backing open invoice (collect_debt_no_invoice ghost residual,
+  // cart-debt-line carryover, manual adjustments). Displayed
+  // below the invoice list as "Previous balance".
+  const debtPaperBalance = Number(customerDebtData?.paper_record_balance || 0);
 
   // MP-POS-DEBT-CART-FLOW: NO auto-collect. Outstanding invoices keep
   // the original per-invoice modal (unchanged, works). Manual / paper-
@@ -354,7 +366,12 @@ export default function POSPage() {
   const addDebtToCart = () => {
     const selected = debtInvoices.filter(i => selectedDebtIds.has(i.id));
     if (!selected.length) { setShowDebtModal(false); return; }
-    const totalAmt = selected.reduce((s, i) => s + parseFloat(i.balance_due), 0);
+    // MP-INVOICE-DISPLAY-NET-OF-RETURNS (Bug B): use effective
+    // balance (post net-of-refund-credit-portion) for cart totals
+    // and per-invoice display. Falls back to raw balance_due on
+    // legacy API responses that haven't been redeployed yet.
+    const totalAmt = selected.reduce((s, i) =>
+      s + parseFloat(i.effective_balance_due ?? i.balance_due), 0);
     const refs = selected.map(i => i.sale_number).join(", ");
     setCart(prev => [
       ...prev.filter(i => i.product_id !== "__DEBT__"),
@@ -484,15 +501,27 @@ export default function POSPage() {
         const totalDebt  = debtItem.debtAmount;
         const amountToPay = debtPayAmt ? Math.min(parseFloat(debtPayAmt), totalDebt) : totalDebt;
         let remaining = amountToPay;
+        // MP-POS-COLLECT-DEBT-CART-NO-RECEIPT (Bug A): capture each
+        // /sales/:id/payment response so onSuccess can aggregate
+        // them into a debt_collection-shape receipt payload.
+        // Same fix family as commit 4c64605 (CreditsPage), now
+        // covering the multi-invoice POS-cart path.
+        const responses = [];
         for (const saleId of debtItem.debtSaleIds) {
           if (remaining <= 0) break;
           const inv = debtInvoices.find(i => i.id === saleId);
           if (!inv) continue;
-          const payThis = Math.min(remaining, parseFloat(inv.balance_due));
-          await api.post(`/sales/${saleId}/payment`, { amount: payThis, payment_method: payMethod, notes: notes || null });
+          // MP-INVOICE-DISPLAY-NET-OF-RETURNS (Bug B): cap at
+          // effective_balance_due (after-refund-credit-portion)
+          // not raw balance_due. Falls back to balance_due on
+          // older API responses that don't carry effective yet.
+          const cap = parseFloat(inv.effective_balance_due ?? inv.balance_due);
+          const payThis = Math.min(remaining, cap);
+          const r = await api.post(`/sales/${saleId}/payment`, { amount: payThis, payment_method: payMethod, notes: notes || null });
+          responses.push(r?.data?.data || {});
           remaining -= payThis;
         }
-        return { isDebt: true };
+        return { isDebt: true, responses, totalPaid: amountToPay };
       }
 
       const salePayload = {
@@ -560,6 +589,45 @@ export default function POSPage() {
       // any response landing here is a genuine backend response.)
       if (data?.isDebt) {
         toast.success(lang === "en" ? "✓ Debt payment recorded!" : "✓ Remboursement enregistré!", { duration: 2000 });
+        // MP-POS-COLLECT-DEBT-CART-NO-RECEIPT (Bug A): aggregate
+        // per-invoice responses into a debt_collection-shape
+        // payload so the shared receipt component renders with
+        // applied_to_invoices breakdown + customer debt
+        // before/after. For single-invoice carts this also
+        // surfaces a receipt (was silently toast-only before).
+        const responses = data.responses || [];
+        if (responses.length > 0) {
+          const first = responses[0];
+          const last  = responses[responses.length - 1];
+          const applied_to_invoices = responses.map(r => ({
+            sale_id:     r.sale_id,
+            sale_number: r.sale_number,
+            applied:     Number(r.amount) || 0,
+          }));
+          setDebtReceiptEvent({
+            data: {
+              // Multi-invoice has no single sale_number to encode
+              // in the QR; if exactly one invoice, use its
+              // sale_number so QR renders. Otherwise null = no QR
+              // (the receipt just shows the applied_to_invoices
+              // list which is the relevant info anyway).
+              sale_number:    responses.length === 1 ? first.sale_number : null,
+              amount:         Number(data.totalPaid) || 0,
+              payment_method: first.payment_method,
+              applied_to_invoices,
+              ghost_portion:  0,
+              debt_before:    first.debt_before,
+              debt_after:     last.debt_after,
+              customer_id:    first.customer_id,
+              customer_name:  first.customer_name,
+              customer_phone: first.customer_phone,
+              cashier_name:   first.cashier_name,
+              location_id:    first.location_id,
+              location_name:  first.location_name,
+              shift_id:       first.shift_id,
+            }
+          });
+        }
       } else {
         // D-2.4: link the new sale back to its Online Cart entry so
         // the entry moves to Completed, void can reverse it, and
@@ -881,17 +949,36 @@ export default function POSPage() {
                       <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{inv.sale_date}{inv.due_date && ` · Due ${inv.due_date}`}</div>
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      <div style={{ fontWeight: 700, color: "#f87171", fontSize: 14 }}>{formatCFA(inv.balance_due)}</div>
+                      {/* MP-INVOICE-DISPLAY-NET-OF-RETURNS (Bug B):
+                          effective_balance_due is balance_due
+                          minus the sum of audit-logged credit-
+                          portion reversals from prior refunds.
+                          Falls back to balance_due on older API
+                          responses. */}
+                      <div style={{ fontWeight: 700, color: "#f87171", fontSize: 14 }}>
+                        {formatCFA(inv.effective_balance_due ?? inv.balance_due)}
+                      </div>
                       <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{inv.payment_status}</div>
                     </div>
                   </div>
                 );
               })}
             </div>
+            {/* Optional residual line: customer.total_debt minus
+                sum of effective invoice balances. Surfaces paper-
+                record debt (ghost-residual from cart-debt-line
+                carryover, manual adjustments, collect_debt_no_
+                invoice ghosts) that has no backing invoice. */}
+            {debtPaperBalance > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 14px", marginBottom: 8, fontSize: 12, color: "var(--text-muted)", borderTop: "1px dashed var(--border)", paddingTop: 10 }}>
+                <span>{lang === "en" ? "Previous balance" : "Solde antérieur"}</span>
+                <span style={{ fontWeight: 600 }}>{formatCFA(debtPaperBalance)}</span>
+              </div>
+            )}
             {selectedDebtIds.size > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 14px", background: "rgba(239,68,68,0.08)", borderRadius: 10, marginBottom: 16, fontSize: 13 }}>
                 <span style={{ fontWeight: 600 }}>{lang === "en" ? "To collect:" : "À encaisser :"}</span>
-                <strong style={{ color: "#f87171" }}>{formatCFA(debtInvoices.filter(i => selectedDebtIds.has(i.id)).reduce((s, i) => s + parseFloat(i.balance_due), 0))}</strong>
+                <strong style={{ color: "#f87171" }}>{formatCFA(debtInvoices.filter(i => selectedDebtIds.has(i.id)).reduce((s, i) => s + parseFloat(i.effective_balance_due ?? i.balance_due), 0))}</strong>
               </div>
             )}
             <div style={{ display: "flex", gap: 10 }}>
@@ -1391,6 +1478,19 @@ export default function POSPage() {
           org={orgSettings}
           lang={lang}
           onClose={() => setShowReceipt(false)}
+        />
+      )}
+
+      {/* MP-POS-COLLECT-DEBT-CART-NO-RECEIPT (Bug A): debt-cart
+          receipt. Aggregated from per-invoice /sales/:id/payment
+          responses into a debt_collection-shape payload. */}
+      {debtReceiptEvent && (
+        <PaymentEventReceipt
+          eventType="debt_collection"
+          data={debtReceiptEvent.data}
+          org={orgSettings}
+          lang={lang}
+          onClose={() => setDebtReceiptEvent(null)}
         />
       )}
 

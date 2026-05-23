@@ -45,6 +45,12 @@ export default function CreditsPage() {
   });
 
   const openInvoices = debtDetail?.data || [];
+  // MP-INVOICE-DISPLAY-NET-OF-RETURNS (Bug B): the slice of the
+  // customer's total_debt that has no backing open invoice
+  // (paper-record / ghost-residual). Surfaces as a "Previous
+  // balance" row so sum(invoice balances) + paper = total_debt.
+  const paperRecordBalance = Number(debtDetail?.paper_record_balance || 0);
+  const customerEffectiveTotal = Number(debtDetail?.customer_total_debt || 0);
 
   const payMutation = useMutation({
     mutationFn: ({ saleId }) => api.post(`/sales/${saleId}/payment`, {
@@ -93,7 +99,7 @@ export default function CreditsPage() {
       msg += lang === "en" ? "\nInvoice details:\n" : "\nDétails des factures:\n";
       openInvoices.slice(0, 3).forEach(s => {
         const date = new Date(s.sale_date || s.created_at).toLocaleDateString("fr-FR");
-        msg += `• ${s.sale_number} (${date}): ${(+s.balance_due).toLocaleString()} FCFA\n`;
+        msg += `• ${s.sale_number} (${date}): ${(+(s.effective_balance_due ?? s.balance_due)).toLocaleString()} FCFA\n`;
       });
       if (openInvoices.length > 3) msg += `• ...et ${openInvoices.length - 3} autre(s)\n`;
     }
@@ -267,6 +273,21 @@ export default function CreditsPage() {
             </div>
           ) : (
             <div style={{ display: "grid", gap: 8 }}>
+              {paperRecordBalance > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 14px", background: "var(--bg-card)", border: "1px dashed var(--border)", borderRadius: 10, fontSize: 12, color: "var(--text-muted)" }}>
+                  <div>
+                    <div style={{ fontWeight: 600, color: "var(--text-secondary)" }}>
+                      {lang === "en" ? "Previous balance" : "Solde antérieur"}
+                    </div>
+                    <div style={{ fontSize: 10, marginTop: 2 }}>
+                      {lang === "en"
+                        ? "Legacy debt without a specific invoice (paper / manual / ghost residual)"
+                        : "Dette historique sans facture spécifique (papier / manuelle / résidu)"}
+                    </div>
+                  </div>
+                  <strong style={{ color: "#f87171", fontSize: 14 }}>{formatCFA(paperRecordBalance)}</strong>
+                </div>
+              )}
               {openInvoices.map(sale => (
                 <div key={sale.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
@@ -284,7 +305,7 @@ export default function CreditsPage() {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ fontSize: 12 }}>
                       <span style={{ color: "#f87171", fontWeight: 600 }}>
-                        {lang === "en" ? "Balance:" : "Reste:"} {formatCFA(sale.balance_due)}
+                        {lang === "en" ? "Balance:" : "Reste:"} {formatCFA((sale.effective_balance_due ?? sale.balance_due))}
                       </span>
                       {sale.due_date && (
                         <span style={{ marginLeft: 10, color: sale.due_date < today ? "#f87171" : "var(--text-muted)", fontSize: 11 }}>
@@ -294,7 +315,7 @@ export default function CreditsPage() {
                       )}
                     </div>
                     <button className="btn btn-success btn-sm"
-                      onClick={() => { setPayForm(f => ({ ...f, amount: sale.balance_due })); setShowPay(sale); }}>
+                      onClick={() => { setPayForm(f => ({ ...f, amount: (sale.effective_balance_due ?? sale.balance_due) })); setShowPay(sale); }}>
                       💰 {lang === "en" ? "Record payment" : "Paiement"}
                     </button>
                   </div>
@@ -341,7 +362,7 @@ export default function CreditsPage() {
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, paddingTop: 8, borderTop: "1px solid var(--border)", marginTop: 4 }}>
                 <span style={{ fontWeight: 600 }}>{lang === "en" ? "Balance due" : "Reste à payer"}</span>
-                <span style={{ color: "#f87171", fontWeight: 700 }}>{formatCFA(showPay.balance_due)}</span>
+                <span style={{ color: "#f87171", fontWeight: 700 }}>{formatCFA((showPay.effective_balance_due ?? showPay.balance_due))}</span>
               </div>
             </div>
 
@@ -349,7 +370,7 @@ export default function CreditsPage() {
               <label className="label">{lang === "en" ? "Amount received (FCFA)" : "Montant reçu (FCFA)"} *</label>
               <input className="input" type="number" value={payForm.amount}
                 onChange={e => setP("amount", e.target.value)}
-                placeholder={String(showPay.balance_due)} />
+                placeholder={String((showPay.effective_balance_due ?? showPay.balance_due))} />
             </div>
             <div className="form-group">
               <label className="label">{lang === "en" ? "Payment method" : "Mode de paiement"}</label>
