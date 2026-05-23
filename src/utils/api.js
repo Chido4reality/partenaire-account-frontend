@@ -1,18 +1,140 @@
 import axios from "axios";
 import { useAuthStore, useLangStore } from "../store";
+import { enqueue, configureSync, startWorker, genLocalId } from "./pendingSync";
+import { getNetworkStatus } from "./network";
 
 // Timeout intentionally generous: the service worker has its own 4s abort timer
 // for offline detection, then writes to IndexedDB and posts a message. A short
 // axios timeout (e.g. 5s) can fire DURING that fallback and surface as a hang.
-const api = axios.create({ baseURL: import.meta.env.VITE_API_URL || "/api", timeout: 15000 });
+const BASE_URL = import.meta.env.VITE_API_URL || "/api";
+const api = axios.create({ baseURL: BASE_URL, timeout: 15000 });
+
+// MP-CAPACITOR-AND-OFFLINE-FIRST-ARCHITECTURE Slice 3: hand the
+// queue worker the same baseURL + auth token getter we use here so
+// it can replay queued POSTs against the same backend. configureSync
+// is idempotent — calling it on every module load is fine.
+configureSync({
+  baseUrl:      BASE_URL,
+  getAuthToken: () => useAuthStore.getState().token,
+});
+startWorker();
+
+// MP-CAPACITOR Slice 3: write paths that participate in the offline
+// queue. When the device is offline, POSTs to these endpoints are
+// enqueued + returned to the caller with an optimistic response so
+// the cashier UI can move forward; when online, they fire normally
+// but a 5xx still gets caught + enqueued so a transient outage
+// doesn't lose the write either.
+//
+// /returns/{return,exchange,void}/:saleId are the three return-flow
+// shapes; all three go through the same backend handler (processReturn
+// or void_sale RPC) that supports local_id idempotency.
+const OFFLINE_ELIGIBLE = [
+  { rx: /^\/sales\/?$/,                            method: "POST" },
+  { rx: /^\/sales\/[^/]+\/payment\/?$/,            method: "POST" },
+  { rx: /^\/returns\/(return|exchange|void)\/[^/]+\/?$/, method: "POST" },
+  { rx: /^\/expenditures\/?$/,                     method: "POST" },
+  { rx: /^\/stock-transfers\/?$/,                  method: "POST" },
+  { rx: /^\/stock\/arrivals\/?$/,                  method: "POST" },
+];
+
+function isOfflineEligible(method, url) {
+  if (!url) return false;
+  const m = (method || "GET").toUpperCase();
+  // Strip query string + leading baseURL if axios resolved it.
+  const path = url.replace(BASE_URL, "").split("?")[0];
+  return OFFLINE_ELIGIBLE.some(e => e.method === m && e.rx.test(path));
+}
+
+// Optimistic response for offline enqueue. The cashier UI expects a
+// {data: {...}} shape mirroring the backend's success payload.
+// Server fields the device can't know yet (sale_number, server_id,
+// created_at) get OFFLINE-prefixed placeholders the UI can display
+// + the canonical values land on the local mirror when the queue
+// drains and the dedupe replay returns the server's row.
+function buildOptimisticResponse(endpoint, payload, localId) {
+  const ts = Date.now();
+  const offlineRef = `OFFLINE-${ts}`;
+  return {
+    data: {
+      success: true,
+      offline_queued: true,
+      data: {
+        server_id:    null,
+        local_id:     localId,
+        sale_number:  offlineRef,
+        return_ref:   offlineRef,
+        ...payload,
+        // Common echo fields the UI reads.
+        id:           localId,
+        created_at:   new Date(ts).toISOString(),
+      },
+    },
+    status:     202,
+    statusText: "Queued for sync",
+    headers:    {},
+    config:     {},
+  };
+}
 
 api.interceptors.request.use(config => {
   const token = useAuthStore.getState().token;
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  // MP-CAPACITOR Slice 3: stamp local_id on every offline-eligible
+  // POST regardless of online state. Online → backend dedupes via
+  // (org_id, local_id) unique index (Slice 1). Offline → the queue
+  // worker reuses this exact local_id on replay so the same write
+  // can't land twice.
+  if (isOfflineEligible(config.method, config.url) && config.data && typeof config.data === "object" && !config.data.local_id) {
+    config.data = { ...config.data, local_id: genLocalId() };
+  }
   return config;
 });
 
-api.interceptors.response.use(res => res, err => {
+// MP-CAPACITOR Slice 3: pre-flight check for offline-eligible writes.
+// If the device is offline we never even hit the network — straight
+// to the queue, optimistic response returned synchronously. Wrap in
+// an adapter-style shim that runs BEFORE axios's transport so axios
+// doesn't surface a network error to the caller.
+const _originalAdapter = api.defaults.adapter;
+api.defaults.adapter = async function offlineAwareAdapter(config) {
+  if (isOfflineEligible(config.method, config.url)) {
+    let net;
+    try { net = await getNetworkStatus(); } catch { net = { connected: true }; }
+    if (!net.connected) {
+      const payload = typeof config.data === "string" ? safeJson(config.data) : (config.data || {});
+      const localId = payload.local_id || genLocalId();
+      payload.local_id = localId;
+      const endpoint = (config.url || "").replace(BASE_URL, "");
+      await enqueue({ endpoint, method: (config.method || "POST").toUpperCase(), payload });
+      return buildOptimisticResponse(endpoint, payload, localId);
+    }
+  }
+  return _originalAdapter(config);
+};
+
+function safeJson(s) { try { return JSON.parse(s); } catch { return {}; } }
+
+api.interceptors.response.use(res => res, async err => {
+  // MP-CAPACITOR Slice 3: 5xx on an offline-eligible write → enqueue
+  // for replay so a transient backend hiccup doesn't lose the cashier's
+  // action. Network errors (no response) also enqueue. 4xx still bubbles
+  // — those are validation errors the user needs to see now.
+  const cfg = err.config || {};
+  if (isOfflineEligible(cfg.method, cfg.url)) {
+    const isNetworkErr = !err.response;
+    const is5xx = err.response && err.response.status >= 500;
+    if (isNetworkErr || is5xx) {
+      try {
+        const payload = typeof cfg.data === "string" ? safeJson(cfg.data) : (cfg.data || {});
+        const localId = payload.local_id || genLocalId();
+        payload.local_id = localId;
+        const endpoint = (cfg.url || "").replace(BASE_URL, "");
+        await enqueue({ endpoint, method: (cfg.method || "POST").toUpperCase(), payload });
+        return Promise.resolve(buildOptimisticResponse(endpoint, payload, localId));
+      } catch { /* fall through to error bubble */ }
+    }
+  }
   if (err.response?.status === 401) { useAuthStore.getState().logout(); window.location.href = "/login"; }
   // Sprint A: any 403 with { error: 'upgrade_required' } pops the universal
   // PaywallModal. Layout listens for this event so individual pages don't
