@@ -72,7 +72,7 @@ export default function OnlineOfflineBar() {
                  : (pendingCount > 0
                      ? `Hors ligne · ${pendingCount} en attente`
                      : 'Hors ligne') },
-    conflict: { bg: '#ef4444', text: '#ffffff', emoji: '⚠',
+    conflict: { bg: '#fbbf24', text: '#0b1220', emoji: '⚠',
                label: en
                  ? `${conflictCount} sync conflict${conflictCount === 1 ? '' : 's'} — tap to review`
                  : `${conflictCount} conflit${conflictCount === 1 ? '' : 's'} — appuyez pour revoir` },

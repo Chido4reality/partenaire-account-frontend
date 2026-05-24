@@ -7,7 +7,6 @@ import { openWhatsApp } from "../../utils/whatsapp";
 import { nukeClientState, hardRedirectToLogin } from "../../utils/authReset";
 import UpgradeModal from "./UpgradeModal";
 import PaywallModal from "./PaywallModal";
-import OfflineBanner from "./OfflineBanner";
 import OnlineOfflineBar from "./OnlineOfflineBar";
 import { startAutoSync, processPendingQueue } from "../../utils/syncService";
 import { hasSection } from "../../utils/planCapabilities";
@@ -772,8 +771,6 @@ export default function Layout() {
         </nav>
 
         <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
-          <OfflineBanner lang={lang} collapsed={collapsed} />
-
           {!collapsed && (
             <div style={{ position: "relative", marginBottom: 6 }}>
               <button id="notif-bell-desktop" onClick={() => setShowNotif(s => !s)} style={{ width: "100%", padding: "6px 10px", borderRadius: 8, background: "rgba(255,255,255,0.05)", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: 11, textAlign: "left", display: "flex", justifyContent: "space-between" }}>
