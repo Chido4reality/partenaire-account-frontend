@@ -107,6 +107,12 @@ export default function POSPage() {
   const custRef       = useRef(null);
   const barcodeBuffer = useRef("");
   const barcodeTimer  = useRef(null);
+  // MP-DOZIE-CART-PREFILL-STOCK-MISSING: the Dozie hydration effect
+  // below has empty deps but needs to wait for allProducts to load
+  // before it can populate location-scoped stock. The deps array now
+  // includes allProducts?.data so the effect retries once it arrives;
+  // this ref makes sure the prefill body still only runs once.
+  const dozieHydrationRanRef = useRef(false);
 
   useEffect(() => {
     if (scanMode !== "usb") return;
@@ -243,11 +249,24 @@ export default function POSPage() {
   // mapping to a full pa_product so the cart row matches the exact
   // shape addToCart() produces (don't fork the cart model). The sale
   // is linked back to the entry on finalize (saleMutation.onSuccess).
+  //
+  // MP-DOZIE-CART-PREFILL-STOCK-MISSING: GET /products/:id (singular)
+  // does NOT carry location-scoped stock, so the original prefill
+  // set stock:undefined per item — which attemptCheckout then treats
+  // as "not stocked at this location" and hard-blocks the sale.
+  // Cross-look up allProducts (the location-scoped useQuery loaded
+  // above) so the hydrated cart row carries the correct stock value.
+  // Wait until allProducts has loaded before running — the ref guard
+  // makes sure the body still only runs once even though the effect
+  // re-fires when allProducts arrives async after mount.
   useEffect(() => {
+    if (dozieHydrationRanRef.current) return;
     const params = new URLSearchParams(window.location.search);
     const fromOnline = params.get("from_online");
     const fromSession = params.get("session") || "";
     if (!fromOnline) return;
+    if (!allProducts?.data) return; // wait for location-scoped products to load
+    dozieHydrationRanRef.current = true;
     let cancelled = false;
     (async () => {
       try {
@@ -258,10 +277,17 @@ export default function POSPage() {
           toast.error(lang === "en" ? "No mapped items on that order" : "Aucun article associé");
           return;
         }
+        const locScopedById = new Map((allProducts.data || []).map(ap => [ap.id, ap]));
         const hydrated = await Promise.all(mappings.map(async m => {
           try {
             const p = await api.get(`/products/${m.product_id}`).then(r => r.data?.data);
             if (!p) return null;
+            // Pull location-scoped stock from the cached list — falls back
+            // to null when the product isn't in the limit=200 page (rare
+            // edge; backend NOT_STOCKED_AT_LOCATION still backstops on
+            // submit, so null is the safe pessimistic default).
+            const locScoped = locScopedById.get(m.product_id);
+            const stockQty = locScoped?.stock?.quantity ?? null;
             return {
               product_id: p.id,
               name: p.name, unit: p.unit, barcode: p.barcode,
@@ -270,7 +296,7 @@ export default function POSPage() {
               original_price: Number(p.sell_price) || 0,
               min_price: p.min_price || 0,
               cost_price: p.cost_price,
-              stock: undefined
+              stock: stockQty
             };
           } catch { return null; }
         }));
@@ -297,7 +323,7 @@ export default function POSPage() {
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [allProducts?.data]);
 
   const locations = locData?.data || [];
 
