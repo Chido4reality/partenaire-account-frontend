@@ -178,11 +178,13 @@ async function closeNative() {
 // The shim covers the SQL patterns this codebase actually uses:
 //   - INSERT INTO t (cols) VALUES (?, ?, ...)
 //   - INSERT OR REPLACE INTO t (cols) VALUES (?, ?, ...)
-//   - SELECT cols FROM t [WHERE col=? [AND col=?]...]
+//   - SELECT cols FROM t [WHERE clause [AND clause]...]
 //                        [ORDER BY col ASC|DESC]
 //                        [LIMIT n]
-//   - UPDATE t SET col=?, col=? WHERE col=?
-//   - DELETE FROM t WHERE col=?
+//   - UPDATE t SET col=?, col=? WHERE clause [AND clause]...
+//   - DELETE FROM t WHERE clause [AND clause]...
+//   Clause grammar:  col OP ?       (OP ∈ =, !=, <>, <, >, <=, >=)
+//                    col IS NULL  |  col IS NOT NULL
 //   - CREATE TABLE IF NOT EXISTS — recognised + treated as a no-op
 //     (the shim is schemaless; columns are accepted by name)
 //   - CREATE INDEX IF NOT EXISTS — no-op
@@ -196,6 +198,37 @@ const _shimTables = new Map(); // name → rows[]
 function shimEnsureTable(name) {
   if (!_shimTables.has(name)) _shimTables.set(name, []);
   return _shimTables.get(name);
+}
+
+// Evaluate `clauses` (already split on AND) against a row, consuming params
+// starting at `baseIdx`. Re-evaluating per row from the same baseIdx is
+// intentional — earlier in-place paramIdx bookkeeping was both per-row buggy
+// (SELECT used an outer accumulator) and forced single-row callers to thread
+// the index manually. Centralising both quirks here.
+function shimEvalWhere(clauses, row, params, baseIdx) {
+  let idx = baseIdx;
+  for (const cl of clauses) {
+    const cmp     = /^(\w+)\s*(=|!=|<>|<=|>=|<|>)\s*\?$/.exec(cl);
+    const isNull  = /^(\w+)\s+IS\s+NULL$/i.exec(cl);
+    const notNull = /^(\w+)\s+IS\s+NOT\s+NULL$/i.exec(cl);
+    let ok;
+    if (cmp) {
+      const col = cmp[1], op = cmp[2], v = params[idx++], lhs = row[col];
+      switch (op) {
+        case '=':  ok = lhs === v; break;
+        case '!=':
+        case '<>': ok = lhs !== v; break;
+        case '<':  ok = lhs <  v;  break;
+        case '>':  ok = lhs >  v;  break;
+        case '<=': ok = lhs <= v;  break;
+        case '>=': ok = lhs >= v;  break;
+      }
+    } else if (isNull)  { ok = row[isNull[1]]  == null; }
+    else if (notNull)   { ok = row[notNull[1]] != null; }
+    else throw new Error(`[localDb shim] unsupported WHERE clause: ${cl}`);
+    if (!ok) return false;
+  }
+  return true;
 }
 
 function shimParseInsert(sql, params) {
@@ -230,16 +263,7 @@ function shimParseSelect(sql, params) {
   let rows = (_shimTables.get(table) || []).slice();
   if (where) {
     const clauses = where.split(/\s+AND\s+/i).map(c => c.trim());
-    let paramIdx = 0;
-    rows = rows.filter(r => clauses.every(cl => {
-      const eq = /^(\w+)\s*=\s*\?$/.exec(cl);
-      const isNull  = /^(\w+)\s+IS\s+NULL$/i.exec(cl);
-      const notNull = /^(\w+)\s+IS\s+NOT\s+NULL$/i.exec(cl);
-      if (eq)      { const v = params[paramIdx++]; return r[eq[1]] === v; }
-      if (isNull)  { return r[isNull[1]] == null; }
-      if (notNull) { return r[notNull[1]] != null; }
-      throw new Error(`[localDb shim] unsupported WHERE clause: ${cl}`);
-    }));
+    rows = rows.filter(r => shimEvalWhere(clauses, r, params, 0));
   }
   if (orderBy) {
     rows.sort((a, b) => {
@@ -270,23 +294,15 @@ function shimParseUpdate(sql, params) {
     if (!sm) throw new Error(`[localDb shim] unsupported SET: ${s}`);
     return sm[1];
   });
-  let paramIdx = 0;
-  const setValues = setOps.map(() => params[paramIdx++]);
+  const setValues = setOps.map((_, i) => params[i]);
+  const whereStart = setOps.length;
   const rows = shimEnsureTable(table);
   let changes = 0;
   const whereClauses = where
     ? where.split(/\s+AND\s+/i).map(c => c.trim())
     : [];
   for (const r of rows) {
-    const match = whereClauses.every(cl => {
-      const eq = /^(\w+)\s*=\s*\?$/.exec(cl);
-      if (!eq) throw new Error(`[localDb shim] unsupported WHERE: ${cl}`);
-      const v = params[paramIdx++];
-      const ok = r[eq[1]] === v;
-      paramIdx--; // re-read next loop iteration; reset is per-row
-      return ok;
-    });
-    if (!match) continue;
+    if (whereClauses.length && !shimEvalWhere(whereClauses, r, params, whereStart)) continue;
     setOps.forEach((col, i) => { r[col] = setValues[i]; });
     changes++;
   }
@@ -301,18 +317,11 @@ function shimParseDelete(sql, params) {
   const rows = shimEnsureTable(table);
   if (!where) { const n = rows.length; rows.length = 0; return { changes: n }; }
   const clauses = where.split(/\s+AND\s+/i).map(c => c.trim());
-  let paramIdx = 0;
   const keep = [];
   let changes = 0;
   for (const r of rows) {
-    const match = clauses.every(cl => {
-      const eq = /^(\w+)\s*=\s*\?$/.exec(cl);
-      if (!eq) throw new Error(`[localDb shim] unsupported WHERE: ${cl}`);
-      const v = params[paramIdx++];
-      paramIdx--;
-      return r[eq[1]] === v;
-    });
-    if (match) changes++; else keep.push(r);
+    if (shimEvalWhere(clauses, r, params, 0)) changes++;
+    else keep.push(r);
   }
   rows.length = 0;
   rows.push(...keep);

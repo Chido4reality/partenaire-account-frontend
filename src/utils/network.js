@@ -13,7 +13,19 @@
 // trigger the pending_sync flush as soon as the device reconnects.
 
 let _capacitorNetwork = null;
-let _isCapacitor = false;
+
+// Detect native synchronously via the window.Capacitor global the native runtime
+// injects BEFORE our JS bundle executes. We can't use `import('@capacitor/core')`
+// here: Vite ships dynamic imports as separate chunks, and that chunk fetch hangs
+// when the device is offline — which blocks ensureLoaded(), which blocks
+// getNetworkStatus(), which blocks the offlineAwareAdapter from ever returning,
+// which keeps the POS Pay button spinning until the network comes back. On web
+// window.Capacitor is undefined; skip the @capacitor/network import entirely and
+// fall through to the navigator.onLine + cached-event-flag path below.
+const IS_NATIVE = typeof window !== 'undefined'
+                  && typeof window.Capacitor !== 'undefined'
+                  && typeof window.Capacitor.isNativePlatform === 'function'
+                  && window.Capacitor.isNativePlatform();
 
 // Web-only: cached online flag kept in sync via window 'online'/'offline'
 // events. Needed because Chromium DevTools fires the offline event reliably
@@ -29,22 +41,16 @@ function wireWebListeners() {
   _webListenersWired = true;
 }
 
-// Lazy import so the web bundle doesn't pay the Capacitor cost on
-// pages where it's not used (defensive — the runtime stub is small,
-// but principled).
+// On native, lazy-load @capacitor/network on first use. Web short-circuits to
+// the navigator/event fallback without any dynamic import.
 async function ensureLoaded() {
   if (_capacitorNetwork !== null) return;
+  if (!IS_NATIVE) { _capacitorNetwork = false; return; }
   try {
-    const cap = await import('@capacitor/core');
-    _isCapacitor = cap.Capacitor?.isNativePlatform?.() === true;
-    if (_isCapacitor) {
-      const net = await import('@capacitor/network');
-      _capacitorNetwork = net.Network;
-    } else {
-      _capacitorNetwork = false; // mark as resolved, web fallback
-    }
+    const net = await import('@capacitor/network');
+    _capacitorNetwork = net.Network;
   } catch {
-    _capacitorNetwork = false; // package not installed → web fallback
+    _capacitorNetwork = false;
   }
 }
 
