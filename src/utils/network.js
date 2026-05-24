@@ -36,12 +36,9 @@ let _cachedOnline = typeof navigator !== 'undefined' ? !!navigator.onLine : true
 let _webListenersWired = false;
 function wireWebListeners() {
   if (_webListenersWired || typeof window === 'undefined') return;
-  // TEMP instrumentation (remove with the offline-adapter fix)
-  window.addEventListener('online',  () => { _cachedOnline = true;  console.log('[wireWebListeners] online event → _cachedOnline = true'); });
-  window.addEventListener('offline', () => { _cachedOnline = false; console.log('[wireWebListeners] offline event → _cachedOnline = false'); });
+  window.addEventListener('online',  () => { _cachedOnline = true;  });
+  window.addEventListener('offline', () => { _cachedOnline = false; });
   _webListenersWired = true;
-  // TEMP instrumentation (remove with the offline-adapter fix)
-  console.log('[wireWebListeners] listeners attached, initial _cachedOnline =', _cachedOnline);
 }
 
 // On native, lazy-load @capacitor/network on first use. Web short-circuits to
@@ -76,14 +73,11 @@ export async function getNetworkStatus() {
   }
   wireWebListeners();
   const navOnline = typeof navigator !== 'undefined' ? !!navigator.onLine : true;
-  const connected = _cachedOnline && navOnline;
-  // TEMP instrumentation (remove with the offline-adapter fix)
-  console.log('[getNetworkStatus:web]', { IS_NATIVE, capNet: _capacitorNetwork, cached: _cachedOnline, navOnline, wired: _webListenersWired, connected });
   return {
     // Either signal saying "offline" wins: cached catches DevTools-only
     // emulation (which fires the event but leaves navigator.onLine true);
     // navOnline catches a true OS-level disconnect that races listener wiring.
-    connected,
+    connected:      _cachedOnline && navOnline,
     connectionType: 'unknown',
     source:         'web',
   };
