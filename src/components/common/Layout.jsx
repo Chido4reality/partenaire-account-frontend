@@ -8,7 +8,6 @@ import { nukeClientState, hardRedirectToLogin } from "../../utils/authReset";
 import UpgradeModal from "./UpgradeModal";
 import PaywallModal from "./PaywallModal";
 import OnlineOfflineBar from "./OnlineOfflineBar";
-import { startAutoSync, processPendingQueue } from "../../utils/syncService";
 import { hasSection } from "../../utils/planCapabilities";
 import toast from "react-hot-toast";
 
@@ -186,10 +185,10 @@ export default function Layout() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  useEffect(() => {
-    const stopAutoSync = startAutoSync();
-    return () => stopAutoSync();
-  }, []);
+  // MP-SLICE-3-RETIRE-LEGACY-SERVICE-WORKER: startAutoSync removed. The legacy
+  // replay loop is superseded by pendingSync.startWorker (called once at api.js
+  // module load), which drains via onNetworkChange + a 30s safety-net poll —
+  // no per-Layout-mount hook needed.
 
   // Sprint A: any 403 with error='upgrade_required' from the axios
   // interceptor fires this event. Layout owns the paywall state, so

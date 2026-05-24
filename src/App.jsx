@@ -238,26 +238,17 @@ export default function App() {
     // URLSearchParams check.
     consumeImpersonateToken();
 
-    const handleOnline = () => {
-      setOnline(true);
-      // Trigger background sync now that we're back online
-      navigator.serviceWorker?.ready.then(reg => {
-        reg.sync?.register("sync-pending-sales").catch(() => {});
-      });
-    };
+    // MP-SLICE-3-RETIRE-LEGACY-SERVICE-WORKER: drop reg.sync.register +
+    // "sw-sync-complete" listener. Both belonged to the retired legacy SW;
+    // Slice 3's pendingSync worker now owns reconnect-triggered draining via
+    // onNetworkChange (utils/network.js → utils/pendingSync.js startWorker).
+    const handleOnline  = () => setOnline(true);
+    const handleOffline = () => setOnline(false);
     window.addEventListener("online",  handleOnline);
-    window.addEventListener("offline", () => setOnline(false));
-
-    const onSync = ({ detail }) => {
-      toast.success(
-        `✓ ${detail.synced} offline sale${detail.synced > 1 ? "s" : ""} synced`,
-        { duration: 4000, style: { background: "#064e3b", color: "#6ee7b7", border: "1px solid #065f46" } }
-      );
-    };
-    window.addEventListener("sw-sync-complete", onSync);
+    window.addEventListener("offline", handleOffline);
     return () => {
-      window.removeEventListener("online",           handleOnline);
-      window.removeEventListener("sw-sync-complete", onSync);
+      window.removeEventListener("online",  handleOnline);
+      window.removeEventListener("offline", handleOffline);
     };
   }, []);
 

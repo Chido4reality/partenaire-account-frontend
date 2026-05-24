@@ -2,23 +2,26 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
-import { registerSW } from "virtual:pwa-register";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode><App /></React.StrictMode>
 );
 
-// Register the service worker immediately (don't wait for load event)
-registerSW({ immediate: true });
-
-// Relay SW messages to the app as CustomEvents so any component can listen
+// MP-SLICE-3-RETIRE-LEGACY-SERVICE-WORKER: clean up any leftover MP service
+// worker registered by a previous version of the app. The legacy SW had its
+// own offline queue using IndexedDB and was intercepting POST /api/sales
+// before the axios adapter could run; Slice 3 supersedes both behaviours.
+// Returning visitors carry the old SW until something unregisters it — this
+// shim does so on every load (no-op once the registrations array is empty).
+// Scope: only the MP SW (scriptURL ending in /sw.js) is unregistered. The
+// admin portal SW (/sw-admin.js, scoped to /admin.html) is left alone.
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.addEventListener("message", ({ data }) => {
-    if (data?.type === "SYNC_COMPLETE") {
-      window.dispatchEvent(new CustomEvent("sw-sync-complete", { detail: data }));
+  navigator.serviceWorker.getRegistrations().then(regs => {
+    for (const r of regs) {
+      const url = r.active?.scriptURL || r.installing?.scriptURL || r.waiting?.scriptURL || "";
+      if (url && !url.endsWith("/sw-admin.js")) {
+        r.unregister().catch(() => { /* best-effort */ });
+      }
     }
-    if (data?.type === "SALE_SAVED_OFFLINE") {
-      window.dispatchEvent(new CustomEvent("sw-sale-offline", { detail: data }));
-    }
-  });
+  }).catch(() => { /* getRegistrations rejected — nothing to clean up */ });
 }
