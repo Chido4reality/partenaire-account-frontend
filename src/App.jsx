@@ -27,17 +27,23 @@ import OperationsDashboardPage from "./pages/OperationsDashboardPage"; // MP-OWN
 // the tab/app or reconnects (e.g. after making a sale on another device
 // or being away). staleTime keeps it from spamming refetches.
 //
-// MP-SLICE-3-REACT-QUERY-NETWORK-MODE-OVERRIDE: networkMode:'always' is
-// load-bearing. React Query v4+ defaults to 'online', which pauses
-// mutations entirely when navigator.onLine is false — the mutationFn
-// never runs, so axios never sees the request, so Slice 3's
-// offlineAwareAdapter never gets a chance to enqueue + return an
-// optimistic 202. Setting 'always' on both queries and mutations cedes
-// offline detection to Slice 3 (utils/network.js + utils/api.js),
-// which is what owns it by design.
+// MP-SLICE-3-REACT-QUERY-NETWORK-MODE-OVERRIDE: networkMode:'always' on
+// mutations is load-bearing. React Query v4+ defaults to 'online', which
+// pauses mutations when navigator.onLine is false — the mutationFn never
+// runs, so axios never sees the request, so Slice 3's offlineAwareAdapter
+// never gets a chance to enqueue + return an optimistic 202. 'always' on
+// mutations cedes write-side offline detection to Slice 3 (utils/network.js
+// + utils/api.js), which is what owns it by design.
+//
+// Queries deliberately stay on the default 'online' mode: Slice 3 has no
+// read-through cache for arbitrary GETs (notifications, products,
+// shifts/current, etc.), so 'always' would let them fail loudly while
+// offline and surface error objects to consumers that expect arrays —
+// crashing POSPage's filter calls. 'online' pauses them instead, and the
+// page renders whatever React Query last cached.
 const qc = new QueryClient({
   defaultOptions: {
-    queries:   { networkMode: 'always', retry: 1, staleTime: 30000, refetchOnWindowFocus: true, refetchOnReconnect: true },
+    queries:   { retry: 1, staleTime: 30000, refetchOnWindowFocus: true, refetchOnReconnect: true },
     mutations: { networkMode: 'always' },
   }
 });
