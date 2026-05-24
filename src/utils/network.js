@@ -15,6 +15,20 @@
 let _capacitorNetwork = null;
 let _isCapacitor = false;
 
+// Web-only: cached online flag kept in sync via window 'online'/'offline'
+// events. Needed because Chromium DevTools fires the offline event reliably
+// but doesn't always set navigator.onLine = false (crbug 423246 family) —
+// so reading navigator.onLine alone makes the adapter miss DevTools-emulated
+// offline even when OnlineOfflineBar (which is event-driven) sees it.
+let _cachedOnline = typeof navigator !== 'undefined' ? !!navigator.onLine : true;
+let _webListenersWired = false;
+function wireWebListeners() {
+  if (_webListenersWired || typeof window === 'undefined') return;
+  window.addEventListener('online',  () => { _cachedOnline = true;  });
+  window.addEventListener('offline', () => { _cachedOnline = false; });
+  _webListenersWired = true;
+}
+
 // Lazy import so the web bundle doesn't pay the Capacitor cost on
 // pages where it's not used (defensive — the runtime stub is small,
 // but principled).
@@ -51,10 +65,13 @@ export async function getNetworkStatus() {
       // Native plugin failed — fall through to navigator
     }
   }
+  wireWebListeners();
+  const navOnline = typeof navigator !== 'undefined' ? !!navigator.onLine : true;
   return {
-    connected:      typeof navigator !== 'undefined'
-                    ? !!navigator.onLine
-                    : true,
+    // Either signal saying "offline" wins: cached catches DevTools-only
+    // emulation (which fires the event but leaves navigator.onLine true);
+    // navOnline catches a true OS-level disconnect that races listener wiring.
+    connected:      _cachedOnline && navOnline,
     connectionType: 'unknown',
     source:         'web',
   };
