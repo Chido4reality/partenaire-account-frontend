@@ -96,7 +96,12 @@ api.interceptors.request.use(config => {
 // to the queue, optimistic response returned synchronously. Wrap in
 // an adapter-style shim that runs BEFORE axios's transport so axios
 // doesn't surface a network error to the caller.
-const _originalAdapter = api.defaults.adapter;
+// axios v1's defaults.adapter is a selector array (e.g. ['xhr','http','fetch']),
+// not a function. Resolve it eagerly via the public getAdapter() helper so the
+// override below can actually chain — otherwise every non-offline-eligible
+// request TypeErrors inside the async adapter and the page's try/catch swallows
+// it as a generic "Something went wrong" toast (network tab stays empty).
+const _originalAdapter = axios.getAdapter(api.defaults.adapter);
 api.defaults.adapter = async function offlineAwareAdapter(config) {
   if (isOfflineEligible(config.method, config.url)) {
     let net;
