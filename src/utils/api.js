@@ -105,7 +105,9 @@ const _originalAdapter = axios.getAdapter(api.defaults.adapter);
 api.defaults.adapter = async function offlineAwareAdapter(config) {
   if (isOfflineEligible(config.method, config.url)) {
     let net;
-    try { net = await getNetworkStatus(); } catch { net = { connected: true }; }
+    try { net = await getNetworkStatus(); } catch (e) { net = { connected: true }; console.log('[offlineAware] getNetworkStatus threw:', e); }
+    // TEMP instrumentation (remove with the offline-adapter fix)
+    console.log('[offlineAware]', (config.method || 'GET').toUpperCase(), config.url, 'eligible=true', 'connected=', net?.connected);
     if (!net.connected) {
       const payload = typeof config.data === "string" ? safeJson(config.data) : (config.data || {});
       const localId = payload.local_id || genLocalId();
