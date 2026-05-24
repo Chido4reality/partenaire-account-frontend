@@ -105,12 +105,13 @@ export async function enqueue({ endpoint, method = 'POST', payload }) {
 // ── Stats + subscriptions ──────────────────────────────────────
 
 export async function getStats() {
+  // Full table scan + JS tally rather than SELECT status, COUNT(*) … GROUP BY status:
+  // the web localDb shim's SELECT regex doesn't accept GROUP BY, and queue size is
+  // bounded (unflushed rows + 5-min retention on sent rows) so a scan is trivial.
   try {
-    const counts = await query(
-      `SELECT status, COUNT(*) AS n FROM pending_sync GROUP BY status`
-    );
+    const rows = await query(`SELECT * FROM pending_sync`);
     const out = { queued: 0, sending: 0, sent: 0, failed_transient: 0, failed_permanent: 0, total: 0 };
-    for (const r of counts) { out[r.status] = Number(r.n) || 0; }
+    for (const r of rows) { if (out[r.status] !== undefined) out[r.status]++; }
     out.total = out.queued + out.sending + out.failed_transient + out.failed_permanent;
     _lastStatsCache = out;
     return out;

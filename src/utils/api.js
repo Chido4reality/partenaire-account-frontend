@@ -106,6 +106,9 @@ api.defaults.adapter = async function offlineAwareAdapter(config) {
   if (isOfflineEligible(config.method, config.url)) {
     let net;
     try { net = await getNetworkStatus(); } catch { net = { connected: true }; }
+    // TEMP instrumentation (remove in Bug A fix): we need one round of empirical
+    // confirmation that this branch is or isn't firing on Peter's offline POS test.
+    console.log('[offlineAware]', (config.method || 'GET').toUpperCase(), config.url, 'eligible=true', 'connected=', net?.connected);
     if (!net.connected) {
       const payload = typeof config.data === "string" ? safeJson(config.data) : (config.data || {});
       const localId = payload.local_id || genLocalId();
