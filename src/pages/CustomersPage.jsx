@@ -5,6 +5,7 @@ import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
 import { useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
+import useOwnerApproval from "../hooks/useOwnerApproval";
 
 const PAYMENT_METHODS = [
   { key: "cash",         icon: "💵", en: "Cash",        fr: "Espèces" },
@@ -22,8 +23,13 @@ const TYPES = [
 export default function CustomersPage() {
   const { lang } = useLangStore();
   const { selectedLocation } = useSettingsStore();
-  const { org } = useAuthStore();
+  const { org, user } = useAuthStore();
+  const role = user?.role || "";
   const qc = useQueryClient();
+  // MP-OWNER-PIN-APPROVAL: PIN-entry modal for sensitive operations.
+  // The hook returns a promise-based requestApproval() helper and the
+  // modal element to mount somewhere in the render tree.
+  const { requestApproval, modal: approvalModal } = useOwnerApproval();
 
   // MP-PAYMENT-EVENT-RECEIPTS Phase 3: post-success receipt modal
   // for Encaisser dette. Capture the response shape from the
@@ -123,8 +129,78 @@ export default function CustomersPage() {
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
 
+  // MP-OWNER-PIN-APPROVAL: customer edit gated per role.
+  //   Owner:    direct PATCH
+  //   Manager:  direct unless credit_limit OR total_debt is changing →
+  //             one approval token covers the sensitive change
+  //   Cashier:  always needs approval — broad 'edit_customer' unless
+  //             a sensitive field changed, in which case the more
+  //             specific action_type wins (matches backend's audit
+  //             label resolution)
   const updateMutation = useMutation({
-    mutationFn: () => api.patch(`/customers/${selected.id}`, { ...form, total_debt: +form.total_debt || 0 }),
+    mutationFn: async () => {
+      const body = { ...form, total_debt: +form.total_debt || 0 };
+      const headers = {};
+      const newCredit = Number(body.credit_limit || 0);
+      const oldCredit = Number(selected?.credit_limit || 0);
+      const newDebt   = Number(body.total_debt   || 0);
+      const oldDebt   = Number(selected?.total_debt   || 0);
+      const creditChanged = newCredit !== oldCredit;
+      const debtChanged   = newDebt   !== oldDebt;
+      const safeChanged   = ["name","phone","address","customer_type","notes"]
+        .some(k => (body[k] ?? "") !== (selected?.[k] ?? ""));
+
+      // Owners don't need approval for any field.
+      // Managers need approval only when credit_limit/total_debt changes.
+      // Cashiers need approval for any change.
+      let needsApproval = false;
+      let actionType = null;
+      let descSuffix = "";
+      if (role === "manager") {
+        if (creditChanged) {
+          needsApproval = true; actionType = "edit_customer_credit";
+          descSuffix = lang === "fr"
+            ? ` (limite de crédit : ${oldCredit.toLocaleString()} → ${newCredit.toLocaleString()} FCFA)`
+            : ` (credit limit: ${oldCredit.toLocaleString()} → ${newCredit.toLocaleString()} FCFA)`;
+        } else if (debtChanged) {
+          needsApproval = true; actionType = "edit_customer_debt";
+          descSuffix = lang === "fr"
+            ? ` (solde : ${oldDebt.toLocaleString()} → ${newDebt.toLocaleString()} FCFA)`
+            : ` (debt: ${oldDebt.toLocaleString()} → ${newDebt.toLocaleString()} FCFA)`;
+        }
+      } else if (role === "cashier") {
+        if (!creditChanged && !debtChanged && !safeChanged) {
+          return { data: { success: true, data: selected } }; // no-op
+        }
+        needsApproval = true;
+        actionType = creditChanged ? "edit_customer_credit"
+                   : debtChanged   ? "edit_customer_debt"
+                   :                 "edit_customer";
+        if (creditChanged) descSuffix = lang === "fr"
+          ? ` (limite : ${oldCredit.toLocaleString()} → ${newCredit.toLocaleString()})`
+          : ` (credit: ${oldCredit.toLocaleString()} → ${newCredit.toLocaleString()})`;
+        else if (debtChanged) descSuffix = lang === "fr"
+          ? ` (solde : ${oldDebt.toLocaleString()} → ${newDebt.toLocaleString()})`
+          : ` (debt: ${oldDebt.toLocaleString()} → ${newDebt.toLocaleString()})`;
+      }
+
+      if (needsApproval) {
+        const { token } = await requestApproval({
+          actionType,
+          targetTable: "pa_customers",
+          targetId:    selected.id,
+          context: {
+            credit_limit_old: oldCredit, credit_limit_new: newCredit,
+            total_debt_old:   oldDebt,   total_debt_new:   newDebt,
+          },
+          description: (lang === "fr"
+            ? `Modifier le client « ${selected.name} »`
+            : `Edit customer "${selected.name}"`) + descSuffix,
+        });
+        headers["Approval-Token"] = token;
+      }
+      return api.patch(`/customers/${selected.id}`, body, { headers });
+    },
     onSuccess: () => {
       toast.success(lang === "en" ? "Customer updated!" : "Client mis a jour!");
       qc.invalidateQueries(["customers"]);
@@ -138,7 +214,11 @@ export default function CustomersPage() {
       qc.invalidateQueries(["customer-debt", selected.id]);
       qc.invalidateQueries(["pos-customers"]);
     },
-    onError: (err) => toast.error(err.response?.data?.message || "Error")
+    onError: (err) => {
+      // MP-OWNER-PIN-APPROVAL: user closed the PIN modal — silent.
+      if (err?.code === "cancelled") return;
+      toast.error(err.response?.data?.message || "Error");
+    }
   });
 
   // MP-COLLECT-DEBT-NO-INVOICE: POST /customers/:id/collect-debt.
@@ -180,11 +260,32 @@ export default function CustomersPage() {
     }
   });
 
-  // MP-CUSTOMER-DELETE: hard delete (backend 409s if the customer has
-  // any sales/payments/etc). 409 keeps the modal open and shows why;
-  // success removes them from the list.
+  // MP-CUSTOMER-DELETE + MP-OWNER-PIN-APPROVAL: hard delete (backend
+  // 409s if customer has sales/payments/etc). 409 keeps the modal open
+  // and shows why; success removes them from the list. Non-owners
+  // (manager, cashier) must surface an owner PIN first.
   const deleteMutation = useMutation({
-    mutationFn: () => api.delete(`/customers/${confirmDel.id}`),
+    mutationFn: async () => {
+      const headers = {};
+      if (role !== "owner") {
+        const debtClause = Number(confirmDel?.total_debt || 0) > 0
+          ? (lang === "fr"
+              ? ` (solde dû : ${Number(confirmDel.total_debt).toLocaleString()} FCFA)`
+              : ` (outstanding debt: ${Number(confirmDel.total_debt).toLocaleString()} FCFA)`)
+          : "";
+        const { token } = await requestApproval({
+          actionType:   "delete_customer",
+          targetTable:  "pa_customers",
+          targetId:     confirmDel.id,
+          context:      { customer_name: confirmDel.name, total_debt: Number(confirmDel?.total_debt || 0) },
+          description:  (lang === "fr"
+            ? `Supprimer le client « ${confirmDel.name} »`
+            : `Delete customer "${confirmDel.name}"`) + debtClause,
+        });
+        headers["Approval-Token"] = token;
+      }
+      return api.delete(`/customers/${confirmDel.id}`, { headers });
+    },
     onSuccess: () => {
       toast.success(lang === "en" ? "Customer deleted" : "Client supprimé");
       if (selected?.id === confirmDel.id) setSelected(null);
@@ -193,6 +294,8 @@ export default function CustomersPage() {
       qc.invalidateQueries(["customer-summary"]);
     },
     onError: (err) => {
+      // MP-OWNER-PIN-APPROVAL: silent on PIN-modal cancel.
+      if (err?.code === "cancelled") return;
       const r = err.response;
       if (r?.status === 409) {
         setDelError((r.data?.message || "Customer has transaction history. Cannot delete.")
@@ -219,6 +322,10 @@ export default function CustomersPage() {
 
   return (
     <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
+      {/* MP-OWNER-PIN-APPROVAL: mounts the PIN-entry modal at the
+          page root so it overlays everything else (z:2500). The hook
+          self-manages open state — we just need to render the element. */}
+      {approvalModal}
       {/* Left: customer list */}
       <div style={{ flex: 1, padding: 24, overflowY: "auto", borderRight: selected ? "1px solid var(--border)" : "none" }}>
         <div className="page-header">
