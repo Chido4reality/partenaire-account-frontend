@@ -1285,8 +1285,18 @@ export default function POSPage() {
         </div>
         <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: mobile ? "column" : "row" }}>
 
-        {/* ██ LEFT PANEL ████████████████████████████████████████ */}
-        <div style={{ flex: 1, padding: mobile ? 12 : 20, overflowY: "auto", borderRight: mobile ? "none" : "1px solid var(--border)" }}>
+        {/* ██ LEFT PANEL ████████████████████████████████████████
+            MP-MOBILE-UI: the cart strip (position:fixed, 56px tall)
+            sits ~60px above the viewport bottom, covering the
+            bottom 56px of this scroll area. Without extra bottom
+            padding, the search dropdown / last product rows render
+            UNDER the strip — most visibly on the APK because
+            Capacitor's Keyboard:'native' resize mode shrinks the
+            viewport when the search input is focused, putting the
+            dropdown right where the strip lives. Add 72px of
+            paddingBottom only when the strip is actually showing
+            (cart non-empty OR holds present). */}
+        <div style={{ flex: 1, padding: mobile ? 12 : 20, paddingBottom: mobile && (cart.length > 0 || activeHolds.length > 0) ? 84 : (mobile ? 12 : 20), overflowY: "auto", borderRight: mobile ? "none" : "1px solid var(--border)" }}>
 
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
             <div>
