@@ -731,8 +731,8 @@ export default function ReportsPage() {
             const items = Object.values(itemMap).sort((a, b) => b.total - a.total);
             const grandTotal = items.reduce((s, i) => s + i.total, 0);
             return (
-              <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden" }}>
-                <table className="table">
+              <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "auto" }}>
+                <table className="table" style={{ minWidth: 500 }}>
                   <thead>
                     <tr>
                       <th>{lang === "en" ? "Product" : "Produit"}</th>
@@ -783,8 +783,8 @@ export default function ReportsPage() {
           {topLoading ? <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>Loading...</div>
           : topProducts.length === 0 ? <div className="empty-state"><div style={{ fontWeight: 600 }}>No data</div></div>
           : (
-            <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden" }}>
-              <table className="table">
+            <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "auto" }}>
+              <table className="table" style={{ minWidth: 540 }}>
                 <thead><tr>
                   <th>#</th>
                   <th>{lang === "en" ? "Product" : "Produit"}</th>
@@ -826,8 +826,8 @@ export default function ReportsPage() {
           {debtLoading ? <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>Loading...</div>
           : debts.length === 0 ? <div className="empty-state"><div style={{ fontWeight: 600, color: "#34d399" }}>✓ {lang === "en" ? "No outstanding debts!" : "Aucun crédit en cours!"}</div></div>
           : (
-            <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden" }}>
-              <table className="table">
+            <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "auto" }}>
+              <table className="table" style={{ minWidth: 760 }}>
                 <thead><tr>
                   <th>Customer</th>
                   <th>Phone</th>
@@ -879,8 +879,8 @@ export default function ReportsPage() {
               </div>
             ))}
           </div>
-          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-            <table className="data-table" style={{ width: "100%", fontSize: 13 }}>
+          <div className="card" style={{ padding: 0, overflow: "auto" }}>
+            <table className="data-table" style={{ width: "100%", fontSize: 13, minWidth: 900 }}>
               <thead><tr>
                 {[lang === "en" ? "Return" : "Retour", lang === "en" ? "Sale" : "Vente",
                   lang === "en" ? "Type" : "Type", lang === "en" ? "Items" : "Articles",

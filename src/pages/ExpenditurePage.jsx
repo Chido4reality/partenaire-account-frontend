@@ -93,8 +93,8 @@ export default function ExpenditurePage() {
           </button>
         </div>
       ) : (
-        <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden" }}>
-          <table className="table">
+        <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "auto" }}>
+          <table className="table" style={{ minWidth: 700 }}>
             <thead>
               <tr>
                 <th>{lang === "en" ? "Description" : "Description"}</th>
