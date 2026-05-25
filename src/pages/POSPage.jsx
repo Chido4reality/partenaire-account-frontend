@@ -92,6 +92,11 @@ export default function POSPage() {
   // exceeding available stock (WARN, may proceed).
   const [blockModal, setBlockModal]           = useState(null);
   const [oversellModal, setOversellModal]     = useState(null);
+  // MP-DOZIE-CART-PREFILL-VALIDATE: when the online_cart_validate_for_pos
+  // RPC reports can_proceed=false, this holds per-item verdicts to
+  // render. Shape: { locationName, items:[{name, status, qty_requested,
+  // qty_available, ...}], summary }.
+  const [validateModal, setValidateModal]     = useState(null);
   // Hold Sale (park & resume). showHold = label/notes prompt;
   // heldTicket = the just-held cart to print; showResume = the
   // active-holds picker.
@@ -107,12 +112,11 @@ export default function POSPage() {
   const custRef       = useRef(null);
   const barcodeBuffer = useRef("");
   const barcodeTimer  = useRef(null);
-  // MP-DOZIE-CART-PREFILL-STOCK-MISSING: the Dozie hydration effect
-  // below has empty deps but needs to wait for allProducts to load
-  // before it can populate location-scoped stock. The deps array now
-  // includes allProducts?.data so the effect retries once it arrives;
-  // this ref makes sure the prefill body still only runs once.
-  const dozieHydrationRanRef = useRef(false);
+  // MP-DOZIE-CART-PREFILL-VALIDATE: prevents the validate-on-mount
+  // effect from re-firing once it has dispatched a successful POST.
+  // The URL params are stripped on completion, but selectedLocation
+  // changes would otherwise re-fire the effect mid-flight.
+  const dozieValidateRanRef = useRef(false);
 
   useEffect(() => {
     if (scanMode !== "usb") return;
@@ -243,74 +247,72 @@ export default function POSPage() {
     }
   }, [customerDebtData]);
 
-  // D-2.4: Online Cart → Cart prefill. The entry was finalized by
-  // /online-cart/:id/send-to-cart with cashier-confirmed `mappings`
-  // ([{dozie_item_index, product_id, qty, price}]). We hydrate each
-  // mapping to a full pa_product so the cart row matches the exact
-  // shape addToCart() produces (don't fork the cart model). The sale
-  // is linked back to the entry on finalize (saleMutation.onSuccess).
-  //
-  // MP-DOZIE-CART-PREFILL-STOCK-MISSING: GET /products/:id (singular)
-  // does NOT carry location-scoped stock, so the original prefill
-  // set stock:undefined per item — which attemptCheckout then treats
-  // as "not stocked at this location" and hard-blocks the sale.
-  // Cross-look up allProducts (the location-scoped useQuery loaded
-  // above) so the hydrated cart row carries the correct stock value.
-  // Wait until allProducts has loaded before running — the ref guard
-  // makes sure the body still only runs once even though the effect
-  // re-fires when allProducts arrives async after mount.
+  // D-2.4 / MP-DOZIE-CART-PREFILL-VALIDATE: Online Cart → POS prefill
+  // via the server-side validate RPC. Replaces the prior client-side
+  // allProducts cross-lookup (commit 3604342) which suffered from
+  // limit=200 truncation and selectedLocation timing races. The RPC
+  // resolves product_ids (mappings, then case-insensitive name match
+  // scoped to the seller's org), reads stock from pa_stock at the
+  // target location, and auto-fills the cart row's mappings +
+  // location_id on success. Non-stock fields (unit, barcode,
+  // min_price, cost_price) still hydrate via /products/:id since the
+  // RPC's response is intentionally stock-focused.
   useEffect(() => {
-    if (dozieHydrationRanRef.current) return;
+    if (dozieValidateRanRef.current) return;
     const params = new URLSearchParams(window.location.search);
     const fromOnline = params.get("from_online");
     const fromSession = params.get("session") || "";
     if (!fromOnline) return;
-    if (!allProducts?.data) return; // wait for location-scoped products to load
-    dozieHydrationRanRef.current = true;
+    if (!selectedLocation?.id) return; // wait for location to settle
+    dozieValidateRanRef.current = true;
     let cancelled = false;
     (async () => {
       try {
-        const res = await api.get(`/online-cart/${fromOnline}`).then(r => r.data);
-        const entry = res?.data;
-        const mappings = Array.isArray(entry?.mappings) ? entry.mappings : [];
-        if (!mappings.length) {
-          toast.error(lang === "en" ? "No mapped items on that order" : "Aucun article associé");
+        const res = await api.post(`/online-cart/${fromOnline}/validate-for-pos`, {
+          location_id: selectedLocation.id
+        }).then(r => r.data);
+        const verdict = res?.data || {};
+        if (cancelled) return;
+        const verdictItems = Array.isArray(verdict.items) ? verdict.items : [];
+        if (!verdict.can_proceed) {
+          setValidateModal({
+            locationName: selectedLocation?.name || "",
+            items: verdictItems,
+            summary: verdict.summary || null
+          });
           return;
         }
-        const locScopedById = new Map((allProducts.data || []).map(ap => [ap.id, ap]));
-        const hydrated = await Promise.all(mappings.map(async m => {
+        // Hydrate non-stock fields for each resolved item. stock comes
+        // from the RPC (qty_available) — that's the authoritative
+        // number attemptCheckout will consult.
+        const hydrated = await Promise.all(verdictItems.map(async it => {
           try {
-            const p = await api.get(`/products/${m.product_id}`).then(r => r.data?.data);
+            const p = await api.get(`/products/${it.product_id}`).then(r => r.data?.data);
             if (!p) return null;
-            // Pull location-scoped stock from the cached list — falls back
-            // to null when the product isn't in the limit=200 page (rare
-            // edge; backend NOT_STOCKED_AT_LOCATION still backstops on
-            // submit, so null is the safe pessimistic default).
-            const locScoped = locScopedById.get(m.product_id);
-            const stockQty = locScoped?.stock?.quantity ?? null;
             return {
-              product_id: p.id,
-              name: p.name, unit: p.unit, barcode: p.barcode,
-              quantity: Number(m.qty) || 1,
-              unit_price: Number(m.price) || Number(p.sell_price) || 0,
+              product_id: it.product_id,
+              name: p.name || it.name,
+              unit: p.unit, barcode: p.barcode,
+              quantity: Number(it.qty_requested) || 1,
+              unit_price: Number(it.price) || Number(p.sell_price) || 0,
               original_price: Number(p.sell_price) || 0,
               min_price: p.min_price || 0,
               cost_price: p.cost_price,
-              stock: stockQty
+              stock: Number(it.qty_available)
             };
           } catch { return null; }
         }));
         if (cancelled) return;
         const items = hydrated.filter(Boolean);
         if (!items.length) {
-          toast.error(lang === "en" ? "Mapped products not found" : "Produits introuvables");
+          toast.error(lang === "en" ? "Failed to load cart items" : "Échec du chargement");
           return;
         }
         setCart(items);
         setOnlineCtx({
-          id: entry.id,
-          ref: entry.dozie_order_ref || entry.id.slice(0, 8),
-          session: fromSession || entry.cart_session_id || ""
+          id: fromOnline,
+          ref: fromOnline.slice(0, 8),
+          session: fromSession
         });
         toast.success(lang === "en" ? "Cart prefilled from Dozie order" : "Panier pré-rempli (Dozie)");
       } catch (e) {
@@ -323,7 +325,7 @@ export default function POSPage() {
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allProducts?.data]);
+  }, [selectedLocation?.id]);
 
   const locations = locData?.data || [];
 
@@ -1451,6 +1453,64 @@ export default function POSPage() {
               </div>
             </div>
             <button onClick={() => setBlockModal(null)} className="btn btn-primary btn-block" style={{ fontWeight: 700 }}>
+              {lang === "en" ? "OK, I'll fix it" : "OK, je corrige"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── MP-DOZIE-CART-PREFILL-VALIDATE: per-item status from the
+            online_cart_validate_for_pos RPC when can_proceed=false.
+            Multi-location transfer / partial-fulfill / substitution
+            workflows are deferred — this modal is informational only;
+            cashier voids the order or switches stores to proceed. ── */}
+      {validateModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000, padding: 16 }}>
+          <div style={{ background: "var(--bg-card)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 14, width: "100%", maxWidth: 520, padding: 22 }}>
+            <div style={{ fontSize: 30, marginBottom: 8 }}>⚠️</div>
+            <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 8 }}>
+              {lang === "en" ? "Cannot complete this order here" : "Impossible de finaliser ici"}
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 14 }}>
+              {lang === "en"
+                ? <>Stock check at <strong>{validateModal.locationName || "this location"}</strong>:</>
+                : <>Vérification du stock à <strong>{validateModal.locationName || "ce site"}</strong> :</>}
+              <ul style={{ margin: "10px 0 0 0", padding: 0, listStyle: "none" }}>
+                {(validateModal.items || []).map((it, i) => {
+                  const palette = it.status === "ok"
+                    ? { bg: "rgba(16,185,129,0.12)", border: "rgba(16,185,129,0.4)", fg: "#10b981" }
+                    : it.status === "insufficient"
+                    ? { bg: "rgba(245,158,11,0.12)", border: "rgba(245,158,11,0.4)", fg: "#f59e0b" }
+                    : { bg: "rgba(239,68,68,0.12)", border: "rgba(239,68,68,0.4)", fg: "#ef4444" };
+                  const badge = it.status === "ok"
+                    ? (lang === "en" ? "OK" : "OK")
+                    : it.status === "insufficient"
+                    ? (lang === "en" ? "Insufficient" : "Insuffisant")
+                    : (lang === "en" ? "Not in catalog" : "Hors catalogue");
+                  return (
+                    <li key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 10px", marginBottom: 6, borderRadius: 8, background: palette.bg, border: `1px solid ${palette.border}` }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name || "—"}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                          {lang === "en"
+                            ? `requested ${Number(it.qty_requested) || 0} · available ${Number(it.qty_available) || 0}`
+                            : `demandé ${Number(it.qty_requested) || 0} · disponible ${Number(it.qty_available) || 0}`}
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: palette.fg, padding: "3px 8px", borderRadius: 999, border: `1px solid ${palette.border}`, whiteSpace: "nowrap" }}>
+                        {badge}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div style={{ marginTop: 12, color: "var(--text-muted)" }}>
+                {lang === "en"
+                  ? "Transfer stock from another location, remove unmatched items in the inbox, or switch to a store that carries them."
+                  : "Transférez du stock depuis un autre site, retirez les articles non reconnus dans la boîte de réception, ou passez à un site qui les a en stock."}
+              </div>
+            </div>
+            <button onClick={() => setValidateModal(null)} className="btn btn-primary btn-block" style={{ fontWeight: 700 }}>
               {lang === "en" ? "OK, I'll fix it" : "OK, je corrige"}
             </button>
           </div>
