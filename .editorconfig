@@ -1,0 +1,18 @@
+# MP-LOGIN-MOJIBAKE-FIX (Wave 2 follow-up): enforces UTF-8 +
+# LF line endings + final newline across the frontend repo so
+# editors don't silently re-save in Windows-1252 / CRLF and
+# reintroduce the mojibake bug. Applies to every editor that
+# respects EditorConfig (VS Code with extension, JetBrains
+# native, Sublime, etc.).
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+[*.md]
+trim_trailing_whitespace = false
