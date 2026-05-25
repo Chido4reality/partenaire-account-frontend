@@ -133,13 +133,9 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
   const voidReasonValid = reason.trim().length >= 3;
 
   const handleSubmit = async () => {
-    // MP-OWNER-PIN-APPROVAL (Wave 2): void path no longer requires a
-    // typed PIN here — the new OwnerApprovalModal collects it when
-    // needed. Refund + exchange paths still use the legacy in-modal
-    // pin input.
-    if (mode !== "void" && (!pin || pin.length < 4)) {
-      setPinError(lang === "en" ? "PIN required" : "PIN requis"); return;
-    }
+    // MP-OWNER-PIN-APPROVAL (Wave 3): refund + exchange now use the
+    // same useOwnerApproval flow as void (Wave 2). No inline PIN
+    // input anywhere in this modal; the PIN modal pops on submit.
     setLoading(true);
     setPinError("");
 
@@ -199,8 +195,11 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
         const replacement_items = mode === "exchange"
           ? newItems.map(i => ({ product_id: i.product_id, qty: +i.quantity, unit_price: +i.sell_price }))
           : [];
+        // MP-OWNER-PIN-APPROVAL (Wave 3): legacy pin in body is gone;
+        // owner/manager PIN comes via the approval modal and rides as
+        // an Approval-Token header. Owner role skips the modal entirely.
         const body = {
-          pin, reason, location_id: returnLocationId,
+          reason, location_id: returnLocationId,
           return_type: mode === "exchange" ? "replace_different" : "refund",
           items_returned, replacement_items,
           refund_method: refundMethod,
@@ -208,8 +207,34 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
           override_reason: overrideReason || null,
           notes: reason || null
         };
+        const headers = {};
+        if (user?.role !== "owner") {
+          try {
+            const refundTotal = items_returned.reduce((s, i) => s + (i.qty * i.unit_price), 0);
+            const { token } = await requestApproval({
+              actionType:  mode === "exchange" ? "exchange_sale" : "refund_sale",
+              targetTable: "pa_sales",
+              targetId:    sale.id,
+              context: {
+                sale_number: sale.sale_number,
+                return_type: body.return_type,
+                refund_amount: refundTotal,
+                item_count: items_returned.length,
+                replacement_count: replacement_items.length,
+              },
+              description: (lang === "fr"
+                ? `${mode === "exchange" ? "Échanger" : "Rembourser"} la vente ${sale.sale_number || ""}`
+                : `${mode === "exchange" ? "Exchange" : "Refund"} sale ${sale.sale_number || ""}`)
+                + ` (${formatCFA(refundTotal)})`,
+            });
+            headers["Approval-Token"] = token;
+          } catch (e) {
+            if (e?.code === "cancelled") { setLoading(false); return; }
+            throw e;
+          }
+        }
         // Both legacy paths delegate to one server handler.
-        res = await api.post(`/returns/${mode === "exchange" ? "exchange" : "return"}/${sale.id}`, body);
+        res = await api.post(`/returns/${mode === "exchange" ? "exchange" : "return"}/${sale.id}`, body, { headers });
       }
 
       const ref = res?.data?.data?.return_ref;
@@ -423,7 +448,7 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
             </div>
 
             {mode !== "void" && pastWindow && <WindowBanner days={saleAgeDays} value={overrideReason} setValue={setOverrideReason} lang={lang} />}
-            <PinAndReason pin={pin} setPin={setPin} reason={reason} setReason={setReason} pinError={pinError} lang={lang} />
+            <PinAndReason reason={reason} setReason={setReason} lang={lang} />
             <ActionButtons mode="refund" loading={loading} onBack={() => setMode(null)} onConfirm={handleSubmit} lang={lang} />
           </div>
         )}
@@ -527,7 +552,7 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
             </div>
 
             {mode !== "void" && pastWindow && <WindowBanner days={saleAgeDays} value={overrideReason} setValue={setOverrideReason} lang={lang} />}
-            <PinAndReason pin={pin} setPin={setPin} reason={reason} setReason={setReason} pinError={pinError} lang={lang} />
+            <PinAndReason reason={reason} setReason={setReason} lang={lang} />
             <ActionButtons mode="exchange" loading={loading} onBack={() => setMode(null)} onConfirm={handleSubmit} lang={lang} />
           </div>
         )}
@@ -623,22 +648,16 @@ function VoidPinAndReason({ pin, setPin, reason, setReason, pinError, lang, reas
   );
 }
 
-function PinAndReason({ pin, setPin, reason, setReason, pinError, lang }) {
+// MP-OWNER-PIN-APPROVAL (Wave 3): inline PIN input removed — the
+// OwnerApprovalModal collects the owner/manager PIN on submit. The
+// reason field stays since it carries forward to the audit log row.
+function PinAndReason({ reason, setReason, lang }) {
   return (
     <div style={{ marginBottom: 14 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 10 }}>
-        <div className="form-group">
-          <label className="label">🔐 {lang === "en" ? "Manager/Owner PIN *" : "PIN Manager/Patron *"}</label>
-          <input className="input" type="password" inputMode="numeric" maxLength={4}
-            value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
-            placeholder="••••" style={{ textAlign: "center", letterSpacing: 6 }} />
-          {pinError && <div style={{ color: "#f87171", fontSize: 11, marginTop: 4 }}>{pinError}</div>}
-        </div>
-        <div className="form-group">
-          <label className="label">{lang === "en" ? "Reason" : "Raison"}</label>
-          <input className="input" value={reason} onChange={e => setReason(e.target.value)}
-            placeholder={lang === "en" ? "e.g. Wrong product scanned" : "Ex: Mauvais produit scanné"} />
-        </div>
+      <div className="form-group">
+        <label className="label">{lang === "en" ? "Reason" : "Raison"}</label>
+        <input className="input" value={reason} onChange={e => setReason(e.target.value)}
+          placeholder={lang === "en" ? "e.g. Wrong product scanned" : "Ex: Mauvais produit scanné"} />
       </div>
     </div>
   );
