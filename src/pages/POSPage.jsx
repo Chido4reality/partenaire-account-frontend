@@ -1,5 +1,6 @@
 // v12 - receipt payment status fix
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
@@ -45,6 +46,7 @@ export default function POSPage() {
   const { selectedLocation, setLocation } = useSettingsStore();
   const { user } = useAuthStore();
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const isOwner = user?.role === "owner";
   // MP-REQUIRE-OPEN-SHIFT Phase 3: shared with <ActiveShiftIndicator />
   // via the ["current-shift", locId] cache, so this hook does not
@@ -273,6 +275,18 @@ export default function POSPage() {
         }).then(r => r.data);
         const verdict = res?.data || {};
         if (cancelled) return;
+        // RPC v2 returns ok:false with an error code for hard failures
+        // (entry_not_pending, org_mismatch, location_not_found,
+        // empty_items, entry_not_found). Surface the code and offer a
+        // path back to the inbox so the cashier isn't stranded.
+        if (!verdict.ok) {
+          setValidateModal({
+            locationName: selectedLocation?.name || "",
+            errorCode: verdict.error || "unknown_error",
+            items: []
+          });
+          return;
+        }
         const verdictItems = Array.isArray(verdict.items) ? verdict.items : [];
         if (!verdict.can_proceed) {
           setValidateModal({
@@ -1459,18 +1473,40 @@ export default function POSPage() {
         </div>
       )}
 
-      {/* ── MP-DOZIE-CART-PREFILL-VALIDATE: per-item status from the
-            online_cart_validate_for_pos RPC when can_proceed=false.
-            Multi-location transfer / partial-fulfill / substitution
-            workflows are deferred — this modal is informational only;
-            cashier voids the order or switches stores to proceed. ── */}
+      {/* ── MP-DOZIE-CART-PREFILL-VALIDATE: result modal from the
+            online_cart_validate_for_pos RPC. Two variants:
+              • errorCode set → hard failure (entry_not_pending,
+                org_mismatch, etc.); offer "Back to inbox"
+              • items set     → can_proceed=false; per-item status
+                badges with informational guidance (transfer /
+                partial-fulfill / substitution are deferred). ── */}
       {validateModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000, padding: 16 }}>
           <div style={{ background: "var(--bg-card)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 14, width: "100%", maxWidth: 520, padding: 22 }}>
-            <div style={{ fontSize: 30, marginBottom: 8 }}>⚠️</div>
+            <div style={{ fontSize: 30, marginBottom: 8 }}>{validateModal.errorCode ? "⛔" : "⚠️"}</div>
             <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 8 }}>
-              {lang === "en" ? "Cannot complete this order here" : "Impossible de finaliser ici"}
+              {validateModal.errorCode
+                ? (lang === "en" ? "Cannot open this online cart" : "Impossible d'ouvrir ce panier")
+                : (lang === "en" ? "Cannot complete this order here" : "Impossible de finaliser ici")}
             </div>
+            {validateModal.errorCode ? (
+              <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 14 }}>
+                {(() => {
+                  const c = validateModal.errorCode;
+                  const map = {
+                    entry_not_found:    lang === "en" ? "Online cart entry not found." : "Panier en ligne introuvable.",
+                    entry_not_pending:  lang === "en" ? "This online cart has already been processed." : "Ce panier en ligne a déjà été traité.",
+                    org_mismatch:       lang === "en" ? "Location does not belong to this organisation." : "Le site n'appartient pas à cette organisation.",
+                    location_not_found: lang === "en" ? "Selected location is invalid." : "Le site sélectionné est invalide.",
+                    empty_items:        lang === "en" ? "This online cart has no items." : "Ce panier en ligne n'a aucun article."
+                  };
+                  return map[c] || (lang === "en" ? "Validation failed." : "Échec de validation.");
+                })()}
+                <div style={{ marginTop: 8, fontFamily: "monospace", fontSize: 11, color: "var(--text-muted)" }}>
+                  code: {validateModal.errorCode}
+                </div>
+              </div>
+            ) : (
             <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 14 }}>
               {lang === "en"
                 ? <>Stock check at <strong>{validateModal.locationName || "this location"}</strong>:</>
@@ -1510,9 +1546,16 @@ export default function POSPage() {
                   : "Transférez du stock depuis un autre site, retirez les articles non reconnus dans la boîte de réception, ou passez à un site qui les a en stock."}
               </div>
             </div>
-            <button onClick={() => setValidateModal(null)} className="btn btn-primary btn-block" style={{ fontWeight: 700 }}>
-              {lang === "en" ? "OK, I'll fix it" : "OK, je corrige"}
-            </button>
+            )}
+            {validateModal.errorCode ? (
+              <button onClick={() => { setValidateModal(null); navigate("/online-cart"); }} className="btn btn-primary btn-block" style={{ fontWeight: 700 }}>
+                {lang === "en" ? "← Back to inbox" : "← Retour à la boîte"}
+              </button>
+            ) : (
+              <button onClick={() => setValidateModal(null)} className="btn btn-primary btn-block" style={{ fontWeight: 700 }}>
+                {lang === "en" ? "OK, I'll fix it" : "OK, je corrige"}
+              </button>
+            )}
           </div>
         </div>
       )}
