@@ -253,6 +253,21 @@ async function consumeImpersonateToken() {
 export default function App() {
   const { setOnline } = useOfflineStore();
   useEffect(() => {
+    // MP-MOBILE-UI-PHASE-1: belt-and-suspenders runtime StatusBar config.
+    // capacitor.config.ts already declares Style.Dark + bg #1a1f2e on
+    // launch, but a runtime call also lets us re-apply if any plugin
+    // ever flips it (e.g. a hypothetical camera plugin that lightens
+    // the bar). No-op on web (Capacitor.isNativePlatform false).
+    (async () => {
+      try {
+        const { Capacitor } = await import("@capacitor/core");
+        if (!Capacitor.isNativePlatform()) return;
+        const { StatusBar, Style } = await import("@capacitor/status-bar");
+        await StatusBar.setStyle({ style: Style.Dark });
+        await StatusBar.setBackgroundColor({ color: "#1a1f2e" });
+      } catch (_) { /* native plugin not bundled in web; ignore */ }
+    })();
+
     // Fire the impersonation consumer eagerly. It only does anything when
     // ?impersonate_token= is present in the URL, otherwise it's a quick
     // URLSearchParams check.

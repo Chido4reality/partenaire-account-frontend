@@ -1,4 +1,12 @@
 ﻿@import url("https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap");
+
+/* MP-MOBILE-UI-PHASE-1: Tailwind utilities only — preflight is OFF in
+   tailwind.config.js so the global reset doesn't shift any existing
+   page. New mobile-shell components opt into Tailwind via className;
+   legacy components keep inline styles + the .btn/.card helpers below. */
+@tailwind components;
+@tailwind utilities;
+
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --brand:#4f46e5;--brand-light:#818cf8;--brand-dark:#3730a3;
@@ -8,6 +16,14 @@
   --border:rgba(255,255,255,0.08);--border-hover:rgba(255,255,255,0.16);
   --radius-md:10px;--radius-lg:16px;
   --font-display:"Syne",sans-serif;--font-body:"DM Sans",sans-serif;
+  /* MP-MOBILE-UI-PHASE-1: safe-area-inset envs surfaced as CSS vars so
+     they can be referenced from inline styles + Tailwind arbitrary
+     values (e.g. pt-[var(--safe-area-top)]). On non-notch viewports
+     each value resolves to 0px. */
+  --safe-area-top:    env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left:   env(safe-area-inset-left, 0px);
+  --safe-area-right:  env(safe-area-inset-right, 0px);
 }
 html,body,#root{height:100%;background:var(--bg-base);color:var(--text-primary);font-family:var(--font-body);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased;}
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--border-hover);border-radius:4px}

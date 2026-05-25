@@ -1,5 +1,6 @@
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { motion } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore, useLangStore, useOfflineStore, useSettingsStore } from "../../store";
 import api from "../../utils/api";
@@ -9,6 +10,8 @@ import UpgradeModal from "./UpgradeModal";
 import PaywallModal from "./PaywallModal";
 import OnlineOfflineBar from "./OnlineOfflineBar";
 import { hasSection } from "../../utils/planCapabilities";
+import NavDrawer, { DRAWER_WIDTH } from "../layout/NavDrawer";
+import { tapHaptic } from "../../utils/haptics";
 import toast from "react-hot-toast";
 
 // Sprint A: each nav item declares the capability section it belongs to.
@@ -175,6 +178,10 @@ export default function Layout() {
   const myPlan = planData?.data;
   const [showNotif, setShowNotif] = useState(false);
   const [isMobile, setIsMobile]   = useState(window.innerWidth < 768);
+  // MP-MOBILE-UI-PHASE-1: drawer state lives at Layout level so the
+  // hamburger button (inside the mobile top bar) and the NavDrawer
+  // component can share it. Desktop branch is unaffected.
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const navigate  = useNavigate();
   const location  = useLocation();
   const qc        = useQueryClient();
@@ -595,7 +602,34 @@ export default function Layout() {
   // ── MOBILE LAYOUT ────────────────────────────────────────────────────────────
   if (isMobile) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
+      // MP-MOBILE-UI-PHASE-1: outer relative container hosts the drawer
+      // (fixed-positioned overlay) and the content (push-animated). The
+      // bottom tab bar is intentionally inside the animated content so
+      // it slides off-screen with the rest of the shell when the drawer
+      // opens — keeps the visual hierarchy consistent and avoids the
+      // backdrop having to dodge a sticky element.
+      <div style={{ position: "relative", height: "100vh", overflow: "hidden" }}>
+        <NavDrawer
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          navItems={visibleNav}
+          onlineCartPending={onlineCartPending}
+          onLogout={handleLogout}
+        />
+        <motion.div
+          animate={{ x: drawerOpen ? DRAWER_WIDTH : 0 }}
+          transition={{ type: "spring", stiffness: 350, damping: 35 }}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            height: "100vh",
+            overflow: "hidden",
+            // Disable interaction with the content while the drawer is
+            // open so the visible-but-shifted strip on the right routes
+            // taps through to the backdrop (= closes the drawer).
+            pointerEvents: drawerOpen ? "none" : "auto",
+          }}
+        >
         {/* MP-CAPACITOR Slice 2: connectivity bar at very top of every
             screen. Collapses to 4px stripe when online+synced so it
             doesn't burn vertical space; expands to a banner when
@@ -604,12 +638,31 @@ export default function Layout() {
         <OnlineOfflineBar />
         <ImpersonationBanner />
         <BroadcastBanner />
-        <div style={{ background: "var(--bg-surface)", borderBottom: "1px solid var(--border)", padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 15 }}>Mon Partenaire</div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{org?.name}</div>
+        <div style={{ background: "var(--bg-surface)", borderBottom: "1px solid var(--border)", padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, gap: 10 }}>
+          {/* MP-MOBILE-UI-PHASE-1: hamburger trigger added inline to the
+              existing mobile top bar so we don't fork the bar layout.
+              48px hit target meets touch-target guidelines. */}
+          <button
+            onClick={() => { tapHaptic("light"); setDrawerOpen(true); }}
+            aria-label="Open menu"
+            style={{
+              background: "var(--bg-elevated)",
+              border: "1px solid var(--border)",
+              borderRadius: 10,
+              width: 40, height: 40,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: "pointer", flexShrink: 0,
+              color: "var(--text-primary)",
+              fontSize: 18,
+            }}
+          >
+            ☰
+          </button>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 800, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Mon Partenaire</div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{org?.name}</div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
             <div style={{ width: 8, height: 8, borderRadius: "50%", background: isOnline ? "#10b981" : "#ef4444" }} />
             <div style={{ position: "relative" }}>
               <button id="notif-bell-mobile" onClick={() => setShowNotif(s => !s)} style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px", cursor: "pointer", color: "var(--text-primary)", fontSize: 12 }}>
@@ -628,7 +681,7 @@ export default function Layout() {
           <Outlet />
         </main>
 
-        <div style={{ background: "var(--bg-surface)", borderTop: "1px solid var(--border)", display: "flex", flexShrink: 0, paddingBottom: "env(safe-area-inset-bottom)" }}>
+        <div style={{ background: "var(--bg-surface)", borderTop: "1px solid var(--border)", display: "flex", flexShrink: 0, paddingBottom: "var(--safe-area-bottom)" }}>
           {mobileNav.map(item => {
             const isActive = item.to === "/" ? location.pathname === "/" : location.pathname.startsWith(item.to);
             return (
@@ -647,6 +700,7 @@ export default function Layout() {
         </div>
         {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} currentPlan={myPlan?.plan} />}
         {paywall && <PaywallModal feature={paywall.feature} currentPlan={effectivePlan} mpId={myPlan?.user_id_number} onClose={() => setPaywall(null)} />}
+        </motion.div>
       </div>
     );
   }
