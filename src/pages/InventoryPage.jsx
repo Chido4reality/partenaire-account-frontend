@@ -932,7 +932,11 @@ export default function InventoryPage() {
 
       {/* ── PRODUCTS TAB ── */}
       {tab === "products" && (
-        <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden" }}>
+        // MP-MOBILE-UI-PHASE-1-5: same h-scroll fix as the Stock Levels
+        // tab — overflow:auto + table minWidth so the 8-column table
+        // (Product / Barcode / Unit / Cost / Walk-in / Wholesale /
+        // Min floor / Edit) is reachable on phone viewports.
+        <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "auto" }}>
           {/* ARCHIVE-RESTORE-UI: include is_active=false rows when ON */}
           <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", padding: "10px 16px", borderBottom: "1px solid var(--border)" }}>
             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>
@@ -946,7 +950,7 @@ export default function InventoryPage() {
               {!search && canAddProduct && <button className="btn btn-primary" onClick={() => guardAdd(() => setShowAddProduct(true))} style={{ marginTop: 12, opacity: atInventoryCap ? 0.55 : 1 }}>+ {lang === "en" ? "Add product" : "Ajouter"}{atInventoryCap ? " 🔒" : ""}</button>}
             </div>
           ) : (
-            <table className="table">
+            <table className="table" style={{ minWidth: 700 }}>
               <thead>
                 <tr>
                   <th>Product</th>
@@ -988,9 +992,12 @@ export default function InventoryPage() {
 
       {/* ── ALERTS TAB ── */}
       {tab === "alerts" && (
-        <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden" }}>
+        // MP-MOBILE-UI-PHASE-1-5: 5-column alerts table — narrower than
+        // Stock Levels / Products but still wider than a 360px phone
+        // viewport once the action buttons and padding settle.
+        <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "auto" }}>
           {alerts.length === 0 ? <div className="empty-state"><div style={{ fontWeight: 600, color: "#34d399" }}>✓ All stock levels OK!</div></div> : (
-            <table className="table">
+            <table className="table" style={{ minWidth: 520 }}>
               <thead><tr>
                 <th>Product</th><th>Location</th>
                 <th style={{ textAlign: "right" }}>Current</th><th style={{ textAlign: "right" }}>Min</th><th style={{ textAlign: "right" }}>Shortage</th>
