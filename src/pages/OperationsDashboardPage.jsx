@@ -350,7 +350,11 @@ export default function OperationsDashboardPage() {
         {debtAging.isLoading && <div style={loadingStyle}>{en ? "Loading…" : "Chargement…"}</div>}
         {debtAging.data && (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 14 }}>
+            {/* MP-MOBILE-UI: 4-bucket aging cards; force 2 cols on
+                mobile so the bold FCFA value (e.g. "1,250,000 FCFA")
+                doesn't bleed past a ~75px column on a 360px phone.
+                Desktop layout unchanged. */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-3.5">
               {(debtAging.data.buckets || []).map((b, i) => {
                 const colors = ["#10b981", "#3b82f6", "#fbbf24", "#f87171"];
                 return (
