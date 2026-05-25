@@ -81,7 +81,10 @@ export default function OwnerApprovalModal({
       const code = err?.response?.data?.error;
       if (status === 429) {
         setError(lang === "fr" ? "Trop de tentatives. Attendez 5 minutes." : "Too many attempts. Wait 5 minutes.");
-      } else if (status === 401 || code === "invalid_pin") {
+      } else if (status === 403 || status === 401 || code === "invalid_pin") {
+        // 403 is the new bad-PIN response (was 401 pre-APK fix; 401
+        // tripped the universal logout interceptor). Keep 401 in the
+        // match for any deploys mid-rollout.
         setError(lang === "fr" ? "PIN incorrect" : "Wrong PIN");
         setPin("");
       } else if (code === "bad_pin_format") {

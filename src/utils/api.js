@@ -140,7 +140,23 @@ api.interceptors.response.use(res => res, async err => {
       } catch { /* fall through to error bubble */ }
     }
   }
-  if (err.response?.status === 401) { useAuthStore.getState().logout(); window.location.href = "/login"; }
+  // MP-OWNER-PIN-APPROVAL: distinguish session-invalid 401s (auth
+  // middleware rejected the Bearer token) from authorisation-flow 401s
+  // (approval / consume RPC said no). Approval-flow paths return a
+  // structured `error` code; let the originating component handle them
+  // (show "Wrong PIN", "Token expired", etc.) WITHOUT logging the
+  // cashier out. On native APK the previous unconditional logout fired
+  // before the modal's catch could surface a "Wrong PIN" message,
+  // dumping cashiers to /login mid-flow.
+  const APPROVAL_ERRORS = new Set([
+    "invalid_pin", "token_required", "approval_failed", "consume_failed",
+    "bad_pin_format", "bad_action", "missing_target", "entry_not_found",
+    "entry_not_pending", "rate_limited",
+  ]);
+  if (err.response?.status === 401 && !APPROVAL_ERRORS.has(err.response?.data?.error)) {
+    useAuthStore.getState().logout();
+    window.location.href = "/login";
+  }
   // Sprint A: any 403 with { error: 'upgrade_required' } pops the universal
   // PaywallModal. Layout listens for this event so individual pages don't
   // each have to handle the response shape. Rejection still propagates so
