@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import api, { formatCFA } from "../../utils/api";
 import OwnerPIN from "./OwnerPIN";
 import { useSettingsStore, useAuthStore } from "../../store";
+import useOwnerApproval from "../../hooks/useOwnerApproval";
 
 /**
  * VoidReturnModal — handles void, refund, exchange
@@ -26,7 +27,11 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
   // (returns.js: /void requires owner/manager; /return + /exchange
   // open to cashier).
   const { user } = useAuthStore();
-  const canVoid = user?.role === "owner" || user?.role === "manager";
+  // MP-OWNER-PIN-APPROVAL (Wave 2): voiding is now token-gated, so
+  // cashier can void too (with an owner/manager PIN at the counter).
+  // Same-day rule still enforced server-side for non-owner.
+  const canVoid = ["owner", "manager", "cashier"].includes(user?.role);
+  const { requestApproval, modal: approvalModal } = useOwnerApproval();
   // The return inherits the sale's location. Some report payloads
   // don't include location_id (pre-multi-location / trimmed select),
   // so fall back to the cashier's currently selected location.
@@ -128,7 +133,13 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
   const voidReasonValid = reason.trim().length >= 3;
 
   const handleSubmit = async () => {
-    if (!pin || pin.length < 4) { setPinError(lang === "en" ? "PIN required" : "PIN requis"); return; }
+    // MP-OWNER-PIN-APPROVAL (Wave 2): void path no longer requires a
+    // typed PIN here — the new OwnerApprovalModal collects it when
+    // needed. Refund + exchange paths still use the legacy in-modal
+    // pin input.
+    if (mode !== "void" && (!pin || pin.length < 4)) {
+      setPinError(lang === "en" ? "PIN required" : "PIN requis"); return;
+    }
     setLoading(true);
     setPinError("");
 
@@ -156,7 +167,28 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
     try {
       let res;
       if (mode === "void") {
-        res = await api.post(`/returns/void/${sale.id}`, { pin, reason });
+        // MP-OWNER-PIN-APPROVAL: owner direct; manager + cashier
+        // surface an Approval-Token via the PIN modal. Cancelling
+        // the modal throws code:'cancelled' which we swallow.
+        const headers = {};
+        if (user?.role !== "owner") {
+          try {
+            const { token } = await requestApproval({
+              actionType:  "void_sale",
+              targetTable: "pa_sales",
+              targetId:    sale.id,
+              context:     { sale_number: sale.sale_number, total: sale.total_amount, reason: reason.trim() },
+              description: (lang === "fr"
+                ? `Annuler la vente ${sale.sale_number || ""}`
+                : `Void sale ${sale.sale_number || ""}`) + ` (${formatCFA(sale.total_amount || 0)})`,
+            });
+            headers["Approval-Token"] = token;
+          } catch (e) {
+            if (e?.code === "cancelled") { setLoading(false); return; }
+            throw e;
+          }
+        }
+        res = await api.post(`/returns/void/${sale.id}`, { reason }, { headers });
       } else {
         // Unified return/replace contract (Sprint L). Exchange =
         // refund + replacement_items; backend computes price_difference.
@@ -209,6 +241,10 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      {/* MP-OWNER-PIN-APPROVAL (Wave 2): PIN modal for void flow.
+          Renders inside this dialog's portal stack so its z:2500
+          stays above the outer modal (z:300). */}
+      {approvalModal}
       <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, maxWidth: 500, width: "100%", maxHeight: "90vh", overflowY: "auto" }}>
 
         {/* Header */}
@@ -320,7 +356,7 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
               </div>
             )}
             {mode !== "void" && pastWindow && <WindowBanner days={saleAgeDays} value={overrideReason} setValue={setOverrideReason} lang={lang} />}
-            <VoidPinAndReason pin={pin} setPin={setPin} reason={reason} setReason={setReason} pinError={pinError} lang={lang} reasonValid={voidReasonValid} />
+            <VoidPinAndReason pin={pin} setPin={setPin} reason={reason} setReason={setReason} pinError={pinError} lang={lang} reasonValid={voidReasonValid} noPin />
             <ActionButtons mode="void" loading={loading} disabled={!voidReasonValid} onBack={() => setMode(null)} onConfirm={handleSubmit} lang={lang} />
           </div>
         )}
@@ -519,7 +555,10 @@ function WindowBanner({ days, value, setValue, lang }) {
 // the common cases ring through with one tap; "Other" keeps the field
 // editable for free-form context. Validation message renders when the
 // reason isn't yet valid so the cashier knows why Confirm is disabled.
-function VoidPinAndReason({ pin, setPin, reason, setReason, pinError, lang, reasonValid }) {
+// MP-OWNER-PIN-APPROVAL (Wave 2): void's PIN entry moved to the
+// OwnerApprovalModal that pops on submit. When `noPin` is true (the
+// new void flow), we render reason-only and span the full width.
+function VoidPinAndReason({ pin, setPin, reason, setReason, pinError, lang, reasonValid, noPin }) {
   const PRESETS = [
     { value: "Customer changed mind",   fr: "Le client a changé d'avis" },
     { value: "Wrong item rung",         fr: "Mauvais article scanné" },
@@ -539,14 +578,16 @@ function VoidPinAndReason({ pin, setPin, reason, setReason, pinError, lang, reas
   };
   return (
     <div style={{ marginBottom: 14 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 10 }}>
-        <div className="form-group">
-          <label className="label">🔐 {lang === "en" ? "Manager/Owner PIN *" : "PIN Manager/Patron *"}</label>
-          <input className="input" type="password" inputMode="numeric" maxLength={4}
-            value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
-            placeholder="••••" style={{ textAlign: "center", letterSpacing: 6 }} />
-          {pinError && <div style={{ color: "#f87171", fontSize: 11, marginTop: 4 }}>{pinError}</div>}
-        </div>
+      <div style={{ display: "grid", gridTemplateColumns: noPin ? "1fr" : "1fr 2fr", gap: 10 }}>
+        {!noPin && (
+          <div className="form-group">
+            <label className="label">🔐 {lang === "en" ? "Manager/Owner PIN *" : "PIN Manager/Patron *"}</label>
+            <input className="input" type="password" inputMode="numeric" maxLength={4}
+              value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              placeholder="••••" style={{ textAlign: "center", letterSpacing: 6 }} />
+            {pinError && <div style={{ color: "#f87171", fontSize: 11, marginTop: 4 }}>{pinError}</div>}
+          </div>
+        )}
         <div className="form-group">
           <label className="label">
             {lang === "en" ? "Reason *" : "Raison *"}

@@ -9,6 +9,7 @@ import api, { formatCFA } from "../utils/api";
 import OwnerPIN from "../components/common/OwnerPIN";
 import PhotoUploadButtons from "../components/common/PhotoUploadButtons";
 import PaywallModal from "../components/common/PaywallModal";
+import useOwnerApproval from "../hooks/useOwnerApproval";
 import DoziePublishModal from "../components/common/DoziePublishModal";
 import { getCapabilities, isAtCap } from "../utils/planCapabilities";
 
@@ -79,6 +80,10 @@ export default function InventoryPage() {
   const isManager = role === "manager";
   const isWarehouse = role === "warehouse";
   const isCashier = role === "cashier";
+  // MP-OWNER-PIN-APPROVAL (Wave 2): owner PIN needed before manager
+  // confirms a product price change (via the edit modal) or a manual
+  // stock adjustment. Hook self-manages modal state.
+  const { requestApproval, modal: approvalModal } = useOwnerApproval();
 
   if (isCashier) return (
     <div style={{ padding: 40, textAlign: "center" }}>
@@ -333,22 +338,58 @@ export default function InventoryPage() {
   });
 
   // ── EDIT PRODUCT MUTATION ───────────────────────────────────────────────────
+  // MP-OWNER-PIN-APPROVAL (Wave 2): manager-initiated edits via this
+  // modal must surface owner/manager approval when sell_price or
+  // wholesale_price actually change. The backend keys off the
+  // X-Edit-Source: product-edit header so the receive-goods flow
+  // (which also patches prices but as a bulk batch) is exempt.
   const editProductMutation = useMutation({
-    mutationFn: () => api.patch(`/products/${editProduct.id}`, {
-      name: editProduct.name,
-      barcode: editProduct.barcode || null,
-      unit: editProduct.unit,
-      cost_price: +editProduct.cost_price || 0,
-      sell_price: +editProduct.sell_price,
-      wholesale_price: +editProduct.wholesale_price || 0,
-      min_price: +editProduct.min_price || 0,
-    }),
+    mutationFn: async () => {
+      const body = {
+        name: editProduct.name,
+        barcode: editProduct.barcode || null,
+        unit: editProduct.unit,
+        cost_price: +editProduct.cost_price || 0,
+        sell_price: +editProduct.sell_price,
+        wholesale_price: +editProduct.wholesale_price || 0,
+        min_price: +editProduct.min_price || 0,
+      };
+      const headers = { "X-Edit-Source": "product-edit" };
+      // Owner direct. Non-owner (manager today; cashier never reaches
+      // this modal — page-level gate at L84) always requests approval;
+      // the backend re-reads stored values and only consumes the token
+      // when a price actually changed, so a manager who opened the
+      // modal to fix a typo and didn't touch prices will see the PIN
+      // prompt but the token simply goes unused.
+      if (!isOwner) {
+        const newSell = +editProduct.sell_price || 0;
+        const newWS   = +editProduct.wholesale_price || 0;
+        const { token } = await requestApproval({
+          actionType:  "edit_product_price",
+          targetTable: "pa_products",
+          targetId:    editProduct.id,
+          context: {
+            sell_price_new: newSell,
+            wholesale_price_new: newWS,
+          },
+          description: lang === "fr"
+            ? `Modifier le produit « ${editProduct.name} »`
+            : `Edit product "${editProduct.name}"`,
+        });
+        headers["Approval-Token"] = token;
+      }
+      return api.patch(`/products/${editProduct.id}`, body, { headers });
+    },
     onSuccess: () => {
       toast.success(lang === "en" ? "✓ Product updated!" : "✓ Produit mis à jour!");
       setShowEditProduct(false); setEditProduct(null);
       invalidateAll();
     },
-    onError: (err) => toast.error(err.response?.data?.message || "Error")
+    onError: (err) => {
+      // MP-OWNER-PIN-APPROVAL: silent when user closed PIN modal.
+      if (err?.code === "cancelled") return;
+      toast.error(err.response?.data?.message || "Error");
+    }
   });
 
   // STOCK-UX-PASS Part B — archive (soft-remove) a wrong-input product.
@@ -1526,9 +1567,14 @@ export default function InventoryPage() {
       {/* ── ADJUST MODAL ── */}
       {showAdjust && selectedStockRow && (
         <AdjustModal product={selectedStockRow} lang={lang}
+          role={role} requestApproval={requestApproval}
           onClose={() => { setShowAdjust(false); setSelectedStockRow(null); }}
           onSuccess={() => { setShowAdjust(false); setSelectedStockRow(null); invalidateAll(); }} />
       )}
+      {/* MP-OWNER-PIN-APPROVAL (Wave 2): hook's modal lives at the page
+          root so it can overlay both the Adjust modal and the Edit
+          product modal at z:2500. */}
+      {approvalModal}
 
       {/* FU.4 — migrate-duplicates modal. Pairs of (ptn_products[], pa_products[]) */}
       {showMigrate && (
@@ -1908,7 +1954,12 @@ function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemov
 }
 
 // ── ADJUST MODAL ──────────────────────────────────────────────────────────────
-function AdjustModal({ product, lang, onClose, onSuccess }) {
+// MP-OWNER-PIN-APPROVAL (Wave 2): manager-initiated adjustments need
+// an owner/manager PIN. Owner + warehouse pass through directly (the
+// warehouse role's core job is inventory ops; PIN per adjustment would
+// cripple). Cashier never reaches this modal — the page-level gate at
+// the top of InventoryPage blocks them entirely.
+function AdjustModal({ product, role, requestApproval, lang, onClose, onSuccess }) {
   const [qty, setQty] = useState(product.quantity);
   const [minQty, setMinQty] = useState(product.min_quantity || 5);
   const [alertEnabled, setAlertEnabled] = useState(product.alert_enabled !== false);
@@ -1919,12 +1970,37 @@ function AdjustModal({ product, lang, onClose, onSuccess }) {
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      await api.patch("/stock/adjust", { product_id: product.product_id, location_id: product.location_id, new_quantity: +qty, min_quantity: +minQty, alert_enabled: alertEnabled, reason });
-      // Update product active status
+      const headers = {};
+      if (role === "manager" || role === "cashier") {
+        const { token } = await requestApproval({
+          actionType:  "adjust_stock",
+          targetTable: "pa_stock",
+          targetId:    product.product_id,
+          context: {
+            from_quantity: product.quantity,
+            to_quantity:   +qty,
+            location_id:   product.location_id,
+            reason:        reason || null,
+          },
+          description: (lang === "fr"
+            ? `Ajuster le stock de « ${product.pa_products?.name || ""} »`
+            : `Adjust stock for "${product.pa_products?.name || ""}"`)
+            + ` (${product.quantity} → ${+qty})`,
+        });
+        headers["Approval-Token"] = token;
+      }
+      await api.patch("/stock/adjust",
+        { product_id: product.product_id, location_id: product.location_id, new_quantity: +qty, min_quantity: +minQty, alert_enabled: alertEnabled, reason },
+        { headers });
+      // Update product active status (not gated — is_active is the
+      // owner-archive path; managers/warehouse who can open this modal
+      // are already trusted with the status toggle).
       await api.patch("/products/" + product.product_id, { is_active: isActive });
       toast.success(lang === "en" ? "✓ Stock adjusted!" : "✓ Stock ajusté!");
       onSuccess();
     } catch (err) {
+      // MP-OWNER-PIN-APPROVAL: PIN modal closed → silent.
+      if (err?.code === "cancelled") { setLoading(false); return; }
       toast.error(err.response?.data?.message || "Error");
     } finally { setLoading(false); }
   };
