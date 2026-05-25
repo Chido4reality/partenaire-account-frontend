@@ -1543,6 +1543,7 @@ export default function POSPage() {
           open={sheetOpen}
           onOpenChange={setSheetOpen}
           itemCount={cart.length}
+          heldCount={activeHolds.length}
           total={total}
           formatTotal={formatCFA}
           lang={lang}

@@ -25,15 +25,27 @@ export default function MobileCartSheet({
   open,
   onOpenChange,
   itemCount,
+  heldCount = 0,
   total,
   formatTotal,
   lang = "en",
   children,
 }) {
-  // Hide the strip when cart is empty — nothing to drag up to.
-  // Sheet's still mounted so external openers (e.g. "Resume" hold)
-  // can pop it open if cart populates between renders.
-  const showStrip = itemCount > 0;
+  // Strip is visible when EITHER cart has items OR there are held
+  // sales to resume. The Resume button lives inside the cart-pane
+  // children, so without holds-aware visibility, cashiers couldn't
+  // reach it once their working cart emptied.
+  const hasItems = itemCount > 0;
+  const hasHolds = heldCount > 0;
+  const showStrip = hasItems || hasHolds;
+  // Display variants per holds + items combination.
+  const heldLabel = lang === "fr"
+    ? `${heldCount} ${heldCount === 1 ? "vente en attente" : "ventes en attente"}`
+    : `${heldCount} held ${heldCount === 1 ? "sale" : "sales"}`;
+  // Background tone shifts when only holds (no live cart) so the
+  // strip reads as a "resume" affordance, not a sale total.
+  const stripBg = hasItems ? "var(--brand)" : "rgba(245,158,11,0.95)";
+  const stripFg = "#fff";
 
   return (
     <>
@@ -50,8 +62,8 @@ export default function MobileCartSheet({
             bottom: `calc(${BOTTOM_NAV_HEIGHT}px + var(--safe-area-bottom))`,
             height: 56,
             padding: "0 16px",
-            background: "var(--brand)",
-            color: "#fff",
+            background: stripBg,
+            color: stripFg,
             border: "none",
             borderTop: "1px solid rgba(255,255,255,0.12)",
             display: "flex",
@@ -64,16 +76,44 @@ export default function MobileCartSheet({
             boxShadow: "0 -6px 24px rgba(0,0,0,0.35)",
           }}
         >
-          <span>
-            🛒 {itemCount}{" "}
-            {itemCount === 1
-              ? (lang === "fr" ? "article" : "item")
-              : (lang === "fr" ? "articles" : "items")}
-          </span>
-          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span>{formatTotal ? formatTotal(total) : total}</span>
-            <span style={{ fontSize: 16, lineHeight: 1 }}>↑</span>
-          </span>
+          {hasItems ? (
+            <>
+              <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                <span style={{ flexShrink: 0 }}>
+                  🛒 {itemCount}{" "}
+                  {itemCount === 1
+                    ? (lang === "fr" ? "article" : "item")
+                    : (lang === "fr" ? "articles" : "items")}
+                </span>
+                {hasHolds && (
+                  <span
+                    style={{
+                      fontSize: 11, fontWeight: 700,
+                      background: "rgba(0,0,0,0.25)",
+                      padding: "2px 8px", borderRadius: 12,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    📋 {heldCount} {lang === "fr" ? "en attente" : "held"}
+                  </span>
+                )}
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                <span>{formatTotal ? formatTotal(total) : total}</span>
+                <span style={{ fontSize: 16, lineHeight: 1 }}>↑</span>
+              </span>
+            </>
+          ) : (
+            <>
+              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                📋 <span>{heldLabel}</span>
+                <span style={{ opacity: 0.85, fontWeight: 500 }}>
+                  · {lang === "fr" ? "appuyer pour reprendre" : "tap to resume"}
+                </span>
+              </span>
+              <span style={{ fontSize: 16, lineHeight: 1 }}>↑</span>
+            </>
+          )}
         </button>
       )}
 
