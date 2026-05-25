@@ -1,6 +1,7 @@
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { motion } from "framer-motion";
+import { Drawer } from "vaul";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore, useLangStore, useOfflineStore, useSettingsStore } from "../../store";
 import api from "../../utils/api";
@@ -357,10 +358,100 @@ export default function Layout() {
   // looked missing. Fix: use position:fixed on desktop and read the
   // trigger's getBoundingClientRect to anchor the panel. Mobile keeps
   // absolute positioning since the mobile header has no overflow clip.
+  // Shared body — notification list. Used by both the desktop
+  // dropdown and the mobile Vaul sheet so behaviour stays in lockstep.
+  const renderNotifBody = () => (
+    notifications.length === 0 ? (
+      <div style={{ padding: 16, textAlign: "center", color: "var(--text-muted)", fontSize: 12 }}>
+        {lang === "en" ? "No notifications" : "Aucune notification"}
+      </div>
+    ) : notifications.slice(0, 15).map(n => {
+      // Map ref_type → in-app route. Older notifications with NULL
+      // refs (the existing 122 low-stock rows generated before the
+      // backend fix) just mark-read on click — no navigation,
+      // panel stays open.
+      const focusUrlFor = (n) => {
+        if (!n.ref_type || !n.ref_id) return null;
+        switch (n.ref_type) {
+          case "product":  return `/inventory?focus=${n.ref_id}`;
+          case "customer": return `/customers?focus=${n.ref_id}`;
+          case "sale":     return `/pos?focus=${n.ref_id}`;
+          case "credit":   return `/credits?focus=${n.ref_id}`;
+          default:         return null;
+        }
+      };
+      const focusUrl = focusUrlFor(n);
+      return (
+      <div key={n.id} onClick={() => {
+            if (!n.is_read) markReadMutation.mutate(n.id);
+            if (focusUrl) { setShowNotif(false); navigate(focusUrl); }
+          }}
+        style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", cursor: focusUrl ? "pointer" : "default", background: n.is_read ? "transparent" : "rgba(79,70,229,0.05)" }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ width: 6, height: 6, borderRadius: "50%", background: notifColor(n.type), marginTop: 5, flexShrink: 0 }} />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 12, fontWeight: n.is_read ? 400 : 600 }}>{lang === "en" ? (n.title_en || n.title) : (n.title_fr || n.title_en || n.title)}</div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en" ? (n.body_en || n.body) : (n.body_fr || n.body_en || n.body)}</div>
+          </div>
+        </div>
+      </div>
+      );
+    })
+  );
+
   const NotifPanel = () => {
+    // ── MOBILE: Vaul bottom sheet ─────────────────────────────────
+    // The previous absolute-positioned panel inherited width:100%
+    // from the bell's ~50px relative wrapper and rendered squeezed.
+    // Bottom sheet escapes the wrapper via portal and gets full
+    // viewport width.
+    if (isMobile) {
+      return (
+        <Drawer.Root open={true} onOpenChange={(o) => { if (!o) setShowNotif(false); }}>
+          <Drawer.Portal>
+            <Drawer.Overlay style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1700 }} />
+            <Drawer.Content
+              style={{
+                position: "fixed", bottom: 0, left: 0, right: 0,
+                maxHeight: "85vh",
+                background: "var(--bg-surface)",
+                borderTopLeftRadius: 20, borderTopRightRadius: 20,
+                borderTop: "1px solid var(--border)",
+                zIndex: 1701,
+                display: "flex", flexDirection: "column",
+                outline: "none",
+              }}
+            >
+              <div style={{ width: 40, height: 4, background: "var(--border-hover)", borderRadius: 2, margin: "10px auto 6px", flexShrink: 0 }} />
+              <div style={{ padding: "8px 16px 10px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexShrink: 0 }}>
+                <Drawer.Title style={{ fontWeight: 700, fontSize: 15, color: "var(--text-primary)" }}>
+                  🔔 {lang === "en" ? "Notifications" : "Notifications"}{unread > 0 && ` (${unread})`}
+                </Drawer.Title>
+                {unread > 0 && (
+                  <button
+                    onClick={() => markAllReadMutation.mutate()}
+                    disabled={markAllReadMutation.isLoading}
+                    style={{ background: "none", border: "none", color: "var(--brand-light)", cursor: "pointer", fontSize: 13, fontWeight: 600, padding: "4px 8px", whiteSpace: "nowrap" }}
+                  >
+                    {markAllReadMutation.isLoading
+                      ? (lang === "en" ? "Marking…" : "En cours…")
+                      : (lang === "en" ? "Mark all" : "Tout marquer")}
+                  </button>
+                )}
+              </div>
+              <div style={{ flex: 1, overflowY: "auto", paddingBottom: "var(--safe-area-bottom)" }}>
+                {renderNotifBody()}
+              </div>
+            </Drawer.Content>
+          </Drawer.Portal>
+        </Drawer.Root>
+      );
+    }
+
+    // ── DESKTOP: existing fixed-position dropdown ─────────────────
     const panelRef = useRef(null);
     useLayoutEffect(() => {
-      if (isMobile || !panelRef.current) return;
+      if (!panelRef.current) return;
       const trigger = document.getElementById("notif-bell-desktop");
       if (!trigger) return;
       const r = trigger.getBoundingClientRect();
@@ -372,31 +463,20 @@ export default function Layout() {
       panelRef.current.style.left = Math.max(8, left) + "px";
     });
 
-    // Close on outside-click / Esc / scroll / resize.
-    //
-    // Both the click and scroll handlers use closest() on a stable DOM
-    // id (rather than ref.contains) so they survive any unmount/remount
-    // of NotifPanel between Layout renders — and so a scroll on the
-    // panel's own scrollable list (caught by capture=true on window)
-    // doesn't get treated as "user scrolled outside, close the panel".
+    // Close on outside-click / Esc / scroll / resize. The click and
+    // scroll handlers use closest() on stable DOM ids so they survive
+    // any unmount/remount of NotifPanel between Layout renders.
     useEffect(() => {
       const isInsidePanel = (target) =>
         target && target.closest && target.closest("#notif-panel-pos");
       const isInsideBell = (target) =>
         target && target.closest && (target.closest("#notif-bell-desktop") || target.closest("#notif-bell-mobile"));
-
       const onMouseDown = (e) => {
-        // Two early-outs in this order: inside-panel clicks let the
-        // alert-row onClick fire its mark-read mutation; bell clicks
-        // let the bell's own onClick toggle the panel.
         if (isInsidePanel(e.target)) return;
         if (isInsideBell(e.target)) return;
         setShowNotif(false);
       };
       const onKey = (e) => { if (e.key === "Escape") setShowNotif(false); };
-      // Capture=true so scrolls on inner containers (the <main> scroll
-      // region) reach this handler; ignored when the scroll happened
-      // inside the panel itself.
       const onScroll = (e) => {
         if (isInsidePanel(e.target)) return;
         setShowNotif(false);
@@ -413,67 +493,30 @@ export default function Layout() {
         window.removeEventListener("resize", onResize);
       };
     }, []);
-    const baseStyle = isMobile
-      ? { position: "absolute", top: 52, left: 0, right: 0, width: "100%", marginBottom: 0 }
-      : { position: "fixed",    top: 0,  left: -9999, width: 320, marginBottom: 0 };
     return (
-    <div id="notif-panel-pos" ref={panelRef} style={{ ...baseStyle, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.4)", overflow: "hidden", zIndex: 1000 }}>
-      <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-        <span style={{ fontWeight: 600, fontSize: 13, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Notifications {unread > 0 && `(${unread})`}</span>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-          {unread > 0 && (
-            <button
-              onClick={() => markAllReadMutation.mutate()}
-              disabled={markAllReadMutation.isLoading}
-              style={{ background: "none", border: "none", color: "var(--brand-light)", cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0, flexShrink: 0, whiteSpace: "nowrap" }}
-            >
-              {markAllReadMutation.isLoading
-                ? (lang === "en" ? "Marking…" : "En cours…")
-                : (lang === "en" ? "Mark all" : "Tout marquer")}
-            </button>
-          )}
-          <button onClick={() => setShowNotif(false)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}>✕</button>
+      <div id="notif-panel-pos" ref={panelRef}
+        style={{ position: "fixed", top: 0, left: -9999, width: 320, marginBottom: 0, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.4)", overflow: "hidden", zIndex: 1000 }}>
+        <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+          <span style={{ fontWeight: 600, fontSize: 13, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Notifications {unread > 0 && `(${unread})`}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+            {unread > 0 && (
+              <button
+                onClick={() => markAllReadMutation.mutate()}
+                disabled={markAllReadMutation.isLoading}
+                style={{ background: "none", border: "none", color: "var(--brand-light)", cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0, flexShrink: 0, whiteSpace: "nowrap" }}
+              >
+                {markAllReadMutation.isLoading
+                  ? (lang === "en" ? "Marking…" : "En cours…")
+                  : (lang === "en" ? "Mark all" : "Tout marquer")}
+              </button>
+            )}
+            <button onClick={() => setShowNotif(false)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}>✕</button>
+          </div>
+        </div>
+        <div style={{ maxHeight: 300, overflowY: "auto" }}>
+          {renderNotifBody()}
         </div>
       </div>
-      <div style={{ maxHeight: 300, overflowY: "auto" }}>
-        {notifications.length === 0 ? (
-          <div style={{ padding: 16, textAlign: "center", color: "var(--text-muted)", fontSize: 12 }}>
-            {lang === "en" ? "No notifications" : "Aucune notification"}
-          </div>
-        ) : notifications.slice(0, 15).map(n => {
-          // Map ref_type → in-app route. Older notifications with NULL
-          // refs (the existing 122 low-stock rows generated before the
-          // backend fix) just mark-read on click — no navigation,
-          // panel stays open.
-          const focusUrlFor = (n) => {
-            if (!n.ref_type || !n.ref_id) return null;
-            switch (n.ref_type) {
-              case "product":  return `/inventory?focus=${n.ref_id}`;
-              case "customer": return `/customers?focus=${n.ref_id}`;
-              case "sale":     return `/pos?focus=${n.ref_id}`;
-              case "credit":   return `/credits?focus=${n.ref_id}`;
-              default:         return null;
-            }
-          };
-          const focusUrl = focusUrlFor(n);
-          return (
-          <div key={n.id} onClick={() => {
-                if (!n.is_read) markReadMutation.mutate(n.id);
-                if (focusUrl) { setShowNotif(false); navigate(focusUrl); }
-              }}
-            style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", cursor: focusUrl ? "pointer" : "default", background: n.is_read ? "transparent" : "rgba(79,70,229,0.05)" }}>
-            <div style={{ display: "flex", gap: 8 }}>
-              <div style={{ width: 6, height: 6, borderRadius: "50%", background: notifColor(n.type), marginTop: 5, flexShrink: 0 }} />
-              <div>
-                <div style={{ fontSize: 12, fontWeight: n.is_read ? 400 : 600 }}>{lang === "en" ? (n.title_en || n.title) : (n.title_fr || n.title_en || n.title)}</div>
-                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en" ? (n.body_en || n.body) : (n.body_fr || n.body_en || n.body)}</div>
-              </div>
-            </div>
-          </div>
-          );
-        })}
-      </div>
-    </div>
     );
   };
 
