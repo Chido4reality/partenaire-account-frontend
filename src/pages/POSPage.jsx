@@ -14,6 +14,10 @@ import CameraScanner from "../components/common/CameraScanner";
 import { genSaleCodes } from "../utils/receiptCodes";
 import { ActiveShiftIndicator, useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
 import MobileShiftChip from "../components/layout/MobileShiftChip";
+import MobileCartSheet from "../components/pos/MobileCartSheet";
+import PayButton from "../components/pos/PayButton";
+import { tapHaptic } from "../utils/haptics";
+import { motion } from "framer-motion";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 
 const PAYMENT_MODES = [
@@ -100,6 +104,17 @@ export default function POSPage() {
   // render. Shape: { locationName, items:[{name, status, qty_requested,
   // qty_available, ...}], summary }.
   const [validateModal, setValidateModal]     = useState(null);
+  // MP-MOBILE-UI-PHASE-2A: cart bottom-sheet visibility on mobile.
+  // The MobileCartSheet renders a persistent strip when cart isn't
+  // empty; this state controls whether the full sheet is expanded.
+  // The auto-collapse effect below closes it whenever any overlay
+  // modal opens, so the Vaul portal (z:1701) doesn't sit on top of
+  // root modals that live at z:3000+.
+  const [sheetOpen, setSheetOpen] = useState(false);
+  // MP-MOBILE-UI-PHASE-2A: brief row flash on add-to-cart. Holds the
+  // product_id of the last-tapped row for ~250ms so the row can
+  // pulse-highlight, then clears.
+  const [justAddedId, setJustAddedId] = useState(null);
   // Hold Sale (park & resume). showHold = label/notes prompt;
   // heldTicket = the just-held cart to print; showResume = the
   // active-holds picker.
@@ -120,6 +135,22 @@ export default function POSPage() {
   // The URL params are stripped on completion, but selectedLocation
   // changes would otherwise re-fire the effect mid-flight.
   const dozieValidateRanRef = useRef(false);
+
+  // MP-MOBILE-UI-PHASE-2A: auto-collapse the mobile cart sheet whenever
+  // ANY root-level overlay opens. Vaul renders at z:1701 — the receipt /
+  // hold / resume / block / oversell / validate modals are all at
+  // z:3000+ inside POSPage's JSX but the cashier perception is
+  // "modal on top of sheet". Closing the sheet first removes the
+  // backdrop and gives the modal the entire viewport. resetCart()
+  // already returns POSPage to a fresh state on sale success, so this
+  // also gives the cleanest "transaction done" finish.
+  useEffect(() => {
+    if (showReceipt || showHold || showResume || debtReceiptEvent
+        || blockModal || oversellModal || validateModal) {
+      setSheetOpen(false);
+    }
+  }, [showReceipt, showHold, showResume, debtReceiptEvent,
+      blockModal, oversellModal, validateModal]);
 
   useEffect(() => {
     if (scanMode !== "usb") return;
@@ -959,6 +990,184 @@ export default function POSPage() {
 
   const mobile = isMobile();
 
+  // MP-MOBILE-UI-PHASE-2A: the cart-pane inner JSX, captured once so
+  // it can be reused by both the desktop right-pane and the mobile
+  // bottom sheet without duplicating ~170 lines of JSX. All state,
+  // handlers, and derived values are closed over from POSPage's
+  // outer scope — same behavior as the previous inline render.
+  const cartPaneInner = (
+    <>
+          <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--bg-elevated)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontWeight: 700, fontSize: 14 }}>🛒 {lang === "en" ? "Cart" : "Panier"}</span>
+              {cart.length > 0 && <span style={{ background: "var(--brand)", color: "#fff", borderRadius: 20, padding: "1px 8px", fontSize: 11, fontWeight: 700 }}>{cart.length}</span>}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              {activeHolds.length > 0 && (
+                <button onClick={() => setShowResume(true)}
+                  title={lang === "en" ? "Resume a held sale" : "Reprendre une vente en attente"}
+                  style={{ background: "rgba(245,158,11,0.14)", border: "1px solid rgba(245,158,11,0.4)", color: "#fbbf24", cursor: "pointer", fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 6 }}>
+                  ⏸ {lang === "en" ? "Resume" : "Reprendre"} ({activeHolds.length})
+                </button>
+              )}
+              {cart.length > 0 && (
+                <button onClick={() => setCart([])} style={{ background: "rgba(239,68,68,0.1)", border: "none", color: "#f87171", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 6 }}>
+                  {lang === "en" ? "Clear all" : "Vider"}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {onlineCtx && (
+            <div style={{ padding: "8px 14px", background: "rgba(79,70,229,0.12)", borderBottom: "1px solid rgba(79,70,229,0.3)", display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 14 }}>📥</span>
+              <span style={{ fontSize: 11, color: "var(--brand-light)", fontWeight: 600, flex: 1, minWidth: 0 }}>
+                {lang === "en"
+                  ? `Prefilled from Dozie order ${onlineCtx.ref} — sale links back on checkout`
+                  : `Pré-rempli depuis Dozie ${onlineCtx.ref} — la vente sera liée`}
+              </span>
+            </div>
+          )}
+
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            {cart.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "32px 16px", color: "var(--text-muted)" }}>
+                <div style={{ fontSize: 32, marginBottom: 8, opacity: 0.3 }}>🛒</div>
+                <div style={{ fontSize: 12 }}>{lang === "en" ? "Cart is empty" : "Panier vide"}</div>
+              </div>
+            ) : cart.map((item, idx) => (
+              <div key={idx} style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", background: (item.isDebt || item.isDebtPayment) ? "rgba(239,68,68,0.04)" : "transparent" }}>
+                {(item.isDebt || item.isDebtPayment) && (
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#f87171", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>
+                    {item.isDebtPayment ? "💰" : "🧾"} {lang === "en" ? "Debt Repayment" : "Remboursement dette"} · DEBT
+                  </div>
+                )}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: (item.isDebt || item.isDebtPayment) ? 4 : 7 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, flex: 1, paddingRight: 8, lineHeight: 1.3 }}>{item.name}</div>
+                  <button onClick={() => updateQty(idx, 0)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: "0 2px", flexShrink: 0 }}>✕</button>
+                </div>
+                {item.isDebt ? (
+                  <div style={{ fontSize: 14, fontWeight: 800, color: "#f87171", textAlign: "right" }}>{formatCFA(item.unit_price)}</div>
+                ) : (
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <button onClick={() => updateQty(idx, item.quantity - 1)} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: "pointer", fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
+                    <input type="number" value={item.quantity} onChange={e => onQtyInput(idx, e.target.value)} onBlur={() => onQtyBlur(idx)} style={{ width: 40, textAlign: "center", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "3px 4px", fontSize: 13 }} />
+                    <button onClick={() => updateQty(idx, item.quantity + 1)} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: "pointer", fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                    <div style={{ flex: 1, position: "relative" }}>
+                      <input type="number" value={item.unit_price} onChange={e => onPriceInput(idx, e.target.value)} onBlur={() => onPriceBlur(idx)} style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "4px 6px 4px 18px", fontSize: 12 }} />
+                      <span style={{ position: "absolute", left: 6, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "var(--text-muted)" }}>F</span>
+                    </div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--brand-light)", minWidth: 56, textAlign: "right" }}>{formatCFA(item.quantity * item.unit_price)}</div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div style={{ padding: "14px 16px", borderTop: "2px solid var(--border)", background: "var(--bg-elevated)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <span style={{ fontWeight: 600, fontSize: 13, color: "var(--text-secondary)" }}>Total</span>
+              <span style={{ fontWeight: 800, fontSize: 20, color: "var(--brand-light)", letterSpacing: "-0.5px" }}>{formatCFA(total)}</span>
+            </div>
+
+            {!showPayment ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <button className="btn btn-primary btn-block" disabled={cart.length === 0 || !selectedLocation} onClick={() => setShowPayment(true)} style={{ height: 44, fontSize: 14, fontWeight: 700, borderRadius: 12 }}>
+                  {!selectedLocation ? (lang === "en" ? "Select location first" : "Choisir emplacement") : hasDebt ? (lang === "en" ? "Collect Payment →" : "Encaisser →") : (lang === "en" ? "Proceed to Payment →" : "Paiement →")}
+                </button>
+                {!hasDebt && (
+                  <button disabled={cart.length === 0 || !selectedLocation} onClick={() => { setHoldLabel(""); setHoldNotes(""); setShowHold(true); }}
+                    style={{ height: 40, fontSize: 13, fontWeight: 700, borderRadius: 12, cursor: cart.length === 0 ? "not-allowed" : "pointer", background: "transparent", border: "1.5px solid rgba(245,158,11,0.5)", color: cart.length === 0 ? "var(--text-muted)" : "#fbbf24", opacity: cart.length === 0 || !selectedLocation ? 0.5 : 1 }}>
+                    ⏸ {lang === "en" ? "Hold Sale" : "Mettre en attente"}
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div>
+                {isDebtOnlyCart && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>
+                      {lang === "en" ? "Amount to collect (blank = full balance)" : "Montant à encaisser (vide = tout)"}
+                    </div>
+                    <input className="input" type="number"
+                      placeholder={`${lang === "en" ? "Full balance:" : "Solde total:"} ${total.toLocaleString()} FCFA`}
+                      value={debtPayAmt} onChange={e => setDebtPayAmt(e.target.value)}
+                      style={{ marginBottom: 4 }} />
+                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                      {lang === "en" ? "Leave blank to collect full balance" : "Laissez vide pour encaisser le solde total"}
+                    </div>
+                  </div>
+                )}
+                {!isDebtOnlyCart && (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 10 }}>
+                    {PAYMENT_MODES.map(pm => (
+                      <button key={pm.key} onClick={() => setPayMode(pm.key)} style={{ padding: "8px 4px", borderRadius: 10, border: `1.5px solid ${payMode === pm.key ? pm.color : "var(--border)"}`, background: payMode === pm.key ? pm.color + "18" : "transparent", color: payMode === pm.key ? pm.color : "var(--text-secondary)", cursor: "pointer", fontSize: 11, fontWeight: 700, transition: "all 0.15s" }}>
+                        <div style={{ fontSize: 14 }}>{pm.icon}</div>
+                        <div style={{ marginTop: 2 }}>{lang === "en" ? pm.en : pm.fr}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {payMode === "partial" && !isDebtOnlyCart && (
+                  <input className="input" type="number" placeholder={lang === "en" ? "Amount paid (FCFA)" : "Montant payé (FCFA)"} value={paidAmt} onChange={e => setPaidAmt(e.target.value)} style={{ marginBottom: 8 }} />
+                )}
+                {(payMode === "partial" || payMode === "credit") && !isDebtOnlyCart && (
+                  <input className="input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={{ marginBottom: 8 }} title={lang === "en" ? "Due date" : "Date d'échéance"} />
+                )}
+                <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
+                  {PAY_METHODS.map(m => (
+                    <button key={m.key} onClick={() => setPayMethod(m.key)} style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: `1.5px solid ${payMethod === m.key ? "var(--brand)" : "var(--border)"}`, background: payMethod === m.key ? "rgba(79,70,229,0.12)" : "transparent", color: payMethod === m.key ? "var(--brand-light)" : "var(--text-secondary)", cursor: "pointer", fontSize: 10, fontWeight: 700, transition: "all 0.15s" }}>
+                      <div>{m.icon}</div>
+                      <div style={{ marginTop: 1 }}>{lang === "en" ? m.en : m.fr}</div>
+                    </button>
+                  ))}
+                </div>
+                <div style={{ background: "var(--bg-card)", borderRadius: 10, padding: "10px 12px", marginBottom: 10, fontSize: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                    <span style={{ color: "var(--text-muted)" }}>Total</span><strong>{formatCFA(total)}</strong>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: "#10b981" }}>{lang === "en" ? "Paid" : "Payé"}</span>
+                    <strong style={{ color: "#10b981" }}>{formatCFA(paid)}</strong>
+                  </div>
+                  {balance > 0 && !hasDebt && (
+                    <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 6, borderTop: "1px solid var(--border)", marginTop: 3 }}>
+                      <span style={{ color: "#f87171", fontWeight: 600 }}>{lang === "en" ? "Balance due" : "Reste"}</span>
+                      <strong style={{ color: "#f87171" }}>{formatCFA(balance)}</strong>
+                    </div>
+                  )}
+                </div>
+                {!shiftIsOpen && (
+                  <div style={{ padding: "8px 12px", background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.35)", borderRadius: 8, fontSize: 12, color: "#fbbf24", fontWeight: 600, marginBottom: 8, textAlign: "center" }}>
+                    {noShiftHint(lang)}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => setShowPayment(false)} className="btn btn-secondary" style={{ flex: 1 }}>← {lang === "en" ? "Back" : "Retour"}</button>
+                  {(payMode === "credit" || payMode === "partial") && !customer && (
+                    <div style={{ gridColumn: "1/-1", padding: "8px 12px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, fontSize: 12, color: "#f87171", marginBottom: 8 }}>
+                      ⚠️ {lang === "en" ? "A registered customer is required for credit or partial sales." : "Un client enregistré est requis pour les ventes à crédit ou partielles."}
+                    </div>
+                  )}
+                  <PayButton
+                    saleMutation={saleMutation}
+                    onClick={attemptCheckout}
+                    disabled={!shiftIsOpen || (!hasDebt && payMode === "partial" && !paidAmt) || ((payMode === "credit" || payMode === "partial") && !customer)}
+                    title={!shiftIsOpen ? noShiftHint(lang) : ""}
+                    label={lang === "en" ? "✓ Confirm" : "✓ Valider"}
+                    successLabel={lang === "en" ? "✓ Sold!" : "✓ Vendu !"}
+                    errorLabel={lang === "en" ? "✕ Failed" : "✕ Échec"}
+                    onSuccessTimeout={() => setSheetOpen(false)}
+                    className="btn btn-success"
+                    style={{ flex: 2, fontWeight: 700 }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+    </>
+  );
+
   return (
     <>
       {/* ── DEBT MODAL ─────────────────────────────────────── */}
@@ -1245,36 +1454,60 @@ export default function POSPage() {
 
           {filteredProducts.length > 0 && (
             <div style={{ border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden", marginBottom: 8 }}>
-              {filteredProducts.map((p, i) => (
-                <div key={p.id} onClick={() => addToCart(p)}
-                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 14px", cursor: "pointer", borderBottom: i < filteredProducts.length - 1 ? "1px solid var(--border)" : "none", transition: "background 0.1s" }}
-                  onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.04)"}
-                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                  <div style={{ flex: 1, paddingRight: 12 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{p.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)", display: "flex", gap: 8 }}>
-                      {p.barcode && <span style={{ fontFamily: "monospace" }}>{p.barcode}</span>}
-                      {p.stock?.quantity !== undefined && (
-                        <span style={{
-                          color: p.stock.quantity <= (p.stock.min_quantity || 5) ? "#f87171" : p.stock.quantity <= (p.stock.min_quantity || 5) * 2 ? "#fbbf24" : "var(--text-muted)",
-                          fontWeight: p.stock.quantity <= (p.stock.min_quantity || 5) ? 600 : 400
-                        }}>
-                          {p.stock.quantity <= (p.stock.min_quantity || 5) ? "⚠️ " : ""}Stock: {p.stock.quantity} {p.unit}
+              {filteredProducts.map((p, i) => {
+                // MP-MOBILE-UI-PHASE-2A: stock color tiers — green > 10,
+                // amber 1-10, red 0. Falls back to muted when the
+                // product has no stock row for this location (the
+                // validate-for-pos path keeps a real number even for
+                // online-cart prefilled products).
+                const stockQ = p.stock?.quantity;
+                const stockColor =
+                  stockQ === undefined || stockQ === null ? "var(--text-muted)" :
+                  stockQ === 0  ? "#f87171" :
+                  stockQ <= 10  ? "#fbbf24" :
+                                  "#34d399";
+                const isFlashing = justAddedId === p.id;
+                const rowHeight = mobile ? 72 : 56;
+                return (
+                  <motion.div key={p.id}
+                    onClick={() => {
+                      tapHaptic("light");
+                      addToCart(p);
+                      setJustAddedId(p.id);
+                      setTimeout(() => setJustAddedId(curr => curr === p.id ? null : curr), 280);
+                    }}
+                    animate={{ backgroundColor: isFlashing ? "rgba(79,70,229,0.22)" : "rgba(0,0,0,0)" }}
+                    transition={{ duration: 0.22 }}
+                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: mobile ? "12px 14px" : "11px 14px", minHeight: rowHeight, cursor: "pointer", borderBottom: i < filteredProducts.length - 1 ? "1px solid var(--border)" : "none" }}>
+                    <div style={{ flex: 1, paddingRight: 12, minWidth: 0 }}>
+                      <div style={{ fontSize: mobile ? 14 : 13, fontWeight: 600, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)", display: "flex", gap: 8, alignItems: "center" }}>
+                        {p.barcode && <span style={{ fontFamily: "monospace" }}>{p.barcode}</span>}
+                        {stockQ !== undefined && stockQ !== null && (
+                          <span style={{ color: stockColor, fontWeight: 600 }}>
+                            ● {stockQ} {p.unit} {lang === "en" ? "in stock" : "en stock"}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: mobile ? 6 : 2 }}>
+                      <div style={{ fontWeight: 700, color: "var(--brand-light)", fontSize: mobile ? 15 : 14 }}>
+                        {formatCFA(isTierCustomer(customer) && p.wholesale_price > 0 ? p.wholesale_price : p.sell_price)}
+                        {isTierCustomer(customer) && p.wholesale_price > 0 && (
+                          <span style={{ fontSize: 9, background: "#fbbf24", color: "#000", borderRadius: 4, padding: "1px 4px", marginLeft: 4, fontWeight: 700 }}>GROS</span>
+                        )}
+                      </div>
+                      {mobile ? (
+                        <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: "var(--brand)", padding: "3px 10px", borderRadius: 12 }}>
+                          + {lang === "en" ? "Add" : "Ajouter"}
                         </span>
+                      ) : (
+                        <div style={{ fontSize: 10, color: "var(--text-muted)" }}>/{p.unit}</div>
                       )}
                     </div>
-                  </div>
-                  <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <div style={{ fontWeight: 700, color: "var(--brand-light)", fontSize: 14 }}>
-                      {formatCFA(isTierCustomer(customer) && p.wholesale_price > 0 ? p.wholesale_price : p.sell_price)}
-                      {isTierCustomer(customer) && p.wholesale_price > 0 && (
-                        <span style={{ fontSize: 9, background: "#fbbf24", color: "#000", borderRadius: 4, padding: "1px 4px", marginLeft: 4, fontWeight: 700 }}>GROS</span>
-                      )}
-                    </div>
-                    <div style={{ fontSize: 10, color: "var(--text-muted)" }}>/{p.unit}</div>
-                  </div>
-                </div>
-              ))}
+                  </motion.div>
+                );
+              })}
             </div>
           )}
 
@@ -1285,171 +1518,38 @@ export default function POSPage() {
           )}
         </div>
 
-        {/* ██ RIGHT PANEL — Cart ████████████████████████████████ */}
-        <div style={{ width: mobile ? "100%" : 340, display: "flex", flexDirection: "column", background: "var(--bg-surface)", borderTop: mobile ? "1px solid var(--border)" : "none", maxHeight: mobile ? "55vh" : "100%" }}>
-
-          <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--bg-elevated)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontWeight: 700, fontSize: 14 }}>🛒 {lang === "en" ? "Cart" : "Panier"}</span>
-              {cart.length > 0 && <span style={{ background: "var(--brand)", color: "#fff", borderRadius: 20, padding: "1px 8px", fontSize: 11, fontWeight: 700 }}>{cart.length}</span>}
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              {activeHolds.length > 0 && (
-                <button onClick={() => setShowResume(true)}
-                  title={lang === "en" ? "Resume a held sale" : "Reprendre une vente en attente"}
-                  style={{ background: "rgba(245,158,11,0.14)", border: "1px solid rgba(245,158,11,0.4)", color: "#fbbf24", cursor: "pointer", fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 6 }}>
-                  ⏸ {lang === "en" ? "Resume" : "Reprendre"} ({activeHolds.length})
-                </button>
-              )}
-              {cart.length > 0 && (
-                <button onClick={() => setCart([])} style={{ background: "rgba(239,68,68,0.1)", border: "none", color: "#f87171", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 6 }}>
-                  {lang === "en" ? "Clear all" : "Vider"}
-                </button>
-              )}
-            </div>
+        {/* ██ RIGHT PANEL — Cart (DESKTOP ONLY) ████████████████████████
+            MP-MOBILE-UI-PHASE-2A: on mobile, this inline pane is
+            skipped — the same cartPaneInner JSX is rendered inside
+            <MobileCartSheet> at the bottom of the JSX tree so the
+            cashier gets a proper bottom-sheet UX instead of a half-
+            height squished pane. */}
+        {!mobile && (
+          <div style={{ width: 340, display: "flex", flexDirection: "column", background: "var(--bg-surface)", maxHeight: "100%" }}>
+            {cartPaneInner}
           </div>
-
-          {onlineCtx && (
-            <div style={{ padding: "8px 14px", background: "rgba(79,70,229,0.12)", borderBottom: "1px solid rgba(79,70,229,0.3)", display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 14 }}>📥</span>
-              <span style={{ fontSize: 11, color: "var(--brand-light)", fontWeight: 600, flex: 1, minWidth: 0 }}>
-                {lang === "en"
-                  ? `Prefilled from Dozie order ${onlineCtx.ref} — sale links back on checkout`
-                  : `Pré-rempli depuis Dozie ${onlineCtx.ref} — la vente sera liée`}
-              </span>
-            </div>
-          )}
-
-          <div style={{ flex: 1, overflowY: "auto" }}>
-            {cart.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "32px 16px", color: "var(--text-muted)" }}>
-                <div style={{ fontSize: 32, marginBottom: 8, opacity: 0.3 }}>🛒</div>
-                <div style={{ fontSize: 12 }}>{lang === "en" ? "Cart is empty" : "Panier vide"}</div>
-              </div>
-            ) : cart.map((item, idx) => (
-              <div key={idx} style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", background: (item.isDebt || item.isDebtPayment) ? "rgba(239,68,68,0.04)" : "transparent" }}>
-                {(item.isDebt || item.isDebtPayment) && (
-                  <div style={{ fontSize: 10, fontWeight: 700, color: "#f87171", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>
-                    {item.isDebtPayment ? "💰" : "🧾"} {lang === "en" ? "Debt Repayment" : "Remboursement dette"} · DEBT
-                  </div>
-                )}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: (item.isDebt || item.isDebtPayment) ? 4 : 7 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, flex: 1, paddingRight: 8, lineHeight: 1.3 }}>{item.name}</div>
-                  <button onClick={() => updateQty(idx, 0)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: "0 2px", flexShrink: 0 }}>✕</button>
-                </div>
-                {item.isDebt ? (
-                  <div style={{ fontSize: 14, fontWeight: 800, color: "#f87171", textAlign: "right" }}>{formatCFA(item.unit_price)}</div>
-                ) : (
-                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    <button onClick={() => updateQty(idx, item.quantity - 1)} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: "pointer", fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
-                    <input type="number" value={item.quantity} onChange={e => onQtyInput(idx, e.target.value)} onBlur={() => onQtyBlur(idx)} style={{ width: 40, textAlign: "center", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "3px 4px", fontSize: 13 }} />
-                    <button onClick={() => updateQty(idx, item.quantity + 1)} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: "pointer", fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
-                    <div style={{ flex: 1, position: "relative" }}>
-                      <input type="number" value={item.unit_price} onChange={e => onPriceInput(idx, e.target.value)} onBlur={() => onPriceBlur(idx)} style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "4px 6px 4px 18px", fontSize: 12 }} />
-                      <span style={{ position: "absolute", left: 6, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "var(--text-muted)" }}>F</span>
-                    </div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--brand-light)", minWidth: 56, textAlign: "right" }}>{formatCFA(item.quantity * item.unit_price)}</div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-
-          <div style={{ padding: "14px 16px", borderTop: "2px solid var(--border)", background: "var(--bg-elevated)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <span style={{ fontWeight: 600, fontSize: 13, color: "var(--text-secondary)" }}>Total</span>
-              <span style={{ fontWeight: 800, fontSize: 20, color: "var(--brand-light)", letterSpacing: "-0.5px" }}>{formatCFA(total)}</span>
-            </div>
-
-            {!showPayment ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <button className="btn btn-primary btn-block" disabled={cart.length === 0 || !selectedLocation} onClick={() => setShowPayment(true)} style={{ height: 44, fontSize: 14, fontWeight: 700, borderRadius: 12 }}>
-                  {!selectedLocation ? (lang === "en" ? "Select location first" : "Choisir emplacement") : hasDebt ? (lang === "en" ? "Collect Payment →" : "Encaisser →") : (lang === "en" ? "Proceed to Payment →" : "Paiement →")}
-                </button>
-                {!hasDebt && (
-                  <button disabled={cart.length === 0 || !selectedLocation} onClick={() => { setHoldLabel(""); setHoldNotes(""); setShowHold(true); }}
-                    style={{ height: 40, fontSize: 13, fontWeight: 700, borderRadius: 12, cursor: cart.length === 0 ? "not-allowed" : "pointer", background: "transparent", border: "1.5px solid rgba(245,158,11,0.5)", color: cart.length === 0 ? "var(--text-muted)" : "#fbbf24", opacity: cart.length === 0 || !selectedLocation ? 0.5 : 1 }}>
-                    ⏸ {lang === "en" ? "Hold Sale" : "Mettre en attente"}
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div>
-                {isDebtOnlyCart && (
-                  <div style={{ marginBottom: 10 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>
-                      {lang === "en" ? "Amount to collect (blank = full balance)" : "Montant à encaisser (vide = tout)"}
-                    </div>
-                    <input className="input" type="number"
-                      placeholder={`${lang === "en" ? "Full balance:" : "Solde total:"} ${total.toLocaleString()} FCFA`}
-                      value={debtPayAmt} onChange={e => setDebtPayAmt(e.target.value)}
-                      style={{ marginBottom: 4 }} />
-                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                      {lang === "en" ? "Leave blank to collect full balance" : "Laissez vide pour encaisser le solde total"}
-                    </div>
-                  </div>
-                )}
-                {!isDebtOnlyCart && (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 10 }}>
-                    {PAYMENT_MODES.map(pm => (
-                      <button key={pm.key} onClick={() => setPayMode(pm.key)} style={{ padding: "8px 4px", borderRadius: 10, border: `1.5px solid ${payMode === pm.key ? pm.color : "var(--border)"}`, background: payMode === pm.key ? pm.color + "18" : "transparent", color: payMode === pm.key ? pm.color : "var(--text-secondary)", cursor: "pointer", fontSize: 11, fontWeight: 700, transition: "all 0.15s" }}>
-                        <div style={{ fontSize: 14 }}>{pm.icon}</div>
-                        <div style={{ marginTop: 2 }}>{lang === "en" ? pm.en : pm.fr}</div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {payMode === "partial" && !isDebtOnlyCart && (
-                  <input className="input" type="number" placeholder={lang === "en" ? "Amount paid (FCFA)" : "Montant payé (FCFA)"} value={paidAmt} onChange={e => setPaidAmt(e.target.value)} style={{ marginBottom: 8 }} />
-                )}
-                {(payMode === "partial" || payMode === "credit") && !isDebtOnlyCart && (
-                  <input className="input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={{ marginBottom: 8 }} title={lang === "en" ? "Due date" : "Date d'échéance"} />
-                )}
-                <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
-                  {PAY_METHODS.map(m => (
-                    <button key={m.key} onClick={() => setPayMethod(m.key)} style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: `1.5px solid ${payMethod === m.key ? "var(--brand)" : "var(--border)"}`, background: payMethod === m.key ? "rgba(79,70,229,0.12)" : "transparent", color: payMethod === m.key ? "var(--brand-light)" : "var(--text-secondary)", cursor: "pointer", fontSize: 10, fontWeight: 700, transition: "all 0.15s" }}>
-                      <div>{m.icon}</div>
-                      <div style={{ marginTop: 1 }}>{lang === "en" ? m.en : m.fr}</div>
-                    </button>
-                  ))}
-                </div>
-                <div style={{ background: "var(--bg-card)", borderRadius: 10, padding: "10px 12px", marginBottom: 10, fontSize: 12 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                    <span style={{ color: "var(--text-muted)" }}>Total</span><strong>{formatCFA(total)}</strong>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span style={{ color: "#10b981" }}>{lang === "en" ? "Paid" : "Payé"}</span>
-                    <strong style={{ color: "#10b981" }}>{formatCFA(paid)}</strong>
-                  </div>
-                  {balance > 0 && !hasDebt && (
-                    <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 6, borderTop: "1px solid var(--border)", marginTop: 3 }}>
-                      <span style={{ color: "#f87171", fontWeight: 600 }}>{lang === "en" ? "Balance due" : "Reste"}</span>
-                      <strong style={{ color: "#f87171" }}>{formatCFA(balance)}</strong>
-                    </div>
-                  )}
-                </div>
-                {!shiftIsOpen && (
-                  <div style={{ padding: "8px 12px", background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.35)", borderRadius: 8, fontSize: 12, color: "#fbbf24", fontWeight: 600, marginBottom: 8, textAlign: "center" }}>
-                    {noShiftHint(lang)}
-                  </div>
-                )}
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => setShowPayment(false)} className="btn btn-secondary" style={{ flex: 1 }}>← {lang === "en" ? "Back" : "Retour"}</button>
-                  {(payMode === "credit" || payMode === "partial") && !customer && (
-                    <div style={{ gridColumn: "1/-1", padding: "8px 12px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, fontSize: 12, color: "#f87171", marginBottom: 8 }}>
-                      ⚠️ {lang === "en" ? "A registered customer is required for credit or partial sales." : "Un client enregistré est requis pour les ventes à crédit ou partielles."}
-                    </div>
-                  )}
-                  <button onClick={attemptCheckout} disabled={!shiftIsOpen || saleMutation.isPending || (!hasDebt && payMode === "partial" && !paidAmt) || ((payMode === "credit" || payMode === "partial") && !customer)} title={!shiftIsOpen ? noShiftHint(lang) : ""} className="btn btn-success" style={{ flex: 2, fontWeight: 700 }}>
-                    {saleMutation.isPending ? "⏳" : (lang === "en" ? "✓ Confirm" : "✓ Valider")}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        )}
       </div>
       </div>{/* /MP-CASH-SHIFTS-UI outer column */}
+
+      {/* MP-MOBILE-UI-PHASE-2A: mobile cart bottom sheet. Hosts the
+          SAME cartPaneInner JSX as the desktop right-pane above, so
+          every cart feature (debt rows, online-cart prefill, hold/
+          resume, payment form, Confirm/PayButton) works identically
+          in both viewports. The persistent strip inside MobileCartSheet
+          shows the totals; tap to expand. */}
+      {mobile && (
+        <MobileCartSheet
+          open={sheetOpen}
+          onOpenChange={setSheetOpen}
+          itemCount={cart.length}
+          total={total}
+          formatTotal={formatCFA}
+          lang={lang}
+        >
+          {cartPaneInner}
+        </MobileCartSheet>
+      )}
       {/* ── BUG 2: HARD BLOCK — product not stocked at this location ── */}
       {blockModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000, padding: 16 }}>
