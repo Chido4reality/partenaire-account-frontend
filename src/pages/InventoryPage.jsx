@@ -750,7 +750,13 @@ export default function InventoryPage() {
 
       {/* ── STOCK TAB ── */}
       {tab === "stock" && (
-        <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden" }}>
+        // MP-MOBILE-UI-PHASE-1-5: mirror the Overview tab's h-scroll
+        // pattern (overflow:auto + table minWidth) so the 11-column
+        // Stock Levels table is reachable on mobile. The previous
+        // overflow:hidden clipped the overflow with no scroll
+        // affordance, leaving cashiers unable to see Status/Last-moved
+        // /Actions columns on a ~360px phone.
+        <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "auto" }}>
           {stockLoading ? <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>Loading...</div>
           : filtered.length === 0 ? (
             <div className="empty-state">
@@ -758,7 +764,7 @@ export default function InventoryPage() {
               <div style={{ fontWeight: 600 }}>{search ? `No results for "${search}"` : (lang === "en" ? "No stock records yet" : "Aucun stock")}</div>
             </div>
           ) : (
-            <table className="table">
+            <table className="table" style={{ minWidth: 800 }}>
               <thead>
                 <tr>
                   <th>{lang === "en" ? "Product" : "Produit"}</th>

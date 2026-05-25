@@ -13,6 +13,7 @@ import { cacheData, getCachedData } from "../utils/offlineStore";
 import CameraScanner from "../components/common/CameraScanner";
 import { genSaleCodes } from "../utils/receiptCodes";
 import { ActiveShiftIndicator, useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
+import MobileShiftChip from "../components/layout/MobileShiftChip";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 
 const PAYMENT_MODES = [
@@ -1064,10 +1065,14 @@ export default function POSPage() {
       )}
 
       {/* MP-CASH-SHIFTS-UI: outer column so the shift indicator sits
-          on top without breaking the left/right panel layout. */}
+          on top without breaking the left/right panel layout.
+          MP-MOBILE-UI-PHASE-1-5: on mobile, swap the full-width banner
+          for a compact chip that opens a bottom sheet — saves ~30px
+          vertical space cashiers need to see the cart. Desktop keeps
+          the inline indicator. */}
       <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--bg-base)" }}>
-        <div style={{ padding: "10px 14px 0 14px" }}>
-          <ActiveShiftIndicator />
+        <div style={{ padding: mobile ? "8px 14px 0 14px" : "10px 14px 0 14px" }}>
+          {mobile ? <MobileShiftChip /> : <ActiveShiftIndicator />}
         </div>
         <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: mobile ? "column" : "row" }}>
 
