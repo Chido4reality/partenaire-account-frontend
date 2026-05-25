@@ -297,9 +297,16 @@ export default function Dashboard() {
             )}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 20, alignItems: 'start' }}>
-            {/* Recent sales */}
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          {/* MP-MOBILE-UI-PHASE-1-5: stack columns on mobile so the
+              Recent Sales card isn't squeezed into a ~60px slot beside
+              the 280px Quick Actions sidebar. md:grid-cols-[1fr_280px]
+              preserves the desktop sidebar layout. */}
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_280px] gap-5 items-start">
+            {/* Recent sales — overflow:auto so the wide table can
+                h-scroll on mobile when stacked full-width still isn't
+                enough for all 5 columns. minWidth on the table mirrors
+                the InventoryPage Stock Levels fix pattern (aea7e27). */}
+            <div className="card" style={{ padding: 0, overflow: 'auto' }}>
               <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15 }}>{t('dashboard.recentSales')}</span>
                 <button onClick={() => navigate('/reports')} className="btn btn-secondary btn-sm">
@@ -312,7 +319,7 @@ export default function Dashboard() {
                   <div className="empty-state-text">{t('common.noData')}</div>
                 </div>
               ) : (
-                <table className="table">
+                <table className="table" style={{ minWidth: 560 }}>
                   <thead>
                     <tr>
                       <th>{lang === 'en' ? 'Invoice' : 'Facture'}</th>
