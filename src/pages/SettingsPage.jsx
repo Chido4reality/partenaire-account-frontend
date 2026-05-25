@@ -414,21 +414,25 @@ export default function SettingsPage() {
               {activeStaff.map(s => {
                 const rs = roleStyle(s.role);
                 return (
-                  // MP-MOBILE-UI: flexWrap on the row so the actions
-                  // block drops below name/phone on narrow viewports
-                  // instead of overflowing the card. minWidth:0 on the
-                  // middle div lets long names ellipsis cleanly. The
-                  // actions block keeps flexShrink:0 so its buttons
-                  // don't squeeze together when it wraps.
-                  <div key={s.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 18px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-                    <div style={{ width: 38, height: 38, borderRadius: 10, background: rs.bg, color: rs.color, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
-                      {s.full_name?.charAt(0)?.toUpperCase()}
+                  // MP-MOBILE-UI: deterministic stack. The previous
+                  // flex-wrap fallback (57d4b0a) depended on intrinsic
+                  // widths and let rows collapse to ~100px name/phone
+                  // when the actions block barely fit inline. Now the
+                  // avatar+name+phone group has w-full on mobile so
+                  // it occupies the whole row, FORCING the actions
+                  // block to wrap to a new line. md+ restores the
+                  // inline layout via md:w-auto + md:flex-1.
+                  <div key={s.id} className="flex flex-wrap items-center" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 18px", gap: 14 }}>
+                    <div className="flex items-center gap-3.5 w-full md:w-auto md:flex-1 min-w-0">
+                      <div style={{ width: 38, height: 38, borderRadius: 10, background: rs.bg, color: rs.color, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
+                        {s.full_name?.charAt(0)?.toUpperCase()}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.full_name}</div>
+                        <div style={{ fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.phone}</div>
+                      </div>
                     </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.full_name}</div>
-                      <div style={{ fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.phone}</div>
-                    </div>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0, flexWrap: "wrap" }}>
+                    <div className="flex items-center gap-2 flex-wrap" style={{ flexShrink: 0 }}>
                       <span style={{ fontSize: 11, padding: "2px 10px", borderRadius: 12, background: rs.bg, color: rs.color, fontWeight: 600 }}>
                         {ROLES.find(r => r.value === s.role)?.[lang === "en" ? "en" : "fr"] || s.role}
                       </span>
@@ -456,14 +460,19 @@ export default function SettingsPage() {
                   {inactiveStaff.map(s => {
                     const rs = roleStyle(s.role);
                     return (
-                      // MP-MOBILE-UI: same flexWrap fix as the active row above.
-                      <div key={s.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 18px", display: "flex", alignItems: "center", gap: 14, opacity: 0.6, marginBottom: 8, flexWrap: "wrap" }}>
-                        <div style={{ width: 38, height: 38, borderRadius: 10, background: rs.bg, color: rs.color, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
-                          {s.full_name?.charAt(0)?.toUpperCase()}
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.full_name}</div>
-                          <div style={{ fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.phone}</div>
+                      // MP-MOBILE-UI: same deterministic stack as the
+                      // active row above (avatar+name group takes w-full
+                      // on mobile, forcing the Reactivate button to wrap
+                      // to a new line).
+                      <div key={s.id} className="flex flex-wrap items-center" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 18px", gap: 14, opacity: 0.6, marginBottom: 8 }}>
+                        <div className="flex items-center gap-3.5 w-full md:w-auto md:flex-1 min-w-0">
+                          <div style={{ width: 38, height: 38, borderRadius: 10, background: rs.bg, color: rs.color, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
+                            {s.full_name?.charAt(0)?.toUpperCase()}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.full_name}</div>
+                            <div style={{ fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.phone}</div>
+                          </div>
                         </div>
                         {isOwner && (
                           <button onClick={() => reactivateStaffMutation.mutate(s.id)}
