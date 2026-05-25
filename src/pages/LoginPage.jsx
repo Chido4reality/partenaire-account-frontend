@@ -36,7 +36,7 @@ export default function LoginPage() {
       <div style={{ position: "absolute", width: 500, height: 500, borderRadius: "50%", background: "radial-gradient(circle, rgba(79,70,229,0.12) 0%, transparent 70%)", top: "50%", left: "50%", transform: "translate(-50%,-50%)", pointerEvents: "none" }} />
       <div style={{ width: "100%", maxWidth: 400, position: "relative" }}>
         <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div style={{ width: 60, height: 60, borderRadius: 16, margin: "0 auto 14px", background: "linear-gradient(135deg, #4f46e5, #7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26 }}>ðŸ¤</div>
+          <div style={{ width: 60, height: 60, borderRadius: 16, margin: "0 auto 14px", background: "linear-gradient(135deg, #4f46e5, #7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26 }}>🤝</div>
           <h1 style={{ fontFamily: "var(--font-display)", fontSize: 26, fontWeight: 800, color: "var(--text-primary)" }}>Mon Partenaire</h1>
           <p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 6 }}>{lang === "en" ? "Manage your shop, grow your business" : "Gerez votre boutique, developpez votre business"}</p>
         </div>
@@ -49,7 +49,7 @@ export default function LoginPage() {
             </div>
             <div className="form-group">
               <label className="label">{t("auth.password")}</label>
-              <input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" />
+              <input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="" />
             </div>
             <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={loading} style={{ marginTop: 8 }}>
               {loading ? t("auth.logging") : t("auth.loginBtn")}
@@ -62,7 +62,7 @@ export default function LoginPage() {
         </div>
         <div style={{ textAlign: "center", marginTop: 16 }}>
           <button onClick={() => setLang(lang === "en" ? "fr" : "en")} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}>
-            ðŸŒ {lang === "en" ? "Francais" : "English"}
+            🌐 {lang === "en" ? "Francais" : "English"}
           </button>
         </div>
       </div>
