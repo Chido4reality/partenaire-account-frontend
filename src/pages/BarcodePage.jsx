@@ -54,7 +54,7 @@ export default function BarcodePage() {
     const barcodeCode = product.barcode || product.id?.slice(-8).toUpperCase();
     const totalWidth = dims.width;
     const totalHeight = dims.height;
-    const orgName = org?.name || "Mon Partenaire";
+    const orgName = org?.name || "Mon Partenaire Dozie";
 
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="${totalHeight}" style="border:1px solid #ccc;border-radius:4px;background:white;font-family:Arial,sans-serif;">
       ${showOrg ? `<text x="${totalWidth/2}" y="14" text-anchor="middle" font-size="${dims.fontSize - 1}" fill="#666">${orgName}</text>` : ""}

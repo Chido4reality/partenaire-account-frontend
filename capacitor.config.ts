@@ -21,7 +21,7 @@ import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId:    'com.partenaire.monpartenaire',
-  appName:  'Mon Partenaire',
+  appName:  'Mon Partenaire Dozie',
   webDir:   'dist',
 
   // androidScheme:'https' lets the Android WebView treat

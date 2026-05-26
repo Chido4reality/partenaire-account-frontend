@@ -97,7 +97,7 @@ export function buildLedgerText(ledger, lang) {
   }
 
   L.push("");
-  L.push("— Mon Partenaire POS");
+  L.push("— Mon Partenaire Dozie POS");
   return L.join("\n");
 }
 
@@ -232,7 +232,7 @@ export function buildLedgerTextV2(ledger, lang) {
   }
 
   L.push("");
-  L.push("— Mon Partenaire POS");
+  L.push("— Mon Partenaire Dozie POS");
   return L.join("\n");
 }
 

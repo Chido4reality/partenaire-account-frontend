@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Mon Partenaire</string>
-    <string name="title_activity_main">Mon Partenaire</string>
+    <string name="app_name">Mon Partenaire Dozie</string>
+    <string name="title_activity_main">Mon Partenaire Dozie</string>
     <string name="package_name">com.partenaire.monpartenaire</string>
     <string name="custom_url_scheme">com.partenaire.monpartenaire</string>
 </resources>
