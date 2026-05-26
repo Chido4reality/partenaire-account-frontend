@@ -1396,6 +1396,19 @@ export default function POSPage() {
             )}
           </div>
 
+          {/* ── SCANNER + RESULTS WRAP ───────────────────────────
+              MP-MOBILE-UI: when the mobile cart strip is visible (cart
+              non-empty OR holds present), the floating strip + the soft
+              keyboard squeeze the visible area such that inline search
+              results render UNDER the strip — only on APK because
+              Capacitor's Keyboard:'native' resize mode shrinks the
+              WebView viewport on input focus while the strip stays
+              anchored to the new bottom. Reversing the scanner ↔
+              results visual order on mobile-with-strip pushes results
+              ABOVE the input, keeping them in already-visible space no
+              matter how aggressively the keyboard reflows things.
+              Desktop and empty-cart mobile keep the original order. */}
+          <div style={{ display: "flex", flexDirection: (mobile && (cart.length > 0 || activeHolds.length > 0)) ? "column-reverse" : "column" }}>
           {/* ── SCANNER SECTION ── */}
           <div style={{ marginBottom: 14 }}>
             <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", display: "block", marginBottom: 8 }}>
@@ -1520,6 +1533,7 @@ export default function POSPage() {
               })}
             </div>
           )}
+          </div>{/* /SCANNER + RESULTS WRAP */}
 
           {search.length > 0 && filteredProducts.length === 0 && (
             <div style={{ textAlign: "center", padding: "20px", color: "var(--text-muted)", fontSize: 13 }}>
