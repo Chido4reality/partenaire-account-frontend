@@ -10,3 +10,14 @@ dist/
 .env.local
 .env.*.local
 .env.development
+
+# MP-PLAY-CONSOLE-INITIAL-RELEASE: NEVER commit the release keystore.
+# Losing it loses the ability to publish updates; committing it is
+# equivalent to publishing your app-signing identity. Keep the .jks
+# file in android/ locally + at least one offline backup. The build
+# reads its passwords from MP_KEYSTORE_PASSWORD + MP_KEY_PASSWORD
+# env vars so neither lands in source either.
+android/*.jks
+android/*.keystore
+android/app/*.jks
+android/app/*.keystore
