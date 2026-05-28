@@ -27,18 +27,60 @@ const IS_NATIVE = typeof window !== 'undefined'
                   && typeof window.Capacitor.isNativePlatform === 'function'
                   && window.Capacitor.isNativePlatform();
 
-// Web-only: cached online flag kept in sync via window 'online'/'offline'
-// events. Needed because Chromium DevTools fires the offline event reliably
-// but doesn't always set navigator.onLine = false (crbug 423246 family) —
-// so reading navigator.onLine alone makes the adapter miss DevTools-emulated
-// offline even when OnlineOfflineBar (which is event-driven) sees it.
+// Web-only: cached REAL-connectivity flag. Updated by (a) window
+// online/offline events and (b) a periodic HEAD /health ping. The ping is
+// the important bit: navigator.onLine only knows whether a network interface
+// exists — it reports "online" on a router/hotspot whose upstream is dead
+// (the common Cameroon flaky-network case), so a request fires and hangs.
+// The ping closes that blind spot for BOTH the OnlineOfflineBar (via _subs)
+// and getNetworkStatus (which reads _cachedOnline). Also catches
+// DevTools-emulated offline (crbug 423246: event fires but navigator.onLine
+// can stay true).
 let _cachedOnline = typeof navigator !== 'undefined' ? !!navigator.onLine : true;
 let _webListenersWired = false;
+const _subs = new Set();                                   // onNetworkChange web subscribers
+const HEALTH_URL = (import.meta.env.VITE_API_URL || '/api') + '/health';
+let _healthTimer = null;
+
+// Notify web subscribers on change only.
+function _notifyWeb(connected) {
+  if (connected === _cachedOnline) return;
+  _cachedOnline = connected;
+  const status = { connected, connectionType: 'unknown', source: 'web' };
+  _subs.forEach(cb => { try { cb(status); } catch { /* noop */ } });
+}
+
+// Any HTTP response (even 404/405) proves the backend is reachable; only a
+// 3s abort or a network error counts as offline.
+async function pingHealth() {
+  try {
+    const c = new AbortController();
+    const tid = setTimeout(() => c.abort(), 3000);
+    await fetch(HEALTH_URL, { method: 'HEAD', cache: 'no-store', signal: c.signal });
+    clearTimeout(tid);
+    return true;
+  } catch { return false; }
+}
+
 function wireWebListeners() {
   if (_webListenersWired || typeof window === 'undefined') return;
-  window.addEventListener('online',  () => { _cachedOnline = true;  });
-  window.addEventListener('offline', () => { _cachedOnline = false; });
+  // 'online' can fire optimistically before upstream is truly reachable —
+  // confirm with a ping. 'offline' is authoritative → go offline now.
+  window.addEventListener('online',  () => { pingHealth().then(_notifyWeb); });
+  window.addEventListener('offline', () => { _notifyWeb(false); });
   _webListenersWired = true;
+}
+
+// Periodic 3s real-connectivity poll (web only — native uses Capacitor
+// Network events). Flips _cachedOnline + notifies the bar, and (since
+// getNetworkStatus reads _cachedOnline) lets the write adapter enqueue
+// immediately on dead-upstream instead of waiting out the 15s write timeout.
+function startWebHealthMonitor() {
+  if (_healthTimer || IS_NATIVE) return;
+  wireWebListeners();
+  const tick = async () => { _notifyWeb(await pingHealth()); };
+  tick();
+  _healthTimer = setInterval(tick, 3000);
 }
 
 // On native, lazy-load @capacitor/network on first use. Web short-circuits to
@@ -89,8 +131,6 @@ export async function getNetworkStatus() {
 export function onNetworkChange(cb) {
   let active = true;
   let capHandle = null;
-  let webOnline = null;
-  let webOffline = null;
 
   ensureLoaded().then(() => {
     if (!active) return;
@@ -112,17 +152,17 @@ export function onNetworkChange(cb) {
       }
     }
     if (typeof window !== 'undefined') {
-      webOnline  = () => cb({ connected: true,  connectionType: 'unknown', source: 'web' });
-      webOffline = () => cb({ connected: false, connectionType: 'unknown', source: 'web' });
-      window.addEventListener('online',  webOnline);
-      window.addEventListener('offline', webOffline);
+      // Web: subscribe to the shared health-monitor channel. The monitor
+      // (window online/offline events + 3s HEAD /health poll) calls every
+      // subscriber via _notifyWeb on a real-connectivity change.
+      _subs.add(cb);
+      startWebHealthMonitor();
     }
   });
 
   return () => {
     active = false;
+    _subs.delete(cb);
     if (capHandle) { try { capHandle.remove(); } catch { /* noop */ } }
-    if (webOnline)  window.removeEventListener('online',  webOnline);
-    if (webOffline) window.removeEventListener('offline', webOffline);
   };
 }

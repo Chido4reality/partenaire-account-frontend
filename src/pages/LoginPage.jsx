@@ -27,7 +27,13 @@ export default function LoginPage() {
       login(res.data.user, res.data.org, res.data.token);
       navigate("/");
     } catch (err) {
-      toast.error(err.response?.data?.message || t("common.error"));
+      // No response / axios timeout (ECONNABORTED) / transport error
+      // (ERR_NETWORK) = connectivity problem, not bad credentials. Say so
+      // clearly and fast (6s timeout) instead of a generic error after a hang.
+      const networkish = !err.response || err.code === "ECONNABORTED" || err.code === "ERR_NETWORK";
+      toast.error(networkish
+        ? (lang === "fr" ? "Pas de connexion — vérifiez votre réseau" : "No connection — check your network")
+        : (err.response?.data?.message || t("common.error")));
     } finally { setLoading(false); }
   };
 

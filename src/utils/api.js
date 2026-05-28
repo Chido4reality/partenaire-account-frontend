@@ -3,11 +3,16 @@ import { useAuthStore, useLangStore } from "../store";
 import { enqueue, configureSync, startWorker, genLocalId } from "./pendingSync";
 import { getNetworkStatus } from "./network";
 
-// Timeout intentionally generous: the service worker has its own 4s abort timer
-// for offline detection, then writes to IndexedDB and posts a message. A short
-// axios timeout (e.g. 5s) can fire DURING that fallback and surface as a hang.
+// Default 6s timeout for reads + auth so a dropped/partial network surfaces
+// fast instead of hanging. (The old 15s was "generous" to let a now-DELETED
+// service worker's 4s abort fire first — that SW was retired in vite.config's
+// Slice-3 cleanup, so 15s just became a silent ~15s freeze on every read/login
+// when the network drops.) Offline-eligible writes get 15s back via the
+// request interceptor below — they enqueue on failure through
+// offlineAwareAdapter, so a longer ceiling there only lets a slow-but-up
+// backend ack before we fall back to the optimistic queue.
 const BASE_URL = import.meta.env.VITE_API_URL || "/api";
-const api = axios.create({ baseURL: BASE_URL, timeout: 15000 });
+const api = axios.create({ baseURL: BASE_URL, timeout: 6000 });
 
 // MP-CAPACITOR-AND-OFFLINE-FIRST-ARCHITECTURE Slice 3: hand the
 // queue worker the same baseURL + auth token getter we use here so
@@ -88,6 +93,10 @@ api.interceptors.request.use(config => {
   if (isOfflineEligible(config.method, config.url) && config.data && typeof config.data === "object" && !config.data.local_id) {
     config.data = { ...config.data, local_id: genLocalId() };
   }
+  // Offline-eligible writes keep the generous 15s ceiling: they enqueue on
+  // failure, so giving a slow-but-up backend longer to ack avoids a premature
+  // optimistic-queue fallback. Reads/auth stay on the 6s default (fail fast).
+  if (isOfflineEligible(config.method, config.url)) config.timeout = 15000;
   return config;
 });
 
