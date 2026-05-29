@@ -27,6 +27,8 @@
 // in pendingSync.js owns the state transitions; this file just gives
 // it durable storage.
 
+import Dexie from 'dexie';
+
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS mirror_pa_products (
   id TEXT PRIMARY KEY,
@@ -328,20 +330,89 @@ function shimParseDelete(sql, params) {
   return { changes };
 }
 
+// ── Web persistence (Phase 1B) ──────────────────────────────────
+//
+// The in-memory shim above loses everything on a browser reload. For
+// the integrity-critical write queue (pending_sync) that means an
+// offline sale rung before a refresh is silently lost. Back ONLY that
+// table with IndexedDB (the mirror_* tables are re-pullable read caches
+// — not worth persisting). Dedicated DB `mp_offline_queue`, kept here
+// so localDb.js is the only file that owns this and there's zero
+// coupling to offlineStore.js / POS_OfflineDB.
+//
+// Native is unaffected — this is web-shim-only. The pendingSync.js
+// state machine is unaffected — it still issues the same SQL; we just
+// hydrate the table on first access and write-through on mutation.
+
+let _queueDb = null;
+function getQueueDb() {
+  if (_queueDb) return _queueDb;
+  _queueDb = new Dexie('mp_offline_queue');
+  _queueDb.version(1).stores({ pending_sync: 'id, status, created_at, local_id' });
+  return _queueDb;
+}
+
+async function idbLoadPendingSync() {
+  try { return await getQueueDb().pending_sync.toArray(); }
+  catch (e) { console.warn('[localDb] pending_sync IDB load failed; in-memory only:', e?.message); return []; }
+}
+
+// Whole-table write-through. The queue is bounded (unflushed rows +
+// 5-min sent retention), so clear + bulkPut per mutation is trivial and
+// atomic — no per-row IDB surgery. IDB failure (private mode / quota)
+// degrades to in-memory only for the session; the sale still works now.
+async function idbPersistPendingSync(rows) {
+  try {
+    const db = getQueueDb();
+    await db.transaction('rw', db.pending_sync, async () => {
+      await db.pending_sync.clear();
+      if (rows && rows.length) await db.pending_sync.bulkPut(rows.map(r => ({ ...r })));
+    });
+  } catch (e) {
+    console.warn('[localDb] pending_sync IDB persist failed; queue is memory-only this session:', e?.message);
+  }
+}
+
+// One-time hydration: load the persisted queue into the shim before the
+// first read/write touches it. Gated by a single promise so it runs
+// once regardless of which exec/query call comes first (pendingSync hits
+// exec/query directly without ever calling openDb() on web).
+let _webHydrated = false;
+let _webHydrating = null;
+function ensureWebHydrated() {
+  if (_webHydrated) return Promise.resolve();
+  if (!_webHydrating) {
+    _webHydrating = (async () => {
+      const rows = await idbLoadPendingSync();
+      _shimTables.set('pending_sync', rows);
+      _webHydrated = true;
+    })();
+  }
+  return _webHydrating;
+}
+
 async function execWeb(sql, params = []) {
+  await ensureWebHydrated();
   const trimmed = sql.trim();
   // CREATE TABLE / INDEX / multi-statement schema → recognised as no-op.
   if (/^\s*(CREATE\s+(TABLE|INDEX)|DROP|PRAGMA|BEGIN|COMMIT|ROLLBACK)/i.test(trimmed)) {
     return { changes: 0 };
   }
-  if (/^\s*INSERT/i.test(trimmed))  { shimParseInsert(trimmed, params); return { changes: 1 }; }
-  if (/^\s*UPDATE/i.test(trimmed))  { return shimParseUpdate(trimmed, params); }
-  if (/^\s*DELETE/i.test(trimmed))  { return shimParseDelete(trimmed, params); }
-  if (/^\s*SELECT/i.test(trimmed))  { return { changes: 0, rows: shimParseSelect(trimmed, params) }; }
-  throw new Error(`[localDb shim] unsupported SQL: ${trimmed.slice(0, 60)}`);
+  let result;
+  if (/^\s*INSERT/i.test(trimmed))      { shimParseInsert(trimmed, params); result = { changes: 1 }; }
+  else if (/^\s*UPDATE/i.test(trimmed)) { result = shimParseUpdate(trimmed, params); }
+  else if (/^\s*DELETE/i.test(trimmed)) { result = shimParseDelete(trimmed, params); }
+  else if (/^\s*SELECT/i.test(trimmed)) { return { changes: 0, rows: shimParseSelect(trimmed, params) }; }
+  else throw new Error(`[localDb shim] unsupported SQL: ${trimmed.slice(0, 60)}`);
+  // Write-through: persist the queue whenever a mutation touched it.
+  if (/\bpending_sync\b/i.test(trimmed)) {
+    await idbPersistPendingSync(_shimTables.get('pending_sync') || []);
+  }
+  return result;
 }
 
 async function queryWeb(sql, params = []) {
+  await ensureWebHydrated();
   return shimParseSelect(sql, params);
 }
 

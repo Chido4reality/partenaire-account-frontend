@@ -153,8 +153,21 @@ export function startWorker() {
   // Periodic safety net for rows in failed_transient state that the
   // online event didn't catch (rare — usually online fires first).
   _pollTimer = setInterval(() => flushIfOnline(), POLL_INTERVAL_MS);
-  // First boot — try once.
-  flushIfOnline();
+  // Crash/reload recovery (web + native), THEN first flush. A row left
+  // in 'sending' (process died mid-attempt — e.g. browser reload on web
+  // now that the queue persists, or app kill on native) is never
+  // re-picked: flushOnce only scans 'queued' + 'failed_transient'.
+  // Reset stranded 'sending' → 'queued' so it retries. Safe: the stamped
+  // local_id + backend dedupe make replay idempotent (a row that did
+  // land returns dedup_replay → sent, no duplicate).
+  recoverStranded().then(() => flushIfOnline());
+}
+
+async function recoverStranded() {
+  try {
+    await exec(`UPDATE pending_sync SET status = ? WHERE status = ?`, ['queued', 'sending']);
+    notify();
+  } catch { /* best-effort; queued rows still flush regardless */ }
 }
 
 async function flushIfOnline() {
