@@ -133,12 +133,49 @@ export function OpenShiftModal({ open, onClose, onOpened }) {
       if (chosenLoc && chosenLocId !== selectedLocation?.id) {
         setLocation(chosenLoc);
       }
-      toast.success(lang === "fr"
-        ? `Poste ouvert à ${chosenName} avec ${formatCFA(d.opening_float)}`
-        : `Shift opened at ${chosenName} with ${formatCFA(d.opening_float)}`);
+      // MP-PHASE-3-OFFLINE-SHIFT: optimistic 202 from the offline queue →
+      // tell the cashier it'll sync rather than implying it hit the server.
+      toast.success(res?.data?.offline_queued
+        ? (lang === "fr" ? `Poste ouvert à ${chosenName} · se synchronisera` : `Shift opened at ${chosenName} · will sync`)
+        : (lang === "fr"
+            ? `Poste ouvert à ${chosenName} avec ${formatCFA(d.opening_float)}`
+            : `Shift opened at ${chosenName} with ${formatCFA(d.opening_float)}`));
+      // MP-PHASE-3-OFFLINE-SHIFT: offline open is optimistic. The
+      // ["current-shift", locId] query can't refetch while offline
+      // (networkMode 'online' pauses it), so without seeding the cache the
+      // POS keeps seeing no open shift and blocks sales — making the "·
+      // will sync" toast a false promise. Seed it so the shift reads as open
+      // immediately. Drawer math starts at zero (offline sales don't update
+      // it locally yet — Phase 3.1; the authoritative close reconciles from
+      // server-side pa_drawer_ledger once the queue drains). All consumers
+      // read these with `|| 0` guards, so the zeros are safe.
+      if (res?.data?.offline_queued && chosenLocId) {
+        const nowIso = new Date().toISOString();
+        qc.setQueryData(["current-shift", chosenLocId], {
+          shift_id:            d.shift_id,
+          status:              "open",
+          opening_float:       fl,
+          opened_at:           nowIso,
+          shift_date:          nowIso.split("T")[0],
+          cashier_id:          user?.id ?? null,
+          cashier_name:        user?.name ?? null,
+          location_id:         chosenLocId,
+          cash_sales_received: 0,
+          cash_refunds:        0,
+          cash_expenses:       0,
+          expected_drawer:     fl,
+          actual_cash:         null,
+        });
+      }
       // New keys (canonical) + legacy keys (still read by the
-      // bridge ShiftsPage table until Stage 2 swap completes).
-      qc.invalidateQueries({ queryKey: ["current-shift"] });
+      // bridge ShiftsPage table until Stage 2 swap completes). When queued,
+      // do NOT invalidate current-shift — a refetch on a connectivity flicker
+      // would hit /shifts/current before the open has synced and clobber the
+      // seed with "no open shift", re-blocking sales. The seed holds until
+      // the queue drains the open; a later online refetch returns the real row.
+      if (!res?.data?.offline_queued) {
+        qc.invalidateQueries({ queryKey: ["current-shift"] });
+      }
       qc.invalidateQueries({ queryKey: ["shifts-history"] });
       qc.invalidateQueries({ queryKey: ["my-shift"] });
       qc.invalidateQueries({ queryKey: ["all-shifts"] });
@@ -352,13 +389,19 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
     }),
     onSuccess: (res) => {
       const d = res?.data?.data || {};
-      const v = Number(d.variance || 0);
-      const msg = v === 0
-        ? (lang === "fr" ? "Poste fermé. Caisse exacte ✓" : "Shift closed. Drawer exact ✓")
-        : v > 0
-          ? (lang === "fr" ? `Poste fermé. Excédent : +${formatCFA(v)}` : `Shift closed. Surplus: +${formatCFA(v)}`)
-          : (lang === "fr" ? `Poste fermé. Manquant : ${formatCFA(v)}` : `Shift closed. Shortage: ${formatCFA(v)}`);
-      toast.success(msg);
+      // MP-PHASE-3-OFFLINE-SHIFT: offline close is optimistic — variance
+      // isn't known until close_cash_shift runs server-side on sync.
+      if (res?.data?.offline_queued) {
+        toast.success(lang === "fr" ? "Poste fermé · se synchronisera" : "Shift closed · will sync");
+      } else {
+        const v = Number(d.variance || 0);
+        const msg = v === 0
+          ? (lang === "fr" ? "Poste fermé. Caisse exacte ✓" : "Shift closed. Drawer exact ✓")
+          : v > 0
+            ? (lang === "fr" ? `Poste fermé. Excédent : +${formatCFA(v)}` : `Shift closed. Surplus: +${formatCFA(v)}`)
+            : (lang === "fr" ? `Poste fermé. Manquant : ${formatCFA(v)}` : `Shift closed. Shortage: ${formatCFA(v)}`);
+        toast.success(msg);
+      }
       qc.invalidateQueries({ queryKey: ["current-shift"] });
       qc.invalidateQueries({ queryKey: ["shifts-history"] });
       qc.invalidateQueries({ queryKey: ["my-shift"] });

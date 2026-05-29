@@ -41,6 +41,9 @@ const OFFLINE_ELIGIBLE = [
   { rx: /^\/expenditures\/?$/,                     method: "POST" },
   { rx: /^\/stock-transfers\/?$/,                  method: "POST" },
   { rx: /^\/stock\/arrivals\/?$/,                  method: "POST" },
+  // MP-PHASE-3-OFFLINE-SHIFT: shift open/close ride the same queue.
+  { rx: /^\/shifts\/open\/?$/,                      method: "POST" },
+  { rx: /^\/shifts\/[^/]+\/close\/?$/,              method: "POST" },
 ];
 
 function isOfflineEligible(method, url) {
@@ -69,6 +72,9 @@ function buildOptimisticResponse(endpoint, payload, localId) {
         local_id:     localId,
         sale_number:  offlineRef,
         return_ref:   offlineRef,
+        // MP-PHASE-3-OFFLINE-SHIFT: /shifts/open carries the client shift PK
+        // as payload.id; the UI reads `shift_id`, so surface it here.
+        shift_id:     payload.id || localId,
         ...payload,
         // Common echo fields the UI reads.
         id:           localId,
@@ -92,6 +98,15 @@ api.interceptors.request.use(config => {
   // can't land twice.
   if (isOfflineEligible(config.method, config.url) && config.data && typeof config.data === "object" && !config.data.local_id) {
     config.data = { ...config.data, local_id: genLocalId() };
+  }
+  // MP-PHASE-3-OFFLINE-SHIFT: stamp a client UUID as the shift PK (`id`) on
+  // an offline /shifts/open. The backend INSERTs it idempotently, so the
+  // open's replay is dedup-safe and the sales rung against this shift resolve
+  // server-side once it lands. genLocalId() is UUID-v4-shaped (crypto.randomUUID
+  // or a v4-shaped fallback), matching the backend's id regex.
+  const _path = (config.url || "").replace(BASE_URL, "").split("?")[0];
+  if (/^\/shifts\/open\/?$/.test(_path) && config.data && typeof config.data === "object" && !config.data.id) {
+    config.data = { ...config.data, id: genLocalId() };
   }
   // Offline-eligible writes keep the generous 15s ceiling: they enqueue on
   // failure, so giving a slow-but-up backend longer to ack avoids a premature

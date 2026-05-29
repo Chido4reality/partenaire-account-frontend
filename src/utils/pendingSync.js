@@ -202,9 +202,26 @@ async function flushOnce() {
     const cooldown = BACKOFF_MS[idx];
     if (now - lastAtt >= cooldown) elig.push(t);
   }
-  for (const r of elig) {
-    await attempt(r);
-  }
+  // MP-PHASE-3-OFFLINE-SHIFT: shift-before-sales ordering guard. A sale that
+  // replays before its (offline-opened) shift has synced would hit the
+  // backend's NO_OPEN_SHIFT 400 → failed_permanent (replay uses raw fetch, so
+  // the axios interceptor's softening doesn't apply). So attempt /shifts/open
+  // rows FIRST, and if any shift-open is still unsynced, hold the rest this
+  // pass — they retry next pass once the shift lands. Additive precondition
+  // only; sale processing itself is unchanged. (No SQL LIKE — the web shim's
+  // WHERE grammar doesn't support it — so re-scan and filter in JS.)
+  const isShiftOpen = (ep) => /\/shifts\/open\/?$/.test(ep || '');
+  for (const r of elig.filter(r => isShiftOpen(r.endpoint))) await attempt(r);
+  const all = await query(`SELECT * FROM pending_sync`);
+  // Hold the rest only while a shift-open is still ACTIVELY trying
+  // (queued / sending / failed_transient). A 'failed_permanent' shift-open is
+  // a terminal conflict (e.g. 409 — another shift already open); don't freeze
+  // the queue forever on it — let its sales attempt, fail NO_OPEN_SHIFT, and
+  // surface alongside it in ConflictModal for the cashier to resolve together.
+  const shiftStillTrying = all.some(r =>
+    isShiftOpen(r.endpoint) && r.status !== 'sent' && r.status !== 'failed_permanent');
+  if (shiftStillTrying) { notify(); return; }
+  for (const r of elig.filter(r => !isShiftOpen(r.endpoint))) await attempt(r);
   // Garbage-collect sent rows older than retention.
   const cutoff = new Date(now - SENT_RETENTION_MS).toISOString();
   await exec(
