@@ -16,7 +16,7 @@
 // page hits them.
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import api, { formatCFA } from "../utils/api";
 import { ActiveShiftIndicator } from "../components/common/ShiftWidgets";
@@ -34,7 +34,7 @@ export default function ShiftsPage() {
   const locId = selectedLocation?.id || null;
   const [offset, setOffset] = useState(0);
 
-  const { data: historyResp, isLoading: histLoading } = useQuery({
+  const { data: historyResp, isLoading: histLoading } = useOfflineCachedQuery({
     queryKey: ["shifts-history", locId, PAGE_LIMIT, offset],
     queryFn: () => api.get(
       `/shifts/history?location_id=${locId}&limit=${PAGE_LIMIT}&offset=${offset}`

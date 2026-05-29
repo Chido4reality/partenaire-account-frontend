@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useLangStore, useAuthStore, useSettingsStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
@@ -88,17 +88,17 @@ export default function ReportsPage() {
   // location_id; empty => all locations).
   const locQS = repLoc ? `&location_id=${repLoc}` : "";
 
-  const { data: dailyData, isLoading: dailyLoading } = useQuery({
+  const { data: dailyData, isLoading: dailyLoading } = useOfflineCachedQuery({
     queryKey: ["reports-daily", from, to, repLoc],
     queryFn: () => api.get("/reports/daily?from=" + from + "&to=" + to + locQS).then(r => r.data)
   });
 
-  const { data: debtData, isLoading: debtLoading } = useQuery({
+  const { data: debtData, isLoading: debtLoading } = useOfflineCachedQuery({
     queryKey: ["reports-debts"],
     queryFn: () => api.get("/reports/debts").then(r => r.data)
   });
 
-  const { data: salesDetailData, isLoading: salesDetailLoading } = useQuery({
+  const { data: salesDetailData, isLoading: salesDetailLoading } = useOfflineCachedQuery({
     queryKey: ["reports-sales-detail", from, to, repLoc],
     queryFn: () => api.get(`/reports/sales-detail?from=${from}&to=${to}${locQS}`).then(r => r.data),
     enabled: tab === "sales"
@@ -106,27 +106,27 @@ export default function ReportsPage() {
 
   const todayStr = new Date().toISOString().split("T")[0];
 
-  const { data: todaySalesData, isLoading: todayLoading } = useQuery({
+  const { data: todaySalesData, isLoading: todayLoading } = useOfflineCachedQuery({
     queryKey: ["reports-today-sales", repLoc],
     queryFn: () => api.get(`/reports/sales-detail?date=${todayStr}${locQS}`).then(r => r.data),
     enabled: tab === "daily_sales",
     refetchInterval: 60000
   });
 
-  const { data: topProductsData, isLoading: topLoading } = useQuery({
+  const { data: topProductsData, isLoading: topLoading } = useOfflineCachedQuery({
     queryKey: ["reports-top-products", from, to],
     queryFn: () => api.get(`/reports/top-products?from=${from}&to=${to}`).then(r => r.data),
     enabled: tab === "products"
   });
 
-  const { data: locationsData } = useQuery({
+  const { data: locationsData } = useOfflineCachedQuery({
     queryKey: ["locations"],
     queryFn: () => api.get("/locations").then(r => r.data),
     staleTime: 300000
   });
   const ledgerLocations = locationsData?.data || [];
 
-  const { data: ledgerData, isLoading: ledgerLoading } = useQuery({
+  const { data: ledgerData, isLoading: ledgerLoading } = useOfflineCachedQuery({
     queryKey: ["reports-ledger", ledgerDate, ledgerLoc],
     queryFn: () => api.get(`/reports/daily-ledger?date=${ledgerDate}&location_id=${ledgerLoc}`).then(r => r.data),
     enabled: tab === "ledger"
@@ -211,7 +211,7 @@ export default function ReportsPage() {
     }
   };
 
-  const { data: returnsData, isLoading: returnsLoading } = useQuery({
+  const { data: returnsData, isLoading: returnsLoading } = useOfflineCachedQuery({
     queryKey: ["reports-returns", from, to],
     queryFn: () => api.get(`/returns?from=${from}&to=${to}`).then(r => r.data),
     enabled: tab === "returns"

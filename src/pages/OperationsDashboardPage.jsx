@@ -17,7 +17,7 @@
 // so the existing landing page survives untouched.
 
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import { Link } from "react-router-dom";
 import { useLangStore } from "../store";
 import api, { formatCFA } from "../utils/api";
@@ -113,22 +113,22 @@ export default function OperationsDashboardPage() {
   const undoDismiss = (id) => setDismissed(prev => { const n = new Set(prev); n.delete(id); saveDismissed(n); return n; });
 
   // ── Queries ──────────────────────────────────────────────────
-  const overview = useQuery({
+  const overview = useOfflineCachedQuery({
     queryKey: ["dash-overview", from, to],
     queryFn:  () => api.get(`/dashboard/overview?from=${from}&to=${to}`).then(r => r.data?.data || null),
     staleTime: 30000,
   });
-  const anomalies = useQuery({
+  const anomalies = useOfflineCachedQuery({
     queryKey: ["dash-anomalies", from, to],
     queryFn:  () => api.get(`/dashboard/anomalies?from=${from}&to=${to}`).then(r => r.data?.data || { anomalies: [] }),
     staleTime: 30000,
   });
-  const debtAging = useQuery({
+  const debtAging = useOfflineCachedQuery({
     queryKey: ["dash-debt-aging"],
     queryFn:  () => api.get(`/dashboard/debt-aging`).then(r => r.data?.data || null),
     staleTime: 60000,
   });
-  const invHealth = useQuery({
+  const invHealth = useOfflineCachedQuery({
     queryKey: ["dash-inventory-health"],
     queryFn:  () => api.get(`/dashboard/inventory-health`).then(r => r.data?.data || null),
     staleTime: 60000,

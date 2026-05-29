@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useLangStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
@@ -22,18 +23,18 @@ export default function ExpenditurePage() {
   const [dateFilter, setDateFilter] = useState(new Date().toISOString().split("T")[0]);
   const [form, setForm] = useState({ location_id: "", category_id: "", amount: "", description: "", exp_date: new Date().toISOString().split("T")[0] });
 
-  const { data: expData, isLoading } = useQuery({
+  const { data: expData, isLoading } = useOfflineCachedQuery({
     queryKey: ["expenditures", dateFilter],
     queryFn: () => api.get(`/expenditures?date=${dateFilter}&limit=50`).then(r => r.data),
     refetchInterval: 30000
   });
 
-  const { data: catData } = useQuery({
+  const { data: catData } = useOfflineCachedQuery({
     queryKey: ["exp-categories"],
     queryFn: () => api.get("/expenditures/categories").then(r => r.data)
   });
 
-  const { data: locData } = useQuery({
+  const { data: locData } = useOfflineCachedQuery({
     queryKey: ["locations"],
     queryFn: () => api.get("/locations").then(r => r.data)
   });

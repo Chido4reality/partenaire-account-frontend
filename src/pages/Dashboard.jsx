@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useOfflineCachedQuery } from '../utils/offlineQuery';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore, useLangStore } from '../store';
 import api, { formatCFA, formatDate, getGreeting } from '../utils/api';
@@ -48,7 +48,7 @@ export default function Dashboard() {
   // to All) — same backend filter, same number. Selecting a shop here
   // scopes only this page's today figures, not the POS/Stock context.
   const [locFilter, setLocFilter] = useState("");
-  const { data: locsResp } = useQuery({
+  const { data: locsResp } = useOfflineCachedQuery({
     queryKey: ["locations"],
     queryFn: () => api.get("/locations").then(r => r.data),
     staleTime: 300000
@@ -68,7 +68,7 @@ export default function Dashboard() {
   const roleIcon = { owner: '👑', manager: '🔑', cashier: '🛒', warehouse: '📦' }[role] || '👤';
   const firstName = user?.full_name?.split(' ')[0] || '';
 
-  const { data: summary, isLoading } = useQuery({
+  const { data: summary, isLoading } = useOfflineCachedQuery({
     queryKey: ['daily-summary', locFilter],
     queryFn: async () => {
       const params = locFilter ? `?location_id=${locFilter}` : '';
@@ -78,20 +78,20 @@ export default function Dashboard() {
     refetchInterval: 60000
   });
 
-  const { data: alerts } = useQuery({
+  const { data: alerts } = useOfflineCachedQuery({
     queryKey: ['stock-alerts'],
     queryFn: async () => api.get('/stock?low_only=true').then(r => r.data),
     refetchInterval: 300000,
     enabled: !isCashier
   });
 
-  const { data: recentSales } = useQuery({
+  const { data: recentSales } = useOfflineCachedQuery({
     queryKey: ['recent-sales'],
     queryFn: async () => api.get('/sales?limit=8').then(r => r.data),
     refetchInterval: 30000
   });
 
-  const { data: credits } = useQuery({
+  const { data: credits } = useOfflineCachedQuery({
     queryKey: ['overdue-credits'],
     queryFn: async () => api.get('/reports/debts').then(r => r.data),
     enabled: isOwner || isManager
@@ -101,11 +101,12 @@ export default function Dashboard() {
   // Surfaces a banner when the org has 0 Dozie publications, linking
   // straight to /inventory. Owner/manager only — cashier doesn't
   // publish.
-  const { data: dozieListings } = useQuery({
+  const { data: dozieListings } = useOfflineCachedQuery({
     queryKey: ['dozie-listings'],
     queryFn: () => api.get('/dozie-listings').then(r => r.data?.data || []),
     enabled: isOwner || isManager,
     staleTime: 60000,
+    fallback: [],
   });
   const hasZeroDozieListings = (isOwner || isManager) && Array.isArray(dozieListings) && dozieListings.length === 0;
 

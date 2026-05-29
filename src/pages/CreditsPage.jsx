@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useAuthStore, useLangStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
@@ -22,14 +23,14 @@ export default function CreditsPage() {
   // before/after) that the shared receipt component renders as
   // eventType='invoice_payment'.
   const [receiptEvent, setReceiptEvent] = useState(null);
-  const { data: orgSettingsResp } = useQuery({
+  const { data: orgSettingsResp } = useOfflineCachedQuery({
     queryKey: ["org-settings"],
     queryFn: () => api.get("/settings").then(r => r.data),
   });
   const orgSettings = orgSettingsResp?.data || org || {};
 
   // ── Fetch all customers with debt (summary list) ──────────────────────────
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useOfflineCachedQuery({
     queryKey: ["credits"],
     queryFn: () => api.get("/reports/debts").then(r => r.data),
     refetchInterval: 30000
@@ -37,7 +38,7 @@ export default function CreditsPage() {
 
   // ── Fetch open invoices for selected customer ─────────────────────────────
   // Uses /sales/customer-debt/:id which is now correctly ordered in the backend
-  const { data: debtDetail, isLoading: debtLoading } = useQuery({
+  const { data: debtDetail, isLoading: debtLoading } = useOfflineCachedQuery({
     queryKey: ["customer-debt", selected?.id],
     queryFn: () => api.get(`/sales/customer-debt/${selected.id}`).then(r => r.data),
     enabled: !!selected?.id,

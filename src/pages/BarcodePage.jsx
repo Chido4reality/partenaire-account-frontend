@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import { useLangStore, useAuthStore } from "../store";
 import api, { formatCFA } from "../utils/api";
 import CameraScanner from "../components/common/CameraScanner";
@@ -17,7 +17,7 @@ export default function BarcodePage() {
   const [labelSize, setLabelSize] = useState("medium"); // small, medium, large
   const [priceType, setPriceType] = useState("sell"); // sell, wholesale
 
-  const { data: productsData } = useQuery({
+  const { data: productsData } = useOfflineCachedQuery({
     queryKey: ["products-barcode"],
     queryFn: () => api.get("/products?limit=200").then(r => r.data)
   });
