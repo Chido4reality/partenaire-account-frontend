@@ -1,6 +1,7 @@
 import BarcodeInput from "../components/common/BarcodeInput";
 import { useState, useEffect, useRef } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useLangStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
@@ -73,18 +74,18 @@ export default function TransfersPage() {
     else setScannedItems(p => p.map((it, i) => i === idx ? { ...it, quantity: qty } : it));
   };
 
-  const { data: transferData, isLoading } = useQuery({
+  const { data: transferData, isLoading } = useOfflineCachedQuery({
     queryKey: ["transfers", statusFilter],
     queryFn: () => api.get(`/transfers?${statusFilter ? "status=" + statusFilter : ""}&limit=30`).then(r => r.data),
     refetchInterval: 30000
   });
 
-  const { data: locData } = useQuery({
+  const { data: locData } = useOfflineCachedQuery({
     queryKey: ["locations"],
     queryFn: () => api.get("/locations").then(r => r.data)
   });
 
-  const { data: searchResults } = useQuery({
+  const { data: searchResults } = useOfflineCachedQuery({
     queryKey: ["transfer-search", manualSearch],
     queryFn: () => manualSearch.length >= 2
       ? api.get(`/products?search=${manualSearch}&location_id=${fromLoc}`).then(r => r.data)

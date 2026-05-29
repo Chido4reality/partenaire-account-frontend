@@ -39,7 +39,11 @@ const OFFLINE_ELIGIBLE = [
   { rx: /^\/sales\/[^/]+\/payment\/?$/,            method: "POST" },
   { rx: /^\/returns\/(return|exchange|void)\/[^/]+\/?$/, method: "POST" },
   { rx: /^\/expenditures\/?$/,                     method: "POST" },
-  { rx: /^\/stock-transfers\/?$/,                  method: "POST" },
+  // MP-PHASE-4.2: actual backend route is /api/transfers (not /stock-transfers).
+  // The misnamed regex meant offline transfers fell through to the network and
+  // 6s-hung. Backend already dedupes by local_id (transfers.js + syncDedupe),
+  // so the queue is replay-safe end-to-end.
+  { rx: /^\/transfers\/?$/,                         method: "POST" },
   { rx: /^\/stock\/arrivals\/?$/,                  method: "POST" },
   // MP-PHASE-3-OFFLINE-SHIFT: shift open/close ride the same queue.
   { rx: /^\/shifts\/open\/?$/,                      method: "POST" },
