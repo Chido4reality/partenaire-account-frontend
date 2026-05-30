@@ -193,13 +193,21 @@ export default function POSPage() {
 
   const { data: locData } = useQuery({
     queryKey: ["locations"],
+    // MP-PHASE-4.0 + Issue B: 'always' so the queryFn runs OFFLINE — the
+    // existing try/catch + getCachedData fallback below was dead code
+    // under default 'online' (queryFn pauses). Safe form per the
+    // memory rule: this queryFn always returns an array-shape, never
+    // an error object.
+    networkMode: 'always',
     queryFn: async () => {
+      console.log('[query] fired', ["locations"], { online: navigator.onLine });
       try {
         const result = await api.get("/locations").then(r => r.data);
         cacheData("pos-locations", result);
         return result;
       } catch {
         const cached = await getCachedData("pos-locations");
+        console.log('[query] cache fallback', ["locations"], { hits: !!cached });
         return cached || { data: [] };
       }
     }
@@ -207,14 +215,17 @@ export default function POSPage() {
 
   const { data: allProducts } = useQuery({
     queryKey: ["pos-products", selectedLocation?.id],
+    networkMode: 'always',
     queryFn: async () => {
       const cacheKey = "pos-products-" + (selectedLocation?.id || "all");
+      console.log('[query] fired', ["pos-products", selectedLocation?.id], { online: navigator.onLine });
       try {
         const result = await api.get("/products?location_id=" + (selectedLocation?.id || "") + "&limit=200").then(r => r.data);
         cacheData(cacheKey, result);
         return result;
       } catch {
         const cached = await getCachedData(cacheKey);
+        console.log('[query] cache fallback', ["pos-products", selectedLocation?.id], { hits: !!cached });
         return cached || { data: [] };
       }
     },
@@ -224,13 +235,16 @@ export default function POSPage() {
 
   const { data: allCustomers } = useQuery({
     queryKey: ["pos-customers"],
+    networkMode: 'always',
     queryFn: async () => {
+      console.log('[query] fired', ["pos-customers"], { online: navigator.onLine });
       try {
         const result = await api.get("/customers?limit=300").then(r => r.data);
         cacheData("pos-customers", result);
         return result;
       } catch {
         const cached = await getCachedData("pos-customers");
+        console.log('[query] cache fallback', ["pos-customers"], { hits: !!cached });
         return cached || { data: [] };
       }
     },

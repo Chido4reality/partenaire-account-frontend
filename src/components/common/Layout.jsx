@@ -10,6 +10,7 @@ import { nukeClientState, hardRedirectToLogin } from "../../utils/authReset";
 import UpgradeModal from "./UpgradeModal";
 import PaywallModal from "./PaywallModal";
 import OnlineOfflineBar from "./OnlineOfflineBar";
+import { onSyncEvent } from "../../utils/pendingSync";
 import { hasSection } from "../../utils/planCapabilities";
 import NavDrawer, { DRAWER_WIDTH } from "../layout/NavDrawer";
 import { tapHaptic } from "../../utils/haptics";
@@ -192,6 +193,33 @@ export default function Layout() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  // MP-PHASE-4.0 + Issue A: subscribe to pendingSync sync events. When
+  // an offline-queued row reaches 'sent' (which happens ONLINE, so a
+  // refetch will actually succeed), invalidate the React Query slots
+  // whose data was being served by an optimistic seed — most importantly
+  // ['current-shift'], which OpenShiftModal seeds during the offline
+  // window so the POS can ring sales. Without this invalidation the
+  // seed kept serving even after the real shift row landed.
+  useEffect(() => onSyncEvent((e) => {
+    if (e.type !== 'sent') return;
+    // [Wave 4.0 debug instrumentation — Peter pastes these traces.]
+    console.log('[sync] handler fired', { type: e.type, endpoint: e.endpoint });
+    const ep = e.endpoint || '';
+    const isOpen  = /^\/shifts\/open\/?$/.test(ep);
+    const isClose = /^\/shifts\/[^/]+\/close\/?$/.test(ep);
+    const isSale  = /^\/sales\/?$/.test(ep);
+    if (isOpen || isClose || isSale) {
+      console.log('[sync] invalidate', ['current-shift']);
+      qc.invalidateQueries({ queryKey: ['current-shift'] });
+    }
+    if (isClose) {
+      for (const k of ['shifts-history', 'my-shift', 'all-shifts']) {
+        console.log('[sync] invalidate', [k]);
+        qc.invalidateQueries({ queryKey: [k] });
+      }
+    }
+  }), [qc]);
 
   // MP-SLICE-3-RETIRE-LEGACY-SERVICE-WORKER: startAutoSync removed. The legacy
   // replay loop is superseded by pendingSync.startWorker (called once at api.js

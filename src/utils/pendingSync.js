@@ -52,6 +52,21 @@ export function genLocalId() {
 
 // ── In-process state ───────────────────────────────────────────
 const _listeners = new Set();
+// MP-PHASE-4.0 + Issue A: per-row sync events (separate channel from
+// the aggregate-stats subscribe above). Consumers — most importantly
+// Layout — react to a specific row reaching 'sent' by invalidating the
+// React Query slot that was being served by an optimistic seed (e.g.
+// ['current-shift'] after an offline /shifts/open lands), so the next
+// refetch picks up the real server row instead of the seed lingering.
+const _syncEventListeners = new Set();
+export function onSyncEvent(cb) { _syncEventListeners.add(cb); return () => _syncEventListeners.delete(cb); }
+function emitSyncEvent(evt) {
+  // [Wave 4.0 debug instrumentation — Peter will paste traces.]
+  console.log('[sync] emit sent', { endpoint: evt.endpoint, localId: evt.localId });
+  for (const cb of _syncEventListeners) {
+    try { cb(evt); } catch { /* listener errors are not our problem */ }
+  }
+}
 let _workerStarted = false;
 let _workerRunning = false;
 let _pollTimer = null;
@@ -277,6 +292,7 @@ async function attempt(row) {
       `UPDATE pending_sync SET status = ?, server_id = ?, last_error = ? WHERE id = ?`,
       ['sent', serverId, null, row.id]
     );
+    emitSyncEvent({ type: 'sent', endpoint: row.endpoint, localId: row.local_id });
     notify();
     return;
   }
