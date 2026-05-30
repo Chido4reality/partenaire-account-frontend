@@ -27,7 +27,8 @@
 // role !== owner/manager (see canVoid in that component).
 
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useOfflineCachedQuery } from "../utils/offlineQuery";
+import { cacheData, getCachedData } from "../utils/offlineStore";
 import { useLangStore, useAuthStore } from "../store";
 import api, { formatCFA } from "../utils/api";
 import VoidReturnModal from "../components/common/VoidReturnModal";
@@ -80,7 +81,7 @@ export default function RefundsPage() {
   //                   log and matters less to the customer)
   const [receiptEvent, setReceiptEvent] = useState(null);
   const { org } = useAuthStore();
-  const { data: orgSettingsResp } = useQuery({
+  const { data: orgSettingsResp } = useOfflineCachedQuery({
     queryKey: ["org-settings"],
     queryFn: () => api.get("/settings").then(r => r.data),
   });
@@ -89,7 +90,7 @@ export default function RefundsPage() {
   const PAGE_LIMIT = 50;
 
   // Search query — only fires when activeQuery is set.
-  const { data: searchResp, isLoading: searchLoading, refetch: refetchSearch } = useQuery({
+  const { data: searchResp, isLoading: searchLoading, refetch: refetchSearch } = useOfflineCachedQuery({
     queryKey: ["refunds-search", activeQuery],
     queryFn: () => {
       const { by, value } = activeQuery;
@@ -101,7 +102,7 @@ export default function RefundsPage() {
 
   // Date-list query — drives the "By date" tab. include_online=true
   // so the cashier sees both channels in one list (POS + online).
-  const { data: dateResp, isLoading: dateLoading, refetch: refetchDate } = useQuery({
+  const { data: dateResp, isLoading: dateLoading, refetch: refetchDate } = useOfflineCachedQuery({
     queryKey: ["refunds-by-date", date, page, PAGE_LIMIT],
     queryFn: () =>
       api.get(`/sales?date=${date}&include_online=true&limit=${PAGE_LIMIT}&page=${page}`)
@@ -155,8 +156,23 @@ export default function RefundsPage() {
       const { data } = await api.get(`/sales/${saleId}`);
       const sale = data?.data || data;
       if (!sale || !sale.id) throw new Error("Sale not found");
+      // MP-PHASE-4.3: cache the full detail so a later OFFLINE refund of
+      // the same sale can open the modal from this cached copy. Best-
+      // effort; cacheData swallows storage errors internally.
+      try { cacheData(`sale-detail-${saleId}`, sale); } catch {}
       setSelected(sale);
     } catch (err) {
+      // MP-PHASE-4.3: network/timeout → offline fallback. (1) the
+      // per-sale detail cache populated by a prior online open; (2) the
+      // current list row (summary — may lack a few fields the modal
+      // normally renders but enough to drive a refund/void). Refund
+      // writes themselves already queue (returns/* in OFFLINE_ELIGIBLE).
+      try {
+        const cached = await getCachedData(`sale-detail-${saleId}`);
+        if (cached && cached.id) { setSelected(cached); setLoadingSale(null); return; }
+      } catch {}
+      const fromList = (sales || []).find(s => s.id === saleId);
+      if (fromList) { setSelected(fromList); setLoadingSale(null); return; }
       console.error("[refunds] failed to load sale", err);
     } finally {
       setLoadingSale(null);
