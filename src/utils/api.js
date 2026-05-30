@@ -52,6 +52,13 @@ const OFFLINE_ELIGIBLE = [
   // pa_offline_dedup seam (backend syncDedupe.dedupeByEndpointLocalId).
   { rx: /^\/customers\/[^/]+\/collect-debt\/?$/,    method: "POST" },
   { rx: /^\/stock\/count\/?$/,                      method: "POST" },
+  // MP-PHASE-4.5: offline inventory writes via the same dedup seam +
+  // peek pattern (PATCH handlers' approval-token gate is short-
+  // circuited by peekDedup on replay so a single original token
+  // consumption isn't relitigated).
+  { rx: /^\/products\/?$/,                          method: "POST"  },
+  { rx: /^\/products\/[^/]+\/?$/,                   method: "PATCH" },
+  { rx: /^\/stock\/adjust\/?$/,                     method: "PATCH" },
 ];
 
 function isOfflineEligible(method, url) {

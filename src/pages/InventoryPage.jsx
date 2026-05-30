@@ -2,7 +2,8 @@
 import BarcodeInput from "../components/common/BarcodeInput";
 import CameraScanner from "../components/common/CameraScanner";
 import React, { useState, useEffect, useRef } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import api, { formatCFA } from "../utils/api";
@@ -129,7 +130,7 @@ export default function InventoryPage() {
   const [migrateData, setMigrateData] = useState({ seller: null, pairs: [] });
   const [migrateSel, setMigrateSel] = useState({});         // ptn_id → { selected, dozie_price, hard_delete }
   const [migrateApplying, setMigrateApplying] = useState(false);
-  const { data: migrateCandidatesData } = useQuery({
+  const { data: migrateCandidatesData } = useOfflineCachedQuery({
     queryKey: ["dozie-migrate-candidates"],
     queryFn: () => api.get("/dozie/migrate-duplicates/candidates").then(r => r.data),
     enabled: isOwner,
@@ -193,7 +194,7 @@ export default function InventoryPage() {
   }, [showAddProduct, showReceive, showAdjust, showEditProduct, showRapidEntry, showImport]);
 
   // ── DATA QUERIES ────────────────────────────────────────────────────────────
-  const { data: stockData, isLoading: stockLoading } = useQuery({
+  const { data: stockData, isLoading: stockLoading } = useOfflineCachedQuery({
     queryKey: ["stock", selectedLocation?.id, search],
     queryFn: () => {
       // When searching, search across ALL locations
@@ -205,23 +206,23 @@ export default function InventoryPage() {
     refetchInterval: 30000
   });
 
-  const { data: alertData } = useQuery({
+  const { data: alertData } = useOfflineCachedQuery({
     queryKey: ["stock-alerts"],
     queryFn: () => api.get("/stock?low_only=true").then(r => r.data),
     refetchInterval: 60000
   });
 
-  const { data: productsData } = useQuery({
+  const { data: productsData } = useOfflineCachedQuery({
     queryKey: ["products-all", showArchived],
     queryFn: () => api.get("/products?limit=500" + (showArchived ? "&include_archived=true" : "")).then(r => r.data),
   });
 
-  const { data: locationsData } = useQuery({
+  const { data: locationsData } = useOfflineCachedQuery({
     queryKey: ["locations"],
     queryFn: () => api.get("/locations").then(r => r.data)
   });
 
-  const { data: allStockData } = useQuery({
+  const { data: allStockData } = useOfflineCachedQuery({
     queryKey: ["stock-all"],
     queryFn: () => api.get("/stock").then(r => r.data),
     enabled: tab === "overview"
@@ -240,7 +241,7 @@ export default function InventoryPage() {
   // product we sum across allStock when on "overview", or just use
   // the current stock list otherwise — out-of-stock surfacing on the
   // publish modal is best-effort and the modal also shows the warning.
-  const { data: dozieListingsData } = useQuery({
+  const { data: dozieListingsData } = useOfflineCachedQuery({
     queryKey: ["dozie-listings"],
     queryFn:  () => api.get("/dozie-listings").then(r => r.data?.data || []),
     enabled:  isOwner || (user?.role === "manager"),
@@ -278,7 +279,7 @@ export default function InventoryPage() {
   // Sprint A: pull effective plan + capabilities. We already have the
   // legacy /my-plan query cached by Layout — re-using the same key
   // skips an extra round-trip on page load.
-  const { data: planData } = useQuery({
+  const { data: planData } = useOfflineCachedQuery({
     queryKey: ["my-plan"],
     queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
     refetchInterval: 300000,
