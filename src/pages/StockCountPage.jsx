@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import api, { formatCFA } from "../utils/api";
@@ -31,7 +32,7 @@ export default function StockCountPage() {
   );
 
   // Load stock for selected location
-  const { data: stockData, isLoading } = useQuery({
+  const { data: stockData, isLoading } = useOfflineCachedQuery({
     queryKey: ["stock-count", selectedLocation?.id],
     queryFn: () => {
       const params = selectedLocation ? `?location_id=${selectedLocation.id}` : "";
@@ -39,7 +40,7 @@ export default function StockCountPage() {
     }
   });
 
-  const { data: locData } = useQuery({
+  const { data: locData } = useOfflineCachedQuery({
     queryKey: ["locations"],
     queryFn: () => api.get("/locations").then(r => r.data)
   });

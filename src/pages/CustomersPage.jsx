@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
@@ -41,7 +42,7 @@ export default function CustomersPage() {
   // Org settings power the receipt header (shop name, address,
   // receipt_footer). Cached under the existing ["org-settings"]
   // key so this is typically a cache hit.
-  const { data: orgSettingsResp } = useQuery({
+  const { data: orgSettingsResp } = useOfflineCachedQuery({
     queryKey: ["org-settings"],
     queryFn: () => api.get("/settings").then(r => r.data),
   });
@@ -68,7 +69,7 @@ export default function CustomersPage() {
   const [collectForm, setCollectForm]         = useState({ amount: "", payment_method: "cash", notes: "" });
   const [collectError, setCollectError]       = useState(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useOfflineCachedQuery({
     queryKey: ["customers", search, typeFilter, debtOnly],
     queryFn: () => api.get(`/customers?search=${search}&type=${typeFilter}&has_debt=${debtOnly}&limit=50`).then(r => r.data),
     refetchInterval: 30000
@@ -76,14 +77,14 @@ export default function CustomersPage() {
 
   // MP-CUSTOMER-DEBT-SUMMARY: org-wide aggregate (not filtered/paginated
   // like the list above). Invalidated by the add/update/delete mutations.
-  const { data: summaryResp } = useQuery({
+  const { data: summaryResp } = useOfflineCachedQuery({
     queryKey: ["customer-summary"],
     queryFn: () => api.get("/customers/summary").then(r => r.data),
     refetchInterval: 30000
   });
   const summary = summaryResp?.data || { total_debt: 0, customers_with_debt: 0, total_customers: 0 };
 
-  const { data: detail } = useQuery({
+  const { data: detail } = useOfflineCachedQuery({
     queryKey: ["customer-detail", selected?.id],
     queryFn: () => api.get(`/customers/${selected.id}`).then(r => r.data),
     enabled: !!selected?.id

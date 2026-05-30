@@ -48,6 +48,10 @@ const OFFLINE_ELIGIBLE = [
   // MP-PHASE-3-OFFLINE-SHIFT: shift open/close ride the same queue.
   { rx: /^\/shifts\/open\/?$/,                      method: "POST" },
   { rx: /^\/shifts\/[^/]+\/close\/?$/,              method: "POST" },
+  // MP-PHASE-4.4: offline collect-debt + stock-count via the generic
+  // pa_offline_dedup seam (backend syncDedupe.dedupeByEndpointLocalId).
+  { rx: /^\/customers\/[^/]+\/collect-debt\/?$/,    method: "POST" },
+  { rx: /^\/stock\/count\/?$/,                      method: "POST" },
 ];
 
 function isOfflineEligible(method, url) {
