@@ -104,6 +104,18 @@ export default function InventoryPage() {
   const canAdjustStock = isOwner || isManager || isWarehouse;
 
   const [tab, setTab] = useState("stock");
+  // MP-STOCK-LOCATION-FILTER: in-tab Location filter for the Stock Levels
+  // table. The top-bar selectedLocation drives POS/shift context (what
+  // till the cashier is ringing on); reusing it as the inventory-view
+  // filter was a category mismatch — a new user with no top-bar
+  // selection sees "all locations" → 1 product × 2 default locations
+  // shows as 2 rows and reads as duplicates.
+  //
+  // "" = All locations (rendered as such in the dropdown). Defaulted
+  // to selectedLocation.id when set, else the first location's id
+  // once locations finish loading (see useEffect below). Scoped to
+  // this component — switching tabs preserves it; full page nav resets.
+  const [locStockFilter, setLocStockFilter] = useState("");
   const [search, setSearch] = useState("");
   const [scanning, setScanning] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
@@ -195,11 +207,16 @@ export default function InventoryPage() {
 
   // ── DATA QUERIES ────────────────────────────────────────────────────────────
   const { data: stockData, isLoading: stockLoading } = useOfflineCachedQuery({
-    queryKey: ["stock", selectedLocation?.id, search],
+    queryKey: ["stock", locStockFilter, search],
     queryFn: () => {
-      // When searching, search across ALL locations
+      // MP-STOCK-LOCATION-FILTER: drive by the in-tab Location dropdown
+      // (locStockFilter), not the top-bar selectedLocation. Empty string
+      // = "All locations" and sends no location_id param. When searching,
+      // search across ALL locations regardless of the dropdown — matches
+      // the placeholder "Search all locations…" and lets the cashier
+      // find a product without first guessing where it lives.
       const params = new URLSearchParams();
-      if (selectedLocation && !search) params.append("location_id", selectedLocation.id);
+      if (locStockFilter && !search) params.append("location_id", locStockFilter);
       if (search) params.append("search", search);
       return api.get("/stock?" + params.toString()).then(r => r.data);
     },
@@ -233,6 +250,24 @@ export default function InventoryPage() {
   const products = productsData?.data || [];
   const locations = locationsData?.data || [];
   const allStock = allStockData?.data || [];
+
+  // MP-STOCK-LOCATION-FILTER: pick a sane default for the in-tab Location
+  // dropdown once we know what locations exist. Prefer the top-bar
+  // selectedLocation (matches the cashier's POS/shift context), fall
+  // back to the first location, leave "All locations" only when the
+  // user has explicitly chosen it (locStockFilter !== "" sticks). Runs
+  // once on locations-arrive, then again if the cashier later changes
+  // their top-bar selection from null → something — without overriding
+  // their explicit in-tab choice.
+  const locFilterTouchedRef = useRef(false);
+  useEffect(() => {
+    if (locFilterTouchedRef.current) return;
+    if (!locations.length) return;
+    const next = selectedLocation?.id || locations[0]?.id || "";
+    setLocStockFilter(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locations.length, selectedLocation?.id]);
+  const setLocFilterByUser = (v) => { locFilterTouchedRef.current = true; setLocStockFilter(v); };
 
   // MP-DOZIE-INVENTORY-PUBLISH-UI: org's Dozie listings, indexed by
   // product_id so the inventory row can render the publish button's
@@ -766,8 +801,8 @@ export default function InventoryPage() {
 
       {/* Search */}
       {(tab === "stock" || tab === "products") && (
-        <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16, maxWidth: 600 }}>
-          <div style={{ flex: 1, position: "relative" }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16, maxWidth: 600, flexWrap: "wrap" }}>
+          <div style={{ flex: 1, position: "relative", minWidth: 220 }}>
             <input ref={searchRef} className="input"
               placeholder={lang === "en" ? "Search all locations by name, barcode or slot..." : "Chercher partout par nom, code-barres ou emplacement..."}
               value={search} onChange={e => setSearch(e.target.value)}
@@ -782,6 +817,28 @@ export default function InventoryPage() {
             title={lang === "en" ? "Scan with camera" : "Scanner avec la caméra"}>
             📷
           </button>
+          {/* MP-STOCK-LOCATION-FILTER: in-tab Location dropdown for the
+              Stock Levels table only. Hidden on Products (it doesn't
+              affect that view) and on single-location orgs (no real
+              choice). Disabled during search since the query falls
+              through to all-locations regardless. */}
+          {tab === "stock" && locations.length > 1 && (
+            <select
+              className="input"
+              value={locStockFilter}
+              onChange={(e) => setLocFilterByUser(e.target.value)}
+              disabled={!!search}
+              title={search
+                ? (lang === "en" ? "Search spans all locations" : "La recherche couvre tous les emplacements")
+                : (lang === "en" ? "Filter Stock Levels by location" : "Filtrer par emplacement")}
+              style={{ flexShrink: 0, height: 42, minWidth: 180, fontWeight: 600 }}
+            >
+              <option value="">📍 {lang === "en" ? "All locations" : "Tous les emplacements"}</option>
+              {locations.map(l => (
+                <option key={l.id} value={l.id}>📍 {l.name}</option>
+              ))}
+            </select>
+          )}
         </div>
       )}
 
