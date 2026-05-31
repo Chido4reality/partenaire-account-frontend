@@ -48,3 +48,48 @@ export const useSettingsStore = create(persist(
   }),
   { name: "mp-settings" }
 ));
+
+// MP-POS-CART-PERSIST: keep an in-progress sale alive across navigation,
+// hard refresh, and offline crashes. Cart used to live in POSPage local
+// state, so tapping any sidebar link unmounted the page and wiped the
+// cart. Now POSPage saves draft snapshots here on every change and
+// restores them on mount when (userId, locationId) match. Scoping
+// matters: Nora's cart at Bonaberri shouldn't appear when she's working
+// Bepanda, and one cashier's draft mustn't surface for another user on
+// the same device.
+//
+// Shape: drafts[`${userId}::${locationId}`] = {
+//   items, customer, payMode, paidAmt, dueDate, notes, updatedAt
+// }
+// updatedAt drives a 24h TTL on restore — older drafts are stale and
+// silently discarded so a cashier who walked away yesterday doesn't
+// come back to surprise data today.
+export const useDraftCartStore = create(persist(
+  (set, get) => ({
+    drafts: {},
+    saveDraft: ({ userId, locationId, items, customer, payMode, paidAmt, dueDate, notes }) => {
+      if (!userId || !locationId) return;
+      const key = `${userId}::${locationId}`;
+      set((state) => ({
+        drafts: {
+          ...state.drafts,
+          [key]: { items, customer, payMode, paidAmt, dueDate, notes, updatedAt: Date.now() },
+        },
+      }));
+    },
+    getDraft: ({ userId, locationId }) => {
+      if (!userId || !locationId) return null;
+      return get().drafts[`${userId}::${locationId}`] || null;
+    },
+    clearDraft: ({ userId, locationId }) => {
+      if (!userId || !locationId) return;
+      const key = `${userId}::${locationId}`;
+      set((state) => {
+        if (!state.drafts[key]) return state;
+        const { [key]: _drop, ...rest } = state.drafts;
+        return { drafts: rest };
+      });
+    },
+  }),
+  { name: "mp-pos-draft-cart" }
+));

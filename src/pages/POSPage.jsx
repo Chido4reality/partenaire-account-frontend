@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
-import { useLangStore, useSettingsStore, useAuthStore } from "../store";
+import { useLangStore, useSettingsStore, useAuthStore, useDraftCartStore } from "../store";
 // MP-MIN-PRICE-PIN-UX Option B: OwnerPIN import dropped — the PIN
 // override flow was dead code (imported, state set, never rendered).
 // Staff who attempt a sub-min price now get a toast.error explaining
@@ -151,6 +151,86 @@ export default function POSPage() {
     }
   }, [showReceipt, showHold, showResume, debtReceiptEvent,
       blockModal, oversellModal, validateModal]);
+
+  // MP-POS-CART-PERSIST: restore + auto-save draft cart so navigating
+  // away (e.g. accidentally tapping a sidebar link) never loses Nora's
+  // in-progress sale. Scoped per (user × location) via useDraftCartStore;
+  // 24h TTL silently drops stale carts.
+  //
+  // Scope-pin (cartScopeRef): the current in-memory cart belongs to ONE
+  // (userId, locationId) pair. If the cashier switches location mid-cart,
+  // we MUST NOT auto-save those items under the new location's key —
+  // that would silently overwrite the other location's saved draft. The
+  // pin records "which scope the cart's items came from"; auto-save only
+  // fires while the current scope matches the pin. Switching location
+  // freezes save until the cart empties (sale, hold, or manual clear),
+  // at which point the pin clears and the new scope can author its own
+  // draft.
+  const { saveDraft, getDraft, clearDraft } = useDraftCartStore();
+  const userId = user?.id;
+  const locId  = selectedLocation?.id;
+  const draftRestoredRef = useRef(false);
+  const cartScopeRef     = useRef(null); // { userId, locId } when cart non-empty
+  // Restore once user + location are resolved. Skip if no draft, draft
+  // is older than 24h, or items is empty. Open the mobile cart sheet
+  // on successful restore so the cashier sees the cart waiting for her.
+  useEffect(() => {
+    if (draftRestoredRef.current) return;
+    if (!userId || !locId) return;
+    const draft = getDraft({ userId, locationId: locId });
+    if (!draft) { draftRestoredRef.current = true; return; }
+    const TTL_MS = 24 * 60 * 60 * 1000;
+    if (Date.now() - (draft.updatedAt || 0) > TTL_MS) {
+      clearDraft({ userId, locationId: locId });
+      draftRestoredRef.current = true;
+      return;
+    }
+    if (Array.isArray(draft.items) && draft.items.length > 0) {
+      setCart(draft.items);
+      if (draft.customer)      setCustomer(draft.customer);
+      if (draft.payMode)       setPayMode(draft.payMode);
+      if (draft.paidAmt)       setPaidAmt(draft.paidAmt);
+      if (draft.dueDate)       setDueDate(draft.dueDate);
+      if (draft.notes)         setNotes(draft.notes);
+      if (isMobile())          setSheetOpen(true);
+      cartScopeRef.current = { userId, locId };
+      toast.success(lang === "en"
+        ? `${draft.items.length} item(s) restored from your saved cart`
+        : `${draft.items.length} article(s) restauré(s) de votre panier`,
+        { duration: 3500 });
+    }
+    draftRestoredRef.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, locId]);
+  // Auto-save on every cart-shaped change. Guard against firing before
+  // restore completes — otherwise the empty-initial-state would wipe a
+  // valid persisted draft before we ever read it.
+  useEffect(() => {
+    if (!draftRestoredRef.current) return;
+    if (!userId || !locId) return;
+    if (cart.length === 0) {
+      // Cart emptied (sale finalized / held / cleared). Drop pin so the
+      // next non-empty cart claims the current scope as its own.
+      if (cartScopeRef.current) {
+        clearDraft({ userId: cartScopeRef.current.userId, locationId: cartScopeRef.current.locId });
+        cartScopeRef.current = null;
+      }
+      return;
+    }
+    // First non-empty change pins the scope to whichever (user, loc) is
+    // active right now.
+    if (!cartScopeRef.current) {
+      cartScopeRef.current = { userId, locId };
+    }
+    // Freeze save when the cashier has switched location mid-cart: the
+    // items still belong to the pinned scope, not the current one.
+    if (cartScopeRef.current.userId !== userId || cartScopeRef.current.locId !== locId) {
+      return;
+    }
+    saveDraft({ userId, locationId: locId,
+      items: cart, customer, payMode, paidAmt, dueDate, notes });
+  }, [cart, customer, payMode, paidAmt, dueDate, notes,
+      userId, locId, saveDraft, clearDraft]);
 
   useEffect(() => {
     if (scanMode !== "usb") return;
