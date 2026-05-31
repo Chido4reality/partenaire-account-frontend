@@ -53,8 +53,14 @@ export const cacheData = async (key, data) => {
 };
 
 export const getCachedData = async (key) => {
+  // cacheData stores `{ data, ts }`; consumers expect the original payload.
+  // Returning the wrapper instead of `parsed.data` was the root cause of
+  // Phase-4 offline crashes ("M.filter is not a function") once
+  // networkMode:'always' made the offline catch path actually fire.
   try {
     const raw = localStorage.getItem('cache_' + key);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.data ?? null;
   } catch { return null; }
 };

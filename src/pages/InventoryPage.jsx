@@ -247,7 +247,10 @@ export default function InventoryPage() {
     enabled:  isOwner || (user?.role === "manager"),
     staleTime: 30000,
   });
-  const dozieListings = dozieListingsData || [];
+  // Defense-in-depth: queryFn returns an array, but the offline-cache
+  // path could in theory hand back a non-array if cache shape ever
+  // drifts again. Array.isArray gates .map() against future regressions.
+  const dozieListings = Array.isArray(dozieListingsData) ? dozieListingsData : [];
   const dozieListingByProductId = new Map(
     dozieListings.map(l => [l.product_id, l]));
   const stockByProductId = (() => {

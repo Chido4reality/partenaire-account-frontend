@@ -11,11 +11,18 @@
 // Memory-rule check: that feedback says don't put `networkMode:'always'`
 // on queries that can return error objects to consumers — error objects
 // slip past `(x || []).filter(...)` guards and crash callers. Here, our
-// queryFn ALWAYS returns an array-shape (`r` on success, `cached` on
-// failure, or the `fallback` — defaults to `{ data: [] }`), never an
+// queryFn ALWAYS returns the queryFn's payload on success, the cached
+// payload on hit, or the `fallback` on miss (default `null`) — never an
 // error object. So this is the safe form of `networkMode:'always'` the
 // rule's caveat allows ("...unless you've also built a matching
 // read-through cache that handles offline GETs gracefully").
+//
+// Fallback shape note: default is `null` (not `{ data: [] }` or `[]`)
+// because queryFns in this codebase return arbitrary shapes — some
+// return arrays, some return `{ data: [...] }`, some return scalars.
+// `null` flows correctly through every current consumer pattern
+// (`x?.data || []`, `x || []`, `x || {}`). Pass an explicit `fallback`
+// if you need a specific shape during the cache-miss + offline window.
 //
 // Usage:
 //   useOfflineCachedQuery({
@@ -38,7 +45,7 @@ function deriveCacheKey(queryKey) {
 
 export function useOfflineCachedQuery({ queryKey, queryFn, fallback, ...opts }) {
   const cacheKey = deriveCacheKey(queryKey);
-  const empty = fallback !== undefined ? fallback : { data: [] };
+  const empty = fallback !== undefined ? fallback : null;
   return useQuery({
     queryKey,
     networkMode: "always",
