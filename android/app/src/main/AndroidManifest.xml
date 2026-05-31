@@ -38,4 +38,13 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- MP-CAPACITOR-CAMERA: CameraScanner uses navigator.mediaDevices.getUserMedia
+         via zxing for barcode + QR scan (Inventory receive-goods, POS, Refunds).
+         Android WebView's runtime permission grant requires the permission to be
+         declared here; otherwise getUserMedia rejects without a prompt and the
+         scanner silently fails. android:required="false" on the hardware feature
+         keeps the APK installable on cameraless devices (tablets, emulators);
+         the scanner branches in JS will surface a "no camera" toast instead. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 </manifest>
