@@ -46,14 +46,37 @@ import api, { formatCFA } from "../../utils/api";
 import { buildLedgerTextV2 as buildLedgerText, buildWeeklyText } from "../../utils/reportText";
 
 // ── ModalShell — same overlay pattern as the rest of the app ─────
+// zIndex 3500: must clear Vaul's mobile bottom-sheet portal (z:1701)
+// AND POSPage's own root-level modals (z:3000+, see POSPage.jsx:142).
+// Otherwise OpenShiftModal opened from the POS shift-required CTA
+// renders UNDER the cart sheet on phones — Nora's report — making the
+// Cancel/Confirm action row look "cut off below viewport." Cash/Shifts
+// page has no Vaul portal so z:300 worked there; the modal layer just
+// needs to be high enough for every parent context.
+//
+// maxHeight:90vh + overflowY:auto + flex column: defensive sizing for
+// very small viewports where the modal body (multi-loc dropdown +
+// float + notes + alerts + button row, or CloseShiftModal's full
+// drawer breakdown) exceeds the screen. Without the cap, an intrinsic
+// height taller than the viewport would push half the content above
+// AND below the visible area with no way to scroll. The flex column
+// keeps the action footer pinned to the modal's bottom edge so Cancel
+// and Confirm stay reachable even after a long scroll.
 function ModalShell({ children, onClose, busy }) {
   return (
     <div
-      style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+      style={{ position: "fixed", inset: 0, zIndex: 3500, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
       onClick={() => { if (!busy) onClose(); }}
     >
       <div onClick={e => e.stopPropagation()}
-        style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, maxWidth: 440, width: "100%", boxShadow: "0 24px 60px rgba(0,0,0,0.6)" }}>
+        style={{
+          background: "var(--bg-elevated)", border: "1px solid var(--border)",
+          borderRadius: 16, padding: 24,
+          maxWidth: 440, width: "100%",
+          maxHeight: "90vh", overflowY: "auto",
+          display: "flex", flexDirection: "column",
+          boxShadow: "0 24px 60px rgba(0,0,0,0.6)",
+        }}>
         {children}
       </div>
     </div>
