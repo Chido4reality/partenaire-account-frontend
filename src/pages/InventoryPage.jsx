@@ -269,6 +269,38 @@ export default function InventoryPage() {
   }, [locations.length, selectedLocation?.id]);
   const setLocFilterByUser = (v) => { locFilterTouchedRef.current = true; setLocStockFilter(v); };
 
+  // MP-INITIAL-STOCK-DEFAULT-LOCATION: Paint-at-qty-0 fix. The Add
+  // Product and Rapid Entry forms have an "Initial Stock (optional)"
+  // panel whose Location dropdown defaulted to "Skip (add later)" —
+  // and the Quantity input is disabled until a location is picked. New
+  // users would fill in name + price and submit without realising the
+  // initial-quantity flow needed a location, so /stock/arrivals was
+  // never posted and the auto-stock zero-rows are what showed up in
+  // Inventory. Pre-select the most-likely-intended location (top-bar
+  // selectedLocation, else first location) so the Quantity field is
+  // enabled by default and entering a number actually applies. Users
+  // who deliberately want to add later can still switch to "Skip".
+  const defaultInitialLocId = selectedLocation?.id || locations[0]?.id || "";
+  // Add Product modal: seed when it opens, unless the user has already
+  // picked something (in which case respect their choice).
+  useEffect(() => {
+    if (!showAddProduct) return;
+    if (newProduct.initial_location_id) return;
+    if (!defaultInitialLocId) return;
+    setNewProduct(p => ({ ...p, initial_location_id: defaultInitialLocId }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAddProduct, defaultInitialLocId]);
+  // Rapid Entry modal: same logic. The existing flow at rapidMutation
+  // onSuccess preserves initial_location_id across batch submits, so
+  // this useEffect only matters for the first product of a session.
+  useEffect(() => {
+    if (!showRapidEntry) return;
+    if (rapidItem.initial_location_id) return;
+    if (!defaultInitialLocId) return;
+    setRapidItem(p => ({ ...p, initial_location_id: defaultInitialLocId }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showRapidEntry, defaultInitialLocId]);
+
   // MP-DOZIE-INVENTORY-PUBLISH-UI: org's Dozie listings, indexed by
   // product_id so the inventory row can render the publish button's
   // state (none / live / paused) in one lookup. allStock above is
@@ -588,9 +620,14 @@ export default function InventoryPage() {
       const vals = lines[i].split(",").map(v => v.trim().replace(/^"|"$/g, ""));
       const row = {};
       headers.forEach((h, idx) => { row[h] = vals[idx] || ""; });
-      // Map location name to id
+      // Map location name to id. Fall back to the most-likely-intended
+      // location (top-bar selectedLocation, else first location) when
+      // the row's location cell is blank or doesn't match any known
+      // location name — same Paint-at-qty-0 trap the modal forms hit.
+      // The Preview UI still surfaces which location resolved, so
+      // surprises stay visible before the user hits Import.
       const loc = locations.find(l => l.name.toLowerCase() === (row.location || "").toLowerCase());
-      row.location_id = loc?.id || "";
+      row.location_id = loc?.id || defaultInitialLocId || "";
       row.initial_quantity = row.qty || row.quantity || row.initial_quantity || "";
       if (row.name) rows.push(row);
     }
