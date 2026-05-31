@@ -645,6 +645,180 @@ export default function POSPage() {
     : (payMode === "paid" ? total : payMode === "credit" ? 0 : (+paidAmt || 0));
   const balance = total - paid;
 
+  // MP-PHASE-4 WAVE 2 — optimistic UI seed for POST /sales offline_queued.
+  // Mirrors Wave 1's collect-debt + stock-adjust pattern. Touches every
+  // cache slot a sale moves so the UI reflects the new state immediately
+  // even when the actual write is sitting in pendingSync. Same clobber
+  // guard applies: when offline_queued, the parent's broad
+  // invalidateQueries skips the keys seeded here — otherwise an
+  // invalidate → refetch → catch-fallback would return the pre-sale
+  // localStorage cached array and clobber the seed.
+  //
+  // Closes Phase 3.1's offline-drawer ticket: cash sales seed the
+  // ["current-shift", locId] drawer math (cash_sales_received +
+  // expected_drawer), so the ActiveShiftIndicator + DrawerDashboardCard
+  // reflect the new sale's contribution without waiting for sync.
+  const seedAfterOfflineSale = ({ saleId, saleNumber, items, payMethodArg, paidArg, totalArg, balanceArg, paymentStatusArg, customerArg, locIdArg }) => {
+    // ── 1. Stock decrement (stock / stock-all / stock-alerts / pos-products)
+    const productLines = items.filter(i =>
+      i.product_id && i.product_id !== "__DEBT__" && i.product_id !== "__DEBT_PAYMENT__" && i.type !== "debt_payment");
+    const decrementMap = new Map(); // product_id → total qty sold this txn
+    for (const line of productLines) {
+      const q = Number(line.quantity) || 0;
+      if (q > 0) decrementMap.set(line.product_id, (decrementMap.get(line.product_id) || 0) + q);
+    }
+    if (decrementMap.size > 0) {
+      const decRow = (s) => {
+        if (!s) return s;
+        const sold = decrementMap.get(s.product_id);
+        if (!sold) return s;
+        if (s.location_id && locIdArg && s.location_id !== locIdArg) return s;
+        return { ...s, quantity: Math.max(0, (Number(s.quantity) || 0) - sold) };
+      };
+      qc.setQueriesData(
+        { predicate: (q) => {
+          const k = q.queryKey?.[0];
+          return k === "stock" || k === "stock-all" || k === "stock-alerts";
+        }},
+        (old) => {
+          if (!old) return old;
+          const arr = Array.isArray(old) ? old : (old.data || []);
+          const next = arr.map(decRow);
+          return Array.isArray(old) ? next : { ...old, data: next };
+        }
+      );
+      // pos-products has a different shape — products with nested
+      // `stock: { quantity, min_quantity, alert_enabled }`. Decrement
+      // the nested quantity defensively (skip if no stock object).
+      qc.setQueriesData(
+        { predicate: (q) => q.queryKey?.[0] === "pos-products" },
+        (old) => {
+          if (!old) return old;
+          const arr = Array.isArray(old) ? old : (old.data || []);
+          const next = arr.map(p => {
+            if (!p) return p;
+            const sold = decrementMap.get(p.id);
+            if (!sold || !p.stock) return p;
+            const curQty = Number(p.stock.quantity) || 0;
+            return { ...p, stock: { ...p.stock, quantity: Math.max(0, curQty - sold) } };
+          });
+          return Array.isArray(old) ? next : { ...old, data: next };
+        }
+      );
+    }
+    // ── 2. Recent sales prepend
+    qc.setQueriesData(
+      { predicate: (q) => q.queryKey?.[0] === "recent-sales" },
+      (old) => {
+        if (!old) return old;
+        const arr = Array.isArray(old) ? old : (old.data || []);
+        const nowIso = new Date().toISOString();
+        const synth = {
+          id: saleId,
+          sale_number: saleNumber,
+          sale_date: nowIso,
+          created_at: nowIso,
+          total_amount: totalArg,
+          paid_amount: paidArg,
+          balance_due: balanceArg,
+          payment_method: payMethodArg,
+          payment_status: paymentStatusArg,
+          location_id: locIdArg,
+          customer_id: customerArg?.id || null,
+          pa_customers: customerArg
+            ? { id: customerArg.id, name: customerArg.name, phone: customerArg.phone }
+            : null,
+          offline_queued: true,
+        };
+        // Cap at ~50 so an offline binge of sales doesn't bloat the
+        // cache entry (Dashboard's recent-sales call uses limit=8, so
+        // 50 is generous headroom).
+        const next = [synth, ...arr].slice(0, 50);
+        return Array.isArray(old) ? next : { ...old, data: next };
+      }
+    );
+    // ── 3. Daily summary bump
+    qc.setQueriesData(
+      { predicate: (q) => q.queryKey?.[0] === "daily-summary" },
+      (old) => {
+        if (!old) return old;
+        const s = old.data || old;
+        if (!s || typeof s !== "object") return old;
+        const cashBump   = payMethodArg === "cash" ? Number(paidArg) || 0 : 0;
+        const creditBump = balanceArg > 0 ? Number(balanceArg) || 0 : 0;
+        const next = {
+          ...s,
+          gross_sales:    (Number(s.gross_sales)    || 0) + (Number(totalArg) || 0),
+          sale_count:     (Number(s.sale_count)     || 0) + 1,
+          cash_collected: (Number(s.cash_collected) || 0) + cashBump,
+          credit_sales:   (Number(s.credit_sales)   || 0) + creditBump,
+          // net_profit / net_cash require cost_price + per-category
+          // accounting — left as-is; the next online refetch reconciles.
+        };
+        return old.data ? { ...old, data: next } : next;
+      }
+    );
+    // ── 4. Current shift drawer bump (cash only — debt and non-cash
+    // payment methods don't move pa_cash_shifts.cash_sales_received).
+    if (payMethodArg === "cash" && locIdArg) {
+      qc.setQueryData(["current-shift", locIdArg], (old) => {
+        if (!old) return old;
+        const cur      = Number(old.cash_sales_received) || 0;
+        const expected = Number(old.expected_drawer)     || 0;
+        const cashAdd  = Number(paidArg) || 0;
+        return {
+          ...old,
+          cash_sales_received: cur + cashAdd,
+          expected_drawer:     expected + cashAdd,
+        };
+      });
+    }
+    // ── 5. Customer debt bump (credit/partial sale only)
+    if (customerArg?.id && balanceArg > 0) {
+      const customerId = customerArg.id;
+      const priorDebt  = Number(customerArg.total_debt) || 0;
+      const bumpRow = (c) => c?.id === customerId
+        ? { ...c, total_debt: (Number(c.total_debt) || 0) + balanceArg }
+        : c;
+      qc.setQueriesData(
+        { predicate: (q) => {
+          const k = q.queryKey?.[0];
+          return k === "customers" || k === "pos-customers";
+        }},
+        (old) => {
+          if (!old) return old;
+          const arr = Array.isArray(old) ? old : (old.data || []);
+          const next = arr.map(bumpRow);
+          return Array.isArray(old) ? next : { ...old, data: next };
+        }
+      );
+      qc.setQueryData(["customer-detail", customerId], (old) => {
+        if (!old) return old;
+        const rec = old.data || old;
+        if (!rec || rec.id !== customerId) return old;
+        const next = { ...rec, total_debt: (Number(rec.total_debt) || 0) + balanceArg };
+        return old.data ? { ...old, data: next } : next;
+      });
+      qc.setQueriesData(
+        { predicate: (q) => q.queryKey?.[0] === "customer-summary" },
+        (old) => {
+          if (!old) return old;
+          const s = old.data || old;
+          if (!s || typeof s !== "object") return old;
+          const becameDebtor = priorDebt === 0;
+          const next = {
+            ...s,
+            total_debt: (Number(s.total_debt) || 0) + balanceArg,
+            customers_with_debt: becameDebtor
+              ? (Number(s.customers_with_debt) || 0) + 1
+              : s.customers_with_debt,
+          };
+          return old.data ? { ...old, data: next } : next;
+        }
+      );
+    }
+  };
+
   const saleMutation = useMutation({
     mutationFn: async () => {
       // MP-CART-INVOICE-PRODUCT-BUG: the legacy invoice-settle path
@@ -822,6 +996,12 @@ export default function POSPage() {
                 { duration: 7000, style: { background: "#451a03", color: "#fbbf24", border: "1px solid #92400e" } });
             });
         }
+        const paymentStatus =
+          paid >= total ? "paid" :
+          paid > 0      ? "partial" :
+                          "credit";
+        // saleId already declared above (online-cart link-sale path). Reuse it.
+        const saleNumber = data?.data?.sale_number || data?.sale_number || `OFFLINE-${Date.now()}`;
         setLastSale({
           // /sales returns { success, data: fullSale }. Spreading
           // `data` only exposed { success, data } — so sale.sale_number
@@ -848,12 +1028,27 @@ export default function POSPage() {
           // the badge can never disagree with the rendered
           // amounts below it. Matches the backend's own derivation
           // and the values backend writes to pa_sales.
-          payment_status:
-            paid >= total ? "paid" :
-            paid > 0      ? "partial" :
-                            "credit",
+          payment_status: paymentStatus,
         });
         setShowReceipt(true);
+
+        // MP-PHASE-4 WAVE 2: seed every cache slot the sale moves so the
+        // UI reflects the new state immediately offline. Gated on
+        // offline_queued so online sales keep the existing
+        // server-truth-then-invalidate path.
+        if (data?.offline_queued) {
+          seedAfterOfflineSale({
+            saleId, saleNumber,
+            items: cart,
+            payMethodArg: payMethod,
+            paidArg:      paid,
+            totalArg:     total,
+            balanceArg:   balance,
+            paymentStatusArg: paymentStatus,
+            customerArg:  customer,
+            locIdArg:     selectedLocation?.id,
+          });
+        }
       }
       resetCart();
       // MP-INVALIDATE-AFTER-SALE: a sale moves stock + sales + dashboard
@@ -863,10 +1058,33 @@ export default function POSPage() {
       // would miss most. Use a predicate that names every affected
       // first-key (and the reports-* family) so every dependent view
       // refetches immediately.
+      //
+      // Wave 2: when the sale was offline-queued, skip the keys
+      // seedAfterOfflineSale just authored. Invalidate → refetch →
+      // offline-cache catch-fallback would return the pre-sale array
+      // and clobber the seed (same trap Phase 3 shift-open's "do NOT
+      // invalidate current-shift while offline_queued" guard avoids).
+      // Non-seeded keys still get refreshed so e.g. stock-count and
+      // reports-* refetch on next reconnect.
+      const offlineQueued = !!data?.offline_queued;
       qc.invalidateQueries({
         predicate: (q) => {
           const k = q.queryKey && q.queryKey[0];
           if (typeof k !== "string") return false;
+          if (offlineQueued) {
+            // Skip seeded keys (stock family, pos-products,
+            // recent-sales, daily-summary, current-shift, customers
+            // family). Note: current-shift wasn't in the original
+            // invalidate list, but adding the skip keeps the rule
+            // legible at the seed site.
+            if (k === "stock" || k === "stock-all" || k === "stock-alerts" ||
+                k === "pos-products" || k === "recent-sales" ||
+                k === "daily-summary" || k === "current-shift" ||
+                k === "customers" || k === "pos-customers" ||
+                k === "customer-detail" || k === "customer-summary") {
+              return false;
+            }
+          }
           return (
             k === "stock" || k === "stock-all" || k === "stock-alerts" || k === "stock-count" ||
             k === "products-all" || k === "products-barcode" || k === "pos-products" ||
