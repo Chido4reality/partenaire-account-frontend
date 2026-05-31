@@ -1573,7 +1573,24 @@ export default function InventoryPage() {
         <AdjustModal product={selectedStockRow} lang={lang}
           role={role} requestApproval={requestApproval}
           onClose={() => { setShowAdjust(false); setSelectedStockRow(null); }}
-          onSuccess={() => { setShowAdjust(false); setSelectedStockRow(null); invalidateAll(); }} />
+          onSuccess={(offlineQueued) => {
+            setShowAdjust(false); setSelectedStockRow(null);
+            // MP-PHASE-4 WAVE 1: when the modal seeded the stock caches
+            // offline, skip invalidating the seeded keys — invalidate
+            // → refetch → offline-cache fallback would return the OLD
+            // pre-adjust cached array and clobber the seed. Same
+            // principle as ShiftWidgets.jsx's "don't invalidate
+            // current-shift while offline_queued" guard. Non-seeded
+            // keys (products-all, dozie-migrate-candidates) still get
+            // refreshed so a manual `is_active` toggle or a freshly-
+            // migrated Dozie pair surfaces.
+            if (offlineQueued) {
+              qc.invalidateQueries(["products-all"]);
+              qc.invalidateQueries(["dozie-migrate-candidates"]);
+            } else {
+              invalidateAll();
+            }
+          }} />
       )}
       {/* MP-OWNER-PIN-APPROVAL (Wave 2): hook's modal lives at the page
           root so it can overlay both the Adjust modal and the Edit
@@ -1970,6 +1987,56 @@ function AdjustModal({ product, role, requestApproval, lang, onClose, onSuccess 
   const [isActive, setIsActive] = useState(product.pa_products?.is_active !== false);
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
+  const qc = useQueryClient();
+
+  // MP-PHASE-4 WAVE 1 — optimistic UI seed for offline stock-adjust.
+  // The api.patch returns the offlineAwareAdapter's 202 when the device
+  // is offline. Without a setQueryData seed, the inventory list shows
+  // pre-adjust quantity until sync (Peter's "value doesn't change until
+  // sync" complaint) — and the cashier might retry, generating a fresh
+  // mutation flow that bypasses dedupe by being a new submission.
+  // Mirror of the Phase 3 shift-open seed pattern in ShiftWidgets.jsx.
+  const seedStockAfterAdjust = ({ newQty, newMin, newAlertEnabled }) => {
+    const match = (s) => s.product_id === product.product_id && s.location_id === product.location_id;
+    const updateRow = (s) => ({ ...s, quantity: newQty, min_quantity: newMin, alert_enabled: newAlertEnabled });
+    // ["stock", locId, search] + ["stock-all"] live under varying param
+    // shapes — match them by first-key prefix and replace the affected
+    // row in whichever cache slots already populated.
+    qc.setQueriesData(
+      { predicate: (q) => {
+        const k = q.queryKey?.[0];
+        return k === "stock" || k === "stock-all";
+      }},
+      (old) => {
+        if (!old) return old;
+        const arr = Array.isArray(old) ? old : (old.data || []);
+        const next = arr.map(s => match(s) ? updateRow(s) : s);
+        return Array.isArray(old) ? next : { ...old, data: next };
+      }
+    );
+    // ["stock-alerts"] — re-derive membership. Below min + alert on →
+    // include; otherwise remove. Update in place if it stays.
+    const shouldAlert = newQty < newMin && newAlertEnabled;
+    qc.setQueriesData(
+      { predicate: (q) => q.queryKey?.[0] === "stock-alerts" },
+      (old) => {
+        if (!old) return old;
+        const arr = Array.isArray(old) ? old : (old.data || []);
+        const existsIdx = arr.findIndex(match);
+        let next;
+        if (shouldAlert && existsIdx === -1) {
+          next = [...arr, updateRow(product)];
+        } else if (!shouldAlert && existsIdx !== -1) {
+          next = arr.filter(s => !match(s));
+        } else if (existsIdx !== -1) {
+          next = arr.map(s => match(s) ? updateRow(s) : s);
+        } else {
+          return old;
+        }
+        return Array.isArray(old) ? next : { ...old, data: next };
+      }
+    );
+  };
 
   const handleSubmit = async () => {
     setLoading(true);
@@ -1993,15 +2060,21 @@ function AdjustModal({ product, role, requestApproval, lang, onClose, onSuccess 
         });
         headers["Approval-Token"] = token;
       }
-      await api.patch("/stock/adjust",
+      const res = await api.patch("/stock/adjust",
         { product_id: product.product_id, location_id: product.location_id, new_quantity: +qty, min_quantity: +minQty, alert_enabled: alertEnabled, reason },
         { headers });
+      const offlineQueued = !!res?.data?.offline_queued;
+      if (offlineQueued) {
+        seedStockAfterAdjust({ newQty: +qty, newMin: +minQty, newAlertEnabled: alertEnabled });
+      }
       // Update product active status (not gated — is_active is the
       // owner-archive path; managers/warehouse who can open this modal
       // are already trusted with the status toggle).
       await api.patch("/products/" + product.product_id, { is_active: isActive });
-      toast.success(lang === "en" ? "✓ Stock adjusted!" : "✓ Stock ajusté!");
-      onSuccess();
+      toast.success(offlineQueued
+        ? (lang === "en" ? "✓ Stock adjusted · will sync" : "✓ Stock ajusté · se synchronisera")
+        : (lang === "en" ? "✓ Stock adjusted!" : "✓ Stock ajusté!"));
+      onSuccess(offlineQueued);
     } catch (err) {
       // MP-OWNER-PIN-APPROVAL: PIN modal closed → silent.
       if (err?.code === "cancelled") { setLoading(false); return; }

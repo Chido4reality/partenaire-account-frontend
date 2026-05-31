@@ -228,6 +228,14 @@ export default function CustomersPage() {
   // (no toast, so the cashier can correct and retry). On success we
   // close, toast the new balance, and invalidate the same key set as
   // customer-edit + the daily-summary key so the dashboard refreshes.
+  //
+  // MP-PHASE-4 WAVE 1 — offline optimistic UI: when api.post returns
+  // the offlineAwareAdapter's 202, the server-computed debt_after
+  // isn't known. Compute it client-side from the current customer
+  // balance and seed every debt-bearing cache slot so the UI reflects
+  // the new balance immediately (was Peter's "doesn't change until
+  // sync" complaint, which risked re-submit + duplicate writes).
+  // Mirror of the Phase 3 shift-open pattern in ShiftWidgets.jsx.
   const collectMutation = useMutation({
     mutationFn: () => api.post(`/customers/${selected.id}/collect-debt`, {
       amount:         +collectForm.amount || 0,
@@ -236,25 +244,140 @@ export default function CustomersPage() {
       notes:          collectForm.notes || null,
     }),
     onSuccess: (res) => {
+      const offlineQueued = !!res?.data?.offline_queued;
       const d = res?.data?.data || {};
+      // For online, trust server's debt_before/debt_after. For offline,
+      // synthesize from the modal's known state — server's RPC will
+      // recompute authoritatively on sync.
+      const amt = +collectForm.amount || 0;
+      const debtBefore = Number(selected?.total_debt || 0);
+      const debtAfter  = Math.max(0, debtBefore - amt);
+      const customerId = selected?.id;
+      const method     = collectForm.payment_method;
+
+      const displayAmount = offlineQueued ? amt : (d.amount ?? amt);
+      const displayAfter  = offlineQueued ? debtAfter : (d.debt_after ?? debtAfter);
       toast.success(lang === "en"
-        ? `Collected ${formatCFA(d.amount)} — debt now ${formatCFA(d.debt_after)}`
-        : `Encaissé ${formatCFA(d.amount)} — dette: ${formatCFA(d.debt_after)}`);
+        ? `${offlineQueued ? "Queued · " : ""}Collected ${formatCFA(displayAmount)} — debt now ${formatCFA(displayAfter)}`
+        : `${offlineQueued ? "En attente · " : ""}Encaissé ${formatCFA(displayAmount)} — dette: ${formatCFA(displayAfter)}`);
       setShowCollectDebt(false);
       setCollectForm({ amount: "", payment_method: "cash", notes: "" });
       setCollectError(null);
-      qc.invalidateQueries(["customers"]);
-      qc.invalidateQueries(["customer-summary"]);
-      qc.invalidateQueries(["customer-detail", selected.id]);
-      qc.invalidateQueries(["customer-debt", selected.id]);
-      qc.invalidateQueries(["pos-customers"]);
-      qc.invalidateQueries(["dashboard"]);
-      qc.invalidateQueries(["daily-summary"]);
+
+      if (offlineQueued && customerId) {
+        // Update every cache slot that exposes the collected customer's
+        // total_debt. Each slot has its own envelope shape ({data:[…]},
+        // {data:{…}}, raw arrays/objects) — handle each defensively.
+        const updateRow = (c) => c?.id === customerId
+          ? { ...c, total_debt: debtAfter }
+          : c;
+
+        // ["customers", search, typeFilter, debtOnly] — list slot.
+        qc.setQueriesData(
+          { predicate: (q) => q.queryKey?.[0] === "customers" },
+          (old) => {
+            if (!old) return old;
+            const arr = Array.isArray(old) ? old : (old.data || []);
+            const next = arr.map(updateRow);
+            return Array.isArray(old) ? next : { ...old, data: next };
+          }
+        );
+        // ["pos-customers"] — POS quick-pick list. Same row shape.
+        qc.setQueriesData(
+          { predicate: (q) => q.queryKey?.[0] === "pos-customers" },
+          (old) => {
+            if (!old) return old;
+            const arr = Array.isArray(old) ? old : (old.data || []);
+            const next = arr.map(updateRow);
+            return Array.isArray(old) ? next : { ...old, data: next };
+          }
+        );
+        // ["customer-detail", id] — single-record slot.
+        qc.setQueryData(["customer-detail", customerId], (old) => {
+          if (!old) return old;
+          const rec = old.data || old;
+          if (!rec || rec.id !== customerId) return old;
+          const next = { ...rec, total_debt: debtAfter };
+          return old.data ? { ...old, data: next } : next;
+        });
+        // ["customer-summary"] — org-wide aggregate. Best-effort
+        // decrement; total_customers stays put, customers_with_debt
+        // decrements only when this customer's new balance is zero.
+        qc.setQueriesData(
+          { predicate: (q) => q.queryKey?.[0] === "customer-summary" },
+          (old) => {
+            if (!old) return old;
+            const s = old.data || old;
+            if (!s) return old;
+            const newTotal = Math.max(0, Number(s.total_debt || 0) - amt);
+            const becameZero = debtBefore > 0 && debtAfter === 0;
+            const next = {
+              ...s,
+              total_debt: newTotal,
+              customers_with_debt: becameZero
+                ? Math.max(0, Number(s.customers_with_debt || 0) - 1)
+                : s.customers_with_debt,
+            };
+            return old.data ? { ...old, data: next } : next;
+          }
+        );
+        // ["current-shift", locId] — drawer math. Cash payment of
+        // collected debt lands in cash_sales_received (matches how
+        // POSPage's invoice-settle path attributes to the drawer).
+        // Mobile-money / bank don't touch the drawer.
+        if (method === "cash" && selectedLocation?.id) {
+          qc.setQueryData(["current-shift", selectedLocation.id], (old) => {
+            if (!old) return old;
+            const cur = Number(old.cash_sales_received || 0);
+            const expected = Number(old.expected_drawer || 0);
+            return { ...old, cash_sales_received: cur + amt, expected_drawer: expected + amt };
+          });
+        }
+        // Non-seeded keys whose refetch is harmless (no clobber risk):
+        // credits/customer-debt/daily-summary all serve stale cached
+        // data offline and re-arrive at the truth on next online refetch.
+        qc.invalidateQueries(["credits"]);
+        qc.invalidateQueries(["customer-debt", customerId]);
+        qc.invalidateQueries(["dashboard"]);
+        qc.invalidateQueries(["daily-summary"]);
+      } else {
+        // Online path unchanged — invalidate everything so the next
+        // refetch picks up the server's RPC-computed truth.
+        qc.invalidateQueries(["customers"]);
+        qc.invalidateQueries(["customer-summary"]);
+        qc.invalidateQueries(["customer-detail", customerId]);
+        qc.invalidateQueries(["customer-debt", customerId]);
+        qc.invalidateQueries(["pos-customers"]);
+        qc.invalidateQueries(["dashboard"]);
+        qc.invalidateQueries(["daily-summary"]);
+      }
+
       // MP-PAYMENT-EVENT-RECEIPTS Phase 3: surface the receipt for
       // the customer. Backend already enriched the response with
       // applied_to_invoices, ghost_portion, customer/cashier/
-      // location fields — no follow-up fetch.
-      setReceiptEvent({ eventType: "debt_collection", data: d });
+      // location fields — no follow-up fetch. Offline path has no
+      // server enrichment; synthesize the minimum shape the receipt
+      // component needs so the cashier still gets a printable record.
+      const receiptData = offlineQueued
+        ? {
+            sale_number:    d.sale_number || null,
+            amount:         amt,
+            payment_method: method,
+            applied_to_invoices: [],
+            ghost_portion:  amt,
+            debt_before:    debtBefore,
+            debt_after:     debtAfter,
+            customer_id:    customerId,
+            customer_name:  selected?.name || null,
+            customer_phone: selected?.phone || null,
+            cashier_name:   user?.full_name || null,
+            location_id:    selectedLocation?.id || null,
+            location_name:  selectedLocation?.name || null,
+            shift_id:       null,
+            offline_queued: true,
+          }
+        : d;
+      setReceiptEvent({ eventType: "debt_collection", data: receiptData });
     },
     onError: (err) => {
       setCollectError(err.response?.data?.message || "Error");
