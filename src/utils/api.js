@@ -150,8 +150,25 @@ api.defaults.adapter = async function offlineAwareAdapter(config) {
       const localId = payload.local_id || genLocalId();
       payload.local_id = localId;
       const endpoint = (config.url || "").replace(BASE_URL, "");
-      await enqueue({ endpoint, method: (config.method || "POST").toUpperCase(), payload });
-      return buildOptimisticResponse(endpoint, payload, localId);
+      try {
+        await enqueue({ endpoint, method: (config.method || "POST").toUpperCase(), payload });
+        return buildOptimisticResponse(endpoint, payload, localId);
+      } catch (e) {
+        // MP-PHASE-4 BUG-2 DIAGNOSTIC: surface SQLite/queue failures on
+        // the offline pre-flight path. Without this, an enqueue throw
+        // (e.g. @capacitor-community/sqlite plugin not initialised, or
+        // pending_sync table not created) propagates as a generic axios
+        // rejection that the response interceptor then silently swallows
+        // — the cashier sees "Network error. Retry." with no log trail.
+        // Logged at error level so Chrome devtools WebView debugging
+        // surfaces it. Re-throw so the response interceptor still gets
+        // its chance to enqueue via the secondary path.
+        console.error("[offlineAwareAdapter enqueue threw]", {
+          endpoint, method: config.method,
+          error: e?.message || String(e), stack: e?.stack,
+        });
+        throw e;
+      }
     }
   }
   return _originalAdapter(config);
@@ -176,7 +193,22 @@ api.interceptors.response.use(res => res, async err => {
         const endpoint = (cfg.url || "").replace(BASE_URL, "");
         await enqueue({ endpoint, method: (cfg.method || "POST").toUpperCase(), payload });
         return Promise.resolve(buildOptimisticResponse(endpoint, payload, localId));
-      } catch { /* fall through to error bubble */ }
+      } catch (e) {
+        // MP-PHASE-4 BUG-2 DIAGNOSTIC: surface queue failures on the
+        // response-interceptor fallback path. Was a bare `catch {}`
+        // that fell through to bubble the original network error —
+        // the cashier sees "Network error. Retry." and we have no log
+        // trail. Capture before fall-through so the next failure is
+        // actionable from Chrome devtools WebView debugging.
+        console.error("[response-interceptor enqueue threw]", {
+          endpoint: (cfg.url || "").replace(BASE_URL, ""),
+          method: cfg.method,
+          original_error: err?.message || String(err),
+          enqueue_error: e?.message || String(e),
+          enqueue_stack: e?.stack,
+        });
+        /* fall through to error bubble */
+      }
     }
   }
   // MP-OWNER-PIN-APPROVAL: distinguish session-invalid 401s (auth
