@@ -99,6 +99,13 @@ export default function POSPage() {
   // exceeding available stock (WARN, may proceed).
   const [blockModal, setBlockModal]           = useState(null);
   const [oversellModal, setOversellModal]     = useState(null);
+  // MP-CREDIT-LIMIT-MODAL: dedicated UI for backend's CREDIT_LIMIT_EXCEEDED
+  // 400. Backend already returns structured fields (credit_limit,
+  // current_debt, new_balance) alongside the verbose French sentence;
+  // we render the three numbers in a table so the cashier reads them
+  // at a glance instead of squinting at a wrapped toast. Shape:
+  // { customer_name, credit_limit, current_debt, new_balance }.
+  const [creditLimitModal, setCreditLimitModal] = useState(null);
   // MP-DOZIE-CART-PREFILL-VALIDATE: when the online_cart_validate_for_pos
   // RPC reports can_proceed=false, this holds per-item verdicts to
   // render. Shape: { locationName, items:[{name, status, qty_requested,
@@ -1109,6 +1116,19 @@ export default function POSPage() {
         });
         return;
       }
+      if (d?.code === "CREDIT_LIMIT_EXCEEDED") {
+        // sales.js:158-165 returns credit_limit + current_debt +
+        // new_balance as structured fields. Render the three numbers
+        // in a table so the cashier sees what tripped the gate
+        // without parsing a long French sentence on a phone screen.
+        setCreditLimitModal({
+          customer_name: customer?.name || "",
+          credit_limit:  Number(d.credit_limit)  || 0,
+          current_debt:  Number(d.current_debt)  || 0,
+          new_balance:   Number(d.new_balance)   || 0,
+        });
+        return;
+      }
       // MP-OFFLINE-WARNING-FALSE-POSITIVE: no err.response means the
       // request never reached the server (network down, DNS failure,
       // CORS). Be honest about it — don't pretend it was saved
@@ -1720,7 +1740,16 @@ export default function POSPage() {
               ABOVE the input, keeping them in already-visible space no
               matter how aggressively the keyboard reflows things.
               Desktop and empty-cart mobile keep the original order. */}
-          <div style={{ display: "flex", flexDirection: (mobile && (cart.length > 0 || activeHolds.length > 0)) ? "column-reverse" : "column" }}>
+          {/* MP-MOBILE-UI-PHASE-2C: column-reverse experiment removed.
+              The original intent was to keep the scanner/search above
+              the on-screen keyboard when a cart was active; in practice
+              the Vaul mobile cart sheet (z:1701) already pins the cart
+              to the top of the visible area, and reversing the column
+              pushed the search input + results dropdown BELOW the
+              sheet's peek bar — Peter's "search dead after debt-line
+              auto-added" repro on the APK. Always column = search input
+              stays where the cashier expects it. */}
+          <div style={{ display: "flex", flexDirection: "column" }}>
           {/* ── SCANNER SECTION ── */}
           <div style={{ marginBottom: 14 }}>
             <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", display: "block", marginBottom: 8 }}>
@@ -1910,6 +1939,51 @@ export default function POSPage() {
             </div>
             <button onClick={() => setBlockModal(null)} className="btn btn-primary btn-block" style={{ fontWeight: 700 }}>
               {lang === "en" ? "OK, I'll fix it" : "OK, je corrige"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── MP-CREDIT-LIMIT-MODAL: structured rendering of the
+          backend's CREDIT_LIMIT_EXCEEDED 400. Mirrors blockModal's
+          shape so the UX feels consistent with the other hard-block
+          modals (z:3000, full-width row of numbers, single CTA). */}
+      {creditLimitModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000, padding: 16 }}>
+          <div style={{ background: "var(--bg-card)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 14, width: "100%", maxWidth: 460, padding: 22 }}>
+            <div style={{ fontSize: 30, marginBottom: 8 }}>🚫</div>
+            <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>
+              {lang === "en" ? "Credit limit reached" : "Limite de crédit atteinte"}
+            </div>
+            {creditLimitModal.customer_name && (
+              <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 14 }}>
+                {creditLimitModal.customer_name}
+              </div>
+            )}
+            {/* Three-row breakdown. New balance highlighted red so the
+                eye lands on it first — that's the number that tripped
+                the gate. */}
+            <div style={{ background: "var(--bg-elevated)", borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 13 }}>
+                <span style={{ color: "var(--text-muted)" }}>{lang === "en" ? "Limit" : "Limite"}</span>
+                <span style={{ fontWeight: 700 }}>{formatCFA(creditLimitModal.credit_limit)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 13, borderTop: "1px solid var(--border)" }}>
+                <span style={{ color: "var(--text-muted)" }}>{lang === "en" ? "Current debt" : "Dette actuelle"}</span>
+                <span style={{ fontWeight: 700 }}>{formatCFA(creditLimitModal.current_debt)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 13, borderTop: "1px solid var(--border)" }}>
+                <span style={{ color: "var(--text-muted)" }}>{lang === "en" ? "New balance" : "Nouveau solde"}</span>
+                <span style={{ fontWeight: 700, color: "#f87171" }}>{formatCFA(creditLimitModal.new_balance)}</span>
+              </div>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5, marginBottom: 14 }}>
+              {lang === "en"
+                ? "Collect a partial payment first, or raise the limit from Customers."
+                : "Collectez un paiement partiel d'abord, ou augmentez la limite dans Clients."}
+            </div>
+            <button onClick={() => setCreditLimitModal(null)} className="btn btn-primary btn-block" style={{ fontWeight: 700 }}>
+              OK
             </button>
           </div>
         </div>

@@ -68,7 +68,14 @@ export default function NavDrawer({
           {/* Backdrop — fills viewport, lower z than drawer. Tap closes.
               Sits above the translated content so taps on the visible
               80-ish px of content also close (content's pointer-events
-              are disabled by the parent while the drawer is open). */}
+              are disabled by the parent while the drawer is open).
+              MP-NAVDRAWER-Z-ABOVE-VAUL: z bumped 1500 → 2500 (panel
+              1501 → 2501 below) so the drawer clears the Vaul mobile
+              cart sheet portal (z:1701). Pre-fix on phones with cart
+              items active, the bottom ~80px of the drawer (Sign Out
+              + Settings section) was hidden under Vaul's peek bar.
+              Still below ModalShell (z:3500) so a modal can stack on
+              top of the drawer if both are open. */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -78,7 +85,7 @@ export default function NavDrawer({
             style={{
               position: "fixed", inset: 0,
               background: "rgba(0,0,0,0.5)",
-              zIndex: 1500,
+              zIndex: 2500,
             }}
           />
 
@@ -105,7 +112,7 @@ export default function NavDrawer({
               width: DRAWER_WIDTH,
               background: "var(--bg-surface)",
               borderRight: "1px solid var(--border)",
-              zIndex: 1501,
+              zIndex: 2501,
               display: "flex",
               flexDirection: "column",
               paddingTop: "var(--safe-area-top)",
