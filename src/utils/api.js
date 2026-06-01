@@ -123,6 +123,25 @@ api.interceptors.request.use(config => {
   if (/^\/shifts\/open\/?$/.test(_path) && config.data && typeof config.data === "object" && !config.data.id) {
     config.data = { ...config.data, id: genLocalId() };
   }
+  // MP-PRODUCTS-OFFLINE-ID-STAMP (Bug X, 1 Jun): same precedent as
+  // /shifts/open. The offline-eligible POST /products needs the client
+  // to stamp the product's primary-key UUID BEFORE the request leaves
+  // the device. Without it, the optimistic 202 surfaces id=<localId>
+  // and the cashier's UI references that — but on later queue replay
+  // the backend generates a NEW server-side UUID, so any /stock/arrivals
+  // POSTed in the same offline window (carrying items[].product_id =
+  // <localId>) FK-violates against pa_arrival_items on replay. Result:
+  // product exists, but arrival never lands, qty stays at 0 forever
+  // — Peter's "Painting brush" repro.
+  //
+  // Reusing payload.local_id as id makes the offline-stamped UUID
+  // identical to the dedup key. The backend (post-Bug-X commit)
+  // validates UUID v4 and honors the value on insert, so the
+  // arrival's product_id resolves cleanly. Stamped AFTER the local_id
+  // block above so payload.local_id is already populated.
+  if (/^\/products\/?$/.test(_path) && config.data && typeof config.data === "object" && !config.data.id && config.data.local_id) {
+    config.data = { ...config.data, id: config.data.local_id };
+  }
   // Offline-eligible writes get a 45s ceiling: they enqueue on failure,
   // and Render's free-tier cold-start can take 30-60s when the container
   // has been idle. Paul (Cameroon, 1 Jun) hit "Exhausted 5 attempts:
