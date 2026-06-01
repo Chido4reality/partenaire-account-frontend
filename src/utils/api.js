@@ -123,10 +123,19 @@ api.interceptors.request.use(config => {
   if (/^\/shifts\/open\/?$/.test(_path) && config.data && typeof config.data === "object" && !config.data.id) {
     config.data = { ...config.data, id: genLocalId() };
   }
-  // Offline-eligible writes keep the generous 15s ceiling: they enqueue on
-  // failure, so giving a slow-but-up backend longer to ack avoids a premature
-  // optimistic-queue fallback. Reads/auth stay on the 6s default (fail fast).
-  if (isOfflineEligible(config.method, config.url)) config.timeout = 15000;
+  // Offline-eligible writes get a 45s ceiling: they enqueue on failure,
+  // and Render's free-tier cold-start can take 30-60s when the container
+  // has been idle. Paul (Cameroon, 1 Jun) hit "Exhausted 5 attempts:
+  // signal aborted without reason" because every aborted-at-15s request
+  // killed the in-flight TCP socket before Render finished booting →
+  // queue retries kept hitting cold containers. 45s gives the typical
+  // 30-50s cold-start window room to land while keeping the abort
+  // short enough that a truly dead network still surfaces within a
+  // minute. Reads/auth stay on the 6s default (fail fast — the offline
+  // UI flips quickly when network drops mid-read). App.jsx fires a
+  // warm-up /health ping at launch to prime the container, which
+  // covers the dominant "open app, start working" flow.
+  if (isOfflineEligible(config.method, config.url)) config.timeout = 45000;
   return config;
 });
 

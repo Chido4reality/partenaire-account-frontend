@@ -34,7 +34,14 @@
 import { exec, query } from './localDb';
 import { onNetworkChange, getNetworkStatus } from './network';
 
-const ENDPOINT_TIMEOUTS_MS = 12000;
+// MP-RENDER-COLDSTART-WARMUP: per-attempt fetch timeout. 12s → 45s
+// because Render free-tier cold-start can take 30-60s. Paul (Cameroon,
+// 1 Jun) hit "Exhausted 5 attempts: signal aborted without reason" on
+// POST /products because every aborted-at-12s queue retry killed the
+// in-flight TCP socket before Render finished booting, so subsequent
+// retries kept hitting cold containers in a doom loop. 45s covers the
+// typical cold-start window with headroom for slow Cameroon RTT.
+const ENDPOINT_TIMEOUTS_MS = 45000;
 const BACKOFF_MS  = [1_000, 5_000, 30_000, 300_000, 1_800_000];
 const MAX_ATTEMPTS = BACKOFF_MS.length;
 const POLL_INTERVAL_MS = 30_000;

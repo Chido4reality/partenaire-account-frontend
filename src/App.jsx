@@ -273,6 +273,26 @@ export default function App() {
     // URLSearchParams check.
     consumeImpersonateToken();
 
+    // MP-RENDER-COLDSTART-WARMUP: fire-and-forget HEAD ping at app launch
+    // to prime Render's container. Free-tier cold-start is 30-60s when
+    // the container has been idle (~15min); Paul (Cameroon, 1 Jun) hit
+    // "Exhausted 5 attempts: signal aborted without reason" because his
+    // first POST landed on a cold container and every aborted retry
+    // killed the in-flight TCP socket before boot completed. The user
+    // typically takes 10-60s of UI navigation after launch before their
+    // first write (pick location, customer, scan product), so a warm-up
+    // ping kicked off here usually completes long before the first
+    // user-issued write fires. .catch swallowed because we genuinely
+    // don't care about the response — only the side effect of waking
+    // Render. Belt-and-suspenders with the 45s timeout bumps in
+    // api.js and pendingSync.js for the cases where the user IS faster
+    // than the warm-up or the container goes cold mid-session.
+    try {
+      const apiBase = import.meta.env.VITE_API_URL || "/api";
+      fetch(apiBase + "/health", { method: "HEAD", cache: "no-store" })
+        .catch(() => { /* fire-and-forget */ });
+    } catch (_) { /* SSR / no fetch — ignore */ }
+
     // MP-SLICE-3-RETIRE-LEGACY-SERVICE-WORKER: drop reg.sync.register +
     // "sw-sync-complete" listener. Both belonged to the retired legacy SW;
     // Slice 3's pendingSync worker now owns reconnect-triggered draining via
