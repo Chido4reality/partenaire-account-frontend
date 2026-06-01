@@ -43,6 +43,17 @@ function deriveCacheKey(queryKey) {
   return "oq_" + queryKey.map(v => v == null ? "" : String(v)).join("|");
 }
 
+// MP-DEBT-MODAL-PREFETCH (Issue 2): exposed so callers can manually
+// seed the localStorage cache via cacheData with the SAME key the
+// useOfflineCachedQuery consumer reads back via getCachedData. Used by
+// POSPage to fire-and-forget customer-debt prefetches on POS mount so
+// the modal works offline even for customers the cashier hasn't
+// individually picked online before. Keep deriveCacheKey itself
+// internal — only the contract (cacheKey shape) is exported.
+export function cacheKeyFor(queryKey) {
+  return deriveCacheKey(queryKey);
+}
+
 export function useOfflineCachedQuery({ queryKey, queryFn, fallback, ...opts }) {
   const cacheKey = deriveCacheKey(queryKey);
   const empty = fallback !== undefined ? fallback : null;

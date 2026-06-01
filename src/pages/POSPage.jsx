@@ -10,6 +10,7 @@ import { useLangStore, useSettingsStore, useAuthStore, useDraftCartStore } from 
 // why; the backend at sales.js:46-62 is the source of truth either way.
 import api, { formatCFA } from "../utils/api";
 import { cacheData, getCachedData } from "../utils/offlineStore";
+import { useOfflineCachedQuery, cacheKeyFor } from "../utils/offlineQuery";
 import CameraScanner from "../components/common/CameraScanner";
 import { genSaleCodes } from "../utils/receiptCodes";
 import { ActiveShiftIndicator, useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
@@ -346,7 +347,14 @@ export default function POSPage() {
   });
   const orgSettings = orgData?.data || {};
 
-  const { data: customerDebtData, isLoading: debtLoading } = useQuery({
+  // MP-DEBT-MODAL-OFFLINE (Issue 2): converted from useQuery to
+  // useOfflineCachedQuery so the debt detail can serve cached data
+  // when the network is unavailable. Combined with the prefetch
+  // useEffect below — which warms the cache for every debtor as soon
+  // as allCustomers loads — the cashier can pick any customer who
+  // owed money at last-online-sync and see the modal/banner correctly
+  // even fully offline.
+  const { data: customerDebtData, isLoading: debtLoading } = useOfflineCachedQuery({
     queryKey: ["customer-debt", customer?.id],
     queryFn: () => api.get(`/sales/customer-debt/${customer.id}`).then(r => r.data),
     enabled: !!customer?.id && (customer?.total_debt || 0) > 0,
@@ -381,6 +389,46 @@ export default function POSPage() {
       setDebtBanner(null);
     }
   }, [customerDebtData]);
+
+  // MP-DEBT-MODAL-PREFETCH (Issue 2): warm the customer-debt cache for
+  // every debtor as soon as the allCustomers list arrives. Without this,
+  // the modal/banner only works for customers the cashier individually
+  // picked WHILE online — picking any other debtor offline would leave
+  // customerDebtData undefined and the useEffect above would silently
+  // return early. The pre-fetch fires once per debtor in parallel,
+  // populates the offlineQuery localStorage cache via cacheData with
+  // the SAME derived key the consumer reads back, and ALSO seeds the
+  // React Query in-memory cache so the modal opens instantly without
+  // a refetch when the cashier picks the customer next.
+  //
+  // Bounded by active-debtor count (typically a small subset of total
+  // customers). Failures are silent — best-effort warm-up, no UI
+  // spinner, and the existing online refetch path handles the case
+  // where the cache is stale by the time the cashier picks the
+  // customer. Re-runs whenever allCustomers refetches.
+  useEffect(() => {
+    const all = allCustomers?.data || [];
+    if (!all.length) return;
+    const debtors = all.filter(c => c?.id && Number(c?.total_debt || 0) > 0);
+    if (!debtors.length) return;
+    let cancelled = false;
+    (async () => {
+      // Promise.all so the warm-up parallelizes; each request is small.
+      await Promise.all(debtors.map(async (c) => {
+        if (cancelled) return;
+        try {
+          const r = await api.get(`/sales/customer-debt/${c.id}`).then(res => res.data);
+          if (cancelled) return;
+          // Persist for offline reads via useOfflineCachedQuery's
+          // catch path, AND seed React Query so the consumer hits a
+          // warm slot without a refetch on first read.
+          try { cacheData(cacheKeyFor(["customer-debt", c.id]), r); } catch { /* swallow storage errors */ }
+          qc.setQueryData(["customer-debt", c.id], r);
+        } catch { /* silent — best-effort warm-up */ }
+      }));
+    })();
+    return () => { cancelled = true; };
+  }, [allCustomers?.data, qc]);
 
   // D-2.4 / MP-DOZIE-CART-PREFILL-VALIDATE: Online Cart → POS prefill
   // via the server-side validate RPC. Replaces the prior client-side
