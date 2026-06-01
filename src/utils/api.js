@@ -1,7 +1,7 @@
 import axios from "axios";
 import { useAuthStore, useLangStore } from "../store";
 import { enqueue, configureSync, startWorker, genLocalId } from "./pendingSync";
-import { getNetworkStatus } from "./network";
+import { getNetworkStatus, recordWriteFailure, recordWriteSuccess } from "./network";
 
 // Default 6s timeout for reads + auth so a dropped/partial network surfaces
 // fast instead of hanging. (The old 15s was "generous" to let a now-DELETED
@@ -153,8 +153,17 @@ const _originalAdapter = axios.getAdapter(api.defaults.adapter);
 api.defaults.adapter = async function offlineAwareAdapter(config) {
   if (isOfflineEligible(config.method, config.url)) {
     let net;
-    try { net = await getNetworkStatus(); } catch { net = { connected: true }; }
-    if (!net.connected) {
+    try { net = await getNetworkStatus(); } catch { net = { connected: true, degraded: false }; }
+    // MP-DEGRADED-ROUTING (Paul, 1 Jun): route writes via the queue
+    // path not only when fully offline, but also when network.js
+    // reports "degraded" (a recent ping or write attempt failed,
+    // navigator still says online). Trades "this write might have
+    // succeeded on the real network" for "the cashier sees an
+    // instant Queued · will sync toast instead of waiting up to
+    // 45s on a spinner before the response interceptor catches and
+    // enqueues anyway." See network.js's MP-DEGRADED-ROUTING
+    // comment for the threshold rationale.
+    if (!net.connected || net.degraded) {
       const payload = typeof config.data === "string" ? safeJson(config.data) : (config.data || {});
       const localId = payload.local_id || genLocalId();
       payload.local_id = localId;
@@ -185,7 +194,19 @@ api.defaults.adapter = async function offlineAwareAdapter(config) {
 
 function safeJson(s) { try { return JSON.parse(s); } catch { return {}; } }
 
-api.interceptors.response.use(res => res, async err => {
+api.interceptors.response.use(res => {
+  // MP-DEGRADED-ROUTING: a successful 2xx on an offline-eligible write
+  // path is a vote of confidence that the network is healthy. Decrement
+  // _writeAttemptFailures (clamps at 0 in network.js) so the degraded
+  // flag clears when enough writes succeed in a row. Reads aren't a
+  // useful signal — they bypass the offline queue entirely.
+  try {
+    if (isOfflineEligible(res?.config?.method, res?.config?.url)) {
+      recordWriteSuccess();
+    }
+  } catch { /* noop */ }
+  return res;
+}, async err => {
   // MP-CAPACITOR Slice 3: 5xx on an offline-eligible write → enqueue
   // for replay so a transient backend hiccup doesn't lose the cashier's
   // action. Network errors (no response) also enqueue. 4xx still bubbles
@@ -201,6 +222,12 @@ api.interceptors.response.use(res => res, async err => {
         payload.local_id = localId;
         const endpoint = (cfg.url || "").replace(BASE_URL, "");
         await enqueue({ endpoint, method: (cfg.method || "POST").toUpperCase(), payload });
+        // MP-DEGRADED-ROUTING: the real network just failed on an
+        // offline-eligible write. Increment the degraded counter so
+        // the NEXT write skips the network and goes straight to the
+        // queue, sparing the cashier another 45s spinner cycle.
+        // Cleared by a successful 2xx on a subsequent write.
+        try { recordWriteFailure(); } catch { /* noop */ }
         return Promise.resolve(buildOptimisticResponse(endpoint, payload, localId));
       } catch (e) {
         // MP-PHASE-4 BUG-2 DIAGNOSTIC: surface queue failures on the

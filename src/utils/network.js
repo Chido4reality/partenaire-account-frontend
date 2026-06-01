@@ -70,11 +70,66 @@ const OFFLINE_FAIL_THRESHOLD = 3; // consecutive ping fails required to
                                    // override navigator-says-online
 let _consecutiveFails = 0;
 
+// MP-DEGRADED-ROUTING (Paul, 1 Jun): the indicator threshold above (3
+// consecutive fails) is deliberately conservative so the user only sees
+// "Offline" red when we're confident. But the WRITE adapter has been
+// using the same binary signal, so a single flake left the cashier
+// waiting 45s on a spinner before the response interceptor fell back to
+// the queue. The fix: a separate, more aggressive routing hint just for
+// writes — ANY sign of trouble (1+ recent ping fail OR 1+ recent write
+// failure) routes the next write straight to the queue. The indicator
+// stays on its 3-fail bar (no false red); the cashier gets an instant
+// "Queued · will sync" toast instead of a spinner.
+//
+// _writeAttemptFailures is incremented by api.js's response interceptor
+// when it falls back to enqueue (real network errored on an offline-
+// eligible write) and decremented when a real-network response comes
+// back 2xx. Bounded — clamps at 0 so a long-running drain doesn't
+// accumulate negative counts.
+let _writeAttemptFailures = 0;
+function isDegradedNow() {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return false; // already offline; not "degraded"
+  return _consecutiveFails >= 1 || _writeAttemptFailures >= 1;
+}
+// Exported so api.js can feed the signal back. recordWriteSuccess
+// clamps at 0 (no negative counts); recordWriteFailure has no upper
+// bound but pingHealth's full-reset on success drains it via the
+// indicator path too.
+export function recordWriteFailure() {
+  _writeAttemptFailures++;
+  // Notify subs so the indicator's ⚠ stripe lights up immediately,
+  // not at the next 10s poll tick.
+  _notifyWebDegradedMaybe();
+}
+export function recordWriteSuccess() {
+  if (_writeAttemptFailures > 0) {
+    _writeAttemptFailures--;
+    _notifyWebDegradedMaybe();
+  }
+}
+// Snapshot of the degraded signal — used by api.js's adapter pre-flight
+// AND by getNetworkStatus's return shape so consumers see the same.
+function _degradedSnapshot() { return isDegradedNow(); }
+
 // Notify web subscribers on change only.
 function _notifyWeb(connected) {
   if (connected === _cachedOnline) return;
   _cachedOnline = connected;
-  const status = { connected, connectionType: 'unknown', source: 'web' };
+  const status = { connected, degraded: _degradedSnapshot(), connectionType: 'unknown', source: 'web' };
+  _subs.forEach(cb => { try { cb(status); } catch { /* noop */ } });
+}
+
+// MP-DEGRADED-ROUTING: separate notify path for degraded-flag flips
+// that don't change the connected boolean (e.g. counter went 0→1 on
+// a write failure while navigator still reports online). Same
+// subscriber list, same status shape, just driven by the secondary
+// signal. Tracks _lastDegradedSent to keep change-only semantics.
+let _lastDegradedSent = false;
+function _notifyWebDegradedMaybe() {
+  const cur = _degradedSnapshot();
+  if (cur === _lastDegradedSent) return;
+  _lastDegradedSent = cur;
+  const status = { connected: _cachedOnline, degraded: cur, connectionType: 'unknown', source: 'web' };
   _subs.forEach(cb => { try { cb(status); } catch { /* noop */ } });
 }
 
@@ -99,9 +154,20 @@ async function pingHealth() {
     await fetch(HEALTH_URL, { method: 'HEAD', cache: 'no-store', signal: c.signal });
     clearTimeout(tid);
     _consecutiveFails = 0;
+    // MP-DEGRADED-ROUTING: a successful ping clears the degraded signal
+    // contribution from _consecutiveFails. Notify so the indicator's
+    // ⚠ stripe clears even if _writeAttemptFailures is still > 0.
+    // (When both reach 0, degraded flips to false and bar returns to
+    // pure online.)
+    _notifyWebDegradedMaybe();
     return true;
   } catch {
     _consecutiveFails++;
+    // MP-DEGRADED-ROUTING: first ping fail = degraded flips to true.
+    // Notify so the adapter sees the new routing hint on the next call
+    // AND the indicator's ⚠ stripe lights up before the indicator's
+    // 3-fail "offline" threshold is reached.
+    _notifyWebDegradedMaybe();
     return false;
   }
 }
@@ -164,6 +230,7 @@ export async function getNetworkStatus() {
       const s = await _capacitorNetwork.getStatus();
       return {
         connected:      !!s.connected,
+        degraded:       _degradedSnapshot(),
         connectionType: s.connectionType || 'unknown',
         source:         'capacitor',
       };
@@ -178,6 +245,7 @@ export async function getNetworkStatus() {
     // emulation (which fires the event but leaves navigator.onLine true);
     // navOnline catches a true OS-level disconnect that races listener wiring.
     connected:      _cachedOnline && navOnline,
+    degraded:       _degradedSnapshot(),
     connectionType: 'unknown',
     source:         'web',
   };

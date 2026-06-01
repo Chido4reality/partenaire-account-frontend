@@ -28,6 +28,12 @@ export default function OnlineOfflineBar() {
   const lang = useLangStore(s => s.lang);
   const en   = lang === 'en';
   const [connected, setConnected] = useState(true);
+  // MP-DEGRADED-ROUTING: subtle ⚠ visual cue when the adapter has flipped
+  // to "route writes through queue" but the indicator is still green
+  // (connectivity isn't confirmed dead yet). Drives a small amber stripe
+  // / icon — see PALETTE.degraded below. Set from the network status
+  // shape's new `degraded` field; cleared the same way.
+  const [degraded, setDegraded]   = useState(false);
   // MP-CAPACITOR Slice 3: live pending_sync stats. Drives the
   // pending count badge, the syncing pulse, and the failed_permanent
   // amber-state badge that opens ConflictModal.
@@ -36,8 +42,16 @@ export default function OnlineOfflineBar() {
 
   useEffect(() => {
     let mounted = true;
-    getNetworkStatus().then(s => { if (mounted) setConnected(s.connected); });
-    const unsubNet  = onNetworkChange(s => { if (mounted) setConnected(s.connected); });
+    getNetworkStatus().then(s => {
+      if (!mounted) return;
+      setConnected(s.connected);
+      setDegraded(!!s.degraded);
+    });
+    const unsubNet  = onNetworkChange(s => {
+      if (!mounted) return;
+      setConnected(s.connected);
+      setDegraded(!!s.degraded);
+    });
     const unsubSync = subscribePendingSync(s => { if (mounted) setStats(s); });
     return () => { mounted = false; unsubNet(); unsubSync(); };
   }, []);
@@ -46,13 +60,19 @@ export default function OnlineOfflineBar() {
   const syncing         = (stats.sending || 0) > 0;
   const conflictCount   = stats.failed_permanent || 0;
 
-  // Four visual tiers. failed_permanent takes precedence over the
-  // pure-pending state because the cashier needs to know that
-  // something needs their attention NOW.
+  // Five visual tiers (degraded added). failed_permanent takes
+  // precedence over the pure-pending state because the cashier needs to
+  // know that something needs their attention NOW. Degraded sits ABOVE
+  // pure 'online' (so a flake without queue rows still gets a hint)
+  // but BELOW syncing/pending (so when the queue has content the count
+  // takes the spotlight). degraded label is intentionally small/
+  // non-alarming — Paul's pain was the app "feels stuck", a subtle
+  // amber stripe gives him awareness without crying wolf.
   const tier = conflictCount > 0 ? 'conflict'
              : !connected ? 'offline'
              : syncing    ? 'syncing'
              : pendingCount > 0 ? 'pending'
+             : degraded   ? 'degraded'
              : 'online';
 
   const PALETTE = {
@@ -64,6 +84,14 @@ export default function OnlineOfflineBar() {
     pending: { bg: '#fbbf24', text: '#0b1220', emoji: '↻',
                label: en ? `Online · ${pendingCount} pending sync`
                          : `En ligne · ${pendingCount} en attente` },
+    // MP-DEGRADED-ROUTING: muted amber, ⚠ icon, short non-alarming
+    // copy. Same height as 'pending' (full bar, not collapsed)
+    // because the cashier should glance and know writes are being
+    // saved locally — but the wording is "saving" not "offline" so
+    // they don't panic.
+    degraded: { bg: '#f59e0b', text: '#0b1220', emoji: '⚠',
+                label: en ? 'Connection unstable · saving locally'
+                          : 'Connexion instable · enregistrement local' },
     offline: { bg: '#ef4444', text: '#ffffff', emoji: '🔴',
                label: en
                  ? (pendingCount > 0
