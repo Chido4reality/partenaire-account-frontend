@@ -5,6 +5,7 @@ import { useAuthStore, useLangStore, useSettingsStore } from "../store";
 import api from "../utils/api";
 import PaywallModal from "../components/common/PaywallModal";
 import { hasFeature, getCapabilities } from "../utils/planCapabilities";
+import { useLiteMode } from "../hooks/useLiteMode";
 
 const ROLES = [
   { value: "cashier",   en: "Cashier",    fr: "Caissier",     color: "#94a3b8" },
@@ -24,6 +25,29 @@ export default function SettingsPage() {
   const { selectedLocation, setLocation } = useSettingsStore();
   const qc = useQueryClient();
   const isOwner = user?.role === "owner";
+  // MP-LITE-MODE-PHASE-1: source of truth for the toggle's current value.
+  // The Mode tab below renders only for owner; the toggle POSTs to
+  // /auth/lite-mode and updates authStore.org.lite_mode inline so the
+  // whole app re-renders without a /auth/me round-trip.
+  const lite = useLiteMode();
+  const [showModeConfirm, setShowModeConfirm] = useState(false);
+  const [modeSaving, setModeSaving] = useState(false);
+  const flipMode = async () => {
+    setModeSaving(true);
+    const targetEnabled = !lite ? true : false; // currently Pro → flip to Lite, currently Lite → flip to Pro
+    try {
+      await api.post("/auth/lite-mode", { enabled: targetEnabled });
+      // Mutate org in place so every useLiteMode consumer re-renders.
+      const curr = useAuthStore.getState().org || {};
+      useAuthStore.setState({ org: { ...curr, lite_mode: targetEnabled } });
+      toast.success(targetEnabled
+        ? (lang === "en" ? "✓ Switched to Lite Mode" : "✓ Mode Lite activé")
+        : (lang === "en" ? "✓ Switched to Pro Mode" : "✓ Mode Pro activé"));
+      setShowModeConfirm(false);
+    } catch (e) {
+      toast.error(e?.response?.data?.message || "Error");
+    } finally { setModeSaving(false); }
+  };
 
   const [tab, setTab] = useState("locations");
 
@@ -328,7 +352,12 @@ export default function SettingsPage() {
     { key: "staff",     en: "Staff",              fr: "Personnel" },
     { key: "shop",      en: "Shop Settings",      fr: "Paramètres boutique", ownerOnly: true },
     { key: "account",   en: "Account",            fr: "Compte" },
-    { key: "dozie",     en: "Partenaire Dozie",   fr: "Partenaire Dozie",    ownerOnly: true },
+    // MP-LITE-MODE-PHASE-1: owner-only Mode tab. In Lite, Partenaire
+    // Dozie tab is hidden too (would expose Marketplace controls the
+    // toggle was supposed to suppress); the Mode tab itself stays so
+    // the owner can opt back into Pro.
+    { key: "mode",      en: "Mode",               fr: "Mode",                ownerOnly: true },
+    { key: "dozie",     en: "Partenaire Dozie",   fr: "Partenaire Dozie",    ownerOnly: true, hideInLite: true },
   ];
 
   return (
@@ -339,7 +368,7 @@ export default function SettingsPage() {
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 4, marginBottom: 24, borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
-        {TABS.filter(tb => !tb.ownerOnly || isOwner).map(tb => (
+        {TABS.filter(tb => (!tb.ownerOnly || isOwner) && !(lite && tb.hideInLite)).map(tb => (
           <button key={tb.key} onClick={() => setTab(tb.key)}
             style={{ padding: "10px 20px", background: "none", border: "none", borderBottom: tab === tb.key ? "2px solid var(--brand)" : "2px solid transparent", color: tab === tb.key ? "var(--text-primary)" : "var(--text-muted)", cursor: "pointer", fontSize: 13, fontWeight: tab === tb.key ? 600 : 400, marginBottom: -1 }}>
             {lang === "en" ? tb.en : tb.fr}
@@ -761,6 +790,93 @@ export default function SettingsPage() {
             <button className="btn btn-secondary" onClick={() => setLang(lang === "en" ? "fr" : "en")}>
               🌐 {lang === "en" ? "Switch to Français" : "Switch to English"}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ══ MODE TAB (Lite / Pro) ═════════════════════════════════════════════
+          MP-LITE-MODE-PHASE-1: owner-only switch between simplified
+          (Lite) and full-feature (Pro) UI. Confirms before flipping
+          so a misclick doesn't silently demote a Pro user. */}
+      {tab === "mode" && isOwner && (
+        <div>
+          <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, marginBottom: 20 }}>
+            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 8 }}>
+              {lang === "en" ? "App Mode" : "Mode de l'application"}
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20, lineHeight: 1.55 }}>
+              {lang === "en"
+                ? "Lite Mode hides advanced surfaces (Notifications, Marketplace, Operations dashboard, by-location reports, bulk Transfers) so the app stays simple for day-to-day till work. Pro Mode reveals everything. You can switch back at any time."
+                : "Le Mode Lite masque les surfaces avancées (Notifications, Marché, Tableau opérations, rapports par site, transferts en lot) pour garder l'application simple pour le travail quotidien à la caisse. Le Mode Pro révèle tout. Vous pouvez basculer à tout moment."}
+            </div>
+            <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{
+                flex: "1 1 240px",
+                background: lite ? "rgba(16,185,129,0.10)" : "var(--bg-elevated)",
+                border: `1px solid ${lite ? "rgba(16,185,129,0.45)" : "var(--border)"}`,
+                borderRadius: 12, padding: "14px 16px",
+              }}>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
+                  {lite ? "✓ " : ""}{lang === "en" ? "Lite Mode" : "Mode Lite"}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  {lang === "en" ? "Currently active" : "Actuellement actif"}{lite ? "" : (lang === "en" ? " when toggled on" : " si activé")}
+                </div>
+              </div>
+              <div style={{
+                flex: "1 1 240px",
+                background: !lite ? "rgba(79,70,229,0.12)" : "var(--bg-elevated)",
+                border: `1px solid ${!lite ? "rgba(79,70,229,0.45)" : "var(--border)"}`,
+                borderRadius: 12, padding: "14px 16px",
+              }}>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
+                  {!lite ? "✓ " : ""}{lang === "en" ? "Pro Mode" : "Mode Pro"}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  {!lite ? (lang === "en" ? "Currently active" : "Actuellement actif") : (lang === "en" ? "Full feature set" : "Toutes les fonctionnalités")}
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowModeConfirm(true)}
+              disabled={modeSaving}
+              className="btn btn-primary"
+              style={{ marginTop: 20, fontWeight: 700 }}>
+              {lite
+                ? (lang === "en" ? "Switch to Pro Mode" : "Passer au Mode Pro")
+                : (lang === "en" ? "Switch to Lite Mode" : "Passer au Mode Lite")}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm modal for Mode switch. Inline rather than a shared
+          shell so the copy can be specific. */}
+      {showModeConfirm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3500, padding: 16 }}>
+          <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 14, width: "100%", maxWidth: 420, padding: 24 }}>
+            <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 10 }}>
+              {lite
+                ? (lang === "en" ? "Switch to Pro Mode?" : "Activer le Mode Pro ?")
+                : (lang === "en" ? "Switch to Lite Mode?" : "Activer le Mode Lite ?")}
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.55, marginBottom: 18 }}>
+              {lite
+                ? (lang === "en"
+                    ? "Pro Mode reveals Notifications, Marketplace, Operations dashboard, by-location reports, and bulk Transfers. You can return to Lite at any time."
+                    : "Le Mode Pro révèle Notifications, Marché, Tableau opérations, rapports par site et transferts en lot. Vous pouvez revenir au Mode Lite à tout moment.")
+                : (lang === "en"
+                    ? "Lite Mode hides advanced surfaces so the app stays simple. Day-to-day till work is unaffected. You can return to Pro at any time."
+                    : "Le Mode Lite masque les surfaces avancées pour garder l'application simple. Le travail quotidien à la caisse n'est pas affecté. Vous pouvez revenir au Mode Pro à tout moment.")}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} disabled={modeSaving} onClick={() => setShowModeConfirm(false)}>
+                {lang === "en" ? "Cancel" : "Annuler"}
+              </button>
+              <button className="btn btn-primary" style={{ flex: 1, fontWeight: 700 }} disabled={modeSaving} onClick={flipMode}>
+                {modeSaving ? "..." : (lang === "en" ? "Confirm" : "Confirmer")}
+              </button>
+            </div>
           </div>
         </div>
       )}

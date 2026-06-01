@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useOfflineCachedQuery } from '../utils/offlineQuery';
+import { useLiteMode } from '../hooks/useLiteMode';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore, useLangStore } from '../store';
 import api, { formatCFA, formatDate, getGreeting } from '../utils/api';
@@ -41,6 +42,9 @@ export default function Dashboard() {
   const { user } = useAuthStore();
   const { t, lang } = useLangStore();
   const navigate = useNavigate();
+  // MP-LITE-MODE-PHASE-1: skip Dozie nudge query, hide Net Profit card,
+  // hide Sell-on-Dozie banner in Lite. Owners flip via Settings → Mode.
+  const lite = useLiteMode();
 
   // MP-DASHBOARD-REPORT-CONSISTENCY: explicit location filter, default
   // "" = All locations. Decoupled from the global selectedLocation store
@@ -104,11 +108,13 @@ export default function Dashboard() {
   const { data: dozieListings } = useOfflineCachedQuery({
     queryKey: ['dozie-listings'],
     queryFn: () => api.get('/dozie-listings').then(r => r.data?.data || []),
-    enabled: isOwner || isManager,
+    // MP-LITE-MODE-PHASE-1: Marketplace banner hidden in Lite, no need
+    // to fetch listing state.
+    enabled: !lite && (isOwner || isManager),
     staleTime: 60000,
     fallback: [],
   });
-  const hasZeroDozieListings = (isOwner || isManager) && Array.isArray(dozieListings) && dozieListings.length === 0;
+  const hasZeroDozieListings = !lite && (isOwner || isManager) && Array.isArray(dozieListings) && dozieListings.length === 0;
 
   const s = summary?.data || {};
   const overdueCount = credits?.data?.filter(c => c.earliest_due && new Date(c.earliest_due) < new Date())?.length || 0;
@@ -279,7 +285,8 @@ export default function Dashboard() {
             <StatCard icon="💵" label={t('dashboard.cashCollected')}
               value={isLoading ? '...' : formatCFA(s.cash_collected || 0)}
               color="#10b981" />
-            {isOwner && (
+            {/* MP-LITE-MODE-PHASE-1: Net Profit hidden in Lite — Pro analytic. */}
+            {isOwner && !lite && (
               <StatCard icon="📈" label={t('dashboard.netProfit')}
                 value={isLoading ? '...' : formatCFA(s.net_profit || 0)}
                 sub={s.profit_margin_pct ? `${s.profit_margin_pct}% margin` : ''}

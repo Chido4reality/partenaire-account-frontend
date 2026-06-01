@@ -13,6 +13,7 @@ import PaywallModal from "../components/common/PaywallModal";
 import useOwnerApproval from "../hooks/useOwnerApproval";
 import DoziePublishModal from "../components/common/DoziePublishModal";
 import { getCapabilities, isAtCap } from "../utils/planCapabilities";
+import { useLiteMode } from "../hooks/useLiteMode";
 
 // Sprint C — shared helper for the 4 product entry paths. Reads a File
 // from the camera/file picker, resizes if larger than 1920px on the
@@ -75,6 +76,10 @@ export default function InventoryPage() {
   const { selectedLocation } = useSettingsStore();
   const { user } = useAuthStore();
   const qc = useQueryClient();
+  // MP-LITE-MODE-PHASE-1: skip dozie-listings + dozie-migrate-candidates,
+  // hide Sell-on-Dozie controls in Lite. Multi-location stock display +
+  // simple Receive Goods flow stay (per directive amendment).
+  const lite = useLiteMode();
 
   const role = user?.role || "cashier";
   const isOwner = role === "owner";
@@ -145,7 +150,8 @@ export default function InventoryPage() {
   const { data: migrateCandidatesData } = useOfflineCachedQuery({
     queryKey: ["dozie-migrate-candidates"],
     queryFn: () => api.get("/dozie/migrate-duplicates/candidates").then(r => r.data),
-    enabled: isOwner,
+    // MP-LITE-MODE-PHASE-1: Dozie migration banner is a Pro nudge.
+    enabled: !lite && isOwner,
     staleTime: 300000,
     retry: 1
   });
@@ -311,7 +317,8 @@ export default function InventoryPage() {
   const { data: dozieListingsData } = useOfflineCachedQuery({
     queryKey: ["dozie-listings"],
     queryFn:  () => api.get("/dozie-listings").then(r => r.data?.data || []),
-    enabled:  isOwner || (user?.role === "manager"),
+    // MP-LITE-MODE-PHASE-1: Sell-on-Dozie controls hidden; skip fetch.
+    enabled:  !lite && (isOwner || (user?.role === "manager")),
     staleTime: 30000,
   });
   // Defense-in-depth: queryFn returns an array, but the offline-cache
@@ -1182,7 +1189,8 @@ export default function InventoryPage() {
                                 don't repeat the button across location
                                 rows. Owner+manager only (gated upstream
                                 via canAdjustStock OR explicit isOwner). */}
-                            {dozieFirst && (isOwner || user?.role === "manager") && (
+                            {/* MP-LITE-MODE-PHASE-1: Sell-on-Dozie button hidden in Lite. */}
+                            {!lite && dozieFirst && (isOwner || user?.role === "manager") && (
                               <button
                                 className="btn btn-secondary btn-sm"
                                 onClick={() => setDoziePublishCtx({
@@ -1587,7 +1595,9 @@ export default function InventoryPage() {
             {/* MP-INVENTORY-DOZIE-CONTROLS — Sell-on-Dozie toggle + price.
                 Saves via the existing PATCH /products/:id/expose-on-dozie.
                 Toggle OFF still sends the price so it is preserved for a
-                later toggle-on (matches pa_dozie_seller_listings semantics). */}
+                later toggle-on (matches pa_dozie_seller_listings semantics).
+                MP-LITE-MODE-PHASE-1: section hidden in Lite. */}
+            {!lite && (
             <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 14 }}>
               <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
                 <input type="checkbox" checked={dozieEnabled} onChange={e => setDozieEnabled(e.target.checked)} />
@@ -1619,6 +1629,7 @@ export default function InventoryPage() {
                 {dozieSaving ? "..." : (lang === "en" ? "Save Dozie settings" : "Enregistrer Dozie")}
               </button>
             </div>
+            )}{/* end MP-LITE-MODE-PHASE-1 Sell-on-Dozie section */}
 
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setShowEditProduct(false); setEditProduct(null); }}>{lang === "en" ? "Cancel" : "Annuler"}</button>

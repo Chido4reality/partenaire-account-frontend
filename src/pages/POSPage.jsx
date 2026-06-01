@@ -11,6 +11,7 @@ import { useLangStore, useSettingsStore, useAuthStore, useDraftCartStore } from 
 import api, { formatCFA } from "../utils/api";
 import { cacheData, getCachedData } from "../utils/offlineStore";
 import { useOfflineCachedQuery, cacheKeyFor } from "../utils/offlineQuery";
+import { useLiteMode } from "../hooks/useLiteMode";
 import CameraScanner from "../components/common/CameraScanner";
 import { genSaleCodes } from "../utils/receiptCodes";
 import { ActiveShiftIndicator, useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
@@ -52,6 +53,11 @@ export default function POSPage() {
   const { selectedLocation, setLocation } = useSettingsStore();
   const { user } = useAuthStore();
   const qc = useQueryClient();
+  // MP-LITE-MODE-PHASE-1: skip Issue 2's customer-debt prefetch in Lite
+  // (per directive — Pro-only optimization). The on-demand fetch when
+  // a customer is selected still runs; only the upfront bulk warm-up
+  // is gated.
+  const lite = useLiteMode();
   const navigate = useNavigate();
   const isOwner = user?.role === "owner";
   // MP-REQUIRE-OPEN-SHIFT Phase 3: shared with <ActiveShiftIndicator />
@@ -407,6 +413,10 @@ export default function POSPage() {
   // where the cache is stale by the time the cashier picks the
   // customer. Re-runs whenever allCustomers refetches.
   useEffect(() => {
+    // MP-LITE-MODE-PHASE-1: skip the upfront prefetch in Lite. The
+    // useOfflineCachedQuery consumer above still fetches on-demand
+    // when a customer is selected; only the bulk warm-up is gated.
+    if (lite) return;
     const all = allCustomers?.data || [];
     if (!all.length) return;
     const debtors = all.filter(c => c?.id && Number(c?.total_debt || 0) > 0);
@@ -428,7 +438,7 @@ export default function POSPage() {
       }));
     })();
     return () => { cancelled = true; };
-  }, [allCustomers?.data, qc]);
+  }, [allCustomers?.data, qc, lite]);
 
   // D-2.4 / MP-DOZIE-CART-PREFILL-VALIDATE: Online Cart → POS prefill
   // via the server-side validate RPC. Replaces the prior client-side

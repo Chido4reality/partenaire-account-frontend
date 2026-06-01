@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { Drawer } from "vaul";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore, useLangStore, useOfflineStore, useSettingsStore } from "../../store";
+import { useLiteMode } from "../../hooks/useLiteMode";
 import api from "../../utils/api";
 import { openWhatsApp } from "../../utils/whatsapp";
 import { nukeClientState, hardRedirectToLogin } from "../../utils/authReset";
@@ -102,6 +103,7 @@ function ImpersonationBanner() {
 const BCAST_DISMISS_KEY = "mp-bcast-dismissed";
 function BroadcastBanner() {
   const { lang } = useLangStore();
+  const lite = useLiteMode();
   const [dismissed, setDismissed] = useState(() => {
     try { return JSON.parse(localStorage.getItem(BCAST_DISMISS_KEY) || "[]"); }
     catch { return []; }
@@ -111,8 +113,10 @@ function BroadcastBanner() {
     queryFn: () => api.get("/notifications/broadcasts").then(r => r.data),
     refetchInterval: 300000,
     retry: 1,
+    enabled: !lite, // MP-LITE-MODE-PHASE-1: skip in Lite (no broadcasts UI)
     onError: () => {}
   });
+  if (lite) return null;
   const list = (data?.data || []).filter(b => !dismissed.includes(b.id));
   if (!list.length) return null;
   const b = list[0];
@@ -149,6 +153,10 @@ function BroadcastBanner() {
 
 export default function Layout() {
   const { user, org, logout } = useAuthStore();
+  // MP-LITE-MODE-PHASE-1: tightens visible NAV + skips polled queries
+  // that don't surface in Lite. Reads from authStore.org.lite_mode
+  // (default true) — owners flip via Settings → Mode.
+  const lite = useLiteMode();
   const { lang, setLang }     = useLangStore();
   const queryClient           = useQueryClient(); // MP-AUTH-STATE-HYGIENE
   const { isOnline: storeOnline } = useOfflineStore();
@@ -175,6 +183,7 @@ export default function Layout() {
     queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
     refetchInterval: 300000,
     retry: 1,
+    enabled: !lite, // MP-LITE-MODE-PHASE-1: subscription banner hidden in Lite
     onError: () => {} // silent fail
   });
   const myPlan = planData?.data;
@@ -278,7 +287,8 @@ export default function Layout() {
   const { data: notifData } = useQuery({
     queryKey: ["notifications"],
     queryFn: () => api.get("/notifications").then(r => r.data),
-    refetchInterval: 30000
+    refetchInterval: 30000,
+    enabled: !lite, // MP-LITE-MODE-PHASE-1: notifications dropdown hidden in Lite
   });
 
   const markReadMutation = useMutation({
@@ -306,9 +316,15 @@ export default function Layout() {
   const isGrace        = !!myPlan?.is_grace;
   const trialDaysLeft  = myPlan?.days_remaining_in_trial;
   const graceDaysLeft  = myPlan?.days_remaining_in_grace;
+  // MP-LITE-MODE-PHASE-1: hide Online Cart, Operations dashboard nav
+  // entries in Lite. Settings, POS, Inventory, Customers, Credits,
+  // Reports etc. stay — per directive amendment, multi-location and
+  // basic Transfers remain first-class in Lite.
+  const LITE_HIDDEN_ROUTES = new Set(["/online-cart", "/operations"]);
   const visibleNav = NAV.filter(item => {
     if (!item.roles.includes(role)) return false;
     if (!hasSection(effectivePlan, item.section)) return false;
+    if (lite && LITE_HIDDEN_ROUTES.has(item.to)) return false;
     return true;
   });
   // MP-MOBILE-NAV-FIX: mobile has only this 5-slot bottom bar (no
@@ -334,7 +350,9 @@ export default function Layout() {
     queryKey: ["online-cart-pending-count"],
     queryFn: () => api.get("/online-cart/pending-count").then(r => r.data),
     refetchInterval: 30000,
-    enabled: hasSection(effectivePlan, "online_cart"),
+    // MP-LITE-MODE-PHASE-1: Online Cart nav entry is hidden in Lite,
+    // so the badge poll has nothing to drive. Skip the request.
+    enabled: !lite && hasSection(effectivePlan, "online_cart"),
     retry: 1,
     onError: () => {}
   });
@@ -735,12 +753,15 @@ export default function Layout() {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
             <div style={{ width: 8, height: 8, borderRadius: "50%", background: isOnline ? "#10b981" : "#ef4444" }} />
-            <div style={{ position: "relative" }}>
-              <button id="notif-bell-mobile" onClick={() => setShowNotif(s => !s)} style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px", cursor: "pointer", color: "var(--text-primary)", fontSize: 12 }}>
-                🔔 {unread > 0 && <span style={{ background: "#ef4444", color: "#fff", borderRadius: 10, padding: "0 5px", fontSize: 10, fontWeight: 700, marginLeft: 4 }}>{unread}</span>}
-              </button>
-              {showNotif && <NotifPanel />}
-            </div>
+            {/* MP-LITE-MODE-PHASE-1: notifications bell hidden in Lite. */}
+            {!lite && (
+              <div style={{ position: "relative" }}>
+                <button id="notif-bell-mobile" onClick={() => setShowNotif(s => !s)} style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px", cursor: "pointer", color: "var(--text-primary)", fontSize: 12 }}>
+                  🔔 {unread > 0 && <span style={{ background: "#ef4444", color: "#fff", borderRadius: 10, padding: "0 5px", fontSize: 10, fontWeight: 700, marginLeft: 4 }}>{unread}</span>}
+                </button>
+                {showNotif && <NotifPanel />}
+              </div>
+            )}
           </div>
         </div>
 
@@ -895,7 +916,8 @@ export default function Layout() {
         </nav>
 
         <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
-          {!collapsed && (
+          {/* MP-LITE-MODE-PHASE-1: notifications bell hidden in Lite. */}
+          {!collapsed && !lite && (
             <div style={{ position: "relative", marginBottom: 6 }}>
               <button id="notif-bell-desktop" onClick={() => setShowNotif(s => !s)} style={{ width: "100%", padding: "6px 10px", borderRadius: 8, background: "rgba(255,255,255,0.05)", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: 11, textAlign: "left", display: "flex", justifyContent: "space-between" }}>
                 <span>🔔 {lang === "en" ? "Alerts" : "Alertes"}</span>
