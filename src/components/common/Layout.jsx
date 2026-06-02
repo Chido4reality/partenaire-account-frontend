@@ -5,6 +5,7 @@ import { Drawer } from "vaul";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore, useLangStore, useOfflineStore, useSettingsStore } from "../../store";
 import { useLiteMode } from "../../hooks/useLiteMode";
+import { useTrialState } from "../../hooks/useTrialState";
 import api from "../../utils/api";
 import { openWhatsApp } from "../../utils/whatsapp";
 import { nukeClientState, hardRedirectToLogin } from "../../utils/authReset";
@@ -101,6 +102,55 @@ function ImpersonationBanner() {
 // banner (dismissals remembered per-broadcast in localStorage so it
 // doesn't nag, but a NEW broadcast still shows).
 const BCAST_DISMISS_KEY = "mp-bcast-dismissed";
+// MP-BILLING-V2 (2 Jun): two narrow status strips for the trial states.
+// LiteTrialStrip — countdown days 8-14 of the 14-day Lite trial.
+// ProTrialStrip — always visible mini-badge while Pro trial is active.
+// Both render slim (28px) so they don't crowd the main app chrome; they
+// share the same horizontal slot as ImpersonationBanner and
+// BroadcastBanner. Lite uses muted amber so a normal trial reads as
+// informational, not alarming; Pro uses brand-indigo so the badge
+// blends with the Pro UI shape it gates.
+function TrialBanner() {
+  const { lang } = useLangStore();
+  const trial = useTrialState();
+  // Lite strip wins when both could render (cashier shouldn't be
+  // confused by stacked banners); the Pro mini-badge is small enough
+  // to sit on top in a follow-up if we want both visible together.
+  if (trial.show_lite_trial_countdown) {
+    const n = trial.lite_trial_days_remaining;
+    const label = lang === "en"
+      ? `⏳ Trial ends in ${n} day${n === 1 ? '' : 's'} — upgrade to Lite or Pro to keep all features.`
+      : `⏳ Essai se termine dans ${n} jour${n === 1 ? '' : 's'} — passez à Lite ou Pro pour garder toutes les fonctionnalités.`;
+    return (
+      <div role="status" style={{
+        width: "100%", padding: "6px 12px",
+        background: "rgba(245,158,11,0.14)", color: "#fbbf24",
+        borderBottom: "1px solid rgba(245,158,11,0.35)",
+        fontSize: 12, fontWeight: 700, textAlign: "center",
+      }}>
+        {label}
+      </div>
+    );
+  }
+  if (trial.pro_trial_state === 'active') {
+    const n = trial.pro_trial_days_remaining;
+    const label = lang === "en"
+      ? `✦ Pro trial: ${n} day${n === 1 ? '' : 's'} left`
+      : `✦ Essai Pro : ${n} jour${n === 1 ? '' : 's'} restant${n === 1 ? '' : 's'}`;
+    return (
+      <div role="status" style={{
+        width: "100%", padding: "6px 12px",
+        background: "rgba(79,70,229,0.14)", color: "var(--brand-light)",
+        borderBottom: "1px solid rgba(79,70,229,0.35)",
+        fontSize: 12, fontWeight: 700, textAlign: "center",
+      }}>
+        {label}
+      </div>
+    );
+  }
+  return null;
+}
+
 function BroadcastBanner() {
   const { lang } = useLangStore();
   const lite = useLiteMode();
@@ -726,6 +776,7 @@ export default function Layout() {
             offline queue wakes up. */}
         <OnlineOfflineBar />
         <ImpersonationBanner />
+        <TrialBanner />
         <BroadcastBanner />
         <div style={{ background: "var(--bg-surface)", borderBottom: "1px solid var(--border)", padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, gap: 10 }}>
           {/* MP-MOBILE-UI-PHASE-1: hamburger trigger added inline to the

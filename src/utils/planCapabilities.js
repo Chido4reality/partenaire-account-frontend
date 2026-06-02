@@ -1,13 +1,21 @@
 // Sync with backend/src/lib/planCapabilities.js — DO NOT EDIT
 // EITHER FILE WITHOUT UPDATING THE OTHER.
 //
-// Frontend copy of the central plan-capabilities config. Used by the
-// sidebar nav filter, the universal PaywallModal, and per-feature cap
-// badges on the Inventory / Staff / Settings pages.
+// MP-BILLING-V2 (2 Jun): rekeyed from silver/gold/premium → trial/lite/pro
+// to match the MCP-applied pa_plans rename. Mapping decided in
+// review-claude's Q1 hybrid answer:
+//   trial = old silver behavior + 10-product cap. Trial is the free
+//           floor that orgs stay on indefinitely after the 14-day
+//           countdown ends — caps are constant, only the banner
+//           disappears.
+//   lite  = old gold behavior at 8 000 FCFA/mo — full sections +
+//           Dozie access.
+//   pro   = old premium behavior at 10 000 FCFA/mo — wildcard
+//           sections, no caps, CSV + receipt branding unlocked.
 //
-// 'trial' is a virtual plan — pa_plans has no 'trial' row; the
-// effective_plan returned by /api/subscriptions/my-plan is the value
-// to feed into hasSection/hasFeature/meetsCap helpers.
+// Legacy aliases (silver/gold/premium) still resolve to the
+// equivalent new tier via getCapabilities()'s alias_of lookup so any
+// stale call path (cached bundle, audit log payload) keeps working.
 
 export const PLAN_CAPABILITIES = {
   trial: {
@@ -15,23 +23,8 @@ export const PLAN_CAPABILITIES = {
     label_fr: 'Essai',
     duration_days: 14,
     grace_days: 7,
-    sections: ['dashboard', 'sales', 'inventory', 'count', 'labels',
-               'transfers', 'customers', 'credits', 'cashflow', 'reports',
-               'online_cart', 'settings'],
-    inventory_cap: null,
-    staff_cap: 2,
-    location_cap: 2,
-    csv_exports: false,
-    receipt_branding: false,
-    dozie_access: true,
-    dozie_city_cap: 3,
-    price_fcfa_month: 0
-  },
-  silver: {
-    label: 'Silver',
-    label_fr: 'Silver',
     sections: ['sales', 'inventory', 'settings'],
-    inventory_cap: 10,
+    inventory_cap: 10,     // MP-BILLING-V2 Q3
     staff_cap: 1,
     location_cap: 1,
     csv_exports: false,
@@ -40,9 +33,9 @@ export const PLAN_CAPABILITIES = {
     dozie_city_cap: 0,
     price_fcfa_month: 0
   },
-  gold: {
-    label: 'Gold',
-    label_fr: 'Gold',
+  lite: {
+    label: 'Lite',
+    label_fr: 'Lite',
     sections: ['dashboard', 'sales', 'inventory', 'count', 'labels',
                'transfers', 'customers', 'credits', 'cashflow', 'reports',
                'online_cart', 'settings'],
@@ -55,9 +48,9 @@ export const PLAN_CAPABILITIES = {
     dozie_city_cap: 3,
     price_fcfa_month: 8000
   },
-  premium: {
-    label: 'Premium',
-    label_fr: 'Premium',
+  pro: {
+    label: 'Pro',
+    label_fr: 'Pro',
     sections: '*',
     inventory_cap: null,
     staff_cap: null,
@@ -67,11 +60,18 @@ export const PLAN_CAPABILITIES = {
     dozie_access: true,
     dozie_city_cap: null,
     price_fcfa_month: 10000
-  }
+  },
+
+  // Legacy aliases — DO NOT REFERENCE FROM NEW CODE.
+  silver:  { legacy: true, alias_of: 'trial' },
+  gold:    { legacy: true, alias_of: 'lite' },
+  premium: { legacy: true, alias_of: 'pro' }
 };
 
 export function getCapabilities(plan_id) {
-  return PLAN_CAPABILITIES[plan_id] || PLAN_CAPABILITIES.silver;
+  const raw = PLAN_CAPABILITIES[plan_id];
+  if (raw && raw.alias_of) return PLAN_CAPABILITIES[raw.alias_of];
+  return raw || PLAN_CAPABILITIES.trial;
 }
 
 export function hasSection(plan, section) {

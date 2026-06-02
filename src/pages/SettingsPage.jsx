@@ -6,6 +6,7 @@ import api from "../utils/api";
 import PaywallModal from "../components/common/PaywallModal";
 import { hasFeature, getCapabilities } from "../utils/planCapabilities";
 import { useLiteMode } from "../hooks/useLiteMode";
+import { useTrialState } from "../hooks/useTrialState";
 
 const ROLES = [
   { value: "cashier",   en: "Cashier",    fr: "Caissier",     color: "#94a3b8" },
@@ -30,22 +31,45 @@ export default function SettingsPage() {
   // /auth/lite-mode and updates authStore.org.lite_mode inline so the
   // whole app re-renders without a /auth/me round-trip.
   const lite = useLiteMode();
+  const trial = useTrialState();
   const [showModeConfirm, setShowModeConfirm] = useState(false);
   const [modeSaving, setModeSaving] = useState(false);
   const flipMode = async () => {
     setModeSaving(true);
     const targetEnabled = !lite ? true : false; // currently Pro → flip to Lite, currently Lite → flip to Pro
     try {
-      await api.post("/auth/lite-mode", { enabled: targetEnabled });
-      // Mutate org in place so every useLiteMode consumer re-renders.
+      const res = await api.post("/auth/lite-mode", { enabled: targetEnabled });
+      // MP-BILLING-V2: response surfaces pro_trial_* fields when the
+      // flip started or used the trial. Update authStore.org with the
+      // full set so the next useTrialState read sees the new clock.
       const curr = useAuthStore.getState().org || {};
-      useAuthStore.setState({ org: { ...curr, lite_mode: targetEnabled } });
+      const proStart = res?.data?.pro_trial_started_at ?? curr.pro_trial_started_at ?? null;
+      const proEnd   = res?.data?.pro_trial_ends_at    ?? curr.pro_trial_ends_at    ?? null;
+      useAuthStore.setState({ org: {
+        ...curr,
+        lite_mode: targetEnabled,
+        pro_trial_started_at: proStart,
+        pro_trial_ends_at:    proEnd,
+      } });
+      const startedNow = res?.data?.pro_trial_started_now;
       toast.success(targetEnabled
         ? (lang === "en" ? "✓ Switched to Lite Mode" : "✓ Mode Lite activé")
-        : (lang === "en" ? "✓ Switched to Pro Mode" : "✓ Mode Pro activé"));
+        : startedNow
+          ? (lang === "en" ? "✓ Pro Mode trial started — 7 days" : "✓ Essai Mode Pro lancé — 7 jours")
+          : (lang === "en" ? "✓ Switched to Pro Mode" : "✓ Mode Pro activé"));
       setShowModeConfirm(false);
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Error");
+      // MP-BILLING-V2: surface the structured PRO_TRIAL_EXPIRED so the
+      // toast tells the owner why the flip was rejected.
+      const code = e?.response?.data?.code;
+      if (code === "PRO_TRIAL_EXPIRED") {
+        toast.error(lang === "en"
+          ? "Pro Mode trial ended — subscribe to Pro to continue"
+          : "Essai Mode Pro terminé — abonnez-vous pour continuer",
+          { duration: 5000 });
+      } else {
+        toast.error(e?.response?.data?.message || "Error");
+      }
     } finally { setModeSaving(false); }
   };
 
@@ -837,15 +861,49 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
-            <button
-              onClick={() => setShowModeConfirm(true)}
-              disabled={modeSaving}
-              className="btn btn-primary"
-              style={{ marginTop: 20, fontWeight: 700 }}>
-              {lite
-                ? (lang === "en" ? "Switch to Pro Mode" : "Passer au Mode Pro")
-                : (lang === "en" ? "Switch to Lite Mode" : "Passer au Mode Lite")}
-            </button>
+            {/* MP-BILLING-V2: Pro trial state context. Surfaces under
+                the two cards so the owner sees why the CTA reads what
+                it does. Four states map → four UI shapes. */}
+            {lite && trial.pro_trial_state === 'active' && (
+              <div style={{ marginTop: 16, padding: "10px 14px", background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 10, fontSize: 12, color: "#fbbf24" }}>
+                ⏳ {lang === "en"
+                  ? `Pro Mode trial active — ${trial.pro_trial_days_remaining} day${trial.pro_trial_days_remaining === 1 ? '' : 's'} remaining. Subscribe to Pro to keep access after expiry.`
+                  : `Essai Mode Pro actif — ${trial.pro_trial_days_remaining} jour${trial.pro_trial_days_remaining === 1 ? '' : 's'} restant${trial.pro_trial_days_remaining === 1 ? '' : 's'}. Abonnez-vous à Pro pour garder l'accès après l'essai.`}
+              </div>
+            )}
+            {lite && trial.pro_trial_state === 'expired' && !trial.is_paid_pro && (
+              <div style={{ marginTop: 16, padding: "10px 14px", background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 10, fontSize: 12, color: "#f87171" }}>
+                🚫 {lang === "en"
+                  ? "Pro Mode trial ended. A Pro subscription is required to enable Pro Mode."
+                  : "Essai Mode Pro terminé. Un abonnement Pro est requis pour activer le Mode Pro."}
+              </div>
+            )}
+            {/* Primary CTA. When Lite+expired+not_paid, swap to a
+                disabled flavour with an Upgrade hint instead of the
+                normal Switch CTA. Click → confirm modal as before. */}
+            {lite && trial.pro_trial_state === 'expired' && !trial.is_paid_pro ? (
+              <button
+                disabled
+                className="btn btn-primary"
+                style={{ marginTop: 20, fontWeight: 700, opacity: 0.55, cursor: "not-allowed" }}
+                title={lang === "en"
+                  ? "Subscribe to Pro to re-enable this toggle"
+                  : "Abonnez-vous à Pro pour réactiver ce bouton"}>
+                {lang === "en" ? "Pro Mode requires a subscription" : "Mode Pro requiert un abonnement"}
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowModeConfirm(true)}
+                disabled={modeSaving}
+                className="btn btn-primary"
+                style={{ marginTop: 20, fontWeight: 700 }}>
+                {lite
+                  ? (trial.can_start_pro_trial
+                      ? (lang === "en" ? "Switch to Pro Mode — 7-day free trial" : "Activer le Mode Pro — Essai gratuit 7 jours")
+                      : (lang === "en" ? "Switch to Pro Mode" : "Passer au Mode Pro"))
+                  : (lang === "en" ? "Switch to Lite Mode" : "Passer au Mode Lite")}
+              </button>
+            )}
           </div>
         </div>
       )}
