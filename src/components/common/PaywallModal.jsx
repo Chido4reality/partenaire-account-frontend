@@ -64,20 +64,40 @@ function copyFor(feature, lang) {
     : { title: `${titled} requires a higher plan`, body: "Upgrade required." };
 }
 
+// MP-BILLING-V2 (2 Jun): rekeyed alongside planCapabilities. Primary
+// keys are lite/pro now; gold/premium retained as alias_of fallbacks
+// so any pre-deploy cached bundle reading the old keys finds copy
+// without going through getCapabilities() name-resolution.
 const PLAN_PERKS = {
+  lite: {
+    en: ["Dashboard, Customers, Credits, Reports, Dozie", "Up to 2 staff, 2 locations"],
+    fr: ["Tableau de bord, Clients, Crédits, Rapports, Dozie", "Jusqu'à 2 utilisateurs, 2 emplacements"]
+  },
+  pro: {
+    en: ["Everything Lite has", "Unlimited inventory, staff, locations", "CSV exports + custom receipt branding"],
+    fr: ["Tout ce qu'inclut Lite", "Inventaire, utilisateurs, emplacements illimités", "Exports CSV + reçus personnalisés"]
+  },
+  // Legacy alias fallbacks — keep the same content but under old keys.
   gold: {
     en: ["Dashboard, Customers, Credits, Reports, Dozie", "Up to 2 staff, 2 locations"],
     fr: ["Tableau de bord, Clients, Crédits, Rapports, Dozie", "Jusqu'à 2 utilisateurs, 2 emplacements"]
   },
   premium: {
-    en: ["Everything Gold has", "Unlimited inventory, staff, locations", "CSV exports + custom receipt branding"],
-    fr: ["Tout ce qu'inclut Gold", "Inventaire, utilisateurs, emplacements illimités", "Exports CSV + reçus personnalisés"]
+    en: ["Everything Lite has", "Unlimited inventory, staff, locations", "CSV exports + custom receipt branding"],
+    fr: ["Tout ce qu'inclut Lite", "Inventaire, utilisateurs, emplacements illimités", "Exports CSV + reçus personnalisés"]
   }
 };
 
 export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
   const { lang } = useLangStore();
-  const [selectedTier, setSelectedTier] = useState("gold");
+  // MP-BILLING-V2 (2 Jun): default-selected tier rekeyed gold → lite.
+  // Under the rekey, PLAN_CAPABILITIES.gold is { legacy: true,
+  // alias_of: 'lite' } — selecting it as the initial state and then
+  // doing a direct PLAN_CAPABILITIES[tier] lookup (line ~150 below)
+  // returns the alias shape, which has no price_fcfa_month, which
+  // crashed PaywallModal at render time when any 403 upgrade_required
+  // event fired (test_account trial-login repro, 2 Jun).
+  const [selectedTier, setSelectedTier] = useState("lite");
   const [openUpgrade, setOpenUpgrade] = useState(false);
 
   const copy = copyFor(feature, lang);
@@ -95,7 +115,9 @@ export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
   }
 
   const whatsappMsg = () => {
-    const planName = (PLAN_CAPABILITIES[selectedTier] || {}).label || selectedTier;
+    // MP-BILLING-V2: getCapabilities resolves legacy aliases so a
+    // stale selectedTier value still surfaces the canonical label.
+    const planName = getCapabilities(selectedTier).label || selectedTier;
     return lang === "fr"
       ? `Bonjour Partenaire Support, je voudrais mettre à niveau mon compte ${mpId || ""} vers le plan ${planName}.`
       : `Hello Partenaire Support, I would like to upgrade my account ${mpId || ""} to the ${planName} plan.`;
@@ -143,11 +165,17 @@ export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
           <strong>{currentCaps.label}</strong>
         </div>
 
-        {/* Plan choice — Gold + Premium. Silver is the floor so we never show it. */}
+        {/* MP-BILLING-V2 (2 Jun): tier choice rekeyed gold/premium → lite/pro.
+            Trial is the floor — never offered. Using getCapabilities()
+            instead of a direct PLAN_CAPABILITIES[tier] lookup so any
+            future alias indirection stays handled. PLAN_PERKS is also
+            indexed by tier — fall back to the alias's canonical key
+            via getCapabilities's .alias_of resolution so a stale code
+            path with old keys still finds copy. */}
         <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
-          {["gold", "premium"].map(tier => {
-            const caps = PLAN_CAPABILITIES[tier];
-            const perks = PLAN_PERKS[tier][lang === "fr" ? "fr" : "en"];
+          {["lite", "pro"].map(tier => {
+            const caps = getCapabilities(tier);
+            const perks = (PLAN_PERKS[tier] || PLAN_PERKS[caps.label?.toLowerCase() || tier] || { en: [], fr: [] })[lang === "fr" ? "fr" : "en"];
             const selected = selectedTier === tier;
             return (
               <div key={tier} onClick={() => setSelectedTier(tier)}
@@ -166,7 +194,14 @@ export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
                     <div style={{ fontWeight: 800, fontSize: 16, color: "var(--brand-light)" }}>
-                      {caps.price_fcfa_month.toLocaleString("fr-CM")} FCFA
+                      {/* MP-BILLING-V2: defensive guard. A getCapabilities()
+                          resolution always returns a primary tier shape with
+                          price_fcfa_month present — but if a future code path
+                          loses the alias_of resolution and lands on a legacy
+                          alias, this Number coercion + nullish fallback
+                          keeps the modal renderable instead of crashing the
+                          whole app shell. */}
+                      {Number(caps?.price_fcfa_month ?? 0).toLocaleString("fr-CM")} FCFA
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                       {lang === "fr" ? "/ mois" : "/ month"}
@@ -195,8 +230,8 @@ export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
               color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700
             }}>
             {lang === "fr"
-              ? `Mettre à niveau vers ${PLAN_CAPABILITIES[selectedTier].label}`
-              : `Upgrade to ${PLAN_CAPABILITIES[selectedTier].label}`}
+              ? `Mettre à niveau vers ${getCapabilities(selectedTier).label || selectedTier}`
+              : `Upgrade to ${getCapabilities(selectedTier).label || selectedTier}`}
           </button>
         </div>
 
