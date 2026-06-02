@@ -205,6 +205,29 @@ async function flushIfOnline() {
 }
 
 async function flushOnce() {
+  // MP-PAUL-FIX-2 (3 Jun): watchdog log for stale 'sending' rows. If a
+  // row has been in 'sending' for >2 min, attempt() probably crashed
+  // mid-fetch in a way recoverStranded didn't catch (or the device
+  // resumed mid-attempt). Log so the next bug report has a concrete
+  // attribution; the row stays in 'sending' for now to avoid double-
+  // attempts during a real in-flight fetch — startWorker's
+  // recoverStranded path resets it on next worker bootstrap.
+  try {
+    const cutoff = new Date(Date.now() - 120_000).toISOString();
+    const stale = await query(
+      `SELECT * FROM pending_sync WHERE status = ? ORDER BY last_attempted_at ASC`,
+      ['sending']
+    );
+    for (const r of stale) {
+      if (r.last_attempted_at && r.last_attempted_at < cutoff) {
+        console.warn('[pendingSync watchdog] stale sending row', {
+          id: r.id, endpoint: r.endpoint, attempts: r.attempts,
+          last_attempted_at: r.last_attempted_at,
+        });
+      }
+    }
+  } catch { /* watchdog is best-effort; don't crash the worker */ }
+
   // Pull all rows we should attempt this pass: queued + transients
   // whose backoff has elapsed. We sort by created_at so the cashier
   // sees their earliest action settle first.
@@ -224,26 +247,41 @@ async function flushOnce() {
     const cooldown = BACKOFF_MS[idx];
     if (now - lastAtt >= cooldown) elig.push(t);
   }
-  // MP-PHASE-3-OFFLINE-SHIFT: shift-before-sales ordering guard. A sale that
-  // replays before its (offline-opened) shift has synced would hit the
-  // backend's NO_OPEN_SHIFT 400 → failed_permanent (replay uses raw fetch, so
-  // the axios interceptor's softening doesn't apply). So attempt /shifts/open
-  // rows FIRST, and if any shift-open is still unsynced, hold the rest this
-  // pass — they retry next pass once the shift lands. Additive precondition
-  // only; sale processing itself is unchanged. (No SQL LIKE — the web shim's
-  // WHERE grammar doesn't support it — so re-scan and filter in JS.)
+  // MP-PHASE-3-OFFLINE-SHIFT + MP-PAUL-FIX-2 (3 Jun): shift-before-sales
+  // ordering guard. A sale that replays before its (offline-opened) shift
+  // has synced would hit the backend's NO_OPEN_SHIFT 400 → failed_permanent
+  // (replay uses raw fetch, so the axios interceptor's softening doesn't
+  // apply). So attempt /shifts/open rows FIRST.
+  //
+  // 3 Jun NARROWING: the original guard held the ENTIRE queue behind a
+  // stuck shift-open — products, expenses, transfers, collect-debt,
+  // stock-counts, inventory edits all paused for the ~35 min worst-case
+  // shift-open backoff schedule even though NONE of them depend on a
+  // shift. Paul reported "1 pending sync forever" in Cameroon network
+  // testing because of this. Now the guard ONLY holds /sales and
+  // /sales/:id/payment rows. Everything else flushes regardless of
+  // shift-open state. Risk: a sale replaying before its shift lands
+  // hits NO_OPEN_SHIFT → failed_permanent → ConflictModal — the
+  // cashier discards/retries explicitly. Trade is "mysterious 35-min
+  // stuck queue" → "explicit conflict surface for the niche sequence."
+  // (No SQL LIKE — the web shim's WHERE grammar doesn't support it —
+  // so re-scan and filter in JS.)
   const isShiftOpen = (ep) => /\/shifts\/open\/?$/.test(ep || '');
+  const isSaleRow = (ep) => /^\/sales\/?$/.test(ep || '') || /^\/sales\/[^/]+\/payment\/?$/.test(ep || '');
   for (const r of elig.filter(r => isShiftOpen(r.endpoint))) await attempt(r);
   const all = await query(`SELECT * FROM pending_sync`);
-  // Hold the rest only while a shift-open is still ACTIVELY trying
-  // (queued / sending / failed_transient). A 'failed_permanent' shift-open is
-  // a terminal conflict (e.g. 409 — another shift already open); don't freeze
-  // the queue forever on it — let its sales attempt, fail NO_OPEN_SHIFT, and
-  // surface alongside it in ConflictModal for the cashier to resolve together.
+  // Hold ONLY sales while a shift-open is actively trying (queued /
+  // sending / failed_transient). A 'failed_permanent' shift-open is
+  // a terminal conflict (e.g. 409 — another shift already open);
+  // don't freeze even the sales subset forever on it — let them
+  // attempt, fail NO_OPEN_SHIFT, and surface alongside it in
+  // ConflictModal for the cashier to resolve together.
   const shiftStillTrying = all.some(r =>
     isShiftOpen(r.endpoint) && r.status !== 'sent' && r.status !== 'failed_permanent');
-  if (shiftStillTrying) { notify(); return; }
-  for (const r of elig.filter(r => !isShiftOpen(r.endpoint))) await attempt(r);
+  for (const r of elig.filter(r => !isShiftOpen(r.endpoint))) {
+    if (shiftStillTrying && isSaleRow(r.endpoint)) continue;
+    await attempt(r);
+  }
   // Garbage-collect sent rows older than retention.
   const cutoff = new Date(now - SENT_RETENTION_MS).toISOString();
   await exec(
@@ -331,12 +369,25 @@ async function attempt(row) {
   await markTransient(row, `${res.status} ${body?.message || ''}`);
 }
 
+// MP-PAUL-FIX-2 (3 Jun): per-endpoint MAX caps. Shift-open gets a tight
+// 2-attempt cap so a stuck shift-open surfaces ConflictModal fast
+// instead of burning ~35 min of escalating backoff. Other endpoints
+// keep the default 5-attempt schedule. (Recovery path: ConflictModal's
+// retry resets attempts to 0 — see retry() below — so the cashier can
+// re-try after fixing the underlying cause.)
+const SHIFT_OPEN_MAX_ATTEMPTS = 2;
+function maxAttemptsFor(endpoint) {
+  if (/\/shifts\/open\/?$/.test(endpoint || '')) return SHIFT_OPEN_MAX_ATTEMPTS;
+  return MAX_ATTEMPTS;
+}
+
 async function markTransient(row, msg) {
   const next = (Number(row.attempts) || 0) + 1;
-  if (next >= MAX_ATTEMPTS) {
+  const cap = maxAttemptsFor(row.endpoint);
+  if (next >= cap) {
     await exec(
       `UPDATE pending_sync SET status = ?, last_error = ? WHERE id = ?`,
-      ['failed_permanent', `Exhausted ${MAX_ATTEMPTS} attempts: ${msg}`, row.id]
+      ['failed_permanent', `Exhausted ${cap} attempts: ${msg}`, row.id]
     );
   } else {
     await exec(

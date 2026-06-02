@@ -7,6 +7,8 @@ import { useAuthStore, useLangStore, useOfflineStore, useSettingsStore } from ".
 import { useLiteMode } from "../../hooks/useLiteMode";
 import { useTrialState } from "../../hooks/useTrialState";
 import api from "../../utils/api";
+import { cacheData } from "../../utils/offlineStore";
+import { cacheKeyFor } from "../../utils/offlineQuery";
 import { openWhatsApp } from "../../utils/whatsapp";
 import { nukeClientState, hardRedirectToLogin } from "../../utils/authReset";
 import UpgradeModal from "./UpgradeModal";
@@ -327,6 +329,39 @@ export default function Layout() {
       }
     }
   }), [qc]);
+
+  // MP-PAUL-FIX-16 (3 Jun): eager warm-up of pos-customers + per-debtor
+  // customer-debt cache. POSPage's own prefetch (cbc5ccd) only fires
+  // once the cashier reaches POS — if Paul opens the app, drops to
+  // offline before navigating to POS, then picks a customer with debt,
+  // the debt modal never appears because the per-customer detail was
+  // never fetched. Doing this at Layout level means the cache fills
+  // during the brief online window between login and the first user
+  // action. Best-effort: failures swallowed, no UI spinner. Re-runs
+  // if user.id changes (different login session).
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await api.get("/customers?limit=300").then(res => res.data);
+        if (cancelled) return;
+        qc.setQueryData(["pos-customers"], r);
+        try { cacheData("pos-customers", r); } catch { /* swallow storage errors */ }
+        const debtors = (r?.data || []).filter(c => c?.id && Number(c?.total_debt || 0) > 0);
+        await Promise.all(debtors.map(async (c) => {
+          if (cancelled) return;
+          try {
+            const dr = await api.get(`/sales/customer-debt/${c.id}`).then(res => res.data);
+            if (cancelled) return;
+            try { cacheData(cacheKeyFor(["customer-debt", c.id]), dr); } catch { /* swallow */ }
+            qc.setQueryData(["customer-debt", c.id], dr);
+          } catch { /* silent — best-effort warm-up */ }
+        }));
+      } catch { /* silent — Layout warm-up is opportunistic */ }
+    })();
+    return () => { cancelled = true; };
+  }, [user?.id, qc]);
 
   // MP-SLICE-3-RETIRE-LEGACY-SERVICE-WORKER: startAutoSync removed. The legacy
   // replay loop is superseded by pendingSync.startWorker (called once at api.js

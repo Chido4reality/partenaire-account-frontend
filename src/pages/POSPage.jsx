@@ -396,6 +396,20 @@ export default function POSPage() {
     }
   }, [customerDebtData]);
 
+  // MP-PAUL-FIX-16 (3 Jun): offline-fallback banner. When the cashier
+  // picks a customer with debt but useOfflineCachedQuery returns
+  // null (offline + no cached detail, because Layout warm-up didn't
+  // reach this customer before the network dropped) the effect above
+  // returns early and the cashier sees nothing — silent failure.
+  // Surface a non-blocking inline note so they know the debt detail
+  // can't load right now and what to do. Distinct from debtBanner
+  // (which is the paper-debt prompt for online flows).
+  const showOfflineDebtNote =
+    !!customer?.id &&
+    Number(customer?.total_debt || 0) > 0 &&
+    !debtLoading &&
+    !customerDebtData;
+
   // MP-DEBT-MODAL-PREFETCH (Issue 2): warm the customer-debt cache for
   // every debtor as soon as the allCustomers list arrives. Without this,
   // the modal/banner only works for customers the cashier individually
@@ -1473,72 +1487,94 @@ export default function POSPage() {
                 )}
               </div>
             ) : (
-              <div>
-                {isDebtOnlyCart && (
-                  <div style={{ marginBottom: 10 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>
-                      {lang === "en" ? "Amount to collect (blank = full balance)" : "Montant à encaisser (vide = tout)"}
+              // MP-PAUL-FIX-6 (3 Jun): partial-pay Confirm hidden on phone.
+              // Original layout stacked all payment fields + Back/Confirm
+              // in one un-bounded div; on a small phone with virtual
+              // keyboard open the Confirm fell below the visible viewport.
+              // Now: flex-column with the scrollable form on top
+              // (maxHeight: 50vh on mobile so it doesn't push the action
+              // row off-screen even when keyboard is up) and the
+              // Back/Confirm row pinned below the scroll boundary. Desktop
+              // right-pane is unaffected because its parent already has
+              // overflow handling.
+              <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+                <div style={{
+                  overflowY: "auto",
+                  minHeight: 0,
+                  maxHeight: mobile ? "50vh" : "none",
+                  paddingRight: 2,
+                }}>
+                  {isDebtOnlyCart && (
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>
+                        {lang === "en" ? "Amount to collect (blank = full balance)" : "Montant à encaisser (vide = tout)"}
+                      </div>
+                      <input className="input" type="number"
+                        placeholder={`${lang === "en" ? "Full balance:" : "Solde total:"} ${total.toLocaleString()} FCFA`}
+                        value={debtPayAmt} onChange={e => setDebtPayAmt(e.target.value)}
+                        style={{ marginBottom: 4 }} />
+                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                        {lang === "en" ? "Leave blank to collect full balance" : "Laissez vide pour encaisser le solde total"}
+                      </div>
                     </div>
-                    <input className="input" type="number"
-                      placeholder={`${lang === "en" ? "Full balance:" : "Solde total:"} ${total.toLocaleString()} FCFA`}
-                      value={debtPayAmt} onChange={e => setDebtPayAmt(e.target.value)}
-                      style={{ marginBottom: 4 }} />
-                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                      {lang === "en" ? "Leave blank to collect full balance" : "Laissez vide pour encaisser le solde total"}
+                  )}
+                  {!isDebtOnlyCart && (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 10 }}>
+                      {PAYMENT_MODES.map(pm => (
+                        <button key={pm.key} onClick={() => setPayMode(pm.key)} style={{ padding: "8px 4px", borderRadius: 10, border: `1.5px solid ${payMode === pm.key ? pm.color : "var(--border)"}`, background: payMode === pm.key ? pm.color + "18" : "transparent", color: payMode === pm.key ? pm.color : "var(--text-secondary)", cursor: "pointer", fontSize: 11, fontWeight: 700, transition: "all 0.15s" }}>
+                          <div style={{ fontSize: 14 }}>{pm.icon}</div>
+                          <div style={{ marginTop: 2 }}>{lang === "en" ? pm.en : pm.fr}</div>
+                        </button>
+                      ))}
                     </div>
-                  </div>
-                )}
-                {!isDebtOnlyCart && (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 10 }}>
-                    {PAYMENT_MODES.map(pm => (
-                      <button key={pm.key} onClick={() => setPayMode(pm.key)} style={{ padding: "8px 4px", borderRadius: 10, border: `1.5px solid ${payMode === pm.key ? pm.color : "var(--border)"}`, background: payMode === pm.key ? pm.color + "18" : "transparent", color: payMode === pm.key ? pm.color : "var(--text-secondary)", cursor: "pointer", fontSize: 11, fontWeight: 700, transition: "all 0.15s" }}>
-                        <div style={{ fontSize: 14 }}>{pm.icon}</div>
-                        <div style={{ marginTop: 2 }}>{lang === "en" ? pm.en : pm.fr}</div>
+                  )}
+                  {payMode === "partial" && !isDebtOnlyCart && (
+                    <input className="input" type="number" placeholder={lang === "en" ? "Amount paid (FCFA)" : "Montant payé (FCFA)"} value={paidAmt} onChange={e => setPaidAmt(e.target.value)} style={{ marginBottom: 8 }} />
+                  )}
+                  {(payMode === "partial" || payMode === "credit") && !isDebtOnlyCart && (
+                    <input className="input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={{ marginBottom: 8 }} title={lang === "en" ? "Due date" : "Date d'échéance"} />
+                  )}
+                  <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
+                    {PAY_METHODS.map(m => (
+                      <button key={m.key} onClick={() => setPayMethod(m.key)} style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: `1.5px solid ${payMethod === m.key ? "var(--brand)" : "var(--border)"}`, background: payMethod === m.key ? "rgba(79,70,229,0.12)" : "transparent", color: payMethod === m.key ? "var(--brand-light)" : "var(--text-secondary)", cursor: "pointer", fontSize: 10, fontWeight: 700, transition: "all 0.15s" }}>
+                        <div>{m.icon}</div>
+                        <div style={{ marginTop: 1 }}>{lang === "en" ? m.en : m.fr}</div>
                       </button>
                     ))}
                   </div>
-                )}
-                {payMode === "partial" && !isDebtOnlyCart && (
-                  <input className="input" type="number" placeholder={lang === "en" ? "Amount paid (FCFA)" : "Montant payé (FCFA)"} value={paidAmt} onChange={e => setPaidAmt(e.target.value)} style={{ marginBottom: 8 }} />
-                )}
-                {(payMode === "partial" || payMode === "credit") && !isDebtOnlyCart && (
-                  <input className="input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={{ marginBottom: 8 }} title={lang === "en" ? "Due date" : "Date d'échéance"} />
-                )}
-                <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
-                  {PAY_METHODS.map(m => (
-                    <button key={m.key} onClick={() => setPayMethod(m.key)} style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: `1.5px solid ${payMethod === m.key ? "var(--brand)" : "var(--border)"}`, background: payMethod === m.key ? "rgba(79,70,229,0.12)" : "transparent", color: payMethod === m.key ? "var(--brand-light)" : "var(--text-secondary)", cursor: "pointer", fontSize: 10, fontWeight: 700, transition: "all 0.15s" }}>
-                      <div>{m.icon}</div>
-                      <div style={{ marginTop: 1 }}>{lang === "en" ? m.en : m.fr}</div>
-                    </button>
-                  ))}
-                </div>
-                <div style={{ background: "var(--bg-card)", borderRadius: 10, padding: "10px 12px", marginBottom: 10, fontSize: 12 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                    <span style={{ color: "var(--text-muted)" }}>Total</span><strong>{formatCFA(total)}</strong>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span style={{ color: "#10b981" }}>{lang === "en" ? "Paid" : "Payé"}</span>
-                    <strong style={{ color: "#10b981" }}>{formatCFA(paid)}</strong>
-                  </div>
-                  {balance > 0 && !hasDebt && (
-                    <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 6, borderTop: "1px solid var(--border)", marginTop: 3 }}>
-                      <span style={{ color: "#f87171", fontWeight: 600 }}>{lang === "en" ? "Balance due" : "Reste"}</span>
-                      <strong style={{ color: "#f87171" }}>{formatCFA(balance)}</strong>
+                  <div style={{ background: "var(--bg-card)", borderRadius: 10, padding: "10px 12px", marginBottom: 10, fontSize: 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                      <span style={{ color: "var(--text-muted)" }}>Total</span><strong>{formatCFA(total)}</strong>
                     </div>
-                  )}
-                </div>
-                {!shiftIsOpen && (
-                  <div style={{ padding: "8px 12px", background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.35)", borderRadius: 8, fontSize: 12, color: "#fbbf24", fontWeight: 600, marginBottom: 8, textAlign: "center" }}>
-                    {noShiftHint(lang)}
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ color: "#10b981" }}>{lang === "en" ? "Paid" : "Payé"}</span>
+                      <strong style={{ color: "#10b981" }}>{formatCFA(paid)}</strong>
+                    </div>
+                    {balance > 0 && !hasDebt && (
+                      <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 6, borderTop: "1px solid var(--border)", marginTop: 3 }}>
+                        <span style={{ color: "#f87171", fontWeight: 600 }}>{lang === "en" ? "Balance due" : "Reste"}</span>
+                        <strong style={{ color: "#f87171" }}>{formatCFA(balance)}</strong>
+                      </div>
+                    )}
                   </div>
-                )}
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => setShowPayment(false)} className="btn btn-secondary" style={{ flex: 1 }}>← {lang === "en" ? "Back" : "Retour"}</button>
                   {(payMode === "credit" || payMode === "partial") && !customer && (
-                    <div style={{ gridColumn: "1/-1", padding: "8px 12px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, fontSize: 12, color: "#f87171", marginBottom: 8 }}>
+                    <div style={{ padding: "8px 12px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, fontSize: 12, color: "#f87171", marginBottom: 8 }}>
                       ⚠️ {lang === "en" ? "A registered customer is required for credit or partial sales." : "Un client enregistré est requis pour les ventes à crédit ou partielles."}
                     </div>
                   )}
+                </div>
+                {/* Action footer — sits OUTSIDE the scroll boundary so
+                    Confirm stays visible on small phones with keyboard up.
+                    Shift warning is kept just above the buttons (also
+                    outside the scroll area) so it can't be scrolled out
+                    of sight either. */}
+                {!shiftIsOpen && (
+                  <div style={{ padding: "8px 12px", background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.35)", borderRadius: 8, fontSize: 12, color: "#fbbf24", fontWeight: 600, marginTop: 8, marginBottom: 8, textAlign: "center" }}>
+                    {noShiftHint(lang)}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8, paddingTop: 8, borderTop: mobile ? "1px solid var(--border)" : "none", background: "var(--bg-surface)" }}>
+                  <button onClick={() => setShowPayment(false)} className="btn btn-secondary" style={{ flex: 1 }}>← {lang === "en" ? "Back" : "Retour"}</button>
                   <PayButton
                     saleMutation={saleMutation}
                     onClick={attemptCheckout}
@@ -1656,6 +1692,25 @@ export default function POSPage() {
               {lang === "en" ? "Add to Cart" : "Ajouter au panier"}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* MP-PAUL-FIX-16: offline-fallback inline note. Non-blocking
+          slim band beneath the customer chip; tells the cashier why
+          the debt modal didn't appear and what to do, instead of
+          silent failure. */}
+      {showOfflineDebtNote && (
+        <div role="status" style={{
+          position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)",
+          zIndex: 1099, maxWidth: 460, width: "calc(100% - 24px)",
+          background: "rgba(245,158,11,0.14)", border: "1px solid rgba(245,158,11,0.4)",
+          borderRadius: 10, padding: "8px 12px", fontSize: 12, color: "#fbbf24",
+          fontWeight: 600, textAlign: "center", display: "flex", alignItems: "center", gap: 8, justifyContent: "center",
+        }}>
+          <span>⚠</span>
+          <span>{lang === "en"
+            ? `Debt detail unavailable offline. ${customer?.name || "Customer"} owes ${formatCFA(Number(customer?.total_debt) || 0)} — reconnect to load invoices.`
+            : `Détail dette indisponible hors-ligne. ${customer?.name || "Client"} doit ${formatCFA(Number(customer?.total_debt) || 0)} — reconnectez pour charger les factures.`}</span>
         </div>
       )}
 
