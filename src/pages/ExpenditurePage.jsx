@@ -6,6 +6,54 @@ import { useLangStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
 import { useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
 
+// MP-PAUL-FIX-5B (3 Jun): pa_expenditure_categories.name is stored
+// French-only in the DB (single source of truth). The cashier-facing
+// UI re-labels at render time so the English-language flow doesn't
+// read like raw French. Unknown categories (custom ones added later
+// by an org) fall through to the raw name. Mapping intentionally
+// covers the launch-set seed categories — see admin migration that
+// populates pa_expenditure_categories for new orgs.
+const CATEGORY_LABEL_EN = {
+  "Transport":        "Transport",
+  "Marchandises":     "Goods",
+  "Carburant":        "Fuel",
+  "Loyer":            "Rent",
+  "Salaires":         "Salaries",
+  "Salaire":          "Salary",
+  "Electricité":      "Electricity",
+  "Electricite":      "Electricity",
+  "Eau":              "Water",
+  "Téléphone":        "Phone",
+  "Telephone":        "Phone",
+  "Internet":         "Internet",
+  "Facture":          "Bill",
+  "Factures":         "Bills",
+  "Maintenance":      "Maintenance",
+  "Entretien":        "Maintenance",
+  "Réparations":      "Repairs",
+  "Reparations":      "Repairs",
+  "Fournitures":      "Supplies",
+  "Bureau":           "Office",
+  "Marketing":        "Marketing",
+  "Publicité":        "Advertising",
+  "Publicite":        "Advertising",
+  "Impôts":           "Taxes",
+  "Impots":           "Taxes",
+  "Taxes":            "Taxes",
+  "Assurance":        "Insurance",
+  "Sécurité":         "Security",
+  "Securite":         "Security",
+  "Frais bancaires":  "Bank fees",
+  "Banque":           "Bank",
+  "Autre":            "Other",
+  "Divers":           "Other",
+};
+function categoryLabel(name, lang) {
+  if (!name) return "";
+  if (lang !== "en") return name;
+  return CATEGORY_LABEL_EN[name] || name;
+}
+
 export default function ExpenditurePage() {
   const { lang } = useLangStore();
   const qc = useQueryClient();
@@ -112,7 +160,7 @@ export default function ExpenditurePage() {
                   <td>
                     {e.pa_expenditure_categories ? (
                       <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: 10, background: "rgba(79,70,229,0.1)", color: "var(--brand-light)" }}>
-                        {e.pa_expenditure_categories.name}
+                        {categoryLabel(e.pa_expenditure_categories.name, lang)}
                       </span>
                     ) : "-"}
                   </td>
@@ -152,7 +200,7 @@ export default function ExpenditurePage() {
               <label className="label">{lang === "en" ? "Category" : "Categorie"}</label>
               <select className="input" value={form.category_id} onChange={e => setF("category_id", e.target.value)}>
                 <option value="">{lang === "en" ? "Select category" : "Choisir categorie"}</option>
-                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {categories.map(c => <option key={c.id} value={c.id}>{categoryLabel(c.name, lang)}</option>)}
               </select>
             </div>
             <div className="form-group">
