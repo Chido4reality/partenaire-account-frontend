@@ -102,6 +102,54 @@ function ImpersonationBanner() {
 // banner (dismissals remembered per-broadcast in localStorage so it
 // doesn't nag, but a NEW broadcast still shows).
 const BCAST_DISMISS_KEY = "mp-bcast-dismissed";
+// MP-LITE-PRO-VISUAL-POLISH (2 Jun): tiny inline badge next to the org
+// name in the sidebar/topbar. Two muted palettes so the cashier reads
+// the mode at a glance without the UI feeling shiny — warm gray for
+// Lite (calm, free-tier), soft purple for Pro (premium without
+// shouting). Live-updates via useLiteMode on the Settings flip.
+function ModeBadge() {
+  const lite = useLiteMode();
+  const isLite = lite;
+  return (
+    <span
+      aria-label={isLite ? "Lite Mode" : "Pro Mode"}
+      style={{
+        display: "inline-block",
+        marginLeft: 6,
+        background: isLite ? "#F1EFE8" : "#EEEDFE",
+        color:      isLite ? "#5F5E5A" : "#534AB7",
+        fontSize: 10, padding: "2px 6px",
+        borderRadius: 4, fontWeight: 500,
+        letterSpacing: 0.3,
+        verticalAlign: "middle",
+      }}
+    >
+      {isLite ? "LITE" : "PRO"}
+    </span>
+  );
+}
+
+// MP-LITE-PRO-VISUAL-POLISH (2 Jun): 2px accent strip at the very top
+// of the app shell. First thing the eye catches. Same two palettes as
+// ModeBadge so the two reinforce each other — warm gray = Lite, soft
+// purple = Pro. Kept 2px max per "not too shiny" direction; appears
+// ABOVE OnlineOfflineBar (which itself collapses to a 4px stripe when
+// connectivity is clean).
+function ModeAccent() {
+  const lite = useLiteMode();
+  return (
+    <div
+      role="presentation"
+      style={{
+        width: "100%",
+        height: 2,
+        background: lite ? "#B4B2A9" : "#AFA9EC",
+        flexShrink: 0,
+      }}
+    />
+  );
+}
+
 // MP-BILLING-V2 (2 Jun): two narrow status strips for the trial states.
 // LiteTrialStrip — countdown days 8-14 of the 14-day Lite trial.
 // ProTrialStrip — always visible mini-badge while Pro trial is active.
@@ -774,6 +822,7 @@ export default function Layout() {
             doesn't burn vertical space; expands to a banner when
             offline. Slice 3 will pass pendingCount/syncing as the
             offline queue wakes up. */}
+        <ModeAccent />
         <OnlineOfflineBar />
         <ImpersonationBanner />
         <TrialBanner />
@@ -800,7 +849,9 @@ export default function Layout() {
           </button>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 800, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Mon Partenaire Dozie</div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{org?.name}</div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {org?.name}<ModeBadge />
+            </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
             <div style={{ width: 8, height: 8, borderRadius: "50%", background: isOnline ? "#10b981" : "#ef4444" }} />
@@ -864,7 +915,9 @@ export default function Layout() {
           {!collapsed && (
             <div>
               <div style={{ fontWeight: 800, fontSize: 14 }}>Mon Partenaire Dozie</div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1 }}>{org?.name}</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1 }}>
+                {org?.name}<ModeBadge />
+              </div>
             </div>
           )}
           <button onClick={() => setCollapsed(c => !c)} style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)", cursor: "pointer", fontSize: 11, padding: "4px 8px", borderRadius: 6, flexShrink: 0 }}>
