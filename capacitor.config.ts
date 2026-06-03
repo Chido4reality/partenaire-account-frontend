@@ -35,7 +35,7 @@ const config: CapacitorConfig = {
 
   // Match the dark brand background so the WebView's first paint
   // doesn't flash white before the React shell mounts.
-  backgroundColor: '#1a1f2e',
+  backgroundColor: '#152B52',
 
   plugins: {
     SplashScreen: {
@@ -45,7 +45,7 @@ const config: CapacitorConfig = {
       // dependency on JS-side mount ordering on cold start.
       launchShowDuration: 1500,
       launchAutoHide:     true,
-      backgroundColor:    '#1a1f2e',
+      backgroundColor:    '#152B52',
       androidSplashResourceName: 'splash',
       androidScaleType:   'CENTER_CROP',
       showSpinner:        false,
@@ -55,7 +55,7 @@ const config: CapacitorConfig = {
       // bg-elevated colour used by the React shell so the system
       // status bar blends into the app chrome.
       style:           'DARK',
-      backgroundColor: '#1a1f2e',
+      backgroundColor: '#152B52',
       overlaysWebView: false,
     },
     Keyboard: {

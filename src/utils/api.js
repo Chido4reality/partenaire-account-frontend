@@ -168,11 +168,48 @@ api.interceptors.request.use(config => {
 // override below can actually chain — otherwise every non-offline-eligible
 // request TypeErrors inside the async adapter and the page's try/catch swallows
 // it as a generic "Something went wrong" toast (network tab stays empty).
+// ─── MP-DIAGNOSTIC INSTRUMENT (support tool) ───────────────────────────
+// Surfaces the offline write decision + any thrown error to an on-screen
+// banner. HIDDEN by default; enabled via the 5-tap version reveal in
+// Settings (sets localStorage 'mp-debug'='1'). console.error always fires
+// (visible in adb logcat); the banner only renders in debug mode. Tap the
+// banner to dismiss it. Kept as a permanent field-support lever.
+let _mpDiagSeq = 0;
+function mpDiag(text) {
+  try { console.error("[MP-DIAG]", text); } catch { /* noop */ }
+  if (typeof document === "undefined") return;
+  try { if (localStorage.getItem("mp-debug") !== "1") return; } catch { return; }
+  try {
+    let el = document.getElementById("mp-diag-banner");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "mp-diag-banner";
+      el.style.cssText =
+        "position:fixed;left:0;right:0;bottom:0;z-index:99999;background:#111;" +
+        "color:#0f0;font:12px/1.45 monospace;padding:8px 10px;white-space:pre-wrap;" +
+        "max-height:45vh;overflow:auto;border-top:2px solid #0f0;";
+      el.addEventListener("click", () => { try { el.remove(); } catch { /* noop */ } });
+      document.body.appendChild(el);
+    }
+    _mpDiagSeq += 1;
+    el.textContent = `MP-DIAG #${_mpDiagSeq} (tap to close)\n${text}`;
+  } catch {
+    try { window.alert("MP-DIAG\n" + text); } catch { /* noop */ }
+  }
+}
+
 const _originalAdapter = axios.getAdapter(api.defaults.adapter);
 api.defaults.adapter = async function offlineAwareAdapter(config) {
   if (isOfflineEligible(config.method, config.url)) {
+    const _diagPath = `${(config.method || "POST").toUpperCase()} ${(config.url || "").replace(BASE_URL, "").split("?")[0]}`;
     let net;
-    try { net = await getNetworkStatus(); } catch { net = { connected: true, degraded: false }; }
+    try {
+      net = await getNetworkStatus();
+    } catch (e) {
+      net = { connected: true, degraded: false };
+      // MP-DIAG: getNetworkStatus itself threw → we wrongly assume online.
+      mpDiag(`WRITE ${_diagPath}\ngetNetworkStatus() THREW: ${e?.name}: ${e?.message}\n=> defaulted connected=true (will hit network)`);
+    }
     // MP-DEGRADED-ROUTING (Paul, 1 Jun): route writes via the queue
     // path not only when fully offline, but also when network.js
     // reports "degraded" (a recent ping or write attempt failed,
@@ -186,9 +223,12 @@ api.defaults.adapter = async function offlineAwareAdapter(config) {
       const payload = typeof config.data === "string" ? safeJson(config.data) : (config.data || {});
       const localId = payload.local_id || genLocalId();
       payload.local_id = localId;
+      payload.is_offline = true;   // audit flag: this write was queued offline (survives replay verbatim)
       const endpoint = (config.url || "").replace(BASE_URL, "");
       try {
         await enqueue({ endpoint, method: (config.method || "POST").toUpperCase(), payload });
+        // MP-DIAG: hypothesis (b) FALSE — the native queue write succeeded.
+        mpDiag(`WRITE ${_diagPath}\nDETECT connected=${net.connected} degraded=${net.degraded} src=${net.source}\n=> ENQUEUED OK ✓ (offline queue is working)`);
         return buildOptimisticResponse(endpoint, payload, localId);
       } catch (e) {
         // MP-PHASE-4 BUG-2 DIAGNOSTIC: surface SQLite/queue failures on
@@ -204,9 +244,14 @@ api.defaults.adapter = async function offlineAwareAdapter(config) {
           endpoint, method: config.method,
           error: e?.message || String(e), stack: e?.stack,
         });
+        // MP-DIAG: hypothesis (b) TRUE — the native storage layer is throwing.
+        mpDiag(`WRITE ${_diagPath}\nDETECT connected=${net.connected} degraded=${net.degraded} src=${net.source}\n=> ENQUEUE THREW ✗: ${e?.name}: ${e?.message}\n(THIS IS THE BUG — native SQLite/storage layer)`);
         throw e;
       }
     }
+    // MP-DIAG: adapter decided "online" → real network. In an airplane-mode
+    // test this verdict is itself the anomaly (hypothesis a), so surface it.
+    mpDiag(`WRITE ${_diagPath}\nDETECT connected=${net.connected} degraded=${net.degraded} src=${net.source}\n=> ROUTED TO NETWORK (adapter thinks online)`);
   }
   return _originalAdapter(config);
 };
@@ -239,6 +284,7 @@ api.interceptors.response.use(res => {
         const payload = typeof cfg.data === "string" ? safeJson(cfg.data) : (cfg.data || {});
         const localId = payload.local_id || genLocalId();
         payload.local_id = localId;
+        payload.is_offline = true;   // real network failed → queued; tag for audit
         const endpoint = (cfg.url || "").replace(BASE_URL, "");
         await enqueue({ endpoint, method: (cfg.method || "POST").toUpperCase(), payload });
         // MP-DEGRADED-ROUTING: the real network just failed on an
@@ -247,6 +293,9 @@ api.interceptors.response.use(res => {
         // queue, sparing the cashier another 45s spinner cycle.
         // Cleared by a successful 2xx on a subsequent write.
         try { recordWriteFailure(); } catch { /* noop */ }
+        // MP-DIAG: pre-flight missed offline but the safety net caught the
+        // network error and queued the write — detection lagged, storage OK.
+        mpDiag(`RESP-FALLBACK ${(cfg.method || "").toUpperCase()} ${endpoint}\nnetwork err: ${err?.message}\n=> SALVAGED via queue ✓ (detection missed offline, storage OK)`);
         return Promise.resolve(buildOptimisticResponse(endpoint, payload, localId));
       } catch (e) {
         // MP-PHASE-4 BUG-2 DIAGNOSTIC: surface queue failures on the
@@ -262,6 +311,9 @@ api.interceptors.response.use(res => {
           enqueue_error: e?.message || String(e),
           enqueue_stack: e?.stack,
         });
+        // MP-DIAG: both pre-flight AND safety-net enqueue threw → the
+        // cashier sees "Network error. Retry." Native storage is the cause.
+        mpDiag(`RESP-FALLBACK ${(cfg.method || "").toUpperCase()} ${(cfg.url || "").replace(BASE_URL, "")}\nnetwork err: ${err?.message}\n=> ENQUEUE THREW ✗: ${e?.name}: ${e?.message}\n(THIS IS THE BUG — native SQLite/storage layer)`);
         /* fall through to error bubble */
       }
     }

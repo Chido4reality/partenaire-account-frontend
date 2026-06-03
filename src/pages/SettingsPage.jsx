@@ -20,12 +20,35 @@ const roleStyle = (role) => {
   return { color: r?.color || "#94a3b8", bg: (r?.color || "#94a3b8") + "20" };
 };
 
+// MP-DEBUG-REVEAL (3 Jun): 5 quick taps on the version footer toggle
+// 'mp-debug' in localStorage, which un-hides the offline diagnostic banner
+// (api.js mpDiag). Classic Android dev-menu reveal — invisible to normal
+// users, a permanent support lever for field debugging.
+let _debugTaps = { count: 0, t: 0 };
+
 export default function SettingsPage() {
   const { user, org } = useAuthStore();
   const { lang, setLang } = useLangStore();
   const { selectedLocation, setLocation } = useSettingsStore();
   const qc = useQueryClient();
   const isOwner = user?.role === "owner";
+  const handleVersionTap = () => {
+    const now = Date.now();
+    if (now - _debugTaps.t > 2000) _debugTaps.count = 0;
+    _debugTaps.t = now;
+    _debugTaps.count += 1;
+    if (_debugTaps.count >= 5) {
+      _debugTaps.count = 0;
+      let on = false;
+      try { on = localStorage.getItem("mp-debug") === "1"; } catch { /* ignore */ }
+      try {
+        if (on) { localStorage.removeItem("mp-debug"); document.getElementById("mp-diag-banner")?.remove(); }
+        else { localStorage.setItem("mp-debug", "1"); }
+      } catch { /* ignore */ }
+      toast(on ? (lang === "fr" ? "Mode debug désactivé" : "Debug mode OFF")
+               : (lang === "fr" ? "Mode debug activé" : "Debug mode ON"));
+    }
+  };
   // MP-LITE-MODE-PHASE-1: source of truth for the toggle's current value.
   // The Mode tab below renders only for owner; the toggle POSTs to
   // /auth/lite-mode and updates authStore.org.lite_mode inline so the
@@ -418,13 +441,13 @@ export default function SettingsPage() {
               const isActive = selectedLocation?.id === loc.id;
               return (
                 <div key={loc.id} style={{ background: "var(--bg-card)", border: `1px solid ${isActive ? "var(--brand)" : "var(--border)"}`, borderRadius: 12, padding: "16px 20px", display: "flex", alignItems: "center", gap: 16 }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: loc.type === "warehouse" ? "rgba(79,70,229,0.15)" : "rgba(16,185,129,0.15)", color: loc.type === "warehouse" ? "var(--brand-light)" : "#34d399", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 16, flexShrink: 0 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: loc.type === "warehouse" ? "rgba(251,197,3,0.15)" : "rgba(16,185,129,0.15)", color: loc.type === "warehouse" ? "var(--brand-light)" : "#34d399", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 16, flexShrink: 0 }}>
                     {loc.name.charAt(0).toUpperCase()}
                   </div>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 14 }}>{loc.name}</div>
                     <div style={{ fontSize: 12, color: "var(--text-muted)", display: "flex", gap: 10, marginTop: 2, flexWrap: "wrap" }}>
-                      <span style={{ background: loc.type === "warehouse" ? "rgba(79,70,229,0.12)" : "rgba(16,185,129,0.12)", color: loc.type === "warehouse" ? "var(--brand-light)" : "#34d399", padding: "1px 8px", borderRadius: 8, fontSize: 11, fontWeight: 600 }}>{loc.type}</span>
+                      <span style={{ background: loc.type === "warehouse" ? "rgba(251,197,3,0.12)" : "rgba(16,185,129,0.12)", color: loc.type === "warehouse" ? "var(--brand-light)" : "#34d399", padding: "1px 8px", borderRadius: 8, fontSize: 11, fontWeight: 600 }}>{loc.type}</span>
                       {loc.address && <span>{loc.address}</span>}
                       {loc.phone && <span>{loc.phone}</span>}
                     </div>
@@ -548,7 +571,7 @@ export default function SettingsPage() {
           )}
 
           {/* Role info box */}
-          <div style={{ marginTop: 20, padding: 16, background: "rgba(79,70,229,0.08)", border: "1px solid rgba(79,70,229,0.2)", borderRadius: 12, fontSize: 13, color: "var(--text-secondary)" }}>
+          <div style={{ marginTop: 20, padding: 16, background: "rgba(251,197,3,0.08)", border: "1px solid rgba(251,197,3,0.2)", borderRadius: 12, fontSize: 13, color: "var(--text-secondary)" }}>
             <strong style={{ color: "var(--text-primary)" }}>{lang === "en" ? "Staff roles:" : "Rôles du personnel:"}</strong>
             <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
               {ROLES.filter(r => r.value !== "owner").map(r => (
@@ -623,8 +646,8 @@ export default function SettingsPage() {
                         style={{
                           display: "flex", alignItems: "flex-start", gap: 10,
                           padding: "10px 14px", borderRadius: 10, cursor: "pointer",
-                          background: checked ? "rgba(79,70,229,0.10)" : "var(--bg-elevated)",
-                          border: `1px solid ${checked ? "rgba(79,70,229,0.40)" : "var(--border)"}`,
+                          background: checked ? "rgba(251,197,3,0.10)" : "var(--bg-elevated)",
+                          border: `1px solid ${checked ? "rgba(251,197,3,0.40)" : "var(--border)"}`,
                           transition: "background 0.15s, border-color 0.15s",
                         }}>
                         <input type="radio" name="drawer_mode"
@@ -849,8 +872,8 @@ export default function SettingsPage() {
               </div>
               <div style={{
                 flex: "1 1 240px",
-                background: !lite ? "rgba(79,70,229,0.12)" : "var(--bg-elevated)",
-                border: `1px solid ${!lite ? "rgba(79,70,229,0.45)" : "var(--border)"}`,
+                background: !lite ? "rgba(251,197,3,0.12)" : "var(--bg-elevated)",
+                border: `1px solid ${!lite ? "rgba(251,197,3,0.45)" : "var(--border)"}`,
                 borderRadius: 12, padding: "14px 16px",
               }}>
                 <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
@@ -983,7 +1006,7 @@ export default function SettingsPage() {
             </div>
           ) : dozieStatus?.activated && !dozieStatus?.has_pin ? (
             /* ── State B: auto-linked, owner needs to set a PIN ── */
-            <div style={{ background: "var(--bg-card)", border: "1px solid rgba(79,70,229,0.35)", borderRadius: 16, padding: 24 }}>
+            <div style={{ background: "var(--bg-card)", border: "1px solid rgba(251,197,3,0.35)", borderRadius: 16, padding: 24 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
                 <div style={{ fontSize: 28 }}>🔑</div>
                 <div>
@@ -1031,7 +1054,7 @@ export default function SettingsPage() {
                   : (lang === "en" ? "✦ Set PIN and start selling" : "✦ Définir le PIN et commencer à vendre")}
               </button>
 
-              <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: "rgba(79,70,229,0.08)", border: "1px solid rgba(79,70,229,0.2)", fontSize: 12, color: "var(--brand-light)", lineHeight: 1.5 }}>
+              <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: "rgba(251,197,3,0.08)", border: "1px solid rgba(251,197,3,0.2)", fontSize: 12, color: "var(--brand-light)", lineHeight: 1.5 }}>
                 💡 {lang === "en"
                   ? "After setting your PIN, log into Partenaire Dozie with your registered phone number and this PIN. Your active MP products will be listed automatically."
                   : "Après avoir défini votre PIN, connectez-vous à Partenaire Dozie avec votre numéro de téléphone et ce PIN. Vos produits MP actifs seront listés automatiquement."}
@@ -1058,7 +1081,7 @@ export default function SettingsPage() {
                   <span style={{ fontSize: 13 }}>{dozieStatus.identity?.linked_at ? new Date(dozieStatus.identity.linked_at).toLocaleDateString() : "—"}</span>
                 </div>
               </div>
-              <div style={{ marginTop: 16, background: "rgba(79,70,229,0.08)", border: "1px solid rgba(79,70,229,0.2)", borderRadius: 10, padding: 12, fontSize: 12, color: "var(--brand-light)" }}>
+              <div style={{ marginTop: 16, background: "rgba(251,197,3,0.08)", border: "1px solid rgba(251,197,3,0.2)", borderRadius: 10, padding: 12, fontSize: 12, color: "var(--brand-light)" }}>
                 💡 {lang === "en"
                   ? "Log in to Partenaire Dozie using your registered phone number and the Dozie PIN you set during activation."
                   : "Connectez-vous à Partenaire Dozie avec votre numéro de téléphone et le code PIN Dozie défini lors de l'activation."}
@@ -1289,6 +1312,12 @@ export default function SettingsPage() {
           mpId={myPlan?.user_id_number}
           onClose={() => setBrandingPaywall(false)} />
       )}
+
+      {/* MP-DEBUG-REVEAL: tappable version footer — 5 taps toggles debug mode. */}
+      <div onClick={handleVersionTap}
+        style={{ textAlign: "center", padding: "20px 0 8px", color: "var(--text-muted)", fontSize: 11, userSelect: "none" }}>
+        Mon Partenaire Dozie · v1.0.0
+      </div>
     </div>
   );
 }

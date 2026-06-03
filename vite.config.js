@@ -27,7 +27,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",   // skipWaiting + clients.claim → fresh shell next load
-      injectRegister: "auto",       // inject <link rel=manifest> + registration into index.html
+      injectRegister: false,        // registration is manual + platform-gated in main.jsx (native skips the SW to avoid stale-install)
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg}"],
         // Never precache the admin portal's standalone shell/assets — it
@@ -54,8 +54,8 @@ export default defineConfig({
         scope: "/",
         display: "standalone",
         orientation: "portrait",
-        background_color: "#1a1f2e",
-        theme_color: "#1a1f2e",
+        background_color: "#152B52",
+        theme_color: "#152B52",
         icons: [
           { src: "/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any maskable" },
         ],
