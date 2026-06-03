@@ -477,9 +477,9 @@
 
     /* Plan + status badges */
     .badge-plan { padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; }
-    .badge-plan.silver  { background: var(--plan-silver-bg);  color: var(--plan-silver-text); }
-    .badge-plan.gold    { background: var(--plan-gold-bg);    color: var(--plan-gold-text); }
-    .badge-plan.premium { background: var(--plan-premium-bg); color: var(--plan-premium-text); }
+    .badge-plan.trial   { background: var(--plan-trial-bg);   color: var(--plan-trial-text); }
+    .badge-plan.lite    { background: var(--plan-silver-bg);  color: var(--plan-silver-text); }
+    .badge-plan.pro     { background: var(--plan-gold-bg);    color: var(--plan-gold-text); }
     .badge-plan.none    { background: var(--bg-tertiary);     color: var(--text-muted); }
 
     .pill {
@@ -890,6 +890,7 @@
         <div class="sb-section">Mon Partenaire</div>
         <a class="sb-link" data-route="businesses"><span class="sb-link-icon">🏪</span><span class="sb-link-label">Businesses</span></a>
         <a class="sb-link" data-route="subscriptions"><span class="sb-link-icon">💳</span><span class="sb-link-label">Subscriptions</span></a>
+        <a class="sb-link" data-route="subscription-requests"><span class="sb-link-icon">✉️</span><span class="sb-link-label">Sub. requests</span></a>
         <a class="sb-link" data-route="mp-finance"><span class="sb-link-icon">📊</span><span class="sb-link-label">MP Finance</span></a>
 
         <div class="sb-section">Partenaire Dozie</div>
@@ -961,9 +962,9 @@
           <input type="search" id="biz-search" class="grow" placeholder="Search by name or MP-ID…" />
           <select id="biz-plan">
             <option value="">All plans</option>
-            <option value="silver">Silver</option>
-            <option value="gold">Gold</option>
-            <option value="premium">Premium</option>
+            <option value="trial">Trial</option>
+            <option value="lite">Lite</option>
+            <option value="pro">Pro</option>
           </select>
           <select id="biz-status">
             <option value="">All status</option>
@@ -1021,6 +1022,41 @@
               <th>Notes</th><th style="text-align:right">Actions</th>
             </tr></thead>
             <tbody id="subs-tbody">
+              <tr><td class="empty" colspan="8">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- SUBSCRIPTION REQUESTS (Track A3) -->
+      <section class="route" id="route-subscription-requests">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Subscription Requests</div>
+            <div class="page-sub">In-app activation requests. Approve to flip the plan + log the payment, or reject with a reason shown to the business.</div>
+          </div>
+        </div>
+
+        <div class="stat-strip" id="subr-strip">
+          <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">Approved</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">Rejected</div><div class="stat-value muted">…</div></div>
+        </div>
+
+        <div class="section-tabs" id="subr-tabs">
+          <button class="section-tab active" data-subr-tab="pending">Pending  <span class="tab-count" id="cnt-subr-pending">·</span></button>
+          <button class="section-tab"        data-subr-tab="approved">Approved <span class="tab-count" id="cnt-subr-approved">·</span></button>
+          <button class="section-tab"        data-subr-tab="rejected">Rejected <span class="tab-count" id="cnt-subr-rejected">·</span></button>
+          <button class="section-tab"        data-subr-tab="all">All <span class="tab-count" id="cnt-subr-all">·</span></button>
+        </div>
+
+        <div class="table-wrap">
+          <table class="data">
+            <thead><tr>
+              <th>Date</th><th>Business</th><th>Plan</th><th>Cycle</th>
+              <th>Method</th><th>Status</th><th>Notes</th><th style="text-align:right">Actions</th>
+            </tr></thead>
+            <tbody id="subr-tbody">
               <tr><td class="empty" colspan="8">Loading…</td></tr>
             </tbody>
           </table>
@@ -1584,7 +1620,7 @@
 
     // ────────────────────── ROUTING ──────────────────────
     const VALID_ROUTES = new Set([
-      'dashboard', 'businesses', 'subscriptions', 'mp-finance',
+      'dashboard', 'businesses', 'subscriptions', 'subscription-requests', 'mp-finance',
       'marketplace-users', 'verifications', 'dozie-subscriptions', 'orders', 'disputes', 'marketplace-finance',
       'broadcasts', 'admin-team', 'audit-log', 'settings'
     ]);
@@ -1613,6 +1649,7 @@
       if (route === 'settings')           loadSettings();
       if (route === 'businesses')         loadBusinesses();
       if (route === 'subscriptions')      loadSubscriptions();
+      if (route === 'subscription-requests') loadSubscriptionRequests();
       if (route === 'mp-finance')         loadFinance();
       if (route === 'marketplace-users')  loadDzUsers();
       if (route === 'verifications')      loadDzVerifs();
@@ -2018,8 +2055,11 @@
     let _bizSearchTimer = null;
 
     function planBadgeHtml(plan) {
-      const p = String(plan || '').toLowerCase();
-      const cls = ['silver','gold','premium'].includes(p) ? p : 'none';
+      let p = String(plan || '').toLowerCase();
+      // MP-BILLING-V2: normalise legacy plan_ids → trial/lite/pro for display.
+      const NORM = { silver: 'trial', gold: 'lite', premium: 'pro' };
+      if (NORM[p]) p = NORM[p];
+      const cls = ['trial','lite','pro'].includes(p) ? p : 'none';
       const label = p ? (p.charAt(0).toUpperCase() + p.slice(1)) : '—';
       return '<span class="badge-plan ' + cls + '">' + escapeHtml(label) + '</span>';
     }
@@ -2270,9 +2310,9 @@
       const html =
         '<div class="field"><label>Plan</label>' +
           '<select id="bp-plan">' +
-            '<option value="silver"  ' + (biz.plan === 'silver'  ? 'selected' : '') + '>Silver</option>' +
-            '<option value="gold"    ' + (biz.plan === 'gold'    ? 'selected' : '') + '>Gold</option>' +
-            '<option value="premium" ' + (biz.plan === 'premium' ? 'selected' : '') + '>Premium</option>' +
+            '<option value="trial" ' + (biz.plan === 'trial' ? 'selected' : '') + '>Trial</option>' +
+            '<option value="lite"  ' + (biz.plan === 'lite'  ? 'selected' : '') + '>Lite</option>' +
+            '<option value="pro"   ' + (biz.plan === 'pro'   ? 'selected' : '') + '>Pro</option>' +
           '</select>' +
         '</div>' +
         '<div class="field"><label>Notes (optional)</label><textarea id="bp-notes" placeholder="Why are you changing this?"></textarea></div>';
@@ -2580,6 +2620,102 @@
     }
     function stopSubsAutoRefresh() {
       if (_subsRefreshTimer) { clearInterval(_subsRefreshTimer); _subsRefreshTimer = null; }
+    }
+
+    // ── SUBSCRIPTION REQUESTS (Track A3 — in-app activation requests) ──────
+    let _subrCache = [];
+    let _subrTab = 'pending';
+
+    async function loadSubscriptionRequests(opts) {
+      opts = opts || {};
+      const tbody = $('subr-tbody');
+      if (!opts.silent) tbody.innerHTML = '<tr><td class="empty" colspan="8">Loading…</td></tr>';
+      try {
+        const res = await apiAdmin('GET', '/admin/subscription-requests?status=all');
+        _subrCache = (res && res.data) || [];
+        renderSubrStrip();
+        renderSubrTabs();
+        renderSubrTable();
+      } catch (e) {
+        tbody.innerHTML = '<tr><td class="empty" colspan="8">Error: ' + escapeHtml(e.message) + '</td></tr>';
+      }
+    }
+
+    function renderSubrStrip() {
+      const cards = $('subr-strip').children;
+      const set = (i, n) => { const v = cards[i].querySelector('.stat-value'); v.textContent = String(n); v.classList.remove('muted'); };
+      set(0, _subrCache.filter(r => r.status === 'pending').length);
+      set(1, _subrCache.filter(r => r.status === 'approved').length);
+      set(2, _subrCache.filter(r => r.status === 'rejected').length);
+    }
+
+    function renderSubrTabs() {
+      const counts = _subrCache.reduce((acc, r) => { acc[r.status] = (acc[r.status] || 0) + 1; return acc; }, {});
+      $('cnt-subr-pending').textContent  = counts.pending  || 0;
+      $('cnt-subr-approved').textContent = counts.approved || 0;
+      $('cnt-subr-rejected').textContent = counts.rejected || 0;
+      $('cnt-subr-all').textContent      = _subrCache.length;
+    }
+
+    function renderSubrTable() {
+      const tbody = $('subr-tbody');
+      const rows = _subrCache.filter(r => _subrTab === 'all' ? true : r.status === _subrTab);
+      if (!rows.length) { tbody.innerHTML = '<tr><td class="empty" colspan="8">No requests in this tab.</td></tr>'; return; }
+      tbody.innerHTML = rows.map(r => {
+        const org = r.pa_organisations || {};
+        const actions = [];
+        if (r.status === 'pending') {
+          actions.push('<button class="btn" style="padding:5px 10px;font-size:12px" data-subr-action="approve" data-subr-id="' + escapeHtml(r.id) + '">Approve</button>');
+          actions.push('<button class="btn" style="padding:5px 10px;font-size:12px;color:var(--danger);border-color:rgba(239,68,68,0.4)" data-subr-action="reject" data-subr-id="' + escapeHtml(r.id) + '">Reject</button>');
+        }
+        return '<tr>' +
+          '<td>' + fmtDate(r.created_at) + '</td>' +
+          '<td>' + escapeHtml(org.name || '—') + '<div style="font-size:11px;color:var(--text-muted)">' + escapeHtml(org.user_id_number || '') + '</div></td>' +
+          '<td>' + planBadgeHtml(r.requested_plan_id) + '</td>' +
+          '<td>' + escapeHtml(r.billing_cycle || '—') + '</td>' +
+          '<td>' + escapeHtml(r.payment_method || '—') + '</td>' +
+          '<td>' + statusPillHtml(r.status) + '</td>' +
+          '<td style="font-size:11px;color:var(--text-muted);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(r.notes || r.admin_note || '') + '</td>' +
+          '<td style="text-align:right">' + (actions.join(' ') || '—') + '</td>' +
+        '</tr>';
+      }).join('');
+      tbody.querySelectorAll('button[data-subr-action]').forEach(b => {
+        b.addEventListener('click', () => handleSubrAction(b.getAttribute('data-subr-action'), b.getAttribute('data-subr-id')));
+      });
+    }
+
+    function handleSubrAction(action, id) {
+      const r = _subrCache.find(x => x.id === id);
+      if (!r) return;
+      const org = r.pa_organisations || {};
+      const planLabel = String(r.requested_plan_id || '').replace(/^\w/, c => c.toUpperCase());
+      if (action === 'approve') {
+        openModal({
+          title: 'Approve & activate', sub: (org.name || '') + ' · ' + planLabel + ' (' + (r.billing_cycle || '') + ', ' + (r.payment_method || '') + ')',
+          content: '<div class="field"><label>Note (optional)</label><textarea id="subr-ap-notes" placeholder="Payment reference, receipt no., etc."></textarea></div>',
+          secondary: { label: 'Cancel' },
+          primary: { label: 'Approve & activate', onClick: async (close) => {
+            try {
+              await apiAdmin('PATCH', '/admin/subscription-requests/' + id, { action: 'approve', notes: $('subr-ap-notes').value });
+              showToast('Subscription activated', 'success'); close(); loadSubscriptionRequests();
+            } catch (e) { showToast(e.message, 'danger'); }
+          }}
+        });
+      } else if (action === 'reject') {
+        openModal({
+          title: 'Reject request', sub: (org.name || '') + ' · ' + planLabel,
+          content: '<div class="field"><label>Reason (required)</label><textarea id="subr-rj-notes" placeholder="Shown to the business in their app."></textarea></div>',
+          secondary: { label: 'Cancel' },
+          primary: { label: 'Reject', onClick: async (close) => {
+            const notes = $('subr-rj-notes').value.trim();
+            if (!notes) return showToast('Reason is required', 'danger');
+            try {
+              await apiAdmin('PATCH', '/admin/subscription-requests/' + id, { action: 'reject', notes });
+              showToast('Request rejected', 'success'); close(); loadSubscriptionRequests();
+            } catch (e) { showToast(e.message, 'danger'); }
+          }}
+        });
+      }
     }
 
     async function loadSubscriptions(opts) {
@@ -3095,7 +3231,7 @@
       if (eff.is_grace) {
         body = `Effective plan: <strong>Trial</strong> (${eff.days_remaining_in_grace} day${eff.days_remaining_in_grace === 1 ? '' : 's'} of grace remaining)`;
       } else if (eff.auto_downgraded) {
-        body = `Effective plan: <strong>Silver</strong> (auto-downgraded from <strong>${escapeHtml(planId || 'trial')}</strong> — DB row not yet reconciled)`;
+        body = `Effective plan: <strong>Trial</strong> (auto-downgraded from <strong>${escapeHtml(planId || 'trial')}</strong> — DB row not yet reconciled)`;
       } else if (eff.plan === 'trial' && eff.days_remaining_in_trial != null) {
         body = `Effective plan: <strong>Trial</strong> (${eff.days_remaining_in_trial} day${eff.days_remaining_in_trial === 1 ? '' : 's'} remaining)`;
       } else if (eff.plan !== planId) {
@@ -4265,9 +4401,9 @@
           <div id="bc-mp-filters" class="field">
             <label>MP plans</label>
             <select id="bc-plans" multiple size="4">
-              <option value="silver"${(filter.plan||[]).includes('silver')   ? ' selected' : ''}>Silver</option>
-              <option value="gold"${(filter.plan||[]).includes('gold')       ? ' selected' : ''}>Gold</option>
-              <option value="premium"${(filter.plan||[]).includes('premium') ? ' selected' : ''}>Premium</option>
+              <option value="trial"${(filter.plan||[]).includes('trial') ? ' selected' : ''}>Trial</option>
+              <option value="lite"${(filter.plan||[]).includes('lite')   ? ' selected' : ''}>Lite</option>
+              <option value="pro"${(filter.plan||[]).includes('pro')     ? ' selected' : ''}>Pro</option>
             </select>
             <label style="margin-top:8px">Subscription status</label>
             <select id="bc-sub-status" multiple size="3">
@@ -4895,7 +5031,13 @@
         closeNotifDropdown();
       };
       _notifEscHandler = (e) => { if (e.key === 'Escape') closeNotifDropdown(); };
-      _notifScrollHandler  = () => closeNotifDropdown();
+      _notifScrollHandler  = (e) => {
+        // A2 fix: scrolling INSIDE the dropdown (mousewheel or scrollbar drag
+        // on the notif list) must NOT close it — that target is contained by
+        // the dropdown. Only page/sidebar scroll outside it closes.
+        if (_notifEl && e && e.target && (_notifEl === e.target || (_notifEl.contains && _notifEl.contains(e.target)))) return;
+        closeNotifDropdown();
+      };
       _notifResizeHandler  = () => closeNotifDropdown();
       document.addEventListener('mousedown', _notifOutsideHandler, true);
       document.addEventListener('keydown',   _notifEscHandler);
@@ -5084,6 +5226,15 @@
         });
       });
       $('subs-export').addEventListener('click', openSubsExport);
+
+      // SUBSCRIPTION REQUESTS (Track A3)
+      document.querySelectorAll('[data-subr-tab]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          _subrTab = btn.getAttribute('data-subr-tab');
+          document.querySelectorAll('[data-subr-tab]').forEach(b => b.classList.toggle('active', b === btn));
+          renderSubrTable();
+        });
+      });
       // Clicking the "Pending" stat card jumps to that tab.
       document.querySelectorAll('#subs-strip [data-tab="pending"]').forEach(c =>
         c.addEventListener('click', () => {
