@@ -1404,7 +1404,7 @@ export default function POSPage() {
           <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--bg-elevated)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontWeight: 700, fontSize: 14 }}>🛒 {lang === "en" ? "Cart" : "Panier"}</span>
-              {cart.length > 0 && <span style={{ background: "var(--brand)", color: "#fff", borderRadius: 20, padding: "1px 8px", fontSize: 11, fontWeight: 700 }}>{cart.length}</span>}
+              {cart.length > 0 && <span style={{ background: "var(--brand)", color: "#152B52", borderRadius: 20, padding: "1px 8px", fontSize: 11, fontWeight: 700 }}>{cart.length}</span>}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               {activeHolds.length > 0 && (
@@ -1423,7 +1423,7 @@ export default function POSPage() {
           </div>
 
           {onlineCtx && (
-            <div style={{ padding: "8px 14px", background: "rgba(79,70,229,0.12)", borderBottom: "1px solid rgba(79,70,229,0.3)", display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ padding: "8px 14px", background: "rgba(251,197,3,0.12)", borderBottom: "1px solid rgba(251,197,3,0.3)", display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontSize: 14 }}>📥</span>
               <span style={{ fontSize: 11, color: "var(--brand-light)", fontWeight: 600, flex: 1, minWidth: 0 }}>
                 {lang === "en"
@@ -1536,7 +1536,7 @@ export default function POSPage() {
                   )}
                   <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
                     {PAY_METHODS.map(m => (
-                      <button key={m.key} onClick={() => setPayMethod(m.key)} style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: `1.5px solid ${payMethod === m.key ? "var(--brand)" : "var(--border)"}`, background: payMethod === m.key ? "rgba(79,70,229,0.12)" : "transparent", color: payMethod === m.key ? "var(--brand-light)" : "var(--text-secondary)", cursor: "pointer", fontSize: 10, fontWeight: 700, transition: "all 0.15s" }}>
+                      <button key={m.key} onClick={() => setPayMethod(m.key)} style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: `1.5px solid ${payMethod === m.key ? "var(--brand)" : "var(--border)"}`, background: payMethod === m.key ? "rgba(251,197,3,0.12)" : "transparent", color: payMethod === m.key ? "var(--brand-light)" : "var(--text-secondary)", cursor: "pointer", fontSize: 10, fontWeight: 700, transition: "all 0.15s" }}>
                         <div>{m.icon}</div>
                         <div style={{ marginTop: 1 }}>{lang === "en" ? m.en : m.fr}</div>
                       </button>
@@ -1605,7 +1605,7 @@ export default function POSPage() {
               {customer?.name} {lang === "en" ? "has unpaid invoices. Select which to collect:" : "a des factures impayées. Choisissez lesquelles encaisser :"}
             </div>
             <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-              <button onClick={() => setSelectedDebtIds(new Set(debtInvoices.map(i => i.id)))} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "rgba(79,70,229,0.1)", color: "var(--brand-light)", cursor: "pointer", fontWeight: 600 }}>
+              <button onClick={() => setSelectedDebtIds(new Set(debtInvoices.map(i => i.id)))} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "rgba(251,197,3,0.1)", color: "var(--brand-light)", cursor: "pointer", fontWeight: 600 }}>
                 {lang === "en" ? "Select all" : "Tout sélectionner"}
               </button>
               <button onClick={() => setSelectedDebtIds(new Set())} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "transparent", color: "var(--text-muted)", cursor: "pointer" }}>
@@ -1618,8 +1618,8 @@ export default function POSPage() {
                 return (
                   <div key={inv.id}
                     onClick={() => { const n = new Set(selectedDebtIds); checked ? n.delete(inv.id) : n.add(inv.id); setSelectedDebtIds(n); }}
-                    style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${checked ? "var(--brand)" : "var(--border)"}`, background: checked ? "rgba(79,70,229,0.08)" : "var(--bg-card)", cursor: "pointer", transition: "all 0.15s" }}>
-                    <div style={{ width: 18, height: 18, borderRadius: 5, border: `2px solid ${checked ? "var(--brand)" : "var(--border)"}`, background: checked ? "var(--brand)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "#fff", fontSize: 11, fontWeight: 700 }}>
+                    style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${checked ? "var(--brand)" : "var(--border)"}`, background: checked ? "rgba(251,197,3,0.08)" : "var(--bg-card)", cursor: "pointer", transition: "all 0.15s" }}>
+                    <div style={{ width: 18, height: 18, borderRadius: 5, border: `2px solid ${checked ? "var(--brand)" : "var(--border)"}`, background: checked ? "var(--brand)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "#152B52", fontSize: 11, fontWeight: 700 }}>
                       {checked ? "✓" : ""}
                     </div>
                     <div style={{ flex: 1 }}>
@@ -1664,7 +1664,7 @@ export default function POSPage() {
                 {lang === "en" ? "Skip" : "Ignorer"}
               </button>
               <button onClick={addDebtToCart} disabled={selectedDebtIds.size === 0}
-                style={{ flex: 2, padding: "10px", border: "none", borderRadius: 10, background: selectedDebtIds.size > 0 ? "var(--brand)" : "var(--border)", color: selectedDebtIds.size > 0 ? "#fff" : "var(--text-muted)", cursor: selectedDebtIds.size > 0 ? "pointer" : "not-allowed", fontWeight: 700, fontSize: 14, transition: "all 0.15s" }}>
+                style={{ flex: 2, padding: "10px", border: "none", borderRadius: 10, background: selectedDebtIds.size > 0 ? "var(--brand)" : "var(--border)", color: selectedDebtIds.size > 0 ? "#152B52" : "var(--text-muted)", cursor: selectedDebtIds.size > 0 ? "pointer" : "not-allowed", fontWeight: 700, fontSize: 14, transition: "all 0.15s" }}>
                 {lang === "en" ? "Add to Cart →" : "Ajouter au panier →"}
               </button>
             </div>
@@ -1688,7 +1688,7 @@ export default function POSPage() {
               {lang === "en" ? "Skip — sale only" : "Ignorer"}
             </button>
             <button onClick={addDebtPaymentToCart}
-              style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "var(--brand)", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
+              style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "var(--brand)", color: "#152B52", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
               {lang === "en" ? "Add to Cart" : "Ajouter au panier"}
             </button>
           </div>
@@ -1751,7 +1751,7 @@ export default function POSPage() {
               </div>
             </div>
             {selectedLocation && (
-              <div style={{ fontSize: 11, background: "rgba(79,70,229,0.12)", color: "var(--brand-light)", padding: "4px 10px", borderRadius: 20, fontWeight: 600 }}>
+              <div style={{ fontSize: 11, background: "rgba(251,197,3,0.12)", color: "var(--brand-light)", padding: "4px 10px", borderRadius: 20, fontWeight: 600 }}>
                 📍 {selectedLocation.name}
               </div>
             )}
@@ -1775,8 +1775,8 @@ export default function POSPage() {
               👤 {lang === "en" ? "Customer (optional)" : "Client (optionnel)"}
             </label>
             {customer ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "rgba(79,70,229,0.1)", border: "1px solid var(--brand)", borderRadius: 10 }}>
-                <div style={{ width: 28, height: 28, borderRadius: 8, background: "var(--brand)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12, flexShrink: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "rgba(251,197,3,0.1)", border: "1px solid var(--brand)", borderRadius: 10 }}>
+                <div style={{ width: 28, height: 28, borderRadius: 8, background: "var(--brand)", color: "#152B52", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12, flexShrink: 0 }}>
                   {customer.name.charAt(0).toUpperCase()}
                 </div>
                 <div style={{ flex: 1 }}>
@@ -1816,7 +1816,7 @@ export default function POSPage() {
                         style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, transition: "background 0.1s" }}
                         onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
                         onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                        <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(79,70,229,0.2)", color: "var(--brand-light)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
+                        <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(251,197,3,0.2)", color: "var(--brand-light)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
                           {c.name.charAt(0).toUpperCase()}
                         </div>
                         <div style={{ flex: 1 }}>
@@ -1881,7 +1881,7 @@ export default function POSPage() {
             </div>
 
             {scanMode === "usb" && (
-              <div style={{ background: scanning ? "rgba(16,185,129,0.1)" : "rgba(79,70,229,0.08)", border: `1.5px solid ${scanning ? "#10b981" : "var(--brand)"}`, borderRadius: 12, padding: "14px 16px", marginBottom: 8, textAlign: "center", transition: "all 0.3s" }}>
+              <div style={{ background: scanning ? "rgba(16,185,129,0.1)" : "rgba(251,197,3,0.08)", border: `1.5px solid ${scanning ? "#10b981" : "var(--brand)"}`, borderRadius: 12, padding: "14px 16px", marginBottom: 8, textAlign: "center", transition: "all 0.3s" }}>
                 <div style={{ fontSize: 22, marginBottom: 4 }}>{scanning ? "✓" : "🔌"}</div>
                 <div style={{ fontWeight: 700, fontSize: 13, color: scanning ? "#10b981" : "var(--brand-light)" }}>
                   {scanning ? (lang === "en" ? "Item added!" : "Article ajouté!") : (lang === "en" ? "USB Scanner Ready" : "Lecteur USB prêt")}
@@ -1899,9 +1899,9 @@ export default function POSPage() {
 
             {scanMode === "camera" && (
               <button onClick={() => setShowCamera(true)}
-                style={{ width: "100%", padding: "16px", marginBottom: 8, background: "rgba(79,70,229,0.1)", border: "2px dashed var(--brand)", borderRadius: 12, color: "var(--brand-light)", cursor: "pointer", fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, transition: "all 0.2s" }}
-                onMouseEnter={e => e.currentTarget.style.background = "rgba(79,70,229,0.2)"}
-                onMouseLeave={e => e.currentTarget.style.background = "rgba(79,70,229,0.1)"}>
+                style={{ width: "100%", padding: "16px", marginBottom: 8, background: "rgba(251,197,3,0.1)", border: "2px dashed var(--brand)", borderRadius: 12, color: "var(--brand-light)", cursor: "pointer", fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, transition: "all 0.2s" }}
+                onMouseEnter={e => e.currentTarget.style.background = "rgba(251,197,3,0.2)"}
+                onMouseLeave={e => e.currentTarget.style.background = "rgba(251,197,3,0.1)"}>
                 <span style={{ fontSize: 24 }}>📷</span>
                 <div style={{ textAlign: "left" }}>
                   <div>{lang === "en" ? "Tap to Scan Barcode" : "Scanner un code-barres"}</div>
@@ -1953,7 +1953,7 @@ export default function POSPage() {
                       setJustAddedId(p.id);
                       setTimeout(() => setJustAddedId(curr => curr === p.id ? null : curr), 280);
                     }}
-                    animate={{ backgroundColor: isFlashing ? "rgba(79,70,229,0.22)" : "rgba(0,0,0,0)" }}
+                    animate={{ backgroundColor: isFlashing ? "rgba(251,197,3,0.22)" : "rgba(0,0,0,0)" }}
                     transition={{ duration: 0.22 }}
                     style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: mobile ? "12px 14px" : "11px 14px", minHeight: rowHeight, cursor: "pointer", borderBottom: i < filteredProducts.length - 1 ? "1px solid var(--border)" : "none" }}>
                     <div style={{ flex: 1, paddingRight: 12, minWidth: 0 }}>
@@ -1975,7 +1975,7 @@ export default function POSPage() {
                         )}
                       </div>
                       {mobile ? (
-                        <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: "var(--brand)", padding: "3px 10px", borderRadius: 12 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: "#152B52", background: "var(--brand)", padding: "3px 10px", borderRadius: 12 }}>
                           + {lang === "en" ? "Add" : "Ajouter"}
                         </span>
                       ) : (
@@ -2495,7 +2495,7 @@ function HoldTicket({ hold, org, lang, cashierName, onClose }) {
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <button onClick={printTicket}
-            style={{ width: "100%", padding: "12px", background: "var(--brand)", border: "none", color: "#fff", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+            style={{ width: "100%", padding: "12px", background: "var(--brand)", border: "none", color: "#152B52", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
             🖨️ {HT.print}
           </button>
           <button onClick={onClose}

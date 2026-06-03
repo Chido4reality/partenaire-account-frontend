@@ -182,7 +182,7 @@ export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
                 style={{
                   padding: "14px 16px", borderRadius: 12,
                   border: `2px solid ${selected ? "var(--brand)" : "var(--border)"}`,
-                  background: selected ? "rgba(79,70,229,0.08)" : "var(--bg-card)",
+                  background: selected ? "rgba(251,197,3,0.08)" : "var(--bg-card)",
                   cursor: "pointer", transition: "border-color 0.15s"
                 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -227,7 +227,7 @@ export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
             style={{
               flex: 2, padding: "10px 14px", borderRadius: 10,
               background: "var(--brand)", border: "1px solid var(--brand)",
-              color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700
+              color: "#152B52", cursor: "pointer", fontSize: 13, fontWeight: 700
             }}>
             {lang === "fr"
               ? `Mettre à niveau vers ${getCapabilities(selectedTier).label || selectedTier}`

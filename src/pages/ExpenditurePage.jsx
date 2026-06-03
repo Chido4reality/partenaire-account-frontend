@@ -159,7 +159,7 @@ export default function ExpenditurePage() {
                   <td style={{ fontWeight: 500 }}>{e.description}</td>
                   <td>
                     {e.pa_expenditure_categories ? (
-                      <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: 10, background: "rgba(79,70,229,0.1)", color: "var(--brand-light)" }}>
+                      <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: 10, background: "rgba(251,197,3,0.1)", color: "var(--brand-light)" }}>
                         {categoryLabel(e.pa_expenditure_categories.name, lang)}
                       </span>
                     ) : "-"}

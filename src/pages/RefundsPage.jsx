@@ -222,7 +222,7 @@ export default function RefundsPage() {
               style={{
                 flex: "1 1 120px", padding: "10px 12px",
                 background: active ? "var(--brand)" : "transparent",
-                color: active ? "#fff" : "var(--text-secondary)",
+                color: active ? "#152B52" : "var(--text-secondary)",
                 border: "none", borderRadius: 8,
                 fontWeight: 700, fontSize: 13, cursor: "pointer",
                 transition: "background 0.15s, color 0.15s",

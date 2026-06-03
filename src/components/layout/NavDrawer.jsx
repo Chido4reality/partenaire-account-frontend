@@ -126,7 +126,7 @@ export default function NavDrawer({
                 <div
                   style={{
                     width: 40, height: 40, borderRadius: 12,
-                    background: "rgba(79,70,229,0.2)",
+                    background: "rgba(251,197,3,0.2)",
                     color: "var(--brand-light)",
                     display: "flex", alignItems: "center", justifyContent: "center",
                     fontSize: 16, fontWeight: 700, flexShrink: 0,
@@ -147,7 +147,7 @@ export default function NavDrawer({
                 <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 6 }}>
                   <span
                     style={{
-                      background: "rgba(79,70,229,0.15)",
+                      background: "rgba(251,197,3,0.15)",
                       color: "var(--brand-light)",
                       padding: "2px 8px",
                       borderRadius: 12,

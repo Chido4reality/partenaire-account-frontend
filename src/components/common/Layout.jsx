@@ -118,8 +118,8 @@ function ModeBadge() {
       style={{
         display: "inline-block",
         marginLeft: 6,
-        background: isLite ? "#F1EFE8" : "#EEEDFE",
-        color:      isLite ? "#5F5E5A" : "#534AB7",
+        background: isLite ? "rgba(255,255,255,0.06)" : "#152B52",
+        color:      isLite ? "var(--text-secondary)" : "#FBC503",
         fontSize: 10, padding: "2px 6px",
         borderRadius: 4, fontWeight: 500,
         letterSpacing: 0.3,
@@ -145,7 +145,7 @@ function ModeAccent() {
       style={{
         width: "100%",
         height: 2,
-        background: lite ? "#B4B2A9" : "#AFA9EC",
+        background: lite ? "rgba(255,255,255,0.14)" : "#FBC503",
         flexShrink: 0,
       }}
     />
@@ -190,8 +190,8 @@ function TrialBanner() {
     return (
       <div role="status" style={{
         width: "100%", padding: "6px 12px",
-        background: "rgba(79,70,229,0.14)", color: "var(--brand-light)",
-        borderBottom: "1px solid rgba(79,70,229,0.35)",
+        background: "rgba(251,197,3,0.14)", color: "var(--brand-light)",
+        borderBottom: "1px solid rgba(251,197,3,0.35)",
         fontSize: 12, fontWeight: 700, textAlign: "center",
       }}>
         {label}
@@ -224,7 +224,7 @@ function BroadcastBanner() {
     ? { bg: "rgba(239,68,68,0.16)", bd: "rgba(239,68,68,0.5)", fg: "#fca5a5", icon: "⛔" }
     : b.severity === "warning"
     ? { bg: "rgba(245,158,11,0.16)", bd: "rgba(245,158,11,0.5)", fg: "#fbbf24", icon: "⚠" }
-    : { bg: "rgba(79,70,229,0.16)", bd: "rgba(79,70,229,0.5)", fg: "var(--brand-light)", icon: "📢" };
+    : { bg: "rgba(251,197,3,0.16)", bd: "rgba(251,197,3,0.5)", fg: "var(--brand-light)", icon: "📢" };
   const dismiss = () => {
     const next = [...dismissed, b.id];
     setDismissed(next);
@@ -565,7 +565,7 @@ export default function Layout() {
             if (!n.is_read) markReadMutation.mutate(n.id);
             if (focusUrl) { setShowNotif(false); navigate(focusUrl); }
           }}
-        style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", cursor: focusUrl ? "pointer" : "default", background: n.is_read ? "transparent" : "rgba(79,70,229,0.05)" }}>
+        style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", cursor: focusUrl ? "pointer" : "default", background: n.is_read ? "transparent" : "rgba(251,197,3,0.05)" }}>
         <div style={{ display: "flex", gap: 8 }}>
           <div style={{ width: 6, height: 6, borderRadius: "50%", background: notifColor(n.type), marginTop: 5, flexShrink: 0 }} />
           <div style={{ minWidth: 0, flex: 1 }}>
@@ -805,7 +805,7 @@ export default function Layout() {
                 style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", cursor: "pointer" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                   <span style={{ fontSize: 12, fontWeight: 700 }}>{res.ref}</span>
-                  <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 9, background: res.type === "sale" ? "rgba(79,70,229,0.15)" : "rgba(245,158,11,0.15)", color: res.type === "sale" ? "var(--brand-light)" : "#fbbf24" }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 9, background: res.type === "sale" ? "rgba(251,197,3,0.15)" : "rgba(245,158,11,0.15)", color: res.type === "sale" ? "var(--brand-light)" : "#fbbf24" }}>
                     {res.type === "sale" ? (lang === "en" ? "MP Sale" : "Vente MP") : (lang === "en" ? "Dozie" : "Dozie")}
                   </span>
                 </div>
@@ -963,7 +963,7 @@ export default function Layout() {
         {!collapsed && (
           <div style={{ padding: "8px 16px", borderBottom: "1px solid var(--border)", fontSize: 11 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ background: "rgba(79,70,229,0.15)", color: "var(--brand-light)", padding: "3px 10px", borderRadius: 20, fontWeight: 600 }}>
+              <span style={{ background: "rgba(251,197,3,0.15)", color: "var(--brand-light)", padding: "3px 10px", borderRadius: 20, fontWeight: 600 }}>
                 {roleLabel()}
               </span>
               {myPlan && (
@@ -1012,7 +1012,7 @@ export default function Layout() {
                   </div>
                 ) : (
                   <button onClick={() => setShowUpgrade(true)}
-                    style={{ marginTop: 6, width: "100%", padding: "5px 10px", borderRadius: 8, border: "1px solid var(--brand)", background: "rgba(79,70,229,0.1)", color: "var(--brand-light)", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
+                    style={{ marginTop: 6, width: "100%", padding: "5px 10px", borderRadius: 8, border: "1px solid var(--brand)", background: "rgba(251,197,3,0.1)", color: "var(--brand-light)", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
                     ⬆️ {lang === "en" ? "Upgrade plan" : "Améliorer le plan"}
                   </button>
                 )
@@ -1035,7 +1035,7 @@ export default function Layout() {
                 justifyContent: collapsed ? "center" : "flex-start",
                 color: isActive ? "#fff" : "var(--text-secondary)",
                 textDecoration: "none",
-                background: isActive ? "rgba(79,70,229,0.2)" : "transparent",
+                background: isActive ? "rgba(251,197,3,0.2)" : "transparent",
                 borderLeft: isActive ? "3px solid var(--brand)" : "3px solid transparent",
                 fontSize: 13, fontWeight: isActive ? 600 : 400,
                 transition: "all 0.15s"

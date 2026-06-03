@@ -843,7 +843,7 @@ export default function ReportsPage() {
                       <tr key={c.id}>
                         <td style={{ fontWeight: 600 }}>{c.name}</td>
                         <td style={{ color: "var(--text-muted)" }}>{c.phone || "—"}</td>
-                        <td><span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: "rgba(79,70,229,0.1)", color: "var(--brand-light)" }}>{c.customer_type}</span></td>
+                        <td><span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: "rgba(251,197,3,0.1)", color: "var(--brand-light)" }}>{c.customer_type}</span></td>
                         <td style={{ textAlign: "right" }}>{c.open_invoices}</td>
                         <td style={{ color: isOverdue ? "#f87171" : "var(--text-secondary)", fontSize: 13 }}>
                           {c.earliest_due ? formatDate(c.earliest_due) + (isOverdue ? " ⚠️" : "") : "—"}

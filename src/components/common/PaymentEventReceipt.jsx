@@ -57,7 +57,7 @@ class _ReceiptErrorBoundary extends Component {
               : "L'opération a réussi — seul l'affichage du reçu a échoué. Vous pouvez retrouver l'enregistrement dans l'historique client ou le journal d'audit."}
           </div>
           <button onClick={this.props.onClose}
-            style={{ padding: "10px 24px", borderRadius: 10, background: "var(--brand)", border: "none", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 14 }}>
+            style={{ padding: "10px 24px", borderRadius: 10, background: "var(--brand)", border: "none", color: "#152B52", fontWeight: 700, cursor: "pointer", fontSize: 14 }}>
             {en ? "Close" : "Fermer"}
           </button>
         </div>
@@ -354,7 +354,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
           <div style={{ fontSize: 13, color: "var(--text-muted)", textAlign: "center", marginBottom: 14 }}>
             {en ? "No receipt data to display." : "Aucune donnée de reçu à afficher."}
           </div>
-          <button onClick={onClose} style={{ width: "100%", padding: 10, borderRadius: 10, background: "var(--brand)", color: "#fff", border: "none", fontWeight: 700, cursor: "pointer" }}>
+          <button onClick={onClose} style={{ width: "100%", padding: 10, borderRadius: 10, background: "var(--brand)", color: "#152B52", border: "none", fontWeight: 700, cursor: "pointer" }}>
             {en ? "Close" : "Fermer"}
           </button>
         </div>

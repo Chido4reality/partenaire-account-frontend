@@ -204,7 +204,7 @@ export default function DoziePublishModal({ productId, productName, defaultPrice
             </button>
           )}
           <button onClick={handleSave} disabled={busy}
-            style={{ flex: 2, padding: "10px", border: "none", borderRadius: 10, background: "var(--brand)", color: "#fff", cursor: busy ? "not-allowed" : "pointer", fontWeight: 700, fontSize: 14, opacity: busy ? 0.6 : 1 }}>
+            style={{ flex: 2, padding: "10px", border: "none", borderRadius: 10, background: "var(--brand)", color: "#152B52", cursor: busy ? "not-allowed" : "pointer", fontWeight: 700, fontSize: 14, opacity: busy ? 0.6 : 1 }}>
             {busy ? "..." : existing ? (en ? "✓ Save" : "✓ Enregistrer") : (en ? "🚀 Publish" : "🚀 Publier")}
           </button>
         </div>

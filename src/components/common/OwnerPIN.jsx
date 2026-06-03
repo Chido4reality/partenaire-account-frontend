@@ -89,7 +89,7 @@ export default function OwnerPIN({ open, onSuccess, onCancel, reason = "", lang 
             {lang === "en" ? "Cancel" : "Annuler"}
           </button>
           <button onClick={handleSubmit} disabled={pin.length < 4 || loading}
-            style={{ flex: 2, padding: "10px", border: "none", borderRadius: 10, background: pin.length === 4 ? "var(--brand)" : "var(--border)", color: pin.length === 4 ? "#fff" : "var(--text-muted)", cursor: pin.length === 4 ? "pointer" : "not-allowed", fontWeight: 700, fontSize: 14 }}>
+            style={{ flex: 2, padding: "10px", border: "none", borderRadius: 10, background: pin.length === 4 ? "var(--brand)" : "var(--border)", color: pin.length === 4 ? "#152B52" : "var(--text-muted)", cursor: pin.length === 4 ? "pointer" : "not-allowed", fontWeight: 700, fontSize: 14 }}>
             {loading ? "..." : (lang === "en" ? "Confirm" : "Confirmer")}
           </button>
         </div>

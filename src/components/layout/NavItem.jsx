@@ -17,7 +17,7 @@ export default function NavItem({ to, icon, label, badge, onTap }) {
         minHeight: 48,
         padding: "10px 16px",
         color: isActive ? "#fff" : "var(--text-secondary)",
-        background: isActive ? "rgba(79,70,229,0.18)" : "transparent",
+        background: isActive ? "rgba(251,197,3,0.18)" : "transparent",
         borderLeft: isActive ? "3px solid var(--brand)" : "3px solid transparent",
         fontSize: 14,
         fontWeight: isActive ? 600 : 400,

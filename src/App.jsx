@@ -60,7 +60,7 @@ class ErrorBoundary extends Component {
         <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 8 }}>Something went wrong</div>
         <div style={{ color: "#9ca3af", fontSize: 13, marginBottom: 24, maxWidth: 360 }}>{this.state.error?.message || "An unexpected error occurred."}</div>
         <button onClick={() => { this.setState({ crashed: false, error: null }); window.location.href = "/"; }}
-          style={{ padding: "10px 24px", borderRadius: 10, background: "#4f46e5", border: "none", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: 14 }}>
+          style={{ padding: "10px 24px", borderRadius: 10, background: "var(--brand)", border: "none", color: "#152B52", fontWeight: 600, cursor: "pointer", fontSize: 14 }}>
           Reload app
         </button>
       </div>

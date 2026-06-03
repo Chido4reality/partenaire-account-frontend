@@ -255,7 +255,7 @@ export default function StockCountPage() {
                 const diff = +item.actual_qty - +item.system_qty;
                 const hasDiff = diff !== 0;
                 return (
-                  <div key={idx} style={{ background: "var(--bg-card)", border: `1px solid ${hasDiff ? (diff > 0 ? "rgba(79,70,229,0.4)" : "rgba(239,68,68,0.4)") : "var(--border)"}`, borderRadius: 12, padding: "12px 14px" }}>
+                  <div key={idx} style={{ background: "var(--bg-card)", border: `1px solid ${hasDiff ? (diff > 0 ? "rgba(251,197,3,0.4)" : "rgba(239,68,68,0.4)") : "var(--border)"}`, borderRadius: 12, padding: "12px 14px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontWeight: 600, fontSize: 13 }}>{item.name}</div>

@@ -124,7 +124,7 @@ export default function ConflictModal({ onClose }) {
                 </details>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={() => handleRetry(r.id)} disabled={busyId === r.id}
-                    style={{ flex: 1, padding: "8px", borderRadius: 8, border: "none", background: "var(--brand)", color: "#fff", fontWeight: 700, fontSize: 12, cursor: busyId === r.id ? "not-allowed" : "pointer" }}>
+                    style={{ flex: 1, padding: "8px", borderRadius: 8, border: "none", background: "var(--brand)", color: "#152B52", fontWeight: 700, fontSize: 12, cursor: busyId === r.id ? "not-allowed" : "pointer" }}>
                     ↻ {en ? "Retry" : "Réessayer"}
                   </button>
                   <button onClick={() => handleDiscard(r.id)} disabled={busyId === r.id}

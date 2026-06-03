@@ -42,7 +42,7 @@ export default function BarcodeInput({ value, onChange, onScan, placeholder, lan
             onClick={() => setShowCamera(true)}
             title={lang === "en" ? "Scan with camera" : "Scanner avec camera"}
             style={{
-              background: "rgba(79,70,229,0.2)",
+              background: "rgba(251,197,3,0.2)",
               border: "1.5px solid var(--brand)",
               borderRadius: "var(--radius-md)",
               padding: "0 16px",

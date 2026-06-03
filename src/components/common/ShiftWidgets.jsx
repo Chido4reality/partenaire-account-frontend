@@ -241,7 +241,7 @@ export function OpenShiftModal({ open, onClose, onOpened }) {
       <div style={{
         background: "var(--bg-card)", borderRadius: 10,
         padding: "12px 14px", marginBottom: 14,
-        border: multiLoc ? "1px solid rgba(79,70,229,0.30)" : "1px solid transparent",
+        border: multiLoc ? "1px solid rgba(251,197,3,0.30)" : "1px solid transparent",
       }}>
         <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>
           {lang === "fr" ? "Ouvrir la caisse à" : "Open shift at"}
@@ -734,7 +734,7 @@ function SendReportPromptModal({ locationId, onClose }) {
       <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
         {fr ? "Destinataire" : "Recipient"}: <strong>+{phoneWithCode}</strong>
         {isSaturday && (
-          <span style={{ marginLeft: 8, padding: "1px 8px", borderRadius: 8, background: "rgba(79,70,229,0.15)", color: "var(--brand-light)", fontSize: 11, fontWeight: 700 }}>
+          <span style={{ marginLeft: 8, padding: "1px 8px", borderRadius: 8, background: "rgba(251,197,3,0.15)", color: "var(--brand-light)", fontSize: 11, fontWeight: 700 }}>
             {fr ? "Inclut résumé hebdo" : "Includes weekly recap"}
           </span>
         )}
@@ -873,7 +873,7 @@ export function ActiveShiftIndicator() {
             style={{
               marginLeft: "auto", padding: "6px 12px", borderRadius: 8,
               border: "1px solid var(--brand)", background: "var(--brand)",
-              color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer",
+              color: "#152B52", fontWeight: 700, fontSize: 12, cursor: "pointer",
             }}>
             {lang === "fr" ? "Ouvrir le poste" : "Open shift"}
           </button>

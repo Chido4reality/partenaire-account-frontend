@@ -1032,7 +1032,7 @@ export default function InventoryPage() {
                 setMigrateSel(initSel);
                 setShowMigrate(true);
               }}
-              style={{ background: "var(--brand)", border: 0, color: "#fff", padding: "8px 16px", borderRadius: 8, fontWeight: 700, cursor: "pointer", fontSize: 13, whiteSpace: "nowrap" }}>
+              style={{ background: "var(--brand)", border: 0, color: "#152B52", padding: "8px 16px", borderRadius: 8, fontWeight: 700, cursor: "pointer", fontSize: 13, whiteSpace: "nowrap" }}>
               {lang === "en" ? "Auto-link to MP products →" : "Lier aux produits MP →"}
             </button>
           </div>
@@ -1153,7 +1153,7 @@ export default function InventoryPage() {
                         <div style={{ fontWeight: 500 }}>{p?.name}</div>
                         {p?.barcode && <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>{p.barcode}</div>}
                       </td>
-                      <td><span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: s.pa_locations?.type === "warehouse" ? "rgba(79,70,229,0.15)" : "rgba(16,185,129,0.15)", color: s.pa_locations?.type === "warehouse" ? "var(--brand-light)" : "#34d399" }}>{s.pa_locations?.name}</span></td>
+                      <td><span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: s.pa_locations?.type === "warehouse" ? "rgba(251,197,3,0.15)" : "rgba(16,185,129,0.15)", color: s.pa_locations?.type === "warehouse" ? "var(--brand-light)" : "#34d399" }}>{s.pa_locations?.name}</span></td>
                       <td>
                         {s.slot_code ? (
                           <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 6, background: "rgba(251,191,36,0.15)", color: "#fbbf24", fontFamily: "monospace", fontWeight: 700 }}>
@@ -1690,7 +1690,7 @@ export default function InventoryPage() {
               )}
             </div>
 
-            <div style={{ background: "rgba(79,70,229,0.08)", borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "var(--text-muted)" }}>
+            <div style={{ background: "rgba(251,197,3,0.08)", borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "var(--text-muted)" }}>
               💡 {lang === "en" ? "Tip: Fill name, scan barcode, set prices, press Enter or click Add. Form resets automatically." : "Astuce: Remplissez le nom, scannez le code, entrez les prix, appuyez sur Entrée. Le formulaire se réinitialise automatiquement."}
             </div>
 
@@ -1778,7 +1778,7 @@ export default function InventoryPage() {
             {/* Step 1: Download template */}
             <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 16 }}>
               <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>
-                <span style={{ background: "var(--brand)", color: "#fff", borderRadius: "50%", width: 22, height: 22, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, marginRight: 8 }}>1</span>
+                <span style={{ background: "var(--brand)", color: "#152B52", borderRadius: "50%", width: 22, height: 22, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, marginRight: 8 }}>1</span>
                 {lang === "en" ? "Download the template" : "Télécharger le modèle"}
               </div>
               <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>
@@ -1792,7 +1792,7 @@ export default function InventoryPage() {
             {/* Step 2: Upload */}
             <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 16 }}>
               <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>
-                <span style={{ background: "var(--brand)", color: "#fff", borderRadius: "50%", width: 22, height: 22, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, marginRight: 8 }}>2</span>
+                <span style={{ background: "var(--brand)", color: "#152B52", borderRadius: "50%", width: 22, height: 22, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, marginRight: 8 }}>2</span>
                 {lang === "en" ? "Upload your filled file" : "Téléverser votre fichier rempli"}
               </div>
               <label style={{ display: "block", padding: "20px", border: "2px dashed var(--border)", borderRadius: 10, textAlign: "center", cursor: "pointer", color: "var(--text-muted)", fontSize: 13 }}>
@@ -1806,7 +1806,7 @@ export default function InventoryPage() {
             {importPreview.length > 0 && (
               <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 16 }}>
                 <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>
-                  <span style={{ background: "var(--brand)", color: "#fff", borderRadius: "50%", width: 22, height: 22, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, marginRight: 8 }}>3</span>
+                  <span style={{ background: "var(--brand)", color: "#152B52", borderRadius: "50%", width: 22, height: 22, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, marginRight: 8 }}>3</span>
                   {lang === "en" ? `Preview — ${importPreview.length} products found` : `Aperçu — ${importPreview.length} produits trouvés`}
                 </div>
                 <div style={{ overflowX: "auto", maxHeight: 240, overflowY: "auto" }}>
@@ -2163,7 +2163,7 @@ function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemov
       {selected ? (
         <div>
           {/* Selected product */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "rgba(79,70,229,0.12)", border: "1px solid var(--brand)", borderRadius: 10, marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "rgba(251,197,3,0.12)", border: "1px solid var(--brand)", borderRadius: 10, marginBottom: 12 }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 700, fontSize: 14 }}>{selected.name}</div>
               {selected.barcode && <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>{selected.barcode}</div>}
@@ -2258,7 +2258,7 @@ function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemov
               {filtered.map((p, i) => (
                 <button key={p.id} onClick={() => pickProduct(p)}
                   style={{ width: "100%", padding: "10px 14px", background: "none", border: "none", borderBottom: i < filtered.length - 1 ? "1px solid var(--border)" : "none", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", textAlign: "left" }}
-                  onMouseEnter={e => e.currentTarget.style.background = "rgba(79,70,229,0.08)"}
+                  onMouseEnter={e => e.currentTarget.style.background = "rgba(251,197,3,0.08)"}
                   onMouseLeave={e => e.currentTarget.style.background = "none"}>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>{p.name}</div>

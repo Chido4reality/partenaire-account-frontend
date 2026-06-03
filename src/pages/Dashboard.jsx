@@ -196,7 +196,7 @@ export default function Dashboard() {
           </div>
           {/* Role badge */}
           <div style={{ marginTop: 6 }}>
-            <span style={{ fontSize: 11, padding: "3px 10px", borderRadius: 20, fontWeight: 600, background: isOwner ? "rgba(251,191,36,0.15)" : isManager ? "rgba(79,70,229,0.15)" : isWarehouse ? "rgba(52,211,153,0.15)" : "rgba(148,163,184,0.15)", color: isOwner ? "#fbbf24" : isManager ? "var(--brand-light)" : isWarehouse ? "#34d399" : "#94a3b8" }}>
+            <span style={{ fontSize: 11, padding: "3px 10px", borderRadius: 20, fontWeight: 600, background: isOwner ? "rgba(251,191,36,0.15)" : isManager ? "rgba(251,197,3,0.15)" : isWarehouse ? "rgba(52,211,153,0.15)" : "rgba(148,163,184,0.15)", color: isOwner ? "#fbbf24" : isManager ? "var(--brand-light)" : isWarehouse ? "#34d399" : "#94a3b8" }}>
               {roleIcon} {user?.full_name} · {role.charAt(0).toUpperCase() + role.slice(1)}
             </span>
           </div>

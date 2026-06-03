@@ -124,7 +124,7 @@ export default function CameraScanner({
             style={{ background: "rgba(255,255,255,0.1)", border: "2px solid rgba(255,255,255,0.3)", borderRadius: 12, padding: "14px", color: "#fff", fontSize: 18, width: "100%", maxWidth: 300, textAlign: "center", letterSpacing: 3, marginBottom: 12 }}
             placeholder={placeholder || "0000000000"} autoFocus inputMode={inputMode} />
           <button onClick={handleManualSubmit} disabled={!manualCode.trim()}
-            style={{ background: "#4f46e5", border: "none", borderRadius: 12, padding: "14px 40px", color: "#fff", cursor: "pointer", fontSize: 16, fontWeight: 600, opacity: manualCode.trim() ? 1 : 0.4 }}>
+            style={{ background: "var(--brand)", border: "none", borderRadius: 12, padding: "14px 40px", color: "#152B52", cursor: "pointer", fontSize: 16, fontWeight: 600, opacity: manualCode.trim() ? 1 : 0.4 }}>
             {lang === "en" ? "Search Product" : "Rechercher"}
           </button>
         </div>
@@ -141,7 +141,7 @@ export default function CameraScanner({
                 <div style={{ position: "absolute", top: 0, right: 0, width: 36, height: 36, borderTop: "3px solid #fff", borderRight: "3px solid #fff" }} />
                 <div style={{ position: "absolute", bottom: 0, left: 0, width: 36, height: 36, borderBottom: "3px solid #fff", borderLeft: "3px solid #fff" }} />
                 <div style={{ position: "absolute", bottom: 0, right: 0, width: 36, height: 36, borderBottom: "3px solid #fff", borderRight: "3px solid #fff" }} />
-                <div style={{ position: "absolute", top: "50%", left: 8, right: 8, height: 2, background: "#4f46e5", boxShadow: "0 0 8px #4f46e5" }} />
+                <div style={{ position: "absolute", top: "50%", left: 8, right: 8, height: 2, background: "var(--brand)", boxShadow: "0 0 8px #FBC503" }} />
               </div>
             </div>
             <div style={{ position: "absolute", bottom: 16, left: 0, right: 0, textAlign: "center" }}>
@@ -158,7 +158,7 @@ export default function CameraScanner({
                 style={{ flex: 1, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 10, padding: "10px 14px", color: "#fff", fontSize: 14 }}
                 placeholder={placeholder || (lang === "en" ? "Type barcode..." : "Saisir code-barres...")}
                 inputMode={inputMode} />
-              <button onClick={handleManualSubmit} style={{ background: "#4f46e5", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", cursor: "pointer", fontWeight: 600 }}>
+              <button onClick={handleManualSubmit} style={{ background: "var(--brand)", border: "none", borderRadius: 10, padding: "10px 20px", color: "#152B52", cursor: "pointer", fontWeight: 600 }}>
                 {lang === "en" ? "Go" : "OK"}
               </button>
             </div>

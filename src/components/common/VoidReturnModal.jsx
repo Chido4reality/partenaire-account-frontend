@@ -334,7 +334,7 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
               </div>
             </button>
             <button onClick={() => setMode("exchange")}
-              style={{ padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(79,70,229,0.4)", background: "rgba(79,70,229,0.08)", color: "var(--brand-light)", cursor: "pointer", textAlign: "left", fontWeight: 600 }}>
+              style={{ padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(251,197,3,0.4)", background: "rgba(251,197,3,0.08)", color: "var(--brand-light)", cursor: "pointer", textAlign: "left", fontWeight: 600 }}>
               🔄 {lang === "en" ? "Exchange (swap for another product)" : "Échange (contre un autre produit)"}
               <div style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)", marginTop: 3 }}>
                 {lang === "en" ? "Customer swaps product" : "Client échange un produit"}
@@ -508,7 +508,7 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
               </div>
             )}
             {newItems.map((item, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--bg-card)", borderRadius: 10, padding: "8px 12px", marginBottom: 6, border: "1px solid rgba(79,70,229,0.3)" }}>
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--bg-card)", borderRadius: 10, padding: "8px 12px", marginBottom: 6, border: "1px solid rgba(251,197,3,0.3)" }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 600, fontSize: 13 }}>{item.name}</div>
                   <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
@@ -680,7 +680,7 @@ function ActionButtons({ mode, loading, disabled, onBack, onConfirm, lang }) {
         ← {lang === "en" ? "Back" : "Retour"}
       </button>
       <button onClick={onConfirm} disabled={isDisabled}
-        style={{ flex: 2, padding: "10px", border: "none", borderRadius: 10, background: mode === "void" ? "#ef4444" : mode === "refund" ? "#fbbf24" : "var(--brand)", color: "#fff", cursor: isDisabled ? "not-allowed" : "pointer", opacity: isDisabled ? 0.55 : 1, fontWeight: 700, fontSize: 14 }}>
+        style={{ flex: 2, padding: "10px", border: "none", borderRadius: 10, background: mode === "void" ? "#ef4444" : mode === "refund" ? "#fbbf24" : "var(--brand)", color: "#152B52", cursor: isDisabled ? "not-allowed" : "pointer", opacity: isDisabled ? 0.55 : 1, fontWeight: 700, fontSize: 14 }}>
         {loading ? "..." : (lang === "en" ? labels[mode].en : labels[mode].fr)}
       </button>
     </div>

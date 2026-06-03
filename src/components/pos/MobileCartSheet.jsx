@@ -45,7 +45,7 @@ export default function MobileCartSheet({
   // Background tone shifts when only holds (no live cart) so the
   // strip reads as a "resume" affordance, not a sale total.
   const stripBg = hasItems ? "var(--brand)" : "rgba(245,158,11,0.95)";
-  const stripFg = "#fff";
+  const stripFg = "#152B52";
 
   return (
     <>

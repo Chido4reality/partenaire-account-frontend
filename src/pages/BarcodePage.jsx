@@ -63,7 +63,7 @@ export default function BarcodePage() {
         ${generateBarcodeLines(barcodeCode)}
       </g>
       <text x="${totalWidth/2}" y="${showOrg ? 35 + dims.barcodeH + 12 : 22 + dims.barcodeH + 12}" text-anchor="middle" font-size="${dims.fontSize - 1}" fill="#333" font-family="monospace">${barcodeCode}</text>
-      ${showPrice ? `<text x="${totalWidth/2}" y="${totalHeight - 8}" text-anchor="middle" font-size="${dims.fontSize + 1}" font-weight="bold" fill="#4f46e5">${formatCFA(price)}</text>` : ""}
+      ${showPrice ? `<text x="${totalWidth/2}" y="${totalHeight - 8}" text-anchor="middle" font-size="${dims.fontSize + 1}" font-weight="bold" fill="#152B52">${formatCFA(price)}</text>` : ""}
     </svg>`;
   };
 
@@ -88,7 +88,7 @@ export default function BarcodePage() {
         </style>
       </head><body>
         <div class="no-print" style="padding:10px 0 16px;display:flex;gap:10px;align-items:center">
-          <button onclick="window.print()" style="padding:8px 20px;background:#4f46e5;color:#fff;border:none;borderRadius:8px;cursor:pointer;font-size:14px;font-weight:600">🖨️ Print</button>
+          <button onclick="window.print()" style="padding:8px 20px;background:#152B52;color:#fff;border:none;borderRadius:8px;cursor:pointer;font-size:14px;font-weight:600">🖨️ Print</button>
           <button onclick="window.close()" style="padding:8px 16px;background:#eee;border:none;borderRadius:8px;cursor:pointer;font-size:14px">Close</button>
           <span style="color:#666;font-size:13px">${copies} label(s) for ${selected.name}</span>
         </div>
@@ -112,7 +112,7 @@ export default function BarcodePage() {
         </style>
       </head><body>
         <div class="no-print" style="padding:10px 0 16px">
-          <button onclick="window.print()" style="padding:8px 20px;background:#4f46e5;color:#fff;border:none;borderRadius:8px;cursor:pointer;font-size:14px;font-weight:600">🖨️ Print All</button>
+          <button onclick="window.print()" style="padding:8px 20px;background:#152B52;color:#fff;border:none;borderRadius:8px;cursor:pointer;font-size:14px;font-weight:600">🖨️ Print All</button>
           <button onclick="window.close()" style="padding:8px 16px;background:#eee;border:none;borderRadius:8px;cursor:pointer;margin-left:8px;font-size:14px">Close</button>
         </div>
         <div class="labels">${labelsHtml}</div>
@@ -172,7 +172,7 @@ export default function BarcodePage() {
             ) : products.map(p => (
               <div key={p.id}
                 onClick={() => setSelected(p)}
-                style={{ padding: "10px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", background: selected?.id === p.id ? "rgba(79,70,229,0.1)" : "transparent", borderLeft: selected?.id === p.id ? "3px solid var(--brand)" : "3px solid transparent" }}
+                style={{ padding: "10px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", background: selected?.id === p.id ? "rgba(251,197,3,0.1)" : "transparent", borderLeft: selected?.id === p.id ? "3px solid var(--brand)" : "3px solid transparent" }}
                 onMouseEnter={e => selected?.id !== p.id && (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}
                 onMouseLeave={e => selected?.id !== p.id && (e.currentTarget.style.background = "transparent")}>
                 <div style={{ flex: 1 }}>
@@ -202,7 +202,7 @@ export default function BarcodePage() {
               <div style={{ display: "flex", gap: 6 }}>
                 {["small", "medium", "large"].map(s => (
                   <button key={s} onClick={() => setLabelSize(s)}
-                    style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: `1px solid ${labelSize === s ? "var(--brand)" : "var(--border)"}`, background: labelSize === s ? "rgba(79,70,229,0.15)" : "var(--bg-elevated)", color: labelSize === s ? "var(--brand-light)" : "var(--text-muted)", cursor: "pointer", fontSize: 11, fontWeight: labelSize === s ? 700 : 400 }}>
+                    style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: `1px solid ${labelSize === s ? "var(--brand)" : "var(--border)"}`, background: labelSize === s ? "rgba(251,197,3,0.15)" : "var(--bg-elevated)", color: labelSize === s ? "var(--brand-light)" : "var(--text-muted)", cursor: "pointer", fontSize: 11, fontWeight: labelSize === s ? 700 : 400 }}>
                     {s.charAt(0).toUpperCase() + s.slice(1)}
                   </button>
                 ))}

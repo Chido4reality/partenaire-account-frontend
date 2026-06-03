@@ -437,7 +437,7 @@ export default function CustomersPage() {
 
   const typeColor = (type) => {
     if (type === "vip")       return { bg: "rgba(245,158,11,0.15)",  color: "#fbbf24" };
-    if (type === "wholesale") return { bg: "rgba(79,70,229,0.15)",   color: "#818cf8" };
+    if (type === "wholesale") return { bg: "rgba(251,197,3,0.15)",   color: "var(--brand-light)" };
     if (type === "garage")    return { bg: "rgba(16,185,129,0.15)",  color: "#34d399" };
     return { bg: "rgba(255,255,255,0.05)", color: "var(--text-secondary)" };
   };
@@ -521,7 +521,7 @@ export default function CustomersPage() {
               const isSelected = selected?.id === c.id;
               return (
                 <div key={c.id} onClick={() => setSelected(c)}
-                  style={{ background: isSelected ? "rgba(79,70,229,0.1)" : "var(--bg-card)", border: `1px solid ${isSelected ? "var(--brand)" : "var(--border)"}`, borderRadius: 12, padding: "14px 18px", cursor: "pointer", transition: "all 0.15s" }}>
+                  style={{ background: isSelected ? "rgba(251,197,3,0.1)" : "var(--bg-card)", border: `1px solid ${isSelected ? "var(--brand)" : "var(--border)"}`, borderRadius: 12, padding: "14px 18px", cursor: "pointer", transition: "all 0.15s" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
@@ -606,7 +606,7 @@ export default function CustomersPage() {
                       padding: "10px 14px", borderRadius: 10,
                       border: `1px solid ${disabled ? "var(--border)" : "var(--brand)"}`,
                       background: disabled ? "var(--bg-elevated)" : "var(--brand)",
-                      color: disabled ? "var(--text-muted)" : "#fff",
+                      color: disabled ? "var(--text-muted)" : "#152B52",
                       fontWeight: 700, fontSize: 13,
                       cursor: disabled ? "not-allowed" : "pointer",
                       opacity: disabled ? 0.6 : 1,
@@ -834,7 +834,7 @@ export default function CustomersPage() {
                       onClick={() => setCollectForm(f => ({ ...f, payment_method: m.key }))}
                       style={{ padding: "8px 4px", borderRadius: 8,
                                border: `1.5px solid ${collectForm.payment_method === m.key ? "var(--brand)" : "var(--border)"}`,
-                               background: collectForm.payment_method === m.key ? "rgba(79,70,229,0.12)" : "transparent",
+                               background: collectForm.payment_method === m.key ? "rgba(251,197,3,0.12)" : "transparent",
                                color: collectForm.payment_method === m.key ? "var(--brand-light)" : "var(--text-secondary)",
                                cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
                       <div style={{ fontSize: 14 }}>{m.icon}</div>

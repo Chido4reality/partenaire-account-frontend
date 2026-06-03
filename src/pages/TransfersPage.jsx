@@ -125,7 +125,7 @@ export default function TransfersPage() {
     if (s === "completed") return { bg: "rgba(16,185,129,0.15)", color: "#34d399" };
     if (s === "in_transit") return { bg: "rgba(245,158,11,0.15)", color: "#fbbf24" };
     if (s === "cancelled") return { bg: "rgba(239,68,68,0.15)", color: "#f87171" };
-    return { bg: "rgba(79,70,229,0.15)", color: "var(--brand-light)" };
+    return { bg: "rgba(251,197,3,0.15)", color: "var(--brand-light)" };
   };
 
   const resetNew = () => { setMode("list"); setStep(1); setFromLoc(""); setToLoc(""); setNotes(""); setScannedItems([]); };
@@ -140,7 +140,7 @@ export default function TransfersPage() {
           <h1 className="page-title">{lang === "en" ? "New Transfer" : "Nouveau transfert"}</h1>
           <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
             {[1,2,3].map(s => (
-              <div key={s} style={{ width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, background: step >= s ? "var(--brand)" : "var(--bg-elevated)", color: step >= s ? "#fff" : "var(--text-muted)", border: "1px solid " + (step >= s ? "var(--brand)" : "var(--border)") }}>{s}</div>
+              <div key={s} style={{ width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, background: step >= s ? "var(--brand)" : "var(--bg-elevated)", color: step >= s ? "#152B52" : "var(--text-muted)", border: "1px solid " + (step >= s ? "var(--brand)" : "var(--border)") }}>{s}</div>
             ))}
           </div>
         </div>

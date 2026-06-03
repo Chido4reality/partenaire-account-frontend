@@ -7,7 +7,7 @@ import api, { formatCFA } from "../../utils/api";
 const PAYMENT_METHODS = [
   { value: "mtn_momo",      label: "MTN Mobile Money",    icon: "📱", color: "#FFC300" },
   { value: "orange_money",  label: "Orange Money",         icon: "🟠", color: "#FF6600" },
-  { value: "campay",        label: "CamPay (Auto)",        icon: "⚡", color: "#4f46e5" },
+  { value: "campay",        label: "CamPay (Auto)",        icon: "⚡", color: "var(--brand)" },
   { value: "cash",          label: "Cash",                 icon: "💵", color: "#10b981" },
   { value: "bank",          label: "Bank Transfer",        icon: "🏦", color: "#6366f1" },
 ];
@@ -157,7 +157,7 @@ export default function UpgradeModal({ onClose, currentPlan }) {
             {plansError && <div style={{ textAlign: "center", padding: 20, color: "#f87171" }}>Failed to load plans. Please try again.</div>}
             {plans.map(plan => (
               <div key={plan.id} onClick={() => setSelectedPlan(plan)}
-                style={{ padding: 16, borderRadius: 14, border: `2px solid ${selectedPlan?.id === plan.id ? "var(--brand)" : "var(--border)"}`, background: selectedPlan?.id === plan.id ? "rgba(79,70,229,0.08)" : "var(--bg-card)", cursor: "pointer", marginBottom: 10, transition: "all 0.15s" }}>
+                style={{ padding: 16, borderRadius: 14, border: `2px solid ${selectedPlan?.id === plan.id ? "var(--brand)" : "var(--border)"}`, background: selectedPlan?.id === plan.id ? "rgba(251,197,3,0.08)" : "var(--bg-card)", cursor: "pointer", marginBottom: 10, transition: "all 0.15s" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <div>
                     <div style={{ fontWeight: 800, fontSize: 16 }}>{plan.badge_icon} {plan.name}</div>
@@ -168,7 +168,7 @@ export default function UpgradeModal({ onClose, currentPlan }) {
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
                       {(Array.isArray(plan.features) ? plan.features : (() => { try { return JSON.parse(plan.features || "[]"); } catch { return []; } })()).map((f, i) => (
-                        <span key={i} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: "rgba(79,70,229,0.1)", color: "var(--brand-light)" }}>✓ {f}</span>
+                        <span key={i} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: "rgba(251,197,3,0.1)", color: "var(--brand-light)" }}>✓ {f}</span>
                       ))}
                     </div>
                   </div>
@@ -284,7 +284,7 @@ export default function UpgradeModal({ onClose, currentPlan }) {
             </div>
 
             {paymentMethod === "campay" ? (
-              <div style={{ background: "rgba(79,70,229,0.08)", border: "1px solid rgba(79,70,229,0.25)", borderRadius: 10, padding: 12, marginBottom: 16, fontSize: 12, color: "var(--brand-light)" }}>
+              <div style={{ background: "rgba(251,197,3,0.08)", border: "1px solid rgba(251,197,3,0.25)", borderRadius: 10, padding: 12, marginBottom: 16, fontSize: 12, color: "var(--brand-light)" }}>
                 ⚡ {lang === "en"
                   ? `A USSD push will be sent to ${phone}. Accept it to complete payment automatically.`
                   : `Un USSD push sera envoyé au ${phone}. Acceptez-le pour finaliser le paiement automatiquement.`}
@@ -300,7 +300,7 @@ export default function UpgradeModal({ onClose, currentPlan }) {
             <div style={{ display: "flex", gap: 10 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setStep(2)}>← {lang === "en" ? "Back" : "Retour"}</button>
               {paymentMethod === "campay" ? (
-                <button className="btn btn-primary" style={{ flex: 2, background: "#4f46e5", borderColor: "#4f46e5" }}
+                <button className="btn btn-primary" style={{ flex: 2, background: "var(--brand)", borderColor: "var(--brand)" }}
                   disabled={campayMutation.isPending || !momoValid} onClick={() => campayMutation.mutate()}>
                   {campayMutation.isPending ? "⏳ Initiating..." : (lang === "en" ? "⚡ Pay with CamPay" : "⚡ Payer via CamPay")}
                 </button>
@@ -329,13 +329,13 @@ export default function UpgradeModal({ onClose, currentPlan }) {
                     : `Vérifiez votre téléphone (${phone}) et acceptez le USSD.`}
                 </div>
                 {campayUssd && (
-                  <div style={{ background: "rgba(79,70,229,0.1)", border: "1px solid rgba(79,70,229,0.3)", borderRadius: 12, padding: "14px 20px", marginBottom: 20, display: "inline-block" }}>
+                  <div style={{ background: "rgba(251,197,3,0.1)", border: "1px solid rgba(251,197,3,0.3)", borderRadius: 12, padding: "14px 20px", marginBottom: 20, display: "inline-block" }}>
                     <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4, textTransform: "uppercase", fontWeight: 700 }}>USSD Code</div>
                     <div style={{ fontWeight: 800, fontSize: 22, letterSpacing: 2 }}>{campayUssd}</div>
                   </div>
                 )}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "var(--text-muted)", fontSize: 12 }}>
-                  <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#4f46e5", animation: "pulse 1.5s infinite" }} />
+                  <div style={{ width: 10, height: 10, borderRadius: "50%", background: "var(--brand)", animation: "pulse 1.5s infinite" }} />
                   {lang === "en" ? `Checking… ${pollSeconds}s / 120s` : `Vérification… ${pollSeconds}s / 120s`}
                 </div>
                 <div style={{ marginTop: 20 }}>

@@ -351,7 +351,7 @@ export default function DrawerDashboardCard() {
             }
             action={
               <button onClick={() => setShowOpen(true)}
-                style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid var(--brand)", background: "var(--brand)", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid var(--brand)", background: "var(--brand)", color: "#152B52", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
                 {fr ? "Ouvrir le poste" : "Open shift"}
               </button>
             }
@@ -491,7 +491,7 @@ export default function DrawerDashboardCard() {
               </button>
             ) : (
               <button onClick={() => setShowOpen(true)}
-                style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid var(--brand)", background: "var(--brand)", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid var(--brand)", background: "var(--brand)", color: "#152B52", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
                 🔓 {fr ? "Ouvrir un nouveau poste" : "Open new shift"}
               </button>
             )}

@@ -9,7 +9,13 @@
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --brand:#4f46e5;--brand-light:#818cf8;--brand-dark:#3730a3;
+  /* MP-REBRAND (3 Jun): navy + gold. Dark theme → GOLD is the highlight
+     (buttons, active nav, links, focus) because it pops on the near-black
+     base; NAVY is for tints/badges; gold buttons take navy (--on-brand)
+     text since white-on-gold is illegible. Amber (--warning) stays for
+     warnings; only brand/indigo accents moved to gold. */
+  --brand:#FBC503;--brand-light:#FFD740;--brand-dark:#D9A400;
+  --brand-navy:#152B52;--on-brand:#152B52;
   --success:#10b981;--warning:#f59e0b;--danger:#ef4444;
   --bg-base:#0f0e17;--bg-surface:#1a1928;--bg-elevated:#232235;--bg-card:#1e1d2e;
   --text-primary:#f4f3ff;--text-secondary:#a09fbe;--text-muted:#6b6a8a;
@@ -29,7 +35,7 @@ html,body,#root{height:100%;background:var(--bg-base);color:var(--text-primary);
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--border-hover);border-radius:4px}
 .card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 18px;border-radius:var(--radius-md);font-family:var(--font-body);font-size:14px;font-weight:500;cursor:pointer;border:none;transition:all 0.15s;white-space:nowrap}
-.btn-primary{background:var(--brand);color:#fff}.btn-primary:hover{background:var(--brand-dark)}
+.btn-primary{background:var(--brand);color:var(--on-brand);font-weight:600}.btn-primary:hover{background:var(--brand-dark)}
 .btn-secondary{background:var(--bg-elevated);color:var(--text-primary);border:1px solid var(--border)}
 .btn-success{background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.2)}
 .btn-danger{background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.2)}

@@ -200,11 +200,11 @@ export default function CreditsPage() {
               const isSelected = selected?.id === c.id;
               return (
                 <div key={c.id} onClick={() => setSelected(c)}
-                  style={{ background: isSelected ? "rgba(79,70,229,0.1)" : "var(--bg-card)", border: `1px solid ${isSelected ? "var(--brand)" : isOverdue ? "rgba(239,68,68,0.3)" : "var(--border)"}`, borderRadius: 12, padding: "14px 18px", cursor: "pointer", transition: "all 0.15s" }}>
+                  style={{ background: isSelected ? "rgba(251,197,3,0.1)" : "var(--bg-card)", border: `1px solid ${isSelected ? "var(--brand)" : isOverdue ? "rgba(239,68,68,0.3)" : "var(--border)"}`, borderRadius: 12, padding: "14px 18px", cursor: "pointer", transition: "all 0.15s" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                        <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(79,70,229,0.2)", color: "var(--brand-light)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
+                        <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(251,197,3,0.2)", color: "var(--brand-light)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
                           {c.name.charAt(0).toUpperCase()}
                         </div>
                         <div>

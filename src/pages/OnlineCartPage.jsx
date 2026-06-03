@@ -204,7 +204,7 @@ function MappingModal({ entry, lang, busy, onConfirm, onClose, confirmLabel }) {
               {lang === "en" ? "Cancel" : "Annuler"}
             </button>
             <button onClick={submit} disabled={!allMapped || busy}
-              style={{ padding: "8px 16px", borderRadius: 8, background: (!allMapped || busy) ? "rgba(79,70,229,0.4)" : "var(--brand)", border: "none", color: "#fff", fontWeight: 600, cursor: (!allMapped || busy) ? "not-allowed" : "pointer", fontSize: 13 }}>
+              style={{ padding: "8px 16px", borderRadius: 8, background: (!allMapped || busy) ? "rgba(251,197,3,0.4)" : "var(--brand)", border: "none", color: "#152B52", fontWeight: 600, cursor: (!allMapped || busy) ? "not-allowed" : "pointer", fontSize: 13 }}>
               {busy ? "…" : confirmLabel}
             </button>
           </div>
@@ -377,7 +377,7 @@ export default function OnlineCartPage() {
           <button key={tb.key} onClick={() => setTab(tb.key)}
             style={{ padding: "7px 14px", borderRadius: 8, fontSize: 13, fontWeight: tab === tb.key ? 700 : 400,
               background: tab === tb.key ? "var(--brand)" : "transparent",
-              color: tab === tb.key ? "#fff" : "var(--text-secondary)",
+              color: tab === tb.key ? "#152B52" : "var(--text-secondary)",
               border: "1px solid " + (tab === tb.key ? "var(--brand)" : "var(--border)"), cursor: "pointer" }}>
             {lang === "en" ? tb.en : tb.fr}
           </button>
@@ -453,7 +453,7 @@ export default function OnlineCartPage() {
               )}
               {openEntry.status === "pending" && openEntry.payment_mode !== "paid_online_full" && !openEntry.cart_started_at && (
                 <button onClick={() => startMap("send")}
-                  style={{ padding: "8px 16px", borderRadius: 8, background: "var(--brand)", border: "none", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>
+                  style={{ padding: "8px 16px", borderRadius: 8, background: "var(--brand)", border: "none", color: "#152B52", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>
                   → {t("Send to Cart", "Envoyer au panier")}
                 </button>
               )}
