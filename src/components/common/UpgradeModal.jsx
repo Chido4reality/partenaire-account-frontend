@@ -7,7 +7,7 @@ import api, { formatCFA } from "../../utils/api";
 const PAYMENT_METHODS = [
   { value: "mtn_momo",      label: "MTN Mobile Money",    icon: "📱", color: "#FFC300" },
   { value: "orange_money",  label: "Orange Money",         icon: "🟠", color: "#FF6600" },
-  { value: "campay",        label: "CamPay (Auto)",        icon: "⚡", color: "var(--brand)" },
+  { value: "campay",        label: "CamPay (online)",      icon: "⚡", color: "var(--brand)", comingSoon: true },
   { value: "cash",          label: "Cash",                 icon: "💵", color: "#10b981" },
   { value: "bank",          label: "Bank Transfer",        icon: "🏦", color: "#6366f1" },
 ];
@@ -205,11 +205,13 @@ export default function UpgradeModal({ onClose, currentPlan }) {
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
               {PAYMENT_METHODS.map(pm => (
-                <div key={pm.value} onClick={() => setPaymentMethod(pm.value)}
-                  style={{ padding: "12px 16px", borderRadius: 12, border: `2px solid ${paymentMethod === pm.value ? pm.color : "var(--border)"}`, background: paymentMethod === pm.value ? `${pm.color}15` : "var(--bg-card)", cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
+                <div key={pm.value} onClick={() => { if (!pm.comingSoon) setPaymentMethod(pm.value); }}
+                  style={{ padding: "12px 16px", borderRadius: 12, border: `2px solid ${paymentMethod === pm.value ? pm.color : "var(--border)"}`, background: paymentMethod === pm.value ? `${pm.color}15` : "var(--bg-card)", cursor: pm.comingSoon ? "not-allowed" : "pointer", opacity: pm.comingSoon ? 0.5 : 1, display: "flex", alignItems: "center", gap: 12 }}>
                   <span style={{ fontSize: 20 }}>{pm.icon}</span>
                   <span style={{ fontWeight: 600, fontSize: 14 }}>{pm.label}</span>
-                  {pm.value === "campay" && <span style={{ fontSize: 11, color: "var(--brand-light)", marginLeft: "auto" }}>⚡ Auto-approved</span>}
+                  {pm.comingSoon
+                    ? <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: "auto" }}>{lang === "en" ? "Online payment — Coming soon" : "Paiement en ligne — Bientôt disponible"}</span>
+                    : null}
                 </div>
               ))}
             </div>
