@@ -15,6 +15,7 @@ import ReportsPage from "./pages/ReportsPage";
 import RefundsPage from "./pages/RefundsPage";
 import TransfersPage from "./pages/TransfersPage";
 import ExpenditurePage from "./pages/ExpenditurePage";
+import RequestActivationPage from "./pages/RequestActivationPage";
 import CreditsPage from "./pages/CreditsPage";
 import CustomersPage from "./pages/CustomersPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -332,6 +333,8 @@ export default function App() {
                 operational and must work on every plan tier. */}
             <Route path="refunds"      element={<RoleGuard path="/refunds"><RefundsPage /></RoleGuard>} />
             <Route path="settings"     element={<RoleGuard path="/settings"><PlanGuard path="/settings"><SettingsPage /></PlanGuard></RoleGuard>} />
+            {/* MP-RESTRICTED-MODE (B2): reachable even when restricted — no PlanGuard. */}
+            <Route path="request-activation" element={<RequestActivationPage />} />
             <Route path="shifts"       element={<RoleGuard path="/shifts"><ShiftsPage /></RoleGuard>} />
             <Route path="stock-count"  element={<RoleGuard path="/stock-count"><PlanGuard path="/stock-count"><StockCountPage /></PlanGuard></RoleGuard>} />
             <Route path="barcodes"     element={<RoleGuard path="/barcodes"><PlanGuard path="/barcodes"><BarcodePage /></PlanGuard></RoleGuard>} />

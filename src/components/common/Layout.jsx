@@ -251,6 +251,57 @@ function BroadcastBanner() {
   );
 }
 
+// MP-RESTRICTED-MODE (B1): top banner shown whenever the org is locked out
+// (expired/suspended, no active plan). Tap → /request-activation. Copy flips
+// to "awaiting approval" once a request is pending. Self-contained so it can
+// drop into both the mobile and desktop layout branches.
+function RestrictedBanner() {
+  const { lang } = useLangStore();
+  const navigate = useNavigate();
+  const isAuth = useAuthStore(s => s.isAuthenticated);
+  const { data } = useQuery({
+    queryKey: ["my-plan"],
+    queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
+    enabled: isAuth, staleTime: 60000, retry: false,
+  });
+  const plan = data?.data;
+  if (!plan?.is_restricted) return null;
+  const pending = !!plan.has_pending_request;
+  return (
+    <div role="status" onClick={() => navigate("/request-activation")}
+      style={{ cursor: "pointer", flexShrink: 0, width: "100%", textAlign: "center", padding: "8px 12px", fontSize: 12, fontWeight: 700,
+        background: pending ? "rgba(245,158,11,0.16)" : "rgba(239,68,68,0.16)",
+        color: pending ? "#fbbf24" : "#fca5a5",
+        borderBottom: `1px solid ${pending ? "rgba(245,158,11,0.4)" : "rgba(239,68,68,0.4)"}` }}>
+      {pending
+        ? (lang === "en" ? "⏳ Activation request awaiting approval." : "⏳ Demande d'activation en attente d'approbation.")
+        : (lang === "en" ? "🔒 Subscription expired. Tap to request activation to resume." : "🔒 Abonnement expiré. Appuyez pour demander l'activation.")}
+    </div>
+  );
+}
+
+// Locked content shown in place of a blocked page's <Outlet/> when restricted.
+function RestrictedLock({ lang, hasPending, onRequest }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", padding: 40, textAlign: "center" }}>
+      <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
+      <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 8 }}>
+        {lang === "en" ? "Subscription expired" : "Abonnement expiré"}
+      </div>
+      <div style={{ color: "var(--text-muted)", fontSize: 14, maxWidth: 340, marginBottom: 20 }}>
+        {hasPending
+          ? (lang === "en" ? "Your activation request is awaiting admin approval. Access returns as soon as it's approved." : "Votre demande d'activation est en attente d'approbation. L'accès reviendra dès l'approbation.")
+          : (lang === "en" ? "Request activation to resume using the app." : "Demandez l'activation pour reprendre l'utilisation de l'application.")}
+      </div>
+      {!hasPending && (
+        <button className="btn btn-primary" onClick={onRequest}>
+          {lang === "en" ? "Request activation" : "Demander l'activation"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function Layout() {
   const { user, org, logout } = useAuthStore();
   // MP-LITE-MODE-PHASE-1: tightens visible NAV + skips polled queries
@@ -449,6 +500,12 @@ export default function Layout() {
   const isGrace        = !!myPlan?.is_grace;
   const trialDaysLeft  = myPlan?.days_remaining_in_trial;
   const graceDaysLeft  = myPlan?.days_remaining_in_grace;
+  // MP-RESTRICTED-MODE (B1): hard lock for expired/suspended orgs. Only the
+  // dashboard, settings, and the activation page stay reachable.
+  const isRestricted       = !!myPlan?.is_restricted;
+  const hasPendingRequest  = !!myPlan?.has_pending_request;
+  const RESTRICTED_ALLOWED = ["/", "/settings", "/request-activation"];
+  const restrictedBlock    = isRestricted && !RESTRICTED_ALLOWED.includes(location.pathname);
   // MP-LITE-MODE-PHASE-1: hide Online Cart, Operations dashboard nav
   // entries in Lite. Settings, POS, Inventory, Customers, Credits,
   // Reports etc. stay — per directive amendment, multi-location and
@@ -861,7 +918,7 @@ export default function Layout() {
         <OnlineOfflineBar />
         <ImpersonationBanner />
         <TrialBanner />
-        <BroadcastBanner />
+        <BroadcastBanner /><RestrictedBanner />
         <div style={{ background: "var(--bg-surface)", borderBottom: "1px solid var(--border)", padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, gap: 10 }}>
           {/* MP-MOBILE-UI-PHASE-1: hamburger trigger added inline to the
               existing mobile top bar so we don't fork the bar layout.
@@ -907,7 +964,7 @@ export default function Layout() {
         </div>
 
         <main style={{ flex: 1, overflowY: "auto", background: "var(--bg-base)" }}>
-          <Outlet />
+          {restrictedBlock ? <RestrictedLock lang={lang} hasPending={hasPendingRequest} onRequest={() => navigate("/request-activation")} /> : <Outlet />}
         </main>
 
         <div style={{ background: "var(--bg-surface)", borderTop: "1px solid var(--border)", display: "flex", flexShrink: 0, paddingBottom: "var(--safe-area-bottom)" }}>
@@ -942,7 +999,7 @@ export default function Layout() {
           regardless of viewport. */}
       <OnlineOfflineBar />
       <ImpersonationBanner />
-      <BroadcastBanner />
+      <BroadcastBanner /><RestrictedBanner />
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
       <aside style={{ width: collapsed ? 60 : 220, flexShrink: 0, height: "100%", background: "var(--bg-surface)", borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", transition: "width 0.2s ease", position: "sticky", top: 0, overflow: "hidden" }}>
 
@@ -1110,7 +1167,7 @@ export default function Layout() {
       </aside>
 
       <main style={{ flex: 1, overflowY: "auto", background: "var(--bg-base)" }}>
-        <Outlet />
+        {restrictedBlock ? <RestrictedLock lang={lang} hasPending={hasPendingRequest} onRequest={() => navigate("/request-activation")} /> : <Outlet />}
       </main>
 
       {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} currentPlan={myPlan?.plan} />}

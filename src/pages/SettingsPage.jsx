@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useAuthStore, useLangStore, useSettingsStore } from "../store";
@@ -833,10 +834,14 @@ export default function SettingsPage() {
               </div>
             ))}
           </div>
-          <div style={{ marginTop: 20 }}>
+          <div style={{ marginTop: 20, display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button className="btn btn-secondary" onClick={() => setLang(lang === "en" ? "fr" : "en")}>
               🌐 {lang === "en" ? "Switch to Français" : "Switch to English"}
             </button>
+            {/* MP-RESTRICTED-MODE (B2): subscription entry point — always reachable. */}
+            <Link to="/request-activation" className="btn btn-primary" style={{ textDecoration: "none" }}>
+              💳 {lang === "en" ? "Manage subscription" : "Gérer l'abonnement"}
+            </Link>
           </div>
         </div>
       )}
