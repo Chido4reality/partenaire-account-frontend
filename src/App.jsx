@@ -1,5 +1,5 @@
 import InventoryPage from "./pages/InventoryPage";
-import { useEffect, Component } from "react";
+import { useEffect, useState, Component } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster, toast } from "react-hot-toast";
@@ -253,6 +253,16 @@ async function consumeImpersonateToken() {
 
 export default function App() {
   const { setOnline } = useOfflineStore();
+  // MP-IMPERSONATION (Bug #3): when an ?impersonate token is present, hold the
+  // router until the async token-exchange resolves — otherwise the auth Guard
+  // renders first, sees no session, and redirects to /login before the
+  // impersonated login completes, stranding the admin on the login screen.
+  const [bootstrapping, setBootstrapping] = useState(() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      return p.has("impersonate") || p.has("impersonate_token");
+    } catch { return false; }
+  });
   useEffect(() => {
     // MP-MOBILE-UI-PHASE-1: belt-and-suspenders runtime StatusBar config.
     // capacitor.config.ts already declares Style.Dark + bg #1a1f2e on
@@ -272,7 +282,10 @@ export default function App() {
     // Fire the impersonation consumer eagerly. It only does anything when
     // ?impersonate_token= is present in the URL, otherwise it's a quick
     // URLSearchParams check.
-    consumeImpersonateToken();
+    (async () => {
+      try { await consumeImpersonateToken(); }
+      finally { setBootstrapping(false); }
+    })();
 
     // MP-RENDER-COLDSTART-WARMUP: fire-and-forget HEAD ping at app launch
     // to prime Render's container. Free-tier cold-start is 30-60s when
@@ -308,6 +321,13 @@ export default function App() {
     };
   }, []);
 
+  if (bootstrapping) {
+    return (
+      <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-base)", color: "var(--text-muted)", fontSize: 14 }}>
+        Signing in…
+      </div>
+    );
+  }
   return (
     <ErrorBoundary>
     <QueryClientProvider client={qc}>
