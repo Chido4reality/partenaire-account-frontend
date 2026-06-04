@@ -1,5 +1,8 @@
 {
   "rewrites": [
+    { "source": "/privacy-en", "destination": "/privacy-en.html" },
+    { "source": "/privacy-fr", "destination": "/privacy-fr.html" },
+    { "source": "/privacy", "destination": "/privacy.html" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
