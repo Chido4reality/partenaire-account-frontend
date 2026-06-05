@@ -34,7 +34,7 @@ export default defineConfig({
         // has its own SW; precaching it here would make the two fight.
         globIgnores: ["**/admin.html", "**/admin-manifest.json", "**/sw-admin.js"],
         navigateFallback: "/index.html",
-        navigateFallbackDenylist: [/^\/api/, /^\/admin/, /^\/privacy/],
+        navigateFallbackDenylist: [/^\/api/, /^\/admin/, /^\/privacy/, /^\/suppression-compte/],
         runtimeCaching: [
           {
             // API is NEVER cached — pass straight to network so the axios
