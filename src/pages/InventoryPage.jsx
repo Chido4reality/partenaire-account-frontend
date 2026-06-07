@@ -167,6 +167,9 @@ export default function InventoryPage() {
   const [dozieSaving, setDozieSaving] = useState(false);
   const [editPhotoUploading, setEditPhotoUploading] = useState(false);
   const [newProduct, setNewProduct] = useState(EMPTY_PRODUCT);
+  // MP-PRODUCT-DEDUP: existing product found by barcode/name when adding, so the
+  // Add modal can offer to open/edit it instead of creating a duplicate.
+  const [dupeProduct, setDupeProduct] = useState(null);
 
   // Receive Goods state
   const [receiveForm, setReceiveForm] = useState({
@@ -296,6 +299,8 @@ export default function InventoryPage() {
     setNewProduct(p => ({ ...p, initial_location_id: defaultInitialLocId }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showAddProduct, defaultInitialLocId]);
+  // MP-PRODUCT-DEDUP: clear any stale duplicate notice when the Add modal opens.
+  useEffect(() => { if (showAddProduct) setDupeProduct(null); }, [showAddProduct]);
   // Rapid Entry modal: same logic. The existing flow at rapidMutation
   // onSuccess preserves initial_location_id across batch submits, so
   // this useEffect only matters for the first product of a session.
@@ -595,8 +600,41 @@ export default function InventoryPage() {
         invalidateAll();
       }
     },
-    onError: (err) => toast.error(err.response?.data?.message || "Error")
+    onError: (err) => {
+      // MP-PRODUCT-DEDUP: backend rejected an identical product — surface the
+      // existing one in the modal with an open/edit offer.
+      if (err.response?.status === 409 && err.response?.data?.code === "PRODUCT_EXISTS") {
+        setDupeProduct(err.response.data.existing || null);
+        return;
+      }
+      toast.error(err.response?.data?.message || "Error");
+    }
   });
+
+  // MP-PRODUCT-DEDUP: client-side pre-check (barcode-first, else normalized
+  // name) against the loaded list for instant feedback; the backend 409 above
+  // is the authoritative guard (covers list>500 / offline replay / race).
+  const handleAddProduct = () => {
+    setDupeProduct(null);
+    const bc = (newProduct.barcode || "").trim();
+    let local = null;
+    if (bc) {
+      local = products.find(p => (p.barcode || "").trim() === bc);
+    } else {
+      const wn = (newProduct.name || "").trim().toLowerCase();
+      local = products.find(p => (p.name || "").trim().toLowerCase() === wn);
+    }
+    if (local) { setDupeProduct({ id: local.id, name: local.name, barcode: local.barcode }); return; }
+    addProductMutation.mutate();
+  };
+  // Open the existing product for edit/restock (full row from the loaded list).
+  const openExistingProduct = (m) => {
+    setDupeProduct(null);
+    setShowAddProduct(false);
+    const full = products.find(p => p.id === m.id) || m;
+    setEditProduct({ ...full });
+    setShowEditProduct(true);
+  };
 
   // ── EDIT PRODUCT MUTATION ───────────────────────────────────────────────────
   // MP-OWNER-PIN-APPROVAL (Wave 2): manager-initiated edits via this
@@ -1461,9 +1499,19 @@ export default function InventoryPage() {
               </div>
             </div>
 
+            {dupeProduct && (
+              <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 10, padding: "12px 14px", marginBottom: 12 }}>
+                <div style={{ fontSize: 13, color: "#b91c1c", fontWeight: 600, marginBottom: 8 }}>
+                  ⚠️ {lang === "en" ? "This item already exists" : "Cet article existe déjà"}{dupeProduct.name ? ` : ${dupeProduct.name}` : ""}
+                </div>
+                <button className="btn btn-primary btn-block" onClick={() => openExistingProduct(dupeProduct)}>
+                  {lang === "en" ? "Open / edit / restock it" : "Ouvrir / modifier / réapprovisionner"}
+                </button>
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowAddProduct(false)}>{lang === "en" ? "Cancel" : "Annuler"}</button>
-              <button className="btn btn-primary" style={{ flex: 2 }} disabled={!newProduct.name || !newProduct.sell_price || addProductMutation.isPending} onClick={() => addProductMutation.mutate()}>
+              <button className="btn btn-primary" style={{ flex: 2 }} disabled={!newProduct.name || !newProduct.sell_price || addProductMutation.isPending} onClick={handleAddProduct}>
                 {addProductMutation.isPending ? "..." : (lang === "en" ? "✓ Create Product" : "✓ Créer le produit")}
               </button>
             </div>

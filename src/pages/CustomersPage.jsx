@@ -60,6 +60,10 @@ export default function CustomersPage() {
   const [confirmDel, setConfirmDel] = useState(null); // MP-CUSTOMER-DELETE: customer pending delete
   const [delError, setDelError]     = useState(null); // 409 message shown in the modal
   const [form, setForm]             = useState({ name: "", phone: "", address: "", customer_type: "retail", credit_limit: "", notes: "", total_debt: "" });
+  // MP-CUSTOMER-DEDUP: when a phone already belongs to a customer, hold that
+  // existing customer here so the Add modal can offer to open it instead of
+  // creating a split duplicate.
+  const [dupeMatch, setDupeMatch]   = useState(null);
   // MP-COLLECT-DEBT-NO-INVOICE: separate concern from the edit form.
   // Edit form = admin correction of the balance number; this = cashier
   // recording real money received (creates pa_sales + pa_payments +
@@ -115,8 +119,25 @@ export default function CustomersPage() {
   // Opening "Add customer" must start from a clean form (don't inherit a
   // previously-edited customer's values).
   useEffect(() => {
-    if (showAdd) setForm({ name: "", phone: "", address: "", customer_type: "retail", credit_limit: "", notes: "", total_debt: "" });
+    if (showAdd) { setForm({ name: "", phone: "", address: "", customer_type: "retail", credit_limit: "", notes: "", total_debt: "" }); setDupeMatch(null); }
   }, [showAdd]);
+
+  // MP-CUSTOMER-DEDUP: digits-only phone normalizer (matches the backend).
+  const normPhone = (p) => String(p || "").replace(/\D/g, "");
+  // Open the existing customer the dupe check found (close Add, select it).
+  const openExistingCustomer = (m) => { setDupeMatch(null); setShowAdd(false); setSelected({ id: m.id, name: m.name, phone: m.phone }); };
+  // Submit handler with a client-side pre-check against the loaded list (instant
+  // feedback); the backend 409 below is the authoritative guard (normalized,
+  // covers list-miss / double-submit / race).
+  const handleAddCustomer = () => {
+    setDupeMatch(null);
+    const inc = normPhone(form.phone);
+    if (inc) {
+      const local = (data?.data || []).find(c => normPhone(c.phone) === inc);
+      if (local) { setDupeMatch({ id: local.id, name: local.name, phone: local.phone }); return; }
+    }
+    addMutation.mutate();
+  };
 
   const addMutation = useMutation({
     mutationFn: () => api.post("/customers", { ...form, credit_limit: +form.credit_limit || 0, total_debt: +form.total_debt || 0 }),
@@ -127,7 +148,15 @@ export default function CustomersPage() {
       qc.invalidateQueries(["customers"]);
       qc.invalidateQueries(["customer-summary"]);
     },
-    onError: (err) => toast.error(err.response?.data?.message || "Error")
+    onError: (err) => {
+      // MP-CUSTOMER-DEDUP: backend rejected a same-phone duplicate — surface
+      // the existing customer in the modal with an "open" offer.
+      if (err.response?.status === 409 && err.response?.data?.code === "CUSTOMER_PHONE_EXISTS") {
+        setDupeMatch(err.response.data.existing || null);
+        return;
+      }
+      toast.error(err.response?.data?.message || "Error");
+    }
   });
 
   // MP-OWNER-PIN-APPROVAL: customer edit gated per role.
@@ -765,13 +794,25 @@ export default function CustomersPage() {
               <label className="label">{lang === "en" ? "Notes" : "Notes"}</label>
               <input className="input" value={form.notes} onChange={e => setF("notes", e.target.value)} placeholder={lang === "en" ? "Optional notes..." : "Notes optionnelles..."} />
             </div>
+            {dupeMatch && (
+              <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 10, padding: "12px 14px", marginBottom: 12 }}>
+                <div style={{ fontSize: 13, color: "#b91c1c", fontWeight: 600, marginBottom: 8 }}>
+                  ⚠️ {lang === "en"
+                    ? `A customer with this phone already exists: ${dupeMatch.name}`
+                    : `Un client avec ce numéro existe déjà : ${dupeMatch.name}`}
+                </div>
+                <button className="btn btn-primary btn-block" onClick={() => openExistingCustomer(dupeMatch)}>
+                  {lang === "en" ? `Open ${dupeMatch.name}` : `Ouvrir ${dupeMatch.name}`}
+                </button>
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowAdd(false)}>
                 {lang === "en" ? "Cancel" : "Annuler"}
               </button>
               <button className="btn btn-primary" style={{ flex: 2 }}
                 disabled={!form.name || addMutation.isPending}
-                onClick={() => addMutation.mutate()}>
+                onClick={handleAddCustomer}>
                 {addMutation.isPending ? "..." : (lang === "en" ? "Add Customer" : "Ajouter")}
               </button>
             </div>
