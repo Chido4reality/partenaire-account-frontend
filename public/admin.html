@@ -2490,6 +2490,7 @@
           // Overview
           '<div class="detail-pane active" data-pane="overview">' +
             renderEffectivePlanCard(d.effective_plan, d) +
+            renderBizFeaturedCard(d.dozie_seller) +
             '<div class="health-grid">' +
               '<div class="health-card"><div class="health-label">Days since last sale</div><div class="health-value">' + safe(h.days_since_last_sale) + '</div></div>' +
               '<div class="health-card"><div class="health-label">Days since owner login</div><div class="health-value">' + safe(h.days_since_owner_login) + '</div></div>' +
@@ -2531,6 +2532,7 @@
           '<div class="detail-pane" data-pane="history">' + renderSubHistoryTable(d.subscription_history || []) + '</div>';
         const m = $('modal-host').querySelector('.modal-body');
         m.innerHTML = detailHtml;
+        wireBizFeaturedCard(m, biz, d.dozie_seller);
         m.querySelectorAll('.detail-tab').forEach(btn => {
           btn.addEventListener('click', () => {
             const t = btn.getAttribute('data-detail-tab');
@@ -3218,6 +3220,76 @@
             { featured, sort_order: (featured ? sort_order : undefined) });
           showToast(featured ? 'Seller featured' : 'Seller unfeatured', 'success');
           openDzUserDetail(u); // re-fetch so the card reflects the new state
+        } catch (e) {
+          showToast(e.message, 'danger');
+          save.disabled = false; save.textContent = 'Save';
+        }
+      });
+    }
+
+    // Featured Seller control on the BUSINESS detail Overview pane — where
+    // Peter expects it (Businesses → view details). Featuring is a ptn_users
+    // attribute, so it acts on the org's linked Dozie seller (d.dozie_seller,
+    // resolved server-side via linked_mp_org_id). Reuses the same endpoint as
+    // the Marketplace-users card (PATCH /admin/dozie/users/:id/feature).
+    // master_admin only; if the business has no linked seller, the control is
+    // shown disabled with a short note instead of erroring.
+    function renderBizFeaturedCard(seller) {
+      const master = isMasterAdmin();
+      if (!seller || !seller.id) {
+        return '' +
+          '<div class="card" style="margin-top:12px;background:var(--bg-tertiary)">' +
+            '<div class="settings-card-sub">Featured Seller (Marketplace)</div>' +
+            '<div style="font-style:italic;color:var(--text-muted);font-size:13px">' +
+              'This business has no linked Partenaire Dozie seller, so it can’t be featured on the marketplace.' +
+            '</div>' +
+          '</div>';
+      }
+      const isFeatured = !!seller.featured;
+      const order = (seller.featured_order != null) ? String(seller.featured_order) : '';
+      const dis = master ? '' : ' disabled';
+      return '' +
+        '<div class="card" style="margin-top:12px;background:var(--bg-tertiary)">' +
+          '<div class="settings-card-sub">Featured Seller (Marketplace)</div>' +
+          '<label style="display:flex;align-items:center;gap:8px;margin:4px 0 12px;font-size:14px">' +
+            '<input type="checkbox" id="bzf-check"' + (isFeatured ? ' checked' : '') + dis + '> Featured on marketplace' +
+          '</label>' +
+          '<div id="bzf-order-wrap" class="field" style="max-width:220px;' + (isFeatured ? '' : 'display:none') + '">' +
+            '<label>Display order <span style="color:var(--text-muted);font-weight:400">(lower = higher up)</span></label>' +
+            '<input type="number" id="bzf-order" min="1" step="1" value="' + escapeHtml(order) + '" placeholder="e.g. 1"' + dis + '>' +
+          '</div>' +
+          (master
+            ? '<button class="btn btn-primary" id="bzf-save" style="margin-top:4px">Save</button>'
+            : '<div style="font-style:italic;color:var(--text-muted);font-size:13px">Master admin only</div>') +
+        '</div>';
+    }
+
+    function wireBizFeaturedCard(m, biz, seller) {
+      const chk  = m.querySelector('#bzf-check');
+      const wrap = m.querySelector('#bzf-order-wrap');
+      const save = m.querySelector('#bzf-save');
+      if (!chk) return;            // no linked seller → note-only card
+      chk.addEventListener('change', () => { wrap.style.display = chk.checked ? '' : 'none'; });
+      if (!save) return;           // non-master: disabled card, no save handler
+      save.addEventListener('click', async () => {
+        const featured = chk.checked;
+        const orderRaw = ((m.querySelector('#bzf-order') || {}).value || '').trim();
+        let sort_order;
+        if (featured) {
+          // Same validation as the Marketplace-users card: backend requires
+          // an integer >= 1 when featuring.
+          sort_order = parseInt(orderRaw, 10);
+          if (!/^\d+$/.test(orderRaw) || !Number.isInteger(sort_order) || sort_order < 1) {
+            showToast('Display order is required (1 or higher)', 'danger');
+            return;
+          }
+        }
+        save.disabled = true; save.textContent = 'Saving…';
+        try {
+          await apiAdmin('PATCH', '/admin/dozie/users/' + seller.id + '/feature',
+            { featured, sort_order: (featured ? sort_order : undefined) });
+          showToast(featured ? 'Seller featured' : 'Seller unfeatured', 'success');
+          openBizDetail(biz); // re-fetch so the card reflects the new state
         } catch (e) {
           showToast(e.message, 'danger');
           save.disabled = false; save.textContent = 'Save';
