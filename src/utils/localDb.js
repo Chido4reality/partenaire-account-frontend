@@ -123,7 +123,20 @@ CREATE TABLE IF NOT EXISTS sync_meta (
 let _impl = null; // 'native' | 'web' | null (uninitialised)
 let _db = null;   // native: SQLiteDBConnection; web: in-memory shim instance
 
+// MP-OFFLINE-SHIFT-FIX: native SQLite is the ONLY hard-failure path for an
+// offline-eligible write — if openNative() or a statement throws, enqueue()
+// throws, and the offline-eligible adapter surfaces the caller's
+// "Network error. Retry." (this is why opening a shift offline failed on
+// devices/accounts where the SQLite connection was in a bad state, while it
+// worked on the primary/dev device whose connection was healthy — it was never
+// role-based). When the native layer throws, flip this flag and transparently
+// fail the durable queue over to the IndexedDB-backed web impl for the rest of
+// the session, so the write still queues + drains. Additive: only the catch
+// paths below set it, so a healthy device behaves exactly as before.
+let _nativeFailed = false;
+
 async function detectImpl() {
+  if (_nativeFailed) return 'web';
   if (_impl) return _impl;
   try {
     const cap = await import('@capacitor/core');
@@ -143,16 +156,35 @@ async function openNative() {
   const { CapacitorSQLite, SQLiteConnection } = await import('@capacitor-community/sqlite');
   const sqlite = new SQLiteConnection(CapacitorSQLite);
   const DB_NAME = 'mp_local';
-  // isConnection prevents a double-open after the user navigates back
-  // to a page that calls openDb() again.
-  const isConn = (await sqlite.isConnection(DB_NAME, false)).result;
-  _db = isConn
-    ? await sqlite.retrieveConnection(DB_NAME, false)
-    : await sqlite.createConnection(DB_NAME, false, 'no-encryption', 1, false);
-  await _db.open();
+  // MP-OFFLINE-SHIFT-FIX: a hard relogin (nukeClientState → window.location
+  // .replace) or app relaunch can leave the native plugin holding the
+  // 'mp_local' connection while the JS handle is gone. The original
+  // isConnection→create/retrieve dance throws "Connection already exists"
+  // (on create over a live conn) or "database already open" (on open) in
+  // that state — which is exactly the enqueue() throw that surfaced as the
+  // offline "Network error" for non-primary accounts. Harden every step:
+  // guard isConnection, fall back create→retrieve, and tolerate already-open.
+  let isConn = false;
+  try { isConn = (await sqlite.isConnection(DB_NAME, false)).result; } catch { isConn = false; }
+  try {
+    _db = isConn
+      ? await sqlite.retrieveConnection(DB_NAME, false)
+      : await sqlite.createConnection(DB_NAME, false, 'no-encryption', 1, false);
+  } catch (e) {
+    // create raced a still-live connection (or retrieve found none) → try the
+    // other path before giving up. If both fail, throw so exec/query fail
+    // the queue over to IndexedDB.
+    _db = await sqlite.retrieveConnection(DB_NAME, false);
+  }
   // Apply schema. SQLite tolerates the multiple-statement payload
   // when wrapped in execute(); each CREATE IF NOT EXISTS is a no-op
   // on subsequent boots.
+  try {
+    await _db.open();
+  } catch (e) {
+    // A connection retrieved while already open throws here; that's fine.
+    if (!/already open/i.test(e?.message || '')) throw e;
+  }
   await _db.execute(SCHEMA_SQL);
   return _db;
 }
@@ -433,14 +465,38 @@ export async function openDb() {
   return openWeb();
 }
 
+// MP-OFFLINE-SHIFT-FIX: if a native SQLite op throws, fail the durable queue
+// over to the IndexedDB-backed web impl for the rest of the session and retry
+// the op there, so enqueue()/the worker keep working and an offline-eligible
+// write (e.g. /shifts/open) never hard-fails the caller. Healthy devices never
+// hit the catch, so this is purely additive.
+async function failoverToWeb(op, e) {
+  console.error(`[localDb] native SQLite ${op} failed → failing over to IndexedDB queue:`, e?.message || e);
+  _nativeFailed = true;
+  try { await closeNative(); } catch { /* ignore */ }
+  _db = null;
+}
+
 export async function exec(sql, params = []) {
   const impl = await detectImpl();
-  return impl === 'native' ? execNative(sql, params) : execWeb(sql, params);
+  if (impl !== 'native') return execWeb(sql, params);
+  try {
+    return await execNative(sql, params);
+  } catch (e) {
+    await failoverToWeb('exec', e);
+    return execWeb(sql, params);
+  }
 }
 
 export async function query(sql, params = []) {
   const impl = await detectImpl();
-  return impl === 'native' ? queryNative(sql, params) : queryWeb(sql, params);
+  if (impl !== 'native') return queryWeb(sql, params);
+  try {
+    return await queryNative(sql, params);
+  } catch (e) {
+    await failoverToWeb('query', e);
+    return queryWeb(sql, params);
+  }
 }
 
 export async function close() {
