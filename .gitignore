@@ -21,3 +21,6 @@ android/*.jks
 android/*.keystore
 android/app/*.jks
 android/app/*.keystore
+# Holds the release-signing passwords — never commit.
+keystore.properties
+android/keystore.properties

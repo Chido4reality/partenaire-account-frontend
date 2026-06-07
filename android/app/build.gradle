@@ -1,5 +1,23 @@
 apply plugin: 'com.android.application'
 
+// MP-SIGNING-PROPS: resolve release-signing credentials from
+// android/keystore.properties (gitignored) when present, falling back to the
+// MP_KEYSTORE_PASSWORD / MP_KEY_PASSWORD env vars. This removes the dependency
+// on pasted shell commands — Git Bash bracketed-paste artifacts (^[[200~) were
+// corrupting the env-var exports, so passwords arrived null and
+// :app:signReleaseBundle NPE'd at FinalizeBundleTask. Every value coalesces to
+// "" so a null can never reach the signer (missing/empty → clear "keystore
+// password was incorrect", not a NullPointerException).
+def mpKsPropsFile = rootProject.file('keystore.properties')
+def mpKsProps = new Properties()
+if (mpKsPropsFile.exists()) {
+    mpKsPropsFile.withInputStream { mpKsProps.load(it) }
+}
+def mpStoreFileName = (mpKsProps.getProperty('storeFile') ?: 'mp-release-key.jks').trim()
+def mpStorePass     = (mpKsProps.getProperty('storePassword') ?: System.getenv('MP_KEYSTORE_PASSWORD') ?: '').trim()
+def mpKeyAlias      = (mpKsProps.getProperty('keyAlias') ?: 'mp-release').trim()
+def mpKeyPass       = (mpKsProps.getProperty('keyPassword') ?: System.getenv('MP_KEY_PASSWORD') ?: '').trim()
+
 android {
     namespace "com.partenaire.monpartenaire"
     compileSdk rootProject.ext.compileSdkVersion
@@ -12,7 +30,7 @@ android {
         // duplicates). versionName is the human-facing semver visible
         // in About / Play Store. Bump versionCode by +1 every release;
         // bump versionName per semver rules.
-        versionCode 1
+        versionCode 6
         versionName "1.0.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
@@ -24,16 +42,15 @@ android {
     // MP-PLAY-CONSOLE-INITIAL-RELEASE: signing config for the signed
     // App Bundle (.aab). The keystore lives OUTSIDE the repo at
     // android/mp-release-key.jks (not committed; see .gitignore).
-    // Both passwords are read from env vars at build time so they
-    // never land in source. Set MP_KEYSTORE_PASSWORD and
-    // MP_KEY_PASSWORD in the shell before running `gradlew
-    // bundleRelease` (see release runbook in commit message).
+    // Credentials are resolved above (mp* vars) from android/keystore.properties
+    // (preferred, gitignored) or the MP_* env vars as a fallback — never
+    // hardcoded in source. storeFile resolves relative to the android/ root.
     signingConfigs {
         release {
-            storeFile file('../mp-release-key.jks')
-            storePassword System.getenv('MP_KEYSTORE_PASSWORD')
-            keyAlias 'mp-release'
-            keyPassword System.getenv('MP_KEY_PASSWORD')
+            storeFile rootProject.file(mpStoreFileName)
+            storePassword mpStorePass
+            keyAlias mpKeyAlias
+            keyPassword mpKeyPass
         }
     }
     buildTypes {
