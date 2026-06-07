@@ -1501,8 +1501,12 @@ export default function POSPage() {
                 <div style={{
                   overflowY: "auto",
                   minHeight: 0,
-                  maxHeight: mobile ? "50vh" : "none",
+                  maxHeight: mobile ? "50dvh" : "none",
                   paddingRight: 2,
+                  // + --kb-inset (set by useKeyboardInset) so payment fields
+                  // scroll clear of the keyboard and the reflow on keyboard
+                  // hide settles cleanly instead of briefly clipping.
+                  paddingBottom: "var(--kb-inset, 0px)",
                 }}>
                   {isDebtOnlyCart && (
                     <div style={{ marginBottom: 10 }}>

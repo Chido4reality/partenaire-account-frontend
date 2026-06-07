@@ -132,39 +132,41 @@ export default function StockCountPage() {
           <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 16 }}>
             ✅ {lang === "en" ? "Count Results" : "Résultats du comptage"}
           </div>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Product</th>
-                <th style={{ textAlign: "right" }}>System</th>
-                <th style={{ textAlign: "right" }}>Counted</th>
-                <th style={{ textAlign: "right" }}>Difference</th>
-              </tr>
-            </thead>
-            <tbody>
-              {results.map((r, i) => {
-                const item = stock.find(s => s.product_id === r.product_id);
-                const diff = r.difference || (r.actual - r.previous);
-                return (
-                  <tr key={i}>
-                    <td style={{ fontWeight: 500 }}>{item?.pa_products?.name || r.product_id}</td>
-                    <td style={{ textAlign: "right", color: "var(--text-muted)" }}>{r.previous}</td>
-                    <td style={{ textAlign: "right", fontWeight: 600 }}>{r.actual}</td>
-                    <td style={{ textAlign: "right", fontWeight: 700, color: diff === 0 ? "#34d399" : diff > 0 ? "var(--brand-light)" : "#f87171" }}>
-                      {diff > 0 ? "+" : ""}{diff}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div style={{ overflowX: "auto" }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th style={{ textAlign: "right" }}>System</th>
+                  <th style={{ textAlign: "right" }}>Counted</th>
+                  <th style={{ textAlign: "right" }}>Difference</th>
+                </tr>
+              </thead>
+              <tbody>
+                {results.map((r, i) => {
+                  const item = stock.find(s => s.product_id === r.product_id);
+                  const diff = r.difference || (r.actual - r.previous);
+                  return (
+                    <tr key={i}>
+                      <td style={{ fontWeight: 500 }}>{item?.pa_products?.name || r.product_id}</td>
+                      <td style={{ textAlign: "right", color: "var(--text-muted)" }}>{r.previous}</td>
+                      <td style={{ textAlign: "right", fontWeight: 600 }}>{r.actual}</td>
+                      <td style={{ textAlign: "right", fontWeight: 700, color: diff === 0 ? "#34d399" : diff > 0 ? "var(--brand-light)" : "#f87171" }}>
+                        {diff > 0 ? "+" : ""}{diff}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
           <button className="btn btn-secondary" style={{ marginTop: 16 }} onClick={() => { setSubmitted(false); setResults([]); }}>
             {lang === "en" ? "New count" : "Nouveau comptage"}
           </button>
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: 20 }}>
 
         {/* LEFT: Search & add products */}
         <div>

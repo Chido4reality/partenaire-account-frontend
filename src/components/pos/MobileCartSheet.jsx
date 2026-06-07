@@ -130,7 +130,10 @@ export default function MobileCartSheet({
             style={{
               position: "fixed",
               bottom: 0, left: 0, right: 0,
-              height: "92vh",
+              // dvh (not vh) so the sheet tracks the dynamic viewport when the
+              // keyboard opens (Capacitor Keyboard resize:'native') — keeps the
+              // payment Confirm footer above the keyboard instead of clipped.
+              height: "92dvh",
               background: "var(--bg-surface)",
               borderTopLeftRadius: 20,
               borderTopRightRadius: 20,

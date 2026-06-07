@@ -75,36 +75,58 @@ export default function MobileShiftChip() {
               borderTopLeftRadius: 20,
               borderTopRightRadius: 20,
               borderTop: "1px solid var(--border)",
-              padding: "12px 16px",
-              paddingBottom: "max(20px, var(--safe-area-bottom))",
               zIndex: 1601,
-              maxHeight: "85vh",
-              overflowY: "auto",
+              // dvh tracks the dynamic viewport (keyboard); flex column splits
+              // Vaul's drag area (handle + title) from a dedicated scroll body
+              // so the Close Shift button inside the indicator is always
+              // reachable — previously the whole Content was one scroller and
+              // Vaul's drag-to-dismiss fought the scroll, hiding the button.
+              maxHeight: "85dvh",
+              display: "flex",
+              flexDirection: "column",
             }}
           >
-            {/* Drag handle — Vaul recognises clicks/drags on Content
-                so we don't need a separate trigger. */}
+            {/* Drag handle + title — non-scrolling; Vaul drags from here. */}
             <div
               style={{
                 width: 40, height: 4,
                 background: "var(--border-hover)",
                 borderRadius: 2,
-                margin: "0 auto 14px",
+                margin: "10px auto 8px",
+                flexShrink: 0,
               }}
             />
             <Drawer.Title
               style={{
                 fontWeight: 700, fontSize: 15,
                 color: "var(--text-primary)",
-                marginBottom: 12,
+                padding: "0 16px 12px",
+                flexShrink: 0,
               }}
             >
               {lang === "fr" ? "Poste de caisse" : "Cash Shift"}
             </Drawer.Title>
-            {/* Reuse the existing indicator wholesale — it already
-                renders the right state + its open/close modals are
-                lifted into its own JSX. */}
-            <ActiveShiftIndicator />
+            {/* Scrollable body, separate from the drag area. Bottom padding
+                lives here (inside the scroller) so the last content — the
+                Close Shift button — clears the Android 15 nav-gesture bar. */}
+            <div
+              style={{
+                flex: 1,
+                minHeight: 0,
+                overflowY: "auto",
+                WebkitOverflowScrolling: "touch",
+                padding: "0 16px",
+                // + --kb-inset (set by useKeyboardInset) so the Closing Notes
+                // field below the focused Actual-Cash input can be scrolled
+                // clear of the on-screen keyboard.
+                paddingBottom: "calc(max(20px, var(--safe-area-bottom)) + var(--kb-inset, 0px))",
+              }}
+            >
+              {/* Reuse the existing indicator wholesale — it already
+                  renders the right state + its open/close modals are
+                  lifted into its own JSX. */}
+              <ActiveShiftIndicator />
+            </div>
           </Drawer.Content>
         </Drawer.Portal>
       </Drawer.Root>

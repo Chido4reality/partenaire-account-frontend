@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore, useLangStore, useOfflineStore, useSettingsStore } from "../../store";
 import { useLiteMode } from "../../hooks/useLiteMode";
 import { useTrialState } from "../../hooks/useTrialState";
+import { useKeyboardInset } from "../../hooks/useKeyboardInset";
 import api from "../../utils/api";
 import { cacheData } from "../../utils/offlineStore";
 import { cacheKeyFor } from "../../utils/offlineQuery";
@@ -304,6 +305,10 @@ function RestrictedLock({ lang, hasPending, onRequest }) {
 
 export default function Layout() {
   const { user, org, logout } = useAuthStore();
+  // MP-MOBILE-UI: publish the IME height as --kb-inset + keep the focused
+  // field centered, so inputs below the fold in mobile drawers/sheets stay
+  // reachable when the keyboard is open.
+  useKeyboardInset();
   // MP-LITE-MODE-PHASE-1: tightens visible NAV + skips polled queries
   // that don't surface in Lite. Reads from authStore.org.lite_mode
   // (default true) — owners flip via Settings → Mode.
@@ -887,7 +892,7 @@ export default function Layout() {
       // it slides off-screen with the rest of the shell when the drawer
       // opens — keeps the visual hierarchy consistent and avoids the
       // backdrop having to dodge a sticky element.
-      <div style={{ position: "relative", height: "100vh", overflow: "hidden" }}>
+      <div style={{ position: "relative", height: "100dvh", overflow: "hidden" }}>
         <NavDrawer
           open={drawerOpen}
           onClose={() => setDrawerOpen(false)}
@@ -901,7 +906,12 @@ export default function Layout() {
           style={{
             display: "flex",
             flexDirection: "column",
-            height: "100vh",
+            height: "100dvh",
+            // Defensive safe-area-top: pushes the shell below the status bar
+            // under Android 15+ edge-to-edge. No-ops today (opt-out → inset 0);
+            // box-sizing keeps total height at 100dvh so nothing overflows.
+            paddingTop: "var(--safe-area-top)",
+            boxSizing: "border-box",
             overflow: "hidden",
             // Disable interaction with the content while the drawer is
             // open so the visible-but-shifted strip on the right routes

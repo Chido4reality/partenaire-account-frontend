@@ -2,7 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover activates env(safe-area-inset-*) so the app can pad
+         around the status/nav bars under Android 15+ edge-to-edge. Today (with
+         windowOptOutEdgeToEdgeEnforcement) the insets resolve to 0 and the
+         padding no-ops; it engages automatically if/when the opt-out is removed. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Mon Partenaire Dozie</title>
 
     <!-- PWA -->
