@@ -204,7 +204,8 @@ export default function POSPage() {
       return;
     }
     if (Array.isArray(draft.items) && draft.items.length > 0) {
-      setCart(draft.items);
+      // Backfill a stable lineId on drafts saved before lineIds existed.
+      setCart(draft.items.map(it => (it && it.lineId) ? it : { ...it, lineId: genLineId() }));
       if (draft.customer)      setCustomer(draft.customer);
       if (draft.payMode)       setPayMode(draft.payMode);
       if (draft.paidAmt)       setPaidAmt(draft.paidAmt);
@@ -513,12 +514,15 @@ export default function POSPage() {
             const p = await api.get(`/products/${it.product_id}`).then(r => r.data?.data);
             if (!p) return null;
             return {
+              lineId: genLineId(),
               product_id: it.product_id,
               name: p.name || it.name,
               unit: p.unit, barcode: p.barcode,
               quantity: Number(it.qty_requested) || 1,
               unit_price: Number(it.price) || Number(p.sell_price) || 0,
               original_price: Number(p.sell_price) || 0,
+              sell_price: Number(p.sell_price) || 0,
+              wholesale_price: Number(p.wholesale_price) || 0,
               min_price: p.min_price || 0,
               cost_price: p.cost_price,
               stock: Number(it.qty_available)
@@ -622,6 +626,28 @@ export default function POSPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId, customerType]);
 
+  // MP-PAUL-PHANTOM-LINE-FIX: every cart line gets a stable lineId. Keys,
+  // removal and edits are by lineId — NOT array index — so removing a line
+  // can't shift indices under an in-flight edit and a removed line is fully
+  // gone (the whole object, incl. any below-min price_approval_token, is
+  // dropped). Index-keyed lists were the classic source of a "removed" line
+  // lingering in state and being scanned at checkout though it isn't rendered.
+  const genLineId = () =>
+    (typeof crypto !== "undefined" && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `ln_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+  // A line is submittable only if it's a real, active line: a debt/debt-payment
+  // line, OR a product line with a truthy product_id and quantity > 0. The sale
+  // payload AND the visible cart are derived from this so the backend (and its
+  // min-price check) can only ever see lines that are actually in the cart.
+  const isSubmittableLine = (i) => {
+    if (!i) return false;
+    if (i.type === "debt_payment" || i.isDebt || i.isDebtPayment
+        || i.product_id === "__DEBT__" || i.product_id === "__DEBT_PAYMENT__") return true;
+    return !!i.product_id && (Number(i.quantity) || 0) > 0;
+  };
+
   const addToCart = (product, qty = 1) => {
     const tier  = tierForCustomer(customer);
     const price = priceForTier(product, tier);
@@ -642,6 +668,7 @@ export default function POSPage() {
         return u;
       }
       return [...prev, {
+        lineId: genLineId(),
         product_id: product.product_id || product.id,
         name: product.name, unit: product.unit, barcode: product.barcode,
         quantity: qty,
@@ -670,7 +697,7 @@ export default function POSPage() {
     const refs = selected.map(i => i.sale_number).join(", ");
     setCart(prev => [
       ...prev.filter(i => i.product_id !== "__DEBT__"),
-      { product_id: "__DEBT__", name: `${lang === "en" ? "Debt repayment" : "Remboursement"} (${refs})`, unit: "pce", quantity: 1, unit_price: totalAmt, cost_price: 0, isDebt: true, debtSaleIds: selected.map(i => i.id), debtAmount: totalAmt }
+      { lineId: genLineId(), product_id: "__DEBT__", name: `${lang === "en" ? "Debt repayment" : "Remboursement"} (${refs})`, unit: "pce", quantity: 1, unit_price: totalAmt, cost_price: 0, isDebt: true, debtSaleIds: selected.map(i => i.id), debtAmount: totalAmt }
     ]);
     setShowDebtModal(false);
     setShowPayment(true);
@@ -686,7 +713,7 @@ export default function POSPage() {
     setCart(prev => [
       ...prev.filter(i => i.product_id !== "__DEBT_PAYMENT__"),
       {
-        product_id: "__DEBT_PAYMENT__", type: "debt_payment",
+        lineId: genLineId(), product_id: "__DEBT_PAYMENT__", type: "debt_payment",
         name: `${lang === "en" ? "Debt Repayment" : "Remboursement dette"} (${debtBanner.name})`,
         unit: "pce", quantity: 1, unit_price: debtBanner.amount, cost_price: 0,
         isDebtPayment: true, customer_id: debtBanner.customer_id, debtMax: debtBanner.amount
@@ -695,50 +722,51 @@ export default function POSPage() {
     setDebtBanner(null);
   };
 
-  const updateQty   = (idx, qty) => qty <= 0
-    ? setCart(c => c.filter((_, i) => i !== idx))
-    : setCart(c => c.map((it, i) => i === idx ? { ...it, quantity: qty } : it));
+  // All cart mutations key off lineId (not array index) so a concurrent
+  // removal/re-price can't retarget the wrong row.
+  const removeLine = (lineId) => setCart(c => c.filter(it => it.lineId !== lineId));
+  const updateQty  = (lineId, qty) => qty <= 0
+    ? removeLine(lineId)
+    : setCart(c => c.map(it => it.lineId === lineId ? { ...it, quantity: qty } : it));
 
   // Typing into the price field is free-form (transient) for everyone; the
   // min-price floor + boss/owner PIN override are enforced on blur (below), so
   // we never pop the PIN modal mid-keystroke.
-  const updatePrice = (idx, raw) =>
-    setCart(c => c.map((it, i) => i === idx ? { ...it, unit_price: raw === "" ? "" : +raw } : it));
+  const updatePrice = (lineId, raw) =>
+    setCart(c => c.map(it => it.lineId === lineId ? { ...it, unit_price: raw === "" ? "" : +raw } : it));
 
-  // The qty/price fields are <input type=number>. Clearing the
-  // highlighted digits (Delete) fires onChange with value "", and
-  // `+"" === 0` previously hit updateQty(idx,0) → the line was
-  // filtered out. Tolerate a transient empty value (line stays,
-  // digits cleared) and only normalise on blur. Removal stays
-  // explicit via the ✕ button / decrementing below 1.
-  const onQtyInput = (idx, raw) => {
+  // The qty/price fields are <input type=number>. Clearing the highlighted
+  // digits (Delete) fires onChange with value "" — tolerate a transient empty
+  // value (line stays, digits cleared) and only normalise on blur. Removal
+  // stays explicit via the ✕ button / decrementing below 1.
+  const onQtyInput = (lineId, raw) => {
     if (raw === "") {
-      setCart(c => c.map((it, i) => i === idx ? { ...it, quantity: "" } : it));
+      setCart(c => c.map(it => it.lineId === lineId ? { ...it, quantity: "" } : it));
       return;
     }
     const n = parseInt(raw, 10);
     if (isNaN(n) || n < 1) return; // ignore 0/garbage mid-typing
-    setCart(c => c.map((it, i) => i === idx ? { ...it, quantity: n } : it));
+    setCart(c => c.map(it => it.lineId === lineId ? { ...it, quantity: n } : it));
   };
-  const onQtyBlur = (idx) => setCart(c => c.map((it, i) => {
-    if (i !== idx) return it;
+  const onQtyBlur = (lineId) => setCart(c => c.map(it => {
+    if (it.lineId !== lineId) return it;
     const n = parseInt(it.quantity, 10);
     return (isNaN(n) || n < 1) ? { ...it, quantity: 1 } : { ...it, quantity: n };
   }));
-  const onPriceInput = (idx, raw) => updatePrice(idx, raw);
+  const onPriceInput = (lineId, raw) => updatePrice(lineId, raw);
 
   // MIN-PRICE FLOOR: on blur, a below-min price requires the existing boss/
   // owner PIN override (OwnerApprovalModal). Owners set any price freely. On
   // approval the line keeps the price + carries the token to checkout; on
   // cancel/failure it reverts to the last valid price.
-  const onPriceBlur = async (idx) => {
-    const item = cart[idx];
+  const onPriceBlur = async (lineId) => {
+    const item = cart.find(it => it.lineId === lineId);
     if (!item) return;
     const p = parseFloat(item.unit_price);
     const minPrice = item.min_price || 0;
     const revertTo = item.original_price || item.min_price || 0;
     if (isNaN(p) || p < 0) {
-      setCart(c => c.map((it, i) => i === idx ? { ...it, unit_price: revertTo } : it));
+      setCart(c => c.map(it => it.lineId === lineId ? { ...it, unit_price: revertTo } : it));
       return;
     }
     if (!isOwner && minPrice > 0 && p < minPrice) {
@@ -752,19 +780,19 @@ export default function POSPage() {
             ? `Sell "${item.name}" below minimum (${minPrice.toLocaleString()} FCFA) at ${p.toLocaleString()} FCFA`
             : `Vendre "${item.name}" sous le minimum (${minPrice.toLocaleString()} FCFA) à ${p.toLocaleString()} FCFA`,
         });
-        setCart(c => c.map((it, i) => i === idx
+        setCart(c => c.map(it => it.lineId === lineId
           ? { ...it, unit_price: p, price_overridden: true, price_approval_token: token }
           : it));
       } catch (e) {
         if (e?.code !== "cancelled") {
           toast.error(e?.response?.data?.message || (lang === "en" ? "Approval failed" : "Échec de l'approbation"));
         }
-        setCart(c => c.map((it, i) => i === idx ? { ...it, unit_price: revertTo } : it));
+        setCart(c => c.map(it => it.lineId === lineId ? { ...it, unit_price: revertTo } : it));
       }
       return;
     }
     // Valid price (>= min, or owner): commit and drop any stale override.
-    setCart(c => c.map((it, i) => i === idx
+    setCart(c => c.map(it => it.lineId === lineId
       ? { ...it, unit_price: p, price_overridden: false, price_approval_token: undefined }
       : it));
   };
@@ -1017,7 +1045,11 @@ export default function POSPage() {
         // debt_payment shape so the backend reduces total_debt
         // generically. product_id:null + type so the backend never
         // runs them through stock / min-price / pa_sale_items.
-        items:          cart.map(i => {
+        // MP-PAUL-PHANTOM-LINE-FIX: only submittable lines are sent — a stale/
+        // removed/blank line (no product_id or qty<=0) can never reach the
+        // backend, so its min-price check can only reference items actually in
+        // the cart.
+        items:          cart.filter(isSubmittableLine).map(i => {
                           if (i.type === "debt_payment") {
                             return { type: "debt_payment", product_id: null, quantity: 1, unit_price: Number(i.unit_price) || 0, customer_id: i.customer_id };
                           }
@@ -1378,6 +1410,7 @@ export default function POSPage() {
         let p = null;
         try { p = await api.get(`/products/${it.product_id}`).then(r => r.data?.data); } catch { /* ignore */ }
         return {
+          lineId: genLineId(),
           product_id: it.product_id,
           name: it.name || p?.name || "—",
           unit: p?.unit, barcode: p?.barcode,
@@ -1392,7 +1425,7 @@ export default function POSPage() {
           stock: it.current_stock != null ? Number(it.current_stock) : null,
         };
       }));
-      setCart(hydrated);
+      setCart(hydrated.filter(isSubmittableLine));
       setCustomer(null);
       setShowResume(false);
       const short = hydrated.filter(i => typeof i.stock === "number" && i.quantity > i.stock);
@@ -1504,7 +1537,7 @@ export default function POSPage() {
                 <div style={{ fontSize: 12 }}>{lang === "en" ? "Cart is empty" : "Panier vide"}</div>
               </div>
             ) : cart.map((item, idx) => (
-              <div key={idx} style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", background: (item.isDebt || item.isDebtPayment) ? "rgba(239,68,68,0.04)" : "transparent" }}>
+              <div key={item.lineId} style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", background: (item.isDebt || item.isDebtPayment) ? "rgba(239,68,68,0.04)" : "transparent" }}>
                 {(item.isDebt || item.isDebtPayment) && (
                   <div style={{ fontSize: 10, fontWeight: 700, color: "#f87171", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>
                     {item.isDebtPayment ? "💰" : "🧾"} {lang === "en" ? "Debt Repayment" : "Remboursement dette"} · DEBT
@@ -1512,17 +1545,17 @@ export default function POSPage() {
                 )}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: (item.isDebt || item.isDebtPayment) ? 4 : 7 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, flex: 1, paddingRight: 8, lineHeight: 1.3 }}>{item.name}</div>
-                  <button onClick={() => updateQty(idx, 0)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: "0 2px", flexShrink: 0 }}>✕</button>
+                  <button onClick={() => removeLine(item.lineId)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: "0 2px", flexShrink: 0 }}>✕</button>
                 </div>
                 {item.isDebt ? (
                   <div style={{ fontSize: 14, fontWeight: 800, color: "#f87171", textAlign: "right" }}>{formatCFA(item.unit_price)}</div>
                 ) : (
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    <button onClick={() => updateQty(idx, item.quantity - 1)} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: "pointer", fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
-                    <input type="number" value={item.quantity} onChange={e => onQtyInput(idx, e.target.value)} onBlur={() => onQtyBlur(idx)} style={{ width: 40, textAlign: "center", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "3px 4px", fontSize: 13 }} />
-                    <button onClick={() => updateQty(idx, item.quantity + 1)} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: "pointer", fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                    <button onClick={() => updateQty(item.lineId, item.quantity - 1)} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: "pointer", fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
+                    <input type="number" value={item.quantity} onChange={e => onQtyInput(item.lineId, e.target.value)} onBlur={() => onQtyBlur(item.lineId)} style={{ width: 40, textAlign: "center", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "3px 4px", fontSize: 13 }} />
+                    <button onClick={() => updateQty(item.lineId, item.quantity + 1)} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: "pointer", fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
                     <div style={{ flex: 1, position: "relative" }}>
-                      <input type="number" value={item.unit_price} onChange={e => onPriceInput(idx, e.target.value)} onBlur={() => onPriceBlur(idx)} style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "4px 6px 4px 18px", fontSize: 12 }} />
+                      <input type="number" value={item.unit_price} onChange={e => onPriceInput(item.lineId, e.target.value)} onBlur={() => onPriceBlur(item.lineId)} style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "4px 6px 4px 18px", fontSize: 12 }} />
                       <span style={{ position: "absolute", left: 6, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "var(--text-muted)" }}>F</span>
                     </div>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "var(--brand-light)", minWidth: 56, textAlign: "right" }}>{formatCFA(item.quantity * item.unit_price)}</div>

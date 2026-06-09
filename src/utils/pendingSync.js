@@ -162,19 +162,22 @@ async function notify() {
 export function startWorker() {
   if (_workerStarted) return;
   _workerStarted = true;
-  // Online → flush immediately.
-  onNetworkChange((s) => { if (s.connected) flushIfOnline(); });
+  // Online → flush immediately, FORCING past backoff so a transient that
+  // escalated to its 30-min step retries the moment the network returns.
+  onNetworkChange((s) => { if (s.connected) flushIfOnline(true); });
   // Foreground (web tab + native app resume). visibilitychange covers
   // both via the document API; @capacitor/app appStateChange would
-  // be the native-pure path, deferred to a follow-up if needed.
+  // be the native-pure path, deferred to a follow-up if needed. Also
+  // forced — the user reopening the app expects a fresh drain attempt.
   if (typeof document !== 'undefined') {
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') flushIfOnline();
+      if (document.visibilityState === 'visible') flushIfOnline(true);
     });
   }
-  // Periodic safety net for rows in failed_transient state that the
-  // online event didn't catch (rare — usually online fires first).
-  _pollTimer = setInterval(() => flushIfOnline(), POLL_INTERVAL_MS);
+  // Periodic safety net for rows in failed_transient state. NOT forced —
+  // respects backoff so a persistently-failing server isn't hammered every
+  // 30s; reconnect/foreground are the immediate-retry paths.
+  _pollTimer = setInterval(() => flushIfOnline(false), POLL_INTERVAL_MS);
   // Crash/reload recovery (web + native), THEN first flush. A row left
   // in 'sending' (process died mid-attempt — e.g. browser reload on web
   // now that the queue persists, or app kill on native) is never
@@ -182,7 +185,7 @@ export function startWorker() {
   // Reset stranded 'sending' → 'queued' so it retries. Safe: the stamped
   // local_id + backend dedupe make replay idempotent (a row that did
   // land returns dedup_replay → sent, no duplicate).
-  recoverStranded().then(() => flushIfOnline());
+  recoverStranded().then(() => flushIfOnline(true));
 }
 
 async function recoverStranded() {
@@ -192,19 +195,22 @@ async function recoverStranded() {
   } catch { /* best-effort; queued rows still flush regardless */ }
 }
 
-async function flushIfOnline() {
+// force=true ignores per-row backoff cooldowns for this pass — used on
+// reconnect / app-foreground so a transient that backed off to its 30-min step
+// retries the instant connectivity returns, instead of waiting out the timer.
+async function flushIfOnline(force = false) {
   if (_workerRunning) return;
   const net = await getNetworkStatus();
   if (!net.connected) return;
   _workerRunning = true;
   try {
-    await flushOnce();
+    await flushOnce(force);
   } finally {
     _workerRunning = false;
   }
 }
 
-async function flushOnce() {
+async function flushOnce(force = false) {
   // MP-PAUL-FIX-2 (3 Jun): watchdog log for stale 'sending' rows. If a
   // row has been in 'sending' for >2 min, attempt() probably crashed
   // mid-fetch in a way recoverStranded didn't catch (or the device
@@ -242,6 +248,10 @@ async function flushOnce() {
   const now = Date.now();
   const elig = [...rows];
   for (const t of transients) {
+    // force (reconnect / foreground) → retry now, ignore backoff. Otherwise
+    // respect the backoff step (index clamped so it never exceeds the longest
+    // BACKOFF_MS entry — transients retry forever at that ceiling, never drop).
+    if (force) { elig.push(t); continue; }
     const lastAtt = t.last_attempted_at ? Date.parse(t.last_attempted_at) : 0;
     const idx = Math.min(MAX_ATTEMPTS - 1, Math.max(0, t.attempts - 1));
     const cooldown = BACKOFF_MS[idx];
@@ -369,32 +379,24 @@ async function attempt(row) {
   await markTransient(row, `${res.status} ${body?.message || ''}`);
 }
 
-// MP-PAUL-FIX-2 (3 Jun): per-endpoint MAX caps. Shift-open gets a tight
-// 2-attempt cap so a stuck shift-open surfaces ConflictModal fast
-// instead of burning ~35 min of escalating backoff. Other endpoints
-// keep the default 5-attempt schedule. (Recovery path: ConflictModal's
-// retry resets attempts to 0 — see retry() below — so the cashier can
-// re-try after fixing the underlying cause.)
-const SHIFT_OPEN_MAX_ATTEMPTS = 2;
-function maxAttemptsFor(endpoint) {
-  if (/\/shifts\/open\/?$/.test(endpoint || '')) return SHIFT_OPEN_MAX_ATTEMPTS;
-  return MAX_ATTEMPTS;
-}
-
+// MP-PAUL-SHIFT-NEVER-STRAND (supersedes the 2-attempt shift-open cap):
+// network failures ("Failed to fetch") and 5xx are inherently TRANSIENT — a
+// patch of offline must never strand a queued action, least of all
+// /shifts/open, which dependent sales wait behind. So a transient failure
+// stays failed_transient and keeps retrying INDEFINITELY: BACKOFF_MS governs
+// the autonomous poll cadence (clamped to its longest step via the idx clamp
+// in flushOnce), while a reconnect or app-foreground forces an immediate retry
+// regardless of backoff (flushIfOnline(true)). Only genuine server REJECTIONS
+// — 4xx / 409, handled in attempt() — become failed_permanent, because those
+// won't fix themselves and need the user to resolve. attempts is already
+// incremented in attempt() when the row flips to 'sending', so we only set
+// status + reason here. MAX_ATTEMPTS is retained solely as the backoff-index
+// clamp; it is no longer a give-up threshold.
 async function markTransient(row, msg) {
-  const next = (Number(row.attempts) || 0) + 1;
-  const cap = maxAttemptsFor(row.endpoint);
-  if (next >= cap) {
-    await exec(
-      `UPDATE pending_sync SET status = ?, last_error = ? WHERE id = ?`,
-      ['failed_permanent', `Exhausted ${cap} attempts: ${msg}`, row.id]
-    );
-  } else {
-    await exec(
-      `UPDATE pending_sync SET status = ?, last_error = ? WHERE id = ?`,
-      ['failed_transient', msg, row.id]
-    );
-  }
+  await exec(
+    `UPDATE pending_sync SET status = ?, last_error = ? WHERE id = ?`,
+    ['failed_transient', msg, row.id]
+  );
   notify();
 }
 
@@ -419,4 +421,48 @@ export async function listFailedPermanent() {
     `SELECT * FROM pending_sync WHERE status = ? ORDER BY created_at DESC`,
     ['failed_permanent']
   );
+}
+
+// Every row that is NOT yet confirmed-on-server, for the visible sync queue
+// view: failed_permanent (needs attention) first, then failed_transient
+// (retrying), then queued (waiting), then sending (in flight). Within a status
+// group, oldest first so the cashier's earliest action is on top. 'sent' rows
+// are excluded (they're GC'd after a short retention anyway).
+export async function listPending() {
+  let rows = [];
+  try { rows = await query(`SELECT * FROM pending_sync`); } catch { rows = []; }
+  const rank = { failed_permanent: 0, failed_transient: 1, queued: 2, sending: 3 };
+  const isSale = (ep) => /^\/sales(\/|$)/.test(ep || '');
+  return rows
+    .filter(r => r.status !== 'sent')
+    .sort((a, b) => {
+      // Sales first (accounting-critical), then by status (failed → waiting),
+      // then oldest first within a group.
+      const sa = isSale(a.endpoint) ? 0 : 1, sb = isSale(b.endpoint) ? 0 : 1;
+      if (sa !== sb) return sa - sb;
+      const ra = rank[a.status] ?? 9, rb = rank[b.status] ?? 9;
+      if (ra !== rb) return ra - rb;
+      return String(a.created_at).localeCompare(String(b.created_at));
+    });
+}
+
+// Re-queue every failed row (permanent + transient) in one shot for "Retry
+// all". attempts reset to 0 so the full backoff budget is available again,
+// then kick the worker. Returns how many rows were re-queued.
+export async function retryAll() {
+  let n = 0;
+  try {
+    const rows = await query(`SELECT * FROM pending_sync`);
+    const failed = rows.filter(r => r.status === 'failed_permanent' || r.status === 'failed_transient');
+    for (const r of failed) {
+      await exec(
+        `UPDATE pending_sync SET status = ?, last_error = ?, attempts = ? WHERE id = ?`,
+        ['queued', null, 0, r.id]
+      );
+      n++;
+    }
+  } catch { /* best-effort; per-row Retry remains available */ }
+  notify();
+  flushIfOnline();
+  return n;
 }

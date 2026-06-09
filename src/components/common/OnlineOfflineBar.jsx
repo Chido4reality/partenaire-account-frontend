@@ -107,18 +107,22 @@ export default function OnlineOfflineBar() {
   };
   const p = PALETTE[tier];
 
-  // Online with no pending/syncing/conflicts → collapse to a 4px
-  // stripe so the bar doesn't burn vertical space during normal
-  // operation. Every other state shows the full banner.
-  const collapsed = tier === 'online';
-  const clickable = tier === 'conflict';
+  // MP-PAUL-SYNC-VISIBILITY: the bar is ALWAYS tappable now — tapping opens the
+  // sync-queue view in every state. When synced it confirms "nothing pending";
+  // when there are queued/failed rows it's how the cashier sees and retries
+  // them (previously the bar only opened on the conflict tier, so queued/
+  // transient sales were invisible). Synced renders as a slim-but-visible bar
+  // (not a 4px dead stripe) so there's a clear positive "Synced" confirmation.
+  const slim = tier === 'online';
+  const clickable = true;
 
   return (
     <>
       <div
-        role={clickable ? 'button' : 'status'}
+        role="button"
         aria-live="polite"
-        onClick={clickable ? () => setShowConflicts(true) : undefined}
+        title={en ? 'View sync queue' : 'Voir la file de synchronisation'}
+        onClick={() => setShowConflicts(true)}
         style={{
           position:   'sticky',
           top:        0,
@@ -126,26 +130,24 @@ export default function OnlineOfflineBar() {
           width:      '100%',
           background: p.bg,
           color:      p.text,
-          fontSize:   12,
+          fontSize:   slim ? 11 : 12,
           fontWeight: 700,
           textAlign:  'center',
-          padding:    collapsed ? '2px 0' : '6px 12px',
-          height:     collapsed ? 4       : 'auto',
+          padding:    slim ? '3px 8px' : '6px 12px',
+          height:     'auto',
           overflow:   'hidden',
-          cursor:     clickable ? 'pointer' : 'default',
-          transition: 'height 180ms ease, padding 180ms ease, background 180ms ease',
+          cursor:     'pointer',
+          transition: 'padding 180ms ease, background 180ms ease',
         }}
       >
-        {!collapsed && (
-          <span>
-            <span aria-hidden="true" style={{
-              marginRight: 6,
-              display: 'inline-block',
-              animation: syncing ? 'mpSyncSpin 1s linear infinite' : undefined,
-            }}>{p.emoji}</span>
-            {p.label}
-          </span>
-        )}
+        <span>
+          <span aria-hidden="true" style={{
+            marginRight: 6,
+            display: 'inline-block',
+            animation: syncing ? 'mpSyncSpin 1s linear infinite' : undefined,
+          }}>{p.emoji}</span>
+          {p.label}
+        </span>
         <style>{`
           @keyframes mpSyncSpin {
             from { transform: rotate(0deg); }
