@@ -5,6 +5,7 @@ import { useLangStore, useAuthStore, useSettingsStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
 import VoidReturnModal from "../components/common/VoidReturnModal";
 import { genSaleCodes } from "../utils/receiptCodes";
+import { buildFactureHtml } from "../utils/factureReceipt";
 import { buildLedgerTextV2 as buildLedgerTextUtil, buildWeeklyText as buildWeeklyTextUtil,
   refundKindLabel, shortRetRef } from "../utils/reportText";
 import CollapsibleBlock from "../components/common/CollapsibleBlock";
@@ -97,6 +98,13 @@ export default function ReportsPage() {
     queryKey: ["reports-debts"],
     queryFn: () => api.get("/reports/debts").then(r => r.data)
   });
+
+  // Org letterhead for the FACTURE print (shared ["org-settings"] cache).
+  const { data: orgResp } = useOfflineCachedQuery({
+    queryKey: ["org-settings"],
+    queryFn: () => api.get("/settings").then(r => r.data)
+  });
+  const orgSettings = orgResp?.data || {};
 
   const { data: salesDetailData, isLoading: salesDetailLoading } = useOfflineCachedQuery({
     queryKey: ["reports-sales-detail", from, to, repLoc],
@@ -520,29 +528,22 @@ export default function ReportsPage() {
                                 }} style={{ background: "#25D366", border: "none", color: "#fff", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
                                   📱
                                 </button>
-<button onClick={async () => {
-                                  const items = sale.pa_sale_items || [];
-                                  const total = items.reduce((s,i) => s + itemAmount(i), 0);
-                                  const codes = sale.sale_number ? await genSaleCodes(sale.sale_number) : { barcode: "", qr: "" };
-                                  const w = window.open("","_blank","width=350,height=500");
-                                  w.document.write(`<html><head><style>body{font-family:monospace;font-size:12px;width:300px;margin:0 auto}.row{display:flex;justify-content:space-between}.line{border-top:1px dashed #000;margin:6px 0}.bold{font-weight:bold;font-size:14px}.center{text-align:center}</style></head><body>
-                                    <div class="center" style="font-weight:bold;font-size:14px;margin-bottom:4px">REÇU</div>
-                                    <div class="center">${sale.sale_date}</div>
-                                    <div class="center" style="font-size:15px;font-weight:bold;margin:4px 0">${sale.sale_number || ""}</div>
-                                    ${sale.pa_customers?.name ? `<div class="center">Client: ${sale.pa_customers.name}</div>` : ""}
-                                    <div class="line"></div>
-                                    ${items.map(i => isDebtItem(i)
-                                      ? `<div class="row"><span>${itemLabel(i, lang)}</span><span>${itemAmount(i).toLocaleString()} F</span></div>`
-                                      : `<div class="row"><span>${itemLabel(i, lang)} ×${i.quantity}</span><span>${itemAmount(i).toLocaleString()} F</span></div>`).join("")}
-                                    <div class="line"></div>
-                                    <div class="row bold"><span>TOTAL</span><span>${total.toLocaleString()} FCFA</span></div>
-                                    ${sale.payment_status === "credit" ? `<div class="row" style="color:red"><span>🔴 CRÉDIT DÛ</span><span>${total.toLocaleString()} F</span></div>` : ""}
-                                    ${sale.payment_status === "partial" ? `<div class="row" style="color:orange"><span>🟡 RESTE DÛ</span><span>${sale.balance_due?.toLocaleString()} F</span></div>` : ""}
-                                    <div class="line"></div>
-                                    ${codes.barcode ? `<div class="center"><img src="${codes.barcode}" style="height:44px;image-rendering:pixelated"/></div>` : ""}
-                                    ${codes.qr ? `<div class="center"><img src="${codes.qr}" style="width:110px;height:110px"/></div>` : ""}
-                                    ${sale.sale_number ? `<div class="center" style="font-size:11px">${sale.sale_number}</div>` : ""}
-                                  </body></html>`);
+<button onClick={() => {
+                                  // MP-FACTURE-STANDARD: print the Cameroon FACTURE (shared builder),
+                                  // not the old thermal REÇU. Debt-payment lines map to qty 1 with the
+                                  // amount as P.U. so they still total correctly.
+                                  const items = (sale.pa_sale_items || []).map(i => isDebtItem(i)
+                                    ? { name: itemLabel(i, lang), quantity: 1, unit_price: itemAmount(i) }
+                                    : { name: itemLabel(i, lang), quantity: Number(i.quantity) || 0, unit_price: Number(i.unit_price) || 0 });
+                                  const html = buildFactureHtml({
+                                    org: orgSettings,
+                                    saleNumber: sale.sale_number || "",
+                                    saleDate: sale.sale_date || "",
+                                    customerName: sale.pa_customers?.name || "Comptant",
+                                    items,
+                                  });
+                                  const w = window.open("", "_blank", "width=400,height=600");
+                                  w.document.write(html);
                                   w.document.close(); w.focus(); setTimeout(() => { w.print(); w.close(); }, 400);
                                 }} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-primary)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11 }}>
                                   🖨️

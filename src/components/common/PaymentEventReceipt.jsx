@@ -27,6 +27,7 @@
 import { Component, useEffect, useState } from "react";
 import { genSaleCodes } from "../../utils/receiptCodes";
 import { buildMonospaceReceipt, wrapMonospaceFence } from "../../utils/receiptText";
+import { buildFactureHtml } from "../../utils/factureReceipt";
 
 // MP-VOID-PARTIAL-COMMIT-FIX: scoped error boundary so a render
 // crash in the receipt (bad payload shape, missing field, etc.)
@@ -430,6 +431,26 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
   // same structure: the container is a centered max-width box that condenses
   // to the paper width, and the table wraps the Désignation column.
   const printReceipt = () => {
+    // SALE → shared Cameroon FACTURE builder (identical to the Reports → Sales
+    // details print). No barcode/QR; amounts space-separated, no decimals.
+    if (eventType === "sale") {
+      const isDebt = (i) => i.type === "debt_payment" || i.isDebt || i.isDebtPayment
+        || i.product_id === "__DEBT__" || i.product_id === "__DEBT_PAYMENT__";
+      const items = (data.items || []).map((i) => isDebt(i)
+        ? { name: i.name, quantity: 1, unit_price: Number(i.unit_price) || 0 }
+        : { name: i.name, quantity: Number(i.quantity) || 0, unit_price: Number(i.unit_price) || 0 });
+      const html = buildFactureHtml({
+        org: org || {},
+        saleNumber: reference || data.sale_number || "",
+        saleDate: data.sale_date || "",
+        customerName: data.customer_name || data.customer?.name || "Comptant",
+        items,
+      });
+      const w = window.open("", "_blank", "width=400,height=600");
+      w.document.write(html); w.document.close(); w.focus();
+      setTimeout(() => { w.print(); w.close(); }, 300);
+      return;
+    }
     const esc = (s) => String(s == null ? "" : s)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     // XAF has no cents: round to whole units and group thousands with a plain
