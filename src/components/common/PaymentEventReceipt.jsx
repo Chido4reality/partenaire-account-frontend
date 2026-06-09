@@ -422,44 +422,124 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
     window.open(url, "_blank");
   };
 
+  // MP-FACTURE-STANDARD: Cameroon "FACTURE" print format (matches the Le
+  // Soldeur paper invoice). Letterhead is pulled from org letterhead fields;
+  // sales render as a full facture (items table + TOTAL + signatures). Other
+  // event types (refund / void / debt) keep their line-based body under the
+  // same letterhead — they aren't invoices. Narrow/thermal printers get the
+  // same structure: the container is a centered max-width box that condenses
+  // to the paper width, and the table wraps the Désignation column.
   const printReceipt = () => {
+    const esc = (s) => String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    // XAF has no cents: round to whole units and group thousands with a plain
+    // space (e.g. 57000 -> "57 000", 20500 -> "20 500").
+    const money = (n) => Math.round(Number(n) || 0).toLocaleString("en-US").replace(/,/g, " ");
+    const currency = esc(org?.currency || "FCFA");
     const shopName = org?.name || "Notre boutique";
     const footer = org?.receipt_footer || (en ? "Thank you for your business!" : "Merci pour votre achat!");
     const title = en ? header.titleEn : header.titleFr;
-    const linesHtml = bodyLines
-      .map(l => l === "─────────────────────"
-        ? `<div class="line"></div>`
-        : l === ""
-          ? `<br/>`
-          : `<div>${l.replace(/\*([^*]+)\*/g, "<strong>$1</strong>")}</div>`)
-      .join("");
-    const html = `
-      <html><head><title>${title}</title><style>
-        body { font-family: monospace; font-size: 12px; width: 300px; margin: 0 auto; }
-        h2 { text-align: center; font-size: 14px; margin: 4px 0; }
-        .center { text-align: center; }
-        .line { border-top: 1px dashed #000; margin: 6px 0; }
-        .footer { text-align: center; margin-top: 10px; font-size: 11px; }
-      </style></head><body>
-        <h2>${shopName}</h2>
-        <div class="center">${org?.address || ""} ${org?.city || ""}</div>
-        <div class="center">${org?.phone || ""}</div>
-        <div class="line"></div>
-        <div class="center" style="font-weight:bold">${header.emoji} ${title}</div>
-        <div class="center">${dateStr} ${timeStr}</div>
-        ${reference ? `<div class="center" style="font-size:15px;font-weight:bold;margin:4px 0">${reference}</div>` : ""}
-        <div class="line"></div>
+
+    // ── Letterhead (skip any empty field) ──
+    const lh = [];
+    if (org?.logo_url) lh.push(`<div class="center"><img class="logo" src="${esc(org.logo_url)}"/></div>`);
+    if (org?.name)     lh.push(`<div class="center name">${esc(org.name)}</div>`);
+    if (org?.slogan)   lh.push(`<div class="center slogan">${esc(org.slogan)}</div>`);
+    const addr = [org?.address, org?.city, org?.country].filter(Boolean).map(esc).join(", ");
+    if (addr)          lh.push(`<div class="center small">${addr}</div>`);
+    const tel = [org?.phone, org?.whatsapp_number].filter(Boolean).map(esc).join(" / ");
+    if (tel)           lh.push(`<div class="center small">Tél: ${tel}</div>`);
+    if (org?.email)    lh.push(`<div class="center small">E-mail: ${esc(org.email)}</div>`);
+    const letterhead = lh.join("");
+
+    // DD-MM-YYYY from the sale's own date (fallback: today).
+    const factureDate = (() => {
+      const sd = data.sale_date;
+      if (sd && /^\d{4}-\d{2}-\d{2}/.test(sd)) { const [y, m, d] = sd.slice(0, 10).split("-"); return `${d}-${m}-${y}`; }
+      const d = new Date(); const p = (n) => String(n).padStart(2, "0");
+      return `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()}`;
+    })();
+
+    let bodyHtml;
+    if (eventType === "sale") {
+      const items = data.items || [];
+      const isDebtLine = (i) => i.type === "debt_payment" || i.isDebt || i.isDebtPayment
+        || i.product_id === "__DEBT__" || i.product_id === "__DEBT_PAYMENT__";
+      const rows = items.map((i) => {
+        const debt = isDebtLine(i);
+        const qty = debt ? 1 : (Number(i.quantity) || 0);
+        const pu = Number(i.unit_price) || 0;
+        const lt = qty * pu;
+        return `<tr><td class="c">${qty}</td><td>${esc(i.name)}</td><td class="r">${money(pu)}</td><td class="r">${money(lt)}</td></tr>`;
+      }).join("");
+      const grand = items.reduce((s, i) => {
+        const qty = isDebtLine(i) ? 1 : (Number(i.quantity) || 0);
+        return s + qty * (Number(i.unit_price) || 0);
+      }, 0);
+      const clientName = esc(data.customer_name || data.customer?.name || "Comptant");
+      const num = esc(reference || data.sale_number || "");
+      bodyHtml = `
+        <div class="title">FACTURE</div>
+        <div class="center meta">N°: ${num}</div>
+        <div class="center meta">Date: ${factureDate}</div>
+        <div class="client">Client: ${clientName}</div>
+        <table>
+          <thead><tr><th class="c">Qté</th><th>Désignation</th><th class="r">P.U.</th><th class="r">P. Total</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div class="total">TOTAL: ${money(grand)} ${currency}</div>
+        ${footer ? `<div class="footer">${esc(footer)}</div>` : ""}
+        <div class="arrete">Arrêtée la présente facture à la somme de : ________________________________</div>
+        <div class="sign"><div class="sigcell">Signature client</div><div class="sigcell">Signature vendeur</div></div>`;
+    } else {
+      // Non-sale events: keep the line-based body under the letterhead.
+      const linesHtml = bodyLines
+        .map((l) => l === "─────────────────────" ? `<hr class="sep"/>`
+          : l === "" ? `<br/>`
+          : `<div>${esc(l).replace(/\*([^*]+)\*/g, "<strong>$1</strong>")}</div>`)
+        .join("");
+      bodyHtml = `
+        <hr class="sep"/>
+        <div class="center title">${title}</div>
+        <div class="center meta">${dateStr} ${timeStr}</div>
+        ${reference ? `<div class="center" style="font-size:14px;font-weight:bold;margin:4px 0">${esc(reference)}</div>` : ""}
+        <hr class="sep"/>
         ${linesHtml}
-        <div class="line"></div>
-        ${data.cashier_name ? `<div>${en ? "Cashier" : "Caissier"}: ${data.cashier_name}</div>` : ""}
-        ${data.location_name ? `<div>${en ? "Location" : "Emplacement"}: ${data.location_name}</div>` : ""}
-        ${codes.barcode ? `<div class="center" style="margin-top:6px"><img src="${codes.barcode}" style="height:44px;image-rendering:pixelated"/></div>` : ""}
-        ${codes.qr ? `<div class="center"><img src="${codes.qr}" style="width:110px;height:110px"/></div>` : ""}
-        ${reference ? `<div class="center" style="font-size:11px">${reference}</div>` : ""}
-        <div class="footer">${footer}</div>
-        <div class="footer">— ${shopName}</div>
+        ${codes.qr ? `<div class="center" style="margin-top:8px"><img src="${codes.qr}" style="width:110px;height:110px"/></div>` : ""}
+        ${footer ? `<div class="footer">${esc(footer)}</div>` : ""}`;
+    }
+
+    const html = `
+      <html><head><meta charset="utf-8"><title>${eventType === "sale" ? "FACTURE " + esc(reference || "") : esc(title)}</title><style>
+        * { box-sizing: border-box; }
+        body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #000; margin: 0; padding: 10px; }
+        .wrap { max-width: 440px; margin: 0 auto; }
+        .center { text-align: center; }
+        .name { font-weight: bold; font-size: 16px; }
+        .slogan { font-style: italic; font-size: 11px; }
+        .small { font-size: 11px; line-height: 1.4; }
+        .logo { max-height: 70px; max-width: 200px; object-fit: contain; }
+        .title { text-align: center; font-weight: bold; font-size: 16px; letter-spacing: 1px; margin: 12px 0 4px; }
+        .meta { font-size: 12px; }
+        .client { margin: 8px 0 4px; font-weight: bold; }
+        table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+        th, td { border: 1px solid #000; padding: 4px 6px; font-size: 11px; vertical-align: top; word-break: break-word; }
+        th { background: #f0f0f0; }
+        .c { text-align: center; } .r { text-align: right; }
+        .total { text-align: right; font-weight: bold; font-size: 15px; margin-top: 8px; }
+        .footer { text-align: center; margin-top: 12px; font-size: 11px; }
+        .arrete { margin-top: 16px; font-size: 11px; }
+        .sign { display: flex; justify-content: space-between; margin-top: 30px; font-size: 11px; font-weight: bold; }
+        .sigcell { width: 45%; border-top: 1px solid #000; padding-top: 4px; text-align: center; }
+        hr.sep { border: none; border-top: 1px dashed #000; margin: 8px 0; }
+        @media print { body { padding: 0; } .wrap { max-width: 100%; } }
+      </style></head><body>
+        <div class="wrap">
+          ${letterhead}
+          ${bodyHtml}
+        </div>
       </body></html>`;
-    const w = window.open("", "_blank", "width=350,height=520");
+    const w = window.open("", "_blank", "width=400,height=600");
     w.document.write(html);
     w.document.close();
     w.focus();

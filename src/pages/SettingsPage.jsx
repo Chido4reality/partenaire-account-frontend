@@ -111,7 +111,7 @@ export default function SettingsPage() {
 
   // Shop settings state
   const [shopForm, setShopForm] = useState({
-    name: "", phone: "", address: "", city: "", country: "Cameroun",
+    name: "", slogan: "", email: "", phone: "", address: "", city: "", country: "Cameroun",
     whatsapp_number: "", receipt_footer: "", daily_summary_time: "17:30",
     daily_summary_enabled: true, low_stock_alerts_enabled: true,
     drawer_mode: "shared"
@@ -180,6 +180,8 @@ export default function SettingsPage() {
     if (!d || shopLoaded) return;
     setShopForm({
       name:                     d.name || "",
+      slogan:                   d.slogan || "",
+      email:                    d.email || "",
       phone:                    d.phone || "",
       address:                  d.address || "",
       city:                     d.city || "",
@@ -395,6 +397,35 @@ export default function SettingsPage() {
   const setSF = (k, v) => setStaffForm(f => ({ ...f, [k]: v }));
   const setFF = (k, v) => setShopForm(f => ({ ...f, [k]: v }));
 
+  // FACTURE letterhead logo. Branding is Premium-gated (logo_url), so a
+  // non-Premium org gets the paywall. The picked image is downscaled to a small
+  // PNG data URL (max 320px) so it stays light enough to live in the org row +
+  // ride along in every /settings response, and renders directly in the
+  // printed letterhead <img>. No separate upload endpoint needed.
+  const handleLogoFile = (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!canBrand) { setBrandingPaywall(true); return; }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const max = 320;
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        try { setFF("logo_url", canvas.toDataURL("image/png")); }
+        catch { setFF("logo_url", ev.target.result); }
+      };
+      img.onerror = () => setFF("logo_url", ev.target.result);
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
   const TABS = [
     { key: "locations", en: "Warehouses & Shops", fr: "Magasins & Boutiques" },
     { key: "staff",     en: "Staff",              fr: "Personnel" },
@@ -602,9 +633,18 @@ export default function SettingsPage() {
                 <label className="label">{lang === "en" ? "Shop name" : "Nom de la boutique"} *</label>
                 <input className="input" value={shopForm.name} onChange={e => setFF("name", e.target.value)} placeholder="Ex: Dozie Store" />
               </div>
+              {/* FACTURE letterhead: slogan shows under the business name. */}
+              <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+                <label className="label">{lang === "en" ? "Slogan" : "Slogan"}</label>
+                <input className="input" value={shopForm.slogan} onChange={e => setFF("slogan", e.target.value)} placeholder={lang === "en" ? "Your shop tagline (shown on invoices)" : "Slogan de la boutique (affiché sur les factures)"} />
+              </div>
               <div className="form-group">
                 <label className="label">{lang === "en" ? "Phone" : "Téléphone"}</label>
                 <input className="input" value={shopForm.phone} onChange={e => setFF("phone", e.target.value)} placeholder="6XXXXXXXX" />
+              </div>
+              <div className="form-group">
+                <label className="label">{lang === "en" ? "E-mail" : "E-mail"}</label>
+                <input className="input" type="email" value={shopForm.email} onChange={e => setFF("email", e.target.value)} placeholder="boutique@exemple.com" />
               </div>
               <div className="form-group">
                 <label className="label">{lang === "en" ? "Owner WhatsApp number" : "WhatsApp du propriétaire"}</label>
@@ -622,6 +662,30 @@ export default function SettingsPage() {
               <div className="form-group">
                 <label className="label">{lang === "en" ? "City" : "Ville"}</label>
                 <input className="input" value={shopForm.city} onChange={e => setFF("city", e.target.value)} placeholder="Douala" />
+              </div>
+              {/* FACTURE letterhead logo (Premium-gated, like receipt branding). */}
+              <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+                <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {lang === "en" ? "Logo (invoice letterhead)" : "Logo (en-tête de facture)"}
+                  {!canBrand && (
+                    <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: "rgba(251,191,36,0.15)", color: "#fbbf24", fontWeight: 700 }}>🔒 Premium</span>
+                  )}
+                </label>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  {shopForm.logo_url
+                    ? <img src={shopForm.logo_url} alt="logo" style={{ width: 56, height: 56, objectFit: "contain", borderRadius: 8, border: "1px solid var(--border)", background: "#fff" }} />
+                    : <div style={{ width: 56, height: 56, borderRadius: 8, border: "1px dashed var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, color: "var(--text-muted)" }}>🏪</div>}
+                  <label style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elevated)", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
+                    {lang === "en" ? "Upload logo" : "Choisir un logo"}
+                    <input type="file" accept="image/*" onChange={handleLogoFile} style={{ display: "none" }} />
+                  </label>
+                  {shopForm.logo_url && (
+                    <button type="button" onClick={() => setFF("logo_url", "")}
+                      style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid rgba(248,113,113,0.4)", background: "transparent", color: "#f87171", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
+                      {lang === "en" ? "Remove" : "Retirer"}
+                    </button>
+                  )}
+                </div>
               </div>
               {/* MP-DRAWER-MODE-TOGGLE: drawer mode radio. Spans full
                   width. Save is disabled (with a warning) when the
