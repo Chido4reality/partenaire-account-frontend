@@ -21,6 +21,7 @@ import PayButton from "../components/pos/PayButton";
 import { tapHaptic } from "../utils/haptics";
 import { motion } from "framer-motion";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
+import useOwnerApproval from "../hooks/useOwnerApproval";
 
 const PAYMENT_MODES = [
   { key: "paid",    en: "Full Payment",  fr: "Paiement total",   color: "#10b981", icon: "✓" },
@@ -68,6 +69,9 @@ export default function POSPage() {
   const [cart, setCart]                   = useState([]);
   const [search, setSearch]               = useState("");
   const [customer, setCustomer]           = useState(null);
+  // MIN-PRICE FLOOR: reuse the existing boss/owner PIN approval flow for
+  // below-min manual price edits. {approvalModal} is rendered near the page root.
+  const { requestApproval, modal: approvalModal } = useOwnerApproval();
   const [custSearch, setCustSearch]       = useState("");
   const [showCustDrop, setShowCustDrop]   = useState(false);
   const [payMode, setPayMode]             = useState("paid");
@@ -563,23 +567,64 @@ export default function POSPage() {
       ).slice(0, 8)
     : [];
 
-  // ── PRICE TIER: auto-apply based on customer type ───────────────────────────
-  // MP-CUSTOMER-TYPE-PRICING-TIER (Bug C): wholesale, vip, AND
-  // garage all use wholesale_price. Only retail (and the Dozie
-  // marketplace flow, which doesn't reach this handler) fall
-  // back to sell_price. Pre-fix: only wholesale picked the tier;
-  // VIP customers were charged sell_price (VNT-0002 repro).
-  const TIER_TYPES = ["wholesale", "vip", "garage"];
-  const isTierCustomer = (cust) => TIER_TYPES.includes(cust?.customer_type);
-  const getPrice = (product) => {
-    if (isTierCustomer(customer) && product.wholesale_price > 0) {
-      return product.wholesale_price;
-    }
-    return product.sell_price;
+  // ── PRICE TIER: auto-apply by customer type ─────────────────────────────────
+  // MP-CUSTOMER-TIER-PRICING: price ladder per product is
+  //   cost_price <= min_price <= wholesale_price <= sell_price.
+  // Customer type → tier (recorded on each sale line as price_tier):
+  //   no customer / walk-in        -> sell_price       (walk_in)
+  //   garage | retail | wholesale  -> wholesale_price  (wholesale)
+  //   vip                          -> min_price        (vip)
+  // All three resolve >= min_price, so they never trip the min-price floor.
+  const tierForCustomer = (cust) => {
+    const t = cust?.customer_type;
+    if (!cust) return "walk_in";
+    if (t === "vip") return "vip";
+    if (t === "garage" || t === "retail" || t === "wholesale") return "wholesale";
+    return "walk_in";
   };
+  // Resolve the unit price for a product at a tier, with safe fallbacks when an
+  // optional ladder value is missing (0/null): never resolves to 0, never below
+  // the next price up.
+  const priceForTier = (product, tier) => {
+    const sell = Number(product.sell_price) || 0;
+    const ws   = Number(product.wholesale_price) || 0;
+    const min  = Number(product.min_price) || 0;
+    if (tier === "vip")       return min > 0 ? min : (ws > 0 ? ws : sell);
+    if (tier === "wholesale") return ws  > 0 ? ws  : sell;
+    return sell;
+  };
+  const isTierCustomer = (cust) => tierForCustomer(cust) !== "walk_in";
+  const getPrice = (product) => priceForTier(product, tierForCustomer(customer));
+
+  // Re-price the WHOLE cart when the attached customer is changed or cleared —
+  // existing product lines move to the new tier too, not just newly-added ones.
+  // Debt/debt-payment lines are left alone; any prior manual below-min override
+  // is reset (tier prices are >= min, so they need no approval).
+  const customerId   = customer?.id || null;
+  const customerType = customer?.customer_type || null;
+  useEffect(() => {
+    const tier = tierForCustomer(customer);
+    setCart(prev => prev.map(it => {
+      if (it.isDebt || it.isDebtPayment || it.type === "debt_payment"
+          || it.product_id === "__DEBT__" || it.product_id === "__DEBT_PAYMENT__") return it;
+      // Legacy lines (drafts saved before this change) may lack ladder fields →
+      // priceForTier would yield 0; fall back to the line's current price.
+      const price = priceForTier(it, tier) || Number(it.unit_price) || Number(it.original_price) || 0;
+      return {
+        ...it,
+        unit_price: price,
+        original_price: price,
+        price_tier: tier,
+        price_overridden: false,
+        price_approval_token: undefined,
+      };
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerId, customerType]);
 
   const addToCart = (product, qty = 1) => {
-    const price = getPrice(product);
+    const tier  = tierForCustomer(customer);
+    const price = priceForTier(product, tier);
     // Low stock warning
     const stockQty = product.stock?.quantity;
     const minQty = product.stock?.min_quantity || 5;
@@ -602,6 +647,9 @@ export default function POSPage() {
         quantity: qty,
         unit_price: price,
         original_price: price,
+        price_tier: tier,                                       // recorded on the sale line
+        sell_price: Number(product.sell_price) || 0,            // kept for re-pricing on customer change
+        wholesale_price: Number(product.wholesale_price) || 0,
         min_price: product.min_price || 0,
         cost_price: product.cost_price,
         stock: product.stock?.quantity
@@ -651,27 +699,11 @@ export default function POSPage() {
     ? setCart(c => c.filter((_, i) => i !== idx))
     : setCart(c => c.map((it, i) => i === idx ? { ...it, quantity: qty } : it));
 
-  const updatePrice = (idx, price) => {
-    const item = cart[idx];
-    const newPrice = +price;
-    const minPrice = item.min_price || 0;
-    // Owner can always change price freely
-    if (isOwner) {
-      setCart(c => c.map((it, i) => i === idx ? { ...it, unit_price: newPrice } : it));
-      return;
-    }
-    // Staff: block below min price with an explicit toast so the
-    // cashier knows WHY the price reverted. Backend at sales.js:46-62
-    // would also reject — this just gives clearer feedback before
-    // they get to checkout. No override path; owner must intervene.
-    if (minPrice > 0 && newPrice < minPrice) {
-      toast.error(lang === "en"
-        ? `Minimum price: ${minPrice.toLocaleString()} FCFA — ask the owner`
-        : `Prix minimum: ${minPrice.toLocaleString()} FCFA — demandez au propriétaire`);
-      return;
-    }
-    setCart(c => c.map((it, i) => i === idx ? { ...it, unit_price: newPrice } : it));
-  };
+  // Typing into the price field is free-form (transient) for everyone; the
+  // min-price floor + boss/owner PIN override are enforced on blur (below), so
+  // we never pop the PIN modal mid-keystroke.
+  const updatePrice = (idx, raw) =>
+    setCart(c => c.map((it, i) => i === idx ? { ...it, unit_price: raw === "" ? "" : +raw } : it));
 
   // The qty/price fields are <input type=number>. Clearing the
   // highlighted digits (Delete) fires onChange with value "", and
@@ -693,20 +725,49 @@ export default function POSPage() {
     const n = parseInt(it.quantity, 10);
     return (isNaN(n) || n < 1) ? { ...it, quantity: 1 } : { ...it, quantity: n };
   }));
-  const onPriceInput = (idx, raw) => {
-    if (raw === "") {
-      setCart(c => c.map((it, i) => i === idx ? { ...it, unit_price: "" } : it));
+  const onPriceInput = (idx, raw) => updatePrice(idx, raw);
+
+  // MIN-PRICE FLOOR: on blur, a below-min price requires the existing boss/
+  // owner PIN override (OwnerApprovalModal). Owners set any price freely. On
+  // approval the line keeps the price + carries the token to checkout; on
+  // cancel/failure it reverts to the last valid price.
+  const onPriceBlur = async (idx) => {
+    const item = cart[idx];
+    if (!item) return;
+    const p = parseFloat(item.unit_price);
+    const minPrice = item.min_price || 0;
+    const revertTo = item.original_price || item.min_price || 0;
+    if (isNaN(p) || p < 0) {
+      setCart(c => c.map((it, i) => i === idx ? { ...it, unit_price: revertTo } : it));
       return;
     }
-    updatePrice(idx, raw);
+    if (!isOwner && minPrice > 0 && p < minPrice) {
+      try {
+        const { token } = await requestApproval({
+          actionType:  "edit_product_price",
+          targetTable: "pa_products",
+          targetId:    item.product_id,
+          context:     { min_price: minPrice, attempted_price: p, product: item.name },
+          description: lang === "en"
+            ? `Sell "${item.name}" below minimum (${minPrice.toLocaleString()} FCFA) at ${p.toLocaleString()} FCFA`
+            : `Vendre "${item.name}" sous le minimum (${minPrice.toLocaleString()} FCFA) à ${p.toLocaleString()} FCFA`,
+        });
+        setCart(c => c.map((it, i) => i === idx
+          ? { ...it, unit_price: p, price_overridden: true, price_approval_token: token }
+          : it));
+      } catch (e) {
+        if (e?.code !== "cancelled") {
+          toast.error(e?.response?.data?.message || (lang === "en" ? "Approval failed" : "Échec de l'approbation"));
+        }
+        setCart(c => c.map((it, i) => i === idx ? { ...it, unit_price: revertTo } : it));
+      }
+      return;
+    }
+    // Valid price (>= min, or owner): commit and drop any stale override.
+    setCart(c => c.map((it, i) => i === idx
+      ? { ...it, unit_price: p, price_overridden: false, price_approval_token: undefined }
+      : it));
   };
-  const onPriceBlur = (idx) => setCart(c => c.map((it, i) => {
-    if (i !== idx) return it;
-    const p = parseFloat(it.unit_price);
-    return (isNaN(p) || p < 0)
-      ? { ...it, unit_price: it.original_price || it.min_price || 0 }
-      : it;
-  }));
 
   const total   = cart.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0);
   const hasDebt = cart.some(i => i.product_id === "__DEBT__");
@@ -978,7 +1039,7 @@ export default function POSPage() {
                                 : undefined,
                             };
                           }
-                          return { product_id: i.product_id, quantity: Number(i.quantity) || 1, unit_price: Number(i.unit_price) || 0, cost_price: i.cost_price };
+                          return { product_id: i.product_id, quantity: Number(i.quantity) || 1, unit_price: Number(i.unit_price) || 0, cost_price: i.cost_price, price_tier: i.price_tier || "walk_in", price_approval_token: i.price_approval_token };
                         }),
         payment_method: payMethod,
         paid_amount:    paid,
@@ -1323,6 +1384,9 @@ export default function POSPage() {
           quantity: Number(it.qty) || 1,
           unit_price: Number(it.unit_price) || Number(p?.sell_price) || 0,
           original_price: Number(p?.sell_price) || 0,
+          price_tier: "walk_in", // resume clears the customer; re-prices if one is re-attached
+          sell_price: Number(p?.sell_price) || 0,
+          wholesale_price: Number(p?.wholesale_price) || 0,
           min_price: p?.min_price || 0,
           cost_price: p?.cost_price,
           stock: it.current_stock != null ? Number(it.current_stock) : null,
@@ -1600,6 +1664,7 @@ export default function POSPage() {
 
   return (
     <>
+      {approvalModal}
       {/* ── DEBT MODAL ─────────────────────────────────────── */}
       {showDebtModal && debtInvoices.length > 0 && (
         <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -1973,9 +2038,12 @@ export default function POSPage() {
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: mobile ? 6 : 2 }}>
                       <div style={{ fontWeight: 700, color: "var(--brand-light)", fontSize: mobile ? 15 : 14 }}>
-                        {formatCFA(isTierCustomer(customer) && p.wholesale_price > 0 ? p.wholesale_price : p.sell_price)}
-                        {isTierCustomer(customer) && p.wholesale_price > 0 && (
+                        {formatCFA(priceForTier(p, tierForCustomer(customer)))}
+                        {tierForCustomer(customer) === "wholesale" && p.wholesale_price > 0 && (
                           <span style={{ fontSize: 9, background: "#fbbf24", color: "#000", borderRadius: 4, padding: "1px 4px", marginLeft: 4, fontWeight: 700 }}>GROS</span>
+                        )}
+                        {tierForCustomer(customer) === "vip" && p.min_price > 0 && (
+                          <span style={{ fontSize: 9, background: "#a78bfa", color: "#000", borderRadius: 4, padding: "1px 4px", marginLeft: 4, fontWeight: 700 }}>VIP</span>
                         )}
                       </div>
                       {mobile ? (

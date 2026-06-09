@@ -614,8 +614,32 @@ export default function InventoryPage() {
   // MP-PRODUCT-DEDUP: client-side pre-check (barcode-first, else normalized
   // name) against the loaded list for instant feedback; the backend 409 above
   // is the authoritative guard (covers list>500 / offline replay / race).
+  // PRICE LADDER (client mirror of the backend guard): enforce
+  // cost_price <= min_price <= wholesale_price <= sell_price, comparing only
+  // present (>0) values. Returns a localized message naming the out-of-order
+  // value, or null. This is what blocks "wholesale below min" (Nora's entry).
+  const priceLadderError = (form) => {
+    const steps = [
+      { v: +form.cost_price || 0,      en: "Cost price",      fr: "Prix d'achat" },
+      { v: +form.min_price || 0,       en: "Min price",       fr: "Prix minimum" },
+      { v: +form.wholesale_price || 0, en: "Wholesale price", fr: "Prix de gros" },
+      { v: +form.sell_price || 0,      en: "Sell price",      fr: "Prix de vente" },
+    ].filter(s => s.v > 0);
+    for (let i = 1; i < steps.length; i++) {
+      if (steps[i].v < steps[i - 1].v) {
+        const lo = steps[i], hi = steps[i - 1];
+        return lang === "en"
+          ? `${lo.en} (${lo.v.toLocaleString()} FCFA) can't be below ${hi.en} (${hi.v.toLocaleString()} FCFA).`
+          : `${lo.fr} (${lo.v.toLocaleString()} FCFA) ne peut pas être inférieur au ${hi.fr} (${hi.v.toLocaleString()} FCFA).`;
+      }
+    }
+    return null;
+  };
+
   const handleAddProduct = () => {
     setDupeProduct(null);
+    const ladderErr = priceLadderError(newProduct);
+    if (ladderErr) { toast.error(ladderErr); return; }
     const bc = (newProduct.barcode || "").trim();
     let local = null;
     if (bc) {
@@ -1681,7 +1705,7 @@ export default function InventoryPage() {
 
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setShowEditProduct(false); setEditProduct(null); }}>{lang === "en" ? "Cancel" : "Annuler"}</button>
-              <button className="btn btn-primary" style={{ flex: 2 }} disabled={!editProduct.name || !editProduct.sell_price || editProductMutation.isPending} onClick={() => editProductMutation.mutate()}>
+              <button className="btn btn-primary" style={{ flex: 2 }} disabled={!editProduct.name || !editProduct.sell_price || editProductMutation.isPending} onClick={() => { const e = priceLadderError(editProduct); if (e) { toast.error(e); return; } editProductMutation.mutate(); }}>
                 {editProductMutation.isPending ? "..." : (lang === "en" ? "✓ Save Changes" : "✓ Enregistrer")}
               </button>
             </div>
