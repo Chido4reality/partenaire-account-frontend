@@ -441,14 +441,17 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
         : { name: i.name, quantity: Number(i.quantity) || 0, unit_price: Number(i.unit_price) || 0 });
       const html = buildFactureHtml({
         org: org || {},
+        lang,
         saleNumber: reference || data.sale_number || "",
         saleDate: data.sale_date || "",
         customerName: data.customer_name || data.customer?.name || "Comptant",
         items,
       });
+      // Open the facture as a viewer (black-on-white + Imprimer/Partager/Fermer
+      // action bar). Do NOT auto-print/close — the user drives it from the bar,
+      // so the facture is reachable on phones where the print dialog is absent.
       const w = window.open("", "_blank", "width=400,height=600");
       w.document.write(html); w.document.close(); w.focus();
-      setTimeout(() => { w.print(); w.close(); }, 300);
       return;
     }
     const esc = (s) => String(s == null ? "" : s)

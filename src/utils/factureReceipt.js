@@ -7,7 +7,18 @@
 // FACTURE + N° + Date (DD-MM-YYYY) → Client → 4-col table (Qté|Désignation|
 // P.U.|P. Total) → bold TOTAL → receipt_footer → "Arrêtée la présente facture…"
 // → client/vendor signatures. No barcode/QR. Amounts: space thousands
-// separator, no decimals (XAF has no cents).
+// separator, no decimals.
+//
+// build 10:
+//  • FORCED black-on-white (background:#fff / color:#000 !important + color-scheme
+//    light) on screen AND in print, so the facture never inherits the app's dark
+//    theme inside the WebView.
+//  • A .no-print action bar (Imprimer / Partager / Fermer) that stays on screen
+//    and is hidden from the printout via @media print { .no-print{display:none} }.
+//  • Currency symbol comes from the org's currency field (XAF -> FCFA) via the
+//    currency helper; action labels come from the i18n dictionary.
+import { currencySymbol } from "./currency";
+import { t } from "./i18n";
 
 function esc(s) {
   return String(s == null ? "" : s)
@@ -25,8 +36,8 @@ function factureDate(sd) {
 // org: { logo_url, name, slogan, address, city, country, phone, whatsapp_number,
 //        email, currency, receipt_footer }  (empty fields are skipped)
 // items: [{ name, quantity, unit_price }]   (debt lines: pass quantity 1, unit_price = amount)
-export function buildFactureHtml({ org = {}, saleNumber = "", saleDate = "", customerName, items = [] }) {
-  const currency = esc(org.currency || "FCFA");
+export function buildFactureHtml({ org = {}, lang = "fr", saleNumber = "", saleDate = "", customerName, items = [] }) {
+  const currency = esc(currencySymbol(org.currency));   // XAF -> FCFA, etc.
   const footer = org.receipt_footer || "";
 
   const lh = [];
@@ -48,10 +59,22 @@ export function buildFactureHtml({ org = {}, saleNumber = "", saleDate = "", cus
     return `<tr><td class="c">${qty}</td><td>${esc(i.name)}</td><td class="r">${money(pu)}</td><td class="r">${money(lt)}</td></tr>`;
   }).join("");
 
-  return `<!doctype html><html><head><meta charset="utf-8"><title>FACTURE ${esc(saleNumber)}</title><style>
+  // Action-bar labels via the i18n dictionary (default FR).
+  const printLbl = esc(t("print", lang));
+  const shareLbl = esc(t("share", lang));
+  const closeLbl = esc(t("close", lang));
+  const shareText = `FACTURE ${saleNumber}${org.name ? " — " + org.name : ""} — ${money(grand)} ${currencySymbol(org.currency)}`;
+
+  return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>FACTURE ${esc(saleNumber)}</title><style>
+    :root{color-scheme:light}
+    /* FORCE black-on-white so the facture never inherits the app's dark theme */
+    html,body{background:#fff !important;color:#000 !important}
     *{box-sizing:border-box}
-    body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#000;margin:0;padding:10px}
-    .wrap{max-width:440px;margin:0 auto}
+    body{font-family:Arial,Helvetica,sans-serif;font-size:12px;margin:0;padding:0}
+    .wrap{max-width:440px;margin:0 auto;padding:10px;color:#000;background:#fff}
     .center{text-align:center}
     .name{font-weight:bold;font-size:16px}
     .slogan{font-style:italic;font-size:11px}
@@ -61,7 +84,7 @@ export function buildFactureHtml({ org = {}, saleNumber = "", saleDate = "", cus
     .meta{font-size:12px;text-align:center}
     .client{margin:8px 0 4px;font-weight:bold}
     table{width:100%;border-collapse:collapse;margin-top:6px}
-    th,td{border:1px solid #000;padding:4px 6px;font-size:11px;vertical-align:top;word-break:break-word}
+    th,td{border:1px solid #000;padding:4px 6px;font-size:11px;vertical-align:top;word-break:break-word;color:#000}
     th{background:#f0f0f0}
     .c{text-align:center}.r{text-align:right}
     .total{text-align:right;font-weight:bold;font-size:15px;margin-top:8px}
@@ -69,8 +92,26 @@ export function buildFactureHtml({ org = {}, saleNumber = "", saleDate = "", cus
     .arrete{margin-top:16px;font-size:11px}
     .sign{display:flex;justify-content:space-between;margin-top:30px;font-size:11px;font-weight:bold}
     .sigcell{width:45%;border-top:1px solid #000;padding-top:4px;text-align:center}
-    @media print{body{padding:0}.wrap{max-width:100%}}
-  </style></head><body><div class="wrap">
+    /* On-screen action bar — hidden from the printout */
+    .actions{position:sticky;top:0;z-index:10;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;
+      padding:10px;background:#fff;border-bottom:1px solid #ccc}
+    .actions button{padding:10px 16px;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer}
+    .btn-print{border:none;background:#152B52;color:#fff}
+    .btn-share{border:1px solid #152B52;background:#fff;color:#152B52}
+    .btn-close{border:1px solid #999;background:#fff;color:#333}
+    @media print{
+      .no-print{display:none !important}
+      html,body{background:#fff !important;color:#000 !important}
+      .wrap{max-width:100%;padding:0}
+      body{padding:0}
+    }
+  </style></head><body>
+    <div class="actions no-print">
+      <button class="btn-print" onclick="window.print()">🖨️ ${printLbl}</button>
+      <button class="btn-share" onclick="_shareFacture()">🔗 ${shareLbl}</button>
+      <button class="btn-close" onclick="window.close()">✕ ${closeLbl}</button>
+    </div>
+    <div class="wrap">
     ${lh.join("")}
     <div class="title">FACTURE</div>
     <div class="meta">N°: ${esc(saleNumber)}</div>
@@ -84,5 +125,13 @@ export function buildFactureHtml({ org = {}, saleNumber = "", saleDate = "", cus
     ${footer ? `<div class="footer">${esc(footer)}</div>` : ""}
     <div class="arrete">Arrêtée la présente facture à la somme de : ________________________________</div>
     <div class="sign"><div class="sigcell">Signature client</div><div class="sigcell">Signature vendeur</div></div>
-  </div></body></html>`;
+    </div>
+    <script>
+      function _shareFacture(){
+        var txt=${JSON.stringify(shareText)};
+        try{ if(navigator.share){ navigator.share({title:"FACTURE ${esc(saleNumber)}", text:txt}); return; } }catch(e){}
+        try{ window.open('https://wa.me/?text='+encodeURIComponent(txt),'_blank'); }catch(e){}
+      }
+    </script>
+  </body></html>`;
 }

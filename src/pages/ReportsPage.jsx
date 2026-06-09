@@ -537,14 +537,17 @@ export default function ReportsPage() {
                                     : { name: itemLabel(i, lang), quantity: Number(i.quantity) || 0, unit_price: Number(i.unit_price) || 0 });
                                   const html = buildFactureHtml({
                                     org: orgSettings,
+                                    lang,
                                     saleNumber: sale.sale_number || "",
                                     saleDate: sale.sale_date || "",
                                     customerName: sale.pa_customers?.name || "Comptant",
                                     items,
                                   });
+                                  // Viewer with Imprimer/Partager/Fermer action bar; the user
+                                  // drives print/close — no auto-print (works on phones too).
                                   const w = window.open("", "_blank", "width=400,height=600");
                                   w.document.write(html);
-                                  w.document.close(); w.focus(); setTimeout(() => { w.print(); w.close(); }, 400);
+                                  w.document.close(); w.focus();
                                 }} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-primary)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11 }}>
                                   🖨️
                                 </button>

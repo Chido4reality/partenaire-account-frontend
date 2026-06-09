@@ -9,6 +9,8 @@ import { useLangStore, useSettingsStore, useAuthStore, useDraftCartStore } from 
 // Staff who attempt a sub-min price now get a toast.error explaining
 // why; the backend at sales.js:46-62 is the source of truth either way.
 import api, { formatCFA } from "../utils/api";
+import { formatMoney, currencySymbol } from "../utils/currency";
+import { t } from "../utils/i18n";
 import { cacheData, getCachedData } from "../utils/offlineStore";
 import { useOfflineCachedQuery, cacheKeyFor } from "../utils/offlineQuery";
 import { useLiteMode } from "../hooks/useLiteMode";
@@ -1530,7 +1532,7 @@ export default function POSPage() {
             </div>
           )}
 
-          <div style={{ flex: 1, overflowY: "auto" }}>
+          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: (mobile && showPayment) ? "none" : "block" }}>
             {cart.length === 0 ? (
               <div style={{ textAlign: "center", padding: "32px 16px", color: "var(--text-muted)" }}>
                 <div style={{ fontSize: 32, marginBottom: 8, opacity: 0.3 }}>🛒</div>
@@ -1565,8 +1567,8 @@ export default function POSPage() {
             ))}
           </div>
 
-          <div style={{ padding: "14px 16px", borderTop: "2px solid var(--border)", background: "var(--bg-elevated)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div style={{ padding: "14px 16px", borderTop: "2px solid var(--border)", background: "var(--bg-elevated)", ...(mobile && showPayment ? { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" } : {}) }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexShrink: 0 }}>
               <span style={{ fontWeight: 600, fontSize: 13, color: "var(--text-secondary)" }}>Total</span>
               <span style={{ fontWeight: 800, fontSize: 20, color: "var(--brand-light)", letterSpacing: "-0.5px" }}>{formatCFA(total)}</span>
             </div>
@@ -1594,15 +1596,17 @@ export default function POSPage() {
               // Back/Confirm row pinned below the scroll boundary. Desktop
               // right-pane is unaffected because its parent already has
               // overflow handling.
-              <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+              <div style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: mobile ? 1 : undefined }}>
                 <div style={{
                   overflowY: "auto",
                   minHeight: 0,
-                  maxHeight: mobile ? "50dvh" : "none",
+                  // Fill the available sheet height and scroll; the Back/Confirm
+                  // footer below is pinned (flexShrink:0), so every payment mode
+                  // (Full/Partial/Credit) keeps Confirm reachable with no fixed
+                  // height cap to recompute on mode change. + --kb-inset so the
+                  // focused field scrolls clear of the on-screen keyboard.
+                  flex: mobile ? 1 : undefined,
                   paddingRight: 2,
-                  // + --kb-inset (set by useKeyboardInset) so payment fields
-                  // scroll clear of the keyboard and the reflow on keyboard
-                  // hide settles cleanly instead of briefly clipping.
                   paddingBottom: "var(--kb-inset, 0px)",
                 }}>
                   {isDebtOnlyCart && (
@@ -1611,7 +1615,7 @@ export default function POSPage() {
                         {lang === "en" ? "Amount to collect (blank = full balance)" : "Montant à encaisser (vide = tout)"}
                       </div>
                       <input className="input" type="number"
-                        placeholder={`${lang === "en" ? "Full balance:" : "Solde total:"} ${total.toLocaleString()} FCFA`}
+                        placeholder={`${t("full_balance", lang)}: ${formatMoney(total, orgSettings.currency)}`}
                         value={debtPayAmt} onChange={e => setDebtPayAmt(e.target.value)}
                         style={{ marginBottom: 4 }} />
                       <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
@@ -1630,10 +1634,10 @@ export default function POSPage() {
                     </div>
                   )}
                   {payMode === "partial" && !isDebtOnlyCart && (
-                    <input className="input" type="number" placeholder={lang === "en" ? "Amount paid (FCFA)" : "Montant payé (FCFA)"} value={paidAmt} onChange={e => setPaidAmt(e.target.value)} style={{ marginBottom: 8 }} />
+                    <input className="input" type="number" placeholder={`${t("amount_paid", lang)} (${currencySymbol(orgSettings.currency)})`} value={paidAmt} onChange={e => setPaidAmt(e.target.value)} style={{ marginBottom: 8 }} />
                   )}
                   {(payMode === "partial" || payMode === "credit") && !isDebtOnlyCart && (
-                    <input className="input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={{ marginBottom: 8 }} title={lang === "en" ? "Due date" : "Date d'échéance"} />
+                    <input className="input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={{ marginBottom: 8 }} title={t("due_date", lang)} />
                   )}
                   <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
                     {PAY_METHODS.map(m => (
@@ -1645,16 +1649,16 @@ export default function POSPage() {
                   </div>
                   <div style={{ background: "var(--bg-card)", borderRadius: 10, padding: "10px 12px", marginBottom: 10, fontSize: 12 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                      <span style={{ color: "var(--text-muted)" }}>Total</span><strong>{formatCFA(total)}</strong>
+                      <span style={{ color: "var(--text-muted)" }}>Total</span><strong>{formatMoney(total, orgSettings.currency)}</strong>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span style={{ color: "#10b981" }}>{lang === "en" ? "Paid" : "Payé"}</span>
-                      <strong style={{ color: "#10b981" }}>{formatCFA(paid)}</strong>
+                      <strong style={{ color: "#10b981" }}>{formatMoney(paid, orgSettings.currency)}</strong>
                     </div>
                     {balance > 0 && !hasDebt && (
                       <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 6, borderTop: "1px solid var(--border)", marginTop: 3 }}>
                         <span style={{ color: "#f87171", fontWeight: 600 }}>{lang === "en" ? "Balance due" : "Reste"}</span>
-                        <strong style={{ color: "#f87171" }}>{formatCFA(balance)}</strong>
+                        <strong style={{ color: "#f87171" }}>{formatMoney(balance, orgSettings.currency)}</strong>
                       </div>
                     )}
                   </div>
@@ -1674,7 +1678,7 @@ export default function POSPage() {
                     {noShiftHint(lang)}
                   </div>
                 )}
-                <div style={{ display: "flex", gap: 8, paddingTop: 8, borderTop: mobile ? "1px solid var(--border)" : "none", background: "var(--bg-surface)" }}>
+                <div style={{ display: "flex", gap: 8, paddingTop: 8, flexShrink: 0, borderTop: mobile ? "1px solid var(--border)" : "none", background: "var(--bg-surface)" }}>
                   <button onClick={() => setShowPayment(false)} className="btn btn-secondary" style={{ flex: 1 }}>← {lang === "en" ? "Back" : "Retour"}</button>
                   <PayButton
                     saleMutation={saleMutation}
