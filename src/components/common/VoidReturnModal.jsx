@@ -208,7 +208,11 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
           notes: reason || null
         };
         const headers = {};
-        if (user?.role !== "owner") {
+        // MP-CASHIER-REFUNDS: owner AND cashier process refunds/exchanges
+        // directly — no PIN modal. (Manager still requires approval; void is
+        // unchanged.) Mirrors the backend, which no longer requires an
+        // Approval-Token from cashiers on /returns/return + /exchange.
+        if (user?.role !== "owner" && user?.role !== "cashier") {
           try {
             const refundTotal = items_returned.reduce((s, i) => s + (i.qty * i.unit_price), 0);
             const { token } = await requestApproval({
