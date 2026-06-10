@@ -1046,7 +1046,10 @@ export default function Layout() {
                   3-6 days remaining  → amber
                   <3 days remaining   → red
                   in grace            → red + pulse animation. */}
-            {effectivePlan === "trial" && !isGrace && trialDaysLeft != null && (() => {
+            {/* MP-7DAY-FULL-TRIAL: during the trial the effective plan is 'pro',
+                so key the countdown on days_remaining_in_trial (not effectivePlan)
+                — otherwise a full-trial user sees no trial indicator. */}
+            {!isGrace && trialDaysLeft != null && (() => {
               let bg, border, color;
               if (trialDaysLeft >= 7)      { bg = "rgba(16,185,129,0.15)"; border = "rgba(16,185,129,0.4)"; color = "#10b981"; }
               else if (trialDaysLeft >= 3) { bg = "rgba(245,158,11,0.15)"; border = "rgba(245,158,11,0.4)"; color = "#fbbf24"; }

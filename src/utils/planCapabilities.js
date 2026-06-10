@@ -21,8 +21,10 @@ export const PLAN_CAPABILITIES = {
   trial: {
     label: 'Trial',
     label_fr: 'Essai',
-    duration_days: 14,
-    grace_days: 7,
+    duration_days: 7,    // MP-7DAY-FULL-TRIAL: 7-day full-feature trial window
+    grace_days: 0,       // these caps are the restricted FREE floor AFTER expiry
+    // NOTE: during the 7-day window the backend effective plan is 'pro' (full);
+    // these 'trial' sections are the restricted free floor an org lands on after.
     sections: ['sales', 'inventory', 'settings'],
     inventory_cap: 10,     // MP-BILLING-V2 Q3
     staff_cap: 1,
