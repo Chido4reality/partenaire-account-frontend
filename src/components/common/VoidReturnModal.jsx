@@ -315,6 +315,64 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
           </div>
         )}
 
+        {/* MP-CASHIER-VIEW-ITEMS: read-only itemized contents, shown the
+            moment the sale opens — for EVERY role. A cashier looking up a
+            receipt by number needs to SEE what was sold (a picking list for
+            the magasin): product names + quantities + the location. This is
+            VIEW-ONLY and reads from the already-permitted GET /sales/:id
+            payload — it is NOT coupled to the reports plan-section gate
+            (which only guards the bulk /reports/sales-detail listing). All
+            money actions (refund/exchange/void) stay gated exactly as before.
+            Rendered above the mode buttons so viewing needs no action at all. */}
+        {!mode && (
+          <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 14px", marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div style={{ fontWeight: 700, fontSize: 13 }}>
+                🧾 {lang === "en" ? "Sale contents" : "Contenu de la vente"}
+              </div>
+              {sale.pa_locations?.name && (
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  📍 {sale.pa_locations.name}
+                </div>
+              )}
+            </div>
+            {items.length === 0 ? (
+              <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "6px 0" }}>
+                {lang === "en"
+                  ? "Items not loaded — reconnect to see the full list."
+                  : "Articles non chargés — reconnectez-vous pour voir la liste complète."}
+              </div>
+            ) : (
+              <>
+                {items.map((item, i) => {
+                  const isDebt = item.line_type === "debt_payment" || item.product_id === null;
+                  const pname = (lang === "en" && item.pa_products?.name_en)
+                    ? item.pa_products.name_en
+                    : item.pa_products?.name;
+                  return (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "6px 0", fontSize: 13, borderBottom: i < items.length - 1 ? "1px solid var(--border)" : "none" }}>
+                      {isDebt ? (
+                        <span style={{ color: "var(--text-secondary)" }}>💰 {lang === "en" ? "Debt repayment" : "Remboursement dette"}</span>
+                      ) : (
+                        <span style={{ fontWeight: 600 }}>
+                          {pname || (lang === "en" ? "Item" : "Article")}
+                          <span style={{ color: "var(--brand-light)", fontWeight: 700 }}> × {item.quantity}</span>
+                          {item.pa_products?.unit && <span style={{ color: "var(--text-muted)", fontSize: 11 }}> {item.pa_products.unit}</span>}
+                        </span>
+                      )}
+                      <span style={{ color: "var(--text-muted)", whiteSpace: "nowrap" }}>{formatCFA(item.quantity * item.unit_price)}</span>
+                    </div>
+                  );
+                })}
+                <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, marginTop: 2, fontWeight: 800, fontSize: 14, borderTop: "1px solid var(--border)" }}>
+                  <span>{lang === "en" ? "Total" : "Total"}</span>
+                  <span>{formatCFA(total)}</span>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Mode selection */}
         {!mode && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
