@@ -14,9 +14,22 @@
 // clears from this screen automatically. Failed/Retrying rows get a Retry.
 
 import { useEffect, useState, useCallback } from "react";
-import { useLangStore } from "../store";
+import { useLangStore, useSettingsStore } from "../store";
 import { formatCFA } from "../utils/api";
+import { getCachedData } from "../utils/offlineStore";
 import { listPending, subscribe, retry, retryAll } from "../utils/pendingSync";
+
+// Resolve a line's product name WITHOUT a server call: the queued payload now
+// carries `name` (POSPage stamps it onto each item/line before enqueue), with a
+// best-effort fallback to the offline product cache for rows queued before that
+// change. Debt lines have no product.
+function lineName(item, productNames, lang) {
+  const fr = lang !== "en";
+  if (item.type === "debt_payment" || item.product_id == null) {
+    return item.name || (fr ? "Remboursement dette" : "Debt repayment");
+  }
+  return item.name || productNames[item.product_id] || (fr ? "Produit" : "Item");
+}
 
 // Map an offline-queue endpoint+method to a friendly type. Mirrors the
 // OFFLINE_ELIGIBLE table in utils/api.js — order matters (most specific first).
@@ -104,11 +117,154 @@ function shortError(last_error, lang) {
   return typeof last_error === "string" ? last_error.slice(0, 120) : null;
 }
 
+// Expanded detail for a queued row, read entirely from its payload (no server
+// call — these are unsynced, so the cart/items live in the queued record).
+function RowDetail({ endpoint, payload, productNames, lang }) {
+  const fr = lang !== "en";
+  const ep = endpoint || "";
+  const muted = { fontSize: 11, color: "var(--text-muted)" };
+  const ItemRow = ({ name, qty, unit, total, neg }) => (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "5px 0", fontSize: 13, borderBottom: "1px solid var(--border)" }}>
+      <span style={{ flex: 1 }}>
+        {name}
+        <span style={{ color: "var(--text-muted)" }}> · {qty} × {formatCFA(unit)}</span>
+      </span>
+      <span style={{ fontWeight: 600, whiteSpace: "nowrap", color: neg ? "#f87171" : "var(--text-primary)" }}>
+        {neg ? "−" : ""}{formatCFA(total)}
+      </span>
+    </div>
+  );
+  const Wrap = ({ children }) => (
+    <div style={{ marginTop: 10, padding: "10px 12px", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 10 }}>{children}</div>
+  );
+
+  // ── SALE ──────────────────────────────────────────────────────────────
+  if (/^\/sales\/?$/.test(ep)) {
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    const total = items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0);
+    const paid = payload.paid_amount != null ? Number(payload.paid_amount) : total;
+    const balance = Math.max(0, total - paid);
+    const cust = payload.customer_name || (payload.customer_id ? (fr ? "Client" : "Customer") : (fr ? "Client de passage" : "Walk-in"));
+    return (
+      <Wrap>
+        <div style={{ ...muted, marginBottom: 6 }}>👤 {cust}</div>
+        {items.length === 0
+          ? <div style={muted}>{fr ? "Aucun article dans la file." : "No items in the queued record."}</div>
+          : items.map((i, k) => (
+              <ItemRow key={k} name={lineName(i, productNames, lang)}
+                qty={Number(i.quantity) || 1} unit={Number(i.unit_price) || 0}
+                total={(Number(i.quantity) || 1) * (Number(i.unit_price) || 0)} />
+            ))}
+        <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, fontWeight: 800, fontSize: 14 }}>
+          <span>{fr ? "Total" : "Total"}</span><span>{formatCFA(total)}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 12, color: "var(--text-secondary)" }}>
+          <span>{fr ? "Payé" : "Paid"}: {formatCFA(paid)}</span>
+          {balance > 0 && <span style={{ color: "#fbbf24" }}>{fr ? "Crédit" : "Credit"}: {formatCFA(balance)}</span>}
+        </div>
+      </Wrap>
+    );
+  }
+
+  // ── REFUND / EXCHANGE ────────────────────────────────────────────────
+  if (/^\/returns\/(return|exchange)\//.test(ep)) {
+    const returned = Array.isArray(payload.items_returned) ? payload.items_returned : [];
+    const replaced = Array.isArray(payload.replacement_items) ? payload.replacement_items : [];
+    return (
+      <Wrap>
+        <div style={{ ...muted, marginBottom: 4 }}>{fr ? "Articles retournés" : "Returned items"}</div>
+        {returned.length === 0 ? <div style={muted}>—</div> : returned.map((i, k) => (
+          <ItemRow key={"r"+k} name={lineName(i, productNames, lang)}
+            qty={Number(i.qty || i.quantity) || 1} unit={Number(i.unit_price) || 0}
+            total={(Number(i.qty || i.quantity) || 1) * (Number(i.unit_price) || 0)} neg />
+        ))}
+        {replaced.length > 0 && (<>
+          <div style={{ ...muted, margin: "8px 0 4px" }}>{fr ? "Articles de remplacement" : "Replacement items"}</div>
+          {replaced.map((i, k) => (
+            <ItemRow key={"x"+k} name={lineName(i, productNames, lang)}
+              qty={Number(i.qty || i.quantity) || 1} unit={Number(i.unit_price) || 0}
+              total={(Number(i.qty || i.quantity) || 1) * (Number(i.unit_price) || 0)} />
+          ))}
+        </>)}
+        <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, fontSize: 13, color: "var(--text-secondary)" }}>
+          <span>{fr ? "Mode" : "Method"}: {payload.refund_method || "—"}</span>
+          {payload.return_type && <span>{payload.return_type}</span>}
+        </div>
+      </Wrap>
+    );
+  }
+
+  // ── DEBT PAYMENT / COLLECT-DEBT ──────────────────────────────────────
+  if (/^\/sales\/[^/]+\/payment\/?$/.test(ep) || /collect-debt/.test(ep)) {
+    return (
+      <Wrap>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 700 }}>
+          <span>{fr ? "Montant" : "Amount"}</span><span>{formatCFA(Number(payload.amount) || 0)}</span>
+        </div>
+        <div style={{ ...muted, marginTop: 4 }}>
+          {fr ? "Mode" : "Method"}: {payload.payment_method || "cash"}
+          {payload.customer_name ? ` · 👤 ${payload.customer_name}` : ""}
+        </div>
+      </Wrap>
+    );
+  }
+
+  // ── Fallback (expenses, shifts, stock, products): show known fields ───
+  const generic = [];
+  if (payload.amount != null) generic.push([fr ? "Montant" : "Amount", formatCFA(payload.amount)]);
+  if (payload.opening_float != null) generic.push([fr ? "Fond" : "Float", formatCFA(payload.opening_float)]);
+  if (payload.actual_cash != null) generic.push([fr ? "Compté" : "Counted", formatCFA(payload.actual_cash)]);
+  if (payload.category) generic.push([fr ? "Catégorie" : "Category", String(payload.category)]);
+  if (payload.name) generic.push([fr ? "Nom" : "Name", String(payload.name)]);
+  const gItems = Array.isArray(payload.items) ? payload.items : (Array.isArray(payload.lines) ? payload.lines : []);
+  return (
+    <Wrap>
+      {generic.map(([k, v], i) => (
+        <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
+          <span style={{ color: "var(--text-muted)" }}>{k}</span><span style={{ fontWeight: 600 }}>{v}</span>
+        </div>
+      ))}
+      {gItems.map((i, k) => (
+        <ItemRow key={k} name={lineName(i, productNames, lang)}
+          qty={Number(i.quantity || i.qty) || 1} unit={Number(i.unit_price || i.cost_price) || 0}
+          total={(Number(i.quantity || i.qty) || 1) * (Number(i.unit_price || i.cost_price) || 0)} />
+      ))}
+      {generic.length === 0 && gItems.length === 0 && (
+        <div style={muted}>{fr ? "Aucun détail supplémentaire." : "No further detail."}</div>
+      )}
+    </Wrap>
+  );
+}
+
 export default function PendingSyncPage() {
   const { lang } = useLangStore();
   const fr = lang !== "en";
+  const { selectedLocation } = useSettingsStore();
   const [rows, setRows] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [expanded, setExpanded] = useState(() => new Set());
+  const [productNames, setProductNames] = useState({});
+
+  // Best-effort product-name map from the offline cache POSPage populates
+  // (key "pos-products-<locId>"). Only a fallback — new queued sales already
+  // carry item.name in their payload. No network call.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const cached = await getCachedData("pos-products-" + (selectedLocation?.id || "all"))
+          || await getCachedData("pos-products-all");
+        const list = cached?.data || cached || [];
+        if (!alive || !Array.isArray(list)) return;
+        const map = {};
+        for (const p of list) if (p && p.id) map[p.id] = p.name;
+        setProductNames(map);
+      } catch { /* fallback only */ }
+    })();
+    return () => { alive = false; };
+  }, [selectedLocation?.id]);
+
+  const toggle = (id) => setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const refresh = useCallback(async () => {
     try { setRows(await listPending()); } catch { setRows([]); }
@@ -172,38 +328,46 @@ export default function PendingSyncPage() {
             const isFailed = r.status === "failed_permanent" || r.status === "failed_transient";
             const err = isFailed ? shortError(r.last_error, lang) : null;
             const ref = payload.sale_number || payload.return_ref || null;
+            const isOpen = expanded.has(r.id);
             return (
               <div key={r.id} style={{
                 background: "var(--bg-card)", border: "1px solid var(--border)",
                 borderLeft: `3px solid ${badge.fg}`, borderRadius: 12, padding: "12px 16px",
-                display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap",
               }}>
-                <div style={{ fontSize: 22, width: 26, textAlign: "center" }}>{t.emoji}</div>
-                <div style={{ flex: 1, minWidth: 180 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>
-                    {t.label}
-                    {ref && !String(ref).startsWith("OFFLINE-") && (
-                      <span style={{ fontFamily: "monospace", fontWeight: 600, color: "var(--text-muted)", fontSize: 12, marginLeft: 8 }}>{ref}</span>
+                {/* Header row — tap to expand the queued-action detail. */}
+                <div onClick={() => toggle(r.id)}
+                  style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", cursor: "pointer" }}>
+                  <div style={{ fontSize: 22, width: 26, textAlign: "center" }}>{t.emoji}</div>
+                  <div style={{ flex: 1, minWidth: 180 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>
+                      <span style={{ display: "inline-block", width: 12, color: "var(--text-muted)", fontSize: 11 }}>{isOpen ? "▾" : "▸"}</span>
+                      {t.label}
+                      {ref && !String(ref).startsWith("OFFLINE-") && (
+                        <span style={{ fontFamily: "monospace", fontWeight: 600, color: "var(--text-muted)", fontSize: 12, marginLeft: 8 }}>{ref}</span>
+                      )}
+                    </div>
+                    {details && <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 2, paddingLeft: 12 }}>{details}</div>}
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3, paddingLeft: 12 }}>
+                      {fmtTime(r.created_at)}
+                      {r.attempts > 0 && <span> · {fr ? `essai ${r.attempts}` : `attempt ${r.attempts}`}</span>}
+                      {!isOpen && <span> · {fr ? "toucher pour détails" : "tap for details"}</span>}
+                    </div>
+                    {err && (
+                      <div style={{ fontSize: 11, color: "#f87171", marginTop: 4, wordBreak: "break-word", paddingLeft: 12 }}>⚠ {err}</div>
                     )}
                   </div>
-                  {details && <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 2 }}>{details}</div>}
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>
-                    {fmtTime(r.created_at)}
-                    {r.attempts > 0 && <span> · {fr ? `essai ${r.attempts}` : `attempt ${r.attempts}`}</span>}
-                  </div>
-                  {err && (
-                    <div style={{ fontSize: 11, color: "#f87171", marginTop: 4, wordBreak: "break-word" }}>⚠ {err}</div>
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 10, background: badge.bg, color: badge.fg, whiteSpace: "nowrap" }}>
+                    {badge.text}
+                  </span>
+                  {isFailed && (
+                    <button className="btn btn-secondary" style={{ padding: "6px 12px", fontSize: 12 }}
+                      onClick={(e) => { e.stopPropagation(); onRetry(r.id); }} disabled={busy}>
+                      ↻ {fr ? "Réessayer" : "Retry"}
+                    </button>
                   )}
                 </div>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 10, background: badge.bg, color: badge.fg, whiteSpace: "nowrap" }}>
-                  {badge.text}
-                </span>
-                {isFailed && (
-                  <button className="btn btn-secondary" style={{ padding: "6px 12px", fontSize: 12 }}
-                    onClick={() => onRetry(r.id)} disabled={busy}>
-                    ↻ {fr ? "Réessayer" : "Retry"}
-                  </button>
-                )}
+                {/* Expanded detail — full line items, read from the queued payload. */}
+                {isOpen && <RowDetail endpoint={r.endpoint} payload={payload} productNames={productNames} lang={lang} />}
               </div>
             );
           })}

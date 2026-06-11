@@ -1039,6 +1039,10 @@ export default function POSPage() {
       const salePayload = {
         location_id:    selectedLocation?.id,
         customer_id:    customer?.id || null,
+        // MP-PENDING-SYNC-DETAIL: carry the customer name so an offline-queued
+        // sale shows who it's for on the Pending-sync screen without a lookup.
+        // Backend ignores unknown top-level fields.
+        customer_name:  customer?.name || null,
         // MP-POS-DEBT-CART-FLOW + MP-CART-INVOICE-PRODUCT-BUG: every
         // non-product cart line goes to the backend as a
         // debt_payment line. That includes the legacy __DEBT__
@@ -1065,6 +1069,7 @@ export default function POSPage() {
                             return {
                               type: "debt_payment",
                               product_id: null,
+                              name: i.name, // MP-PENDING-SYNC-DETAIL: label for the queued-action detail view
                               quantity: 1,
                               unit_price: Number(i.unit_price) || 0,
                               customer_id: customer?.id,
@@ -1073,7 +1078,13 @@ export default function POSPage() {
                                 : undefined,
                             };
                           }
-                          return { product_id: i.product_id, quantity: Number(i.quantity) || 1, unit_price: Number(i.unit_price) || 0, cost_price: i.cost_price, price_tier: i.price_tier || "walk_in", price_approval_token: i.price_approval_token };
+                          // MP-PENDING-SYNC-DETAIL: carry `name` so an OFFLINE-
+                          // queued sale is self-describing — the Pending-sync
+                          // screen renders the picking list straight from the
+                          // queued payload (no server call). The backend inserts
+                          // pa_sale_items by explicit columns, so this extra
+                          // field is harmless/ignored server-side.
+                          return { product_id: i.product_id, name: i.name, quantity: Number(i.quantity) || 1, unit_price: Number(i.unit_price) || 0, cost_price: i.cost_price, price_tier: i.price_tier || "walk_in", price_approval_token: i.price_approval_token };
                         }),
         payment_method: payMethod,
         paid_amount:    paid,
