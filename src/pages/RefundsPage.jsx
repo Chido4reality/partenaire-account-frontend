@@ -152,28 +152,37 @@ export default function RefundsPage() {
 
   const handleRefund = async (saleId) => {
     setLoadingSale(saleId);
+    // MP-CASHIER-VIEW-ITEMS: open the modal IMMEDIATELY from the list row. The
+    // search response now carries pa_sale_items + pa_locations, so the row
+    // already has the line items — the "Sale contents" picking list shows the
+    // instant the cashier taps, with NO dependency on the secondary
+    // GET /sales/:id succeeding (it can time out on a cold Render backend and
+    // previously left the modal on an itemless summary). We then enrich in the
+    // background with the full detail (payments, etc.) without blocking the view.
+    const fromList = (sales || []).find(s => s.id === saleId);
+    if (fromList && fromList.id) setSelected(fromList);
     try {
       const { data } = await api.get(`/sales/${saleId}`);
       const sale = data?.data || data;
-      if (!sale || !sale.id) throw new Error("Sale not found");
-      // MP-PHASE-4.3: cache the full detail so a later OFFLINE refund of
-      // the same sale can open the modal from this cached copy. Best-
-      // effort; cacheData swallows storage errors internally.
-      try { cacheData(`sale-detail-${saleId}`, sale); } catch {}
-      setSelected(sale);
+      if (sale && sale.id) {
+        // Don't let an enrichment response that somehow lacks items clobber the
+        // line items we already showed from the (item-bearing) list row.
+        if ((!sale.pa_sale_items || sale.pa_sale_items.length === 0) && fromList?.pa_sale_items?.length) {
+          sale.pa_sale_items = fromList.pa_sale_items;
+        }
+        // MP-PHASE-4.3: cache the full detail so a later OFFLINE refund of
+        // the same sale can open the modal from this cached copy. Best-effort.
+        try { cacheData(`sale-detail-${saleId}`, sale); } catch {}
+        setSelected(sale);
+      }
     } catch (err) {
-      // MP-PHASE-4.3: network/timeout → offline fallback. (1) the
-      // per-sale detail cache populated by a prior online open; (2) the
-      // current list row (summary — may lack a few fields the modal
-      // normally renders but enough to drive a refund/void). Refund
-      // writes themselves already queue (returns/* in OFFLINE_ELIGIBLE).
+      // Enrichment failed (timeout/offline). The modal is already open from the
+      // list row (items included). Prefer a richer cached copy if we have one.
       try {
         const cached = await getCachedData(`sale-detail-${saleId}`);
-        if (cached && cached.id) { setSelected(cached); setLoadingSale(null); return; }
+        if (cached && cached.id) { setSelected(cached); return; }
       } catch {}
-      const fromList = (sales || []).find(s => s.id === saleId);
-      if (fromList) { setSelected(fromList); setLoadingSale(null); return; }
-      console.error("[refunds] failed to load sale", err);
+      if (!fromList) console.error("[refunds] failed to load sale", err);
     } finally {
       setLoadingSale(null);
     }
