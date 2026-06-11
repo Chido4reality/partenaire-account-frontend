@@ -42,6 +42,10 @@ const NAV = [
   // sale-capable roles, not gated by plan section (refunds work
   // on every tier — see SILVER_ALLOWED in App.jsx).
   { to: "/refunds",      en: "Refunds",    fr: "Remboursements",  icon: "↩",  roles: ["owner","manager","cashier"],            section: "sales" },
+  // MP-PENDING-SYNC-SCREEN: offline writes not yet synced to the server.
+  // section:"sales" so it's never plan-gated away (offline happens on every
+  // tier — see SILVER_ALLOWED). Cashier-primary; warehouse sees stock writes.
+  { to: "/pending-sync", en: "Pending sync", fr: "En attente de synchro", icon: "🔄", roles: ["owner","manager","cashier","warehouse"], section: "sales" },
   { to: "/stock-count",  en: "Count",      fr: "Comptage",        icon: "🔢", roles: ["owner","manager","warehouse"],          section: "count" },
   { to: "/barcodes",     en: "Labels",     fr: "Étiquettes",      icon: "🏷️", roles: ["owner","manager","warehouse"],          section: "labels" },
   { to: "/inventory",    en: "Inventory",  fr: "Inventaire",      icon: "📦", roles: ["owner","manager","warehouse"],          section: "inventory" },

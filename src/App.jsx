@@ -23,6 +23,7 @@ import ShiftsPage from "./pages/ShiftsPage";
 import StockCountPage from "./pages/StockCountPage";
 import BarcodePage from "./pages/BarcodePage";
 import OperationsDashboardPage from "./pages/OperationsDashboardPage"; // MP-OWNER-OPERATIONS-DASHBOARD-V1
+import PendingSyncPage from "./pages/PendingSyncPage"; // MP-PENDING-SYNC-SCREEN
 
 // MP-INVALIDATE-AFTER-SALE: refetch stale data when the user returns to
 // the tab/app or reconnects (e.g. after making a sale on another device
@@ -99,6 +100,9 @@ const ROUTE_ACCESS = {
   "/shifts":       ["owner", "manager", "cashier"],
   "/stock-count":  ["owner", "manager", "warehouse"],
   "/barcodes":     ["owner", "manager", "warehouse"],
+  // MP-PENDING-SYNC-SCREEN: everyone who creates offline writes must be able
+  // to see their unsynced queue (cashier sales/refunds; warehouse stock).
+  "/pending-sync": ["owner", "manager", "cashier", "warehouse"],
 };
 
 function Guard({ children }) {
@@ -135,7 +139,7 @@ function RoleGuard({ path, children }) {
 // MP-REFUNDS-STAFF-ACCESS: /refunds is on the Silver allowlist so
 // Silver-tier shops (which don't have the Reports section) can
 // still process customer returns. Operational, not analytical.
-const SILVER_ALLOWED = ["/", "/pos", "/inventory", "/shifts", "/refunds"];
+const SILVER_ALLOWED = ["/", "/pos", "/inventory", "/shifts", "/refunds", "/pending-sync"];
 
 function PlanGuard({ path, children }) {
   const isAuth = useAuthStore(s => s.isAuthenticated);
@@ -352,6 +356,10 @@ export default function App() {
             {/* MP-REFUNDS-STAFF-ACCESS: no PlanGuard — refunds are
                 operational and must work on every plan tier. */}
             <Route path="refunds"      element={<RoleGuard path="/refunds"><RefundsPage /></RoleGuard>} />
+            {/* MP-PENDING-SYNC-SCREEN: offline queue viewer. No PlanGuard —
+                offline writes happen on every tier, so the queue must be
+                visible on every tier (mirrors /refunds on SILVER_ALLOWED). */}
+            <Route path="pending-sync" element={<RoleGuard path="/pending-sync"><PendingSyncPage /></RoleGuard>} />
             <Route path="settings"     element={<RoleGuard path="/settings"><PlanGuard path="/settings"><SettingsPage /></PlanGuard></RoleGuard>} />
             {/* MP-RESTRICTED-MODE (B2): reachable even when restricted — no PlanGuard. */}
             <Route path="request-activation" element={<RequestActivationPage />} />
