@@ -130,6 +130,9 @@ export default function SettingsPage() {
   const [doziePinForm, setDoziePinForm] = useState({ new_pin: "", confirm_pin: "" });
   const [showChangeDoziePin, setShowChangeDoziePin] = useState(false);
   const [doziePinError, setDoziePinError] = useState("");
+  // MP-DOZIE-PIN-VISIBLE: reveal toggle for the seller's current Dozie
+  // login PIN (returned by /dozie/status for the owner). Hidden by default.
+  const [revealDoziePin, setRevealDoziePin] = useState(false);
 
   // Sprint A: enable unconditionally — we use my-plan for the branding
   // gate and Dozie city restrictions, so it must be available on every
@@ -1184,6 +1187,38 @@ export default function SettingsPage() {
                       : (lang === "en" ? "Change PIN" : "Changer PIN")}
                   </button>
                 </div>
+
+                {/* MP-DOZIE-PIN-VISIBLE: show the seller their CURRENT
+                    4-digit login PIN. Critical when the PIN was generated
+                    by the MP→Dozie link (signup auto-link / activate) and
+                    the seller never picked it — without this they can't
+                    know what to type at the Dozie login. Owner-only
+                    (backend only returns dozie_pin to the owner). Masked
+                    until revealed. */}
+                {!showChangeDoziePin && (
+                  dozieStatus?.dozie_pin ? (
+                    <div style={{ marginTop: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+                      <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                        {lang === "en" ? "Your current PIN" : "Votre PIN actuel"}
+                        <span style={{ marginLeft: 10, fontFamily: "monospace", fontSize: 18, fontWeight: 800, letterSpacing: revealDoziePin ? 4 : 2, color: "var(--brand-light)" }}>
+                          {revealDoziePin ? dozieStatus.dozie_pin : "••••"}
+                        </span>
+                      </div>
+                      <button onClick={() => setRevealDoziePin(v => !v)}
+                        style={{ padding: "5px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "transparent", color: "var(--text-secondary)", cursor: "pointer", fontWeight: 600, fontSize: 12 }}>
+                        {revealDoziePin
+                          ? (lang === "en" ? "🙈 Hide" : "🙈 Masquer")
+                          : (lang === "en" ? "👁 Show" : "👁 Afficher")}
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border)", fontSize: 12, color: "var(--text-muted)" }}>
+                      {lang === "en"
+                        ? "Set a PIN below to enable your Partenaire Dozie login."
+                        : "Définissez un PIN ci-dessous pour activer votre connexion Partenaire Dozie."}
+                    </div>
+                  )
+                )}
 
                 {showChangeDoziePin && (
                   <div>

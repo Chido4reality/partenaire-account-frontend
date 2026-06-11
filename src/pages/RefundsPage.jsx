@@ -370,7 +370,16 @@ export default function RefundsPage() {
                   const isOnline = s.channel === "online";
                   const hasRefund = s.has_existing_refund;
                   return (
-                    <tr key={s.id}>
+                    // MP-CASHIER-OPEN-SALE: the whole row opens the sale
+                    // detail. Opening/viewing is NOT gated on an open shift
+                    // (only the money ACTION inside the modal is, enforced
+                    // server-side) — so a cashier can look up a receipt and
+                    // view it before their till is open. Previously the only
+                    // tap target was the shift-disabled Refund button, so
+                    // tapping a result did nothing for a cashier.
+                    <tr key={s.id}
+                      onClick={() => { if (loadingSale !== s.id) handleRefund(s.id); }}
+                      style={{ cursor: loadingSale === s.id ? "wait" : "pointer" }}>
                       <td style={{ color: "var(--text-muted)", fontSize: 12, whiteSpace: "nowrap" }}>
                         {dateStr} <span style={{ opacity: 0.6 }}>{timeStr}</span>
                       </td>
@@ -411,22 +420,31 @@ export default function RefundsPage() {
                         )}
                       </td>
                       <td style={{ textAlign: "right" }}>
+                        {/* MP-CASHIER-OPEN-SALE: this button now OPENS the
+                            sale detail (view + act). Opening is no longer
+                            blocked by shift state or void status — the
+                            cashier can always view. The actual refund /
+                            exchange / void inside the modal stays gated by
+                            the open-shift contract (backend-enforced); the
+                            page-level ShiftRequiredBlocker nudges them to
+                            open a till before acting. stopPropagation so the
+                            button click doesn't double-fire the row onClick. */}
                         <button
-                          onClick={() => handleRefund(s.id)}
-                          disabled={isVoided || loadingSale === s.id || !shiftIsOpen}
-                          title={!shiftIsOpen ? noShiftHint(lang) : ""}
+                          onClick={(e) => { e.stopPropagation(); handleRefund(s.id); }}
+                          disabled={loadingSale === s.id}
+                          title={!shiftIsOpen ? noShiftHint(lang) : (fr ? "Ouvrir la vente" : "Open sale")}
                           style={{
                             padding: "6px 12px", borderRadius: 8,
                             border: "1px solid rgba(251,191,36,0.4)",
-                            background: (isVoided || !shiftIsOpen) ? "var(--bg-elevated)" : "rgba(251,191,36,0.10)",
-                            color: (isVoided || !shiftIsOpen) ? "var(--text-muted)" : "#fbbf24",
+                            background: "rgba(251,191,36,0.10)",
+                            color: "#fbbf24",
                             fontWeight: 700, fontSize: 12,
-                            cursor: (isVoided || !shiftIsOpen) ? "not-allowed" : "pointer",
-                            opacity: (isVoided || !shiftIsOpen) ? 0.6 : 1,
+                            cursor: loadingSale === s.id ? "wait" : "pointer",
+                            opacity: loadingSale === s.id ? 0.6 : 1,
                           }}>
                           {loadingSale === s.id
                             ? "…"
-                            : (fr ? "↩ Rembourser" : "↩ Refund")}
+                            : (fr ? "Ouvrir ›" : "Open ›")}
                         </button>
                       </td>
                     </tr>
