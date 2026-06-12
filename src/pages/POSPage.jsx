@@ -70,6 +70,9 @@ export default function POSPage() {
 
   const [cart, setCart]                   = useState([]);
   const [search, setSearch]               = useState("");
+  // MP-SERVER-SIDE-PRODUCT-SEARCH (Part A.4): online DB-side search results
+  // (null = not searched / offline → use the cached client filter instead).
+  const [serverHits, setServerHits]       = useState(null);
   const [customer, setCustomer]           = useState(null);
   // MIN-PRICE FLOOR: reuse the existing boss/owner PIN approval flow for
   // below-min manual price edits. {approvalModal} is rendered near the page root.
@@ -318,10 +321,17 @@ export default function POSPage() {
     queryKey: ["pos-products", selectedLocation?.id],
     networkMode: 'always',
     queryFn: async () => {
-      const cacheKey = "pos-products-" + (selectedLocation?.id || "all");
+      // MP-SALES-PICKER-FULL-CATALOGUE (build 18): cache key bumped to v2 so
+      // installing this build DISCARDS any stale pre-f118010 product cache (the
+      // Brake-Shoe / "hidden in Sales" bug was a stale cache served when the
+      // 6s fetch timed out on cold start). Longer timeout so a cold Render
+      // backend or slow network resolves instead of falling back to stale.
+      // The backend now returns the FULL active catalogue (no 200 cap), and is
+      // the offline fallback source for the client filter below.
+      const cacheKey = "pos-products-v2-" + (selectedLocation?.id || "all");
       console.log('[query] fired', ["pos-products", selectedLocation?.id], { online: navigator.onLine });
       try {
-        const result = await api.get("/products?location_id=" + (selectedLocation?.id || "") + "&limit=200").then(r => r.data);
+        const result = await api.get("/products?location_id=" + (selectedLocation?.id || ""), { timeout: 45000 }).then(r => r.data);
         cacheData(cacheKey, result);
         return result;
       } catch {
@@ -558,12 +568,31 @@ export default function POSPage() {
 
   const locations = locData?.data || [];
 
+  // MP-SERVER-SIDE-PRODUCT-SEARCH (Part A.4): when ONLINE, search the catalogue
+  // in the DB (scales to thousands of products without caching them all on the
+  // phone). Debounced. Offline or on error, fall back to filtering the cached
+  // full list. Either way the FULL active set is reachable — no zero-stock gate.
+  useEffect(() => {
+    const q = search.trim();
+    if (q.length < 1 || typeof navigator !== "undefined" && navigator.onLine === false) { setServerHits(null); return; }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const r = await api.get(`/products?search=${encodeURIComponent(q)}&location_id=${selectedLocation?.id || ""}`, { timeout: 20000 }).then(x => x.data);
+        if (!cancelled && r && Array.isArray(r.data)) setServerHits(r.data);
+      } catch { if (!cancelled) setServerHits(null); }
+    }, 220);
+    return () => { cancelled = true; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, selectedLocation?.id]);
+
+  const clientFiltered = (allProducts?.data || []).filter(p =>
+    fuzzyMatch(p.name, search) ||
+    fuzzyMatch(p.name_en, search) ||
+    (p.barcode && p.barcode.includes(search))
+  );
   const filteredProducts = search.length >= 1
-    ? (allProducts?.data || []).filter(p =>
-        fuzzyMatch(p.name, search) ||
-        fuzzyMatch(p.name_en, search) ||
-        (p.barcode && p.barcode.includes(search))
-      ).slice(0, 10)
+    ? (serverHits !== null ? serverHits : clientFiltered).slice(0, 25)
     : [];
 
   const filteredCustomers = custSearch.length >= 1 && !customer
