@@ -38,7 +38,21 @@ export default function UpgradeModal({ onClose, currentPlan }) {
     retry: 2
   });
 
+  // MP-SUB-CONSOLIDATION (v2): if a request is already awaiting admin approval,
+  // show a "Pending approval" panel instead of the plan picker — prevents
+  // duplicate submits and makes the pending state obvious on reopen.
+  const { data: myPlanData } = useQuery({
+    queryKey: ["my-plan"],
+    queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
+  });
+  const pending = !!myPlanData?.data?.has_pending_request;
+  const pendingPlanId = myPlanData?.data?.pending_plan_id || null;
+
+  // Plan list is data-driven (active paid tiers from /subscriptions/plans, minus
+  // the silver floor). A future Pro Plus tier slots in automatically once it's
+  // added to pa_plans with is_active=true — no change needed here.
   const plans = (plansData?.data || []).filter(p => p.id !== "silver");
+  const pendingPlan = plans.find(p => p.id === pendingPlanId);
   const totalAmount = selectedPlan ? selectedPlan.price_monthly * months : 0;
 
   // Manual payment (non-CamPay)
@@ -147,8 +161,27 @@ export default function UpgradeModal({ onClose, currentPlan }) {
           )}
         </div>
 
+        {/* Pending state — a request is already awaiting admin approval. Shown
+            instead of the picker so the owner can't submit a duplicate. */}
+        {step === 1 && pending && (
+          <div style={{ textAlign: "center", padding: "16px 4px" }}>
+            <div style={{ fontSize: 48, marginBottom: 14 }}>⏳</div>
+            <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 8 }}>
+              {lang === "en" ? "Upgrade request pending" : "Demande en attente"}
+            </div>
+            <div style={{ color: "var(--text-muted)", fontSize: 13, lineHeight: 1.6, marginBottom: 22 }}>
+              {lang === "en"
+                ? `Your request${pendingPlan ? ` for ${pendingPlan.badge_icon} ${pendingPlan.name}` : ""} is awaiting admin approval. You'll be upgraded as soon as it's approved — no need to submit again. You keep your current access in the meantime.`
+                : `Votre demande${pendingPlan ? ` pour ${pendingPlan.badge_icon} ${pendingPlan.name}` : ""} est en attente d'approbation. Vous serez mis à niveau dès qu'elle sera approuvée — inutile de renvoyer. Vous gardez votre accès actuel entre-temps.`}
+            </div>
+            <button className="btn btn-primary" style={{ width: "100%", height: 46 }} onClick={onClose}>
+              {lang === "en" ? "Got it" : "Compris"}
+            </button>
+          </div>
+        )}
+
         {/* Step 1: Choose Plan */}
-        {step === 1 && (
+        {step === 1 && !pending && (
           <div>
             <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-muted)", marginBottom: 12, textTransform: "uppercase" }}>
               {lang === "en" ? "Select a plan" : "Choisir un plan"}

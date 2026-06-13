@@ -890,7 +890,11 @@
         <div class="sb-section">Mon Partenaire</div>
         <a class="sb-link" data-route="businesses"><span class="sb-link-icon">🏪</span><span class="sb-link-label">Businesses</span></a>
         <a class="sb-link" data-route="subscriptions"><span class="sb-link-icon">💳</span><span class="sb-link-label">Subscriptions</span></a>
-        <a class="sb-link" data-route="subscription-requests"><span class="sb-link-icon">✉️</span><span class="sb-link-label">Sub. requests</span></a>
+        <!-- MP-SUB-CONSOLIDATION (v2): "Sub. requests" tab retired. It read the
+             orphaned pa_subscription_requests table (always empty), while the
+             app's upgrade requests go to pa_subscription_payments shown in the
+             "Subscriptions" tab above. One place for all pending requests now. -->
+        <!-- <a class="sb-link" data-route="subscription-requests"><span class="sb-link-icon">✉️</span><span class="sb-link-label">Sub. requests</span></a> -->
         <a class="sb-link" data-route="mp-finance"><span class="sb-link-icon">📊</span><span class="sb-link-label">MP Finance</span></a>
 
         <div class="sb-section">Partenaire Dozie</div>
