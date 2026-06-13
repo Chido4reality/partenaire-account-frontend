@@ -2362,12 +2362,35 @@ export default function POSPage() {
       {/* ── BUG 3: WARN + ALLOW — overselling ── */}
       {oversellModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000, padding: 16 }}>
-          <div style={{ background: "var(--bg-card)", border: "1px solid rgba(245,158,11,0.45)", borderRadius: 14, width: "100%", maxWidth: 460, padding: 22 }}>
-            <div style={{ fontSize: 30, marginBottom: 8 }}>⚠️</div>
-            <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 8 }}>
-              {lang === "en" ? "Insufficient stock" : "Stock insuffisant"}
+          {/* MP-OVERSELL-MODAL-SCROLL-FIX (build 19): bounded flex column so a
+              long finished-items list can never push the confirm button below
+              the viewport on short phones (Samsung). The header (title +
+              context + BOTH actions) is pinned (flexShrink:0, never scrolls);
+              the items list is the only scrolling region (flex:1, overflow-y).
+              Layout-only — overselling behaviour is unchanged. */}
+          <div style={{ background: "var(--bg-card)", border: "1px solid rgba(245,158,11,0.45)", borderRadius: 14, width: "100%", maxWidth: 460, maxHeight: "85vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            {/* Pinned header — always visible at any screen height */}
+            <div style={{ flexShrink: 0, padding: "20px 22px 14px", borderBottom: "1px solid rgba(245,158,11,0.25)" }}>
+              <div style={{ fontSize: 30, marginBottom: 8 }}>⚠️</div>
+              <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 8 }}>
+                {lang === "en" ? "Insufficient stock" : "Stock insuffisant"}
+              </div>
+              <div style={{ fontSize: 13, color: "var(--text-muted)", lineHeight: 1.5, marginBottom: 14 }}>
+                {lang === "en"
+                  ? "You can still sell — stock will go negative and the sale is flagged for restock follow-up."
+                  : "Vous pouvez vendre — le stock passera en négatif et la vente sera signalée pour réapprovisionnement."}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => setOversellModal(null)} className="btn btn-secondary" style={{ flex: 1 }}>
+                  {lang === "en" ? "Cancel" : "Annuler"}
+                </button>
+                <button onClick={runCheckout} disabled={!shiftIsOpen || saleMutation.isPending} title={!shiftIsOpen ? noShiftHint(lang) : ""} className="btn btn-success" style={{ flex: 2, fontWeight: 700 }}>
+                  {lang === "en" ? "Sell anyway" : "Vendre quand même"}
+                </button>
+              </div>
             </div>
-            <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 14 }}>
+            {/* Scrollable finished/out-of-stock list — scrolls WITHIN the modal */}
+            <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "12px 22px 18px", fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
               {(oversellModal.items || []).map((it, i) => (
                 <div key={i} style={{ marginBottom: 4 }}>
                   <strong>{it.name}</strong> — {lang === "en"
@@ -2375,19 +2398,6 @@ export default function POSPage() {
                     : `${it.available} dispo, vente de ${it.selling}`}
                 </div>
               ))}
-              <div style={{ marginTop: 10, color: "var(--text-muted)" }}>
-                {lang === "en"
-                  ? "You can still sell — stock will go negative and the sale is flagged for restock follow-up."
-                  : "Vous pouvez vendre — le stock passera en négatif et la vente sera signalée pour réapprovisionnement."}
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => setOversellModal(null)} className="btn btn-secondary" style={{ flex: 1 }}>
-                {lang === "en" ? "Cancel" : "Annuler"}
-              </button>
-              <button onClick={runCheckout} disabled={!shiftIsOpen || saleMutation.isPending} title={!shiftIsOpen ? noShiftHint(lang) : ""} className="btn btn-success" style={{ flex: 2, fontWeight: 700 }}>
-                {lang === "en" ? "Sell anyway" : "Vendre quand même"}
-              </button>
             </div>
           </div>
         </div>
