@@ -291,6 +291,19 @@ export default function App() {
       finally { setBootstrapping(false); }
     })();
 
+    // MP-BILLING-V3: returning from the Flutterwave hosted checkout (?flw_tx=).
+    // Activation is driven by the verified webhook, NOT this redirect — so we
+    // just show a "verifying" toast, refetch my-plan a few times to catch the
+    // activation, and strip the param so a refresh can't re-trigger it.
+    (() => {
+      const params = new URLSearchParams(window.location.search);
+      if (!params.get("flw_tx")) return;
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+      toast("⏳ Verifying payment… your plan will update shortly / Vérification du paiement…", { duration: 7000 });
+      let n = 0;
+      const iv = setInterval(() => { qc.invalidateQueries(["my-plan"]); if (++n >= 6) clearInterval(iv); }, 4000);
+    })();
+
     // MP-RENDER-COLDSTART-WARMUP: fire-and-forget HEAD ping at app launch
     // to prime Render's container. Free-tier cold-start is 30-60s when
     // the container has been idle (~15min); Paul (Cameroon, 1 Jun) hit

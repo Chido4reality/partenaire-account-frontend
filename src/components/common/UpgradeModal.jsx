@@ -5,9 +5,12 @@ import { useLangStore } from "../../store";
 import api, { formatCFA } from "../../utils/api";
 
 const PAYMENT_METHODS = [
-  { value: "mtn_momo",      label: "MTN Mobile Money",    icon: "📱", color: "#FFC300" },
-  { value: "orange_money",  label: "Orange Money",         icon: "🟠", color: "#FF6600" },
-  { value: "campay",        label: "CamPay (online)",      icon: "⚡", color: "var(--brand)", comingSoon: true },
+  // Flutterwave hosted checkout — handles card + mobile money (CM/NG) on its own
+  // page; the backend activates only after the verified webhook. The rest are
+  // manual offline methods that go to admin for approval.
+  { value: "flutterwave",   label: "Pay online (card / mobile money)", icon: "⚡", color: "var(--brand)", online: true },
+  { value: "mtn_momo",      label: "MTN Mobile Money (manual)",  icon: "📱", color: "#FFC300" },
+  { value: "orange_money",  label: "Orange Money (manual)",      icon: "🟠", color: "#FF6600" },
   { value: "cash",          label: "Cash",                 icon: "💵", color: "#10b981" },
   { value: "bank",          label: "Bank Transfer",        icon: "🏦", color: "#6366f1" },
 ];
@@ -51,11 +54,31 @@ export default function UpgradeModal({ onClose, currentPlan }) {
   // Plan list is data-driven (active paid tiers from /subscriptions/plans, minus
   // the silver floor). A future Pro Plus tier slots in automatically once it's
   // added to pa_plans with is_active=true — no change needed here.
-  const plans = (plansData?.data || []).filter(p => p.id !== "silver");
+  // Only purchasable paid tiers (Lite / Pro / Pro Plus) — never the free
+  // 'trial' floor or legacy 'silver'. Pro Plus appears automatically.
+  const plans = (plansData?.data || [])
+    .filter(p => p.id !== "silver" && p.id !== "trial" && (p.price ?? p.price_monthly) > 0);
   const pendingPlan = plans.find(p => p.id === pendingPlanId);
-  const totalAmount = selectedPlan ? selectedPlan.price_monthly * months : 0;
+  // Country-aware unit price (backend attaches .price/.currency, default XAF);
+  // falls back to legacy price_monthly if absent.
+  const unitPrice = selectedPlan ? (selectedPlan.price ?? selectedPlan.price_monthly) : 0;
+  const currency = selectedPlan?.currency || "XAF";
+  const totalAmount = unitPrice * months;
 
-  // Manual payment (non-CamPay)
+  // Online payment via Flutterwave hosted checkout — backend creates the payment
+  // + a pending record, returns the hosted link; we redirect the owner to it.
+  // Activation happens via the verified webhook, not this redirect.
+  const flwMutation = useMutation({
+    mutationFn: () => api.post("/subscriptions/flw/initiate", { plan_id: selectedPlan.id, months }),
+    onSuccess: (res) => {
+      const link = res.data?.data?.link;
+      if (link) { window.location.href = link; }
+      else toast.error(lang === "en" ? "Could not start payment." : "Impossible de démarrer le paiement.");
+    },
+    onError: (err) => toast.error(err.response?.data?.message || "Payment error"),
+  });
+
+  // Manual payment (offline → admin approval)
   const upgradeMutation = useMutation({
     mutationFn: () => api.post("/subscriptions/request-upgrade", {
       plan_id: selectedPlan.id,
@@ -206,7 +229,7 @@ export default function UpgradeModal({ onClose, currentPlan }) {
                     </div>
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
-                    <div style={{ fontWeight: 800, fontSize: 18, color: "var(--brand-light)" }}>{formatCFA(plan.price_monthly)}</div>
+                    <div style={{ fontWeight: 800, fontSize: 18, color: "var(--brand-light)" }}>{formatCFA(plan.price ?? plan.price_monthly)}</div>
                     <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en" ? "/month" : "/mois"}</div>
                   </div>
                 </div>
@@ -229,10 +252,10 @@ export default function UpgradeModal({ onClose, currentPlan }) {
             <div className="form-group" style={{ marginBottom: 16 }}>
               <label className="label">{lang === "en" ? "Duration" : "Durée"}</label>
               <select className="input" value={months} onChange={e => setMonths(+e.target.value)}>
-                <option value={1}>{lang === "en" ? "1 month" : "1 mois"} — {formatCFA(selectedPlan?.price_monthly)}</option>
-                <option value={3}>{lang === "en" ? "3 months" : "3 mois"} — {formatCFA(selectedPlan?.price_monthly * 3)}</option>
-                <option value={6}>{lang === "en" ? "6 months" : "6 mois"} — {formatCFA(selectedPlan?.price_monthly * 6)}</option>
-                <option value={12}>{lang === "en" ? "12 months" : "12 mois"} — {formatCFA(selectedPlan?.price_monthly * 12)}</option>
+                <option value={1}>{lang === "en" ? "1 month" : "1 mois"} — {formatCFA(unitPrice)}</option>
+                <option value={3}>{lang === "en" ? "3 months" : "3 mois"} — {formatCFA(unitPrice * 3)}</option>
+                <option value={6}>{lang === "en" ? "6 months" : "6 mois"} — {formatCFA(unitPrice * 6)}</option>
+                <option value={12}>{lang === "en" ? "12 months" : "12 mois"} — {formatCFA(unitPrice * 12)}</option>
               </select>
             </div>
 
@@ -318,11 +341,11 @@ export default function UpgradeModal({ onClose, currentPlan }) {
               </div>
             </div>
 
-            {paymentMethod === "campay" ? (
+            {paymentMethod === "flutterwave" ? (
               <div style={{ background: "rgba(251,197,3,0.08)", border: "1px solid rgba(251,197,3,0.25)", borderRadius: 10, padding: 12, marginBottom: 16, fontSize: 12, color: "var(--brand-light)" }}>
                 ⚡ {lang === "en"
-                  ? `A USSD push will be sent to ${phone}. Accept it to complete payment automatically.`
-                  : `Un USSD push sera envoyé au ${phone}. Acceptez-le pour finaliser le paiement automatiquement.`}
+                  ? `You'll be redirected to Flutterwave's secure page to pay ${formatCFA(totalAmount)} by card or mobile money. Your plan activates automatically once payment is confirmed.`
+                  : `Vous serez redirigé vers la page sécurisée Flutterwave pour payer ${formatCFA(totalAmount)} par carte ou mobile money. Votre plan s'active automatiquement après confirmation.`}
               </div>
             ) : (
               <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 10, padding: 12, marginBottom: 16, fontSize: 12, color: "#fbbf24" }}>
@@ -334,10 +357,10 @@ export default function UpgradeModal({ onClose, currentPlan }) {
 
             <div style={{ display: "flex", gap: 10 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setStep(2)}>← {lang === "en" ? "Back" : "Retour"}</button>
-              {paymentMethod === "campay" ? (
+              {paymentMethod === "flutterwave" ? (
                 <button className="btn btn-primary" style={{ flex: 2, background: "var(--brand)", borderColor: "var(--brand)" }}
-                  disabled={campayMutation.isPending || !momoValid} onClick={() => campayMutation.mutate()}>
-                  {campayMutation.isPending ? "⏳ Initiating..." : (lang === "en" ? "⚡ Pay with CamPay" : "⚡ Payer via CamPay")}
+                  disabled={flwMutation.isPending} onClick={() => flwMutation.mutate()}>
+                  {flwMutation.isPending ? (lang === "en" ? "⏳ Redirecting…" : "⏳ Redirection…") : (lang === "en" ? "⚡ Pay online" : "⚡ Payer en ligne")}
                 </button>
               ) : (
                 <button className="btn btn-primary" style={{ flex: 2, background: "#10b981", borderColor: "#10b981" }}
