@@ -1511,9 +1511,19 @@
     'use strict';
 
     // ────────────────────── CONFIG ──────────────────────
-    const API_BASE = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
-      ? 'http://localhost:3001/api'
-      : 'https://partenaire-account-api.onrender.com/api';
+    // admin.html is a STATIC file (served from /public, not processed by Vite),
+    // so the backend base is resolved from the current host at runtime — this
+    // keeps the v2 STAGING deploy isolated: when this page is served from the
+    // staging frontend host it must call the STAGING backend, never prod.
+    //   - localhost            → local backend
+    //   - *staging* host       → staging backend (Supabase staging)
+    //   - everything else      → prod backend
+    const API_BASE = (function () {
+      const h = location.hostname;
+      if (h === 'localhost' || h === '127.0.0.1') return 'http://localhost:3001/api';
+      if (h.indexOf('staging') !== -1) return 'https://partenaire-account-server-staging.onrender.com/api';
+      return 'https://partenaire-account-api.onrender.com/api';
+    })();
 
     const TOKEN_KEY = 'admin_token';
     const THEME_KEY = 'admin_theme';
