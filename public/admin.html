@@ -886,6 +886,7 @@
 
       <nav class="sb-nav" id="sb-nav">
         <a class="sb-link" data-route="dashboard"><span class="sb-link-icon">🏠</span><span class="sb-link-label">Dashboard</span></a>
+        <a class="sb-link" data-route="live"><span class="sb-link-icon">📡</span><span class="sb-link-label">Live Traffic</span></a>
 
         <div class="sb-section">Mon Partenaire</div>
         <a class="sb-link" data-route="businesses"><span class="sb-link-icon">🏪</span><span class="sb-link-label">Businesses</span></a>
@@ -939,6 +940,32 @@
           <div class="activity-list" id="activity-list">
             <div class="activity-empty">Loading…</div>
           </div>
+        </div>
+      </section>
+
+      <!-- LIVE TRAFFIC -->
+      <section class="route" id="route-live">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Live Traffic</div>
+            <div class="page-sub">Logged-in users online now + a live activity feed across Mon Partenaire and Partenaire Dozie. Auto-refreshes every 7s.</div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <span class="page-sub" id="live-updated"></span>
+            <button class="btn" id="live-refresh">Refresh</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="settings-card-title">🟢 Online now — <span id="live-online-count">0</span></div>
+          <div class="settings-card-sub">Logged-in users (MP owners/cashiers + Dozie buyers/sellers) active in the last 5 minutes.</div>
+          <div class="activity-list" id="live-online-list"><div class="activity-empty">Loading…</div></div>
+        </div>
+
+        <div class="card">
+          <div class="settings-card-title">Activity feed</div>
+          <div class="settings-card-sub">Recent logins, signups, MP sales and Dozie orders — newest first (last 24h).</div>
+          <div class="activity-list" id="live-feed-list"><div class="activity-empty">Loading…</div></div>
         </div>
       </section>
 
@@ -1641,9 +1668,9 @@
 
     // ────────────────────── ROUTING ──────────────────────
     const VALID_ROUTES = new Set([
-      'dashboard', 'businesses', 'subscriptions', 'subscription-requests', 'mp-finance',
+      'dashboard', 'live', 'businesses', 'subscriptions', 'subscription-requests', 'mp-finance',
       'marketplace-users', 'verifications', 'dozie-subscriptions', 'orders', 'disputes', 'marketplace-finance',
-      'broadcasts', 'admin-team', 'audit-log', 'settings'
+      'broadcasts', 'admin-team', 'audit-log', 'cart-reconcile', 'settings'
     ]);
 
     function parseHashRoute() {
@@ -1667,6 +1694,7 @@
       });
       // Per-route side effects
       if (route === 'dashboard')          loadDashboard();
+      if (route === 'live')               loadLive();
       if (route === 'settings')           loadSettings();
       if (route === 'businesses')         loadBusinesses();
       if (route === 'subscriptions')      loadSubscriptions();
@@ -1688,6 +1716,7 @@
       if (route !== 'subscriptions') stopSubsAutoRefresh();
       if (route !== 'verifications')  stopVerifsAutoRefresh();
       if (route !== 'disputes')       stopDisputesAutoRefresh();
+      if (route !== 'live')           stopLiveAutoRefresh();
     }
 
     function renderPlaceholder(route) {
@@ -1708,6 +1737,67 @@
           '<div class="placeholder-text">' + cfg.text + '</div>' +
         '</div>';
       host.dataset.rendered = '1';
+    }
+
+    // ────────────────────── LIVE TRAFFIC ──────────────────────
+    let liveTimer = null;
+    function stopLiveAutoRefresh() { if (liveTimer) { clearInterval(liveTimer); liveTimer = null; } }
+    function startLiveAutoRefresh() {
+      stopLiveAutoRefresh();
+      liveTimer = setInterval(() => { if (location.hash === '#live') refreshLive(); }, 7000);
+    }
+    function liveTimeAgo(ts) {
+      if (!ts) return '';
+      const s = Math.max(0, (Date.now() - new Date(ts).getTime()) / 1000);
+      if (s < 60)    return Math.floor(s) + 's ago';
+      if (s < 3600)  return Math.floor(s / 60) + 'm ago';
+      if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+      return Math.floor(s / 86400) + 'd ago';
+    }
+    const LIVE_ICON = { login: '🔑', signup: '🆕', sale: '🧾', order: '🛒' };
+    function liveBadge(app) {
+      const bg = app === 'MP' ? '#1d4ed8' : '#047857';
+      return '<span style="display:inline-block;font-size:10px;font-weight:700;color:#fff;background:' + bg +
+             ';border-radius:6px;padding:1px 6px;margin-right:6px">' + escapeHtml(app) + '</span>';
+    }
+    function liveRow(left, right) {
+      return '<div class="activity-item" style="display:flex;align-items:center;gap:8px">' +
+             '<div style="flex:1;min-width:0">' + left + '</div>' +
+             '<div class="activity-empty" style="white-space:nowrap;padding:0">' + escapeHtml(right) + '</div></div>';
+    }
+    async function refreshLive() {
+      try {
+        const r = await apiAdmin('GET', '/admin/live');
+        const d = (r && r.data) || {};
+        const on = d.online || { count: 0, users: [] };
+        const cnt = $('live-online-count'); if (cnt) cnt.textContent = on.count || 0;
+        const onList = $('live-online-list');
+        if (onList) {
+          onList.innerHTML = (on.users && on.users.length)
+            ? on.users.map(u => liveRow(
+                liveBadge(u.app) + '<strong>' + escapeHtml(u.name || '—') + '</strong> ' +
+                '<span class="activity-empty" style="padding:0">' + escapeHtml(u.role || '') +
+                (u.where ? ' · ' + escapeHtml(u.where) : '') + '</span>',
+                liveTimeAgo(u.last_seen))).join('')
+            : '<div class="activity-empty">No one online in the last 5 minutes.</div>';
+        }
+        const feedList = $('live-feed-list');
+        if (feedList) {
+          feedList.innerHTML = (d.feed && d.feed.length)
+            ? d.feed.map(e => liveRow(
+                (LIVE_ICON[e.type] || '•') + ' ' + liveBadge(e.app) +
+                '<strong>' + escapeHtml(e.type) + '</strong> — ' + escapeHtml(e.actor || '') + ' ' +
+                '<span class="activity-empty" style="padding:0">' + escapeHtml(e.detail || '') + '</span>',
+                liveTimeAgo(e.ts))).join('')
+            : '<div class="activity-empty">No activity in the last 24h.</div>';
+        }
+        const upd = $('live-updated'); if (upd) upd.textContent = 'Updated ' + new Date().toLocaleTimeString();
+      } catch (e) { /* apiAdmin handles 401/5xx; ignore transient poll errors */ }
+    }
+    function loadLive() {
+      const btn = $('live-refresh'); if (btn) btn.onclick = refreshLive;
+      refreshLive();
+      startLiveAutoRefresh();
     }
 
     // ────────────────────── DASHBOARD ──────────────────────
