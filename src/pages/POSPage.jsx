@@ -80,6 +80,13 @@ export default function POSPage() {
   const [custSearch, setCustSearch]       = useState("");
   const [showCustDrop, setShowCustDrop]   = useState(false);
   const [payMode, setPayMode]             = useState("paid");
+  // MP-POS-SILENT-FULLPAY-GUARD (BUG 1): payMode defaults to "paid". When a
+  // customer is attached the cashier MUST consciously pick Paid/Partial/Credit
+  // — otherwise a credit sale gets silently booked as full cash (the cashier
+  // collects part, forgets to switch off the default, and the receivable is
+  // wiped: VNT-20260613-0021). This flag tracks an explicit tap so we can gate
+  // Confirm + suppress the pre-selected highlight for customer sales.
+  const [payModeChosen, setPayModeChosen] = useState(false);
   const [paidAmt, setPaidAmt]             = useState("");
   const [dueDate, setDueDate]             = useState("");
   const [payMethod, setPayMethod]         = useState("cash");
@@ -212,7 +219,7 @@ export default function POSPage() {
       // Backfill a stable lineId on drafts saved before lineIds existed.
       setCart(draft.items.map(it => (it && it.lineId) ? it : { ...it, lineId: genLineId() }));
       if (draft.customer)      setCustomer(draft.customer);
-      if (draft.payMode)       setPayMode(draft.payMode);
+      if (draft.payMode)       { setPayMode(draft.payMode); setPayModeChosen(true); }
       if (draft.paidAmt)       setPaidAmt(draft.paidAmt);
       if (draft.dueDate)       setDueDate(draft.dueDate);
       if (draft.notes)         setNotes(draft.notes);
@@ -1133,7 +1140,7 @@ export default function POSPage() {
     },
     onSuccess: (data) => {
       const resetCart = () => {
-        setCart([]); setCustomer(null); setPayMode("paid");
+        setCart([]); setCustomer(null); setPayMode("paid"); setPayModeChosen(false);
         setPaidAmt(""); setDueDate(""); setNotes(""); setShowPayment(false);
         setDebtInvoices([]); setSelectedDebtIds(new Set()); setDebtPayAmt("");
         setDebtBanner(null);
@@ -1423,7 +1430,7 @@ export default function POSPage() {
     onSuccess: (row) => {
       setShowHold(false); setHoldLabel(""); setHoldNotes("");
       setCart([]); setCustomer(null); setOnlineCtx(null);
-      setShowPayment(false); setPayMode("paid"); setPaidAmt("");
+      setShowPayment(false); setPayMode("paid"); setPayModeChosen(false); setPaidAmt("");
       toast.success(lang === "en"
         ? `Sale held as ${row.hold_ref}` : `Vente mise en attente : ${row.hold_ref}`,
         { duration: 4000 });
@@ -1665,12 +1672,26 @@ export default function POSPage() {
                   )}
                   {!isDebtOnlyCart && (
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 10 }}>
-                      {PAYMENT_MODES.map(pm => (
-                        <button key={pm.key} onClick={() => setPayMode(pm.key)} style={{ padding: "8px 4px", borderRadius: 10, border: `1.5px solid ${payMode === pm.key ? pm.color : "var(--border)"}`, background: payMode === pm.key ? pm.color + "18" : "transparent", color: payMode === pm.key ? pm.color : "var(--text-secondary)", cursor: "pointer", fontSize: 11, fontWeight: 700, transition: "all 0.15s" }}>
+                      {PAYMENT_MODES.map(pm => {
+                        // MP-POS-SILENT-FULLPAY-GUARD: suppress the pre-selected
+                        // "Paid" highlight for customer sales until the cashier
+                        // actually taps a mode, so the default can't be mistaken
+                        // for a deliberate choice. Walk-ins keep the fast default.
+                        const sel = payMode === pm.key && (payModeChosen || !customer);
+                        return (
+                        <button key={pm.key} onClick={() => { setPayMode(pm.key); setPayModeChosen(true); }} style={{ padding: "8px 4px", borderRadius: 10, border: `1.5px solid ${sel ? pm.color : "var(--border)"}`, background: sel ? pm.color + "18" : "transparent", color: sel ? pm.color : "var(--text-secondary)", cursor: "pointer", fontSize: 11, fontWeight: 700, transition: "all 0.15s" }}>
                           <div style={{ fontSize: 14 }}>{pm.icon}</div>
                           <div style={{ marginTop: 2 }}>{lang === "en" ? pm.en : pm.fr}</div>
                         </button>
-                      ))}
+                        );
+                      })}
+                    </div>
+                  )}
+                  {!isDebtOnlyCart && customer && !payModeChosen && (
+                    <div style={{ padding: "8px 12px", background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.35)", borderRadius: 8, fontSize: 12, color: "#fbbf24", fontWeight: 600, marginBottom: 8 }}>
+                      ⚠️ {lang === "en"
+                        ? "Choose how this customer is paying — Paid in full, Partial, or Credit — before confirming."
+                        : "Choisissez le mode de paiement du client — Payé, Partiel ou Crédit — avant de valider."}
                     </div>
                   )}
                   {payMode === "partial" && !isDebtOnlyCart && (
@@ -1723,7 +1744,7 @@ export default function POSPage() {
                   <PayButton
                     saleMutation={saleMutation}
                     onClick={attemptCheckout}
-                    disabled={!shiftIsOpen || (!hasDebt && payMode === "partial" && !paidAmt) || ((payMode === "credit" || payMode === "partial") && !customer)}
+                    disabled={!shiftIsOpen || (!hasDebt && payMode === "partial" && !paidAmt) || ((payMode === "credit" || payMode === "partial") && !customer) || (!isDebtOnlyCart && !!customer && !payModeChosen)}
                     title={!shiftIsOpen ? noShiftHint(lang) : ""}
                     label={lang === "en" ? "✓ Confirm" : "✓ Valider"}
                     successLabel={lang === "en" ? "✓ Sold!" : "✓ Vendu !"}
