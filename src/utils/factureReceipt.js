@@ -135,3 +135,70 @@ export function buildFactureHtml({ org = {}, lang = "fr", saleNumber = "", saleD
     </script>
   </body></html>`;
 }
+
+// MP-RECEIPT-PRINT-CLOSE-FIX: INNER facture markup (no <html>/<head>/<body>,
+// no action bar, no <script>, no window.close button) for rendering INSIDE the
+// app via an in-app print overlay instead of a separate window.open() window.
+// window.open()-spawned windows can't be reliably closed on Android WebView
+// (window.close() is a no-op), which left an uncloseable layer over the app.
+// All styles are scoped under .mp-fac so nothing leaks to the host app.
+export function buildFactureInner({ org = {}, lang = "fr", saleNumber = "", saleDate = "", customerName, items = [] }) {
+  const currency = esc(currencySymbol(org.currency));
+  const footer = org.receipt_footer || "";
+
+  const lh = [];
+  if (org.logo_url) lh.push(`<div class="center"><img class="logo" src="${esc(org.logo_url)}"/></div>`);
+  if (org.name)     lh.push(`<div class="center name">${esc(org.name)}</div>`);
+  if (org.slogan)   lh.push(`<div class="center slogan">${esc(org.slogan)}</div>`);
+  const addr = [org.address, org.city, org.country].filter(Boolean).map(esc).join(", ");
+  if (addr)         lh.push(`<div class="center small">${addr}</div>`);
+  const tel = [org.phone, org.whatsapp_number].filter(Boolean).map(esc).join(" / ");
+  if (tel)          lh.push(`<div class="center small">Tél: ${tel}</div>`);
+  if (org.email)    lh.push(`<div class="center small">E-mail: ${esc(org.email)}</div>`);
+
+  let grand = 0;
+  const rows = (items || []).map((i) => {
+    const qty = Number(i.quantity) || 0;
+    const pu = Number(i.unit_price) || 0;
+    const lt = qty * pu;
+    grand += lt;
+    return `<tr><td class="c">${qty}</td><td>${esc(i.name)}</td><td class="r">${money(pu)}</td><td class="r">${money(lt)}</td></tr>`;
+  }).join("");
+
+  return `<style>
+    .mp-fac, .mp-fac *{box-sizing:border-box;color:#000}
+    .mp-fac{font-family:Arial,Helvetica,sans-serif;font-size:12px;background:#fff;max-width:440px;margin:0 auto;padding:10px}
+    .mp-fac .center{text-align:center}
+    .mp-fac .name{font-weight:bold;font-size:16px}
+    .mp-fac .slogan{font-style:italic;font-size:11px}
+    .mp-fac .small{font-size:11px;line-height:1.4}
+    .mp-fac .logo{max-height:70px;max-width:200px;object-fit:contain}
+    .mp-fac .title{text-align:center;font-weight:bold;font-size:16px;letter-spacing:1px;margin:12px 0 4px}
+    .mp-fac .meta{font-size:12px;text-align:center}
+    .mp-fac .client{margin:8px 0 4px;font-weight:bold}
+    .mp-fac table{width:100%;border-collapse:collapse;margin-top:6px}
+    .mp-fac th,.mp-fac td{border:1px solid #000;padding:4px 6px;font-size:11px;vertical-align:top;word-break:break-word}
+    .mp-fac th{background:#f0f0f0}
+    .mp-fac .c{text-align:center}.mp-fac .r{text-align:right}
+    .mp-fac .total{text-align:right;font-weight:bold;font-size:15px;margin-top:8px}
+    .mp-fac .footer{text-align:center;margin-top:12px;font-size:11px}
+    .mp-fac .arrete{margin-top:16px;font-size:11px}
+    .mp-fac .sign{display:flex;justify-content:space-between;margin-top:30px;font-size:11px;font-weight:bold}
+    .mp-fac .sigcell{width:45%;border-top:1px solid #000;padding-top:4px;text-align:center}
+  </style>
+  <div class="mp-fac">
+    ${lh.join("")}
+    <div class="title">FACTURE</div>
+    <div class="meta">N°: ${esc(saleNumber)}</div>
+    <div class="meta">Date: ${factureDate(saleDate)}</div>
+    <div class="client">Client: ${esc(customerName || "Comptant")}</div>
+    <table>
+      <thead><tr><th class="c">Qté</th><th>Désignation</th><th class="r">P.U.</th><th class="r">P. Total</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="total">TOTAL: ${money(grand)} ${currency}</div>
+    ${footer ? `<div class="footer">${esc(footer)}</div>` : ""}
+    <div class="arrete">Arrêtée la présente facture à la somme de : ________________________________</div>
+    <div class="sign"><div class="sigcell">Signature client</div><div class="sigcell">Signature vendeur</div></div>
+  </div>`;
+}

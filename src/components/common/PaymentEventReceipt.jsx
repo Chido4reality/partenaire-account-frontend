@@ -27,7 +27,7 @@
 import { Component, useEffect, useState } from "react";
 import { genSaleCodes } from "../../utils/receiptCodes";
 import { buildMonospaceReceipt, wrapMonospaceFence } from "../../utils/receiptText";
-import { buildFactureHtml } from "../../utils/factureReceipt";
+import { buildFactureInner } from "../../utils/factureReceipt";
 
 // MP-VOID-PARTIAL-COMMIT-FIX: scoped error boundary so a render
 // crash in the receipt (bad payload shape, missing field, etc.)
@@ -387,6 +387,50 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
     return () => { cancelled = true; };
   }, [reference]);
 
+  // MP-RECEIPT-PRINT-CLOSE-FIX: the facture/receipt is printed via an IN-APP
+  // overlay (printHtml != null) instead of window.open(). A window.open()-spawned
+  // window can't be reliably closed on Android System WebView (window.close() is
+  // a no-op), which left an uncloseable layer over the app — tapping "Close" did
+  // nothing and the only way out was force-quit. The overlay is plain React state,
+  // so closePrint() ALWAYS dismisses and returns to the live app.
+  const [printHtml, setPrintHtml] = useState(null);
+  const openPrint = (inner) => setPrintHtml(inner);
+  const closePrint = () => {
+    setPrintHtml(null);
+    document.body.classList.remove("mp-printing"); // defensive: never leave print state behind
+  };
+  // Belt-and-suspenders teardown. window.onafterprint is unreliable in Android
+  // WebView, so we ALSO recover on visibilitychange/focus + a safety timeout —
+  // independent of whether the user actually printed.
+  useEffect(() => {
+    if (!printHtml) return;
+    document.body.classList.add("mp-printing");
+    const afterPrint = () => closePrint();                         // auto-return when it fires
+    const strip = () => document.body.classList.remove("mp-printing"); // defensive class strip
+    const onVis = () => { if (document.visibilityState === "visible") strip(); };
+    window.addEventListener("afterprint", afterPrint);
+    window.addEventListener("focus", strip);
+    document.addEventListener("visibilitychange", onVis);
+    const safety = setTimeout(strip, 60000);
+    return () => {
+      window.removeEventListener("afterprint", afterPrint);
+      window.removeEventListener("focus", strip);
+      document.removeEventListener("visibilitychange", onVis);
+      clearTimeout(safety);
+      document.body.classList.remove("mp-printing");
+    };
+  }, [printHtml]);
+  // If the whole receipt unmounts, never leave a print body-class behind.
+  useEffect(() => () => document.body.classList.remove("mp-printing"), []);
+
+  // Share the facture text (used by the print overlay's Partager button).
+  const shareFacture = () => {
+    const num = reference || data.sale_number || "";
+    const txt = `FACTURE ${num}${org?.name ? " — " + org.name : ""}`;
+    try { if (navigator.share) { navigator.share({ title: `FACTURE ${num}`, text: txt }); return; } } catch (e) { /* fall through */ }
+    try { window.open("https://wa.me/?text=" + encodeURIComponent(txt), "_blank"); } catch (e) { /* ignore */ }
+  };
+
   // Body lines (shared by WhatsApp + print + on-screen summary).
   const bodyLines = buildBodyLines(eventType, data, lang, org);
 
@@ -439,19 +483,18 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
       const items = (data.items || []).map((i) => isDebt(i)
         ? { name: i.name, quantity: 1, unit_price: Number(i.unit_price) || 0 }
         : { name: i.name, quantity: Number(i.quantity) || 0, unit_price: Number(i.unit_price) || 0 });
-      const html = buildFactureHtml({
+      // MP-RECEIPT-PRINT-CLOSE-FIX: render the facture in an IN-APP overlay
+      // (black-on-white + Imprimer/Partager/Fermer bar) instead of a separate
+      // window.open() window. The overlay's Fermer is plain React state so it
+      // ALWAYS dismisses; window.open() windows are uncloseable on Android WebView.
+      openPrint(buildFactureInner({
         org: org || {},
         lang,
         saleNumber: reference || data.sale_number || "",
         saleDate: data.sale_date || "",
         customerName: data.customer_name || data.customer?.name || "Comptant",
         items,
-      });
-      // Open the facture as a viewer (black-on-white + Imprimer/Partager/Fermer
-      // action bar). Do NOT auto-print/close — the user drives it from the bar,
-      // so the facture is reachable on phones where the print dialog is absent.
-      const w = window.open("", "_blank", "width=400,height=600");
-      w.document.write(html); w.document.close(); w.focus();
+      }));
       return;
     }
     const esc = (s) => String(s == null ? "" : s)
@@ -533,44 +576,39 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
         ${footer ? `<div class="footer">${esc(footer)}</div>` : ""}`;
     }
 
-    const html = `
-      <html><head><meta charset="utf-8"><title>${eventType === "sale" ? "FACTURE " + esc(reference || "") : esc(title)}</title><style>
-        * { box-sizing: border-box; }
-        body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #000; margin: 0; padding: 10px; }
-        .wrap { max-width: 440px; margin: 0 auto; }
-        .center { text-align: center; }
-        .name { font-weight: bold; font-size: 16px; }
-        .slogan { font-style: italic; font-size: 11px; }
-        .small { font-size: 11px; line-height: 1.4; }
-        .logo { max-height: 70px; max-width: 200px; object-fit: contain; }
-        .title { text-align: center; font-weight: bold; font-size: 16px; letter-spacing: 1px; margin: 12px 0 4px; }
-        .meta { font-size: 12px; }
-        .client { margin: 8px 0 4px; font-weight: bold; }
-        table { width: 100%; border-collapse: collapse; margin-top: 6px; }
-        th, td { border: 1px solid #000; padding: 4px 6px; font-size: 11px; vertical-align: top; word-break: break-word; }
-        th { background: #f0f0f0; }
-        .c { text-align: center; } .r { text-align: right; }
-        .total { text-align: right; font-weight: bold; font-size: 15px; margin-top: 8px; }
-        .footer { text-align: center; margin-top: 12px; font-size: 11px; }
-        .arrete { margin-top: 16px; font-size: 11px; }
-        .sign { display: flex; justify-content: space-between; margin-top: 30px; font-size: 11px; font-weight: bold; }
-        .sigcell { width: 45%; border-top: 1px solid #000; padding-top: 4px; text-align: center; }
-        hr.sep { border: none; border-top: 1px dashed #000; margin: 8px 0; }
-        @media print { body { padding: 0; } .wrap { max-width: 100%; } }
-      </style></head><body>
-        <div class="wrap">
-          ${letterhead}
-          ${bodyHtml}
-        </div>
-      </body></html>`;
-    const w = window.open("", "_blank", "width=400,height=600");
-    w.document.write(html);
-    w.document.close();
-    w.focus();
-    setTimeout(() => { w.print(); w.close(); }, 300);
+    // MP-RECEIPT-PRINT-CLOSE-FIX: scoped INNER markup for the in-app overlay
+    // (no window.open). Styles scoped under .mp-fac so nothing leaks to the app.
+    const inner = `<style>
+        .mp-fac, .mp-fac *{box-sizing:border-box;color:#000}
+        .mp-fac{font-family:Arial,Helvetica,sans-serif;font-size:12px;background:#fff;max-width:440px;margin:0 auto;padding:10px}
+        .mp-fac .center{text-align:center}
+        .mp-fac .name{font-weight:bold;font-size:16px}
+        .mp-fac .slogan{font-style:italic;font-size:11px}
+        .mp-fac .small{font-size:11px;line-height:1.4}
+        .mp-fac .logo{max-height:70px;max-width:200px;object-fit:contain}
+        .mp-fac .title{text-align:center;font-weight:bold;font-size:16px;letter-spacing:1px;margin:12px 0 4px}
+        .mp-fac .meta{font-size:12px}
+        .mp-fac .client{margin:8px 0 4px;font-weight:bold}
+        .mp-fac table{width:100%;border-collapse:collapse;margin-top:6px}
+        .mp-fac th,.mp-fac td{border:1px solid #000;padding:4px 6px;font-size:11px;vertical-align:top;word-break:break-word}
+        .mp-fac th{background:#f0f0f0}
+        .mp-fac .c{text-align:center}.mp-fac .r{text-align:right}
+        .mp-fac .total{text-align:right;font-weight:bold;font-size:15px;margin-top:8px}
+        .mp-fac .footer{text-align:center;margin-top:12px;font-size:11px}
+        .mp-fac .arrete{margin-top:16px;font-size:11px}
+        .mp-fac .sign{display:flex;justify-content:space-between;margin-top:30px;font-size:11px;font-weight:bold}
+        .mp-fac .sigcell{width:45%;border-top:1px solid #000;padding-top:4px;text-align:center}
+        .mp-fac hr.sep{border:none;border-top:1px dashed #000;margin:8px 0}
+      </style>
+      <div class="mp-fac">
+        ${letterhead}
+        ${bodyHtml}
+      </div>`;
+    openPrint(inner);
   };
 
   return (
+    <>
     <div
       style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
       onClick={onClose}
@@ -677,6 +715,42 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
         </div>
       </div>
     </div>
+
+    {/* MP-RECEIPT-PRINT-CLOSE-FIX: in-app print overlay (replaces window.open).
+        z-index 4000 sits ABOVE the receipt modal (300); its Fermer button is the
+        topmost layer so its tap target is never covered, and closePrint() always
+        resets state. window.print() is isolated to this overlay via the @media
+        print rules below; the <style> + overlay unmount together so no print CSS
+        can linger. */}
+    {printHtml && (
+      <div className="mp-print-overlay"
+        style={{ position: "fixed", inset: 0, zIndex: 4000, background: "#fff", color: "#000", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+        <style>{`
+          @media print {
+            body * { visibility: hidden !important; }
+            .mp-print-overlay, .mp-print-overlay * { visibility: visible !important; }
+            .mp-print-overlay { position: absolute !important; inset: 0 !important; }
+            .mp-print-overlay .no-print { display: none !important; }
+          }
+        `}</style>
+        <div className="no-print" style={{ position: "sticky", top: 0, zIndex: 10, display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", padding: 10, background: "#fff", borderBottom: "1px solid #ccc" }}>
+          <button onClick={() => { try { window.print(); } catch (e) { /* ignore */ } }}
+            style={{ padding: "10px 16px", borderRadius: 8, fontWeight: 700, fontSize: 14, border: "none", background: "#152B52", color: "#fff", cursor: "pointer" }}>
+            🖨️ {en ? "Print" : "Imprimer"}
+          </button>
+          <button onClick={shareFacture}
+            style={{ padding: "10px 16px", borderRadius: 8, fontWeight: 700, fontSize: 14, border: "1px solid #152B52", background: "#fff", color: "#152B52", cursor: "pointer" }}>
+            🔗 {en ? "Share" : "Partager"}
+          </button>
+          <button onClick={closePrint}
+            style={{ padding: "10px 16px", borderRadius: 8, fontWeight: 700, fontSize: 14, border: "1px solid #999", background: "#fff", color: "#333", cursor: "pointer" }}>
+            ✕ {en ? "Close" : "Fermer"}
+          </button>
+        </div>
+        <div dangerouslySetInnerHTML={{ __html: printHtml }} />
+      </div>
+    )}
+    </>
   );
 }
 
