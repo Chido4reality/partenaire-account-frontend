@@ -136,6 +136,34 @@ function ModeBadge() {
   );
 }
 
+// MP-WHATS-NEW-2.0: persistent gold "2.0" version marker, same size/shape as
+// ModeBadge so it sits cleanly next to the PRO/LITE pill (and next to the shop
+// name when there's no paid badge — ModeBadge always renders, so it's always
+// visible). Gold-forward (gold fill, navy text) per the dark theme's gold
+// accent. Tapping it re-opens the What's-New card (in-page nicety).
+function VersionBadge() {
+  return (
+    <span
+      onClick={() => { try { window.dispatchEvent(new CustomEvent("mp-open-whatsnew")); } catch { /* no-op */ } }}
+      title="2.0"
+      aria-label="App version 2.0"
+      style={{
+        display: "inline-block",
+        marginLeft: 6,
+        background: "#FBC503",
+        color: "#152B52",
+        fontSize: 10, padding: "2px 6px",
+        borderRadius: 4, fontWeight: 700,
+        letterSpacing: 0.3,
+        verticalAlign: "middle",
+        cursor: "pointer",
+      }}
+    >
+      2.0
+    </span>
+  );
+}
+
 // MP-LITE-PRO-VISUAL-POLISH (2 Jun): 2px accent strip at the very top
 // of the app shell. First thing the eye catches. Same two palettes as
 // ModeBadge so the two reinforce each other — warm gray = Lite, soft
@@ -956,7 +984,7 @@ export default function Layout() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 800, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Mon Partenaire Dozie</div>
             <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {org?.name}<ModeBadge />
+              {org?.name}<ModeBadge /><VersionBadge />
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
@@ -1022,7 +1050,7 @@ export default function Layout() {
             <div>
               <div style={{ fontWeight: 800, fontSize: 14 }}>Mon Partenaire Dozie</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1 }}>
-                {org?.name}<ModeBadge />
+                {org?.name}<ModeBadge /><VersionBadge />
               </div>
             </div>
           )}
