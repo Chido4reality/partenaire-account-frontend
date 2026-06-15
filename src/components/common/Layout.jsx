@@ -354,7 +354,12 @@ export default function Layout() {
     queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
     refetchInterval: 300000,
     retry: 1,
-    enabled: !lite, // MP-LITE-MODE-PHASE-1: subscription banner hidden in Lite
+    // MP-MODE-TRIAL-REWORK: always fetch. /my-plan is the SINGLE source of
+    // trial/entitlement truth for every surface (nav gating, sidebar countdown,
+    // TrialBanner, Settings Mode tab via useTrialState). Fetching it in Simple
+    // view too is required so the nav correctly DOWNGRADES on genuine expiry
+    // (effective_plan='trial' floor) instead of resting on the stale "silver"
+    // fallback, and so all trial-driven surfaces agree.
     onError: () => {} // silent fail
   });
   const myPlan = planData?.data;

@@ -1,63 +1,59 @@
-// MP-MODE-TRIAL-REWORK: unified trial readouts for the frontend.
+// MP-MODE-TRIAL-REWORK: SINGLE source of trial / entitlement truth.
 //
-// There is ONE trial now — the signup trial (pa_organisations.trial_ends_at,
-// subscription_status='trial'), which the backend resolves to full feature
-// access for 7 days. The old separate "Pro Mode" trial (pro_trial_*) is retired.
-// App Mode (Simple/Full) is a pure view toggle; whether Full view is free is
-// driven by `can_use_full_view` (trial active OR paid/lifetime).
+// Reads the backend-authoritative /subscriptions/my-plan (computeEffectivePlan)
+// via the SAME ["my-plan"] react-query cache that Layout uses, so the sidebar
+// countdown + nav gating + TrialBanner + the Settings Mode tab can never
+// desync. (Previously this derived from the client-cached authStore.org, which
+// could go stale and disagree with /my-plan — the reported bug.)
 //
 // Shape:
 //   {
-//     plan_id,
-//     is_paid,                 // on a paid plan (lite/pro/pro_plus/legacy), not expired
-//     is_lifetime,
+//     plan_id, effective_plan,
+//     is_paid,                 // on a paid plan (not the free floor, not trial)
 //     trial_active,            // signup trial currently running
-//     trial_ends_at,           // ISO string or null
-//     trial_days_remaining,    // number or null
-//     show_trial_countdown,    // boolean — show the trial countdown banner
-//     can_use_full_view,       // trial_active || is_paid || is_lifetime
-//     // back-compat aliases (deprecated → mapped to can_use_full_view):
+//     trial_ends_at,
+//     trial_days_remaining,    // whole days (backend floor) — decrements daily
+//     show_trial_countdown,
+//     can_use_full_view,       // authoritative entitlement (lockstep w/ lite-mode 402 gate)
+//     // back-compat aliases:
 //     can_flip_to_pro, is_paid_pro,
 //   }
 
-import { useAuthStore } from "../store";
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-const ceilDays = (ms) => Math.max(0, Math.ceil(ms / DAY_MS));
-const PAID_PLANS = new Set(["lite", "pro", "pro_plus", "gold", "premium"]);
+import { useQuery } from "@tanstack/react-query";
+import api from "../utils/api";
 
 export function useTrialState() {
-  const org = useAuthStore(s => s.org) || {};
-  const plan_id = org.plan_id || "trial";
-  const now = Date.now();
+  const { data } = useQuery({
+    queryKey: ["my-plan"],
+    queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
+    refetchInterval: 300000,
+    retry: 1,
+    onError: () => {},
+  });
+  const mp = (data && data.data) || {};
 
-  const isLifetime = org.is_lifetime === true;
-  const expiryOk = !org.plan_expires_at || new Date(org.plan_expires_at).getTime() > now;
-  const terminated = ["expired", "suspended", "cancelled"].includes(org.subscription_status);
-  const isPaid = PAID_PLANS.has(plan_id) && !terminated && expiryOk;
-
-  // The single signup trial.
-  const trialEndsAt = org.trial_ends_at || null;
-  const trialActive = org.subscription_status === "trial"
-    && !!trialEndsAt
-    && new Date(trialEndsAt).getTime() > now;
-  const trialDaysRemaining = trialActive
-    ? ceilDays(new Date(trialEndsAt).getTime() - now)
-    : (trialEndsAt ? 0 : null);
-
-  const canUseFullView = isLifetime || isPaid || trialActive;
+  const plan_id = mp.plan_id || "trial";
+  const effective_plan = mp.effective_plan || null;
+  const trial_active = !!mp.trial_active;
+  const trial_days_remaining = mp.days_remaining_in_trial != null ? mp.days_remaining_in_trial : null;
+  // Authoritative entitlement from the backend (exact lockstep with the
+  // /auth/lite-mode 402 gate). Defensive fallback if the field isn't present yet.
+  const can_use_full_view = mp.can_use_full_view != null
+    ? !!mp.can_use_full_view
+    : (effective_plan ? effective_plan !== "trial" : true);
+  const is_paid = !!effective_plan && effective_plan !== "trial" && !trial_active;
 
   return {
     plan_id,
-    is_paid: isPaid,
-    is_lifetime: isLifetime,
-    trial_active: trialActive,
-    trial_ends_at: trialEndsAt,
-    trial_days_remaining: trialDaysRemaining,
-    show_trial_countdown: !!trialActive,
-    can_use_full_view: canUseFullView,
-    // Deprecated aliases kept so any straggler consumer doesn't crash mid-rollout.
-    can_flip_to_pro: canUseFullView,
-    is_paid_pro: isPaid,
+    effective_plan,
+    is_paid,
+    trial_active,
+    trial_ends_at: mp.trial_ends_at || null,
+    trial_days_remaining,
+    show_trial_countdown: trial_active,
+    can_use_full_view,
+    // Deprecated aliases kept so any straggler consumer doesn't crash.
+    can_flip_to_pro: can_use_full_view,
+    is_paid_pro: is_paid,
   };
 }
