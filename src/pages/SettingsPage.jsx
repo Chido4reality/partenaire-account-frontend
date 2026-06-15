@@ -60,37 +60,24 @@ export default function SettingsPage() {
   const [modeSaving, setModeSaving] = useState(false);
   const flipMode = async () => {
     setModeSaving(true);
-    const targetEnabled = !lite ? true : false; // currently Pro → flip to Lite, currently Lite → flip to Pro
+    const targetEnabled = !lite ? true : false; // Full(lite=false) → Simple(true); Simple(lite=true) → Full(false)
     try {
-      const res = await api.post("/auth/lite-mode", { enabled: targetEnabled });
-      // MP-BILLING-V2: response surfaces pro_trial_* fields when the
-      // flip started or used the trial. Update authStore.org with the
-      // full set so the next useTrialState read sees the new clock.
+      await api.post("/auth/lite-mode", { enabled: targetEnabled });
+      // MP-MODE-TRIAL-REWORK: App Mode is a pure view toggle — no trial is
+      // stamped. Just reflect the new view in authStore.org.
       const curr = useAuthStore.getState().org || {};
-      const proStart = res?.data?.pro_trial_started_at ?? curr.pro_trial_started_at ?? null;
-      const proEnd   = res?.data?.pro_trial_ends_at    ?? curr.pro_trial_ends_at    ?? null;
-      useAuthStore.setState({ org: {
-        ...curr,
-        lite_mode: targetEnabled,
-        pro_trial_started_at: proStart,
-        pro_trial_ends_at:    proEnd,
-      } });
-      const startedNow = res?.data?.pro_trial_started_now;
+      useAuthStore.setState({ org: { ...curr, lite_mode: targetEnabled } });
       toast.success(targetEnabled
-        ? (lang === "en" ? "✓ Switched to Lite Mode" : "✓ Mode Lite activé")
-        : startedNow
-          ? (lang === "en" ? "✓ Pro Mode trial started — 7 days" : "✓ Essai Mode Pro lancé — 7 jours")
-          : (lang === "en" ? "✓ Switched to Pro Mode" : "✓ Mode Pro activé"));
+        ? (lang === "en" ? "✓ Switched to Simple view" : "✓ Vue simple activée")
+        : (lang === "en" ? "✓ Switched to Full view" : "✓ Vue complète activée"));
       setShowModeConfirm(false);
     } catch (e) {
-      // MP-BILLING-V2: surface the structured PRO_TRIAL_EXPIRED so the
-      // toast tells the owner why the flip was rejected.
+      // MP-MODE-TRIAL-REWORK: trial expired & unpaid → 402 NEEDS_SUBSCRIPTION.
+      // Open the subscription/payment form instead of erroring.
       const code = e?.response?.data?.code;
-      if (code === "PRO_TRIAL_EXPIRED") {
-        toast.error(lang === "en"
-          ? "Pro Mode trial ended — subscribe to Pro to continue"
-          : "Essai Mode Pro terminé — abonnez-vous pour continuer",
-          { duration: 5000 });
+      if (code === "NEEDS_SUBSCRIPTION" || e?.response?.status === 402) {
+        setShowModeConfirm(false);
+        window.dispatchEvent(new CustomEvent("mp-open-upgrade"));
       } else {
         toast.error(e?.response?.data?.message || "Error");
       }
@@ -925,8 +912,8 @@ export default function SettingsPage() {
             </div>
             <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20, lineHeight: 1.55 }}>
               {lang === "en"
-                ? "Lite Mode hides advanced surfaces (Notifications, Marketplace, Operations dashboard, by-location reports, bulk Transfers) so the app stays simple for day-to-day till work. Pro Mode reveals everything. You can switch back at any time."
-                : "Le Mode Lite masque les surfaces avancées (Notifications, Marché, Tableau opérations, rapports par site, transferts en lot) pour garder l'application simple pour le travail quotidien à la caisse. Le Mode Pro révèle tout. Vous pouvez basculer à tout moment."}
+                ? "Simple view hides advanced surfaces (Notifications, Marketplace, Operations dashboard, by-location reports, bulk Transfers) so the app stays simple for day-to-day till work. Full view reveals everything. You can switch back at any time."
+                : "La Vue simple masque les surfaces avancées (Notifications, Marché, Tableau opérations, rapports par site, transferts en lot) pour garder l'application simple pour le travail quotidien à la caisse. La Vue complète révèle tout. Vous pouvez basculer à tout moment."}
             </div>
             <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
               <div style={{
@@ -936,7 +923,7 @@ export default function SettingsPage() {
                 borderRadius: 12, padding: "14px 16px",
               }}>
                 <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
-                  {lite ? "✓ " : ""}{lang === "en" ? "Lite Mode" : "Mode Lite"}
+                  {lite ? "✓ " : ""}{lang === "en" ? "Simple view" : "Vue simple"}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                   {lang === "en" ? "Currently active" : "Actuellement actif"}{lite ? "" : (lang === "en" ? " when toggled on" : " si activé")}
@@ -949,56 +936,43 @@ export default function SettingsPage() {
                 borderRadius: 12, padding: "14px 16px",
               }}>
                 <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
-                  {!lite ? "✓ " : ""}{lang === "en" ? "Pro Mode" : "Mode Pro"}
+                  {!lite ? "✓ " : ""}{lang === "en" ? "Full view" : "Vue complète"}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                   {!lite ? (lang === "en" ? "Currently active" : "Actuellement actif") : (lang === "en" ? "Full feature set" : "Toutes les fonctionnalités")}
                 </div>
               </div>
             </div>
-            {/* MP-BILLING-V2: Pro trial state context. Surfaces under
-                the two cards so the owner sees why the CTA reads what
-                it does. Four states map → four UI shapes. */}
-            {lite && trial.pro_trial_state === 'active' && (
+            {/* MP-MODE-TRIAL-REWORK: context note under the two cards. */}
+            {lite && trial.trial_active && (
               <div style={{ marginTop: 16, padding: "10px 14px", background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 10, fontSize: 12, color: "#fbbf24" }}>
                 ⏳ {lang === "en"
-                  ? `Pro Mode trial active — ${trial.pro_trial_days_remaining} day${trial.pro_trial_days_remaining === 1 ? '' : 's'} remaining. Subscribe to Pro to keep access after expiry.`
-                  : `Essai Mode Pro actif — ${trial.pro_trial_days_remaining} jour${trial.pro_trial_days_remaining === 1 ? '' : 's'} restant${trial.pro_trial_days_remaining === 1 ? '' : 's'}. Abonnez-vous à Pro pour garder l'accès après l'essai.`}
+                  ? `Free trial active — ${trial.trial_days_remaining} day${trial.trial_days_remaining === 1 ? '' : 's'} left. You have full access; switching views is free. Subscribe before it ends to keep Full view.`
+                  : `Essai gratuit actif — ${trial.trial_days_remaining} jour${trial.trial_days_remaining === 1 ? '' : 's'} restant${trial.trial_days_remaining === 1 ? '' : 's'}. Accès complet ; changer de vue est gratuit. Abonnez-vous avant la fin pour garder la Vue complète.`}
               </div>
             )}
-            {lite && trial.pro_trial_state === 'expired' && !trial.is_paid_pro && (
+            {lite && !trial.can_use_full_view && (
               <div style={{ marginTop: 16, padding: "10px 14px", background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 10, fontSize: 12, color: "#f87171" }}>
-                🚫 {lang === "en"
-                  ? "Pro Mode trial ended. A Pro subscription is required to enable Pro Mode."
-                  : "Essai Mode Pro terminé. Un abonnement Pro est requis pour activer le Mode Pro."}
+                🔒 {lang === "en"
+                  ? "Your free trial has ended. Full view requires a subscription (Lite, Pro or Pro Plus)."
+                  : "Votre essai gratuit est terminé. La Vue complète nécessite un abonnement (Lite, Pro ou Pro Plus)."}
               </div>
             )}
-            {/* Primary CTA. When Lite+expired+not_paid, swap to a
-                disabled flavour with an Upgrade hint instead of the
-                normal Switch CTA. Click → confirm modal as before. */}
-            {lite && trial.pro_trial_state === 'expired' && !trial.is_paid_pro ? (
-              <button
-                disabled
-                className="btn btn-primary"
-                style={{ marginTop: 20, fontWeight: 700, opacity: 0.55, cursor: "not-allowed" }}
-                title={lang === "en"
-                  ? "Subscribe to Pro to re-enable this toggle"
-                  : "Abonnez-vous à Pro pour réactiver ce bouton"}>
-                {lang === "en" ? "Pro Mode requires a subscription" : "Mode Pro requiert un abonnement"}
-              </button>
-            ) : (
-              <button
-                onClick={() => setShowModeConfirm(true)}
-                disabled={modeSaving}
-                className="btn btn-primary"
-                style={{ marginTop: 20, fontWeight: 700 }}>
-                {lite
-                  ? (trial.can_start_pro_trial
-                      ? (lang === "en" ? "Switch to Pro Mode — 7-day free trial" : "Activer le Mode Pro — Essai gratuit 7 jours")
-                      : (lang === "en" ? "Switch to Pro Mode" : "Passer au Mode Pro"))
-                  : (lang === "en" ? "Switch to Lite Mode" : "Passer au Mode Lite")}
-              </button>
-            )}
+            {/* CTA — context-aware. Simple→Full: free switch if entitled (trial or
+                paid), else opens the payment/subscription form. Full→Simple: always free. */}
+            <button
+              onClick={() => {
+                if (!lite) { setShowModeConfirm(true); return; }            // Full → Simple
+                if (trial.can_use_full_view) { setShowModeConfirm(true); }  // Simple → Full (entitled)
+                else { window.dispatchEvent(new CustomEvent("mp-open-upgrade")); } // → payment
+              }}
+              disabled={modeSaving}
+              className="btn btn-primary"
+              style={{ marginTop: 20, fontWeight: 700 }}>
+              {lite
+                ? (lang === "en" ? "Switch to Full view" : "Passer à la Vue complète")
+                : (lang === "en" ? "Switch to Simple view" : "Passer à la Vue simple")}
+            </button>
           </div>
         </div>
       )}
@@ -1010,17 +984,17 @@ export default function SettingsPage() {
           <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 14, width: "100%", maxWidth: 420, padding: 24 }}>
             <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 10 }}>
               {lite
-                ? (lang === "en" ? "Switch to Pro Mode?" : "Activer le Mode Pro ?")
-                : (lang === "en" ? "Switch to Lite Mode?" : "Activer le Mode Lite ?")}
+                ? (lang === "en" ? "Switch to Full view?" : "Passer à la Vue complète ?")
+                : (lang === "en" ? "Switch to Simple view?" : "Passer à la Vue simple ?")}
             </div>
             <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.55, marginBottom: 18 }}>
               {lite
                 ? (lang === "en"
-                    ? "Pro Mode reveals Notifications, Marketplace, Operations dashboard, by-location reports, and bulk Transfers. You can return to Lite at any time."
-                    : "Le Mode Pro révèle Notifications, Marché, Tableau opérations, rapports par site et transferts en lot. Vous pouvez revenir au Mode Lite à tout moment.")
+                    ? "Full view reveals Notifications, Marketplace, Operations dashboard, by-location reports, and bulk Transfers. You can return to Simple at any time."
+                    : "La Vue complète révèle Notifications, Marché, Tableau opérations, rapports par site et transferts en lot. Vous pouvez revenir à la Vue simple à tout moment.")
                 : (lang === "en"
-                    ? "Lite Mode hides advanced surfaces so the app stays simple. Day-to-day till work is unaffected. You can return to Pro at any time."
-                    : "Le Mode Lite masque les surfaces avancées pour garder l'application simple. Le travail quotidien à la caisse n'est pas affecté. Vous pouvez revenir au Mode Pro à tout moment.")}
+                    ? "Simple view hides advanced surfaces so the app stays simple. Day-to-day till work is unaffected. You can return to Full at any time."
+                    : "La Vue simple masque les surfaces avancées pour garder l'application simple. Le travail quotidien à la caisse n'est pas affecté. Vous pouvez revenir à la Vue complète à tout moment.")}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} disabled={modeSaving} onClick={() => setShowModeConfirm(false)}>

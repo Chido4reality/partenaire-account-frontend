@@ -1,87 +1,63 @@
-// MP-BILLING-V2 (2 Jun): centralised trial-state readouts for the
-// frontend. Backend computes everything authoritatively; this hook
-// just packages the org's persisted fields (returned by /auth/me via
-// the existing pa_organisations(*) join) into structured booleans +
-// day counts so consumers don't each re-derive the same Math.ceil
-// calls.
+// MP-MODE-TRIAL-REWORK: unified trial readouts for the frontend.
+//
+// There is ONE trial now — the signup trial (pa_organisations.trial_ends_at,
+// subscription_status='trial'), which the backend resolves to full feature
+// access for 7 days. The old separate "Pro Mode" trial (pro_trial_*) is retired.
+// App Mode (Simple/Full) is a pure view toggle; whether Full view is free is
+// driven by `can_use_full_view` (trial active OR paid/lifetime).
 //
 // Shape:
 //   {
-//     plan_id,                      // 'trial' | 'lite' | 'pro' (or legacy alias)
-//     is_paid_pro,                  // plan_id === 'pro' or 'premium'
-//     // ── Lite (14-day) trial ──
-//     trial_ends_at,                // ISO string or null
-//     lite_trial_days_remaining,    // number or null when no trial / past
-//     show_lite_trial_countdown,    // true on days 8-14 of trial
-//     // ── Pro (7-day, sticky) trial ──
-//     pro_trial_started_at,         // ISO string or null
-//     pro_trial_ends_at,            // ISO string or null
-//     pro_trial_state,              // 'never_started' | 'active' | 'expired'
-//     pro_trial_days_remaining,     // number or null
-//     can_start_pro_trial,          // boolean — true only when 'never_started'
-//     can_flip_to_pro,              // boolean — gate for Settings Mode CTA
+//     plan_id,
+//     is_paid,                 // on a paid plan (lite/pro/pro_plus/legacy), not expired
+//     is_lifetime,
+//     trial_active,            // signup trial currently running
+//     trial_ends_at,           // ISO string or null
+//     trial_days_remaining,    // number or null
+//     show_trial_countdown,    // boolean — show the trial countdown banner
+//     can_use_full_view,       // trial_active || is_paid || is_lifetime
+//     // back-compat aliases (deprecated → mapped to can_use_full_view):
+//     can_flip_to_pro, is_paid_pro,
 //   }
 
 import { useAuthStore } from "../store";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ceilDays = (ms) => Math.max(0, Math.ceil(ms / DAY_MS));
+const PAID_PLANS = new Set(["lite", "pro", "pro_plus", "gold", "premium"]);
 
 export function useTrialState() {
   const org = useAuthStore(s => s.org) || {};
-  const plan_id = org.plan_id || 'trial';
-  const isPaidPro = plan_id === 'pro' || plan_id === 'premium';
+  const plan_id = org.plan_id || "trial";
+  const now = Date.now();
 
-  // ── Lite (14-day) trial countdown ───────────────────────────────
+  const isLifetime = org.is_lifetime === true;
+  const expiryOk = !org.plan_expires_at || new Date(org.plan_expires_at).getTime() > now;
+  const terminated = ["expired", "suspended", "cancelled"].includes(org.subscription_status);
+  const isPaid = PAID_PLANS.has(plan_id) && !terminated && expiryOk;
+
+  // The single signup trial.
   const trialEndsAt = org.trial_ends_at || null;
-  let liteTrialDaysRemaining = null;
-  let showLiteTrialCountdown = false;
-  if (trialEndsAt) {
-    const endMs = new Date(trialEndsAt).getTime();
-    const now = Date.now();
-    if (endMs > now) {
-      liteTrialDaysRemaining = ceilDays(endMs - now);
-      // Per directive: quiet days 1-7, countdown days 8-14.
-      showLiteTrialCountdown = liteTrialDaysRemaining <= 7;
-    } else {
-      liteTrialDaysRemaining = 0;
-    }
-  }
+  const trialActive = org.subscription_status === "trial"
+    && !!trialEndsAt
+    && new Date(trialEndsAt).getTime() > now;
+  const trialDaysRemaining = trialActive
+    ? ceilDays(new Date(trialEndsAt).getTime() - now)
+    : (trialEndsAt ? 0 : null);
 
-  // ── Pro (7-day, sticky) trial state ─────────────────────────────
-  const proStartedAt = org.pro_trial_started_at || null;
-  const proEndsAt    = org.pro_trial_ends_at || null;
-  let proTrialState = 'never_started';
-  let proTrialDaysRemaining = null;
-  if (proStartedAt && proEndsAt) {
-    const endMs = new Date(proEndsAt).getTime();
-    const now = Date.now();
-    if (endMs > now) {
-      proTrialState = 'active';
-      proTrialDaysRemaining = ceilDays(endMs - now);
-    } else {
-      proTrialState = 'expired';
-      proTrialDaysRemaining = 0;
-    }
-  }
-
-  const canStartProTrial = proTrialState === 'never_started';
-  // Flip is allowed when: never tried, trial active, OR user is on
-  // paid Pro (trial doesn't apply). Blocked when trial expired AND
-  // user isn't on paid Pro.
-  const canFlipToPro = isPaidPro || proTrialState === 'never_started' || proTrialState === 'active';
+  const canUseFullView = isLifetime || isPaid || trialActive;
 
   return {
     plan_id,
-    is_paid_pro: isPaidPro,
+    is_paid: isPaid,
+    is_lifetime: isLifetime,
+    trial_active: trialActive,
     trial_ends_at: trialEndsAt,
-    lite_trial_days_remaining: liteTrialDaysRemaining,
-    show_lite_trial_countdown: showLiteTrialCountdown,
-    pro_trial_started_at: proStartedAt,
-    pro_trial_ends_at: proEndsAt,
-    pro_trial_state: proTrialState,
-    pro_trial_days_remaining: proTrialDaysRemaining,
-    can_start_pro_trial: canStartProTrial,
-    can_flip_to_pro: canFlipToPro,
+    trial_days_remaining: trialDaysRemaining,
+    show_trial_countdown: !!trialActive,
+    can_use_full_view: canUseFullView,
+    // Deprecated aliases kept so any straggler consumer doesn't crash mid-rollout.
+    can_flip_to_pro: canUseFullView,
+    is_paid_pro: isPaid,
   };
 }

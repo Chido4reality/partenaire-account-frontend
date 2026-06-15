@@ -119,7 +119,7 @@ function ModeBadge() {
   const isLite = lite;
   return (
     <span
-      aria-label={isLite ? "Lite Mode" : "Pro Mode"}
+      aria-label={isLite ? "Simple view" : "Full view"}
       style={{
         display: "inline-block",
         marginLeft: 6,
@@ -131,7 +131,7 @@ function ModeBadge() {
         verticalAlign: "middle",
       }}
     >
-      {isLite ? "LITE" : "PRO"}
+      {isLite ? "SIMPLE" : "FULL"}
     </span>
   );
 }
@@ -196,35 +196,18 @@ function ModeAccent() {
 function TrialBanner() {
   const { lang } = useLangStore();
   const trial = useTrialState();
-  // Lite strip wins when both could render (cashier shouldn't be
-  // confused by stacked banners); the Pro mini-badge is small enough
-  // to sit on top in a follow-up if we want both visible together.
-  if (trial.show_lite_trial_countdown) {
-    const n = trial.lite_trial_days_remaining;
+  // MP-MODE-TRIAL-REWORK: one unified trial → one banner. Shows the signup
+  // trial countdown; subscribe to keep features after it ends.
+  if (trial.show_trial_countdown && trial.trial_days_remaining != null) {
+    const n = trial.trial_days_remaining;
     const label = lang === "en"
-      ? `⏳ Trial ends in ${n} day${n === 1 ? '' : 's'} — upgrade to Lite or Pro to keep all features.`
-      : `⏳ Essai se termine dans ${n} jour${n === 1 ? '' : 's'} — passez à Lite ou Pro pour garder toutes les fonctionnalités.`;
+      ? `⏳ Free trial: ${n} day${n === 1 ? '' : 's'} left — subscribe (Lite, Pro or Pro Plus) to keep all features.`
+      : `⏳ Essai gratuit : ${n} jour${n === 1 ? '' : 's'} restant${n === 1 ? '' : 's'} — abonnez-vous (Lite, Pro ou Pro Plus) pour garder toutes les fonctionnalités.`;
     return (
       <div role="status" style={{
         width: "100%", padding: "6px 12px",
         background: "rgba(245,158,11,0.14)", color: "#fbbf24",
         borderBottom: "1px solid rgba(245,158,11,0.35)",
-        fontSize: 12, fontWeight: 700, textAlign: "center",
-      }}>
-        {label}
-      </div>
-    );
-  }
-  if (trial.pro_trial_state === 'active') {
-    const n = trial.pro_trial_days_remaining;
-    const label = lang === "en"
-      ? `✦ Pro trial: ${n} day${n === 1 ? '' : 's'} left`
-      : `✦ Essai Pro : ${n} jour${n === 1 ? '' : 's'} restant${n === 1 ? '' : 's'}`;
-    return (
-      <div role="status" style={{
-        width: "100%", padding: "6px 12px",
-        background: "rgba(251,197,3,0.14)", color: "var(--brand-light)",
-        borderBottom: "1px solid rgba(251,197,3,0.35)",
         fontSize: 12, fontWeight: 700, textAlign: "center",
       }}>
         {label}
@@ -469,6 +452,14 @@ export default function Layout() {
     };
     window.addEventListener("partenaire:paywall", handler);
     return () => window.removeEventListener("partenaire:paywall", handler);
+  }, []);
+
+  // MP-MODE-TRIAL-REWORK: the Settings "Switch to Full view" CTA (when the org
+  // is trial-expired & unpaid) opens the subscription/payment form directly.
+  useEffect(() => {
+    const openUpgrade = () => setShowUpgrade(true);
+    window.addEventListener("mp-open-upgrade", openUpgrade);
+    return () => window.removeEventListener("mp-open-upgrade", openUpgrade);
   }, []);
 
   // MP-AUTH-STATE-HYGIENE — FIX 1: a real logout nukes EVERYTHING
