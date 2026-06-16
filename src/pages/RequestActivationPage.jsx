@@ -17,13 +17,14 @@ import toast from "react-hot-toast";
 import { useLangStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
 
-// Manual (offline) fallback methods → admin approval. Flutterwave is the
-// primary online path and is NOT in this list (it's its own button).
+// Manual (offline) fallback methods → admin approval, ONLY for paying the owner
+// directly offline. MP-SUB-NO-PHANTOM-PENDING: Mobile Money / Orange are NOT
+// here — those are Flutterwave methods and go through the FW hosted page (the
+// method is chosen on FW, not in this form). No in-app MoMo button may create a
+// manual request. Manual = truly-offline cash / bank transfer only.
 const MANUAL_METHODS = [
-  { value: "mtn_momo",     en: "MTN Mobile Money", fr: "MTN Mobile Money" },
-  { value: "orange_money", en: "Orange Money",     fr: "Orange Money" },
-  { value: "cash",         en: "Cash",             fr: "Espèces" },
-  { value: "bank",         en: "Bank transfer",    fr: "Virement bancaire" },
+  { value: "cash", en: "Cash",          fr: "Espèces" },
+  { value: "bank", en: "Bank transfer", fr: "Virement bancaire" },
 ];
 
 const DURATIONS = [1, 3, 6, 12];
@@ -38,7 +39,7 @@ export default function RequestActivationPage() {
   const [selectedId, setSelectedId] = useState(null);
   const [months, setMonths] = useState(1);
   const [showManual, setShowManual] = useState(false);
-  const [method, setMethod] = useState("mtn_momo");
+  const [method, setMethod] = useState("cash");
   const [notes, setNotes] = useState("");
 
   // Plans (country-aware price + currency) — single source of truth.

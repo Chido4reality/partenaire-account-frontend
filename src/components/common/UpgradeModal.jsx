@@ -4,15 +4,16 @@ import toast from "react-hot-toast";
 import { useLangStore } from "../../store";
 import api, { formatCFA } from "../../utils/api";
 
+// MP-SUB-NO-PHANTOM-PENDING: Mobile Money / Orange are NOT in-app buttons —
+// they're Flutterwave methods, chosen on the FW hosted page. The ONLY online
+// path is Flutterwave (card / MoMo / Orange / bank / USSD picked on FW). The
+// remaining entries are truly-offline methods (pay the owner directly) that go
+// to admin for manual approval. There must be no separate in-app MoMo button
+// that quietly creates a manual request.
 const PAYMENT_METHODS = [
-  // Flutterwave hosted checkout — handles card + mobile money (CM/NG) on its own
-  // page; the backend activates only after the verified webhook. The rest are
-  // manual offline methods that go to admin for approval.
   { value: "flutterwave",   label: "Pay online (card / mobile money)", icon: "⚡", color: "var(--brand)", online: true },
-  { value: "mtn_momo",      label: "MTN Mobile Money (manual)",  icon: "📱", color: "#FFC300" },
-  { value: "orange_money",  label: "Orange Money (manual)",      icon: "🟠", color: "#FF6600" },
-  { value: "cash",          label: "Cash",                 icon: "💵", color: "#10b981" },
-  { value: "bank",          label: "Bank Transfer",        icon: "🏦", color: "#6366f1" },
+  { value: "cash",          label: "Cash (pay owner directly)",        icon: "💵", color: "#10b981" },
+  { value: "bank",          label: "Bank Transfer",                    icon: "🏦", color: "#6366f1" },
 ];
 
 export default function UpgradeModal({ onClose, currentPlan }) {
