@@ -85,7 +85,10 @@ export const PLAN_CAPABILITIES = {
     staff_location_binding: true,
     // HR-lite staff records (photo, job title, hire date, employment type,
     // record-only salary, emergency contact, national ID, notes). Owner-only.
-    staff_maintenance: true
+    staff_maintenance: true,
+    // Standalone manual cash/asset-location ledger (holdings + append-only
+    // movements, derived balances). Owner-only; never touches POS sales/till.
+    asset_ledger: true
   },
 
   // Legacy aliases — DO NOT REFERENCE FROM NEW CODE.

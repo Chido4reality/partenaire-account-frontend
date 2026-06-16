@@ -74,6 +74,8 @@ const NAV = [
   // no upsell, it's a staff utility, not a sell. section:"sales" is always
   // present so role/plan filters pass; the feature flag is the real gate.
   { to: "/attendance",   en: "Attendance", fr: "Pointage",        icon: "🕒", roles: ["owner","manager","cashier","warehouse"], section: "sales", feature: "staff_maintenance", lockHide: true },
+  // Pro Plus Feature 3 — Asset ledger. Owner-only; locked→upsell when not entitled.
+  { to: "/assets",       en: "Assets",     fr: "Avoirs",          icon: "💼", roles: ["owner"],                                section: "settings", feature: "asset_ledger" },
   { to: "/settings",     en: "Settings",   fr: "Paramètres",      icon: "⚙️", roles: ["owner","manager"],                       section: "settings" },
 ];
 

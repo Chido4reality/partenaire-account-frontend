@@ -26,6 +26,7 @@ import OperationsDashboardPage from "./pages/OperationsDashboardPage"; // MP-OWN
 import PendingSyncPage from "./pages/PendingSyncPage"; // MP-PENDING-SYNC-SCREEN
 import AssistantPage from "./pages/AssistantPage"; // Pro Plus Feature 1 — AI Assistant chat UI
 import AttendancePage from "./pages/AttendancePage"; // Staff Maintenance Phase 3 — shared-device PIN attendance
+import AssetsPage from "./pages/AssetsPage"; // Pro Plus Feature 3 — Asset ledger
 
 // MP-INVALIDATE-AFTER-SALE: refetch stale data when the user returns to
 // the tab/app or reconnects (e.g. after making a sale on another device
@@ -112,6 +113,9 @@ const ROUTE_ACCESS = {
   // Staff Maintenance Phase 3 — shared-device clock-in/out. ANY role can clock
   // themselves (the person is verified by PIN in-page); Pro Plus handled in-page.
   "/attendance":   ["owner", "manager", "cashier", "warehouse"],
+  // Pro Plus Feature 3 — Asset ledger. OWNER ONLY (Pro Plus handled in-page +
+  // nav locked deep-link).
+  "/assets":       ["owner"],
 };
 
 function Guard({ children }) {
@@ -386,6 +390,8 @@ export default function App() {
             <Route path="assistant"    element={<RoleGuard path="/assistant"><AssistantPage /></RoleGuard>} />
             {/* Staff attendance clock-in/out — any role; Pro Plus gating in-page. */}
             <Route path="attendance"   element={<RoleGuard path="/attendance"><AttendancePage /></RoleGuard>} />
+            {/* Asset ledger — owner-only (RoleGuard); Pro Plus gating + upsell in-page. */}
+            <Route path="assets"       element={<RoleGuard path="/assets"><AssetsPage /></RoleGuard>} />
             <Route path="settings"     element={<RoleGuard path="/settings"><PlanGuard path="/settings"><SettingsPage /></PlanGuard></RoleGuard>} />
             {/* MP-RESTRICTED-MODE (B2): reachable even when restricted — no PlanGuard. */}
             <Route path="request-activation" element={<RequestActivationPage />} />
