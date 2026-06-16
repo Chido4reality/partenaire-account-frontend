@@ -905,6 +905,7 @@
         <a class="sb-link" data-route="orders"><span class="sb-link-icon">🛒</span><span class="sb-link-label">Orders</span></a>
         <a class="sb-link" data-route="disputes"><span class="sb-link-icon">⚖️</span><span class="sb-link-label">Disputes</span></a>
         <a class="sb-link" data-route="marketplace-finance"><span class="sb-link-icon">💰</span><span class="sb-link-label">Marketplace finance</span></a>
+        <a class="sb-link" data-route="sell-restrictions"><span class="sb-link-icon">🚦</span><span class="sb-link-label">Sell restrictions</span></a>
 
         <div class="sb-section">Shared</div>
         <a class="sb-link" data-route="broadcasts"><span class="sb-link-icon">📣</span><span class="sb-link-label">Broadcasts</span></a>
@@ -1307,6 +1308,31 @@
       </section>
 
       <!-- MARKETPLACE FINANCE -->
+      <section class="route" id="route-sell-restrictions">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Sell restrictions</div>
+            <div class="page-sub">Allowlist of which categories and towns may sell on Partenaire Dozie. Turn one OFF and sellers in that category / town can no longer publish. Master admin only.</div>
+          </div>
+          <button class="btn" onclick="loadSellRestrictions()">Refresh</button>
+        </div>
+        <div id="sr-notmaster" class="page-sub" style="display:none;color:#f87171">Master admin only — you don't have access to this control.</div>
+        <div class="settings-card">
+          <div class="settings-card-title">Categories</div>
+          <div class="settings-card-sub">All 16 categories. Off = sellers in that category can't publish.</div>
+          <div id="sr-categories" style="margin-top:8px">…</div>
+        </div>
+        <div class="settings-card" style="margin-top:16px">
+          <div class="settings-card-title">Towns</div>
+          <div class="settings-card-sub">Towns currently in use are seeded as allowed. Off = no selling there. Add towns as you expand.</div>
+          <div id="sr-towns" style="margin-top:8px">…</div>
+          <div style="margin-top:12px;display:flex;gap:8px">
+            <input id="sr-new-town" placeholder="Add a town…" style="flex:1" />
+            <button class="btn" onclick="addSellTown()">Add town</button>
+          </div>
+        </div>
+      </section>
+
       <section class="route" id="route-marketplace-finance">
         <div class="page-head">
           <div>
@@ -1667,10 +1693,57 @@
       } catch (_) { /* Safari < 14: addListener; not critical */ }
     }
 
+    // ────────────────────── SELL RESTRICTIONS (master admin) ──────────────────────
+    function _isMasterAdmin() {
+      return !!currentAdmin && /superadmin|master/.test((currentAdmin.role || '').toLowerCase());
+    }
+    async function loadSellRestrictions() {
+      const master = _isMasterAdmin();
+      $('sr-notmaster').style.display = master ? 'none' : '';
+      if (!master) { $('sr-categories').innerHTML = ''; $('sr-towns').innerHTML = ''; return; }
+      try {
+        const [c, t] = await Promise.all([
+          apiAdmin('GET', '/admin/dozie/sell-categories'),
+          apiAdmin('GET', '/admin/dozie/sell-towns'),
+        ]);
+        renderSellToggles('sr-categories', c.data || [], 'category', r => r.category_slug, r => r.label || r.category_slug);
+        renderSellToggles('sr-towns', t.data || [], 'town', r => r.town, r => r.town);
+      } catch (e) {
+        $('sr-categories').innerHTML = '<div class="muted">' + escapeHtml(e.message) + '</div>';
+      }
+    }
+    function renderSellToggles(containerId, rows, kind, keyFn, labelFn) {
+      const el = $(containerId);
+      if (!rows.length) { el.innerHTML = '<div class="muted">None.</div>'; return; }
+      el.innerHTML = rows.map(r => {
+        const key = keyFn(r);
+        return '<label style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 2px;border-bottom:1px solid rgba(255,255,255,0.08)">'
+          + '<span>' + escapeHtml(labelFn(r)) + (r.is_allowed ? '' : ' <span class="badge badge-admin" style="background:rgba(239,68,68,0.15);color:#f87171">blocked</span>') + '</span>'
+          + '<input type="checkbox" ' + (r.is_allowed ? 'checked' : '') + ' onchange="toggleSell(\'' + kind + '\',\'' + encodeURIComponent(key) + '\',this.checked,this)">'
+          + '</label>';
+      }).join('');
+    }
+    async function toggleSell(kind, keyEnc, isAllowed, el) {
+      const key = decodeURIComponent(keyEnc);
+      const path = (kind === 'category' ? '/admin/dozie/sell-categories/' : '/admin/dozie/sell-towns/') + encodeURIComponent(key);
+      try {
+        await apiAdmin('PATCH', path, { is_allowed: isAllowed });
+        showToast((isAllowed ? 'Allowed: ' : 'Blocked: ') + key, 'success');
+        loadSellRestrictions();
+      } catch (e) { if (el) el.checked = !isAllowed; showToast(e.message, 'danger'); }
+    }
+    async function addSellTown() {
+      const v = ($('sr-new-town').value || '').trim();
+      if (!v) return;
+      try { await apiAdmin('POST', '/admin/dozie/sell-towns', { town: v }); $('sr-new-town').value = ''; showToast('Town added', 'success'); loadSellRestrictions(); }
+      catch (e) { showToast(e.message, 'danger'); }
+    }
+
     // ────────────────────── ROUTING ──────────────────────
     const VALID_ROUTES = new Set([
       'dashboard', 'live', 'businesses', 'subscriptions', 'subscription-requests', 'mp-finance',
       'marketplace-users', 'verifications', 'dozie-subscriptions', 'orders', 'disputes', 'marketplace-finance',
+      'sell-restrictions',
       'broadcasts', 'admin-team', 'audit-log', 'cart-reconcile', 'settings'
     ]);
 
@@ -1707,6 +1780,7 @@
       if (route === 'disputes')           loadDzDisputes();
       if (route === 'marketplace-finance') loadDzFinance();
       if (route === 'dozie-subscriptions') loadDozieSubs();
+      if (route === 'sell-restrictions')   loadSellRestrictions();
       if (route === 'broadcasts')          loadBroadcasts();
       if (route === 'admin-team')          loadAdminTeam();
       if (route === 'audit-log')           { loadAuditLogActions(); loadAuditLog(); }
@@ -2009,6 +2083,9 @@
       // Hide the Admin Team sidebar link for non-master admins.
       const teamLink = document.querySelector('.sb-link[data-route="admin-team"]');
       if (teamLink) teamLink.style.display = isMaster ? '' : 'none';
+      // Sell restrictions is master-admin-only (endpoints are gated too).
+      const srLink = document.querySelector('.sb-link[data-route="sell-restrictions"]');
+      if (srLink) srLink.style.display = isMaster ? '' : 'none';
 
       $('login-screen').style.display = 'none';
       $('app-shell').classList.add('active');
