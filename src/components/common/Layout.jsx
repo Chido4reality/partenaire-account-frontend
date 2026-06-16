@@ -605,6 +605,20 @@ export default function Layout() {
     }
   }, [_locsResp, selectedLocation, setLocation]);
 
+  // MP-PROPLUS-CASHIER-LOCATION: a Pro Plus cashier pinned to a home location is
+  // FORCED onto it. The backend already substitutes the location server-side on
+  // every money event, but we also OVERWRITE the device store here (on login +
+  // every /my-plan poll) — not just clear-stale — so the picker reflects the
+  // truth and the device can never inherit a different location. `forced_location`
+  // is the authoritative signal: non-null only for a cashier in a Pro Plus org
+  // WITH an assignment (precedence computed server-side).
+  const forcedLocation = myPlan?.forced_location || null;
+  useEffect(() => {
+    if (forcedLocation?.id && selectedLocation?.id !== forcedLocation.id) {
+      setLocation({ id: forcedLocation.id, name: forcedLocation.name, type: forcedLocation.type });
+    }
+  }, [forcedLocation, selectedLocation?.id, setLocation]);
+
   const notifColor = (type) => {
     if (type === "low_stock") return "#fbbf24";
     if (type === "debt_due")  return "#f87171";

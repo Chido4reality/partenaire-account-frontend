@@ -56,6 +56,16 @@ export default function POSPage() {
   const { selectedLocation, setLocation } = useSettingsStore();
   const { user } = useAuthStore();
   const qc = useQueryClient();
+  // MP-PROPLUS-CASHIER-LOCATION: when set, this cashier is pinned to a home
+  // location (Pro Plus). Layout already force-overwrites selectedLocation to it;
+  // here we LOCK the picker so it can't be changed on-device. Backend also
+  // substitutes server-side, so this is purely UX honesty. Dedupes with the
+  // ["my-plan"] query Layout/useTrialState already run.
+  const { data: _myPlanResp } = useQuery({
+    queryKey: ["my-plan"],
+    queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
+  });
+  const forcedLocation = _myPlanResp?.data?.forced_location || null;
   // MP-LITE-MODE-PHASE-1: skip Issue 2's customer-debt prefetch in Lite
   // (per directive — Pro-only optimization). The on-demand fetch when
   // a customer is selected still runs; only the upfront bulk warm-up
@@ -1924,17 +1934,31 @@ export default function POSPage() {
             )}
           </div>
 
-          {!selectedLocation && (
-            <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: "#f87171" }}>
-              ⚠️ {lang === "en" ? "Select a location to start selling" : "Choisissez un emplacement pour vendre"}
+          {/* MP-PROPLUS-CASHIER-LOCATION: pinned cashier → locked display, no picker. */}
+          {forcedLocation ? (
+            <div className="input" aria-disabled="true"
+              style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 8, fontWeight: 600, cursor: "not-allowed", opacity: 0.95 }}
+              title={lang === "en" ? "Assigned by the owner — locked" : "Assigné par le propriétaire — verrouillé"}>
+              🔒 📍 {forcedLocation.name}
+              <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>
+                {lang === "en" ? "(assigned location)" : "(emplacement assigné)"}
+              </span>
             </div>
+          ) : (
+            <>
+              {!selectedLocation && (
+                <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: "#f87171" }}>
+                  ⚠️ {lang === "en" ? "Select a location to start selling" : "Choisissez un emplacement pour vendre"}
+                </div>
+              )}
+              <select className="input" value={selectedLocation?.id || ""}
+                onChange={e => { const loc = locations.find(l => l.id === e.target.value); setLocation(loc || null); }}
+                style={{ marginBottom: 14, borderColor: !selectedLocation ? "#ef4444" : "var(--border)", fontWeight: selectedLocation ? 600 : 400 }}>
+                <option value="">{lang === "en" ? "— Select location —" : "— Choisir emplacement —"}</option>
+                {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
+              </select>
+            </>
           )}
-          <select className="input" value={selectedLocation?.id || ""}
-            onChange={e => { const loc = locations.find(l => l.id === e.target.value); setLocation(loc || null); }}
-            style={{ marginBottom: 14, borderColor: !selectedLocation ? "#ef4444" : "var(--border)", fontWeight: selectedLocation ? 600 : 400 }}>
-            <option value="">{lang === "en" ? "— Select location —" : "— Choisir emplacement —"}</option>
-            {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
-          </select>
 
           {/* ── CUSTOMER SEARCH ── */}
           <div style={{ marginBottom: 14, position: "relative" }}>

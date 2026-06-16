@@ -21,6 +21,18 @@ const roleStyle = (role) => {
   return { color: r?.color || "#94a3b8", bg: (r?.color || "#94a3b8") + "20" };
 };
 
+// MP-PROPLUS-CASHIER-LOCATION: only send assigned_location_id when the org has
+// the Pro Plus capability. Otherwise omit it entirely so a non-Pro-Plus owner
+// editing a staff member (or a downgraded org) never trips the server's
+// upgrade-required gate, and a previously-set assignment is left untouched.
+function buildStaffPayload(form, effectivePlan) {
+  const p = { full_name: form.full_name, phone: form.phone, password: form.password, role: form.role };
+  if (hasFeature(effectivePlan, "staff_location_binding")) {
+    p.assigned_location_id = form.assigned_location_id || null;
+  }
+  return p;
+}
+
 // MP-DEBUG-REVEAL (3 Jun): 5 quick taps on the version footer toggle
 // 'mp-debug' in localStorage, which un-hides the offline diagnostic banner
 // (api.js mpDiag). Classic Android dev-menu reveal — invisible to normal
@@ -94,7 +106,7 @@ export default function SettingsPage() {
   // Staff state
   const [showAddStaff, setShowAddStaff] = useState(false);
   const [editStaff, setEditStaff]       = useState(null);
-  const [staffForm, setStaffForm]       = useState({ full_name: "", phone: "", password: "", role: "cashier" });
+  const [staffForm, setStaffForm]       = useState({ full_name: "", phone: "", password: "", role: "cashier", assigned_location_id: "" });
 
   // Shop settings state
   const [shopForm, setShopForm] = useState({
@@ -226,22 +238,22 @@ export default function SettingsPage() {
 
   // ── STAFF MUTATIONS ────────────────────────────────────────────────────────
   const addStaffMutation = useMutation({
-    mutationFn: () => api.post("/auth/users", staffForm),
+    mutationFn: () => api.post("/auth/users", buildStaffPayload(staffForm, effectivePlan)),
     onSuccess: () => {
       toast.success(lang === "en" ? "Staff member added!" : "Personnel ajouté!");
       setShowAddStaff(false);
-      setStaffForm({ full_name: "", phone: "", password: "", role: "cashier" });
+      setStaffForm({ full_name: "", phone: "", password: "", role: "cashier", assigned_location_id: "" });
       qc.invalidateQueries(["staff"]);
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
 
   const updateStaffMutation = useMutation({
-    mutationFn: () => api.patch("/auth/users/" + editStaff.id, staffForm),
+    mutationFn: () => api.patch("/auth/users/" + editStaff.id, buildStaffPayload(staffForm, effectivePlan)),
     onSuccess: () => {
       toast.success(lang === "en" ? "Staff updated!" : "Personnel mis à jour!");
       setEditStaff(null);
-      setStaffForm({ full_name: "", phone: "", password: "", role: "cashier" });
+      setStaffForm({ full_name: "", phone: "", password: "", role: "cashier", assigned_location_id: "" });
       qc.invalidateQueries(["staff"]);
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
@@ -382,7 +394,7 @@ export default function SettingsPage() {
   const inactiveStaff = staff.filter(s => !s.is_active);
 
   const openEdit = (loc) => { setEditLoc(loc); setLocForm({ name: loc.name, type: loc.type, address: loc.address || "", phone: loc.phone || "" }); };
-  const openEditStaff = (s) => { setEditStaff(s); setStaffForm({ full_name: s.full_name, phone: s.phone, password: "", role: s.role }); };
+  const openEditStaff = (s) => { setEditStaff(s); setStaffForm({ full_name: s.full_name, phone: s.phone, password: "", role: s.role, assigned_location_id: s.assigned_location_id || "" }); };
   const setLF = (k, v) => setLocForm(f => ({ ...f, [k]: v }));
   const setSF = (k, v) => setStaffForm(f => ({ ...f, [k]: v }));
   const setFF = (k, v) => setShopForm(f => ({ ...f, [k]: v }));
@@ -528,6 +540,12 @@ export default function SettingsPage() {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.full_name}</div>
                         <div style={{ fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.phone}</div>
+                        {/* MP-PROPLUS-CASHIER-LOCATION: show the pinned home location (Pro Plus). */}
+                        {s.assigned_location_name && (
+                          <div style={{ fontSize: 11, color: "var(--brand-light)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            📍 {s.assigned_location_name}
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap" style={{ flexShrink: 0 }}>
@@ -1366,6 +1384,27 @@ export default function SettingsPage() {
                 ))}
               </select>
             </div>
+
+            {/* MP-PROPLUS-CASHIER-LOCATION: owner pins a cashier to a home
+                location that follows them onto any device. Pro Plus only —
+                hidden for every other plan (server also gates the write). */}
+            {staffForm.role === "cashier" && hasFeature(effectivePlan, "staff_location_binding") && (
+              <div className="form-group">
+                <label className="label">
+                  {lang === "en" ? "Assigned location (Pro Plus)" : "Emplacement assigné (Pro Plus)"}
+                </label>
+                <select className="input" value={staffForm.assigned_location_id || ""}
+                  onChange={e => setSF("assigned_location_id", e.target.value)}>
+                  <option value="">{lang === "en" ? "— None (device decides) —" : "— Aucun (l'appareil décide) —"}</option>
+                  {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
+                </select>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                  {lang === "en"
+                    ? "This cashier will sell only at this location, on any device. Leave as None to keep the per-device default."
+                    : "Ce caissier ne vendra qu'à cet emplacement, sur tout appareil. Laissez Aucun pour garder le réglage par appareil."}
+                </div>
+              </div>
+            )}
             <div style={{ background: "var(--bg-elevated)", borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "var(--text-muted)" }}>
               {staffForm.role === "cashier" && (lang === "en" ? "✓ Can: make sales, view own sales" : "✓ Peut: faire des ventes, voir ses propres ventes")}
               {staffForm.role === "manager" && (lang === "en" ? "✓ Can: all sales + inventory + add staff" : "✓ Peut: ventes + inventaire + ajouter personnel")}

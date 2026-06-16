@@ -64,6 +64,27 @@ export const PLAN_CAPABILITIES = {
     price_fcfa_month: 10000
   },
 
+  // MP-BILLING-V3: Pro Plus — paid uplift over Pro. Same full access as Pro,
+  // plus Pro Plus-only features. ai_assistant = the owner-only AI chat agent
+  // (Feature 1). Mirrors backend src/lib/planCapabilities.js — keep in sync.
+  pro_plus: {
+    label: 'Pro Plus',
+    label_fr: 'Pro Plus',
+    sections: '*',
+    inventory_cap: null,
+    staff_cap: null,
+    location_cap: null,
+    csv_exports: true,
+    receipt_branding: true,
+    dozie_access: true,
+    dozie_city_cap: null,
+    price_fcfa_month: 13000,
+    ai_assistant: true,
+    // Owner pins a cashier to a home location that follows them across devices
+    // (Staff Maintenance, location slice). Mirror of backend lib/planCapabilities.js.
+    staff_location_binding: true
+  },
+
   // Legacy aliases — DO NOT REFERENCE FROM NEW CODE.
   silver:  { legacy: true, alias_of: 'trial' },
   gold:    { legacy: true, alias_of: 'lite' },

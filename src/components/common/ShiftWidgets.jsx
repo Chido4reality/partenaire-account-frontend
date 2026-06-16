@@ -115,6 +115,16 @@ export function OpenShiftModal({ open, onClose, onOpened }) {
   const multiLoc = locations.length > 1;
   const singleLoc = locations.length === 1;
 
+  // MP-PROPLUS-CASHIER-LOCATION: a pinned Pro Plus cashier can only open a
+  // shift at their home location. Lock the chooser to it (the backend forces it
+  // too). Dedupes with the app-wide ["my-plan"] query.
+  const { data: _myPlanResp } = useQuery({
+    queryKey: ["my-plan"],
+    queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
+    enabled: open,
+  });
+  const forcedLocation = _myPlanResp?.data?.forced_location || null;
+
   // Local in-modal selection. Defaults to the store's
   // selectedLocation (which doubles as "most recently active"
   // since it persists across sessions), falling back to first
@@ -124,12 +134,14 @@ export function OpenShiftModal({ open, onClose, onOpened }) {
   const [chosenLocId, setChosenLocId] = useState(selectedLocation?.id || null);
   useEffect(() => {
     if (!open) return;
-    const next = selectedLocation?.id
+    // Forced (Pro Plus assignment) wins over the device value / first-alpha.
+    const next = forcedLocation?.id
+      || selectedLocation?.id
       || (sortedLocs[0] && sortedLocs[0].id)
       || null;
     setChosenLocId(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, selectedLocation?.id, locations.length]);
+  }, [open, forcedLocation?.id, selectedLocation?.id, locations.length]);
   const chosenLoc = locations.find(l => l.id === chosenLocId) || selectedLocation || null;
   const chosenName = chosenLoc?.name || (lang === "fr" ? "Aucun" : "None");
 
@@ -246,7 +258,13 @@ export function OpenShiftModal({ open, onClose, onOpened }) {
         <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>
           {lang === "fr" ? "Ouvrir la caisse à" : "Open shift at"}
         </div>
-        {multiLoc ? (
+        {forcedLocation ? (
+          // Pro Plus pinned cashier — locked, no choice.
+          <div style={{ fontSize: 15, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}
+            title={lang === "fr" ? "Assigné par le propriétaire — verrouillé" : "Assigned by the owner — locked"}>
+            🔒 📍 {forcedLocation.name}
+          </div>
+        ) : multiLoc ? (
           <select
             className="input"
             value={chosenLocId || ""}
