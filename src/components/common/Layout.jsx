@@ -69,6 +69,11 @@ const NAV = [
   // visible to owners on EVERY plan (all plans include settings); the
   // feature flag below drives entitled (→ /assistant) vs locked (→ upsell).
   { to: "/assistant",    en: "Assistant",  fr: "Assistant",       icon: "✨", roles: ["owner"],                                section: "settings", feature: "ai_assistant" },
+  // Staff Maintenance Phase 3 — shared-device attendance. ALL roles (staff clock
+  // themselves). Pro Plus only: hidden entirely when not entitled (lockHide) —
+  // no upsell, it's a staff utility, not a sell. section:"sales" is always
+  // present so role/plan filters pass; the feature flag is the real gate.
+  { to: "/attendance",   en: "Attendance", fr: "Pointage",        icon: "🕒", roles: ["owner","manager","cashier","warehouse"], section: "sales", feature: "staff_maintenance", lockHide: true },
   { to: "/settings",     en: "Settings",   fr: "Paramètres",      icon: "⚙️", roles: ["owner","manager"],                       section: "settings" },
 ];
 
@@ -554,16 +559,17 @@ export default function Layout() {
     if (lite && LITE_HIDDEN_ROUTES.has(item.to)) return false;
     return true;
   }).map(item => {
-    // Pro Plus feature entries (e.g. Assistant): if the org isn't entitled,
-    // show a LOCKED entry that deep-links to the upsell instead of the feature.
-    // Done here (not per render site) so the sidebar, drawer and mobile bar all
-    // get the same treatment from one place.
+    // Pro Plus feature entries: if the org isn't entitled, either HIDE the entry
+    // (lockHide — a staff utility, not a sell) or show a LOCKED entry that
+    // deep-links to the upsell. Done here (not per render site) so the sidebar,
+    // drawer and mobile bar all get the same treatment from one place.
     if (item.feature && !hasFeature(effectivePlan, item.feature)) {
+      if (item.lockHide) return null;
       return { ...item, to: "/request-activation?plan=pro_plus",
                en: `${item.en} 🔒`, fr: `${item.fr} 🔒`, _locked: true };
     }
     return item;
-  });
+  }).filter(Boolean);
   // MP-MOBILE-NAV-FIX: mobile has only this 5-slot bottom bar (no
   // hamburger). /inventory sits at NAV index 7 so it never made the
   // slice(0,5) — leaving mobile-first sellers unable to reach it. Swap

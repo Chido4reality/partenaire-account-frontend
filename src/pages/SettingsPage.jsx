@@ -217,6 +217,13 @@ export default function SettingsPage() {
     enabled: !!editStaff && isOwner && hasFeature(effectivePlan, "staff_maintenance"),
   });
 
+  // Phase 3 — read-only Attendance records (same period control as Activity).
+  const { data: attendanceData, isLoading: attendanceLoading } = useQuery({
+    queryKey: ["staff-attendance", editStaff?.id, activityPeriod],
+    queryFn: () => api.get(`/staff/${editStaff.id}/attendance?period=${activityPeriod}`).then(r => r.data),
+    enabled: !!editStaff && isOwner && hasFeature(effectivePlan, "staff_maintenance"),
+  });
+
   // MP-SETTINGS-WIPE-BUG: React Query v5 removed the `onSuccess`
   // callback from useQuery. The previous code relied on it to
   // populate shopForm from the server response — so the callback
@@ -1685,6 +1692,57 @@ export default function SettingsPage() {
                               </div>
                             );
                           })}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* ── ATTENDANCE (Phase 3) — read-only records, owner + Pro Plus,
+                edit only. Reuses the Activity period buttons above. ── */}
+            {editStaff && canHrLite && (
+              <div style={{ borderTop: "1px solid var(--border)", marginTop: 4, paddingTop: 14, marginBottom: 12 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, color: "var(--brand-light)" }}>
+                  🕒 {lang === "en" ? "Attendance" : "Pointage"}
+                </div>
+                {attendanceLoading ? (
+                  <div style={{ color: "var(--text-muted)", fontSize: 13 }}>{lang === "en" ? "Loading…" : "Chargement…"}</div>
+                ) : (() => {
+                  const at = attendanceData?.data;
+                  const entries = at?.entries || [];
+                  const sales = at?.activity?.sales_count || 0;
+                  const fmtT = (x) => x ? new Date(x).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null;
+                  const fmtD = (x) => x ? new Date(x).toLocaleDateString() : "";
+                  return (
+                    <>
+                      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                        <div style={{ flex: 1, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px" }}>
+                          <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.4 }}>{lang === "en" ? "Total hours" : "Heures totales"}</div>
+                          <div style={{ fontWeight: 800, fontSize: 18 }}>{at?.total_hours ?? 0} h</div>
+                        </div>
+                        <div style={{ flex: 1, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px" }}>
+                          <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.4 }}>{lang === "en" ? "Sales (cross-check)" : "Ventes (vérif.)"}</div>
+                          <div style={{ fontWeight: 800, fontSize: 18 }}>{sales}</div>
+                          <div style={{ fontSize: 11, color: sales > 0 ? "#34d399" : "var(--text-muted)" }}>
+                            {sales > 0 ? (lang === "en" ? "✓ active" : "✓ actif") : (lang === "en" ? "no sales" : "aucune vente")}
+                          </div>
+                        </div>
+                      </div>
+                      {entries.length === 0 ? (
+                        <div style={{ color: "var(--text-muted)", fontSize: 13, padding: "8px 0" }}>{lang === "en" ? "No attendance in this period." : "Aucun pointage sur cette période."}</div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          {entries.map(e => (
+                            <div key={e.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 12, padding: "6px 10px", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8 }}>
+                              <span style={{ minWidth: 78, color: "var(--text-muted)" }}>{fmtD(e.clock_in_at)}</span>
+                              <span style={{ flex: 1, textAlign: "center" }}>
+                                {fmtT(e.clock_in_at)} → {e.open ? <em style={{ color: "#fbbf24" }}>{lang === "en" ? "open" : "ouvert"}</em> : fmtT(e.clock_out_at)}
+                              </span>
+                              <span style={{ fontWeight: 700, minWidth: 48, textAlign: "right" }}>{e.hours != null ? `${e.hours} h` : "—"}</span>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </>
