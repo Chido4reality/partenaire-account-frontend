@@ -24,6 +24,7 @@ import StockCountPage from "./pages/StockCountPage";
 import BarcodePage from "./pages/BarcodePage";
 import OperationsDashboardPage from "./pages/OperationsDashboardPage"; // MP-OWNER-OPERATIONS-DASHBOARD-V1
 import PendingSyncPage from "./pages/PendingSyncPage"; // MP-PENDING-SYNC-SCREEN
+import AssistantPage from "./pages/AssistantPage"; // Pro Plus Feature 1 — AI Assistant chat UI
 
 // MP-INVALIDATE-AFTER-SALE: refetch stale data when the user returns to
 // the tab/app or reconnects (e.g. after making a sale on another device
@@ -103,6 +104,10 @@ const ROUTE_ACCESS = {
   // MP-PENDING-SYNC-SCREEN: everyone who creates offline writes must be able
   // to see their unsynced queue (cashier sales/refunds; warehouse stock).
   "/pending-sync": ["owner", "manager", "cashier", "warehouse"],
+  // Pro Plus Feature 1 — AI Assistant. OWNER ONLY. The Pro Plus entitlement
+  // check happens in-page (AssistantPage shows the upsell if not entitled) and
+  // the nav entry deep-links non-entitled owners to /request-activation.
+  "/assistant":    ["owner"],
 };
 
 function Guard({ children }) {
@@ -373,6 +378,8 @@ export default function App() {
                 offline writes happen on every tier, so the queue must be
                 visible on every tier (mirrors /refunds on SILVER_ALLOWED). */}
             <Route path="pending-sync" element={<RoleGuard path="/pending-sync"><PendingSyncPage /></RoleGuard>} />
+            {/* Pro Plus AI Assistant — owner-only (RoleGuard); Pro Plus gating + upsell handled in-page. */}
+            <Route path="assistant"    element={<RoleGuard path="/assistant"><AssistantPage /></RoleGuard>} />
             <Route path="settings"     element={<RoleGuard path="/settings"><PlanGuard path="/settings"><SettingsPage /></PlanGuard></RoleGuard>} />
             {/* MP-RESTRICTED-MODE (B2): reachable even when restricted — no PlanGuard. */}
             <Route path="request-activation" element={<RequestActivationPage />} />

@@ -16,7 +16,7 @@ import UpgradeModal from "./UpgradeModal";
 import PaywallModal from "./PaywallModal";
 import OnlineOfflineBar from "./OnlineOfflineBar";
 import { onSyncEvent } from "../../utils/pendingSync";
-import { hasSection } from "../../utils/planCapabilities";
+import { hasSection, hasFeature } from "../../utils/planCapabilities";
 import NavDrawer, { DRAWER_WIDTH } from "../layout/NavDrawer";
 import { tapHaptic } from "../../utils/haptics";
 import toast from "react-hot-toast";
@@ -65,6 +65,10 @@ const NAV = [
   // to the existing Dashboard at "/". Owner + manager only; reuses
   // the reports plan-section gate since the data class is the same.
   { to: "/operations",   en: "Operations", fr: "Opérations",      icon: "📈", roles: ["owner","manager"],                       section: "reports" },
+  // Pro Plus Feature 1 — AI Assistant. Owner-only. section:"settings" so it's
+  // visible to owners on EVERY plan (all plans include settings); the
+  // feature flag below drives entitled (→ /assistant) vs locked (→ upsell).
+  { to: "/assistant",    en: "Assistant",  fr: "Assistant",       icon: "✨", roles: ["owner"],                                section: "settings", feature: "ai_assistant" },
   { to: "/settings",     en: "Settings",   fr: "Paramètres",      icon: "⚙️", roles: ["owner","manager"],                       section: "settings" },
 ];
 
@@ -549,6 +553,16 @@ export default function Layout() {
     if (!hasSection(effectivePlan, item.section)) return false;
     if (lite && LITE_HIDDEN_ROUTES.has(item.to)) return false;
     return true;
+  }).map(item => {
+    // Pro Plus feature entries (e.g. Assistant): if the org isn't entitled,
+    // show a LOCKED entry that deep-links to the upsell instead of the feature.
+    // Done here (not per render site) so the sidebar, drawer and mobile bar all
+    // get the same treatment from one place.
+    if (item.feature && !hasFeature(effectivePlan, item.feature)) {
+      return { ...item, to: "/request-activation?plan=pro_plus",
+               en: `${item.en} 🔒`, fr: `${item.fr} 🔒`, _locked: true };
+    }
+    return item;
   });
   // MP-MOBILE-NAV-FIX: mobile has only this 5-slot bottom bar (no
   // hamburger). /inventory sits at NAV index 7 so it never made the
