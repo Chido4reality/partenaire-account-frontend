@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useAuthStore, useLangStore, useSettingsStore } from "../store";
-import api from "../utils/api";
+import api, { formatCFA } from "../utils/api";
 import PaywallModal from "../components/common/PaywallModal";
 import { hasFeature, getCapabilities } from "../utils/planCapabilities";
 import { useLiteMode } from "../hooks/useLiteMode";
@@ -151,6 +151,8 @@ export default function SettingsPage() {
   const [showAddStaff, setShowAddStaff] = useState(false);
   const [editStaff, setEditStaff]       = useState(null);
   const [staffForm, setStaffForm]       = useState({ ...BLANK_STAFF });
+  // Phase 2 — per-staff Activity view (read-only, owner + Pro Plus).
+  const [activityPeriod, setActivityPeriod] = useState("this_month");
 
   // Shop settings state
   const [shopForm, setShopForm] = useState({
@@ -206,6 +208,13 @@ export default function SettingsPage() {
     queryKey: ["staff"],
     queryFn: () => api.get("/auth/staff").then(r => r.data),
     enabled: tab === "staff"
+  });
+
+  // Phase 2 — read-only Activity for the staffer being edited (owner + Pro Plus).
+  const { data: activityData, isLoading: activityLoading } = useQuery({
+    queryKey: ["staff-activity", editStaff?.id, activityPeriod],
+    queryFn: () => api.get(`/staff/${editStaff.id}/activity?period=${activityPeriod}`).then(r => r.data),
+    enabled: !!editStaff && isOwner && hasFeature(effectivePlan, "staff_maintenance"),
   });
 
   // MP-SETTINGS-WIPE-BUG: React Query v5 removed the `onSuccess`
@@ -1625,6 +1634,65 @@ export default function SettingsPage() {
               </div>
               );
             })()}
+
+            {/* ── ACTIVITY (Phase 2) — read-only, owner + Pro Plus, edit only.
+                Counts/totals + a short recent list for THIS staffer; period
+                filter recomputes server-side. ── */}
+            {editStaff && canHrLite && (
+              <div style={{ borderTop: "1px solid var(--border)", marginTop: 4, paddingTop: 14, marginBottom: 12 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, color: "var(--brand-light)" }}>
+                  📊 {lang === "en" ? "Activity" : "Activité"}
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+                  {[["today", "Today", "Aujourd'hui"], ["this_week", "This week", "Cette semaine"], ["this_month", "This month", "Ce mois"], ["all", "All-time", "Tout"]].map(([v, en, fr]) => (
+                    <button key={v} onClick={() => setActivityPeriod(v)}
+                      className={activityPeriod === v ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm"}
+                      style={{ borderRadius: 16 }}>{lang === "en" ? en : fr}</button>
+                  ))}
+                </div>
+                {activityLoading ? (
+                  <div style={{ color: "var(--text-muted)", fontSize: 13 }}>{lang === "en" ? "Loading…" : "Chargement…"}</div>
+                ) : (() => {
+                  const a = activityData?.data; const s = a?.summary;
+                  const tile = (label, count, total) => (
+                    <div style={{ flex: 1, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", minWidth: 88 }}>
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
+                      <div style={{ fontWeight: 800, fontSize: 18 }}>{count}</div>
+                      {total != null && <div style={{ fontSize: 12, color: "var(--brand-light)" }}>{formatCFA(total)}</div>}
+                    </div>
+                  );
+                  return (
+                    <>
+                      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                        {tile(lang === "en" ? "Sales" : "Ventes", s?.sales?.count || 0, s?.sales?.total || 0)}
+                        {tile(lang === "en" ? "Refunds" : "Remb.", s?.refunds?.count || 0, s?.refunds?.total || 0)}
+                        {tile(lang === "en" ? "Voids" : "Annul.", s?.voids?.count || 0, null)}
+                      </div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 6 }}>{lang === "en" ? "Recent" : "Récent"}</div>
+                      {(a?.recent || []).length === 0 ? (
+                        <div style={{ color: "var(--text-muted)", fontSize: 13, padding: "8px 0" }}>{lang === "en" ? "No activity in this period." : "Aucune activité sur cette période."}</div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          {a.recent.map((r, i) => {
+                            const color = r.type === "sale" ? "#34d399" : r.type === "refund" ? "#fbbf24" : "#f87171";
+                            const label = r.type === "sale" ? (lang === "en" ? "Sale" : "Vente") : r.type === "refund" ? (lang === "en" ? "Refund" : "Remb.") : (lang === "en" ? "Void" : "Annul.");
+                            return (
+                              <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 12, padding: "6px 10px", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8 }}>
+                                <span style={{ color, fontWeight: 700, minWidth: 52 }}>{label}</span>
+                                <span style={{ flex: 1, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.ref || ""}</span>
+                                <span style={{ fontWeight: 600 }}>{formatCFA(r.amount)}</span>
+                                <span style={{ color: "var(--text-muted)", minWidth: 72, textAlign: "right" }}>{r.date ? new Date(r.date).toLocaleDateString() : ""}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setShowAddStaff(false); setEditStaff(null); }}>{lang === "en" ? "Cancel" : "Annuler"}</button>
               <button className="btn btn-primary" style={{ flex: 2 }}
