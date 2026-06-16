@@ -19,7 +19,10 @@ export default function UpgradeModal({ onClose, currentPlan }) {
   const { lang } = useLangStore();
   const qc = useQueryClient();
   const [selectedPlan, setSelectedPlan] = useState(null);
-  const [paymentMethod, setPaymentMethod] = useState(null);
+  // MP-BILLING-V3: Flutterwave is the unified PRIMARY path for all 3 plans —
+  // preselected so the flow is "pick plan → pay via Flutterwave (choose method
+  // on their hosted page) → auto-activate". Manual methods stay as a fallback.
+  const [paymentMethod, setPaymentMethod] = useState("flutterwave");
   const [months, setMonths] = useState(1);
   const [notes, setNotes] = useState("");
   const [phone, setPhone] = useState(""); // MoMo payer number — digits only (8–15)
