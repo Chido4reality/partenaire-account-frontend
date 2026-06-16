@@ -33,6 +33,50 @@ function buildStaffPayload(form, effectivePlan) {
   return p;
 }
 
+// Staff Maintenance Phase 1 — blank form incl HR-lite fields. Basic fields
+// (name/phone/password/role) work on every plan; the HR-lite fields are only
+// shown/saved for a Pro Plus owner.
+const BLANK_STAFF = {
+  full_name: "", phone: "", password: "", role: "cashier", assigned_location_id: "",
+  // HR-lite
+  job_title: "", hire_date: "", employment_type: "", salary_amount: "",
+  salary_period: "per_month", salary_currency: "XAF",
+  emergency_contact_name: "", emergency_contact_phone: "", national_id: "", notes: "",
+  // photo state: existing url, a pending new data-URL, and a remove flag
+  photo_url: "", _photoData: "", _photoRemove: false,
+};
+
+const EMP_TYPES = [
+  { value: "full_time", en: "Full-time", fr: "Temps plein" },
+  { value: "part_time", en: "Part-time", fr: "Temps partiel" },
+  { value: "contract",  en: "Contract",  fr: "Contrat" },
+  { value: "casual",    en: "Casual",    fr: "Occasionnel" },
+];
+
+// Client-side downscale + JPEG compress so low-connectivity shops upload small
+// photos (≈ max 512px, quality 0.7). Returns a data URL.
+function compressImageFile(file, maxDim = 512, quality = 0.7) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("read failed"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("decode failed"));
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > maxDim) { height = Math.round(height * maxDim / width); width = maxDim; }
+        else if (height > maxDim) { width = Math.round(width * maxDim / height); height = maxDim; }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 // MP-DEBUG-REVEAL (3 Jun): 5 quick taps on the version footer toggle
 // 'mp-debug' in localStorage, which un-hides the offline diagnostic banner
 // (api.js mpDiag). Classic Android dev-menu reveal — invisible to normal
@@ -106,7 +150,7 @@ export default function SettingsPage() {
   // Staff state
   const [showAddStaff, setShowAddStaff] = useState(false);
   const [editStaff, setEditStaff]       = useState(null);
-  const [staffForm, setStaffForm]       = useState({ full_name: "", phone: "", password: "", role: "cashier", assigned_location_id: "" });
+  const [staffForm, setStaffForm]       = useState({ ...BLANK_STAFF });
 
   // Shop settings state
   const [shopForm, setShopForm] = useState({
@@ -237,23 +281,58 @@ export default function SettingsPage() {
   });
 
   // ── STAFF MUTATIONS ────────────────────────────────────────────────────────
+  // Whether the HR-lite enrichment applies (Pro Plus + owner). Basic
+  // create/edit always runs via /auth/users for every plan/role.
+  const canHrLite = isOwner && hasFeature(effectivePlan, "staff_maintenance");
+
+  // Persist the HR-lite profile + photo for a known user id. No-op unless
+  // entitled. Runs AFTER the basic /auth/users write so the user row exists.
+  async function persistHrLite(userId) {
+    if (!canHrLite || !userId) return;
+    await api.put("/staff/" + userId + "/profile", {
+      job_title: staffForm.job_title || null,
+      hire_date: staffForm.hire_date || null,
+      employment_type: staffForm.employment_type || null,
+      salary_amount: staffForm.salary_amount === "" ? null : staffForm.salary_amount,
+      salary_period: staffForm.salary_period || null,
+      salary_currency: staffForm.salary_currency || null,
+      emergency_contact_name: staffForm.emergency_contact_name || null,
+      emergency_contact_phone: staffForm.emergency_contact_phone || null,
+      national_id: staffForm.national_id || null,
+      notes: staffForm.notes || null,
+    });
+    if (staffForm._photoData) {
+      await api.post("/staff/" + userId + "/photo", { image: staffForm._photoData });
+    } else if (staffForm._photoRemove && staffForm.photo_url) {
+      await api.delete("/staff/" + userId + "/photo");
+    }
+  }
+
   const addStaffMutation = useMutation({
-    mutationFn: () => api.post("/auth/users", buildStaffPayload(staffForm, effectivePlan)),
+    mutationFn: async () => {
+      const res = await api.post("/auth/users", buildStaffPayload(staffForm, effectivePlan));
+      const newId = res?.data?.data?.id;
+      await persistHrLite(newId);
+      return res;
+    },
     onSuccess: () => {
       toast.success(lang === "en" ? "Staff member added!" : "Personnel ajouté!");
       setShowAddStaff(false);
-      setStaffForm({ full_name: "", phone: "", password: "", role: "cashier", assigned_location_id: "" });
+      setStaffForm({ ...BLANK_STAFF });
       qc.invalidateQueries(["staff"]);
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
 
   const updateStaffMutation = useMutation({
-    mutationFn: () => api.patch("/auth/users/" + editStaff.id, buildStaffPayload(staffForm, effectivePlan)),
+    mutationFn: async () => {
+      await api.patch("/auth/users/" + editStaff.id, buildStaffPayload(staffForm, effectivePlan));
+      await persistHrLite(editStaff.id);
+    },
     onSuccess: () => {
       toast.success(lang === "en" ? "Staff updated!" : "Personnel mis à jour!");
       setEditStaff(null);
-      setStaffForm({ full_name: "", phone: "", password: "", role: "cashier", assigned_location_id: "" });
+      setStaffForm({ ...BLANK_STAFF });
       qc.invalidateQueries(["staff"]);
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
@@ -394,7 +473,39 @@ export default function SettingsPage() {
   const inactiveStaff = staff.filter(s => !s.is_active);
 
   const openEdit = (loc) => { setEditLoc(loc); setLocForm({ name: loc.name, type: loc.type, address: loc.address || "", phone: loc.phone || "" }); };
-  const openEditStaff = (s) => { setEditStaff(s); setStaffForm({ full_name: s.full_name, phone: s.phone, password: "", role: s.role, assigned_location_id: s.assigned_location_id || "" }); };
+  const openEditStaff = async (s) => {
+    setEditStaff(s);
+    // Seed basics immediately (so the modal renders without waiting).
+    setStaffForm({
+      ...BLANK_STAFF,
+      full_name: s.full_name, phone: s.phone, password: "", role: s.role,
+      assigned_location_id: s.assigned_location_id || "",
+      photo_url: s.photo_url || "",
+    });
+    // Owner + Pro Plus: fetch the full HR-lite profile (incl owner-only
+    // national_id / salary) and merge it in. Managers / non-Pro-Plus skip this
+    // (the endpoint is owner+Pro-Plus gated) and only see the basic fields.
+    if (isOwner && hasFeature(effectivePlan, "staff_maintenance")) {
+      try {
+        const r = await api.get("/staff/" + s.id + "/profile");
+        const p = r.data?.data;
+        if (p) setStaffForm(f => ({
+          ...f,
+          job_title: p.job_title || "",
+          hire_date: p.hire_date || "",
+          employment_type: p.employment_type || "",
+          salary_amount: p.salary_amount ?? "",
+          salary_period: p.salary_period || "per_month",
+          salary_currency: p.salary_currency || "XAF",
+          emergency_contact_name: p.emergency_contact_name || "",
+          emergency_contact_phone: p.emergency_contact_phone || "",
+          national_id: p.national_id || "",
+          notes: p.notes || "",
+          photo_url: p.photo_url || s.photo_url || "",
+        }));
+      } catch (e) { /* non-fatal: keep basics */ }
+    }
+  };
   const setLF = (k, v) => setLocForm(f => ({ ...f, [k]: v }));
   const setSF = (k, v) => setStaffForm(f => ({ ...f, [k]: v }));
   const setFF = (k, v) => setShopForm(f => ({ ...f, [k]: v }));
@@ -534,8 +645,10 @@ export default function SettingsPage() {
                   // inline layout via md:w-auto + md:flex-1.
                   <div key={s.id} className="flex flex-wrap items-center" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 18px", gap: 14 }}>
                     <div className="flex items-center gap-3.5 w-full md:w-auto md:flex-1 min-w-0">
-                      <div style={{ width: 38, height: 38, borderRadius: 10, background: rs.bg, color: rs.color, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
-                        {s.full_name?.charAt(0)?.toUpperCase()}
+                      <div style={{ width: 38, height: 38, borderRadius: 10, overflow: "hidden", background: rs.bg, color: rs.color, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
+                        {s.photo_url
+                          ? <img src={s.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          : (s.full_name?.charAt(0)?.toUpperCase())}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.full_name}</div>
@@ -1410,10 +1523,112 @@ export default function SettingsPage() {
               {staffForm.role === "manager" && (lang === "en" ? "✓ Can: all sales + inventory + add staff" : "✓ Peut: ventes + inventaire + ajouter personnel")}
               {staffForm.role === "warehouse" && (lang === "en" ? "✓ Can: receive goods, adjust stock" : "✓ Peut: réceptionner, ajuster le stock")}
             </div>
+
+            {/* ── HR-LITE ENRICHMENT (Staff Maintenance) — Pro Plus + OWNER only.
+                Hidden for managers and non-Pro-Plus orgs; basic fields above keep
+                working for everyone. national_id + salary are owner-only (this
+                whole block is owner-gated). Salary is RECORD-ONLY. ── */}
+            {canHrLite && (() => {
+              const photoPreview = staffForm._photoData
+                || (!staffForm._photoRemove && staffForm.photo_url ? staffForm.photo_url : null);
+              return (
+              <div style={{ borderTop: "1px solid var(--border)", marginTop: 4, paddingTop: 14 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12, color: "var(--brand-light)" }}>
+                  ✨ {lang === "en" ? "Staff record (Pro Plus)" : "Dossier employé (Pro Plus)"}
+                </div>
+
+                {/* Photo */}
+                <div className="form-group">
+                  <label className="label">{lang === "en" ? "Photo" : "Photo"}</label>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                    {photoPreview ? (
+                      <img src={photoPreview} alt="" style={{ width: 64, height: 64, borderRadius: 12, objectFit: "cover", border: "1px solid var(--border)" }} />
+                    ) : (
+                      <div style={{ width: 64, height: 64, borderRadius: 12, background: "var(--bg-elevated)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 22, color: "var(--text-muted)" }}>
+                        {(staffForm.full_name || "?").charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      <label className="btn btn-secondary btn-sm" style={{ cursor: "pointer" }}>
+                        {photoPreview ? (lang === "en" ? "Replace" : "Remplacer") : (lang === "en" ? "Upload" : "Téléverser")}
+                        <input type="file" accept="image/*" style={{ display: "none" }}
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0]; if (!file) return;
+                            try {
+                              const dataUrl = await compressImageFile(file);
+                              setStaffForm(f => ({ ...f, _photoData: dataUrl, _photoRemove: false }));
+                            } catch { toast.error(lang === "en" ? "Could not read image" : "Image illisible"); }
+                            e.target.value = "";
+                          }} />
+                      </label>
+                      {photoPreview && (
+                        <button type="button" className="btn btn-sm"
+                          style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171" }}
+                          onClick={() => setStaffForm(f => ({ ...f, _photoData: "", _photoRemove: true }))}>
+                          {lang === "en" ? "Remove" : "Retirer"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="form-group"><label className="label">{lang === "en" ? "Job / duty title" : "Poste / fonction"}</label>
+                  <input className="input" value={staffForm.job_title} onChange={e => setSF("job_title", e.target.value)} placeholder={lang === "en" ? "e.g. Head cashier" : "ex. Caissier principal"} />
+                </div>
+
+                <div className="form-group"><label className="label">{lang === "en" ? "Hire date" : "Date d'embauche"} *</label>
+                  <input className="input" type="date" value={staffForm.hire_date || ""} onChange={e => setSF("hire_date", e.target.value)} />
+                </div>
+
+                <div className="form-group"><label className="label">{lang === "en" ? "Employment type" : "Type d'emploi"}</label>
+                  <select className="input" value={staffForm.employment_type} onChange={e => setSF("employment_type", e.target.value)}>
+                    <option value="">{lang === "en" ? "— Select —" : "— Choisir —"}</option>
+                    {EMP_TYPES.map(t => <option key={t.value} value={t.value}>{lang === "en" ? t.en : t.fr}</option>)}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="label">{lang === "en" ? "Agreed salary (record only)" : "Salaire convenu (pour mémoire)"}</label>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input className="input" type="number" min="0" style={{ flex: 2 }} value={staffForm.salary_amount}
+                      onChange={e => setSF("salary_amount", e.target.value)} placeholder={lang === "en" ? "Amount" : "Montant"} />
+                    <select className="input" style={{ flex: 1 }} value={staffForm.salary_period} onChange={e => setSF("salary_period", e.target.value)}>
+                      <option value="per_month">{lang === "en" ? "/month" : "/mois"}</option>
+                      <option value="per_hour">{lang === "en" ? "/hour" : "/heure"}</option>
+                    </select>
+                    <input className="input" style={{ flex: 1 }} value={staffForm.salary_currency}
+                      onChange={e => setSF("salary_currency", e.target.value)} placeholder="XAF" />
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                    {lang === "en" ? "Stored for your records only — no payroll calculations." : "Conservé pour vos dossiers uniquement — aucun calcul de paie."}
+                  </div>
+                </div>
+
+                <div className="form-group"><label className="label">{lang === "en" ? "Emergency contact" : "Contact d'urgence"}</label>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input className="input" style={{ flex: 1 }} value={staffForm.emergency_contact_name}
+                      onChange={e => setSF("emergency_contact_name", e.target.value)} placeholder={lang === "en" ? "Name" : "Nom"} />
+                    <input className="input" style={{ flex: 1 }} value={staffForm.emergency_contact_phone}
+                      onChange={e => setSF("emergency_contact_phone", e.target.value)} placeholder={lang === "en" ? "Phone" : "Téléphone"} />
+                  </div>
+                </div>
+
+                <div className="form-group"><label className="label">🔒 {lang === "en" ? "National ID (owner-only)" : "Pièce d'identité (propriétaire uniquement)"}</label>
+                  <input className="input" value={staffForm.national_id} onChange={e => setSF("national_id", e.target.value)}
+                    placeholder={lang === "en" ? "ID / CNI number" : "Numéro CNI"} />
+                </div>
+
+                <div className="form-group"><label className="label">{lang === "en" ? "Notes" : "Notes"}</label>
+                  <textarea className="input" rows={3} value={staffForm.notes} onChange={e => setSF("notes", e.target.value)}
+                    placeholder={lang === "en" ? "Anything else…" : "Autres informations…"} />
+                </div>
+              </div>
+              );
+            })()}
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setShowAddStaff(false); setEditStaff(null); }}>{lang === "en" ? "Cancel" : "Annuler"}</button>
               <button className="btn btn-primary" style={{ flex: 2 }}
-                disabled={!staffForm.full_name || !staffForm.phone || (!editStaff && !staffForm.password) || addStaffMutation.isPending || updateStaffMutation.isPending}
+                disabled={!staffForm.full_name || !staffForm.phone || (!editStaff && !staffForm.password) || (canHrLite && !staffForm.hire_date) || addStaffMutation.isPending || updateStaffMutation.isPending}
                 onClick={() => editStaff ? updateStaffMutation.mutate() : addStaffMutation.mutate()}>
                 {(addStaffMutation.isPending || updateStaffMutation.isPending) ? "..." : (editStaff ? (lang === "en" ? "Save changes" : "Enregistrer") : (lang === "en" ? "Add staff member" : "Ajouter"))}
               </button>

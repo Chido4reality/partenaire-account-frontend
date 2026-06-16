@@ -82,7 +82,10 @@ export const PLAN_CAPABILITIES = {
     ai_assistant: true,
     // Owner pins a cashier to a home location that follows them across devices
     // (Staff Maintenance, location slice). Mirror of backend lib/planCapabilities.js.
-    staff_location_binding: true
+    staff_location_binding: true,
+    // HR-lite staff records (photo, job title, hire date, employment type,
+    // record-only salary, emergency contact, national ID, notes). Owner-only.
+    staff_maintenance: true
   },
 
   // Legacy aliases — DO NOT REFERENCE FROM NEW CODE.
