@@ -151,6 +151,19 @@ export default function AssetsPage() {
 
   const wrap = (c) => <div style={{ maxWidth: 640, margin: "0 auto", padding: 20 }}>{c}</div>;
 
+  // Projected balance + negative flag for the movement confirm step. MUST be
+  // declared before any conditional early-return below (the !entitled paywall,
+  // the detail/expenses returns) so the hook order never changes between
+  // renders — e.g. when the async /my-plan load flips `entitled` false→true.
+  const projection = useMemo(() => {
+    if (!moveModal) return null;
+    const amt = Number(mForm.amount) || 0;
+    const from = byId(mForm.from_holding_id), to = byId(mForm.to_holding_id);
+    if (moveModal.type === "in") return to ? { to, newTo: (to.balance || 0) + amt } : null;
+    if (moveModal.type === "out") return from ? { from, newFrom: (from.balance || 0) - amt } : null;
+    return (from && to) ? { from, to, newFrom: (from.balance || 0) - amt, newTo: (to.balance || 0) + amt } : null;
+  }, [moveModal, mForm, holdings]); // eslint-disable-line
+
   if (!entitled) return wrap(
     <div className="card" style={{ textAlign: "center" }}>
       <div style={{ fontSize: 40, marginBottom: 10 }}>💼</div>
@@ -169,16 +182,6 @@ export default function AssetsPage() {
     if (selectedId) { if (type === "in") base.to_holding_id = selectedId; else base.from_holding_id = selectedId; }
     setMForm(base); setConfirming(false); setMoveModal({ type });
   };
-
-  // Projected balance + negative flag for the confirm step.
-  const projection = useMemo(() => {
-    if (!moveModal) return null;
-    const amt = Number(mForm.amount) || 0;
-    const from = byId(mForm.from_holding_id), to = byId(mForm.to_holding_id);
-    if (moveModal.type === "in") return to ? { to, newTo: (to.balance || 0) + amt } : null;
-    if (moveModal.type === "out") return from ? { from, newFrom: (from.balance || 0) - amt } : null;
-    return (from && to) ? { from, to, newFrom: (from.balance || 0) - amt, newTo: (to.balance || 0) + amt } : null;
-  }, [moveModal, mForm, holdings]); // eslint-disable-line
 
   // ── DETAIL (one holding's append-only history) ──
   if (selectedId && detail) {
