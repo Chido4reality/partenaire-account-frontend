@@ -150,6 +150,14 @@ export function buildLedgerTextV2(ledger, lang) {
   L.push(`  • ${en ? "Bank" : "Banque"}: ${n(dcol.bank)} FCFA`);
   L.push("");
   L.push(`${en ? "Refunds & voids (cash out)" : "Remboursements & annulations (sortie)"}: ${n(df.refunds_voids_cash_out)} FCFA`);
+  // MP-EXCHANGE-VISIBILITY: swaps as their own line with net effect.
+  const ex = df.exchanges || {};
+  if (ex.count) {
+    const sgn = ex.net > 0 ? "+" : ex.net < 0 ? "−" : "";
+    L.push(`${en ? "Exchanges" : "Échanges"} (${ex.count}): ${en ? "net" : "net"} ${sgn}${n(Math.abs(ex.net || 0))} FCFA`);
+    if (ex.cash_in)  L.push(`  • ${en ? "Customer paid in" : "Client a payé"}: +${n(ex.cash_in)} FCFA`);
+    if (ex.cash_out) L.push(`  • ${en ? "Refunded out" : "Remboursé"}: −${n(ex.cash_out)} FCFA`);
+  }
   L.push(`${en ? "Expenses" : "Dépenses"}: ${n(df.expenses)} FCFA`);
   L.push("─────────────────────────");
   L.push(`*${en ? "Net cash flow" : "Flux net espèces"}: ${n(df.net_cash_flow)} FCFA*`);
@@ -169,6 +177,9 @@ export function buildLedgerTextV2(ledger, lang) {
       L.push(`  ${en ? "Cash sales" : "Ventes espèces"}: ${n(s.cash_sales)} FCFA`);
       L.push(`  ${en ? "Debt collected (cash)" : "Dette encaissée (espèces)"}: ${n(s.debt_collected_cash)} FCFA`);
       L.push(`  ${en ? "Cash refunds" : "Remboursements espèces"}: ${n(s.cash_refunds)} FCFA`);
+      if (s.exchange_cash_in || s.exchange_cash_out) {
+        L.push(`  ${en ? "Exchanges (in / out)" : "Échanges (entrée / sortie)"}: +${n(s.exchange_cash_in || 0)} / −${n(s.exchange_cash_out || 0)} FCFA`);
+      }
       L.push(`  ${en ? "Expenses" : "Dépenses"}: ${n(s.expenses)} FCFA`);
       L.push(`  ${en ? "Expected drawer" : "Caisse attendue"}: ${n(s.expected_drawer)} FCFA`);
       if (closed && s.counted_at_close != null) {
