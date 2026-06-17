@@ -1053,6 +1053,12 @@ export default function ReportsPage() {
                                 value={formatCFA(bl.day_flow.refunds_voids_cash_out)}
                                 color={bl.day_flow.refunds_voids_cash_out > 0 ? "#f87171" : undefined}
                                 sign={bl.day_flow.refunds_voids_cash_out > 0 ? "-" : ""} />
+                      {bl.day_flow.exchanges && bl.day_flow.exchanges.count > 0 && (
+                        <BlockRow label={`${lang === "en" ? "Exchanges" : "Échanges"} (${bl.day_flow.exchanges.count})`}
+                                  value={formatCFA(Math.abs(bl.day_flow.exchanges.net))}
+                                  color={bl.day_flow.exchanges.net < 0 ? "#f87171" : bl.day_flow.exchanges.net > 0 ? "#34d399" : undefined}
+                                  sign={bl.day_flow.exchanges.net < 0 ? "-" : ""} />
+                      )}
                       <BlockRow label={lang === "en" ? "Expenses" : "Dépenses"}
                                 value={formatCFA(bl.day_flow.expenses)}
                                 color={bl.day_flow.expenses > 0 ? "#f87171" : undefined}
@@ -1088,6 +1094,10 @@ export default function ReportsPage() {
                             <BlockRow indent label={lang === "en" ? "Cash sales" : "Ventes espèces"} value={formatCFA(s.cash_sales)} />
                             <BlockRow indent label={lang === "en" ? "Debt collected (cash)" : "Dette encaissée (espèces)"} value={formatCFA(s.debt_collected_cash)} />
                             <BlockRow indent label={lang === "en" ? "Cash refunds" : "Remboursements espèces"} value={formatCFA(s.cash_refunds)} color={s.cash_refunds > 0 ? "#f87171" : undefined} sign={s.cash_refunds > 0 ? "-" : ""} />
+                            {((s.exchange_cash_in || 0) > 0 || (s.exchange_cash_out || 0) > 0) && (() => {
+                              const exNet = (s.exchange_cash_in || 0) - (s.exchange_cash_out || 0);
+                              return <BlockRow indent label={lang === "en" ? "Exchanges (net)" : "Échanges (net)"} value={formatCFA(Math.abs(exNet))} color={exNet < 0 ? "#f87171" : exNet > 0 ? "#34d399" : undefined} sign={exNet < 0 ? "-" : ""} />;
+                            })()}
                             <BlockRow indent label={lang === "en" ? "Expenses" : "Dépenses"} value={formatCFA(s.expenses)} color={s.expenses > 0 ? "#f87171" : undefined} sign={s.expenses > 0 ? "-" : ""} />
                             <BlockRow indent label={lang === "en" ? "Expected drawer" : "Caisse attendue"} value={formatCFA(s.expected_drawer)} bold />
                             {closed && s.counted_at_close != null && (
