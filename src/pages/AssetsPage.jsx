@@ -19,6 +19,30 @@ const CATS = [
 const catLabel = (v, en) => { const c = CATS.find(x => x.value === v); return c ? (en ? c.en : c.fr) : v; };
 const fmt = (n, cur) => `${new Intl.NumberFormat("fr-CM").format(Math.round((Number(n) || 0)))} ${cur || ""}`.trim();
 
+// Off-shop expense categories — MIRRORS the POS shop-expense set so the form
+// feels familiar. Stored as a stable value key; re-labelled EN/FR at render.
+const EXPENSE_CATS = [
+  { value: "rent",        en: "Rent",        fr: "Loyer" },
+  { value: "salaries",    en: "Salaries",    fr: "Salaires" },
+  { value: "transport",   en: "Transport",   fr: "Transport" },
+  { value: "fuel",        en: "Fuel",        fr: "Carburant" },
+  { value: "electricity", en: "Electricity", fr: "Électricité" },
+  { value: "water",       en: "Water",       fr: "Eau" },
+  { value: "phone",       en: "Phone",       fr: "Téléphone" },
+  { value: "internet",    en: "Internet",    fr: "Internet" },
+  { value: "maintenance", en: "Maintenance", fr: "Maintenance" },
+  { value: "repairs",     en: "Repairs",     fr: "Réparations" },
+  { value: "supplies",    en: "Supplies",    fr: "Fournitures" },
+  { value: "marketing",   en: "Marketing",   fr: "Marketing" },
+  { value: "taxes",       en: "Taxes",       fr: "Impôts" },
+  { value: "insurance",   en: "Insurance",   fr: "Assurance" },
+  { value: "bank_fees",   en: "Bank fees",   fr: "Frais bancaires" },
+  { value: "goods",       en: "Goods",       fr: "Marchandises" },
+  { value: "other",       en: "Other",       fr: "Autre" },
+];
+const expenseCatLabel = (v, en) => { const c = EXPENSE_CATS.find(x => x.value === v); return c ? (en ? c.en : c.fr) : v; };
+const firstOfMonth = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10); };
+
 export default function AssetsPage() {
   const { lang } = useLangStore();
   const en = lang === "en";
@@ -36,6 +60,14 @@ export default function AssetsPage() {
   const [moveModal, setMoveModal] = useState(null); // { type:'in'|'out'|'transfer' }
   const [mForm, setMForm] = useState({ amount: "", movement_date: new Date().toISOString().slice(0, 10), description: "", from_holding_id: "", to_holding_id: "" });
   const [confirming, setConfirming] = useState(false);
+
+  // Phase 2 — Expenses tab.
+  const [tab, setTab] = useState("holdings"); // 'holdings' | 'expenses'
+  const [expFrom, setExpFrom] = useState(firstOfMonth());
+  const [expTo, setExpTo] = useState(new Date().toISOString().slice(0, 10));
+  const [expModal, setExpModal] = useState(false);
+  const [eForm, setEForm] = useState({ amount: "", expense_date: new Date().toISOString().slice(0, 10), category: "other", description: "", funding: "external" });
+  const [confirmingExp, setConfirmingExp] = useState(false);
 
   const { data: holdingsResp, isLoading } = useQuery({
     queryKey: ["asset-holdings", showArchived],
@@ -76,6 +108,45 @@ export default function AssetsPage() {
       qc.invalidateQueries({ queryKey: ["asset-holdings"] }); qc.invalidateQueries({ queryKey: ["asset-movements"] });
     },
     onError: (e) => { toast.error(e?.response?.data?.message || "Error"); setConfirming(false); },
+  });
+
+  // ── Phase 2 — Expenses ──
+  const { data: expResp, isLoading: expLoading } = useQuery({
+    queryKey: ["asset-expenses", expFrom, expTo],
+    queryFn: () => api.get(`/assets/expenses?from=${expFrom}&to=${expTo}`).then(r => r.data),
+    enabled: entitled && tab === "expenses",
+  });
+  const expenses = expResp?.data?.expenses || [];
+  const expTotal = expResp?.data?.total || 0;
+
+  const createExpense = useMutation({
+    mutationFn: () => api.post("/assets/expenses", {
+      amount: Number(eForm.amount),
+      expense_date: eForm.expense_date,
+      category: eForm.category,
+      description: eForm.description || null,
+      funding_holding_id: eForm.funding === "external" ? null : eForm.funding,
+    }),
+    onSuccess: () => {
+      toast.success(en ? "Expense recorded" : "Dépense enregistrée");
+      setExpModal(false); setConfirmingExp(false);
+      setEForm({ amount: "", expense_date: new Date().toISOString().slice(0, 10), category: "other", description: "", funding: "external" });
+      qc.invalidateQueries({ queryKey: ["asset-expenses"] });
+      qc.invalidateQueries({ queryKey: ["asset-holdings"] });
+      qc.invalidateQueries({ queryKey: ["asset-movements"] });
+    },
+    onError: (e) => { toast.error(e?.response?.data?.message || "Error"); setConfirmingExp(false); },
+  });
+
+  const reverseExpense = useMutation({
+    mutationFn: (id) => api.post(`/assets/expenses/${id}/reverse`),
+    onSuccess: () => {
+      toast.success(en ? "Expense reversed" : "Dépense annulée");
+      qc.invalidateQueries({ queryKey: ["asset-expenses"] });
+      qc.invalidateQueries({ queryKey: ["asset-holdings"] });
+      qc.invalidateQueries({ queryKey: ["asset-movements"] });
+    },
+    onError: (e) => toast.error(e?.response?.data?.message || "Error"),
   });
 
   const wrap = (c) => <div style={{ maxWidth: 640, margin: "0 auto", padding: 20 }}>{c}</div>;
@@ -282,8 +353,153 @@ export default function AssetsPage() {
     );
   }
 
+  function ExpenseModal() {
+    const fundHolding = eForm.funding === "external" ? null : byId(eForm.funding);
+    const amt = Number(eForm.amount) || 0;
+    const cur = fundHolding ? fundHolding.currency_label : "";
+    const newBal = fundHolding ? (fundHolding.balance || 0) - amt : null;
+    const goesNeg = fundHolding && newBal < 0;
+    const canContinue = amt > 0 && !!eForm.category;
+    const activeHoldings = holdings.filter(h => !h.is_archived);
+    return (
+      <div className="modal-overlay" onClick={() => setExpModal(false)}>
+        <div className="modal" onClick={e => e.stopPropagation()}>
+          <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 14 }}>{en ? "Record expense" : "Enregistrer une dépense"}</div>
+          {!confirmingExp ? (
+            <>
+              <div className="form-group"><label className="label">{en ? "Amount" : "Montant"} *</label>
+                <input className="input" type="number" min="0" value={eForm.amount} onChange={e => setEForm(f => ({ ...f, amount: e.target.value }))} placeholder="0" />
+              </div>
+              <div className="form-group"><label className="label">{en ? "Date" : "Date"}</label>
+                <input className="input" type="date" value={eForm.expense_date} onChange={e => setEForm(f => ({ ...f, expense_date: e.target.value }))} />
+              </div>
+              <div className="form-group"><label className="label">{en ? "Category" : "Catégorie"}</label>
+                <select className="input" value={eForm.category} onChange={e => setEForm(f => ({ ...f, category: e.target.value }))}>
+                  {EXPENSE_CATS.map(c => <option key={c.value} value={c.value}>{en ? c.en : c.fr}</option>)}
+                </select>
+              </div>
+              <div className="form-group"><label className="label">{en ? "Description" : "Description"}</label>
+                <input className="input" value={eForm.description} onChange={e => setEForm(f => ({ ...f, description: e.target.value }))} placeholder={en ? "Optional — what was it for?" : "Optionnel — pour quoi ?"} />
+              </div>
+              <div className="form-group"><label className="label">{en ? "Funding source" : "Source de financement"} *</label>
+                <select className="input" value={eForm.funding} onChange={e => setEForm(f => ({ ...f, funding: e.target.value }))}>
+                  <option value="external">{en ? "Other / External (untracked)" : "Autre / Externe (non suivi)"}</option>
+                  {activeHoldings.map(h => <option key={h.id} value={h.id}>{h.name} ({h.currency_label})</option>)}
+                </select>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                  {fundHolding ? (en ? `Deducts from ${fundHolding.name} (balance ${fmt(fundHolding.balance, cur)}).` : `Déduit de ${fundHolding.name} (solde ${fmt(fundHolding.balance, cur)}).`)
+                              : (en ? "Logged only — no holding is affected." : "Enregistré seulement — aucun compte affecté.")}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setExpModal(false)}>{en ? "Cancel" : "Annuler"}</button>
+                <button className="btn btn-primary" style={{ flex: 2 }} disabled={!canContinue} onClick={() => setConfirmingExp(true)}>{en ? "Continue →" : "Continuer →"}</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 16, marginBottom: 14, fontSize: 14, lineHeight: 1.6 }}>
+                {fundHolding
+                  ? (en ? `Expense ${fmt(amt, cur)} (${expenseCatLabel(eForm.category, en)}) from ${fundHolding.name}.` : `Dépense ${fmt(amt, cur)} (${expenseCatLabel(eForm.category, en)}) de ${fundHolding.name}.`)
+                  : (en ? `Expense ${fmt(amt, "")} (${expenseCatLabel(eForm.category, en)}) — Other / External.` : `Dépense ${fmt(amt, "")} (${expenseCatLabel(eForm.category, en)}) — Autre / Externe.`)}
+                {fundHolding && (
+                  <div style={{ marginTop: 6 }}>{fundHolding.name}: {fmt(fundHolding.balance, cur)} → {fmt(newBal, cur)}</div>
+                )}
+                <div style={{ marginTop: 8, color: "var(--text-muted)", fontSize: 12 }}>
+                  ⚠ {en ? "This can't be edited later — only corrected with a reversal." : "Ceci ne pourra pas être modifié — seulement annulé par une écriture inverse."}
+                </div>
+                {goesNeg && (
+                  <div style={{ marginTop: 8, color: "#f87171", fontSize: 12, fontWeight: 600 }}>
+                    ⚠ {en ? `This will push ${fundHolding.name} to ${fmt(newBal, cur)} (negative).` : `${fundHolding.name} passera à ${fmt(newBal, cur)} (négatif).`}
+                  </div>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setConfirmingExp(false)}>← {en ? "Back" : "Retour"}</button>
+                <button className="btn btn-primary" style={{ flex: 2 }} disabled={createExpense.isPending} onClick={() => createExpense.mutate()}>
+                  {createExpense.isPending ? "…" : (en ? "Confirm & save" : "Confirmer")}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const TabBar = (
+    <div style={{ display: "flex", gap: 8, marginBottom: 16, borderBottom: "1px solid var(--border)" }}>
+      {[["holdings", en ? "Holdings" : "Comptes"], ["expenses", en ? "Expenses" : "Dépenses"]].map(([k, label]) => (
+        <button key={k} onClick={() => { setTab(k); if (k === "expenses") setSelectedId(null); }}
+          style={{ background: "none", border: "none", borderBottom: tab === k ? "2px solid var(--brand)" : "2px solid transparent", color: tab === k ? "var(--brand-light)" : "var(--text-muted)", fontWeight: tab === k ? 700 : 500, fontSize: 14, padding: "8px 4px", cursor: "pointer" }}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (tab === "expenses") return wrap(
+    <div>
+      {TabBar}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+        <div style={{ fontWeight: 800, fontSize: 20 }}>🧾 {en ? "Expenses" : "Dépenses"}</div>
+        <button className="btn btn-primary btn-sm" onClick={() => { setEForm({ amount: "", expense_date: new Date().toISOString().slice(0, 10), category: "other", description: "", funding: "external" }); setConfirmingExp(false); setExpModal(true); }}>＋ {en ? "Add expense" : "Ajouter"}</button>
+      </div>
+      <div style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 16 }}>
+        {en ? "Off-shop expenses paid from your holdings or external funds. Separate from POS shop expenses." : "Dépenses hors-boutique payées depuis vos comptes ou des fonds externes. Distinct des dépenses de la boutique."}
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
+        <input className="input" type="date" value={expFrom} onChange={e => setExpFrom(e.target.value)} style={{ width: 150 }} />
+        <span style={{ color: "var(--text-muted)" }}>→</span>
+        <input className="input" type="date" value={expTo} onChange={e => setExpTo(e.target.value)} style={{ width: 150 }} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, marginBottom: 12 }}>
+        <span style={{ fontSize: 12, color: "var(--text-muted)", textTransform: "uppercase", fontWeight: 700 }}>{en ? "Period total" : "Total période"}</span>
+        <span style={{ fontWeight: 800, fontSize: 18, color: "#f87171" }}>{fmt(expTotal)}</span>
+      </div>
+      {expLoading ? (
+        <div style={{ color: "var(--text-muted)" }}>{en ? "Loading…" : "Chargement…"}</div>
+      ) : expenses.length === 0 ? (
+        <div className="empty-state"><div style={{ fontWeight: 600 }}>{en ? "No expenses in this period." : "Aucune dépense sur cette période."}</div></div>
+      ) : (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 6 }}>
+            {en ? "History (append-only)" : "Historique (ajout uniquement)"}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {expenses.map(e => {
+              const reversal = e.is_reversal;
+              return (
+                <div key={e.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 12, padding: "8px 10px", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, opacity: reversal ? 0.75 : 1 }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontWeight: 600 }}>
+                      {expenseCatLabel(e.category, en)}
+                      {e.funding_holding_name
+                        ? <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> · {e.funding_holding_name}</span>
+                        : <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> · {en ? "External" : "Externe"}</span>}
+                    </div>
+                    <div style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.expense_date}{e.description ? " · " + e.description : ""}</div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ fontWeight: 700, color: reversal ? "#34d399" : "#f87171", whiteSpace: "nowrap" }}>{reversal ? "+" : "−"}{fmt(Math.abs(e.amount), e.currency_label)}</div>
+                    {!reversal && (
+                      <button onClick={() => { if (confirm(en ? "Reverse this expense? A compensating entry will be posted (the original is kept)." : "Annuler cette dépense ? Une écriture inverse sera créée (l'originale est conservée).")) reverseExpense.mutate(e.id); }}
+                        title={en ? "Reverse" : "Annuler"} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-muted)", cursor: "pointer", fontSize: 11, padding: "2px 8px" }}>↩</button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+      {expModal && <ExpenseModal />}
+    </div>
+  );
+
   return wrap(
     <div>
+      {TabBar}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
         <div style={{ fontWeight: 800, fontSize: 20 }}>💼 {en ? "Assets" : "Avoirs"}</div>
         <button className="btn btn-primary btn-sm" onClick={() => { setHForm({ name: "", category: "cash", currency_label: "XAF" }); setHoldingModal({ mode: "add" }); }}>＋ {en ? "Add holding" : "Ajouter"}</button>
