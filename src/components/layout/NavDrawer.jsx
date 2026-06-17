@@ -42,7 +42,10 @@ export default function NavDrawer({
   const role = user?.role || "";
 
   // Index nav items by route for quick lookup when materialising sections.
-  const byRoute = new Map((navItems || []).map(n => [n.to, n]));
+  // Key on navKey (the ORIGINAL route) when present — locked Pro Plus items
+  // have their `to` rewritten to the shared upsell URL, so indexing on `to`
+  // would collide them and break SECTIONS lookups by real route.
+  const byRoute = new Map((navItems || []).map(n => [n.navKey || n.to, n]));
   const sectioned = SECTIONS
     .map(s => ({
       label: lang === "en" ? s.en : s.fr,
@@ -179,7 +182,7 @@ export default function NavDrawer({
                   </div>
                   {section.items.map(item => (
                     <NavItem
-                      key={item.to}
+                      key={item.navKey || item.to}
                       to={item.to}
                       icon={item.icon}
                       label={lang === "en" ? item.en : item.fr}

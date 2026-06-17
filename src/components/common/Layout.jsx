@@ -565,12 +565,21 @@ export default function Layout() {
     // (lockHide — a staff utility, not a sell) or show a LOCKED entry that
     // deep-links to the upsell. Done here (not per render site) so the sidebar,
     // drawer and mobile bar all get the same treatment from one place.
+    //
+    // MP-NAV-DUPKEY-FIX: every locked Pro Plus item is rewritten to the SAME
+    // `to` (/request-activation?plan=pro_plus), so when >1 feature is locked
+    // (e.g. Assistant + Assets) they collide on a render `key={item.to}`.
+    // Duplicate sibling keys corrupt React reconciliation across the async
+    // /my-plan load (effectivePlan flips from the "silver" fallback to the real
+    // plan), leaving a stale "Assistant 🔒" node mounted next to the unlocked
+    // "Assistant" → the reported double entry. Carry `navKey` = the ORIGINAL
+    // route (always unique) and key every render off that, not the mutated `to`.
     if (item.feature && !hasFeature(effectivePlan, item.feature)) {
       if (item.lockHide) return null;
-      return { ...item, to: "/request-activation?plan=pro_plus",
+      return { ...item, navKey: item.to, to: "/request-activation?plan=pro_plus",
                en: `${item.en} 🔒`, fr: `${item.fr} 🔒`, _locked: true };
     }
-    return item;
+    return { ...item, navKey: item.to };
   }).filter(Boolean);
   // MP-MOBILE-NAV-FIX: mobile has only this 5-slot bottom bar (no
   // hamburger). /inventory sits at NAV index 7 so it never made the
@@ -585,7 +594,9 @@ export default function Layout() {
   const _invItem = visibleNav.find(n => n.to === "/inventory");
   const mobileNav = visibleNav
     .map(item => (item.to === "/stock-count" && _invItem) ? _invItem : item)
-    .filter((item, idx, arr) => arr.findIndex(x => x.to === item.to) === idx)
+    // dedupe by navKey (original route) — two locked Pro Plus items share the
+    // same upsell `to`, so deduping on `to` would wrongly collapse them to one.
+    .filter((item, idx, arr) => arr.findIndex(x => (x.navKey || x.to) === (item.navKey || item.to)) === idx)
     .slice(0, 5);
 
   // D-2: Online Cart sidebar badge — pending count, 30s poll. Only
@@ -1045,7 +1056,7 @@ export default function Layout() {
           {mobileNav.map(item => {
             const isActive = item.to === "/" ? location.pathname === "/" : location.pathname.startsWith(item.to);
             return (
-              <NavLink key={item.to} to={item.to}
+              <NavLink key={item.navKey || item.to} to={item.to}
                 style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "8px 4px", textDecoration: "none", color: isActive ? "var(--brand-light)" : "var(--text-muted)", fontSize: 10, fontWeight: isActive ? 600 : 400, borderTop: isActive ? "2px solid var(--brand)" : "2px solid transparent", gap: 2 }}>
                 <div style={{ fontSize: 16, position: "relative" }}>
                   {item.icon}
@@ -1162,7 +1173,7 @@ export default function Layout() {
 
         <nav style={{ flex: 1, padding: "8px 0", overflowY: "auto" }}>
           {visibleNav.map(item => (
-            <NavLink key={item.to} to={item.to} end={item.to === "/"}
+            <NavLink key={item.navKey || item.to} to={item.to} end={item.to === "/"}
               style={({ isActive }) => ({
                 display: "flex", alignItems: "center", gap: 10,
                 padding: collapsed ? "12px 0" : "10px 16px",
