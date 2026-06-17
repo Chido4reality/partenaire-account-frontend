@@ -262,6 +262,20 @@ export default function POSPage() {
       items: cart, customer, payMode, paidAmt, dueDate, notes });
   }, [cart, customer, payMode, paidAmt, dueDate, notes,
       userId, locId, saveDraft, clearDraft]);
+  // MP-STORAGE-QUOTA-CRASH-FIX: safeStorage fires this (at most once/session)
+  // when a draft save had to be skipped because the device storage is full.
+  // Quiet, non-fatal heads-up — the sale keeps working, only the auto-save of
+  // the in-progress cart is paused until space frees up.
+  useEffect(() => {
+    const onQuota = () => toast(
+      lang === "en"
+        ? "Device storage is full — your in-progress cart won't be auto-saved. Finish or clear the sale to free space."
+        : "Stockage plein — votre panier en cours ne sera pas sauvegardé. Terminez ou videz la vente pour libérer de l'espace.",
+      { icon: "⚠️", duration: 6000, style: { background: "#451a03", color: "#fbbf24", border: "1px solid #92400e" } }
+    );
+    window.addEventListener("mp-storage-quota", onQuota);
+    return () => window.removeEventListener("mp-storage-quota", onQuota);
+  }, [lang]);
 
   useEffect(() => {
     if (scanMode !== "usb") return;

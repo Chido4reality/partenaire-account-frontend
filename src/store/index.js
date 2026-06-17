@@ -1,6 +1,12 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
 import { translations } from "../i18n/translations";
+import { safeStorage } from "../utils/safeStorage";
+
+// MP-STORAGE-QUOTA-CRASH-FIX: route ALL persisted stores through the guarded
+// storage shim so a QuotaExceededError on any persist write degrades (skips the
+// snapshot) instead of throwing into React and crashing the app.
+const safeJSONStorage = createJSONStorage(() => safeStorage);
 
 export const useAuthStore = create(persist(
   (set) => ({
@@ -15,7 +21,7 @@ export const useAuthStore = create(persist(
     endImpersonation: () => set({ user: null, org: null, token: null, isAuthenticated: false, impersonating: false, impersonation: null }),
     logout: () => set({ user: null, org: null, token: null, isAuthenticated: false, impersonating: false, impersonation: null }),
   }),
-  { name: "mp-auth" }
+  { name: "mp-auth", storage: safeJSONStorage }
 ));
 
 export const useLangStore = create(persist(
@@ -30,7 +36,7 @@ export const useLangStore = create(persist(
       return val || key;
     }
   }),
-  { name: "mp-lang" }
+  { name: "mp-lang", storage: safeJSONStorage }
 ));
 
 export const useOfflineStore = create(persist(
@@ -38,7 +44,7 @@ export const useOfflineStore = create(persist(
     queue: [], isOnline: true,
     setOnline: (v) => set({ isOnline: v }),
   }),
-  { name: "mp-offline" }
+  { name: "mp-offline", storage: safeJSONStorage }
 ));
 
 export const useSettingsStore = create(persist(
@@ -46,7 +52,7 @@ export const useSettingsStore = create(persist(
     selectedLocation: null,
     setLocation: (loc) => set({ selectedLocation: loc }),
   }),
-  { name: "mp-settings" }
+  { name: "mp-settings", storage: safeJSONStorage }
 ));
 
 // MP-POS-CART-PERSIST: keep an in-progress sale alive across navigation,
@@ -64,18 +70,60 @@ export const useSettingsStore = create(persist(
 // updatedAt drives a 24h TTL on restore — older drafts are stale and
 // silently discarded so a cashier who walked away yesterday doesn't
 // come back to surprise data today.
+// MP-STORAGE-QUOTA-CRASH-FIX (growth side): the drafts map grew UNBOUNDED.
+// Entries are keyed by `${userId}::${locationId}`; clearDraft only ever removed
+// the CURRENT scope (on sale finalize / empty cart) and the 24h TTL was applied
+// only on READ in POSPage — never deleted from storage. So every other scope
+// (other cashiers, other locations, abandoned carts) lingered forever, and on a
+// shared device they piled up until the blob blew the quota. Fix: prune
+// TTL-stale scopes + hard-cap the count on every save, and slim each line to a
+// known whitelist (no whole product records ever creep in).
+const DRAFT_TTL_MS  = 24 * 60 * 60 * 1000;  // matches POSPage restore TTL
+const MAX_DRAFTS    = 12;                    // most-recent scopes kept; backstop
+// Exactly the fields addToCart()/addDebtToCart() in POSPage produce and that
+// restore + customer-tier re-pricing + receipts read back. Anything else (e.g.
+// a stray full product object) is dropped so the snapshot can't bloat.
+const DRAFT_ITEM_FIELDS = [
+  "lineId", "product_id", "name", "unit", "barcode", "quantity",
+  "unit_price", "original_price", "price_tier", "sell_price",
+  "wholesale_price", "min_price", "cost_price", "stock",
+  "isDebt", "debtSaleIds", "debtAmount",
+];
+function slimDraftItems(items) {
+  if (!Array.isArray(items)) return [];
+  return items.map((it) => {
+    const o = {};
+    if (it) for (const f of DRAFT_ITEM_FIELDS) if (it[f] !== undefined) o[f] = it[f];
+    return o;
+  });
+}
+
 export const useDraftCartStore = create(persist(
   (set, get) => ({
     drafts: {},
     saveDraft: ({ userId, locationId, items, customer, payMode, paidAmt, dueDate, notes }) => {
       if (!userId || !locationId) return;
       const key = `${userId}::${locationId}`;
-      set((state) => ({
-        drafts: {
-          ...state.drafts,
-          [key]: { items, customer, payMode, paidAmt, dueDate, notes, updatedAt: Date.now() },
-        },
-      }));
+      const now = Date.now();
+      set((state) => {
+        // Prune TTL-stale scopes (the read-side TTL never deleted these).
+        const kept = {};
+        for (const [k, d] of Object.entries(state.drafts || {})) {
+          if (k === key) continue; // current scope rewritten below
+          if (d && (now - (d.updatedAt || 0)) <= DRAFT_TTL_MS) kept[k] = d;
+        }
+        kept[key] = {
+          items: slimDraftItems(items),
+          customer, payMode, paidAmt, dueDate, notes, updatedAt: now,
+        };
+        // Hard cap: keep only the most-recently-updated MAX_DRAFTS scopes.
+        const entries = Object.entries(kept);
+        if (entries.length > MAX_DRAFTS) {
+          entries.sort((a, b) => (b[1].updatedAt || 0) - (a[1].updatedAt || 0));
+          return { drafts: Object.fromEntries(entries.slice(0, MAX_DRAFTS)) };
+        }
+        return { drafts: kept };
+      });
     },
     getDraft: ({ userId, locationId }) => {
       if (!userId || !locationId) return null;
@@ -91,5 +139,5 @@ export const useDraftCartStore = create(persist(
       });
     },
   }),
-  { name: "mp-pos-draft-cart" }
+  { name: "mp-pos-draft-cart", storage: safeJSONStorage }
 ));

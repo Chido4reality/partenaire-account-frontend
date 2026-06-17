@@ -16,6 +16,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import api from "../utils/api";
 import toast from "react-hot-toast";
+import { safeSetItem } from "../utils/safeStorage";
 
 // Small Levenshtein for the auto-match confidence label. Mirrors the
 // Sprint C FU.4 server-side migration matcher closely enough for the
@@ -354,7 +355,7 @@ export default function OnlineCartPage() {
           onChange={e => {
             const loc = locations.find(l => l.id === e.target.value) || null;
             setLocation(loc);
-            if (loc) localStorage.setItem(LOC_LS_KEY, loc.id);
+            if (loc) safeSetItem(LOC_LS_KEY, loc.id);
           }}>
           <option value="">{t("Select location…", "Choisir un site…")}</option>
           {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}

@@ -9,6 +9,7 @@ import { useTrialState } from "../../hooks/useTrialState";
 import { useKeyboardInset } from "../../hooks/useKeyboardInset";
 import api from "../../utils/api";
 import { cacheData } from "../../utils/offlineStore";
+import { safeSetItem } from "../../utils/safeStorage";
 import { cacheKeyFor } from "../../utils/offlineQuery";
 import { openWhatsApp } from "../../utils/whatsapp";
 import { nukeClientState, hardRedirectToLogin } from "../../utils/authReset";
@@ -469,7 +470,7 @@ export default function Layout() {
       hardRedirectToLogin("session_changed");
       return;
     }
-    if (last !== cur) localStorage.setItem("mp_last_user_id", cur);
+    if (last !== cur) safeSetItem("mp_last_user_id", cur);
   }, [user?.id, queryClient]);
   const toggleLang = () => {
     const nl = lang === "en" ? "fr" : "en";
