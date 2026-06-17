@@ -1314,7 +1314,7 @@
             <div class="page-title">Sell restrictions</div>
             <div class="page-sub">Allowlist of which categories and towns may sell on Partenaire Dozie. Turn one OFF and sellers in that category / town can no longer publish. Master admin only.</div>
           </div>
-          <button class="btn" onclick="loadSellRestrictions()">Refresh</button>
+          <button class="btn" id="sr-refresh-btn">Refresh</button>
         </div>
         <div id="sr-notmaster" class="page-sub" style="display:none;color:#f87171">Master admin only — you don't have access to this control.</div>
         <div class="settings-card">
@@ -1328,7 +1328,7 @@
           <div id="sr-towns" style="margin-top:8px">…</div>
           <div style="margin-top:12px;display:flex;gap:8px">
             <input id="sr-new-town" placeholder="Add a town…" style="flex:1" />
-            <button class="btn" onclick="addSellTown()">Add town</button>
+            <button class="btn" id="sr-add-town-btn">Add town</button>
           </div>
         </div>
       </section>
@@ -1697,7 +1697,32 @@
     function _isMasterAdmin() {
       return !!currentAdmin && /superadmin|master/.test((currentAdmin.role || '').toLowerCase());
     }
+    // The whole admin script runs inside an IIFE ('use strict'), so these
+    // handlers are NOT on window — inline onclick/onchange (which resolve
+    // against global scope) silently throw "X is not defined". Wire the panel
+    // the way the rest of the file does: addEventListener inside the IIFE.
+    // Idempotent — the static buttons exist from page load; toggle checkboxes
+    // are re-rendered, so use delegation on the (static) containers.
+    let _srWired = false;
+    function wireSellRestrictionsOnce() {
+      if (_srWired) return;
+      _srWired = true;
+      const addBtn = $('sr-add-town-btn'); if (addBtn) addBtn.addEventListener('click', addSellTown);
+      const refBtn = $('sr-refresh-btn');  if (refBtn) refBtn.addEventListener('click', loadSellRestrictions);
+      const newTown = $('sr-new-town');     if (newTown) newTown.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addSellTown(); } });
+      ['sr-categories', 'sr-towns'].forEach(id => {
+        const c = $(id);
+        if (c) c.addEventListener('change', e => {
+          const t = e.target;
+          if (t && t.matches && t.matches('input[type="checkbox"][data-sell-kind]')) {
+            toggleSell(t.getAttribute('data-sell-kind'), t.getAttribute('data-sell-key'), t.checked, t);
+          }
+        });
+      });
+    }
+
     async function loadSellRestrictions() {
+      wireSellRestrictionsOnce();
       const master = _isMasterAdmin();
       $('sr-notmaster').style.display = master ? 'none' : '';
       if (!master) { $('sr-categories').innerHTML = ''; $('sr-towns').innerHTML = ''; return; }
@@ -1719,7 +1744,7 @@
         const key = keyFn(r);
         return '<label style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 2px;border-bottom:1px solid rgba(255,255,255,0.08)">'
           + '<span>' + escapeHtml(labelFn(r)) + (r.is_allowed ? '' : ' <span class="badge badge-admin" style="background:rgba(239,68,68,0.15);color:#f87171">blocked</span>') + '</span>'
-          + '<input type="checkbox" ' + (r.is_allowed ? 'checked' : '') + ' onchange="toggleSell(\'' + kind + '\',\'' + encodeURIComponent(key) + '\',this.checked,this)">'
+          + '<input type="checkbox" data-sell-kind="' + kind + '" data-sell-key="' + encodeURIComponent(key) + '" ' + (r.is_allowed ? 'checked' : '') + '>'
           + '</label>';
       }).join('');
     }

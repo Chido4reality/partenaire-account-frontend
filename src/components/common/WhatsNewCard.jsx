@@ -13,18 +13,30 @@ const APP_VERSION = "2.0";
 const WHATSNEW_SEEN_KEY = "whatsnew_2_0_seen";
 
 // ╔════════════════════════════════════════════════════════════════════════╗
-// ║  PLACEHOLDER COPY — Peter to finalize the 2.0 highlights here.          ║
-// ║  FR (default) + EN. `bullets` is a simple array; add/remove freely.     ║
-// ║  Intentionally placeholder so nothing inaccurate is advertised.        ║
+// ║  2.0 HIGHLIGHTS (approved). FR (default) + EN — keep in sync.            ║
+// ║  `bullets` is a simple array; the final bullet folds in the closing     ║
+// ║  "for everyone / thank you" line (the card has no separate footer slot).║
 // ╚════════════════════════════════════════════════════════════════════════╝
 const WHATS_NEW_COPY = {
   fr: {
     title: "Bienvenue dans la version 2.0 — nouveautés :",
-    bullets: ["[à compléter]", "[à compléter]", "[à compléter]"],
+    bullets: [
+      "🤖 Assistant IA — posez vos questions sur votre activité en langage simple (ventes, dépenses, meilleurs produits, qui vous doit de l'argent…) et obtenez une réponse immédiate.",
+      "👥 Gestion du personnel — fiches employés, activité par caissier, et pointage des présences.",
+      "📍 Caissier par boutique — affectez chaque caissier à un point de vente précis.",
+      "💰 Patrimoine & Dépenses — suivez votre argent et vos dépenses hors-boutique, séparément de la caisse.",
+      "Et pour tous : une interface rafraîchie et de nombreuses améliorations. Merci de votre fidélité ! 🎉",
+    ],
   },
   en: {
     title: "Welcome to version 2.0 — what's new:",
-    bullets: ["[to be completed]", "[to be completed]", "[to be completed]"],
+    bullets: [
+      "🤖 AI Assistant — ask about your business in plain language (sales, expenses, best products, who owes you money…) and get an instant answer.",
+      "👥 Staff Management — employee records, per-cashier activity, and attendance clock-in/out.",
+      "📍 Cashier by location — assign each cashier to a specific shop.",
+      "💰 Assets & Expenses — track your money and your off-shop expenses, separate from the till.",
+      "And for everyone: a refreshed look and lots of improvements. Thank you! 🎉",
+    ],
   },
 };
 

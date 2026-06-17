@@ -231,8 +231,8 @@ export default function AssetsPage() {
             })}
           </div>
         )}
-        {moveModal && <MovementModal />}
-        {holdingModal && <HoldingModal />}
+        {moveModal && MovementModal()}
+        {holdingModal && HoldingModal()}
       </div>
     );
   }
@@ -496,7 +496,7 @@ export default function AssetsPage() {
           </div>
         </>
       )}
-      {expModal && <ExpenseModal />}
+      {expModal && ExpenseModal()}
     </div>
   );
 
@@ -532,8 +532,8 @@ export default function AssetsPage() {
           {showArchived ? (en ? "Hide archived" : "Masquer les archivés") : (en ? "Show archived" : "Afficher les archivés")}
         </button>
       </div>
-      {holdingModal && <HoldingModal />}
-      {moveModal && <MovementModal />}
+      {holdingModal && HoldingModal()}
+      {moveModal && MovementModal()}
     </div>
   );
 }
