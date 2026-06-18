@@ -190,6 +190,34 @@ function PlanGuard({ path, children }) {
 //
 // Also handles the older ?impersonate_token=<jwt> path (Item 4 single-token
 // flow) for backward compatibility with any in-flight tabs.
+// MP-IMPERSONATION-COLD-START: the impersonation tab fires the exchange the
+// instant it opens. The API can be spun down (Render idle), so that FIRST
+// request hits a 502 / timeout during cold start — and with no retry the
+// frontend dropped straight to the login screen (the "View as owner kicks me
+// to sign-in" symptom). Retry transient failures (network error, 5xx / gateway)
+// with backoff; a 4xx (genuinely expired/invalid token) fails fast so a real
+// auth error is never papered over. ~10s budget covers a typical cold start.
+let _impColdToastShown = false;
+async function impFetch(url, opts) {
+  const delays = [800, 1500, 3000, 5000];
+  let lastErr;
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    try {
+      const res = await fetch(url, opts);
+      if (res.status < 500) return res; // success or a real 4xx — do not retry
+      lastErr = new Error("HTTP " + res.status);
+    } catch (e) { lastErr = e; } // network / abort — likely cold start
+    if (attempt < delays.length) {
+      if (!_impColdToastShown) {
+        _impColdToastShown = true;
+        toast.loading("Connecting to the server… (it may be waking up)", { id: "imp-cold", duration: 15000 });
+      }
+      await new Promise((r) => setTimeout(r, delays[attempt]));
+    }
+  }
+  throw lastErr || new Error("request failed");
+}
+
 async function consumeImpersonateToken() {
   const params = new URLSearchParams(window.location.search);
   const exchangeToken = params.get("impersonate");
@@ -207,17 +235,20 @@ async function consumeImpersonateToken() {
 
   try {
     if (exchangeToken) {
-      // New flow: exchange the impersonation token for a real session.
-      const res = await fetch(apiBase + "/auth/impersonate-exchange?token=" + encodeURIComponent(exchangeToken));
+      // New flow: exchange the impersonation token for a real session. Retries
+      // through a cold-start; a 4xx still fails fast below.
+      const res = await impFetch(apiBase + "/auth/impersonate-exchange?token=" + encodeURIComponent(exchangeToken));
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.success || !data?.session_token) {
+        toast.dismiss("imp-cold");
         toast.error(data?.message || "Impersonation token expired or invalid. Close this tab and try again from the admin portal.", { duration: 8000 });
         stripUrl();
         return false;
       }
+      toast.dismiss("imp-cold");
       // Fetch the user record so the existing app code (which reads
       // authStore.user / authStore.org) keeps working unchanged.
-      const meRes = await fetch(apiBase + "/auth/me", { headers: { Authorization: "Bearer " + data.session_token } });
+      const meRes = await impFetch(apiBase + "/auth/me", { headers: { Authorization: "Bearer " + data.session_token } });
       const me = await meRes.json().catch(() => ({}));
       const user = me?.user;
       const org = user?.pa_organisations || null;
@@ -241,7 +272,8 @@ async function consumeImpersonateToken() {
 
     // Legacy single-token flow (Item 4): the URL token is already a real
     // session token signed with JWT_SECRET. Call /auth/me directly.
-    const res = await fetch(apiBase + "/auth/me", { headers: { Authorization: "Bearer " + legacyToken } });
+    const res = await impFetch(apiBase + "/auth/me", { headers: { Authorization: "Bearer " + legacyToken } });
+    toast.dismiss("imp-cold");
     if (!res.ok) {
       toast.error("Impersonation token rejected: " + res.status, { duration: 6000 });
       stripUrl();
@@ -262,7 +294,8 @@ async function consumeImpersonateToken() {
     stripUrl();
     return true;
   } catch (e) {
-    toast.error("Impersonation failed: " + e.message, { duration: 6000 });
+    toast.dismiss("imp-cold");
+    toast.error("Could not reach the server to start impersonation. The backend may be waking up — close this tab and try again from the admin portal.", { duration: 8000 });
     stripUrl();
     return false;
   }
