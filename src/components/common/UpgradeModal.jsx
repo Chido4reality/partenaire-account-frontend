@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
-import { useLangStore } from "../../store";
+import { useLangStore, useAuthStore } from "../../store";
 import api from "../../utils/api";
 import { useCurrency } from "../../utils/useCurrency";
 
@@ -20,6 +20,12 @@ const PAYMENT_METHODS = [
 export default function UpgradeModal({ onClose, currentPlan }) {
   const { lang } = useLangStore();
   const fmt = useCurrency();
+  // MP-NIGERIA: CamPay is Cameroon mobile-money only — NG orgs pay via Flutterwave.
+  // NOTE: CamPay is already absent from PAYMENT_METHODS (MP-SUB-NO-PHANTOM-PENDING),
+  // so this gate is defensive — it keeps every CamPay UI/code path CM-only if the
+  // option is ever re-surfaced.
+  const { org } = useAuthStore();
+  const isCameroun = (org?.country || "Cameroun") === "Cameroun";
   const qc = useQueryClient();
   const [selectedPlan, setSelectedPlan] = useState(null);
   // MP-BILLING-V3: Flutterwave is the unified PRIMARY path for all 3 plans —
@@ -278,8 +284,8 @@ export default function UpgradeModal({ onClose, currentPlan }) {
               ))}
             </div>
 
-            {/* Phone number — only shown for CamPay */}
-            {paymentMethod === "campay" && (
+            {/* Phone number — only shown for CamPay (Cameroon only) */}
+            {paymentMethod === "campay" && isCameroun && (
               <div className="form-group" style={{ marginBottom: 16 }}>
                 <label className="label">{lang === "en" ? "Mobile Money number" : "Numéro Mobile Money"}</label>
                 <input className="input" value={phone}

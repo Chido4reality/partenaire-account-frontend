@@ -24,7 +24,9 @@ const CATS = [
 ];
 
 export default function RegisterPage() {
-  const [form, setForm] = useState({ org_name: "", full_name: "", phone: "", password: "", category: "moto_parts" });
+  // MP-NIGERIA: `country` drives currency (NGN/XAF), city default, and phone format.
+  // Defaults to Cameroun so an unchanged CM signup is byte-identical to before.
+  const [form, setForm] = useState({ org_name: "", full_name: "", phone: "", password: "", category: "moto_parts", country: "Cameroun" });
   const [loading, setLoading] = useState(false);
   // MP-REGISTER-DUP-PHONE-HANDLING: inline error under the phone
   // field for the 409 PHONE_ALREADY_REGISTERED response. Cleared
@@ -75,6 +77,13 @@ export default function RegisterPage() {
 
         <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 20, padding: 28 }}>
           <form onSubmit={handleSubmit}>
+            <div className="form-group">
+              <label className="label">{lang === "en" ? "Country" : "Pays"}</label>
+              <select className="input" value={form.country} onChange={e => set("country", e.target.value)}>
+                <option value="Cameroun">{lang === "en" ? "Cameroon" : "Cameroun"}</option>
+                <option value="Nigeria">Nigeria</option>
+              </select>
+            </div>
             {[
               { key: "org_name",  en: "Business name",  fr: "Nom de la boutique", type: "text",     ph: "Ex: Moto Parts Akwa" },
               { key: "full_name", en: "Your full name", fr: "Votre nom complet",  type: "text",     ph: "Jean Dupont" },
@@ -87,9 +96,17 @@ export default function RegisterPage() {
                 <div className="form-group" key={f.key}>
                   <label className="label">{lang === "en" ? f.en : f.fr}</label>
                   <input className="input" type={f.type} value={form[f.key]}
-                    onChange={e => set(f.key, e.target.value)} required placeholder={f.ph}
+                    onChange={e => set(f.key, e.target.value)} required
+                    placeholder={isPhone ? (form.country === "Nigeria" ? "08030000000" : "6XXXXXXXX") : f.ph}
                     style={hasError ? { borderColor: "#f87171" } : undefined}
                     aria-invalid={hasError || undefined} />
+                  {isPhone && !hasError && (
+                    <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 4, lineHeight: 1.4 }}>
+                      {form.country === "Nigeria"
+                        ? (lang === "en" ? "Nigerian number (e.g. +234 803 000 0000)" : "Numéro nigérian (ex: +234 803 000 0000)")
+                        : (lang === "en" ? "Cameroon number (e.g. 6XX XX XX XX)" : "Numéro camerounais (ex: 6XX XX XX XX)")}
+                    </div>
+                  )}
                   {hasError && (
                     <div style={{ color: "#f87171", fontSize: 12, marginTop: 6, lineHeight: 1.4 }}>
                       {phoneError}
