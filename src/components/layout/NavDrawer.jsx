@@ -23,9 +23,15 @@ export const DRAWER_WIDTH = 280;
 // belong to a section. New routes added later get a one-line addition
 // here. Sections with zero matching visible items are hidden.
 const SECTIONS = [
-  { en: "DAILY WORK", fr: "TRAVAIL QUOTIDIEN", routes: ["/", "/pos", "/online-cart", "/shifts", "/refunds"] },
+  // MP-PROPLUS-NAV-DRAWER-FIX: the Pro Plus routes (/assistant, /attendance,
+  // /assets) were added to Layout's NAV but never to this mobile SECTIONS map,
+  // so the drawer dropped them even when fully entitled (the desktop sidebar
+  // maps visibleNav flat, which is why web showed them). /assistant goes at the
+  // TOP (prominent), staff Attendance + Assets join PEOPLE & MONEY. Role/feature
+  // gates stay in Layout's NAV (already pass for entitled owners).
+  { en: "DAILY WORK", fr: "TRAVAIL QUOTIDIEN", routes: ["/assistant", "/", "/pos", "/online-cart", "/shifts", "/refunds"] },
   { en: "INVENTORY",  fr: "INVENTAIRE",        routes: ["/inventory", "/stock-count", "/barcodes", "/transfers"] },
-  { en: "PEOPLE & MONEY", fr: "PERSONNES & ARGENT", routes: ["/customers", "/credits", "/expenditures"] },
+  { en: "PEOPLE & MONEY", fr: "PERSONNES & ARGENT", routes: ["/customers", "/credits", "/expenditures", "/attendance", "/assets"] },
   { en: "REPORTING",  fr: "RAPPORTS",          routes: ["/reports", "/operations"] },
   { en: "SETTINGS",   fr: "PARAMÈTRES",        routes: ["/settings"] },
 ];
