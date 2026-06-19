@@ -15,6 +15,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useLangStore, useAuthStore } from "../../store";
 import NavItem from "./NavItem";
 import { tapHaptic } from "../../utils/haptics";
+import { openWhatsApp } from "../../utils/whatsapp";
 
 export const DRAWER_WIDTH = 280;
 
@@ -29,7 +30,11 @@ const SECTIONS = [
   // maps visibleNav flat, which is why web showed them). /assistant goes at the
   // TOP (prominent), staff Attendance + Assets join PEOPLE & MONEY. Role/feature
   // gates stay in Layout's NAV (already pass for entitled owners).
-  { en: "DAILY WORK", fr: "TRAVAIL QUOTIDIEN", routes: ["/assistant", "/", "/pos", "/online-cart", "/shifts", "/refunds"] },
+  // MP-MOBILE-DRAWER-PENDING-SYNC: /pending-sync only ever lived in the 5-slot
+  // bottom bar; in Full view /online-cart bumps it out (it's index 5), leaving
+  // it unreachable. Add it here so the drawer always carries it, independent of
+  // the bottom-bar slot — same SECTIONS-omission pattern as the Pro Plus fix.
+  { en: "DAILY WORK", fr: "TRAVAIL QUOTIDIEN", routes: ["/assistant", "/", "/pos", "/online-cart", "/shifts", "/refunds", "/pending-sync"] },
   { en: "INVENTORY",  fr: "INVENTAIRE",        routes: ["/inventory", "/stock-count", "/barcodes", "/transfers"] },
   { en: "PEOPLE & MONEY", fr: "PERSONNES & ARGENT", routes: ["/customers", "/credits", "/expenditures", "/attendance", "/assets"] },
   { en: "REPORTING",  fr: "RAPPORTS",          routes: ["/reports", "/operations"] },
@@ -43,7 +48,7 @@ export default function NavDrawer({
   onlineCartPending,
   onLogout,
 }) {
-  const { lang } = useLangStore();
+  const { lang, setLang } = useLangStore();
   const { user, org } = useAuthStore();
   const role = user?.role || "";
 
@@ -212,6 +217,48 @@ export default function NavDrawer({
                 borderTop: "1px solid var(--border)",
               }}
             >
+              {/* MP-MOBILE-DRAWER-UTILITIES: mirror the desktop sidebar footer
+                  (Layout.jsx Contact Support + language toggle) so paid-Full
+                  users keep these on the phone — the desktop sidebar never
+                  renders on mobile. Reuses openWhatsApp + setLang. */}
+              {(() => {
+                const phone = "237621840952";
+                const supportBody =
+                  "Bonjour Partenaire Support,\n" +
+                  "Mon ID: " + (org?.user_id_number || "") + "\n" +
+                  "Nom: " + (org?.name || "") + "\n" +
+                  "Plan: " + (org?.plan_id || "") + "\n" +
+                  "Message:\n";
+                return (
+                  <a
+                    href={"https://wa.me/" + phone + "?text=" + encodeURIComponent(supportBody)}
+                    target="_blank" rel="noopener noreferrer"
+                    onClick={(e) => openWhatsApp(e, phone, supportBody)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 10, width: "100%",
+                      padding: "10px 14px", borderRadius: 10, marginBottom: 8,
+                      background: "rgba(37,211,102,0.08)", border: "1px solid rgba(37,211,102,0.2)",
+                      color: "#25d366", fontSize: 13, fontWeight: 600, textDecoration: "none",
+                    }}
+                  >
+                    <span style={{ fontSize: 16 }}>💬</span>
+                    <span>{lang === "en" ? "Contact Support" : "Contacter le Support"}</span>
+                  </a>
+                );
+              })()}
+              <button
+                onClick={() => setLang(lang === "en" ? "fr" : "en")}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10, width: "100%",
+                  padding: "10px 14px", borderRadius: 10, marginBottom: 8,
+                  background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)",
+                  color: "var(--text-secondary)", fontSize: 13, fontWeight: 600,
+                  cursor: "pointer", textAlign: "left",
+                }}
+              >
+                <span style={{ fontSize: 16 }}>🌐</span>
+                <span>{lang === "en" ? "Français" : "English"}</span>
+              </button>
               <button
                 onClick={handleSignOut}
                 style={{
