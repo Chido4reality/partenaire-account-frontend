@@ -465,11 +465,16 @@ export default function ReportsPage() {
                         const statusColor = sale.payment_status === "paid" ? "#34d399" : sale.payment_status === "partial" ? "#fbbf24" : "#f87171";
                         return (
                           <div key={sale.id} style={{ background: "var(--bg-card)", border: `1px solid ${isExpanded ? "var(--brand)" : "var(--border)"}`, borderRadius: 12, overflow: "hidden", transition: "all 0.15s" }}>
-                            {/* Sale header - clickable */}
-                            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px" }}>
-                              <div onClick={() => setExpandedSale(isExpanded ? null : sale.id)} style={{ flex: 1, display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 2 }}>
+                            {/* Sale header - clickable. MP-INVOICE-ROW-MOBILE-REACH:
+                                row wraps + flex:1 groups get minWidth:0 so on a 360px
+                                viewport the amount + per-sale actions (Void/WhatsApp/Print)
+                                reflow into view instead of being clipped by the card's
+                                overflow:hidden (the monospace sale number + status badges
+                                used to force the row to ~367px). */}
+                            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", flexWrap: "wrap" }}>
+                              <div onClick={() => setExpandedSale(isExpanded ? null : sale.id)} style={{ flex: 1, display: "flex", alignItems: "center", gap: 12, cursor: "pointer", minWidth: 0 }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 2, flexWrap: "wrap" }}>
                                   <span style={{ fontWeight: 700, fontSize: 13, fontFamily: "monospace" }}>{sale.sale_number}</span>
                                   <span style={{ fontSize: 11, padding: "1px 8px", borderRadius: 10, background: statusColor + "20", color: statusColor, fontWeight: 600 }}>
                                     {sale.payment_status}
