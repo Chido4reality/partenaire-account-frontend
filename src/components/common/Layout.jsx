@@ -71,10 +71,13 @@ const NAV = [
   // feature flag below drives entitled (→ /assistant) vs locked (→ upsell).
   { to: "/assistant",    en: "Assistant",  fr: "Assistant",       icon: "✨", roles: ["owner"],                                section: "settings", feature: "ai_assistant" },
   // Staff Maintenance Phase 3 — shared-device attendance. ALL roles (staff clock
-  // themselves). Pro Plus only: hidden entirely when not entitled (lockHide) —
-  // no upsell, it's a staff utility, not a sell. section:"sales" is always
-  // present so role/plan filters pass; the feature flag is the real gate.
-  { to: "/attendance",   en: "Attendance", fr: "Pointage",        icon: "🕒", roles: ["owner","manager","cashier","warehouse"], section: "sales", feature: "staff_maintenance", lockHide: true },
+  // themselves). Pro Plus only — CONSISTENT with Assistant + Assets: VISIBLE but
+  // LOCKED (🔒) for lower tiers, deep-linking the pro_plus upsell; unlocked on
+  // pro_plus. (Previously lockHide:true hid it entirely as "a staff utility, not
+  // a sell" — superseded: the three Pro Plus features now behave identically.)
+  // section:"sales" is always present so role/plan filters pass; the feature flag
+  // (staff_maintenance, a pro_plus-only capability) is the real entitlement gate.
+  { to: "/attendance",   en: "Attendance", fr: "Pointage",        icon: "🕒", roles: ["owner","manager","cashier","warehouse"], section: "sales", feature: "staff_maintenance" },
   // Pro Plus Feature 3 — Asset ledger. Owner-only; locked→upsell when not entitled.
   { to: "/assets",       en: "Assets",     fr: "Avoirs",          icon: "💼", roles: ["owner"],                                section: "settings", feature: "asset_ledger" },
   { to: "/settings",     en: "Settings",   fr: "Paramètres",      icon: "⚙️", roles: ["owner","manager"],                       section: "settings" },
