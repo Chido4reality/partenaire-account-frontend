@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useAuthStore, useLangStore, useSettingsStore } from "../store";
-import api from "../utils/api";
+import api, { formatCFA } from "../utils/api";
 import PaywallModal from "../components/common/PaywallModal";
 import { hasFeature, getCapabilities } from "../utils/planCapabilities";
 import { useLiteMode } from "../hooks/useLiteMode";
@@ -20,6 +20,62 @@ const roleStyle = (role) => {
   const r = ROLES.find(x => x.value === role);
   return { color: r?.color || "#94a3b8", bg: (r?.color || "#94a3b8") + "20" };
 };
+
+// MP-PROPLUS-CASHIER-LOCATION: only send assigned_location_id when the org has
+// the Pro Plus capability. Otherwise omit it entirely so a non-Pro-Plus owner
+// editing a staff member (or a downgraded org) never trips the server's
+// upgrade-required gate, and a previously-set assignment is left untouched.
+function buildStaffPayload(form, effectivePlan) {
+  const p = { full_name: form.full_name, phone: form.phone, password: form.password, role: form.role };
+  if (hasFeature(effectivePlan, "staff_location_binding")) {
+    p.assigned_location_id = form.assigned_location_id || null;
+  }
+  return p;
+}
+
+// Staff Maintenance Phase 1 — blank form incl HR-lite fields. Basic fields
+// (name/phone/password/role) work on every plan; the HR-lite fields are only
+// shown/saved for a Pro Plus owner.
+const BLANK_STAFF = {
+  full_name: "", phone: "", password: "", role: "cashier", assigned_location_id: "",
+  // HR-lite
+  job_title: "", hire_date: "", employment_type: "", salary_amount: "",
+  salary_period: "per_month", salary_currency: "XAF",
+  emergency_contact_name: "", emergency_contact_phone: "", national_id: "", notes: "",
+  // photo state: existing url, a pending new data-URL, and a remove flag
+  photo_url: "", _photoData: "", _photoRemove: false,
+};
+
+const EMP_TYPES = [
+  { value: "full_time", en: "Full-time", fr: "Temps plein" },
+  { value: "part_time", en: "Part-time", fr: "Temps partiel" },
+  { value: "contract",  en: "Contract",  fr: "Contrat" },
+  { value: "casual",    en: "Casual",    fr: "Occasionnel" },
+];
+
+// Client-side downscale + JPEG compress so low-connectivity shops upload small
+// photos (≈ max 512px, quality 0.7). Returns a data URL.
+function compressImageFile(file, maxDim = 512, quality = 0.7) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("read failed"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("decode failed"));
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > maxDim) { height = Math.round(height * maxDim / width); width = maxDim; }
+        else if (height > maxDim) { width = Math.round(width * maxDim / height); height = maxDim; }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 // MP-DEBUG-REVEAL (3 Jun): 5 quick taps on the version footer toggle
 // 'mp-debug' in localStorage, which un-hides the offline diagnostic banner
@@ -60,37 +116,24 @@ export default function SettingsPage() {
   const [modeSaving, setModeSaving] = useState(false);
   const flipMode = async () => {
     setModeSaving(true);
-    const targetEnabled = !lite ? true : false; // currently Pro → flip to Lite, currently Lite → flip to Pro
+    const targetEnabled = !lite ? true : false; // Full(lite=false) → Simple(true); Simple(lite=true) → Full(false)
     try {
-      const res = await api.post("/auth/lite-mode", { enabled: targetEnabled });
-      // MP-BILLING-V2: response surfaces pro_trial_* fields when the
-      // flip started or used the trial. Update authStore.org with the
-      // full set so the next useTrialState read sees the new clock.
+      await api.post("/auth/lite-mode", { enabled: targetEnabled });
+      // MP-MODE-TRIAL-REWORK: App Mode is a pure view toggle — no trial is
+      // stamped. Just reflect the new view in authStore.org.
       const curr = useAuthStore.getState().org || {};
-      const proStart = res?.data?.pro_trial_started_at ?? curr.pro_trial_started_at ?? null;
-      const proEnd   = res?.data?.pro_trial_ends_at    ?? curr.pro_trial_ends_at    ?? null;
-      useAuthStore.setState({ org: {
-        ...curr,
-        lite_mode: targetEnabled,
-        pro_trial_started_at: proStart,
-        pro_trial_ends_at:    proEnd,
-      } });
-      const startedNow = res?.data?.pro_trial_started_now;
+      useAuthStore.setState({ org: { ...curr, lite_mode: targetEnabled } });
       toast.success(targetEnabled
-        ? (lang === "en" ? "✓ Switched to Lite Mode" : "✓ Mode Lite activé")
-        : startedNow
-          ? (lang === "en" ? "✓ Pro Mode trial started — 7 days" : "✓ Essai Mode Pro lancé — 7 jours")
-          : (lang === "en" ? "✓ Switched to Pro Mode" : "✓ Mode Pro activé"));
+        ? (lang === "en" ? "✓ Switched to Simple view" : "✓ Vue simple activée")
+        : (lang === "en" ? "✓ Switched to Full view" : "✓ Vue complète activée"));
       setShowModeConfirm(false);
     } catch (e) {
-      // MP-BILLING-V2: surface the structured PRO_TRIAL_EXPIRED so the
-      // toast tells the owner why the flip was rejected.
+      // MP-MODE-TRIAL-REWORK: trial expired & unpaid → 402 NEEDS_SUBSCRIPTION.
+      // Open the subscription/payment form instead of erroring.
       const code = e?.response?.data?.code;
-      if (code === "PRO_TRIAL_EXPIRED") {
-        toast.error(lang === "en"
-          ? "Pro Mode trial ended — subscribe to Pro to continue"
-          : "Essai Mode Pro terminé — abonnez-vous pour continuer",
-          { duration: 5000 });
+      if (code === "NEEDS_SUBSCRIPTION" || e?.response?.status === 402) {
+        setShowModeConfirm(false);
+        window.dispatchEvent(new CustomEvent("mp-open-upgrade"));
       } else {
         toast.error(e?.response?.data?.message || "Error");
       }
@@ -107,7 +150,9 @@ export default function SettingsPage() {
   // Staff state
   const [showAddStaff, setShowAddStaff] = useState(false);
   const [editStaff, setEditStaff]       = useState(null);
-  const [staffForm, setStaffForm]       = useState({ full_name: "", phone: "", password: "", role: "cashier" });
+  const [staffForm, setStaffForm]       = useState({ ...BLANK_STAFF });
+  // Phase 2 — per-staff Activity view (read-only, owner + Pro Plus).
+  const [activityPeriod, setActivityPeriod] = useState("this_month");
 
   // Shop settings state
   const [shopForm, setShopForm] = useState({
@@ -163,6 +208,20 @@ export default function SettingsPage() {
     queryKey: ["staff"],
     queryFn: () => api.get("/auth/staff").then(r => r.data),
     enabled: tab === "staff"
+  });
+
+  // Phase 2 — read-only Activity for the staffer being edited (owner + Pro Plus).
+  const { data: activityData, isLoading: activityLoading } = useQuery({
+    queryKey: ["staff-activity", editStaff?.id, activityPeriod],
+    queryFn: () => api.get(`/staff/${editStaff.id}/activity?period=${activityPeriod}`).then(r => r.data),
+    enabled: !!editStaff && isOwner && hasFeature(effectivePlan, "staff_maintenance"),
+  });
+
+  // Phase 3 — read-only Attendance records (same period control as Activity).
+  const { data: attendanceData, isLoading: attendanceLoading } = useQuery({
+    queryKey: ["staff-attendance", editStaff?.id, activityPeriod],
+    queryFn: () => api.get(`/staff/${editStaff.id}/attendance?period=${activityPeriod}`).then(r => r.data),
+    enabled: !!editStaff && isOwner && hasFeature(effectivePlan, "staff_maintenance"),
   });
 
   // MP-SETTINGS-WIPE-BUG: React Query v5 removed the `onSuccess`
@@ -238,23 +297,58 @@ export default function SettingsPage() {
   });
 
   // ── STAFF MUTATIONS ────────────────────────────────────────────────────────
+  // Whether the HR-lite enrichment applies (Pro Plus + owner). Basic
+  // create/edit always runs via /auth/users for every plan/role.
+  const canHrLite = isOwner && hasFeature(effectivePlan, "staff_maintenance");
+
+  // Persist the HR-lite profile + photo for a known user id. No-op unless
+  // entitled. Runs AFTER the basic /auth/users write so the user row exists.
+  async function persistHrLite(userId) {
+    if (!canHrLite || !userId) return;
+    await api.put("/staff/" + userId + "/profile", {
+      job_title: staffForm.job_title || null,
+      hire_date: staffForm.hire_date || null,
+      employment_type: staffForm.employment_type || null,
+      salary_amount: staffForm.salary_amount === "" ? null : staffForm.salary_amount,
+      salary_period: staffForm.salary_period || null,
+      salary_currency: staffForm.salary_currency || null,
+      emergency_contact_name: staffForm.emergency_contact_name || null,
+      emergency_contact_phone: staffForm.emergency_contact_phone || null,
+      national_id: staffForm.national_id || null,
+      notes: staffForm.notes || null,
+    });
+    if (staffForm._photoData) {
+      await api.post("/staff/" + userId + "/photo", { image: staffForm._photoData });
+    } else if (staffForm._photoRemove && staffForm.photo_url) {
+      await api.delete("/staff/" + userId + "/photo");
+    }
+  }
+
   const addStaffMutation = useMutation({
-    mutationFn: () => api.post("/auth/users", staffForm),
+    mutationFn: async () => {
+      const res = await api.post("/auth/users", buildStaffPayload(staffForm, effectivePlan));
+      const newId = res?.data?.data?.id;
+      await persistHrLite(newId);
+      return res;
+    },
     onSuccess: () => {
       toast.success(lang === "en" ? "Staff member added!" : "Personnel ajouté!");
       setShowAddStaff(false);
-      setStaffForm({ full_name: "", phone: "", password: "", role: "cashier" });
+      setStaffForm({ ...BLANK_STAFF });
       qc.invalidateQueries(["staff"]);
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
 
   const updateStaffMutation = useMutation({
-    mutationFn: () => api.patch("/auth/users/" + editStaff.id, staffForm),
+    mutationFn: async () => {
+      await api.patch("/auth/users/" + editStaff.id, buildStaffPayload(staffForm, effectivePlan));
+      await persistHrLite(editStaff.id);
+    },
     onSuccess: () => {
       toast.success(lang === "en" ? "Staff updated!" : "Personnel mis à jour!");
       setEditStaff(null);
-      setStaffForm({ full_name: "", phone: "", password: "", role: "cashier" });
+      setStaffForm({ ...BLANK_STAFF });
       qc.invalidateQueries(["staff"]);
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
@@ -395,7 +489,39 @@ export default function SettingsPage() {
   const inactiveStaff = staff.filter(s => !s.is_active);
 
   const openEdit = (loc) => { setEditLoc(loc); setLocForm({ name: loc.name, type: loc.type, address: loc.address || "", phone: loc.phone || "" }); };
-  const openEditStaff = (s) => { setEditStaff(s); setStaffForm({ full_name: s.full_name, phone: s.phone, password: "", role: s.role }); };
+  const openEditStaff = async (s) => {
+    setEditStaff(s);
+    // Seed basics immediately (so the modal renders without waiting).
+    setStaffForm({
+      ...BLANK_STAFF,
+      full_name: s.full_name, phone: s.phone, password: "", role: s.role,
+      assigned_location_id: s.assigned_location_id || "",
+      photo_url: s.photo_url || "",
+    });
+    // Owner + Pro Plus: fetch the full HR-lite profile (incl owner-only
+    // national_id / salary) and merge it in. Managers / non-Pro-Plus skip this
+    // (the endpoint is owner+Pro-Plus gated) and only see the basic fields.
+    if (isOwner && hasFeature(effectivePlan, "staff_maintenance")) {
+      try {
+        const r = await api.get("/staff/" + s.id + "/profile");
+        const p = r.data?.data;
+        if (p) setStaffForm(f => ({
+          ...f,
+          job_title: p.job_title || "",
+          hire_date: p.hire_date || "",
+          employment_type: p.employment_type || "",
+          salary_amount: p.salary_amount ?? "",
+          salary_period: p.salary_period || "per_month",
+          salary_currency: p.salary_currency || "XAF",
+          emergency_contact_name: p.emergency_contact_name || "",
+          emergency_contact_phone: p.emergency_contact_phone || "",
+          national_id: p.national_id || "",
+          notes: p.notes || "",
+          photo_url: p.photo_url || s.photo_url || "",
+        }));
+      } catch (e) { /* non-fatal: keep basics */ }
+    }
+  };
   const setLF = (k, v) => setLocForm(f => ({ ...f, [k]: v }));
   const setSF = (k, v) => setStaffForm(f => ({ ...f, [k]: v }));
   const setFF = (k, v) => setShopForm(f => ({ ...f, [k]: v }));
@@ -535,12 +661,20 @@ export default function SettingsPage() {
                   // inline layout via md:w-auto + md:flex-1.
                   <div key={s.id} className="flex flex-wrap items-center" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 18px", gap: 14 }}>
                     <div className="flex items-center gap-3.5 w-full md:w-auto md:flex-1 min-w-0">
-                      <div style={{ width: 38, height: 38, borderRadius: 10, background: rs.bg, color: rs.color, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
-                        {s.full_name?.charAt(0)?.toUpperCase()}
+                      <div style={{ width: 38, height: 38, borderRadius: 10, overflow: "hidden", background: rs.bg, color: rs.color, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
+                        {s.photo_url
+                          ? <img src={s.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          : (s.full_name?.charAt(0)?.toUpperCase())}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.full_name}</div>
                         <div style={{ fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.phone}</div>
+                        {/* MP-PROPLUS-CASHIER-LOCATION: show the pinned home location (Pro Plus). */}
+                        {s.assigned_location_name && (
+                          <div style={{ fontSize: 11, color: "var(--brand-light)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            📍 {s.assigned_location_name}
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap" style={{ flexShrink: 0 }}>
@@ -925,8 +1059,8 @@ export default function SettingsPage() {
             </div>
             <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20, lineHeight: 1.55 }}>
               {lang === "en"
-                ? "Lite Mode hides advanced surfaces (Notifications, Marketplace, Operations dashboard, by-location reports, bulk Transfers) so the app stays simple for day-to-day till work. Pro Mode reveals everything. You can switch back at any time."
-                : "Le Mode Lite masque les surfaces avancées (Notifications, Marché, Tableau opérations, rapports par site, transferts en lot) pour garder l'application simple pour le travail quotidien à la caisse. Le Mode Pro révèle tout. Vous pouvez basculer à tout moment."}
+                ? "Simple view hides advanced surfaces (Notifications, Marketplace, Operations dashboard, by-location reports, bulk Transfers) so the app stays simple for day-to-day till work. Full view reveals everything. You can switch back at any time."
+                : "La Vue simple masque les surfaces avancées (Notifications, Marché, Tableau opérations, rapports par site, transferts en lot) pour garder l'application simple pour le travail quotidien à la caisse. La Vue complète révèle tout. Vous pouvez basculer à tout moment."}
             </div>
             <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
               <div style={{
@@ -936,7 +1070,7 @@ export default function SettingsPage() {
                 borderRadius: 12, padding: "14px 16px",
               }}>
                 <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
-                  {lite ? "✓ " : ""}{lang === "en" ? "Lite Mode" : "Mode Lite"}
+                  {lite ? "✓ " : ""}{lang === "en" ? "Simple view" : "Vue simple"}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                   {lang === "en" ? "Currently active" : "Actuellement actif"}{lite ? "" : (lang === "en" ? " when toggled on" : " si activé")}
@@ -949,56 +1083,43 @@ export default function SettingsPage() {
                 borderRadius: 12, padding: "14px 16px",
               }}>
                 <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
-                  {!lite ? "✓ " : ""}{lang === "en" ? "Pro Mode" : "Mode Pro"}
+                  {!lite ? "✓ " : ""}{lang === "en" ? "Full view" : "Vue complète"}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                   {!lite ? (lang === "en" ? "Currently active" : "Actuellement actif") : (lang === "en" ? "Full feature set" : "Toutes les fonctionnalités")}
                 </div>
               </div>
             </div>
-            {/* MP-BILLING-V2: Pro trial state context. Surfaces under
-                the two cards so the owner sees why the CTA reads what
-                it does. Four states map → four UI shapes. */}
-            {lite && trial.pro_trial_state === 'active' && (
+            {/* MP-MODE-TRIAL-REWORK: context note under the two cards. */}
+            {lite && trial.trial_active && (
               <div style={{ marginTop: 16, padding: "10px 14px", background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 10, fontSize: 12, color: "#fbbf24" }}>
                 ⏳ {lang === "en"
-                  ? `Pro Mode trial active — ${trial.pro_trial_days_remaining} day${trial.pro_trial_days_remaining === 1 ? '' : 's'} remaining. Subscribe to Pro to keep access after expiry.`
-                  : `Essai Mode Pro actif — ${trial.pro_trial_days_remaining} jour${trial.pro_trial_days_remaining === 1 ? '' : 's'} restant${trial.pro_trial_days_remaining === 1 ? '' : 's'}. Abonnez-vous à Pro pour garder l'accès après l'essai.`}
+                  ? `Free trial active — ${trial.trial_days_remaining} day${trial.trial_days_remaining === 1 ? '' : 's'} left. You have full access; switching views is free. Subscribe before it ends to keep Full view.`
+                  : `Essai gratuit actif — ${trial.trial_days_remaining} jour${trial.trial_days_remaining === 1 ? '' : 's'} restant${trial.trial_days_remaining === 1 ? '' : 's'}. Accès complet ; changer de vue est gratuit. Abonnez-vous avant la fin pour garder la Vue complète.`}
               </div>
             )}
-            {lite && trial.pro_trial_state === 'expired' && !trial.is_paid_pro && (
+            {lite && !trial.can_use_full_view && (
               <div style={{ marginTop: 16, padding: "10px 14px", background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 10, fontSize: 12, color: "#f87171" }}>
-                🚫 {lang === "en"
-                  ? "Pro Mode trial ended. A Pro subscription is required to enable Pro Mode."
-                  : "Essai Mode Pro terminé. Un abonnement Pro est requis pour activer le Mode Pro."}
+                🔒 {lang === "en"
+                  ? "Your free trial has ended. Full view requires a subscription (Lite, Pro or Pro Plus)."
+                  : "Votre essai gratuit est terminé. La Vue complète nécessite un abonnement (Lite, Pro ou Pro Plus)."}
               </div>
             )}
-            {/* Primary CTA. When Lite+expired+not_paid, swap to a
-                disabled flavour with an Upgrade hint instead of the
-                normal Switch CTA. Click → confirm modal as before. */}
-            {lite && trial.pro_trial_state === 'expired' && !trial.is_paid_pro ? (
-              <button
-                disabled
-                className="btn btn-primary"
-                style={{ marginTop: 20, fontWeight: 700, opacity: 0.55, cursor: "not-allowed" }}
-                title={lang === "en"
-                  ? "Subscribe to Pro to re-enable this toggle"
-                  : "Abonnez-vous à Pro pour réactiver ce bouton"}>
-                {lang === "en" ? "Pro Mode requires a subscription" : "Mode Pro requiert un abonnement"}
-              </button>
-            ) : (
-              <button
-                onClick={() => setShowModeConfirm(true)}
-                disabled={modeSaving}
-                className="btn btn-primary"
-                style={{ marginTop: 20, fontWeight: 700 }}>
-                {lite
-                  ? (trial.can_start_pro_trial
-                      ? (lang === "en" ? "Switch to Pro Mode — 7-day free trial" : "Activer le Mode Pro — Essai gratuit 7 jours")
-                      : (lang === "en" ? "Switch to Pro Mode" : "Passer au Mode Pro"))
-                  : (lang === "en" ? "Switch to Lite Mode" : "Passer au Mode Lite")}
-              </button>
-            )}
+            {/* CTA — context-aware. Simple→Full: free switch if entitled (trial or
+                paid), else opens the payment/subscription form. Full→Simple: always free. */}
+            <button
+              onClick={() => {
+                if (!lite) { setShowModeConfirm(true); return; }            // Full → Simple
+                if (trial.can_use_full_view) { setShowModeConfirm(true); }  // Simple → Full (entitled)
+                else { window.dispatchEvent(new CustomEvent("mp-open-upgrade")); } // → payment
+              }}
+              disabled={modeSaving}
+              className="btn btn-primary"
+              style={{ marginTop: 20, fontWeight: 700 }}>
+              {lite
+                ? (lang === "en" ? "Switch to Full view" : "Passer à la Vue complète")
+                : (lang === "en" ? "Switch to Simple view" : "Passer à la Vue simple")}
+            </button>
           </div>
         </div>
       )}
@@ -1010,17 +1131,17 @@ export default function SettingsPage() {
           <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 14, width: "100%", maxWidth: 420, padding: 24 }}>
             <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 10 }}>
               {lite
-                ? (lang === "en" ? "Switch to Pro Mode?" : "Activer le Mode Pro ?")
-                : (lang === "en" ? "Switch to Lite Mode?" : "Activer le Mode Lite ?")}
+                ? (lang === "en" ? "Switch to Full view?" : "Passer à la Vue complète ?")
+                : (lang === "en" ? "Switch to Simple view?" : "Passer à la Vue simple ?")}
             </div>
             <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.55, marginBottom: 18 }}>
               {lite
                 ? (lang === "en"
-                    ? "Pro Mode reveals Notifications, Marketplace, Operations dashboard, by-location reports, and bulk Transfers. You can return to Lite at any time."
-                    : "Le Mode Pro révèle Notifications, Marché, Tableau opérations, rapports par site et transferts en lot. Vous pouvez revenir au Mode Lite à tout moment.")
+                    ? "Full view reveals Notifications, Marketplace, Operations dashboard, by-location reports, and bulk Transfers. You can return to Simple at any time."
+                    : "La Vue complète révèle Notifications, Marché, Tableau opérations, rapports par site et transferts en lot. Vous pouvez revenir à la Vue simple à tout moment.")
                 : (lang === "en"
-                    ? "Lite Mode hides advanced surfaces so the app stays simple. Day-to-day till work is unaffected. You can return to Pro at any time."
-                    : "Le Mode Lite masque les surfaces avancées pour garder l'application simple. Le travail quotidien à la caisse n'est pas affecté. Vous pouvez revenir au Mode Pro à tout moment.")}
+                    ? "Simple view hides advanced surfaces so the app stays simple. Day-to-day till work is unaffected. You can return to Full at any time."
+                    : "La Vue simple masque les surfaces avancées pour garder l'application simple. Le travail quotidien à la caisse n'est pas affecté. Vous pouvez revenir à la Vue complète à tout moment.")}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} disabled={modeSaving} onClick={() => setShowModeConfirm(false)}>
@@ -1392,15 +1513,248 @@ export default function SettingsPage() {
                 ))}
               </select>
             </div>
+
+            {/* MP-PROPLUS-CASHIER-LOCATION: owner pins a cashier to a home
+                location that follows them onto any device. Pro Plus only —
+                hidden for every other plan (server also gates the write). */}
+            {staffForm.role === "cashier" && hasFeature(effectivePlan, "staff_location_binding") && (
+              <div className="form-group">
+                <label className="label">
+                  {lang === "en" ? "Assigned location (Pro Plus)" : "Emplacement assigné (Pro Plus)"}
+                </label>
+                <select className="input" value={staffForm.assigned_location_id || ""}
+                  onChange={e => setSF("assigned_location_id", e.target.value)}>
+                  <option value="">{lang === "en" ? "— None (device decides) —" : "— Aucun (l'appareil décide) —"}</option>
+                  {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
+                </select>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                  {lang === "en"
+                    ? "This cashier will sell only at this location, on any device. Leave as None to keep the per-device default."
+                    : "Ce caissier ne vendra qu'à cet emplacement, sur tout appareil. Laissez Aucun pour garder le réglage par appareil."}
+                </div>
+              </div>
+            )}
             <div style={{ background: "var(--bg-elevated)", borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "var(--text-muted)" }}>
               {staffForm.role === "cashier" && (lang === "en" ? "✓ Can: make sales, view own sales" : "✓ Peut: faire des ventes, voir ses propres ventes")}
               {staffForm.role === "manager" && (lang === "en" ? "✓ Can: all sales + inventory + add staff" : "✓ Peut: ventes + inventaire + ajouter personnel")}
               {staffForm.role === "warehouse" && (lang === "en" ? "✓ Can: receive goods, adjust stock" : "✓ Peut: réceptionner, ajuster le stock")}
             </div>
+
+            {/* ── HR-LITE ENRICHMENT (Staff Maintenance) — Pro Plus + OWNER only.
+                Hidden for managers and non-Pro-Plus orgs; basic fields above keep
+                working for everyone. national_id + salary are owner-only (this
+                whole block is owner-gated). Salary is RECORD-ONLY. ── */}
+            {canHrLite && (() => {
+              const photoPreview = staffForm._photoData
+                || (!staffForm._photoRemove && staffForm.photo_url ? staffForm.photo_url : null);
+              return (
+              <div style={{ borderTop: "1px solid var(--border)", marginTop: 4, paddingTop: 14 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12, color: "var(--brand-light)" }}>
+                  ✨ {lang === "en" ? "Staff record (Pro Plus)" : "Dossier employé (Pro Plus)"}
+                </div>
+
+                {/* Photo */}
+                <div className="form-group">
+                  <label className="label">{lang === "en" ? "Photo" : "Photo"}</label>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                    {photoPreview ? (
+                      <img src={photoPreview} alt="" style={{ width: 64, height: 64, borderRadius: 12, objectFit: "cover", border: "1px solid var(--border)" }} />
+                    ) : (
+                      <div style={{ width: 64, height: 64, borderRadius: 12, background: "var(--bg-elevated)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 22, color: "var(--text-muted)" }}>
+                        {(staffForm.full_name || "?").charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      <label className="btn btn-secondary btn-sm" style={{ cursor: "pointer" }}>
+                        {photoPreview ? (lang === "en" ? "Replace" : "Remplacer") : (lang === "en" ? "Upload" : "Téléverser")}
+                        <input type="file" accept="image/*" style={{ display: "none" }}
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0]; if (!file) return;
+                            try {
+                              const dataUrl = await compressImageFile(file);
+                              setStaffForm(f => ({ ...f, _photoData: dataUrl, _photoRemove: false }));
+                            } catch { toast.error(lang === "en" ? "Could not read image" : "Image illisible"); }
+                            e.target.value = "";
+                          }} />
+                      </label>
+                      {photoPreview && (
+                        <button type="button" className="btn btn-sm"
+                          style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171" }}
+                          onClick={() => setStaffForm(f => ({ ...f, _photoData: "", _photoRemove: true }))}>
+                          {lang === "en" ? "Remove" : "Retirer"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="form-group"><label className="label">{lang === "en" ? "Job / duty title" : "Poste / fonction"}</label>
+                  <input className="input" value={staffForm.job_title} onChange={e => setSF("job_title", e.target.value)} placeholder={lang === "en" ? "e.g. Head cashier" : "ex. Caissier principal"} />
+                </div>
+
+                <div className="form-group"><label className="label">{lang === "en" ? "Hire date" : "Date d'embauche"} *</label>
+                  <input className="input" type="date" value={staffForm.hire_date || ""} onChange={e => setSF("hire_date", e.target.value)} />
+                </div>
+
+                <div className="form-group"><label className="label">{lang === "en" ? "Employment type" : "Type d'emploi"}</label>
+                  <select className="input" value={staffForm.employment_type} onChange={e => setSF("employment_type", e.target.value)}>
+                    <option value="">{lang === "en" ? "— Select —" : "— Choisir —"}</option>
+                    {EMP_TYPES.map(t => <option key={t.value} value={t.value}>{lang === "en" ? t.en : t.fr}</option>)}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="label">{lang === "en" ? "Agreed salary (record only)" : "Salaire convenu (pour mémoire)"}</label>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input className="input" type="number" min="0" style={{ flex: 2 }} value={staffForm.salary_amount}
+                      onChange={e => setSF("salary_amount", e.target.value)} placeholder={lang === "en" ? "Amount" : "Montant"} />
+                    <select className="input" style={{ flex: 1 }} value={staffForm.salary_period} onChange={e => setSF("salary_period", e.target.value)}>
+                      <option value="per_month">{lang === "en" ? "/month" : "/mois"}</option>
+                      <option value="per_hour">{lang === "en" ? "/hour" : "/heure"}</option>
+                    </select>
+                    <input className="input" style={{ flex: 1 }} value={staffForm.salary_currency}
+                      onChange={e => setSF("salary_currency", e.target.value)} placeholder="XAF" />
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                    {lang === "en" ? "Stored for your records only — no payroll calculations." : "Conservé pour vos dossiers uniquement — aucun calcul de paie."}
+                  </div>
+                </div>
+
+                <div className="form-group"><label className="label">{lang === "en" ? "Emergency contact" : "Contact d'urgence"}</label>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input className="input" style={{ flex: 1 }} value={staffForm.emergency_contact_name}
+                      onChange={e => setSF("emergency_contact_name", e.target.value)} placeholder={lang === "en" ? "Name" : "Nom"} />
+                    <input className="input" style={{ flex: 1 }} value={staffForm.emergency_contact_phone}
+                      onChange={e => setSF("emergency_contact_phone", e.target.value)} placeholder={lang === "en" ? "Phone" : "Téléphone"} />
+                  </div>
+                </div>
+
+                <div className="form-group"><label className="label">🔒 {lang === "en" ? "National ID (owner-only)" : "Pièce d'identité (propriétaire uniquement)"}</label>
+                  <input className="input" value={staffForm.national_id} onChange={e => setSF("national_id", e.target.value)}
+                    placeholder={lang === "en" ? "ID / CNI number" : "Numéro CNI"} />
+                </div>
+
+                <div className="form-group"><label className="label">{lang === "en" ? "Notes" : "Notes"}</label>
+                  <textarea className="input" rows={3} value={staffForm.notes} onChange={e => setSF("notes", e.target.value)}
+                    placeholder={lang === "en" ? "Anything else…" : "Autres informations…"} />
+                </div>
+              </div>
+              );
+            })()}
+
+            {/* ── ACTIVITY (Phase 2) — read-only, owner + Pro Plus, edit only.
+                Counts/totals + a short recent list for THIS staffer; period
+                filter recomputes server-side. ── */}
+            {editStaff && canHrLite && (
+              <div style={{ borderTop: "1px solid var(--border)", marginTop: 4, paddingTop: 14, marginBottom: 12 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, color: "var(--brand-light)" }}>
+                  📊 {lang === "en" ? "Activity" : "Activité"}
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+                  {[["today", "Today", "Aujourd'hui"], ["this_week", "This week", "Cette semaine"], ["this_month", "This month", "Ce mois"], ["all", "All-time", "Tout"]].map(([v, en, fr]) => (
+                    <button key={v} onClick={() => setActivityPeriod(v)}
+                      className={activityPeriod === v ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm"}
+                      style={{ borderRadius: 16 }}>{lang === "en" ? en : fr}</button>
+                  ))}
+                </div>
+                {activityLoading ? (
+                  <div style={{ color: "var(--text-muted)", fontSize: 13 }}>{lang === "en" ? "Loading…" : "Chargement…"}</div>
+                ) : (() => {
+                  const a = activityData?.data; const s = a?.summary;
+                  const tile = (label, count, total) => (
+                    <div style={{ flex: 1, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", minWidth: 88 }}>
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
+                      <div style={{ fontWeight: 800, fontSize: 18 }}>{count}</div>
+                      {total != null && <div style={{ fontSize: 12, color: "var(--brand-light)" }}>{formatCFA(total)}</div>}
+                    </div>
+                  );
+                  return (
+                    <>
+                      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                        {tile(lang === "en" ? "Sales" : "Ventes", s?.sales?.count || 0, s?.sales?.total || 0)}
+                        {tile(lang === "en" ? "Refunds" : "Remb.", s?.refunds?.count || 0, s?.refunds?.total || 0)}
+                        {tile(lang === "en" ? "Voids" : "Annul.", s?.voids?.count || 0, null)}
+                      </div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 6 }}>{lang === "en" ? "Recent" : "Récent"}</div>
+                      {(a?.recent || []).length === 0 ? (
+                        <div style={{ color: "var(--text-muted)", fontSize: 13, padding: "8px 0" }}>{lang === "en" ? "No activity in this period." : "Aucune activité sur cette période."}</div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          {a.recent.map((r, i) => {
+                            const color = r.type === "sale" ? "#34d399" : r.type === "refund" ? "#fbbf24" : "#f87171";
+                            const label = r.type === "sale" ? (lang === "en" ? "Sale" : "Vente") : r.type === "refund" ? (lang === "en" ? "Refund" : "Remb.") : (lang === "en" ? "Void" : "Annul.");
+                            return (
+                              <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 12, padding: "6px 10px", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8 }}>
+                                <span style={{ color, fontWeight: 700, minWidth: 52 }}>{label}</span>
+                                <span style={{ flex: 1, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.ref || ""}</span>
+                                <span style={{ fontWeight: 600 }}>{formatCFA(r.amount)}</span>
+                                <span style={{ color: "var(--text-muted)", minWidth: 72, textAlign: "right" }}>{r.date ? new Date(r.date).toLocaleDateString() : ""}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* ── ATTENDANCE (Phase 3) — read-only records, owner + Pro Plus,
+                edit only. Reuses the Activity period buttons above. ── */}
+            {editStaff && canHrLite && (
+              <div style={{ borderTop: "1px solid var(--border)", marginTop: 4, paddingTop: 14, marginBottom: 12 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, color: "var(--brand-light)" }}>
+                  🕒 {lang === "en" ? "Attendance" : "Pointage"}
+                </div>
+                {attendanceLoading ? (
+                  <div style={{ color: "var(--text-muted)", fontSize: 13 }}>{lang === "en" ? "Loading…" : "Chargement…"}</div>
+                ) : (() => {
+                  const at = attendanceData?.data;
+                  const entries = at?.entries || [];
+                  const sales = at?.activity?.sales_count || 0;
+                  const fmtT = (x) => x ? new Date(x).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null;
+                  const fmtD = (x) => x ? new Date(x).toLocaleDateString() : "";
+                  return (
+                    <>
+                      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                        <div style={{ flex: 1, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px" }}>
+                          <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.4 }}>{lang === "en" ? "Total hours" : "Heures totales"}</div>
+                          <div style={{ fontWeight: 800, fontSize: 18 }}>{at?.total_hours ?? 0} h</div>
+                        </div>
+                        <div style={{ flex: 1, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px" }}>
+                          <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.4 }}>{lang === "en" ? "Sales (cross-check)" : "Ventes (vérif.)"}</div>
+                          <div style={{ fontWeight: 800, fontSize: 18 }}>{sales}</div>
+                          <div style={{ fontSize: 11, color: sales > 0 ? "#34d399" : "var(--text-muted)" }}>
+                            {sales > 0 ? (lang === "en" ? "✓ active" : "✓ actif") : (lang === "en" ? "no sales" : "aucune vente")}
+                          </div>
+                        </div>
+                      </div>
+                      {entries.length === 0 ? (
+                        <div style={{ color: "var(--text-muted)", fontSize: 13, padding: "8px 0" }}>{lang === "en" ? "No attendance in this period." : "Aucun pointage sur cette période."}</div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          {entries.map(e => (
+                            <div key={e.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 12, padding: "6px 10px", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8 }}>
+                              <span style={{ minWidth: 78, color: "var(--text-muted)" }}>{fmtD(e.clock_in_at)}</span>
+                              <span style={{ flex: 1, textAlign: "center" }}>
+                                {fmtT(e.clock_in_at)} → {e.open ? <em style={{ color: "#fbbf24" }}>{lang === "en" ? "open" : "ouvert"}</em> : fmtT(e.clock_out_at)}
+                              </span>
+                              <span style={{ fontWeight: 700, minWidth: 48, textAlign: "right" }}>{e.hours != null ? `${e.hours} h` : "—"}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setShowAddStaff(false); setEditStaff(null); }}>{lang === "en" ? "Cancel" : "Annuler"}</button>
               <button className="btn btn-primary" style={{ flex: 2 }}
-                disabled={!staffForm.full_name || !staffForm.phone || (!editStaff && !staffForm.password) || addStaffMutation.isPending || updateStaffMutation.isPending}
+                disabled={!staffForm.full_name || !staffForm.phone || (!editStaff && !staffForm.password) || (canHrLite && !staffForm.hire_date) || addStaffMutation.isPending || updateStaffMutation.isPending}
                 onClick={() => editStaff ? updateStaffMutation.mutate() : addStaffMutation.mutate()}>
                 {(addStaffMutation.isPending || updateStaffMutation.isPending) ? "..." : (editStaff ? (lang === "en" ? "Save changes" : "Enregistrer") : (lang === "en" ? "Add staff member" : "Ajouter"))}
               </button>

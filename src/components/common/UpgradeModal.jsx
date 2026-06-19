@@ -4,19 +4,26 @@ import toast from "react-hot-toast";
 import { useLangStore } from "../../store";
 import api, { formatCFA } from "../../utils/api";
 
+// MP-SUB-NO-PHANTOM-PENDING: Mobile Money / Orange are NOT in-app buttons —
+// they're Flutterwave methods, chosen on the FW hosted page. The ONLY online
+// path is Flutterwave (card / MoMo / Orange / bank / USSD picked on FW). The
+// remaining entries are truly-offline methods (pay the owner directly) that go
+// to admin for manual approval. There must be no separate in-app MoMo button
+// that quietly creates a manual request.
 const PAYMENT_METHODS = [
-  { value: "mtn_momo",      label: "MTN Mobile Money",    icon: "📱", color: "#FFC300" },
-  { value: "orange_money",  label: "Orange Money",         icon: "🟠", color: "#FF6600" },
-  { value: "campay",        label: "CamPay (online)",      icon: "⚡", color: "var(--brand)", comingSoon: true },
-  { value: "cash",          label: "Cash",                 icon: "💵", color: "#10b981" },
-  { value: "bank",          label: "Bank Transfer",        icon: "🏦", color: "#6366f1" },
+  { value: "flutterwave",   label: "Pay online (card / mobile money)", icon: "⚡", color: "var(--brand)", online: true },
+  { value: "cash",          label: "Cash (pay owner directly)",        icon: "💵", color: "#10b981" },
+  { value: "bank",          label: "Bank Transfer",                    icon: "🏦", color: "#6366f1" },
 ];
 
 export default function UpgradeModal({ onClose, currentPlan }) {
   const { lang } = useLangStore();
   const qc = useQueryClient();
   const [selectedPlan, setSelectedPlan] = useState(null);
-  const [paymentMethod, setPaymentMethod] = useState(null);
+  // MP-BILLING-V3: Flutterwave is the unified PRIMARY path for all 3 plans —
+  // preselected so the flow is "pick plan → pay via Flutterwave (choose method
+  // on their hosted page) → auto-activate". Manual methods stay as a fallback.
+  const [paymentMethod, setPaymentMethod] = useState("flutterwave");
   const [months, setMonths] = useState(1);
   const [notes, setNotes] = useState("");
   const [phone, setPhone] = useState(""); // MoMo payer number — digits only (8–15)
@@ -38,10 +45,44 @@ export default function UpgradeModal({ onClose, currentPlan }) {
     retry: 2
   });
 
-  const plans = (plansData?.data || []).filter(p => p.id !== "silver");
-  const totalAmount = selectedPlan ? selectedPlan.price_monthly * months : 0;
+  // MP-SUB-CONSOLIDATION (v2): if a request is already awaiting admin approval,
+  // show a "Pending approval" panel instead of the plan picker — prevents
+  // duplicate submits and makes the pending state obvious on reopen.
+  const { data: myPlanData } = useQuery({
+    queryKey: ["my-plan"],
+    queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
+  });
+  const pending = !!myPlanData?.data?.has_pending_request;
+  const pendingPlanId = myPlanData?.data?.pending_plan_id || null;
 
-  // Manual payment (non-CamPay)
+  // Plan list is data-driven (active paid tiers from /subscriptions/plans, minus
+  // the silver floor). A future Pro Plus tier slots in automatically once it's
+  // added to pa_plans with is_active=true — no change needed here.
+  // Only purchasable paid tiers (Lite / Pro / Pro Plus) — never the free
+  // 'trial' floor or legacy 'silver'. Pro Plus appears automatically.
+  const plans = (plansData?.data || [])
+    .filter(p => p.id !== "silver" && p.id !== "trial" && (p.price ?? p.price_monthly) > 0);
+  const pendingPlan = plans.find(p => p.id === pendingPlanId);
+  // Country-aware unit price (backend attaches .price/.currency, default XAF);
+  // falls back to legacy price_monthly if absent.
+  const unitPrice = selectedPlan ? (selectedPlan.price ?? selectedPlan.price_monthly) : 0;
+  const currency = selectedPlan?.currency || "XAF";
+  const totalAmount = unitPrice * months;
+
+  // Online payment via Flutterwave hosted checkout — backend creates the payment
+  // + a pending record, returns the hosted link; we redirect the owner to it.
+  // Activation happens via the verified webhook, not this redirect.
+  const flwMutation = useMutation({
+    mutationFn: () => api.post("/subscriptions/flw/initiate", { plan_id: selectedPlan.id, months }),
+    onSuccess: (res) => {
+      const link = res.data?.data?.link;
+      if (link) { window.location.href = link; }
+      else toast.error(lang === "en" ? "Could not start payment." : "Impossible de démarrer le paiement.");
+    },
+    onError: (err) => toast.error(err.response?.data?.message || "Payment error"),
+  });
+
+  // Manual payment (offline → admin approval)
   const upgradeMutation = useMutation({
     mutationFn: () => api.post("/subscriptions/request-upgrade", {
       plan_id: selectedPlan.id,
@@ -147,8 +188,27 @@ export default function UpgradeModal({ onClose, currentPlan }) {
           )}
         </div>
 
+        {/* Pending state — a request is already awaiting admin approval. Shown
+            instead of the picker so the owner can't submit a duplicate. */}
+        {step === 1 && pending && (
+          <div style={{ textAlign: "center", padding: "16px 4px" }}>
+            <div style={{ fontSize: 48, marginBottom: 14 }}>⏳</div>
+            <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 8 }}>
+              {lang === "en" ? "Upgrade request pending" : "Demande en attente"}
+            </div>
+            <div style={{ color: "var(--text-muted)", fontSize: 13, lineHeight: 1.6, marginBottom: 22 }}>
+              {lang === "en"
+                ? `Your request${pendingPlan ? ` for ${pendingPlan.badge_icon} ${pendingPlan.name}` : ""} is awaiting admin approval. You'll be upgraded as soon as it's approved — no need to submit again. You keep your current access in the meantime.`
+                : `Votre demande${pendingPlan ? ` pour ${pendingPlan.badge_icon} ${pendingPlan.name}` : ""} est en attente d'approbation. Vous serez mis à niveau dès qu'elle sera approuvée — inutile de renvoyer. Vous gardez votre accès actuel entre-temps.`}
+            </div>
+            <button className="btn btn-primary" style={{ width: "100%", height: 46 }} onClick={onClose}>
+              {lang === "en" ? "Got it" : "Compris"}
+            </button>
+          </div>
+        )}
+
         {/* Step 1: Choose Plan */}
-        {step === 1 && (
+        {step === 1 && !pending && (
           <div>
             <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-muted)", marginBottom: 12, textTransform: "uppercase" }}>
               {lang === "en" ? "Select a plan" : "Choisir un plan"}
@@ -173,7 +233,7 @@ export default function UpgradeModal({ onClose, currentPlan }) {
                     </div>
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
-                    <div style={{ fontWeight: 800, fontSize: 18, color: "var(--brand-light)" }}>{formatCFA(plan.price_monthly)}</div>
+                    <div style={{ fontWeight: 800, fontSize: 18, color: "var(--brand-light)" }}>{formatCFA(plan.price ?? plan.price_monthly)}</div>
                     <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en" ? "/month" : "/mois"}</div>
                   </div>
                 </div>
@@ -196,10 +256,10 @@ export default function UpgradeModal({ onClose, currentPlan }) {
             <div className="form-group" style={{ marginBottom: 16 }}>
               <label className="label">{lang === "en" ? "Duration" : "Durée"}</label>
               <select className="input" value={months} onChange={e => setMonths(+e.target.value)}>
-                <option value={1}>{lang === "en" ? "1 month" : "1 mois"} — {formatCFA(selectedPlan?.price_monthly)}</option>
-                <option value={3}>{lang === "en" ? "3 months" : "3 mois"} — {formatCFA(selectedPlan?.price_monthly * 3)}</option>
-                <option value={6}>{lang === "en" ? "6 months" : "6 mois"} — {formatCFA(selectedPlan?.price_monthly * 6)}</option>
-                <option value={12}>{lang === "en" ? "12 months" : "12 mois"} — {formatCFA(selectedPlan?.price_monthly * 12)}</option>
+                <option value={1}>{lang === "en" ? "1 month" : "1 mois"} — {formatCFA(unitPrice)}</option>
+                <option value={3}>{lang === "en" ? "3 months" : "3 mois"} — {formatCFA(unitPrice * 3)}</option>
+                <option value={6}>{lang === "en" ? "6 months" : "6 mois"} — {formatCFA(unitPrice * 6)}</option>
+                <option value={12}>{lang === "en" ? "12 months" : "12 mois"} — {formatCFA(unitPrice * 12)}</option>
               </select>
             </div>
 
@@ -285,11 +345,11 @@ export default function UpgradeModal({ onClose, currentPlan }) {
               </div>
             </div>
 
-            {paymentMethod === "campay" ? (
+            {paymentMethod === "flutterwave" ? (
               <div style={{ background: "rgba(251,197,3,0.08)", border: "1px solid rgba(251,197,3,0.25)", borderRadius: 10, padding: 12, marginBottom: 16, fontSize: 12, color: "var(--brand-light)" }}>
                 ⚡ {lang === "en"
-                  ? `A USSD push will be sent to ${phone}. Accept it to complete payment automatically.`
-                  : `Un USSD push sera envoyé au ${phone}. Acceptez-le pour finaliser le paiement automatiquement.`}
+                  ? `You'll be redirected to Flutterwave's secure page to pay ${formatCFA(totalAmount)} by card or mobile money. Your plan activates automatically once payment is confirmed.`
+                  : `Vous serez redirigé vers la page sécurisée Flutterwave pour payer ${formatCFA(totalAmount)} par carte ou mobile money. Votre plan s'active automatiquement après confirmation.`}
               </div>
             ) : (
               <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 10, padding: 12, marginBottom: 16, fontSize: 12, color: "#fbbf24" }}>
@@ -301,10 +361,10 @@ export default function UpgradeModal({ onClose, currentPlan }) {
 
             <div style={{ display: "flex", gap: 10 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setStep(2)}>← {lang === "en" ? "Back" : "Retour"}</button>
-              {paymentMethod === "campay" ? (
+              {paymentMethod === "flutterwave" ? (
                 <button className="btn btn-primary" style={{ flex: 2, background: "var(--brand)", borderColor: "var(--brand)" }}
-                  disabled={campayMutation.isPending || !momoValid} onClick={() => campayMutation.mutate()}>
-                  {campayMutation.isPending ? "⏳ Initiating..." : (lang === "en" ? "⚡ Pay with CamPay" : "⚡ Payer via CamPay")}
+                  disabled={flwMutation.isPending} onClick={() => flwMutation.mutate()}>
+                  {flwMutation.isPending ? (lang === "en" ? "⏳ Redirecting…" : "⏳ Redirection…") : (lang === "en" ? "⚡ Pay online" : "⚡ Payer en ligne")}
                 </button>
               ) : (
                 <button className="btn btn-primary" style={{ flex: 2, background: "#10b981", borderColor: "#10b981" }}

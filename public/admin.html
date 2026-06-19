@@ -886,11 +886,16 @@
 
       <nav class="sb-nav" id="sb-nav">
         <a class="sb-link" data-route="dashboard"><span class="sb-link-icon">🏠</span><span class="sb-link-label">Dashboard</span></a>
+        <a class="sb-link" data-route="live"><span class="sb-link-icon">📡</span><span class="sb-link-label">Live Traffic</span></a>
 
         <div class="sb-section">Mon Partenaire</div>
         <a class="sb-link" data-route="businesses"><span class="sb-link-icon">🏪</span><span class="sb-link-label">Businesses</span></a>
         <a class="sb-link" data-route="subscriptions"><span class="sb-link-icon">💳</span><span class="sb-link-label">Subscriptions</span></a>
-        <a class="sb-link" data-route="subscription-requests"><span class="sb-link-icon">✉️</span><span class="sb-link-label">Sub. requests</span></a>
+        <!-- MP-SUB-CONSOLIDATION (v2): "Sub. requests" tab retired. It read the
+             orphaned pa_subscription_requests table (always empty), while the
+             app's upgrade requests go to pa_subscription_payments shown in the
+             "Subscriptions" tab above. One place for all pending requests now. -->
+        <!-- <a class="sb-link" data-route="subscription-requests"><span class="sb-link-icon">✉️</span><span class="sb-link-label">Sub. requests</span></a> -->
         <a class="sb-link" data-route="mp-finance"><span class="sb-link-icon">📊</span><span class="sb-link-label">MP Finance</span></a>
 
         <div class="sb-section">Partenaire Dozie</div>
@@ -900,6 +905,7 @@
         <a class="sb-link" data-route="orders"><span class="sb-link-icon">🛒</span><span class="sb-link-label">Orders</span></a>
         <a class="sb-link" data-route="disputes"><span class="sb-link-icon">⚖️</span><span class="sb-link-label">Disputes</span></a>
         <a class="sb-link" data-route="marketplace-finance"><span class="sb-link-icon">💰</span><span class="sb-link-label">Marketplace finance</span></a>
+        <a class="sb-link" data-route="sell-restrictions"><span class="sb-link-icon">🚦</span><span class="sb-link-label">Sell restrictions</span></a>
 
         <div class="sb-section">Shared</div>
         <a class="sb-link" data-route="broadcasts"><span class="sb-link-icon">📣</span><span class="sb-link-label">Broadcasts</span></a>
@@ -938,6 +944,32 @@
         </div>
       </section>
 
+      <!-- LIVE TRAFFIC -->
+      <section class="route" id="route-live">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Live Traffic</div>
+            <div class="page-sub">Logged-in users online now + a live activity feed across Mon Partenaire and Partenaire Dozie. Auto-refreshes every 7s.</div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <span class="page-sub" id="live-updated"></span>
+            <button class="btn" id="live-refresh">Refresh</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="settings-card-title">🟢 Online now — <span id="live-online-count">0</span></div>
+          <div class="settings-card-sub">Logged-in users (MP owners/cashiers + Dozie buyers/sellers) active in the last 5 minutes.</div>
+          <div class="activity-list" id="live-online-list"><div class="activity-empty">Loading…</div></div>
+        </div>
+
+        <div class="card">
+          <div class="settings-card-title">Activity feed</div>
+          <div class="settings-card-sub">Recent logins, signups, MP sales and Dozie orders — newest first (last 24h).</div>
+          <div class="activity-list" id="live-feed-list"><div class="activity-empty">Loading…</div></div>
+        </div>
+      </section>
+
       <!-- BUSINESSES -->
       <section class="route" id="route-businesses">
         <div class="page-head">
@@ -965,6 +997,7 @@
             <option value="trial">Trial</option>
             <option value="lite">Lite</option>
             <option value="pro">Pro</option>
+            <option value="pro_plus">Pro Plus</option>
           </select>
           <select id="biz-status">
             <option value="">All status</option>
@@ -1275,6 +1308,31 @@
       </section>
 
       <!-- MARKETPLACE FINANCE -->
+      <section class="route" id="route-sell-restrictions">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Sell restrictions</div>
+            <div class="page-sub">Allowlist of which categories and towns may sell on Partenaire Dozie. Turn one OFF and sellers in that category / town can no longer publish. Master admin only.</div>
+          </div>
+          <button class="btn" id="sr-refresh-btn">Refresh</button>
+        </div>
+        <div id="sr-notmaster" class="page-sub" style="display:none;color:#f87171">Master admin only — you don't have access to this control.</div>
+        <div class="settings-card">
+          <div class="settings-card-title">Categories</div>
+          <div class="settings-card-sub">All 16 categories. Off = sellers in that category can't publish.</div>
+          <div id="sr-categories" style="margin-top:8px">…</div>
+        </div>
+        <div class="settings-card" style="margin-top:16px">
+          <div class="settings-card-title">Towns</div>
+          <div class="settings-card-sub">Towns currently in use are seeded as allowed. Off = no selling there. Add towns as you expand.</div>
+          <div id="sr-towns" style="margin-top:8px">…</div>
+          <div style="margin-top:12px;display:flex;gap:8px">
+            <input id="sr-new-town" placeholder="Add a town…" style="flex:1" />
+            <button class="btn" id="sr-add-town-btn">Add town</button>
+          </div>
+        </div>
+      </section>
+
       <section class="route" id="route-marketplace-finance">
         <div class="page-head">
           <div>
@@ -1511,9 +1569,19 @@
     'use strict';
 
     // ────────────────────── CONFIG ──────────────────────
-    const API_BASE = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
-      ? 'http://localhost:3001/api'
-      : 'https://partenaire-account-api.onrender.com/api';
+    // admin.html is a STATIC file (served from /public, not processed by Vite),
+    // so the backend base is resolved from the current host at runtime — this
+    // keeps the v2 STAGING deploy isolated: when this page is served from the
+    // staging frontend host it must call the STAGING backend, never prod.
+    //   - localhost            → local backend
+    //   - *staging* host       → staging backend (Supabase staging)
+    //   - everything else      → prod backend
+    const API_BASE = (function () {
+      const h = location.hostname;
+      if (h === 'localhost' || h === '127.0.0.1') return 'http://localhost:3001/api';
+      if (h.indexOf('staging') !== -1) return 'https://partenaire-account-server-staging.onrender.com/api';
+      return 'https://partenaire-account-api.onrender.com/api';
+    })();
 
     const TOKEN_KEY = 'admin_token';
     const THEME_KEY = 'admin_theme';
@@ -1625,11 +1693,83 @@
       } catch (_) { /* Safari < 14: addListener; not critical */ }
     }
 
+    // ────────────────────── SELL RESTRICTIONS (master admin) ──────────────────────
+    function _isMasterAdmin() {
+      return !!currentAdmin && /superadmin|master/.test((currentAdmin.role || '').toLowerCase());
+    }
+    // The whole admin script runs inside an IIFE ('use strict'), so these
+    // handlers are NOT on window — inline onclick/onchange (which resolve
+    // against global scope) silently throw "X is not defined". Wire the panel
+    // the way the rest of the file does: addEventListener inside the IIFE.
+    // Idempotent — the static buttons exist from page load; toggle checkboxes
+    // are re-rendered, so use delegation on the (static) containers.
+    let _srWired = false;
+    function wireSellRestrictionsOnce() {
+      if (_srWired) return;
+      _srWired = true;
+      const addBtn = $('sr-add-town-btn'); if (addBtn) addBtn.addEventListener('click', addSellTown);
+      const refBtn = $('sr-refresh-btn');  if (refBtn) refBtn.addEventListener('click', loadSellRestrictions);
+      const newTown = $('sr-new-town');     if (newTown) newTown.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addSellTown(); } });
+      ['sr-categories', 'sr-towns'].forEach(id => {
+        const c = $(id);
+        if (c) c.addEventListener('change', e => {
+          const t = e.target;
+          if (t && t.matches && t.matches('input[type="checkbox"][data-sell-kind]')) {
+            toggleSell(t.getAttribute('data-sell-kind'), t.getAttribute('data-sell-key'), t.checked, t);
+          }
+        });
+      });
+    }
+
+    async function loadSellRestrictions() {
+      wireSellRestrictionsOnce();
+      const master = _isMasterAdmin();
+      $('sr-notmaster').style.display = master ? 'none' : '';
+      if (!master) { $('sr-categories').innerHTML = ''; $('sr-towns').innerHTML = ''; return; }
+      try {
+        const [c, t] = await Promise.all([
+          apiAdmin('GET', '/admin/dozie/sell-categories'),
+          apiAdmin('GET', '/admin/dozie/sell-towns'),
+        ]);
+        renderSellToggles('sr-categories', c.data || [], 'category', r => r.category_slug, r => r.label || r.category_slug);
+        renderSellToggles('sr-towns', t.data || [], 'town', r => r.town, r => r.town);
+      } catch (e) {
+        $('sr-categories').innerHTML = '<div class="muted">' + escapeHtml(e.message) + '</div>';
+      }
+    }
+    function renderSellToggles(containerId, rows, kind, keyFn, labelFn) {
+      const el = $(containerId);
+      if (!rows.length) { el.innerHTML = '<div class="muted">None.</div>'; return; }
+      el.innerHTML = rows.map(r => {
+        const key = keyFn(r);
+        return '<label style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 2px;border-bottom:1px solid rgba(255,255,255,0.08)">'
+          + '<span>' + escapeHtml(labelFn(r)) + (r.is_allowed ? '' : ' <span class="badge badge-admin" style="background:rgba(239,68,68,0.15);color:#f87171">blocked</span>') + '</span>'
+          + '<input type="checkbox" data-sell-kind="' + kind + '" data-sell-key="' + encodeURIComponent(key) + '" ' + (r.is_allowed ? 'checked' : '') + '>'
+          + '</label>';
+      }).join('');
+    }
+    async function toggleSell(kind, keyEnc, isAllowed, el) {
+      const key = decodeURIComponent(keyEnc);
+      const path = (kind === 'category' ? '/admin/dozie/sell-categories/' : '/admin/dozie/sell-towns/') + encodeURIComponent(key);
+      try {
+        await apiAdmin('PATCH', path, { is_allowed: isAllowed });
+        showToast((isAllowed ? 'Allowed: ' : 'Blocked: ') + key, 'success');
+        loadSellRestrictions();
+      } catch (e) { if (el) el.checked = !isAllowed; showToast(e.message, 'danger'); }
+    }
+    async function addSellTown() {
+      const v = ($('sr-new-town').value || '').trim();
+      if (!v) return;
+      try { await apiAdmin('POST', '/admin/dozie/sell-towns', { town: v }); $('sr-new-town').value = ''; showToast('Town added', 'success'); loadSellRestrictions(); }
+      catch (e) { showToast(e.message, 'danger'); }
+    }
+
     // ────────────────────── ROUTING ──────────────────────
     const VALID_ROUTES = new Set([
-      'dashboard', 'businesses', 'subscriptions', 'subscription-requests', 'mp-finance',
+      'dashboard', 'live', 'businesses', 'subscriptions', 'subscription-requests', 'mp-finance',
       'marketplace-users', 'verifications', 'dozie-subscriptions', 'orders', 'disputes', 'marketplace-finance',
-      'broadcasts', 'admin-team', 'audit-log', 'settings'
+      'sell-restrictions',
+      'broadcasts', 'admin-team', 'audit-log', 'cart-reconcile', 'settings'
     ]);
 
     function parseHashRoute() {
@@ -1653,6 +1793,7 @@
       });
       // Per-route side effects
       if (route === 'dashboard')          loadDashboard();
+      if (route === 'live')               loadLive();
       if (route === 'settings')           loadSettings();
       if (route === 'businesses')         loadBusinesses();
       if (route === 'subscriptions')      loadSubscriptions();
@@ -1664,6 +1805,7 @@
       if (route === 'disputes')           loadDzDisputes();
       if (route === 'marketplace-finance') loadDzFinance();
       if (route === 'dozie-subscriptions') loadDozieSubs();
+      if (route === 'sell-restrictions')   loadSellRestrictions();
       if (route === 'broadcasts')          loadBroadcasts();
       if (route === 'admin-team')          loadAdminTeam();
       if (route === 'audit-log')           { loadAuditLogActions(); loadAuditLog(); }
@@ -1674,6 +1816,7 @@
       if (route !== 'subscriptions') stopSubsAutoRefresh();
       if (route !== 'verifications')  stopVerifsAutoRefresh();
       if (route !== 'disputes')       stopDisputesAutoRefresh();
+      if (route !== 'live')           stopLiveAutoRefresh();
     }
 
     function renderPlaceholder(route) {
@@ -1694,6 +1837,67 @@
           '<div class="placeholder-text">' + cfg.text + '</div>' +
         '</div>';
       host.dataset.rendered = '1';
+    }
+
+    // ────────────────────── LIVE TRAFFIC ──────────────────────
+    let liveTimer = null;
+    function stopLiveAutoRefresh() { if (liveTimer) { clearInterval(liveTimer); liveTimer = null; } }
+    function startLiveAutoRefresh() {
+      stopLiveAutoRefresh();
+      liveTimer = setInterval(() => { if (location.hash === '#live') refreshLive(); }, 7000);
+    }
+    function liveTimeAgo(ts) {
+      if (!ts) return '';
+      const s = Math.max(0, (Date.now() - new Date(ts).getTime()) / 1000);
+      if (s < 60)    return Math.floor(s) + 's ago';
+      if (s < 3600)  return Math.floor(s / 60) + 'm ago';
+      if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+      return Math.floor(s / 86400) + 'd ago';
+    }
+    const LIVE_ICON = { login: '🔑', signup: '🆕', sale: '🧾', order: '🛒' };
+    function liveBadge(app) {
+      const bg = app === 'MP' ? '#1d4ed8' : '#047857';
+      return '<span style="display:inline-block;font-size:10px;font-weight:700;color:#fff;background:' + bg +
+             ';border-radius:6px;padding:1px 6px;margin-right:6px">' + escapeHtml(app) + '</span>';
+    }
+    function liveRow(left, right) {
+      return '<div class="activity-item" style="display:flex;align-items:center;gap:8px">' +
+             '<div style="flex:1;min-width:0">' + left + '</div>' +
+             '<div class="activity-empty" style="white-space:nowrap;padding:0">' + escapeHtml(right) + '</div></div>';
+    }
+    async function refreshLive() {
+      try {
+        const r = await apiAdmin('GET', '/admin/live');
+        const d = (r && r.data) || {};
+        const on = d.online || { count: 0, users: [] };
+        const cnt = $('live-online-count'); if (cnt) cnt.textContent = on.count || 0;
+        const onList = $('live-online-list');
+        if (onList) {
+          onList.innerHTML = (on.users && on.users.length)
+            ? on.users.map(u => liveRow(
+                liveBadge(u.app) + '<strong>' + escapeHtml(u.name || '—') + '</strong> ' +
+                '<span class="activity-empty" style="padding:0">' + escapeHtml(u.role || '') +
+                (u.where ? ' · ' + escapeHtml(u.where) : '') + '</span>',
+                liveTimeAgo(u.last_seen))).join('')
+            : '<div class="activity-empty">No one online in the last 5 minutes.</div>';
+        }
+        const feedList = $('live-feed-list');
+        if (feedList) {
+          feedList.innerHTML = (d.feed && d.feed.length)
+            ? d.feed.map(e => liveRow(
+                (LIVE_ICON[e.type] || '•') + ' ' + liveBadge(e.app) +
+                '<strong>' + escapeHtml(e.type) + '</strong> — ' + escapeHtml(e.actor || '') + ' ' +
+                '<span class="activity-empty" style="padding:0">' + escapeHtml(e.detail || '') + '</span>',
+                liveTimeAgo(e.ts))).join('')
+            : '<div class="activity-empty">No activity in the last 24h.</div>';
+        }
+        const upd = $('live-updated'); if (upd) upd.textContent = 'Updated ' + new Date().toLocaleTimeString();
+      } catch (e) { /* apiAdmin handles 401/5xx; ignore transient poll errors */ }
+    }
+    function loadLive() {
+      const btn = $('live-refresh'); if (btn) btn.onclick = refreshLive;
+      refreshLive();
+      startLiveAutoRefresh();
     }
 
     // ────────────────────── DASHBOARD ──────────────────────
@@ -1904,6 +2108,9 @@
       // Hide the Admin Team sidebar link for non-master admins.
       const teamLink = document.querySelector('.sb-link[data-route="admin-team"]');
       if (teamLink) teamLink.style.display = isMaster ? '' : 'none';
+      // Sell restrictions is master-admin-only (endpoints are gated too).
+      const srLink = document.querySelector('.sb-link[data-route="sell-restrictions"]');
+      if (srLink) srLink.style.display = isMaster ? '' : 'none';
 
       $('login-screen').style.display = 'none';
       $('app-shell').classList.add('active');
@@ -2066,8 +2273,11 @@
       // MP-BILLING-V2: normalise legacy plan_ids → trial/lite/pro for display.
       const NORM = { silver: 'trial', gold: 'lite', premium: 'pro' };
       if (NORM[p]) p = NORM[p];
-      const cls = ['trial','lite','pro'].includes(p) ? p : 'none';
-      const label = p ? (p.charAt(0).toUpperCase() + p.slice(1)) : '—';
+      // MP-PROPLUS-ADMIN-PLAN: pro_plus is a first-class tier — give it a clean
+      // "Pro Plus" label (not "Pro_plus") and its own badge class.
+      const LABELS = { trial: 'Trial', lite: 'Lite', pro: 'Pro', pro_plus: 'Pro Plus' };
+      const cls = ['trial','lite','pro','pro_plus'].includes(p) ? p : 'none';
+      const label = LABELS[p] || (p ? (p.charAt(0).toUpperCase() + p.slice(1)) : '—');
       return '<span class="badge-plan ' + cls + '">' + escapeHtml(label) + '</span>';
     }
     function statusPillHtml(s) {
@@ -2313,14 +2523,44 @@
       }).catch(e => showToast('Download failed: ' + e.message, 'danger'));
     }
 
-    function openBizPlan(biz) {
+    // MP-PROPLUS-ADMIN-PLAN: the Change-plan dropdown is data-driven from the
+    // real active plans (/subscriptions/plans → pa_plans), so every tier —
+    // Pro Plus today, any future tier tomorrow — shows up automatically. No more
+    // hardcoded [trial,lite,pro] array that kept omitting pro_plus. Cached after
+    // first fetch; static fallback (incl pro_plus) so the admin is never stuck.
+    let _adminPlanOptionsCache = null;
+    async function getAdminPlanOptions() {
+      if (_adminPlanOptionsCache) return _adminPlanOptionsCache;
+      try {
+        const res = await apiAdmin('GET', '/subscriptions/plans');
+        const list = (res.data || [])
+          .filter(p => p.is_active)
+          .sort((a, b) => (a.price_monthly || 0) - (b.price_monthly || 0))
+          .map(p => ({ id: p.id, name: p.name || p.id }));
+        if (list.length) _adminPlanOptionsCache = list;
+      } catch (e) { /* fall through to static */ }
+      if (!_adminPlanOptionsCache) {
+        _adminPlanOptionsCache = [
+          { id: 'trial', name: 'Trial' }, { id: 'lite', name: 'Lite' },
+          { id: 'pro', name: 'Pro' }, { id: 'pro_plus', name: 'Pro Plus' },
+        ];
+      }
+      return _adminPlanOptionsCache;
+    }
+
+    async function openBizPlan(biz) {
+      const planOpts = await getAdminPlanOptions();
+      // If the org's current plan isn't in the active list (e.g. a legacy
+      // silver/gold/premium), prepend it so it still shows as the selected value.
+      const opts = (!biz.plan || planOpts.some(p => p.id === biz.plan))
+        ? planOpts.slice()
+        : [{ id: biz.plan, name: biz.plan }, ...planOpts];
+      const optionsHtml = opts.map(p =>
+        '<option value="' + p.id + '"' + (biz.plan === p.id ? ' selected' : '') + '>' + escapeHtml(p.name) + '</option>'
+      ).join('');
       const html =
         '<div class="field"><label>Plan</label>' +
-          '<select id="bp-plan">' +
-            '<option value="trial" ' + (biz.plan === 'trial' ? 'selected' : '') + '>Trial</option>' +
-            '<option value="lite"  ' + (biz.plan === 'lite'  ? 'selected' : '') + '>Lite</option>' +
-            '<option value="pro"   ' + (biz.plan === 'pro'   ? 'selected' : '') + '>Pro</option>' +
-          '</select>' +
+          '<select id="bp-plan">' + optionsHtml + '</select>' +
         '</div>' +
         '<div class="field"><label>Notes (optional)</label><textarea id="bp-notes" placeholder="Why are you changing this?"></textarea></div>';
       openModal({
@@ -4483,6 +4723,7 @@
               <option value="trial"${(filter.plan||[]).includes('trial') ? ' selected' : ''}>Trial</option>
               <option value="lite"${(filter.plan||[]).includes('lite')   ? ' selected' : ''}>Lite</option>
               <option value="pro"${(filter.plan||[]).includes('pro')     ? ' selected' : ''}>Pro</option>
+              <option value="pro_plus"${(filter.plan||[]).includes('pro_plus') ? ' selected' : ''}>Pro Plus</option>
             </select>
             <label style="margin-top:8px">Subscription status</label>
             <select id="bc-sub-status" multiple size="3">

@@ -17,7 +17,7 @@ import UpgradeModal from "./UpgradeModal";
 import PaywallModal from "./PaywallModal";
 import OnlineOfflineBar from "./OnlineOfflineBar";
 import { onSyncEvent } from "../../utils/pendingSync";
-import { hasSection } from "../../utils/planCapabilities";
+import { hasSection, hasFeature } from "../../utils/planCapabilities";
 import NavDrawer, { DRAWER_WIDTH } from "../layout/NavDrawer";
 import { tapHaptic } from "../../utils/haptics";
 import toast from "react-hot-toast";
@@ -66,6 +66,17 @@ const NAV = [
   // to the existing Dashboard at "/". Owner + manager only; reuses
   // the reports plan-section gate since the data class is the same.
   { to: "/operations",   en: "Operations", fr: "Opérations",      icon: "📈", roles: ["owner","manager"],                       section: "reports" },
+  // Pro Plus Feature 1 — AI Assistant. Owner-only. section:"settings" so it's
+  // visible to owners on EVERY plan (all plans include settings); the
+  // feature flag below drives entitled (→ /assistant) vs locked (→ upsell).
+  { to: "/assistant",    en: "Assistant",  fr: "Assistant",       icon: "✨", roles: ["owner"],                                section: "settings", feature: "ai_assistant" },
+  // Staff Maintenance Phase 3 — shared-device attendance. ALL roles (staff clock
+  // themselves). Pro Plus only: hidden entirely when not entitled (lockHide) —
+  // no upsell, it's a staff utility, not a sell. section:"sales" is always
+  // present so role/plan filters pass; the feature flag is the real gate.
+  { to: "/attendance",   en: "Attendance", fr: "Pointage",        icon: "🕒", roles: ["owner","manager","cashier","warehouse"], section: "sales", feature: "staff_maintenance", lockHide: true },
+  // Pro Plus Feature 3 — Asset ledger. Owner-only; locked→upsell when not entitled.
+  { to: "/assets",       en: "Assets",     fr: "Avoirs",          icon: "💼", roles: ["owner"],                                section: "settings", feature: "asset_ledger" },
   { to: "/settings",     en: "Settings",   fr: "Paramètres",      icon: "⚙️", roles: ["owner","manager"],                       section: "settings" },
 ];
 
@@ -120,7 +131,7 @@ function ModeBadge() {
   const isLite = lite;
   return (
     <span
-      aria-label={isLite ? "Lite Mode" : "Pro Mode"}
+      aria-label={isLite ? "Simple view" : "Full view"}
       style={{
         display: "inline-block",
         marginLeft: 6,
@@ -132,7 +143,35 @@ function ModeBadge() {
         verticalAlign: "middle",
       }}
     >
-      {isLite ? "LITE" : "PRO"}
+      {isLite ? "SIMPLE" : "FULL"}
+    </span>
+  );
+}
+
+// MP-WHATS-NEW-2.0: persistent gold "2.0" version marker, same size/shape as
+// ModeBadge so it sits cleanly next to the PRO/LITE pill (and next to the shop
+// name when there's no paid badge — ModeBadge always renders, so it's always
+// visible). Gold-forward (gold fill, navy text) per the dark theme's gold
+// accent. Tapping it re-opens the What's-New card (in-page nicety).
+function VersionBadge() {
+  return (
+    <span
+      onClick={() => { try { window.dispatchEvent(new CustomEvent("mp-open-whatsnew")); } catch { /* no-op */ } }}
+      title="2.0"
+      aria-label="App version 2.0"
+      style={{
+        display: "inline-block",
+        marginLeft: 6,
+        background: "#FBC503",
+        color: "#152B52",
+        fontSize: 10, padding: "2px 6px",
+        borderRadius: 4, fontWeight: 700,
+        letterSpacing: 0.3,
+        verticalAlign: "middle",
+        cursor: "pointer",
+      }}
+    >
+      2.0
     </span>
   );
 }
@@ -169,35 +208,18 @@ function ModeAccent() {
 function TrialBanner() {
   const { lang } = useLangStore();
   const trial = useTrialState();
-  // Lite strip wins when both could render (cashier shouldn't be
-  // confused by stacked banners); the Pro mini-badge is small enough
-  // to sit on top in a follow-up if we want both visible together.
-  if (trial.show_lite_trial_countdown) {
-    const n = trial.lite_trial_days_remaining;
+  // MP-MODE-TRIAL-REWORK: one unified trial → one banner. Shows the signup
+  // trial countdown; subscribe to keep features after it ends.
+  if (trial.show_trial_countdown && trial.trial_days_remaining != null) {
+    const n = trial.trial_days_remaining;
     const label = lang === "en"
-      ? `⏳ Trial ends in ${n} day${n === 1 ? '' : 's'} — upgrade to Lite or Pro to keep all features.`
-      : `⏳ Essai se termine dans ${n} jour${n === 1 ? '' : 's'} — passez à Lite ou Pro pour garder toutes les fonctionnalités.`;
+      ? `⏳ Free trial: ${n} day${n === 1 ? '' : 's'} left — subscribe (Lite, Pro or Pro Plus) to keep all features.`
+      : `⏳ Essai gratuit : ${n} jour${n === 1 ? '' : 's'} restant${n === 1 ? '' : 's'} — abonnez-vous (Lite, Pro ou Pro Plus) pour garder toutes les fonctionnalités.`;
     return (
       <div role="status" style={{
         width: "100%", padding: "6px 12px",
         background: "rgba(245,158,11,0.14)", color: "#fbbf24",
         borderBottom: "1px solid rgba(245,158,11,0.35)",
-        fontSize: 12, fontWeight: 700, textAlign: "center",
-      }}>
-        {label}
-      </div>
-    );
-  }
-  if (trial.pro_trial_state === 'active') {
-    const n = trial.pro_trial_days_remaining;
-    const label = lang === "en"
-      ? `✦ Pro trial: ${n} day${n === 1 ? '' : 's'} left`
-      : `✦ Essai Pro : ${n} jour${n === 1 ? '' : 's'} restant${n === 1 ? '' : 's'}`;
-    return (
-      <div role="status" style={{
-        width: "100%", padding: "6px 12px",
-        background: "rgba(251,197,3,0.14)", color: "var(--brand-light)",
-        borderBottom: "1px solid rgba(251,197,3,0.35)",
         fontSize: 12, fontWeight: 700, textAlign: "center",
       }}>
         {label}
@@ -269,6 +291,7 @@ function RestrictedBanner() {
     queryKey: ["my-plan"],
     queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
     enabled: isAuth, staleTime: 60000, retry: false,
+    networkMode: 'always', // MP-PROPLUS-NAV-RQ-ONLINE-FIX: entitlement must not depend on online-detection
   });
   const plan = data?.data;
   if (!plan?.is_restricted) return null;
@@ -344,7 +367,13 @@ export default function Layout() {
     queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
     refetchInterval: 300000,
     retry: 1,
-    enabled: !lite, // MP-LITE-MODE-PHASE-1: subscription banner hidden in Lite
+    networkMode: 'always', // MP-PROPLUS-NAV-RQ-ONLINE-FIX: entitlement must not depend on online-detection
+    // MP-MODE-TRIAL-REWORK: always fetch. /my-plan is the SINGLE source of
+    // trial/entitlement truth for every surface (nav gating, sidebar countdown,
+    // TrialBanner, Settings Mode tab via useTrialState). Fetching it in Simple
+    // view too is required so the nav correctly DOWNGRADES on genuine expiry
+    // (effective_plan='trial' floor) instead of resting on the stale "silver"
+    // fallback, and so all trial-driven surfaces agree.
     onError: () => {} // silent fail
   });
   const myPlan = planData?.data;
@@ -444,6 +473,14 @@ export default function Layout() {
     return () => window.removeEventListener("partenaire:paywall", handler);
   }, []);
 
+  // MP-MODE-TRIAL-REWORK: the Settings "Switch to Full view" CTA (when the org
+  // is trial-expired & unpaid) opens the subscription/payment form directly.
+  useEffect(() => {
+    const openUpgrade = () => setShowUpgrade(true);
+    window.addEventListener("mp-open-upgrade", openUpgrade);
+    return () => window.removeEventListener("mp-open-upgrade", openUpgrade);
+  }, []);
+
   // MP-AUTH-STATE-HYGIENE — FIX 1: a real logout nukes EVERYTHING
   // (React Query cache, all zustand persist stores, local/sessionStorage)
   // then hard-navigates so React state is fresh. Backend logout call is
@@ -526,7 +563,27 @@ export default function Layout() {
     if (!hasSection(effectivePlan, item.section)) return false;
     if (lite && LITE_HIDDEN_ROUTES.has(item.to)) return false;
     return true;
-  });
+  }).map(item => {
+    // Pro Plus feature entries: if the org isn't entitled, either HIDE the entry
+    // (lockHide — a staff utility, not a sell) or show a LOCKED entry that
+    // deep-links to the upsell. Done here (not per render site) so the sidebar,
+    // drawer and mobile bar all get the same treatment from one place.
+    //
+    // MP-NAV-DUPKEY-FIX: every locked Pro Plus item is rewritten to the SAME
+    // `to` (/request-activation?plan=pro_plus), so when >1 feature is locked
+    // (e.g. Assistant + Assets) they collide on a render `key={item.to}`.
+    // Duplicate sibling keys corrupt React reconciliation across the async
+    // /my-plan load (effectivePlan flips from the "silver" fallback to the real
+    // plan), leaving a stale "Assistant 🔒" node mounted next to the unlocked
+    // "Assistant" → the reported double entry. Carry `navKey` = the ORIGINAL
+    // route (always unique) and key every render off that, not the mutated `to`.
+    if (item.feature && !hasFeature(effectivePlan, item.feature)) {
+      if (item.lockHide) return null;
+      return { ...item, navKey: item.to, to: "/request-activation?plan=pro_plus",
+               en: `${item.en} 🔒`, fr: `${item.fr} 🔒`, _locked: true };
+    }
+    return { ...item, navKey: item.to };
+  }).filter(Boolean);
   // MP-MOBILE-NAV-FIX: mobile has only this 5-slot bottom bar (no
   // hamburger). /inventory sits at NAV index 7 so it never made the
   // slice(0,5) — leaving mobile-first sellers unable to reach it. Swap
@@ -540,7 +597,9 @@ export default function Layout() {
   const _invItem = visibleNav.find(n => n.to === "/inventory");
   const mobileNav = visibleNav
     .map(item => (item.to === "/stock-count" && _invItem) ? _invItem : item)
-    .filter((item, idx, arr) => arr.findIndex(x => x.to === item.to) === idx)
+    // dedupe by navKey (original route) — two locked Pro Plus items share the
+    // same upsell `to`, so deduping on `to` would wrongly collapse them to one.
+    .filter((item, idx, arr) => arr.findIndex(x => (x.navKey || x.to) === (item.navKey || item.to)) === idx)
     .slice(0, 5);
 
   // D-2: Online Cart sidebar badge — pending count, 30s poll. Only
@@ -581,6 +640,20 @@ export default function Layout() {
       setLocation(null); // stale/foreign selection → clear it
     }
   }, [_locsResp, selectedLocation, setLocation]);
+
+  // MP-PROPLUS-CASHIER-LOCATION: a Pro Plus cashier pinned to a home location is
+  // FORCED onto it. The backend already substitutes the location server-side on
+  // every money event, but we also OVERWRITE the device store here (on login +
+  // every /my-plan poll) — not just clear-stale — so the picker reflects the
+  // truth and the device can never inherit a different location. `forced_location`
+  // is the authoritative signal: non-null only for a cashier in a Pro Plus org
+  // WITH an assignment (precedence computed server-side).
+  const forcedLocation = myPlan?.forced_location || null;
+  useEffect(() => {
+    if (forcedLocation?.id && selectedLocation?.id !== forcedLocation.id) {
+      setLocation({ id: forcedLocation.id, name: forcedLocation.name, type: forcedLocation.type });
+    }
+  }, [forcedLocation, selectedLocation?.id, setLocation]);
 
   const notifColor = (type) => {
     if (type === "low_stock") return "#fbbf24";
@@ -957,7 +1030,7 @@ export default function Layout() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 800, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Mon Partenaire Dozie</div>
             <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {org?.name}<ModeBadge />
+              {org?.name}<ModeBadge /><VersionBadge />
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
@@ -986,7 +1059,7 @@ export default function Layout() {
           {mobileNav.map(item => {
             const isActive = item.to === "/" ? location.pathname === "/" : location.pathname.startsWith(item.to);
             return (
-              <NavLink key={item.to} to={item.to}
+              <NavLink key={item.navKey || item.to} to={item.to}
                 style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "8px 4px", textDecoration: "none", color: isActive ? "var(--brand-light)" : "var(--text-muted)", fontSize: 10, fontWeight: isActive ? 600 : 400, borderTop: isActive ? "2px solid var(--brand)" : "2px solid transparent", gap: 2 }}>
                 <div style={{ fontSize: 16, position: "relative" }}>
                   {item.icon}
@@ -1023,7 +1096,7 @@ export default function Layout() {
             <div>
               <div style={{ fontWeight: 800, fontSize: 14 }}>Mon Partenaire Dozie</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1 }}>
-                {org?.name}<ModeBadge />
+                {org?.name}<ModeBadge /><VersionBadge />
               </div>
             </div>
           )}
@@ -1103,7 +1176,7 @@ export default function Layout() {
 
         <nav style={{ flex: 1, padding: "8px 0", overflowY: "auto" }}>
           {visibleNav.map(item => (
-            <NavLink key={item.to} to={item.to} end={item.to === "/"}
+            <NavLink key={item.navKey || item.to} to={item.to} end={item.to === "/"}
               style={({ isActive }) => ({
                 display: "flex", alignItems: "center", gap: 10,
                 padding: collapsed ? "12px 0" : "10px 16px",

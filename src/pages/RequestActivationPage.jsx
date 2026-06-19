@@ -1,156 +1,229 @@
-// MP-RESTRICTED-MODE (B2): in-app "Request Activation" page. Owner picks a
-// plan + cycle + manual payment method and submits; an admin approves via the
-// portal (Track A3), which flips the org plan and lifts restricted mode.
-// Reachable from the restricted banner and Settings → Subscription.
-import { useState } from "react";
+// MP-BILLING-V3 — unified subscription form.
+//
+// ONE flow for ALL THREE paid plans (Lite / Pro / Pro Plus): pick a plan →
+// pay via Flutterwave Standard Checkout (the hosted page where the user chooses
+// card / mobile money / bank / USSD) → the webhook auto-activates the plan.
+// No per-plan special case. Manual ("pay offline → admin approval") stays as a
+// fallback/audit path only.
+//
+// Plans + country-aware pricing come from GET /subscriptions/plans (default
+// Cameroun/XAF). Reachable from the restricted banner and Settings →
+// "Manage subscription". A ?plan=<id> query param preselects a plan so Pro Plus
+// feature deep-links (AI / Staff / Asset) can land here with Pro Plus chosen.
+import { useState, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useLangStore } from "../store";
 import api, { formatCFA, formatDate } from "../utils/api";
 
-const PLANS = {
-  lite: { monthly: 8000,  yearly: 80000 },
-  pro:  { monthly: 10000, yearly: 100000 },
-};
-const METHODS = [
-  { value: "cash",  en: "Cash",            fr: "Espèces" },
-  { value: "momo",  en: "Mobile Money",    fr: "Mobile Money" },
-  { value: "bank",  en: "Bank transfer",   fr: "Virement bancaire" },
-  { value: "other", en: "Other",           fr: "Autre" },
+// Manual (offline) fallback methods → admin approval, ONLY for paying the owner
+// directly offline. MP-SUB-NO-PHANTOM-PENDING: Mobile Money / Orange are NOT
+// here — those are Flutterwave methods and go through the FW hosted page (the
+// method is chosen on FW, not in this form). No in-app MoMo button may create a
+// manual request. Manual = truly-offline cash / bank transfer only.
+const MANUAL_METHODS = [
+  { value: "cash", en: "Cash",          fr: "Espèces" },
+  { value: "bank", en: "Bank transfer", fr: "Virement bancaire" },
 ];
+
+const DURATIONS = [1, 3, 6, 12];
 
 export default function RequestActivationPage() {
   const { lang } = useLangStore();
   const en = lang === "en";
   const qc = useQueryClient();
-  const [plan, setPlan]   = useState("lite");
-  const [cycle, setCycle] = useState("monthly");
+  const [searchParams] = useSearchParams();
+  const deepLinkPlan = searchParams.get("plan"); // e.g. ?plan=pro_plus
+
+  const [selectedId, setSelectedId] = useState(null);
+  const [months, setMonths] = useState(1);
+  const [showManual, setShowManual] = useState(false);
   const [method, setMethod] = useState("cash");
   const [notes, setNotes] = useState("");
-  const [forceForm, setForceForm] = useState(false); // "submit new request" after a reject
 
-  const { data, isLoading, refetch } = useQuery({
-    queryKey: ["my-request"],
-    queryFn: () => api.get("/subscriptions/requests/mine").then(r => r.data),
-    staleTime: 10000,
+  // Plans (country-aware price + currency) — single source of truth.
+  const { data: plansData, isLoading: plansLoading, error: plansError } = useQuery({
+    queryKey: ["plans"],
+    queryFn: () => api.get("/subscriptions/plans").then(r => r.data),
+    retry: 2,
   });
-  const myReq = data?.data;
 
-  const submit = useMutation({
-    mutationFn: () => api.post("/subscriptions/requests", {
-      requested_plan_id: plan, billing_cycle: cycle, payment_method: method, notes: notes || null,
+  // Pending state: a Flutterwave/manual upgrade is already awaiting approval.
+  const { data: myPlanData } = useQuery({
+    queryKey: ["my-plan"],
+    queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
+  });
+  const pending = !!myPlanData?.data?.has_pending_request;
+  const pendingPlanId = myPlanData?.data?.pending_plan_id || null;
+
+  // Only purchasable paid tiers (Lite / Pro / Pro Plus). Pro Plus appears
+  // automatically once it's active in pa_plans — no hardcoded list.
+  const plans = useMemo(() => (plansData?.data || [])
+    .filter(p => p.id !== "silver" && p.id !== "trial" && (p.price ?? p.price_monthly) > 0)
+    .sort((a, b) => (a.price ?? a.price_monthly) - (b.price ?? b.price_monthly)),
+    [plansData]);
+
+  // Resolve the effective selection: explicit click → deep-link → first plan.
+  const selected = useMemo(() => {
+    if (!plans.length) return null;
+    const wanted = selectedId || deepLinkPlan;
+    return plans.find(p => p.id === wanted) || plans[0];
+  }, [plans, selectedId, deepLinkPlan]);
+
+  const unitPrice = selected ? (selected.price ?? selected.price_monthly) : 0;
+  const total = unitPrice * months;
+  const pendingPlan = plans.find(p => p.id === pendingPlanId);
+
+  // PRIMARY — Flutterwave Standard Checkout. Backend creates the hosted payment
+  // + a pending record and returns the link; we redirect. Activation happens via
+  // the verified webhook (auto-activate), never on the redirect alone.
+  const flwMutation = useMutation({
+    mutationFn: () => api.post("/subscriptions/flw/initiate", { plan_id: selected.id, months }),
+    onSuccess: (res) => {
+      const link = res.data?.data?.link;
+      if (link) window.location.href = link;
+      else toast.error(en ? "Could not start payment." : "Impossible de démarrer le paiement.");
+    },
+    onError: (e) => toast.error(e?.response?.data?.message || (en ? "Payment error" : "Erreur de paiement")),
+  });
+
+  // FALLBACK — manual offline payment → admin approval (audit trail).
+  const manualMutation = useMutation({
+    mutationFn: () => api.post("/subscriptions/request-upgrade", {
+      plan_id: selected.id, payment_method: method, months, notes: notes || null,
     }),
     onSuccess: () => {
-      toast.success(en ? "Request submitted" : "Demande envoyée");
-      setForceForm(false);
-      qc.invalidateQueries({ queryKey: ["my-request"] });
+      toast.success(en ? "✓ Request sent! Pending admin approval." : "✓ Demande envoyée ! En attente d'approbation.");
       qc.invalidateQueries({ queryKey: ["my-plan"] });
-      refetch();
     },
     onError: (e) => toast.error(e?.response?.data?.message || (en ? "Could not submit request" : "Échec de l'envoi")),
   });
 
-  const wrap = (children) => <div style={{ maxWidth: 520, margin: "0 auto", padding: 20 }}>{children}</div>;
+  const wrap = (children) => <div style={{ maxWidth: 560, margin: "0 auto", padding: 20 }}>{children}</div>;
 
-  if (isLoading) return wrap(<div style={{ color: "var(--text-muted)" }}>{en ? "Loading…" : "Chargement…"}</div>);
-
-  // Pending → "submitted" view (don't allow duplicate submits).
-  if (myReq && myReq.status === "pending" && !forceForm) {
+  // ── Pending → don't allow duplicate submits ───────────────────────────────
+  if (pending) {
     return wrap(
       <div className="card" style={{ textAlign: "center" }}>
         <div style={{ fontSize: 40, marginBottom: 12 }}>⏳</div>
-        <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 8 }}>{en ? "Request submitted" : "Demande envoyée"}</div>
-        <div style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 6 }}>
+        <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 8 }}>
+          {en ? "Upgrade pending" : "Mise à niveau en attente"}
+        </div>
+        <div style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 8, lineHeight: 1.6 }}>
           {en
-            ? `Sent ${formatDate(myReq.created_at)}. Awaiting admin approval.`
-            : `Envoyée le ${formatDate(myReq.created_at)}. En attente d'approbation par l'admin.`}
+            ? `Your request${pendingPlan ? ` for ${pendingPlan.badge_icon} ${pendingPlan.name}` : ""} is being processed. Your plan activates automatically once payment is confirmed — no need to submit again.`
+            : `Votre demande${pendingPlan ? ` pour ${pendingPlan.badge_icon} ${pendingPlan.name}` : ""} est en cours. Votre plan s'active automatiquement après confirmation du paiement — inutile de renvoyer.`}
         </div>
-        <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
-          {String(myReq.requested_plan_id || "").toUpperCase()} · {myReq.billing_cycle === "yearly" ? (en ? "Yearly" : "Annuel") : (en ? "Monthly" : "Mensuel")} · {myReq.payment_method}
-        </div>
-        <button className="btn btn-secondary" style={{ marginTop: 18 }} onClick={() => refetch()}>
+        <button className="btn btn-secondary" style={{ marginTop: 10 }} onClick={() => qc.invalidateQueries({ queryKey: ["my-plan"] })}>
           {en ? "Refresh status" : "Actualiser le statut"}
         </button>
       </div>
     );
   }
 
-  // Rejected → show reason + allow a new request.
-  if (myReq && myReq.status === "rejected" && !forceForm) {
-    return wrap(
-      <div className="card">
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>❌</div>
-          <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 8 }}>{en ? "Request declined" : "Demande refusée"}</div>
-        </div>
-        {myReq.admin_note && (
-          <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 10, padding: 12, fontSize: 13, color: "var(--text-secondary)", margin: "10px 0" }}>
-            <strong>{en ? "Reason: " : "Raison : "}</strong>{myReq.admin_note}
-          </div>
-        )}
-        <button className="btn btn-primary btn-block" style={{ marginTop: 8 }} onClick={() => setForceForm(true)}>
-          {en ? "Submit a new request" : "Soumettre une nouvelle demande"}
-        </button>
-      </div>
-    );
-  }
-
-  // Form.
-  const price = PLANS[plan][cycle];
-  const yearlySave = PLANS[plan].monthly * 12 - PLANS[plan].yearly;
+  if (plansLoading) return wrap(<div style={{ color: "var(--text-muted)" }}>{en ? "Loading plans…" : "Chargement…"}</div>);
+  if (plansError) return wrap(<div style={{ color: "#f87171" }}>{en ? "Failed to load plans. Please try again." : "Échec du chargement. Réessayez."}</div>);
 
   return wrap(
     <div>
-      <div style={{ fontWeight: 800, fontSize: 20, marginBottom: 4 }}>{en ? "Request activation" : "Demander l'activation"}</div>
-      <div style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 18 }}>
+      <div style={{ fontWeight: 800, fontSize: 20, marginBottom: 4 }}>{en ? "Choose your plan" : "Choisissez votre forfait"}</div>
+      <div style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 18, lineHeight: 1.55 }}>
         {en
-          ? "Choose a plan, pay via your method, then submit. An admin confirms and activates your account."
-          : "Choisissez un forfait, payez via votre mode, puis soumettez. Un admin confirme et active votre compte."}
+          ? "Select a plan and pay securely with Flutterwave — you'll choose your payment method (card, mobile money, bank, USSD) on the next page. Your plan activates automatically once payment is confirmed."
+          : "Sélectionnez un forfait et payez en toute sécurité avec Flutterwave — vous choisirez votre moyen de paiement (carte, mobile money, banque, USSD) à l'étape suivante. Votre plan s'active automatiquement après confirmation."}
       </div>
 
-      <div className="label">{en ? "Plan" : "Forfait"}</div>
-      <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-        {["lite", "pro"].map(p => (
-          <div key={p} onClick={() => setPlan(p)} style={{ flex: 1, cursor: "pointer", borderRadius: 12, padding: 14,
-            border: `2px solid ${plan === p ? "var(--brand)" : "var(--border)"}`, background: plan === p ? "rgba(251,197,3,0.08)" : "var(--bg-card)" }}>
-            <div style={{ fontWeight: 800, fontSize: 15, textTransform: "uppercase" }}>{p}</div>
-            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4 }}>{formatCFA(PLANS[p].monthly)}/{en ? "mo" : "mois"}</div>
-          </div>
+      {/* Plan cards — Lite / Pro / Pro Plus, consistent UI, country-aware price */}
+      <div style={{ display: "grid", gap: 10, marginBottom: 18 }}>
+        {plans.map(p => {
+          const price = p.price ?? p.price_monthly;
+          const isSel = selected?.id === p.id;
+          const feats = Array.isArray(p.features) ? p.features : (() => { try { return JSON.parse(p.features || "[]"); } catch { return []; } })();
+          return (
+            <div key={p.id} onClick={() => setSelectedId(p.id)}
+              style={{ cursor: "pointer", borderRadius: 14, padding: 16,
+                border: `2px solid ${isSel ? "var(--brand)" : "var(--border)"}`,
+                background: isSel ? "rgba(251,197,3,0.08)" : "var(--bg-card)", transition: "all 0.15s" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 16 }}>{p.badge_icon} {p.name}</div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
+                    {p.max_locations === -1 ? "∞" : p.max_locations} {en ? "location(s)" : "emplacement(s)"} ·{" "}
+                    {p.max_products === -1 ? "∞" : p.max_products} {en ? "products" : "produits"} ·{" "}
+                    {p.max_users === -1 ? "∞" : p.max_users} {en ? "user(s)" : "utilisateur(s)"}
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                    {feats.map((f, i) => (
+                      <span key={i} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: "rgba(251,197,3,0.1)", color: "var(--brand-light)" }}>✓ {f}</span>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
+                  <div style={{ fontWeight: 800, fontSize: 18, color: "var(--brand-light)" }}>{formatCFA(price)}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{en ? "/month" : "/mois"}</div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Duration */}
+      <div className="label">{en ? "Duration" : "Durée"}</div>
+      <select className="input" value={months} onChange={e => setMonths(+e.target.value)} style={{ marginBottom: 16 }}>
+        {DURATIONS.map(m => (
+          <option key={m} value={m}>{m} {en ? (m === 1 ? "month" : "months") : "mois"} — {formatCFA(unitPrice * m)}</option>
         ))}
-      </div>
-
-      <div className="label">{en ? "Billing cycle" : "Cycle de facturation"}</div>
-      <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-        {["monthly", "yearly"].map(c => (
-          <div key={c} onClick={() => setCycle(c)} style={{ flex: 1, cursor: "pointer", borderRadius: 12, padding: "10px 14px", textAlign: "center",
-            border: `2px solid ${cycle === c ? "var(--brand)" : "var(--border)"}`, background: cycle === c ? "rgba(251,197,3,0.08)" : "var(--bg-card)" }}>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>{c === "monthly" ? (en ? "Monthly" : "Mensuel") : (en ? "Yearly" : "Annuel")}</div>
-            {c === "yearly" && <div style={{ fontSize: 11, color: "#FBC503", marginTop: 2 }}>{en ? "~2 months free" : "~2 mois offerts"}</div>}
-          </div>
-        ))}
-      </div>
-
-      <div className="label">{en ? "Payment method" : "Mode de paiement"}</div>
-      <select className="input" value={method} onChange={e => setMethod(e.target.value)} style={{ marginBottom: 16 }}>
-        {METHODS.map(m => <option key={m.value} value={m.value}>{en ? m.en : m.fr}</option>)}
       </select>
 
-      <div className="label">{en ? "Notes (optional)" : "Notes (optionnel)"}</div>
-      <input className="input" value={notes} onChange={e => setNotes(e.target.value)}
-        placeholder={en ? "Payment reference, etc." : "Référence de paiement, etc."} style={{ marginBottom: 18 }} />
-
-      <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 14, marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      {/* Total */}
+      <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 14, marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span style={{ color: "var(--text-secondary)", fontSize: 13 }}>{en ? "Total" : "Total"}</span>
-        <span style={{ fontWeight: 800, fontSize: 18 }}>{formatCFA(price)}</span>
+        <span style={{ fontWeight: 800, fontSize: 18, color: "var(--brand-light)" }}>{formatCFA(total)}</span>
       </div>
-      {cycle === "yearly" && yearlySave > 0 && (
-        <div style={{ fontSize: 12, color: "#FBC503", textAlign: "center", marginBottom: 12 }}>
-          {en ? `You save ${formatCFA(yearlySave)} vs monthly` : `Vous économisez ${formatCFA(yearlySave)} vs mensuel`}
+
+      {/* PRIMARY — Flutterwave */}
+      <div style={{ background: "rgba(251,197,3,0.08)", border: "1px solid rgba(251,197,3,0.25)", borderRadius: 10, padding: 12, marginBottom: 12, fontSize: 12, color: "var(--brand-light)" }}>
+        ⚡ {en
+          ? `Selecting "Pay with Flutterwave" takes you to Flutterwave's secure page to pay ${formatCFA(total)} by your preferred method (card, mobile money, bank or USSD). Your ${selected?.name} plan activates automatically once payment is confirmed.`
+          : `« Payer avec Flutterwave » vous amène à la page sécurisée de Flutterwave pour payer ${formatCFA(total)} par le moyen de votre choix (carte, mobile money, banque ou USSD). Votre forfait ${selected?.name} s'active automatiquement après confirmation.`}
+      </div>
+      <button className="btn btn-primary btn-block" style={{ height: 48, fontWeight: 700 }}
+        disabled={!selected || flwMutation.isPending} onClick={() => flwMutation.mutate()}>
+        {flwMutation.isPending
+          ? (en ? "⏳ Redirecting…" : "⏳ Redirection…")
+          : (en ? `⚡ Pay with Flutterwave — ${formatCFA(total)}` : `⚡ Payer avec Flutterwave — ${formatCFA(total)}`)}
+      </button>
+
+      {/* FALLBACK — manual / offline → admin approval */}
+      <div style={{ marginTop: 16, textAlign: "center" }}>
+        <button onClick={() => setShowManual(s => !s)}
+          style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 12, textDecoration: "underline", cursor: "pointer" }}>
+          {en ? "Can't pay online? Request manual activation" : "Impossible de payer en ligne ? Demander une activation manuelle"}
+        </button>
+      </div>
+
+      {showManual && (
+        <div style={{ marginTop: 12, padding: 14, border: "1px solid var(--border)", borderRadius: 12, background: "var(--bg-card)" }}>
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>
+            {en
+              ? "Pay offline, then submit — an admin confirms and activates your account."
+              : "Payez hors ligne, puis soumettez — un admin confirme et active votre compte."}
+          </div>
+          <div className="label">{en ? "Payment method" : "Mode de paiement"}</div>
+          <select className="input" value={method} onChange={e => setMethod(e.target.value)} style={{ marginBottom: 12 }}>
+            {MANUAL_METHODS.map(m => <option key={m.value} value={m.value}>{en ? m.en : m.fr}</option>)}
+          </select>
+          <div className="label">{en ? "Notes (optional)" : "Notes (optionnel)"}</div>
+          <input className="input" value={notes} onChange={e => setNotes(e.target.value)}
+            placeholder={en ? "Payment reference, etc." : "Référence de paiement, etc."} style={{ marginBottom: 12 }} />
+          <button className="btn btn-secondary btn-block" disabled={!selected || manualMutation.isPending}
+            onClick={() => manualMutation.mutate()}>
+            {manualMutation.isPending ? (en ? "Submitting…" : "Envoi…") : (en ? "Submit manual request" : "Soumettre la demande manuelle")}
+          </button>
         </div>
       )}
-      <button className="btn btn-primary btn-block" disabled={submit.isPending} onClick={() => submit.mutate()}>
-        {submit.isPending ? (en ? "Submitting…" : "Envoi…") : (en ? "Request activation" : "Demander l'activation")}
-      </button>
     </div>
   );
 }

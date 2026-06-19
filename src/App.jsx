@@ -1,7 +1,7 @@
 import InventoryPage from "./pages/InventoryPage";
 import { useEffect, useState, Component } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery, onlineManager } from "@tanstack/react-query";
 import { Toaster, toast } from "react-hot-toast";
 import { useAuthStore, useOfflineStore } from "./store";
 import api from "./utils/api";
@@ -24,6 +24,9 @@ import StockCountPage from "./pages/StockCountPage";
 import BarcodePage from "./pages/BarcodePage";
 import OperationsDashboardPage from "./pages/OperationsDashboardPage"; // MP-OWNER-OPERATIONS-DASHBOARD-V1
 import PendingSyncPage from "./pages/PendingSyncPage"; // MP-PENDING-SYNC-SCREEN
+import AssistantPage from "./pages/AssistantPage"; // Pro Plus Feature 1 — AI Assistant chat UI
+import AttendancePage from "./pages/AttendancePage"; // Staff Maintenance Phase 3 — shared-device PIN attendance
+import AssetsPage from "./pages/AssetsPage"; // Pro Plus Feature 3 — Asset ledger
 
 // MP-INVALIDATE-AFTER-SALE: refetch stale data when the user returns to
 // the tab/app or reconnects (e.g. after making a sale on another device
@@ -103,6 +106,16 @@ const ROUTE_ACCESS = {
   // MP-PENDING-SYNC-SCREEN: everyone who creates offline writes must be able
   // to see their unsynced queue (cashier sales/refunds; warehouse stock).
   "/pending-sync": ["owner", "manager", "cashier", "warehouse"],
+  // Pro Plus Feature 1 — AI Assistant. OWNER ONLY. The Pro Plus entitlement
+  // check happens in-page (AssistantPage shows the upsell if not entitled) and
+  // the nav entry deep-links non-entitled owners to /request-activation.
+  "/assistant":    ["owner"],
+  // Staff Maintenance Phase 3 — shared-device clock-in/out. ANY role can clock
+  // themselves (the person is verified by PIN in-page); Pro Plus handled in-page.
+  "/attendance":   ["owner", "manager", "cashier", "warehouse"],
+  // Pro Plus Feature 3 — Asset ledger. OWNER ONLY (Pro Plus handled in-page +
+  // nav locked deep-link).
+  "/assets":       ["owner"],
 };
 
 function Guard({ children }) {
@@ -148,7 +161,11 @@ function PlanGuard({ path, children }) {
     queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
     enabled: isAuth,
     staleTime: 60000,
-    retry: false
+    retry: false,
+    // MP-PROPLUS-NAV-RQ-ONLINE-FIX: entitlement must never depend on RQ's
+    // online-detection (paused 'online' queries → restricted fallback in the
+    // native WebView). Matches the offlineQuery helper used by 14 data modules.
+    networkMode: 'always'
   });
   const myPlan = planData?.data;
   const isSilverRestricted = myPlan?.plan_id === "silver" && !myPlan?.trial_active;
@@ -316,12 +333,45 @@ export default function App() {
       } catch (_) { /* native plugin not bundled in web; ignore */ }
     })();
 
+    // MP-PROPLUS-NAV-RQ-ONLINE-FIX: React Query's default online-detection uses
+    // navigator.onLine, which is unreliable in the Capacitor Android WebView and
+    // can read offline on cold start — pausing every 'online' query (incl.
+    // /subscriptions/my-plan, the entitlement source that drives the Pro Plus
+    // owner nav) so Assistant/Staff/Assets silently fall back to the restricted
+    // floor. Wire RQ's onlineManager to @capacitor/network's TRUE connectivity.
+    // Native only — the web/PWA keeps RQ's default navigator.onLine behavior.
+    let _netHandle;
+    (async () => {
+      try {
+        const { Capacitor } = await import("@capacitor/core");
+        if (!Capacitor.isNativePlatform()) return;
+        const { Network } = await import("@capacitor/network");
+        const s = await Network.getStatus();
+        onlineManager.setOnline(s.connected);
+        _netHandle = await Network.addListener("networkStatusChange",
+          (st) => onlineManager.setOnline(st.connected));
+      } catch (_) { /* @capacitor/network not bundled on web; ignore */ }
+    })();
+
     // Fire the impersonation consumer eagerly. It only does anything when
     // ?impersonate_token= is present in the URL, otherwise it's a quick
     // URLSearchParams check.
     (async () => {
       try { await consumeImpersonateToken(); }
       finally { setBootstrapping(false); }
+    })();
+
+    // MP-BILLING-V3: returning from the Flutterwave hosted checkout (?flw_tx=).
+    // Activation is driven by the verified webhook, NOT this redirect — so we
+    // just show a "verifying" toast, refetch my-plan a few times to catch the
+    // activation, and strip the param so a refresh can't re-trigger it.
+    (() => {
+      const params = new URLSearchParams(window.location.search);
+      if (!params.get("flw_tx")) return;
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+      toast("⏳ Verifying payment… your plan will update shortly / Vérification du paiement…", { duration: 7000 });
+      let n = 0;
+      const iv = setInterval(() => { qc.invalidateQueries(["my-plan"]); if (++n >= 6) clearInterval(iv); }, 4000);
     })();
 
     // MP-RENDER-COLDSTART-WARMUP: fire-and-forget HEAD ping at app launch
@@ -355,6 +405,7 @@ export default function App() {
     return () => {
       window.removeEventListener("online",  handleOnline);
       window.removeEventListener("offline", handleOffline);
+      try { _netHandle?.remove?.(); } catch (_) { /* ignore */ }
     };
   }, []);
 
@@ -393,6 +444,12 @@ export default function App() {
                 offline writes happen on every tier, so the queue must be
                 visible on every tier (mirrors /refunds on SILVER_ALLOWED). */}
             <Route path="pending-sync" element={<RoleGuard path="/pending-sync"><PendingSyncPage /></RoleGuard>} />
+            {/* Pro Plus AI Assistant — owner-only (RoleGuard); Pro Plus gating + upsell handled in-page. */}
+            <Route path="assistant"    element={<RoleGuard path="/assistant"><AssistantPage /></RoleGuard>} />
+            {/* Staff attendance clock-in/out — any role; Pro Plus gating in-page. */}
+            <Route path="attendance"   element={<RoleGuard path="/attendance"><AttendancePage /></RoleGuard>} />
+            {/* Asset ledger — owner-only (RoleGuard); Pro Plus gating + upsell in-page. */}
+            <Route path="assets"       element={<RoleGuard path="/assets"><AssetsPage /></RoleGuard>} />
             <Route path="settings"     element={<RoleGuard path="/settings"><PlanGuard path="/settings"><SettingsPage /></PlanGuard></RoleGuard>} />
             {/* MP-RESTRICTED-MODE (B2): reachable even when restricted — no PlanGuard. */}
             <Route path="request-activation" element={<RequestActivationPage />} />
