@@ -28,6 +28,7 @@ import { Component, useEffect, useState } from "react";
 import { genSaleCodes } from "../../utils/receiptCodes";
 import { buildMonospaceReceipt, wrapMonospaceFence } from "../../utils/receiptText";
 import { buildFactureInner } from "../../utils/factureReceipt";
+import { currencySymbol } from "../../utils/currency";
 
 // MP-VOID-PARTIAL-COMMIT-FIX: scoped error boundary so a render
 // crash in the receipt (bad payload shape, missing field, etc.)
@@ -133,6 +134,7 @@ function nowLocale(lang) {
 // this builder so they can't drift).
 function buildBodyLines(eventType, data, lang, org) {
   const en = lang === "en";
+  const sym = currencySymbol(org?.currency);
   const lines = [];
   // Customer name lookup: new backend payloads expose `customer_name`
   // at the top level; POSPage's existing lastSale shape nests it
@@ -155,16 +157,16 @@ function buildBodyLines(eventType, data, lang, org) {
     const paid = Number(data.paid_amount ?? total) || 0;
     const balance = total - paid;
     lines.push("─────────────────────");
-    lines.push(`${en ? "Total" : "Total"}: ${fmtAmt(total)} FCFA`);
+    lines.push(`${en ? "Total" : "Total"}: ${fmtAmt(total)} ${sym}`);
     if (data.payment_status === "paid") {
-      lines.push(`✅ ${en ? "PAID" : "PAYÉ"}: ${fmtAmt(paid)} FCFA`);
+      lines.push(`✅ ${en ? "PAID" : "PAYÉ"}: ${fmtAmt(paid)} ${sym}`);
     } else if (data.payment_status === "credit") {
       lines.push(`🔴 ${en ? "FULL CREDIT — No payment" : "CRÉDIT TOTAL — Aucun paiement"}`);
-      lines.push(`${en ? "Due" : "Dû"}: ${fmtAmt(total)} FCFA`);
+      lines.push(`${en ? "Due" : "Dû"}: ${fmtAmt(total)} ${sym}`);
     } else if (data.payment_status === "partial") {
       lines.push(`🟡 ${en ? "PARTIAL PAYMENT" : "PAIEMENT PARTIEL"}`);
-      lines.push(`${en ? "Paid" : "Payé"}: ${fmtAmt(paid)} FCFA`);
-      lines.push(`${en ? "Balance due" : "Reste dû"}: ${fmtAmt(balance)} FCFA`);
+      lines.push(`${en ? "Paid" : "Payé"}: ${fmtAmt(paid)} ${sym}`);
+      lines.push(`${en ? "Balance due" : "Reste dû"}: ${fmtAmt(balance)} ${sym}`);
     }
   }
 
@@ -173,7 +175,7 @@ function buildBodyLines(eventType, data, lang, org) {
     const ghost = Number(data.ghost_portion || 0);
     if (customerLine) lines.push(customerLine);
     lines.push("─────────────────────");
-    lines.push(`${en ? "Amount paid" : "Montant payé"}: ${fmtAmt(data.amount)} FCFA`);
+    lines.push(`${en ? "Amount paid" : "Montant payé"}: ${fmtAmt(data.amount)} ${sym}`);
     if (data.payment_method) lines.push(`${en ? "Method" : "Mode"}: ${data.payment_method}`);
     if (applied.length || ghost) {
       lines.push("─────────────────────");
@@ -200,10 +202,10 @@ function buildBodyLines(eventType, data, lang, org) {
     }
     lines.push("─────────────────────");
     if (data.debt_before != null) {
-      lines.push(`${en ? "Previous balance" : "Solde précédent"}: ${fmtAmt(data.debt_before)} FCFA`);
+      lines.push(`${en ? "Previous balance" : "Solde précédent"}: ${fmtAmt(data.debt_before)} ${sym}`);
     }
     if (data.debt_after != null) {
-      lines.push(`*${en ? "New balance" : "Nouveau solde"}: ${fmtAmt(data.debt_after)} FCFA*`);
+      lines.push(`*${en ? "New balance" : "Nouveau solde"}: ${fmtAmt(data.debt_after)} ${sym}*`);
     }
   }
 
@@ -213,20 +215,20 @@ function buildBodyLines(eventType, data, lang, org) {
       lines.push(`${en ? "Invoice" : "Facture"}: ${data.sale_number}`);
     }
     lines.push("─────────────────────");
-    lines.push(`${en ? "Amount paid" : "Montant payé"}: ${fmtAmt(data.amount)} FCFA`);
+    lines.push(`${en ? "Amount paid" : "Montant payé"}: ${fmtAmt(data.amount)} ${sym}`);
     if (data.payment_method) lines.push(`${en ? "Method" : "Mode"}: ${data.payment_method}`);
     lines.push("─────────────────────");
     if (data.sale_total != null) {
-      lines.push(`${en ? "Invoice total" : "Total facture"}: ${fmtAmt(data.sale_total)} FCFA`);
+      lines.push(`${en ? "Invoice total" : "Total facture"}: ${fmtAmt(data.sale_total)} ${sym}`);
     }
     if (data.sale_paid_before != null && data.sale_paid_after != null) {
-      lines.push(`${en ? "Paid before" : "Payé avant"}: ${fmtAmt(data.sale_paid_before)} FCFA`);
-      lines.push(`${en ? "Paid after" : "Payé après"}: ${fmtAmt(data.sale_paid_after)} FCFA`);
+      lines.push(`${en ? "Paid before" : "Payé avant"}: ${fmtAmt(data.sale_paid_before)} ${sym}`);
+      lines.push(`${en ? "Paid after" : "Payé après"}: ${fmtAmt(data.sale_paid_after)} ${sym}`);
     }
     if (data.balance_after != null) {
       const balanceLabel = data.payment_status === "paid"
         ? (en ? "Settled — no balance remaining" : "Soldée — aucun reste dû")
-        : `${en ? "Remaining balance" : "Reste dû"}: ${fmtAmt(data.balance_after)} FCFA`;
+        : `${en ? "Remaining balance" : "Reste dû"}: ${fmtAmt(data.balance_after)} ${sym}`;
       lines.push(data.payment_status === "paid" ? `✅ ${balanceLabel}` : balanceLabel);
     }
     // Customer-level totals (only when a registered customer was
@@ -234,8 +236,8 @@ function buildBodyLines(eventType, data, lang, org) {
     // possible if the original sale predated customer linking).
     if (data.debt_before != null && data.debt_after != null) {
       lines.push("─────────────────────");
-      lines.push(`${en ? "Customer debt before" : "Dette client avant"}: ${fmtAmt(data.debt_before)} FCFA`);
-      lines.push(`*${en ? "Customer debt after" : "Dette client après"}: ${fmtAmt(data.debt_after)} FCFA*`);
+      lines.push(`${en ? "Customer debt before" : "Dette client avant"}: ${fmtAmt(data.debt_before)} ${sym}`);
+      lines.push(`*${en ? "Customer debt after" : "Dette client après"}: ${fmtAmt(data.debt_after)} ${sym}*`);
     }
   }
 
@@ -250,7 +252,7 @@ function buildBodyLines(eventType, data, lang, org) {
       lines.push(`${i.name || "?"} × ${i.qty} ........ ${fmtAmt(total)} F`);
     });
     lines.push("─────────────────────");
-    lines.push(`*${en ? "Refund total" : "Total remboursé"}: ${fmtAmt(data.refund_amount)} FCFA*`);
+    lines.push(`*${en ? "Refund total" : "Total remboursé"}: ${fmtAmt(data.refund_amount)} ${sym}*`);
     if (data.refund_method) lines.push(`${en ? "Method" : "Mode"}: ${data.refund_method}`);
     const credit = Number(data.credit_portion || 0);
     const cash = Number(data.cash_portion || 0);
@@ -265,7 +267,7 @@ function buildBodyLines(eventType, data, lang, org) {
         : `↳ ${fmtAmt(credit)} F imputé sur votre solde client.`);
     }
     if (data.customer_new_balance != null) {
-      lines.push(`${en ? "New balance" : "Nouveau solde"}: ${fmtAmt(data.customer_new_balance)} FCFA`);
+      lines.push(`${en ? "New balance" : "Nouveau solde"}: ${fmtAmt(data.customer_new_balance)} ${sym}`);
     }
   }
 
@@ -301,9 +303,9 @@ function buildBodyLines(eventType, data, lang, org) {
       lines.push(`${i.name || "?"} × ${qty} ........ ${fmtAmt(total)} F${note}`);
     });
     lines.push("─────────────────────");
-    lines.push(`${en ? "Original total" : "Total d'origine"}: ${fmtAmt(data.original_total_amount)} FCFA`);
+    lines.push(`${en ? "Original total" : "Total d'origine"}: ${fmtAmt(data.original_total_amount)} ${sym}`);
     if (Number(data.original_paid_amount || 0) > 0) {
-      lines.push(`${en ? "Originally paid" : "Initialement payé"}: ${fmtAmt(data.original_paid_amount)} FCFA`);
+      lines.push(`${en ? "Originally paid" : "Initialement payé"}: ${fmtAmt(data.original_paid_amount)} ${sym}`);
     }
     // MP-VOID-CASH-AND-RETURNS-HANDLING Gap 1: surface the cash
     // going back to the customer for THIS void. Effective amount
@@ -312,7 +314,7 @@ function buildBodyLines(eventType, data, lang, org) {
     const cashRefund = Number(data.cash_refund_amount || 0);
     const priorRefundTotal = Number(data.prior_refund_total || 0);
     if (cashRefund > 0) {
-      lines.push(`💵 *${en ? "Cash refund" : "Remboursement espèces"}: ${fmtAmt(cashRefund)} FCFA*`);
+      lines.push(`💵 *${en ? "Cash refund" : "Remboursement espèces"}: ${fmtAmt(cashRefund)} ${sym}*`);
       if (data.cash_refund_method && data.cash_refund_method !== "cash") {
         lines.push(`   ${en ? "Method" : "Mode"}: ${data.cash_refund_method}`);
       }
@@ -327,7 +329,7 @@ function buildBodyLines(eventType, data, lang, org) {
     }
     if (data.reason) lines.push(`${en ? "Reason" : "Raison"}: ${data.reason}`);
     if (data.customer_new_balance != null) {
-      lines.push(`${en ? "New customer balance" : "Nouveau solde client"}: ${fmtAmt(data.customer_new_balance)} FCFA`);
+      lines.push(`${en ? "New customer balance" : "Nouveau solde client"}: ${fmtAmt(data.customer_new_balance)} ${sym}`);
     }
     lines.push("");
     lines.push(en
@@ -502,7 +504,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
     // XAF has no cents: round to whole units and group thousands with a plain
     // space (e.g. 57000 -> "57 000", 20500 -> "20 500").
     const money = (n) => Math.round(Number(n) || 0).toLocaleString("en-US").replace(/,/g, " ");
-    const currency = esc(org?.currency || "FCFA");
+    const currency = esc(currencySymbol(org?.currency));
     const shopName = org?.name || "Notre boutique";
     const footer = org?.receipt_footer || (en ? "Thank you for your business!" : "Merci pour votre achat!");
     const title = en ? header.titleEn : header.titleFr;

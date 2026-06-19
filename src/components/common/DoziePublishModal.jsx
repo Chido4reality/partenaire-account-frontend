@@ -20,10 +20,12 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
-import api, { formatCFA } from "../../utils/api";
+import api from "../../utils/api";
+import { useCurrency } from "../../utils/useCurrency";
 
 export default function DoziePublishModal({ productId, productName, defaultPrice, defaultCity, totalStock, onClose, lang = "fr" }) {
   const en = lang === "en";
+  const fmt = useCurrency();
   const qc = useQueryClient();
 
   // Load the existing listing for this product (if any). The /
@@ -154,12 +156,12 @@ export default function DoziePublishModal({ productId, productName, defaultPrice
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
           <div>
-            <label style={labelStyle}>{en ? "Dozie price (FCFA)" : "Prix Dozie (FCFA)"} *</label>
+            <label style={labelStyle}>{en ? `Dozie price (${fmt.symbol})` : `Prix Dozie (${fmt.symbol})`} *</label>
             <input type="number" inputMode="numeric" min={0} value={doziePrice}
               onChange={e => setDoziePrice(e.target.value)} style={inputStyle}
               placeholder={String(defaultPrice ?? "")} />
             <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 3 }}>
-              {en ? `Walk-in price: ${formatCFA(defaultPrice)}` : `Prix détail: ${formatCFA(defaultPrice)}`}
+              {en ? `Walk-in price: ${fmt(defaultPrice)}` : `Prix détail: ${fmt(defaultPrice)}`}
             </div>
           </div>
           <div>

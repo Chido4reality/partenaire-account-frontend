@@ -3,7 +3,8 @@ import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useAuthStore, useLangStore, useSettingsStore } from "../store";
-import api, { formatCFA } from "../utils/api";
+import api from "../utils/api";
+import { useCurrency } from "../utils/useCurrency";
 import PaywallModal from "../components/common/PaywallModal";
 import { hasFeature, getCapabilities } from "../utils/planCapabilities";
 import { useLiteMode } from "../hooks/useLiteMode";
@@ -88,6 +89,7 @@ export default function SettingsPage() {
   const { lang, setLang } = useLangStore();
   const { selectedLocation, setLocation } = useSettingsStore();
   const qc = useQueryClient();
+  const fmt = useCurrency();
   const isOwner = user?.role === "owner";
   const handleVersionTap = () => {
     const now = Date.now();
@@ -1665,7 +1667,7 @@ export default function SettingsPage() {
                     <div style={{ flex: 1, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", minWidth: 88 }}>
                       <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
                       <div style={{ fontWeight: 800, fontSize: 18 }}>{count}</div>
-                      {total != null && <div style={{ fontSize: 12, color: "var(--brand-light)" }}>{formatCFA(total)}</div>}
+                      {total != null && <div style={{ fontSize: 12, color: "var(--brand-light)" }}>{fmt(total)}</div>}
                     </div>
                   );
                   return (
@@ -1687,7 +1689,7 @@ export default function SettingsPage() {
                               <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 12, padding: "6px 10px", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8 }}>
                                 <span style={{ color, fontWeight: 700, minWidth: 52 }}>{label}</span>
                                 <span style={{ flex: 1, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.ref || ""}</span>
-                                <span style={{ fontWeight: 600 }}>{formatCFA(r.amount)}</span>
+                                <span style={{ fontWeight: 600 }}>{fmt(r.amount)}</span>
                                 <span style={{ color: "var(--text-muted)", minWidth: 72, textAlign: "right" }}>{r.date ? new Date(r.date).toLocaleDateString() : ""}</span>
                               </div>
                             );

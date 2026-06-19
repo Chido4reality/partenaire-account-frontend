@@ -3,7 +3,8 @@ import { useOfflineCachedQuery } from '../utils/offlineQuery';
 import { useLiteMode } from '../hooks/useLiteMode';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore, useLangStore } from '../store';
-import api, { formatCFA, formatDate, getGreeting } from '../utils/api';
+import api, { formatDate, getGreeting } from '../utils/api';
+import { useCurrency } from '../utils/useCurrency';
 import { ActiveShiftIndicator } from '../components/common/ShiftWidgets';
 import DrawerDashboardCard from '../components/dashboard/DrawerDashboardCard';
 import WhatsNewCard from '../components/common/WhatsNewCard';
@@ -43,6 +44,7 @@ export default function Dashboard() {
   const { user } = useAuthStore();
   const { t, lang } = useLangStore();
   const navigate = useNavigate();
+  const fmt = useCurrency();
   // MP-LITE-MODE-PHASE-1: skip Dozie nudge query, hide Net Profit card,
   // hide Sell-on-Dozie banner in Lite. Owners flip via Settings → Mode.
   const lite = useLiteMode();
@@ -258,14 +260,14 @@ export default function Dashboard() {
         <div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
             <StatCard icon="🛒" label={lang === 'en' ? "My sales today" : "Mes ventes aujourd'hui"}
-              value={isLoading ? '...' : formatCFA(s.gross_sales || 0)}
+              value={isLoading ? '...' : fmt(s.gross_sales || 0)}
               sub={`${s.sale_count || 0} ${t('dashboard.transactions')}`}
               color="var(--brand-light)" onClick={() => navigate('/reports')} />
             <StatCard icon="💵" label={lang === 'en' ? "Cash collected" : "Espèces encaissées"}
-              value={isLoading ? '...' : formatCFA(s.cash_collected || 0)}
+              value={isLoading ? '...' : fmt(s.cash_collected || 0)}
               color="#10b981" />
             <StatCard icon="💳" label={lang === 'en' ? "Credit sales" : "Ventes crédit"}
-              value={isLoading ? '...' : formatCFA(s.credit_sales || 0)}
+              value={isLoading ? '...' : fmt(s.credit_sales || 0)}
               color="#f59e0b" onClick={() => navigate('/credits')} />
           </div>
 
@@ -283,28 +285,28 @@ export default function Dashboard() {
           {/* Stats grid */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
             <StatCard icon="📊" label={t('dashboard.todaySales')}
-              value={isLoading ? '...' : formatCFA(s.gross_sales || 0)}
+              value={isLoading ? '...' : fmt(s.gross_sales || 0)}
               sub={`${s.sale_count || 0} ${t('dashboard.transactions')}`}
               color="var(--brand-light)" onClick={() => navigate('/reports')} />
             <StatCard icon="💵" label={t('dashboard.cashCollected')}
-              value={isLoading ? '...' : formatCFA(s.cash_collected || 0)}
+              value={isLoading ? '...' : fmt(s.cash_collected || 0)}
               color="#10b981" />
             {/* MP-LITE-MODE-PHASE-1: Net Profit hidden in Lite — Pro analytic. */}
             {isOwner && !lite && (
               <StatCard icon="📈" label={t('dashboard.netProfit')}
-                value={isLoading ? '...' : formatCFA(s.net_profit || 0)}
+                value={isLoading ? '...' : fmt(s.net_profit || 0)}
                 sub={s.profit_margin_pct ? `${s.profit_margin_pct}% margin` : ''}
                 color={s.net_profit >= 0 ? '#10b981' : '#ef4444'} />
             )}
             <StatCard icon="💳" label={t('dashboard.creditSales')}
-              value={isLoading ? '...' : formatCFA(s.credit_sales || 0)}
+              value={isLoading ? '...' : fmt(s.credit_sales || 0)}
               color="#f59e0b" onClick={() => navigate('/credits')} />
             <StatCard icon="💸" label={t('dashboard.totalExpenses')}
-              value={isLoading ? '...' : formatCFA(s.total_expenditure || 0)}
+              value={isLoading ? '...' : fmt(s.total_expenditure || 0)}
               color="#ef4444" onClick={() => navigate('/expenditures')} />
             {isOwner && (
               <StatCard icon="🏦" label={t('dashboard.netCash')}
-                value={isLoading ? '...' : formatCFA(s.net_cash || 0)}
+                value={isLoading ? '...' : fmt(s.net_cash || 0)}
                 color={s.net_cash >= 0 ? '#10b981' : '#ef4444'} />
             )}
           </div>
@@ -347,7 +349,7 @@ export default function Dashboard() {
                         <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{sale.sale_number}</td>
                         <td style={{ color: 'var(--text-secondary)' }}>{formatDate(sale.sale_date, lang)}</td>
                         <td>{sale.pa_customers?.name || <span style={{ color: 'var(--text-muted)' }}>{t('pos.noCustomer')}</span>}</td>
-                        <td style={{ textAlign: 'right', fontWeight: 500 }}>{formatCFA(sale.total_amount)}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 500 }}>{fmt(sale.total_amount)}</td>
                         <td>
                           <span className="badge" style={{ background: `${statusColor(sale.payment_status)}20`, color: statusColor(sale.payment_status) }}>
                             {t(`common.${sale.payment_status}`)}

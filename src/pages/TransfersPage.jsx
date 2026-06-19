@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useLangStore } from "../store";
-import api, { formatCFA, formatDate } from "../utils/api";
+import api, { formatDate } from "../utils/api";
 
 export default function TransfersPage() {
   const { lang } = useLangStore();

@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useLangStore, useAuthStore, useSettingsStore } from "../store";
-import api, { formatCFA, formatDate } from "../utils/api";
+import api, { formatDate } from "../utils/api";
+import { useCurrency } from "../utils/useCurrency";
 import VoidReturnModal from "../components/common/VoidReturnModal";
 import { genSaleCodes } from "../utils/receiptCodes";
 import { buildFactureHtml } from "../utils/factureReceipt";
@@ -59,6 +60,8 @@ export default function ReportsPage() {
   });
   const toggleBlock = (key) => (next) =>
     setBlockExpanded(prev => ({ ...prev, [key]: typeof next === "boolean" ? next : !prev[key] }));
+
+  const fmt = useCurrency();
 
   // Deep-link from the global order search: /reports?sale=<id>&on=<YYYY-MM-DD>.
   // Jump to the Sales Detail tab, widen the range to that day so the
@@ -359,12 +362,12 @@ export default function ReportsPage() {
           <DateFilter />
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 24 }}>
             {[
-              { label: lang === "en" ? "Total sales" : "Ventes totales", value: formatCFA(totals.gross_sales), sub: totals.sale_count + " transactions", color: "var(--brand-light)" },
-              { label: lang === "en" ? "Cash collected" : "Espèces encaissées", value: formatCFA(totals.cash_collected), color: "#34d399" },
-              { label: lang === "en" ? "Gross profit" : "Bénéfice brut", value: formatCFA(totals.gross_profit), sub: avgMargin + "% avg", color: "#34d399" },
-              { label: lang === "en" ? "Expenses" : "Dépenses", value: formatCFA(totals.total_expenditure), color: "#f87171" },
-              { label: lang === "en" ? "Net profit" : "Bénéfice net", value: formatCFA(totals.net_profit), color: totals.net_profit >= 0 ? "#34d399" : "#f87171" },
-              { label: lang === "en" ? "Credit sales" : "Ventes crédit", value: formatCFA(totals.credit_sales), color: "#fbbf24" },
+              { label: lang === "en" ? "Total sales" : "Ventes totales", value: fmt(totals.gross_sales), sub: totals.sale_count + " transactions", color: "var(--brand-light)" },
+              { label: lang === "en" ? "Cash collected" : "Espèces encaissées", value: fmt(totals.cash_collected), color: "#34d399" },
+              { label: lang === "en" ? "Gross profit" : "Bénéfice brut", value: fmt(totals.gross_profit), sub: avgMargin + "% avg", color: "#34d399" },
+              { label: lang === "en" ? "Expenses" : "Dépenses", value: fmt(totals.total_expenditure), color: "#f87171" },
+              { label: lang === "en" ? "Net profit" : "Bénéfice net", value: fmt(totals.net_profit), color: totals.net_profit >= 0 ? "#34d399" : "#f87171" },
+              { label: lang === "en" ? "Credit sales" : "Ventes crédit", value: fmt(totals.credit_sales), color: "#fbbf24" },
             ].map(card => (
               <div key={card.label} className="stat-card">
                 <div className="stat-label">{card.label}</div>
@@ -393,26 +396,26 @@ export default function ReportsPage() {
                   {daily.map((d, i) => (
                     <tr key={i}>
                       <td style={{ fontWeight: 500 }}>{formatDate(d.sale_date, lang)}</td>
-                      <td style={{ textAlign: "right" }}>{formatCFA(d.gross_sales)}<div style={{ fontSize: 10, color: "var(--text-muted)" }}>{d.sale_count} sales</div></td>
-                      <td style={{ textAlign: "right", color: "#34d399" }}>{formatCFA(d.cash_collected)}</td>
-                      {isOwner && <td style={{ textAlign: "right", color: "var(--text-secondary)" }}>{formatCFA(d.total_cost)}</td>}
-                      {isOwner && <td style={{ textAlign: "right", color: "#34d399", fontWeight: 500 }}>{formatCFA(d.gross_profit)}</td>}
+                      <td style={{ textAlign: "right" }}>{fmt(d.gross_sales)}<div style={{ fontSize: 10, color: "var(--text-muted)" }}>{d.sale_count} sales</div></td>
+                      <td style={{ textAlign: "right", color: "#34d399" }}>{fmt(d.cash_collected)}</td>
+                      {isOwner && <td style={{ textAlign: "right", color: "var(--text-secondary)" }}>{fmt(d.total_cost)}</td>}
+                      {isOwner && <td style={{ textAlign: "right", color: "#34d399", fontWeight: 500 }}>{fmt(d.gross_profit)}</td>}
                       {isOwner && <td style={{ textAlign: "right" }}><span style={{ fontSize: 12, padding: "2px 8px", borderRadius: 10, background: d.profit_margin_pct > 20 ? "rgba(16,185,129,0.15)" : "rgba(245,158,11,0.15)", color: d.profit_margin_pct > 20 ? "#34d399" : "#fbbf24" }}>{d.profit_margin_pct}%</span></td>}
-                      <td style={{ textAlign: "right", color: "#f87171" }}>{formatCFA(d.total_expenditure)}</td>
-                      {isOwner && <td style={{ textAlign: "right", fontWeight: 700, color: d.net_profit >= 0 ? "#34d399" : "#f87171" }}>{formatCFA(d.net_profit)}</td>}
+                      <td style={{ textAlign: "right", color: "#f87171" }}>{fmt(d.total_expenditure)}</td>
+                      {isOwner && <td style={{ textAlign: "right", fontWeight: 700, color: d.net_profit >= 0 ? "#34d399" : "#f87171" }}>{fmt(d.net_profit)}</td>}
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
                   <tr style={{ borderTop: "2px solid var(--border)", fontWeight: 700 }}>
                     <td style={{ padding: "12px 16px" }}>TOTAL</td>
-                    <td style={{ textAlign: "right", padding: "12px 16px" }}>{formatCFA(totals.gross_sales)}</td>
-                    <td style={{ textAlign: "right", padding: "12px 16px", color: "#34d399" }}>{formatCFA(totals.cash_collected)}</td>
-                    {isOwner && <td style={{ textAlign: "right", padding: "12px 16px", color: "var(--text-secondary)" }}>{formatCFA(totals.total_cost)}</td>}
-                    {isOwner && <td style={{ textAlign: "right", padding: "12px 16px", color: "#34d399" }}>{formatCFA(totals.gross_profit)}</td>}
+                    <td style={{ textAlign: "right", padding: "12px 16px" }}>{fmt(totals.gross_sales)}</td>
+                    <td style={{ textAlign: "right", padding: "12px 16px", color: "#34d399" }}>{fmt(totals.cash_collected)}</td>
+                    {isOwner && <td style={{ textAlign: "right", padding: "12px 16px", color: "var(--text-secondary)" }}>{fmt(totals.total_cost)}</td>}
+                    {isOwner && <td style={{ textAlign: "right", padding: "12px 16px", color: "#34d399" }}>{fmt(totals.gross_profit)}</td>}
                     {isOwner && <td style={{ textAlign: "right", padding: "12px 16px" }}>{avgMargin}%</td>}
-                    <td style={{ textAlign: "right", padding: "12px 16px", color: "#f87171" }}>{formatCFA(totals.total_expenditure)}</td>
-                    {isOwner && <td style={{ textAlign: "right", padding: "12px 16px", color: totals.net_profit >= 0 ? "#34d399" : "#f87171" }}>{formatCFA(totals.net_profit)}</td>}
+                    <td style={{ textAlign: "right", padding: "12px 16px", color: "#f87171" }}>{fmt(totals.total_expenditure)}</td>
+                    {isOwner && <td style={{ textAlign: "right", padding: "12px 16px", color: totals.net_profit >= 0 ? "#34d399" : "#f87171" }}>{fmt(totals.net_profit)}</td>}
                   </tr>
                 </tfoot>
               </table>
@@ -447,12 +450,12 @@ export default function ReportsPage() {
                         <span style={{ color: "var(--text-muted)" }}>{daySales.length} {lang === "en" ? "sales" : "ventes"}</span>
                         {dayReturns > 0 ? (
                           <>
-                            <span style={{ color: "var(--text-muted)", textDecoration: "line-through" }}>{formatCFA(dayTotal)}</span>
-                            <span style={{ color: "#f87171" }}>↩ -{formatCFA(dayReturns)}</span>
-                            <span style={{ fontWeight: 800, color: "var(--brand-light)" }}>{formatCFA(dayNet)} {lang === "en" ? "NET" : "NET"}</span>
+                            <span style={{ color: "var(--text-muted)", textDecoration: "line-through" }}>{fmt(dayTotal)}</span>
+                            <span style={{ color: "#f87171" }}>↩ -{fmt(dayReturns)}</span>
+                            <span style={{ fontWeight: 800, color: "var(--brand-light)" }}>{fmt(dayNet)} {lang === "en" ? "NET" : "NET"}</span>
                           </>
                         ) : (
-                          <span style={{ fontWeight: 700, color: "var(--brand-light)" }}>{formatCFA(dayTotal)}</span>
+                          <span style={{ fontWeight: 700, color: "var(--brand-light)" }}>{fmt(dayTotal)}</span>
                         )}
                       </div>
                     </div>
@@ -497,15 +500,15 @@ export default function ReportsPage() {
                               <div style={{ textAlign: "right" }}>
                                 {Number(sale.refunded_total) > 0 ? (
                                   <>
-                                    <div style={{ fontSize: 12, color: "var(--text-muted)", textDecoration: "line-through" }}>{formatCFA(sale.total_amount)}</div>
+                                    <div style={{ fontSize: 12, color: "var(--text-muted)", textDecoration: "line-through" }}>{fmt(sale.total_amount)}</div>
                                     <div style={{ fontWeight: 800, fontSize: 15, color: Number(sale.net_amount) <= 0 ? "var(--text-muted)" : "var(--brand-light)" }}>
-                                      {formatCFA(sale.net_amount)} {lang === "en" ? "NET" : "NET"}
+                                      {fmt(sale.net_amount)} {lang === "en" ? "NET" : "NET"}
                                     </div>
                                   </>
                                 ) : (
-                                  <div style={{ fontWeight: 800, fontSize: 15, color: "var(--brand-light)" }}>{formatCFA(sale.total_amount)}</div>
+                                  <div style={{ fontWeight: 800, fontSize: 15, color: "var(--brand-light)" }}>{fmt(sale.total_amount)}</div>
                                 )}
-                                {sale.balance_due > 0 && <div style={{ fontSize: 11, color: "#f87171" }}>Due: {formatCFA(sale.balance_due)}</div>}
+                                {sale.balance_due > 0 && <div style={{ fontSize: 11, color: "#f87171" }}>Due: {fmt(sale.balance_due)}</div>}
                               </div>
                                 <div style={{ color: "var(--text-muted)", fontSize: 16, transition: "transform 0.15s", transform: isExpanded ? "rotate(90deg)" : "none" }}>›</div>
                               </div>
@@ -525,7 +528,7 @@ export default function ReportsPage() {
                                       ? `${itemLabel(i, lang)} ... ${itemAmount(i).toLocaleString()} F\n`
                                       : `${itemLabel(i, lang)} × ${i.quantity} ... ${itemAmount(i).toLocaleString()} F\n`;
                                   });
-                                  msg += `─────────────────────\n*Total: ${total.toLocaleString()} FCFA*`;
+                                  msg += `─────────────────────\n*Total: ${total.toLocaleString()} ${fmt.symbol}*`;
                                   if (sale.payment_status === "credit") msg += `\n🔴 CRÉDIT: ${total.toLocaleString()} F DÛ`;
                                   else if (sale.payment_status === "partial") msg += `\n🟡 PARTIEL — Reste: ${sale.balance_due?.toLocaleString()} F`;
                                   const phone = sale.pa_customers?.phone ? "237" + sale.pa_customers.phone.toString().replace(/^0/,"").replace(/\s/g,"") : "";
@@ -569,17 +572,17 @@ export default function ReportsPage() {
                                       <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                                         {isDebtItem(item)
                                           ? (lang === "en" ? "applied to customer debt" : "appliqué à la dette client")
-                                          : `${item.quantity} ${itemUnit(item)} × ${formatCFA(item.unit_price)}`}
+                                          : `${item.quantity} ${itemUnit(item)} × ${fmt(item.unit_price)}`}
                                       </div>
                                     </div>
                                     <div style={{ fontWeight: 700, fontSize: 14, color: "var(--brand-light)" }}>
-                                      {formatCFA(itemAmount(item))}
+                                      {fmt(itemAmount(item))}
                                     </div>
                                   </div>
                                 ))}
                                 <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 20px", borderTop: "1px solid var(--border)", fontWeight: 700 }}>
                                   <span>{lang === "en" ? "Sold total" : "Total vendu"}</span>
-                                  <span style={{ color: "var(--brand-light)" }}>{formatCFA(sale.total_amount)}</span>
+                                  <span style={{ color: "var(--brand-light)" }}>{fmt(sale.total_amount)}</span>
                                 </div>
                                 {(sale.returns || []).length > 0 && (
                                   <div style={{ borderTop: "2px solid rgba(248,113,113,0.4)", background: "rgba(248,113,113,0.06)" }}>
@@ -590,7 +593,7 @@ export default function ReportsPage() {
                                       <div key={r.id} style={{ padding: "8px 20px", borderTop: "1px solid var(--border)", fontSize: 12 }}>
                                         <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 600 }}>
                                           <span style={{ fontFamily: "monospace" }}>{r.return_ref}</span>
-                                          <span style={{ color: "#f87171" }}>-{formatCFA(r.refund_amount)} {r.refund_method && r.refund_method !== "none" ? `(${r.refund_method})` : ""}</span>
+                                          <span style={{ color: "#f87171" }}>-{fmt(r.refund_amount)} {r.refund_method && r.refund_method !== "none" ? `(${r.refund_method})` : ""}</span>
                                         </div>
                                         <div style={{ color: "var(--text-muted)", marginTop: 2 }}>
                                           {new Date(r.created_at).toLocaleString()} · {r.processed_by_name || "—"}
@@ -599,14 +602,14 @@ export default function ReportsPage() {
                                         </div>
                                         {(r.items_returned || []).map((ri, j) => (
                                           <div key={j} style={{ color: "var(--text-muted)", marginTop: 2 }}>
-                                            • {ri.name || ri.product_id} × {ri.qty || ri.quantity} @ {formatCFA(ri.unit_price || 0)}
+                                            • {ri.name || ri.product_id} × {ri.qty || ri.quantity} @ {fmt(ri.unit_price || 0)}
                                           </div>
                                         ))}
                                       </div>
                                     ))}
                                     <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 20px", borderTop: "1px solid var(--border)", fontWeight: 800 }}>
                                       <span>{lang === "en" ? "NET after returns" : "NET après retours"}</span>
-                                      <span style={{ color: Number(sale.net_amount) <= 0 ? "var(--text-muted)" : "var(--brand-light)" }}>{formatCFA(sale.net_amount)}</span>
+                                      <span style={{ color: Number(sale.net_amount) <= 0 ? "var(--text-muted)" : "var(--brand-light)" }}>{fmt(sale.net_amount)}</span>
                                     </div>
                                   </div>
                                 )}
@@ -662,7 +665,7 @@ export default function ReportsPage() {
 `; });
                 msg += `─────────────────────
 `;
-                msg += `*Total: ${grandTotal.toLocaleString()} FCFA*
+                msg += `*Total: ${grandTotal.toLocaleString()} ${fmt.symbol}*
 `;
                 msg += `✅ Encaissé: ${paid.toLocaleString()} F
 `;
@@ -701,7 +704,7 @@ export default function ReportsPage() {
                   <div class="line"></div>
                   ${items.map(i => `<div class="row"><span>${i.name} × ${i.qty} ${i.unit}</span><span>${i.total.toLocaleString()} F</span></div>`).join("")}
                   <div class="line"></div>
-                  <div class="row bold"><span>TOTAL</span><span>${grandTotal.toLocaleString()} FCFA</span></div>
+                  <div class="row bold"><span>TOTAL</span><span>${grandTotal.toLocaleString()} ${fmt.symbol}</span></div>
                   <div class="row"><span>✅ Encaissé</span><span>${paid.toLocaleString()} F</span></div>
                   ${credit > 0 ? `<div class="row" style="color:red"><span>🔴 Crédit</span><span>${credit.toLocaleString()} F</span></div>` : ""}
                   <div class="row"><span>📦 Nb ventes</span><span>${todaySales.length}</span></div>
@@ -765,7 +768,7 @@ export default function ReportsPage() {
                       </td>
                       <td></td>
                       <td style={{ textAlign: "right", padding: "12px 16px", fontWeight: 800, fontSize: 16, color: "var(--brand-light)" }}>
-                        {grandTotal.toLocaleString()} FCFA
+                        {grandTotal.toLocaleString()} {fmt.symbol}
                       </td>
                     </tr>
                     <tr style={{ background: "var(--bg-elevated)" }}>
@@ -808,7 +811,7 @@ export default function ReportsPage() {
                       </td>
                       <td style={{ fontWeight: 600 }}>{p.name}</td>
                       <td style={{ textAlign: "right", fontWeight: 600 }}>{p.total_qty.toLocaleString()} {p.unit}</td>
-                      <td style={{ textAlign: "right", fontWeight: 700, color: "var(--brand-light)" }}>{formatCFA(p.total_revenue)}</td>
+                      <td style={{ textAlign: "right", fontWeight: 700, color: "var(--brand-light)" }}>{fmt(p.total_revenue)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -824,7 +827,7 @@ export default function ReportsPage() {
           <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
             <div className="stat-card" style={{ flex: 1 }}>
               <div className="stat-label">{lang === "en" ? "Total outstanding" : "Total dû"}</div>
-              <div className="stat-value" style={{ color: "#f87171" }}>{formatCFA(totalDebt)}</div>
+              <div className="stat-value" style={{ color: "#f87171" }}>{fmt(totalDebt)}</div>
             </div>
             <div className="stat-card" style={{ flex: 1 }}>
               <div className="stat-label">{lang === "en" ? "Customers with debt" : "Clients avec crédit"}</div>
@@ -857,7 +860,7 @@ export default function ReportsPage() {
                         <td style={{ color: isOverdue ? "#f87171" : "var(--text-secondary)", fontSize: 13 }}>
                           {c.earliest_due ? formatDate(c.earliest_due) + (isOverdue ? " ⚠️" : "") : "—"}
                         </td>
-                        <td style={{ textAlign: "right", fontWeight: 700, color: "#f87171", fontSize: 15 }}>{formatCFA(c.total_debt)}</td>
+                        <td style={{ textAlign: "right", fontWeight: 700, color: "#f87171", fontSize: 15 }}>{fmt(c.total_debt)}</td>
                       </tr>
                     );
                   })}
@@ -865,7 +868,7 @@ export default function ReportsPage() {
                 <tfoot>
                   <tr style={{ borderTop: "2px solid var(--border)" }}>
                     <td colSpan={5} style={{ padding: "12px 16px", fontWeight: 700 }}>TOTAL</td>
-                    <td style={{ textAlign: "right", fontWeight: 700, color: "#f87171", padding: "12px 16px", fontSize: 16 }}>{formatCFA(totalDebt)}</td>
+                    <td style={{ textAlign: "right", fontWeight: 700, color: "#f87171", padding: "12px 16px", fontSize: 16 }}>{fmt(totalDebt)}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -878,8 +881,8 @@ export default function ReportsPage() {
           <div style={{ display: "flex", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
             {[
               [lang === "en" ? "Returns" : "Retours", returnsStats.count ?? 0],
-              [lang === "en" ? "Total refunded" : "Total remboursé", formatCFA(returnsStats.total_refunded || 0)],
-              [lang === "en" ? "Avg value" : "Valeur moy.", formatCFA(returnsStats.avg_value || 0)],
+              [lang === "en" ? "Total refunded" : "Total remboursé", fmt(returnsStats.total_refunded || 0)],
+              [lang === "en" ? "Avg value" : "Valeur moy.", fmt(returnsStats.avg_value || 0)],
               [lang === "en" ? "Top reason" : "Raison principale", returnsStats.top_reason || "—"],
             ].map(([k, v], i) => (
               <div key={i} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 16px", minWidth: 130 }}>
@@ -908,7 +911,7 @@ export default function ReportsPage() {
                     <td style={{ padding: "8px 12px" }}>{r.sale_number}</td>
                     <td style={{ padding: "8px 12px" }}>{r.return_type || "refund"}</td>
                     <td style={{ padding: "8px 12px" }}>{(r.items_returned || []).length}</td>
-                    <td style={{ padding: "8px 12px", color: "#f87171" }}>{formatCFA(r.refund_amount || 0)}</td>
+                    <td style={{ padding: "8px 12px", color: "#f87171" }}>{fmt(r.refund_amount || 0)}</td>
                     <td style={{ padding: "8px 12px" }}>{r.reason || "—"}</td>
                     <td style={{ padding: "8px 12px", color: "var(--text-muted)" }}>{new Date(r.created_at).toLocaleDateString()}</td>
                     <td style={{ padding: "8px 12px", color: "var(--text-muted)" }}>{r.processed_by_name || "—"}</td>
@@ -964,7 +967,7 @@ export default function ReportsPage() {
             const Subtotal = ({ label, value, color }) => (
               <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderTop: "1px solid var(--border)", fontWeight: 700, fontSize: 13 }}>
                 <span>{lang === "en" ? "Sub-total" : "Sous-total"} — {label}</span>
-                <span style={{ color }}>{formatCFA(value)}</span>
+                <span style={{ color }}>{fmt(value)}</span>
               </div>
             );
 
@@ -1024,12 +1027,12 @@ export default function ReportsPage() {
                   const shiftDrawer   = shiftsList.reduce(
                     (s, r) => s + (Number(r.expected_drawer) || 0), 0);
                   const dayFlowSubtotal = lang === "en"
-                    ? `Day net: ${formatCFA(bl.day_flow.net_cash_flow)}`
-                    : `Net du jour: ${formatCFA(bl.day_flow.net_cash_flow)}`;
+                    ? `Day net: ${fmt(bl.day_flow.net_cash_flow)}`
+                    : `Net du jour: ${fmt(bl.day_flow.net_cash_flow)}`;
                   const shiftsSubtotal = shiftsList.length === 0
                     ? (lang === "en" ? "no shifts" : "aucun poste")
-                    : `${formatCFA(shiftDrawer)} FCFA`;
-                  const outstandingSubtotal = `${formatCFA(bl.outstanding.debt_issued_today)} FCFA`;
+                    : `${fmt(shiftDrawer)} ${fmt.symbol}`;
+                  const outstandingSubtotal = `${fmt(bl.outstanding.debt_issued_today)} ${fmt.symbol}`;
                   return (
                   <>
                     <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 12, textAlign: "center", letterSpacing: "0.3px" }}>
@@ -1043,34 +1046,34 @@ export default function ReportsPage() {
                       subtotalValue={dayFlowSubtotal}
                       expanded={blockExpanded.day_flow}
                       onToggle={toggleBlock("day_flow")}>
-                      <BlockRow label={lang === "en" ? "Sales today" : "Ventes du jour"} value={formatCFA(bl.day_flow.sales.total)} bold />
-                      <BlockRow indent label={lang === "en" ? "Paid cash" : "Payé espèces"} value={formatCFA(bl.day_flow.sales.paid_cash)} />
-                      <BlockRow indent label={lang === "en" ? "Paid MoMo" : "Payé MoMo"} value={formatCFA(bl.day_flow.sales.paid_momo)} />
-                      <BlockRow indent label={lang === "en" ? "Paid bank" : "Payé banque"} value={formatCFA(bl.day_flow.sales.paid_bank)} />
-                      <BlockRow indent label={lang === "en" ? "On credit" : "À crédit"} value={formatCFA(bl.day_flow.sales.on_credit)} color="#fbbf24" />
+                      <BlockRow label={lang === "en" ? "Sales today" : "Ventes du jour"} value={fmt(bl.day_flow.sales.total)} bold />
+                      <BlockRow indent label={lang === "en" ? "Paid cash" : "Payé espèces"} value={fmt(bl.day_flow.sales.paid_cash)} />
+                      <BlockRow indent label={lang === "en" ? "Paid MoMo" : "Payé MoMo"} value={fmt(bl.day_flow.sales.paid_momo)} />
+                      <BlockRow indent label={lang === "en" ? "Paid bank" : "Payé banque"} value={fmt(bl.day_flow.sales.paid_bank)} />
+                      <BlockRow indent label={lang === "en" ? "On credit" : "À crédit"} value={fmt(bl.day_flow.sales.on_credit)} color="#fbbf24" />
                       <div style={{ height: 8 }} />
-                      <BlockRow label={lang === "en" ? "Debt collected" : "Dette encaissée"} value={formatCFA(bl.day_flow.debt_collected.total)} bold />
-                      <BlockRow indent label={lang === "en" ? "Cash" : "Espèces"} value={formatCFA(bl.day_flow.debt_collected.cash)} />
-                      <BlockRow indent label="MoMo" value={formatCFA(bl.day_flow.debt_collected.momo)} />
-                      <BlockRow indent label={lang === "en" ? "Bank" : "Banque"} value={formatCFA(bl.day_flow.debt_collected.bank)} />
+                      <BlockRow label={lang === "en" ? "Debt collected" : "Dette encaissée"} value={fmt(bl.day_flow.debt_collected.total)} bold />
+                      <BlockRow indent label={lang === "en" ? "Cash" : "Espèces"} value={fmt(bl.day_flow.debt_collected.cash)} />
+                      <BlockRow indent label="MoMo" value={fmt(bl.day_flow.debt_collected.momo)} />
+                      <BlockRow indent label={lang === "en" ? "Bank" : "Banque"} value={fmt(bl.day_flow.debt_collected.bank)} />
                       <div style={{ height: 8 }} />
                       <BlockRow label={lang === "en" ? "Refunds & voids (cash out)" : "Remboursements & annulations (sortie)"}
-                                value={formatCFA(bl.day_flow.refunds_voids_cash_out)}
+                                value={fmt(bl.day_flow.refunds_voids_cash_out)}
                                 color={bl.day_flow.refunds_voids_cash_out > 0 ? "#f87171" : undefined}
                                 sign={bl.day_flow.refunds_voids_cash_out > 0 ? "-" : ""} />
                       {bl.day_flow.exchanges && bl.day_flow.exchanges.count > 0 && (
                         <BlockRow label={`${lang === "en" ? "Exchanges" : "Échanges"} (${bl.day_flow.exchanges.count})`}
-                                  value={formatCFA(Math.abs(bl.day_flow.exchanges.net))}
+                                  value={fmt(Math.abs(bl.day_flow.exchanges.net))}
                                   color={bl.day_flow.exchanges.net < 0 ? "#f87171" : bl.day_flow.exchanges.net > 0 ? "#34d399" : undefined}
                                   sign={bl.day_flow.exchanges.net < 0 ? "-" : ""} />
                       )}
                       <BlockRow label={lang === "en" ? "Expenses" : "Dépenses"}
-                                value={formatCFA(bl.day_flow.expenses)}
+                                value={fmt(bl.day_flow.expenses)}
                                 color={bl.day_flow.expenses > 0 ? "#f87171" : undefined}
                                 sign={bl.day_flow.expenses > 0 ? "-" : ""} />
                       <div style={{ height: 1, background: "var(--border)", margin: "8px 0 4px" }} />
                       <BlockRow label={lang === "en" ? "Net cash flow" : "Flux net espèces"}
-                                value={formatCFA(bl.day_flow.net_cash_flow)} bold
+                                value={fmt(bl.day_flow.net_cash_flow)} bold
                                 color={bl.day_flow.net_cash_flow < 0 ? "#f87171" : "#34d399"} />
                     </CollapsibleBlock>
 
@@ -1095,25 +1098,25 @@ export default function ReportsPage() {
                                 ({tfmt(s.opened_at)} → {closed ? tfmt(s.closed_at) : (lang === "en" ? "open" : "ouvert")})
                               </span>
                             </div>
-                            <BlockRow indent label={lang === "en" ? "Opening float" : "Fond d'ouverture"} value={formatCFA(s.opening_float)} />
-                            <BlockRow indent label={lang === "en" ? "Cash sales" : "Ventes espèces"} value={formatCFA(s.cash_sales)} />
-                            <BlockRow indent label={lang === "en" ? "Debt collected (cash)" : "Dette encaissée (espèces)"} value={formatCFA(s.debt_collected_cash)} />
-                            <BlockRow indent label={lang === "en" ? "Cash refunds" : "Remboursements espèces"} value={formatCFA(s.cash_refunds)} color={s.cash_refunds > 0 ? "#f87171" : undefined} sign={s.cash_refunds > 0 ? "-" : ""} />
+                            <BlockRow indent label={lang === "en" ? "Opening float" : "Fond d'ouverture"} value={fmt(s.opening_float)} />
+                            <BlockRow indent label={lang === "en" ? "Cash sales" : "Ventes espèces"} value={fmt(s.cash_sales)} />
+                            <BlockRow indent label={lang === "en" ? "Debt collected (cash)" : "Dette encaissée (espèces)"} value={fmt(s.debt_collected_cash)} />
+                            <BlockRow indent label={lang === "en" ? "Cash refunds" : "Remboursements espèces"} value={fmt(s.cash_refunds)} color={s.cash_refunds > 0 ? "#f87171" : undefined} sign={s.cash_refunds > 0 ? "-" : ""} />
                             {((s.exchange_cash_in || 0) > 0 || (s.exchange_cash_out || 0) > 0) && (() => {
                               const exNet = (s.exchange_cash_in || 0) - (s.exchange_cash_out || 0);
-                              return <BlockRow indent label={lang === "en" ? "Exchanges (net)" : "Échanges (net)"} value={formatCFA(Math.abs(exNet))} color={exNet < 0 ? "#f87171" : exNet > 0 ? "#34d399" : undefined} sign={exNet < 0 ? "-" : ""} />;
+                              return <BlockRow indent label={lang === "en" ? "Exchanges (net)" : "Échanges (net)"} value={fmt(Math.abs(exNet))} color={exNet < 0 ? "#f87171" : exNet > 0 ? "#34d399" : undefined} sign={exNet < 0 ? "-" : ""} />;
                             })()}
-                            <BlockRow indent label={lang === "en" ? "Expenses" : "Dépenses"} value={formatCFA(s.expenses)} color={s.expenses > 0 ? "#f87171" : undefined} sign={s.expenses > 0 ? "-" : ""} />
-                            <BlockRow indent label={lang === "en" ? "Expected drawer" : "Caisse attendue"} value={formatCFA(s.expected_drawer)} bold />
+                            <BlockRow indent label={lang === "en" ? "Expenses" : "Dépenses"} value={fmt(s.expenses)} color={s.expenses > 0 ? "#f87171" : undefined} sign={s.expenses > 0 ? "-" : ""} />
+                            <BlockRow indent label={lang === "en" ? "Expected drawer" : "Caisse attendue"} value={fmt(s.expected_drawer)} bold />
                             {closed && s.counted_at_close != null && (
                               <>
-                                <BlockRow indent label={lang === "en" ? "Counted at close" : "Comptée à la clôture"} value={formatCFA(s.counted_at_close)} />
+                                <BlockRow indent label={lang === "en" ? "Counted at close" : "Comptée à la clôture"} value={fmt(s.counted_at_close)} />
                                 {s.variance != null && s.variance !== 0 && (
                                   <BlockRow indent
                                     label={s.variance < 0
                                       ? (lang === "en" ? "Variance (short)" : "Écart (manquant)")
                                       : (lang === "en" ? "Variance (surplus)" : "Écart (excédent)")}
-                                    value={`${s.variance > 0 ? "+" : "−"}${formatCFA(Math.abs(s.variance))}`}
+                                    value={`${s.variance > 0 ? "+" : "−"}${fmt(Math.abs(s.variance))}`}
                                     color={s.variance < 0 ? "#f87171" : "#fbbf24"} />
                                 )}
                               </>
@@ -1135,10 +1138,10 @@ export default function ReportsPage() {
                       expanded={blockExpanded.outstanding}
                       onToggle={toggleBlock("outstanding")}>
                       <BlockRow label={lang === "en" ? "Debt issued today" : "Crédit accordé aujourd'hui"}
-                                value={formatCFA(bl.outstanding.debt_issued_today)}
+                                value={fmt(bl.outstanding.debt_issued_today)}
                                 color={bl.outstanding.debt_issued_today > 0 ? "#fbbf24" : undefined} />
                       <BlockRow label={lang === "en" ? "Total customer debt (all time)" : "Dette client totale (tous comptes)"}
-                                value={formatCFA(bl.outstanding.total_customer_debt_all_time)} bold />
+                                value={fmt(bl.outstanding.total_customer_debt_all_time)} bold />
                     </CollapsibleBlock>
                   </>
                   );
@@ -1149,31 +1152,31 @@ export default function ReportsPage() {
                       {lang === "en" ? "DAILY REPORT" : "RAPPORT DU JOUR"}
                       {ledger.location?.name && <span style={{ color: "var(--text-muted)", fontWeight: 500 }}> — {ledger.location.name}</span>}
                     </div>
-                    <SimpleRow label={lang === "en" ? "Amount sold"    : "Ventes du jour"}   value={formatCFA(ps.total)} />
-                    <SimpleRow label={lang === "en" ? "Debt collected" : "Dette encaissée"} value={formatCFA(dc.total)} />
+                    <SimpleRow label={lang === "en" ? "Amount sold"    : "Ventes du jour"}   value={fmt(ps.total)} />
+                    <SimpleRow label={lang === "en" ? "Debt collected" : "Dette encaissée"} value={fmt(dc.total)} />
                     <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
                     <SimpleRow label={lang === "en" ? "Total money received" : "Total reçu"}
-                      value={formatCFA(totalReceived)} bold />
+                      value={fmt(totalReceived)} bold />
                     {drCounted != null && (
                       <>
                         <div style={{ height: 12 }} />
                         <SimpleRow label={lang === "en" ? "Counted in drawer" : "Caisse comptée"}
-                          value={formatCFA(drCounted)} />
+                          value={fmt(drCounted)} />
                         {drVariance != null && drVariance < 0 && (
                           <SimpleRow label={lang === "en" ? "Lost (drawer short)" : "Manquant"}
-                            value={formatCFA(Math.abs(drVariance))} color="#f87171" />
+                            value={fmt(Math.abs(drVariance))} color="#f87171" />
                         )}
                         {drVariance != null && drVariance > 0 && (
                           <SimpleRow label={lang === "en" ? "Drawer surplus" : "Excédent caisse"}
-                            value={`+${formatCFA(drVariance)}`} color="#fbbf24" />
+                            value={`+${fmt(drVariance)}`} color="#fbbf24" />
                         )}
                         {Number(ex.total) > 0 && (
                           <SimpleRow label={lang === "en" ? "Expenses" : "Dépenses"}
-                            value={formatCFA(ex.total)} color="#f87171" />
+                            value={fmt(ex.total)} color="#f87171" />
                         )}
                         <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
                         <SimpleRow label={lang === "en" ? "Cash at hand" : "Cash en main"}
-                          value={formatCFA(cashAtHand)} bold color={cashAtHand < 0 ? "#f87171" : "#34d399"} />
+                          value={fmt(cashAtHand)} bold color={cashAtHand < 0 ? "#f87171" : "#34d399"} />
                       </>
                     )}
                     {drCounted == null && dr && (
@@ -1187,7 +1190,7 @@ export default function ReportsPage() {
                       <>
                         <div style={{ height: 12 }} />
                         <SimpleRow label={lang === "en" ? "Debt issued (on credit)" : "Crédit du jour"}
-                          value={formatCFA(debtIssued)} color="#fbbf24" />
+                          value={fmt(debtIssued)} color="#fbbf24" />
                       </>
                     )}
                   </div>
@@ -1203,8 +1206,8 @@ export default function ReportsPage() {
                   <div style={{ color: "var(--text-muted)", fontSize: 13, padding: "6px 0" }}>—</div>
                 ) : ps.items.map((g, i) => (
                   <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "5px 0", borderBottom: "1px solid var(--border)" }}>
-                    <span>{g.product_name} <span style={{ color: "var(--text-muted)" }}>{g.qty} × {formatCFA(g.unit_price)}</span></span>
-                    <span style={{ fontWeight: 600 }}>{formatCFA(g.line_total)}</span>
+                    <span>{g.product_name} <span style={{ color: "var(--text-muted)" }}>{g.qty} × {fmt(g.unit_price)}</span></span>
+                    <span style={{ fontWeight: 600 }}>{fmt(g.line_total)}</span>
                   </div>
                 ))}
                 <Subtotal label={lang === "en" ? "product sales" : "ventes produits"} value={ps.total} color="var(--brand-light)" />
@@ -1221,7 +1224,7 @@ export default function ReportsPage() {
                       {lang === "en" ? "Debt collection" : "Recouvrement"} — <strong>{d.customer_name}</strong>
                       {d.sale_number && <span style={{ color: "var(--text-muted)", fontFamily: "monospace", marginLeft: 6, fontSize: 11 }}>{d.sale_number}</span>}
                     </span>
-                    <span style={{ fontWeight: 600, color: "#34d399" }}>{formatCFA(d.amount)}</span>
+                    <span style={{ fontWeight: 600, color: "#34d399" }}>{fmt(d.amount)}</span>
                   </div>
                 ))}
                 <Subtotal label={lang === "en" ? "debt collections" : "recouvrements"} value={dc.total} color="#34d399" />
@@ -1294,7 +1297,7 @@ export default function ReportsPage() {
                                 </span>
                               </div>
                               <div style={{ color: "#f87171", fontWeight: 700, fontSize: 13 }}>
-                                −{formatCFA(r.refund_amount)}
+                                −{fmt(r.refund_amount)}
                               </div>
                             </div>
                             <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
@@ -1312,16 +1315,16 @@ export default function ReportsPage() {
                                 {Number(r.price_difference) !== 0 && (
                                   <span style={{ marginLeft: 8, color: r.price_difference > 0 ? "#34d399" : "#fbbf24" }}>
                                     {r.price_difference > 0
-                                      ? (lang === "en" ? `+${formatCFA(r.price_difference)} cash back` : `+${formatCFA(r.price_difference)} rendu`)
-                                      : (lang === "en" ? `${formatCFA(r.price_difference)} customer paid` : `${formatCFA(r.price_difference)} payé par client`)}
+                                      ? (lang === "en" ? `+${fmt(r.price_difference)} cash back` : `+${fmt(r.price_difference)} rendu`)
+                                      : (lang === "en" ? `${fmt(r.price_difference)} customer paid` : `${fmt(r.price_difference)} payé par client`)}
                                   </span>
                                 )}
                               </div>
                             )}
                             {r.has_credit_split && (
                               <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3, paddingLeft: 12 }}>
-                                ↳ {formatCFA(r.credit_portion)} {lang === "en" ? "to credit account" : "au compte crédit"},
-                                {" "}{formatCFA(r.cash_portion)} {lang === "en" ? "cash out" : "en espèces"}
+                                ↳ {fmt(r.credit_portion)} {lang === "en" ? "to credit account" : "au compte crédit"},
+                                {" "}{fmt(r.cash_portion)} {lang === "en" ? "cash out" : "en espèces"}
                               </div>
                             )}
                             {r.reason && (
@@ -1361,7 +1364,7 @@ export default function ReportsPage() {
                           {e.category && e.description ? " — " : ""}
                           {e.description}
                         </span>
-                        <span style={{ color: "#f87171", fontWeight: 600 }}>−{formatCFA(e.amount)}</span>
+                        <span style={{ color: "#f87171", fontWeight: 600 }}>−{fmt(e.amount)}</span>
                       </div>
                     ))}
                     <Subtotal label={lang === "en" ? "expenses" : "dépenses"} value={-ex.total} color="#f87171" />
@@ -1403,33 +1406,33 @@ export default function ReportsPage() {
                       <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>💼 {heading}</div>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
                         <span style={{ color: "var(--text-muted)" }}>{lang === "en" ? "Opening float" : "Solde d'ouverture"}</span>
-                        <span>{formatCFA(dr.opening_float)}</span>
+                        <span>{fmt(dr.opening_float)}</span>
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
                         <span style={{ color: "var(--text-muted)" }}>+ {lang === "en" ? "Cash sales this shift" : "Ventes espèces ce poste"}</span>
-                        <span style={{ color: "#34d399" }}>{formatCFA(sCash)}</span>
+                        <span style={{ color: "#34d399" }}>{fmt(sCash)}</span>
                       </div>
                       {sRef > 0 && (
                         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
                           <span style={{ color: "var(--text-muted)" }}>− {lang === "en" ? "Refunds this shift" : "Remboursements ce poste"}</span>
-                          <span style={{ color: "#f87171" }}>−{formatCFA(sRef)}</span>
+                          <span style={{ color: "#f87171" }}>−{fmt(sRef)}</span>
                         </div>
                       )}
                       {sExp > 0 && (
                         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
                           <span style={{ color: "var(--text-muted)" }}>− {lang === "en" ? "Expenses this shift" : "Dépenses ce poste"}</span>
-                          <span style={{ color: "#f87171" }}>−{formatCFA(sExp)}</span>
+                          <span style={{ color: "#f87171" }}>−{fmt(sExp)}</span>
                         </div>
                       )}
                       <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 14, padding: "8px 0 4px", borderTop: "2px solid var(--border)", marginTop: 4 }}>
                         <span>{lang === "en" ? "Expected drawer" : "Caisse attendue"}</span>
-                        <span style={{ color: "var(--brand-light)" }}>{formatCFA(dr.expected)}</span>
+                        <span style={{ color: "var(--brand-light)" }}>{fmt(dr.expected)}</span>
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "6px 0 2px" }}>
                         <span style={{ color: "var(--text-muted)" }}>{lang === "en" ? "Actual cash" : "Caisse réelle"}</span>
                         <span style={{ fontWeight: 600 }}>
                           {drIsClosed
-                            ? formatCFA(dr.actual)
+                            ? fmt(dr.actual)
                             : <em style={{ color: "var(--text-muted)" }}>— {lang === "en" ? "(count at end of shift)" : "(à compter en fin de poste)"}</em>}
                         </span>
                       </div>
@@ -1438,10 +1441,10 @@ export default function ReportsPage() {
                           <span>{lang === "en" ? "Variance" : "Écart"}</span>
                           <span style={{ color: (dr.variance || 0) === 0 ? "#34d399" : (dr.variance || 0) > 0 ? "#fbbf24" : "#f87171" }}>
                             {(dr.variance || 0) === 0
-                              ? `${formatCFA(0)} ${lang === "en" ? "(Exact)" : "(Exact)"}`
+                              ? `${fmt(0)} ${lang === "en" ? "(Exact)" : "(Exact)"}`
                               : (dr.variance || 0) > 0
-                                ? `+${formatCFA(dr.variance)} ${lang === "en" ? "(Surplus)" : "(Excédent)"}`
-                                : `−${formatCFA(Math.abs(dr.variance))} ${lang === "en" ? "(Shortage)" : "(Manquant)"}`}
+                                ? `+${fmt(dr.variance)} ${lang === "en" ? "(Surplus)" : "(Excédent)"}`
+                                : `−${fmt(Math.abs(dr.variance))} ${lang === "en" ? "(Shortage)" : "(Manquant)"}`}
                           </span>
                         </div>
                       )}

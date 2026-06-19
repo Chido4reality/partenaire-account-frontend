@@ -12,6 +12,7 @@
 
 import { useState } from "react";
 import { useLangStore } from "../../store";
+import { useCurrency } from "../../utils/useCurrency";
 import UpgradeModal from "./UpgradeModal";
 import { PLAN_CAPABILITIES, getCapabilities } from "../../utils/planCapabilities";
 import { openWhatsApp } from "../../utils/whatsapp";
@@ -90,6 +91,7 @@ const PLAN_PERKS = {
 
 export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
   const { lang } = useLangStore();
+  const fmt = useCurrency();
   // MP-BILLING-V2 (2 Jun): default-selected tier rekeyed gold → lite.
   // Under the rekey, PLAN_CAPABILITIES.gold is { legacy: true,
   // alias_of: 'lite' } — selecting it as the initial state and then
@@ -201,7 +203,7 @@ export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
                           alias, this Number coercion + nullish fallback
                           keeps the modal renderable instead of crashing the
                           whole app shell. */}
-                      {Number(caps?.price_fcfa_month ?? 0).toLocaleString("fr-CM")} FCFA
+                      {Number(caps?.price_fcfa_month ?? 0).toLocaleString("fr-CM")} {fmt.symbol}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                       {lang === "fr" ? "/ mois" : "/ month"}

@@ -3,7 +3,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useLangStore } from "../store";
-import api, { formatCFA, formatDate } from "../utils/api";
+import api, { formatDate } from "../utils/api";
+import { useCurrency } from "../utils/useCurrency";
 import { useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
 
 // MP-PAUL-FIX-5B (3 Jun): pa_expenditure_categories.name is stored
@@ -66,6 +67,7 @@ export default function ExpenditurePage() {
   // Frontend disables submit only when there's no shift at the
   // currently selected location — the common case.
   const { hasShift: shiftIsOpen } = useActiveShift();
+  const fmt = useCurrency();
 
   const [showAdd, setShowAdd] = useState(false);
   const [dateFilter, setDateFilter] = useState(new Date().toISOString().split("T")[0]);
@@ -111,7 +113,7 @@ export default function ExpenditurePage() {
         <div>
           <h1 className="page-title">{lang === "en" ? "Expenses" : "Depenses"}</h1>
           <div className="page-sub" style={{ color: "#f87171" }}>
-            {lang === "en" ? "Total today:" : "Total aujourd hui:"} {formatCFA(totalToday)}
+            {lang === "en" ? "Total today:" : "Total aujourd hui:"} {fmt(totalToday)}
           </div>
         </div>
         <button className="btn btn-primary" onClick={() => setShowAdd(true)}
@@ -168,14 +170,14 @@ export default function ExpenditurePage() {
                   <td style={{ color: "var(--text-muted)", fontSize: 12 }}>
                     {new Date(e.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </td>
-                  <td style={{ textAlign: "right", fontWeight: 600, color: "#f87171" }}>{formatCFA(e.amount)}</td>
+                  <td style={{ textAlign: "right", fontWeight: 600, color: "#f87171" }}>{fmt(e.amount)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           <div style={{ padding: "12px 20px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", fontWeight: 700 }}>
             <span>{lang === "en" ? "Total" : "Total"}</span>
-            <span style={{ color: "#f87171" }}>{formatCFA(totalToday)}</span>
+            <span style={{ color: "#f87171" }}>{fmt(totalToday)}</span>
           </div>
         </div>
       )}
@@ -193,7 +195,7 @@ export default function ExpenditurePage() {
                 placeholder={lang === "en" ? "e.g. Electricity bill, Transport..." : "Ex: Facture electricite, Transport..."} />
             </div>
             <div className="form-group">
-              <label className="label">{lang === "en" ? "Amount (FCFA)" : "Montant (FCFA)"} *</label>
+              <label className="label">{lang === "en" ? `Amount (${fmt.symbol})` : `Montant (${fmt.symbol})`} *</label>
               <input className="input" type="number" value={form.amount} onChange={e => setF("amount", e.target.value)} placeholder="0" />
             </div>
             <div className="form-group">

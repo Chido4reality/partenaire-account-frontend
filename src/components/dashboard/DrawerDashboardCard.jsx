@@ -22,7 +22,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLangStore, useSettingsStore } from "../../store";
-import api, { formatCFA } from "../../utils/api";
+import api from "../../utils/api";
+import { useCurrency } from "../../utils/useCurrency";
 import { OpenShiftModal, CloseShiftModal } from "../common/ShiftWidgets";
 
 // ── Row primitives ────────────────────────────────────────────────
@@ -60,6 +61,7 @@ function ClickRow({ label, value, valueColor, onClick, title }) {
 function DetailModal({ kind, shiftId, onClose }) {
   const { lang } = useLangStore();
   const fr = lang === "fr";
+  const fmt = useCurrency();
 
   // Per-kind config: endpoint path, title, list key, columns, row render.
   const cfg = {
@@ -125,7 +127,7 @@ function DetailModal({ kind, shiftId, onClose }) {
         </div>
         <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
           {fr ? `${rows.length} ${rows.length === 1 ? "transaction" : "transactions"} · Total : ` : `${rows.length} ${rows.length === 1 ? "transaction" : "transactions"} · Total: `}
-          <strong style={{ color: "var(--brand-light)" }}>{formatCFA(total)}</strong>
+          <strong style={{ color: "var(--brand-light)" }}>{fmt(total)}</strong>
         </div>
 
         <div style={{ overflowY: "auto", flex: 1, minHeight: 0, border: "1px solid var(--border)", borderRadius: 10 }}>
@@ -150,7 +152,7 @@ function DetailModal({ kind, shiftId, onClose }) {
                     <td style={{ color: "var(--text-muted)", fontFamily: "monospace", fontSize: 12 }}>{r.time}</td>
                     <td style={{ fontWeight: 500 }}>{r.a}</td>
                     <td style={{ color: "var(--text-secondary)" }}>{r.b}</td>
-                    <td style={{ textAlign: "right", fontWeight: 700 }}>{formatCFA(r.amount)}</td>
+                    <td style={{ textAlign: "right", fontWeight: 700 }}>{fmt(r.amount)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -248,6 +250,7 @@ export default function DrawerDashboardCard() {
   const { lang } = useLangStore();
   const fr = lang === "fr";
   const { selectedLocation } = useSettingsStore();
+  const fmt = useCurrency();
   const locId = selectedLocation?.id || null;
 
   // Shared cache with <ActiveShiftIndicator/> — same queryKey.
@@ -380,7 +383,7 @@ export default function DrawerDashboardCard() {
     ? (
       <span style={{ fontSize: 13 }}>
         {fr ? "Attendu : " : "Expected: "}
-        <strong style={{ color: "var(--brand-light)" }}>{formatCFA(expected)}</strong>
+        <strong style={{ color: "var(--brand-light)" }}>{fmt(expected)}</strong>
       </span>
     )
     : (
@@ -388,10 +391,10 @@ export default function DrawerDashboardCard() {
         {fr ? "Écart : " : "Variance: "}
         <strong style={{ color: varianceColor }}>
           {variance === 0
-            ? `${formatCFA(0)} ${fr ? "(Exact)" : "(Exact)"}`
+            ? `${fmt(0)} ${fr ? "(Exact)" : "(Exact)"}`
             : variance > 0
-              ? `+${formatCFA(variance)} ${fr ? "(Excédent)" : "(Surplus)"}`
-              : `−${formatCFA(Math.abs(variance))} ${fr ? "(Manquant)" : "(Shortage)"}`}
+              ? `+${fmt(variance)} ${fr ? "(Excédent)" : "(Surplus)"}`
+              : `−${fmt(Math.abs(variance))} ${fr ? "(Manquant)" : "(Shortage)"}`}
         </strong>
       </span>
     );
@@ -430,25 +433,25 @@ export default function DrawerDashboardCard() {
         <div style={{ borderTop: "1px solid var(--border)", paddingTop: 6 }}>
           <StaticRow
             label={fr ? "Solde d'ouverture" : "Opening float"}
-            value={formatCFA(Number(shift.opening_float || 0))} />
+            value={fmt(Number(shift.opening_float || 0))} />
 
           <ClickRow
             label={fr ? "+ Ventes en espèces" : "+ Cash sales"}
-            value={formatCFA(Number(shift.cash_sales_received || 0))}
+            value={fmt(Number(shift.cash_sales_received || 0))}
             valueColor="#34d399"
             onClick={() => setDrill("sales")}
             title={fr ? "Cliquer pour le détail" : "Click for detail"} />
 
           <ClickRow
             label={fr ? "− Remboursements espèces" : "− Cash refunds"}
-            value={formatCFA(Number(shift.cash_refunds || 0))}
+            value={fmt(Number(shift.cash_refunds || 0))}
             valueColor="#f87171"
             onClick={() => setDrill("refunds")}
             title={fr ? "Cliquer pour le détail" : "Click for detail"} />
 
           <ClickRow
             label={fr ? "− Dépenses espèces" : "− Cash expenses"}
-            value={formatCFA(Number(shift.cash_expenses || 0))}
+            value={fmt(Number(shift.cash_expenses || 0))}
             valueColor="#f87171"
             onClick={() => setDrill("expenses")}
             title={fr ? "Cliquer pour le détail" : "Click for detail"} />
@@ -460,7 +463,7 @@ export default function DrawerDashboardCard() {
               {fr ? "Caisse attendue" : "Expected drawer"}
             </span>
             <strong style={{ fontSize: 20, color: "var(--brand-light)" }}>
-              {formatCFA(expected)}
+              {fmt(expected)}
             </strong>
           </div>
 
@@ -469,15 +472,15 @@ export default function DrawerDashboardCard() {
               <div style={{ height: 1, background: "var(--border)", margin: "0 14px 6px" }} />
               <StaticRow
                 label={fr ? "Solde réel" : "Actual cash"}
-                value={formatCFA(Number(shift.actual_cash || 0))} />
+                value={fmt(Number(shift.actual_cash || 0))} />
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 14px", fontSize: 13 }}>
                 <span style={{ color: "var(--text-muted)" }}>{fr ? "Écart" : "Variance"}</span>
                 <strong style={{ color: varianceColor, fontWeight: 700 }}>
                   {variance === 0
-                    ? `${formatCFA(0)} ${fr ? "(Exact)" : "(Exact)"}`
+                    ? `${fmt(0)} ${fr ? "(Exact)" : "(Exact)"}`
                     : variance > 0
-                      ? `+${formatCFA(variance)} ${fr ? "(Excédent)" : "(Surplus)"}`
-                      : `−${formatCFA(Math.abs(variance))} ${fr ? "(Manquant)" : "(Shortage)"}`}
+                      ? `+${fmt(variance)} ${fr ? "(Excédent)" : "(Surplus)"}`
+                      : `−${fmt(Math.abs(variance))} ${fr ? "(Manquant)" : "(Shortage)"}`}
                 </strong>
               </div>
             </>

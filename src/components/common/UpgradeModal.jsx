@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useLangStore } from "../../store";
-import api, { formatCFA } from "../../utils/api";
+import api from "../../utils/api";
+import { useCurrency } from "../../utils/useCurrency";
 
 // MP-SUB-NO-PHANTOM-PENDING: Mobile Money / Orange are NOT in-app buttons —
 // they're Flutterwave methods, chosen on the FW hosted page. The ONLY online
@@ -18,6 +19,7 @@ const PAYMENT_METHODS = [
 
 export default function UpgradeModal({ onClose, currentPlan }) {
   const { lang } = useLangStore();
+  const fmt = useCurrency();
   const qc = useQueryClient();
   const [selectedPlan, setSelectedPlan] = useState(null);
   // MP-BILLING-V3: Flutterwave is the unified PRIMARY path for all 3 plans —
@@ -233,7 +235,7 @@ export default function UpgradeModal({ onClose, currentPlan }) {
                     </div>
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
-                    <div style={{ fontWeight: 800, fontSize: 18, color: "var(--brand-light)" }}>{formatCFA(plan.price ?? plan.price_monthly)}</div>
+                    <div style={{ fontWeight: 800, fontSize: 18, color: "var(--brand-light)" }}>{fmt(plan.price ?? plan.price_monthly)}</div>
                     <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en" ? "/month" : "/mois"}</div>
                   </div>
                 </div>
@@ -256,10 +258,10 @@ export default function UpgradeModal({ onClose, currentPlan }) {
             <div className="form-group" style={{ marginBottom: 16 }}>
               <label className="label">{lang === "en" ? "Duration" : "Durée"}</label>
               <select className="input" value={months} onChange={e => setMonths(+e.target.value)}>
-                <option value={1}>{lang === "en" ? "1 month" : "1 mois"} — {formatCFA(unitPrice)}</option>
-                <option value={3}>{lang === "en" ? "3 months" : "3 mois"} — {formatCFA(unitPrice * 3)}</option>
-                <option value={6}>{lang === "en" ? "6 months" : "6 mois"} — {formatCFA(unitPrice * 6)}</option>
-                <option value={12}>{lang === "en" ? "12 months" : "12 mois"} — {formatCFA(unitPrice * 12)}</option>
+                <option value={1}>{lang === "en" ? "1 month" : "1 mois"} — {fmt(unitPrice)}</option>
+                <option value={3}>{lang === "en" ? "3 months" : "3 mois"} — {fmt(unitPrice * 3)}</option>
+                <option value={6}>{lang === "en" ? "6 months" : "6 mois"} — {fmt(unitPrice * 6)}</option>
+                <option value={12}>{lang === "en" ? "12 months" : "12 mois"} — {fmt(unitPrice * 12)}</option>
               </select>
             </div>
 
@@ -341,21 +343,21 @@ export default function UpgradeModal({ onClose, currentPlan }) {
               )}
               <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, display: "flex", justifyContent: "space-between" }}>
                 <span style={{ fontWeight: 700 }}>Total</span>
-                <strong style={{ fontSize: 18, color: "var(--brand-light)" }}>{formatCFA(totalAmount)}</strong>
+                <strong style={{ fontSize: 18, color: "var(--brand-light)" }}>{fmt(totalAmount)}</strong>
               </div>
             </div>
 
             {paymentMethod === "flutterwave" ? (
               <div style={{ background: "rgba(251,197,3,0.08)", border: "1px solid rgba(251,197,3,0.25)", borderRadius: 10, padding: 12, marginBottom: 16, fontSize: 12, color: "var(--brand-light)" }}>
                 ⚡ {lang === "en"
-                  ? `You'll be redirected to Flutterwave's secure page to pay ${formatCFA(totalAmount)} by card or mobile money. Your plan activates automatically once payment is confirmed.`
-                  : `Vous serez redirigé vers la page sécurisée Flutterwave pour payer ${formatCFA(totalAmount)} par carte ou mobile money. Votre plan s'active automatiquement après confirmation.`}
+                  ? `You'll be redirected to Flutterwave's secure page to pay ${fmt(totalAmount)} by card or mobile money. Your plan activates automatically once payment is confirmed.`
+                  : `Vous serez redirigé vers la page sécurisée Flutterwave pour payer ${fmt(totalAmount)} par carte ou mobile money. Votre plan s'active automatiquement après confirmation.`}
               </div>
             ) : (
               <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 10, padding: 12, marginBottom: 16, fontSize: 12, color: "#fbbf24" }}>
                 ⏳ {lang === "en"
-                  ? `After submitting, your request will be pending until admin approves. Please send ${formatCFA(totalAmount)} via ${PAYMENT_METHODS.find(p => p.value === paymentMethod)?.label} and mention your account ID.`
-                  : `Après soumission, votre demande sera en attente jusqu'à approbation. Envoyez ${formatCFA(totalAmount)} via ${PAYMENT_METHODS.find(p => p.value === paymentMethod)?.label} et mentionnez votre ID de compte.`}
+                  ? `After submitting, your request will be pending until admin approves. Please send ${fmt(totalAmount)} via ${PAYMENT_METHODS.find(p => p.value === paymentMethod)?.label} and mention your account ID.`
+                  : `Après soumission, votre demande sera en attente jusqu'à approbation. Envoyez ${fmt(totalAmount)} via ${PAYMENT_METHODS.find(p => p.value === paymentMethod)?.label} et mentionnez votre ID de compte.`}
               </div>
             )}
 

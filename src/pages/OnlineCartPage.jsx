@@ -15,6 +15,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import api from "../utils/api";
+import { useCurrency } from "../utils/useCurrency";
 import toast from "react-hot-toast";
 import { safeSetItem } from "../utils/safeStorage";
 
@@ -114,6 +115,7 @@ function MappingModal({ entry, lang, busy, onConfirm, onClose, confirmLabel }) {
 
   const allMapped = rows.length > 0 && rows.every(r => r.product && r.qty > 0);
   const fmt = n => Number(n || 0).toLocaleString();
+  const money = useCurrency();
 
   const submit = () => {
     const mappings = rows.map((r, i) => ({
@@ -144,7 +146,7 @@ function MappingModal({ entry, lang, busy, onConfirm, onClose, confirmLabel }) {
               <div key={idx} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 12, marginBottom: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
                   <div style={{ fontWeight: 600, fontSize: 13 }}>
-                    “{items[idx]?.name}” <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>· {fmt(items[idx]?.price)} FCFA</span>
+                    “{items[idx]?.name}” <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>· {fmt(items[idx]?.price)} {money.symbol}</span>
                   </div>
                   {r.product && (
                     <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: "rgba(0,0,0,0.2)", color: conf.color }}>
@@ -232,6 +234,7 @@ export default function OnlineCartPage() {
   const { user } = useAuthStore();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const money = useCurrency();
 
   const [tab, setTab] = useState("pending");
   const [openEntry, setOpenEntry] = useState(null);   // detail panel
@@ -369,7 +372,7 @@ export default function OnlineCartPage() {
         </div>
         <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 16px" }}>
           <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("Total value", "Valeur totale")}</div>
-          <div style={{ fontSize: 20, fontWeight: 700 }}>{stats.sum.toLocaleString()} FCFA</div>
+          <div style={{ fontSize: 20, fontWeight: 700 }}>{stats.sum.toLocaleString()} {money.symbol}</div>
         </div>
       </div>
 
@@ -413,7 +416,7 @@ export default function OnlineCartPage() {
                   <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 9px", borderRadius: 10, background: pill.bg, color: pill.color }}>
                     {lang === "en" ? pill.en : pill.fr}
                   </span>
-                  <span style={{ fontWeight: 700, fontSize: 14 }}>{Number(e.total_amount || 0).toLocaleString()} FCFA</span>
+                  <span style={{ fontWeight: 700, fontSize: 14 }}>{Number(e.total_amount || 0).toLocaleString()} {money.symbol}</span>
                 </div>
               </div>
             );
@@ -435,13 +438,13 @@ export default function OnlineCartPage() {
               </div>
               <div style={{ fontSize: 13, marginBottom: 12 }}>
                 {t("Payment", "Paiement")}: <strong>{(MODE_PILL[openEntry.payment_mode] || {})[lang === "en" ? "en" : "fr"] || openEntry.payment_mode}</strong>
-                {" · "}{Number(openEntry.total_amount || 0).toLocaleString()} FCFA
+                {" · "}{Number(openEntry.total_amount || 0).toLocaleString()} {money.symbol}
               </div>
               <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>{t("Items", "Articles")}</div>
               {(openEntry.items || []).map((it, i) => (
                 <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "4px 0", borderBottom: "1px solid var(--border)" }}>
                   <span>{it.qty || it.quantity} × {it.name}</span>
-                  <span>{Number(it.price || 0).toLocaleString()} FCFA</span>
+                  <span>{Number(it.price || 0).toLocaleString()} {money.symbol}</span>
                 </div>
               ))}
             </div>

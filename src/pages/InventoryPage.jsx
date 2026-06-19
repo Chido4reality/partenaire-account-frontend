@@ -6,7 +6,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
-import api, { formatCFA } from "../utils/api";
+import api from "../utils/api";
+import { useCurrency } from "../utils/useCurrency";
 import OwnerPIN from "../components/common/OwnerPIN";
 import PhotoUploadButtons from "../components/common/PhotoUploadButtons";
 import PaywallModal from "../components/common/PaywallModal";
@@ -90,6 +91,7 @@ export default function InventoryPage() {
   // confirms a product price change (via the edit modal) or a manual
   // stock adjustment. Hook self-manages modal state.
   const { requestApproval, modal: approvalModal } = useOwnerApproval();
+  const fmt = useCurrency();
 
   if (isCashier) return (
     <div style={{ padding: 40, textAlign: "center" }}>
@@ -629,8 +631,8 @@ export default function InventoryPage() {
       if (steps[i].v < steps[i - 1].v) {
         const lo = steps[i], hi = steps[i - 1];
         return lang === "en"
-          ? `${lo.en} (${lo.v.toLocaleString()} FCFA) can't be below ${hi.en} (${hi.v.toLocaleString()} FCFA).`
-          : `${lo.fr} (${lo.v.toLocaleString()} FCFA) ne peut pas être inférieur au ${hi.fr} (${hi.v.toLocaleString()} FCFA).`;
+          ? `${lo.en} (${lo.v.toLocaleString()} ${fmt.symbol}) can't be below ${hi.en} (${hi.v.toLocaleString()} ${fmt.symbol}).`
+          : `${lo.fr} (${lo.v.toLocaleString()} ${fmt.symbol}) ne peut pas être inférieur au ${hi.fr} (${hi.v.toLocaleString()} ${fmt.symbol}).`;
       }
     }
     return null;
@@ -1011,7 +1013,7 @@ export default function InventoryPage() {
           <h1 className="page-title">{lang === "en" ? "Inventory" : "Inventaire"}</h1>
           <div style={{ display: "flex", gap: 16, marginTop: 4, flexWrap: "wrap", alignItems: "center" }}>
             {alerts.length > 0 && <div style={{ fontSize: 12, color: "#fbbf24" }}>⚠️ {alerts.length} {lang === "en" ? "items below minimum" : "articles sous le minimum"}</div>}
-            {isOwner && <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{lang === "en" ? "Stock value:" : "Valeur stock:"} <strong style={{ color: "var(--brand-light)" }}>{formatCFA(totalStockValue)}</strong></div>}
+            {isOwner && <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{lang === "en" ? "Stock value:" : "Valeur stock:"} <strong style={{ color: "var(--brand-light)" }}>{fmt(totalStockValue)}</strong></div>}
             {/* Sprint A: inventory cap usage badge. Hidden on plans with
                 unlimited inventory (Trial/Gold/Premium). */}
             {planCaps.inventory_cap != null && (
@@ -1225,10 +1227,10 @@ export default function InventoryPage() {
                       </td>
                       <td style={{ textAlign: "right", fontWeight: 600, color: isLow ? "#f87171" : "var(--text-primary)" }}>{s.quantity} {p?.unit}</td>
                       <td style={{ textAlign: "right", color: "var(--text-muted)" }}>{s.min_quantity}</td>
-                      {canSeePrices && <td style={{ textAlign: "right", color: "var(--text-muted)", fontSize: 12 }}>{formatCFA(p?.cost_price)}</td>}
-                      {canSeePrices && <td style={{ textAlign: "right", fontWeight: 600, color: "var(--brand-light)" }}>{formatCFA(p?.sell_price)}</td>}
-                      {canSeePrices && <td style={{ textAlign: "right", color: "#fbbf24" }}>{p?.wholesale_price > 0 ? formatCFA(p.wholesale_price) : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>}</td>}
-                      {canSeePrices && <td style={{ textAlign: "right", color: "#f87171", fontSize: 12 }}>{p?.min_price > 0 ? formatCFA(p.min_price) : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>}</td>}
+                      {canSeePrices && <td style={{ textAlign: "right", color: "var(--text-muted)", fontSize: 12 }}>{fmt(p?.cost_price)}</td>}
+                      {canSeePrices && <td style={{ textAlign: "right", fontWeight: 600, color: "var(--brand-light)" }}>{fmt(p?.sell_price)}</td>}
+                      {canSeePrices && <td style={{ textAlign: "right", color: "#fbbf24" }}>{p?.wholesale_price > 0 ? fmt(p.wholesale_price) : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>}</td>}
+                      {canSeePrices && <td style={{ textAlign: "right", color: "#f87171", fontSize: 12 }}>{p?.min_price > 0 ? fmt(p.min_price) : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>}</td>}
                       <td><span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: s.pa_products?.is_active === false ? "rgba(100,100,100,0.15)" : isLow && s.alert_enabled !== false ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.15)", color: s.pa_products?.is_active === false ? "var(--text-muted)" : isLow && s.alert_enabled !== false ? "#f87171" : "#34d399" }}>
   {s.pa_products?.is_active === false ? (lang === "en" ? "⏸ Paused" : "⏸ Pausé") : isLow && s.alert_enabled !== false ? (lang === "en" ? "Low" : "Bas") : "OK"}
 </span></td>
@@ -1286,7 +1288,7 @@ export default function InventoryPage() {
                 <tfoot>
                   <tr style={{ borderTop: "2px solid var(--border)", background: "var(--bg-elevated)" }}>
                     <td colSpan={4} style={{ padding: "12px 16px", fontWeight: 600, fontSize: 12, color: "var(--text-muted)" }}>{lang === "en" ? "Total inventory value (at cost)" : "Valeur totale inventaire (au coût)"}</td>
-                    <td colSpan={5} style={{ textAlign: "right", padding: "12px 16px", fontWeight: 800, color: "var(--brand-light)", fontSize: 15 }}>{formatCFA(totalStockValue)}</td>
+                    <td colSpan={5} style={{ textAlign: "right", padding: "12px 16px", fontWeight: 800, color: "var(--brand-light)", fontSize: 15 }}>{fmt(totalStockValue)}</td>
                   </tr>
                 </tfoot>
               )}
@@ -1327,7 +1329,7 @@ export default function InventoryPage() {
                       <td style={{ color: "var(--text-muted)", fontSize: 12 }}>{p.unit}</td>
                       {locations.map(l => <td key={l.id} style={{ textAlign: "right" }}>{p.locs[l.id] != null ? p.locs[l.id] : <span style={{ color: "var(--text-muted)" }}>—</span>}</td>)}
                       <td style={{ textAlign: "right", fontWeight: 700, color: "var(--brand-light)" }}>{p.total}</td>
-                      {isOwner && <td style={{ textAlign: "right", fontSize: 12, color: "#fbbf24" }}>{formatCFA(value)}</td>}
+                      {isOwner && <td style={{ textAlign: "right", fontSize: 12, color: "#fbbf24" }}>{fmt(value)}</td>}
                     </tr>
                   );
                 })}
@@ -1337,7 +1339,7 @@ export default function InventoryPage() {
                   <td colSpan={2} style={{ fontWeight: 600, padding: "12px 16px" }}>{overviewProducts.length} products</td>
                   {locations.map(l => { const t = allStock.filter(s => s.location_id === l.id).reduce((sum, s) => sum + +s.quantity, 0); return <td key={l.id} style={{ textAlign: "right", fontWeight: 600, padding: "12px 16px" }}>{t}</td>; })}
                   <td style={{ textAlign: "right", fontWeight: 700, color: "var(--brand-light)", padding: "12px 16px" }}>{allStock.reduce((sum, s) => sum + +s.quantity, 0)}</td>
-                  {isOwner && <td style={{ textAlign: "right", fontWeight: 700, color: "#fbbf24", padding: "12px 16px" }}>{formatCFA(totalStockValue)}</td>}
+                  {isOwner && <td style={{ textAlign: "right", fontWeight: 700, color: "#fbbf24", padding: "12px 16px" }}>{fmt(totalStockValue)}</td>}
                 </tr>
               </tfoot>
             </table>
@@ -1392,10 +1394,10 @@ export default function InventoryPage() {
                     </td>
                     <td style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text-muted)" }}>{p.barcode || "—"}</td>
                     <td style={{ color: "var(--text-muted)" }}>{p.unit}</td>
-                    {canSeePrices && <td style={{ textAlign: "right", color: "var(--text-muted)", fontSize: 12 }}>{formatCFA(p.cost_price)}</td>}
-                    {canSeePrices && <td style={{ textAlign: "right", fontWeight: 600, color: "var(--brand-light)" }}>{formatCFA(p.sell_price)}</td>}
-                    {canSeePrices && <td style={{ textAlign: "right", color: "#fbbf24" }}>{p.wholesale_price > 0 ? formatCFA(p.wholesale_price) : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>}</td>}
-                    {canSeePrices && <td style={{ textAlign: "right", color: "#f87171", fontSize: 12 }}>{p.min_price > 0 ? formatCFA(p.min_price) : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>}</td>}
+                    {canSeePrices && <td style={{ textAlign: "right", color: "var(--text-muted)", fontSize: 12 }}>{fmt(p.cost_price)}</td>}
+                    {canSeePrices && <td style={{ textAlign: "right", fontWeight: 600, color: "var(--brand-light)" }}>{fmt(p.sell_price)}</td>}
+                    {canSeePrices && <td style={{ textAlign: "right", color: "#fbbf24" }}>{p.wholesale_price > 0 ? fmt(p.wholesale_price) : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>}</td>}
+                    {canSeePrices && <td style={{ textAlign: "right", color: "#f87171", fontSize: 12 }}>{p.min_price > 0 ? fmt(p.min_price) : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>}</td>}
                     {isOwner && <td><button className="btn btn-secondary btn-sm" onClick={() => { setEditProduct({ ...p }); setShowEditProduct(true); }} style={{ color: "var(--brand-light)" }}>✏️ Edit</button></td>}
                   </tr>
                 ))}
@@ -2159,6 +2161,7 @@ export default function InventoryPage() {
 
 // ── SHARED PRICING SECTION COMPONENT ─────────────────────────────────────────
 function PricingSection({ data, onChange, lang }) {
+  const fmt = useCurrency();
   return (
     <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 14 }}>
       <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 12 }}>
@@ -2166,19 +2169,19 @@ function PricingSection({ data, onChange, lang }) {
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <div className="form-group">
-          <label className="label">{lang === "en" ? "Cost price (FCFA)" : "Prix achat (FCFA)"}</label>
+          <label className="label">{lang === "en" ? `Cost price (${fmt.symbol})` : `Prix achat (${fmt.symbol})`}</label>
           <input className="input" type="number" value={data.cost_price || ""} onChange={e => onChange("cost_price", e.target.value)} placeholder="0" />
         </div>
         <div className="form-group">
-          <label className="label" style={{ color: "var(--brand-light)" }}>{lang === "en" ? "Walk-in price (FCFA) *" : "Prix détail (FCFA) *"}</label>
+          <label className="label" style={{ color: "var(--brand-light)" }}>{lang === "en" ? `Walk-in price (${fmt.symbol}) *` : `Prix détail (${fmt.symbol}) *`}</label>
           <input className="input" type="number" value={data.sell_price || ""} onChange={e => onChange("sell_price", e.target.value)} placeholder="0" />
         </div>
         <div className="form-group">
-          <label className="label" style={{ color: "#fbbf24" }}>{lang === "en" ? "Wholesale price (FCFA)" : "Prix gros (FCFA)"}</label>
+          <label className="label" style={{ color: "#fbbf24" }}>{lang === "en" ? `Wholesale price (${fmt.symbol})` : `Prix gros (${fmt.symbol})`}</label>
           <input className="input" type="number" value={data.wholesale_price || ""} onChange={e => onChange("wholesale_price", e.target.value)} placeholder="0" />
         </div>
         <div className="form-group">
-          <label className="label" style={{ color: "#f87171" }}>{lang === "en" ? "Min price floor (FCFA)" : "Prix minimum (FCFA)"}</label>
+          <label className="label" style={{ color: "#f87171" }}>{lang === "en" ? `Min price floor (${fmt.symbol})` : `Prix minimum (${fmt.symbol})`}</label>
           <input className="input" type="number" value={data.min_price || ""} onChange={e => onChange("min_price", e.target.value)} placeholder="0" />
         </div>
       </div>

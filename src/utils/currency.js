@@ -21,10 +21,10 @@ export function currencySymbol(code) {
 }
 
 // Grouped number (fr-CM: space thousands), no decimals, + currency symbol.
-// Matches formatCFA() exactly when the currency is XAF/unset (FCFA shops keep
-// identical output).
+// BYTE-IDENTICAL to the legacy formatCFA() when the currency is XAF/unset — same
+// "—" guard (`!amount && amount !== 0`) and same `Math.round(amount)` — so FCFA
+// shops keep pixel-identical output after the formatCFA -> fmt migration.
 export function formatMoney(amount, code) {
-  if (amount == null || amount === "") return "—";
-  const n = new Intl.NumberFormat("fr-CM").format(Math.round(Number(amount) || 0));
-  return `${n} ${currencySymbol(code)}`;
+  if (!amount && amount !== 0) return "—";
+  return new Intl.NumberFormat("fr-CM").format(Math.round(amount)) + " " + currencySymbol(code);
 }

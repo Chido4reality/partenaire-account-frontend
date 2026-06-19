@@ -14,10 +14,19 @@
 // clears from this screen automatically. Failed/Retrying rows get a Retry.
 
 import { useEffect, useState, useCallback } from "react";
-import { useLangStore, useSettingsStore } from "../store";
-import { formatCFA } from "../utils/api";
+import { useLangStore, useSettingsStore, useAuthStore } from "../store";
+import { useCurrency } from "../utils/useCurrency";
+import { formatMoney } from "../utils/currency";
 import { getCachedData } from "../utils/offlineStore";
 import { listPending, subscribe, retry, retryAll } from "../utils/pendingSync";
+
+// Non-hook currency formatter for module-scope helpers. Reads the org's
+// currency from the auth store non-reactively (getState), so it always
+// reflects the current org without needing a hook call site.
+function fmtMoney(amount) {
+  const currency = useAuthStore.getState().org?.currency || "XAF";
+  return formatMoney(amount, currency);
+}
 
 // Resolve a line's product name WITHOUT a server call: the queued payload now
 // carries `name` (POSPage stamps it onto each item/line before enqueue), with a
@@ -67,23 +76,23 @@ function describeDetails(endpoint, payload, lang) {
   if (/^\/sales\/?$/.test(ep)) {
     const n = Array.isArray(payload.items) ? payload.items.reduce((s, i) => s + (Number(i.quantity) || 0), 0) : null;
     if (n != null) bits.push(fr ? `${n} article(s)` : `${n} item(s)`);
-    if (payload.total_amount != null) bits.push(formatCFA(payload.total_amount));
+    if (payload.total_amount != null) bits.push(fmtMoney(payload.total_amount));
     if (payload.paid_amount != null && Number(payload.paid_amount) < Number(payload.total_amount || 0)) {
-      bits.push(fr ? `payé ${formatCFA(payload.paid_amount)}` : `paid ${formatCFA(payload.paid_amount)}`);
+      bits.push(fr ? `payé ${fmtMoney(payload.paid_amount)}` : `paid ${fmtMoney(payload.paid_amount)}`);
     }
   } else if (/^\/sales\/[^/]+\/payment\/?$/.test(ep) || /collect-debt/.test(ep)) {
-    if (payload.amount != null) bits.push(formatCFA(payload.amount));
+    if (payload.amount != null) bits.push(fmtMoney(payload.amount));
   } else if (/^\/returns\/(return|exchange|void)\//.test(ep)) {
     const items = payload.items_returned || payload.items || [];
     if (Array.isArray(items) && items.length) bits.push(fr ? `${items.length} ligne(s)` : `${items.length} line(s)`);
     if (payload.refund_method) bits.push(payload.refund_method);
   } else if (/^\/expenditures\/?$/.test(ep)) {
-    if (payload.amount != null) bits.push(formatCFA(payload.amount));
+    if (payload.amount != null) bits.push(fmtMoney(payload.amount));
     if (payload.category) bits.push(payload.category);
   } else if (/^\/shifts\/open\/?$/.test(ep)) {
-    if (payload.opening_float != null) bits.push((fr ? "fond " : "float ") + formatCFA(payload.opening_float));
+    if (payload.opening_float != null) bits.push((fr ? "fond " : "float ") + fmtMoney(payload.opening_float));
   } else if (/^\/shifts\/[^/]+\/close\/?$/.test(ep)) {
-    if (payload.actual_cash != null) bits.push((fr ? "compté " : "counted ") + formatCFA(payload.actual_cash));
+    if (payload.actual_cash != null) bits.push((fr ? "compté " : "counted ") + fmtMoney(payload.actual_cash));
   } else if (/^\/transfers\/?$/.test(ep) || /^\/stock\//.test(ep)) {
     const items = payload.items || payload.lines || [];
     if (Array.isArray(items) && items.length) bits.push(fr ? `${items.length} produit(s)` : `${items.length} product(s)`);
@@ -120,6 +129,7 @@ function shortError(last_error, lang) {
 // Expanded detail for a queued row, read entirely from its payload (no server
 // call — these are unsynced, so the cart/items live in the queued record).
 function RowDetail({ endpoint, payload, productNames, lang }) {
+  const fmt = useCurrency();
   const fr = lang !== "en";
   const ep = endpoint || "";
   const muted = { fontSize: 11, color: "var(--text-muted)" };
@@ -127,10 +137,10 @@ function RowDetail({ endpoint, payload, productNames, lang }) {
     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "5px 0", fontSize: 13, borderBottom: "1px solid var(--border)" }}>
       <span style={{ flex: 1 }}>
         {name}
-        <span style={{ color: "var(--text-muted)" }}> · {qty} × {formatCFA(unit)}</span>
+        <span style={{ color: "var(--text-muted)" }}> · {qty} × {fmt(unit)}</span>
       </span>
       <span style={{ fontWeight: 600, whiteSpace: "nowrap", color: neg ? "#f87171" : "var(--text-primary)" }}>
-        {neg ? "−" : ""}{formatCFA(total)}
+        {neg ? "−" : ""}{fmt(total)}
       </span>
     </div>
   );
@@ -156,11 +166,11 @@ function RowDetail({ endpoint, payload, productNames, lang }) {
                 total={(Number(i.quantity) || 1) * (Number(i.unit_price) || 0)} />
             ))}
         <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, fontWeight: 800, fontSize: 14 }}>
-          <span>{fr ? "Total" : "Total"}</span><span>{formatCFA(total)}</span>
+          <span>{fr ? "Total" : "Total"}</span><span>{fmt(total)}</span>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 12, color: "var(--text-secondary)" }}>
-          <span>{fr ? "Payé" : "Paid"}: {formatCFA(paid)}</span>
-          {balance > 0 && <span style={{ color: "#fbbf24" }}>{fr ? "Crédit" : "Credit"}: {formatCFA(balance)}</span>}
+          <span>{fr ? "Payé" : "Paid"}: {fmt(paid)}</span>
+          {balance > 0 && <span style={{ color: "#fbbf24" }}>{fr ? "Crédit" : "Credit"}: {fmt(balance)}</span>}
         </div>
       </Wrap>
     );
@@ -199,7 +209,7 @@ function RowDetail({ endpoint, payload, productNames, lang }) {
     return (
       <Wrap>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 700 }}>
-          <span>{fr ? "Montant" : "Amount"}</span><span>{formatCFA(Number(payload.amount) || 0)}</span>
+          <span>{fr ? "Montant" : "Amount"}</span><span>{fmt(Number(payload.amount) || 0)}</span>
         </div>
         <div style={{ ...muted, marginTop: 4 }}>
           {fr ? "Mode" : "Method"}: {payload.payment_method || "cash"}
@@ -211,9 +221,9 @@ function RowDetail({ endpoint, payload, productNames, lang }) {
 
   // ── Fallback (expenses, shifts, stock, products): show known fields ───
   const generic = [];
-  if (payload.amount != null) generic.push([fr ? "Montant" : "Amount", formatCFA(payload.amount)]);
-  if (payload.opening_float != null) generic.push([fr ? "Fond" : "Float", formatCFA(payload.opening_float)]);
-  if (payload.actual_cash != null) generic.push([fr ? "Compté" : "Counted", formatCFA(payload.actual_cash)]);
+  if (payload.amount != null) generic.push([fr ? "Montant" : "Amount", fmt(payload.amount)]);
+  if (payload.opening_float != null) generic.push([fr ? "Fond" : "Float", fmt(payload.opening_float)]);
+  if (payload.actual_cash != null) generic.push([fr ? "Compté" : "Counted", fmt(payload.actual_cash)]);
   if (payload.category) generic.push([fr ? "Catégorie" : "Category", String(payload.category)]);
   if (payload.name) generic.push([fr ? "Nom" : "Name", String(payload.name)]);
   const gItems = Array.isArray(payload.items) ? payload.items : (Array.isArray(payload.lines) ? payload.lines : []);

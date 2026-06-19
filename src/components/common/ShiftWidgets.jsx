@@ -42,7 +42,8 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useAuthStore, useLangStore, useSettingsStore } from "../../store";
-import api, { formatCFA } from "../../utils/api";
+import api from "../../utils/api";
+import { useCurrency } from "../../utils/useCurrency";
 import { buildLedgerTextV2 as buildLedgerText, buildWeeklyText } from "../../utils/reportText";
 
 // ── ModalShell — same overlay pattern as the rest of the app ─────
@@ -101,6 +102,7 @@ export function OpenShiftModal({ open, onClose, onOpened }) {
   const { user } = useAuthStore();
   const { selectedLocation, setLocation } = useSettingsStore();
   const qc = useQueryClient();
+  const fmt = useCurrency();
 
   // MP-OPEN-SHIFT-LOCATION-CLARITY: load the org's locations so
   // we can render a prominent in-modal dropdown when there's a
@@ -173,8 +175,8 @@ export function OpenShiftModal({ open, onClose, onOpened }) {
       toast.success(res?.data?.offline_queued
         ? (lang === "fr" ? `Poste ouvert à ${chosenName} · se synchronisera` : `Shift opened at ${chosenName} · will sync`)
         : (lang === "fr"
-            ? `Poste ouvert à ${chosenName} avec ${formatCFA(d.opening_float)}`
-            : `Shift opened at ${chosenName} with ${formatCFA(d.opening_float)}`));
+            ? `Poste ouvert à ${chosenName} avec ${fmt(d.opening_float)}`
+            : `Shift opened at ${chosenName} with ${fmt(d.opening_float)}`));
       // MP-PHASE-3-OFFLINE-SHIFT: offline open is optimistic. The
       // ["current-shift", locId] query can't refetch while offline
       // (networkMode 'online' pauses it), so without seeding the cache the
@@ -288,7 +290,7 @@ export function OpenShiftModal({ open, onClose, onOpened }) {
 
       <div className="form-group">
         <label className="label">
-          {lang === "fr" ? "Solde d'ouverture (FCFA) *" : "Opening float (FCFA) *"}
+          {lang === "fr" ? `Solde d'ouverture (${fmt.symbol}) *` : `Opening float (${fmt.symbol}) *`}
         </label>
         <input className="input" type="number" min="0" step="1"
           value={openingFloat}
@@ -347,6 +349,7 @@ export function OpenShiftModal({ open, onClose, onOpened }) {
 // sign auto-prefixed for the four debit categories.
 function CategoryRow({ label, total, count, sign, children, color }) {
   const [open, setOpen] = useState(false);
+  const fmt = useCurrency();
   const isNeg = sign === "−";
   const amountColor = color
     || (isNeg ? "#f87171" : total > 0 ? "#34d399" : "var(--text-muted)");
@@ -376,7 +379,7 @@ function CategoryRow({ label, total, count, sign, children, color }) {
           )}
         </span>
         <span style={{ color: amountColor, fontWeight: 700, fontFamily: "monospace" }}>
-          {sign}{formatCFA(Math.abs(total))}
+          {sign}{fmt(Math.abs(total))}
         </span>
       </div>
       {open && hasDrill && (
@@ -392,6 +395,7 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
   const { lang } = useLangStore();
   const { user } = useAuthStore();
   const qc = useQueryClient();
+  const fmt = useCurrency();
 
   const [actual, setActual]         = useState("");
   const [notes, setNotes]           = useState("");
@@ -439,8 +443,8 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
         const msg = v === 0
           ? (lang === "fr" ? "Poste fermé. Caisse exacte ✓" : "Shift closed. Drawer exact ✓")
           : v > 0
-            ? (lang === "fr" ? `Poste fermé. Excédent : +${formatCFA(v)}` : `Shift closed. Surplus: +${formatCFA(v)}`)
-            : (lang === "fr" ? `Poste fermé. Manquant : ${formatCFA(v)}` : `Shift closed. Shortage: ${formatCFA(v)}`);
+            ? (lang === "fr" ? `Poste fermé. Excédent : +${fmt(v)}` : `Shift closed. Surplus: +${fmt(v)}`)
+            : (lang === "fr" ? `Poste fermé. Manquant : ${fmt(v)}` : `Shift closed. Shortage: ${fmt(v)}`);
         toast.success(msg);
       }
       qc.invalidateQueries({ queryKey: ["current-shift"] });
@@ -472,13 +476,13 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
     varText  = lang === "fr" ? "Entrez le solde réel pour voir l'écart" : "Enter actual cash to see variance";
     varColor = "var(--text-muted)";
   } else if (variance === 0) {
-    varText  = lang === "fr" ? "Écart : 0 FCFA — Caisse exacte" : "Variance: 0 FCFA — Drawer exact";
+    varText  = lang === "fr" ? `Écart : 0 ${fmt.symbol} — Caisse exacte` : `Variance: 0 ${fmt.symbol} — Drawer exact`;
     varColor = "#34d399";
   } else if (variance > 0) {
-    varText  = lang === "fr" ? `Écart : +${formatCFA(variance)} — Excédent` : `Variance: +${formatCFA(variance)} — Surplus`;
+    varText  = lang === "fr" ? `Écart : +${fmt(variance)} — Excédent` : `Variance: +${fmt(variance)} — Surplus`;
     varColor = "#fbbf24";
   } else {
-    varText  = lang === "fr" ? `Écart : −${formatCFA(Math.abs(variance))} — Manquant` : `Variance: −${formatCFA(Math.abs(variance))} — Shortage`;
+    varText  = lang === "fr" ? `Écart : −${fmt(Math.abs(variance))} — Manquant` : `Variance: −${fmt(Math.abs(variance))} — Shortage`;
     varColor = "#f87171";
   }
 
@@ -494,7 +498,7 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
       <div style={{ background: "var(--bg-card)", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
         {/* Opening float — always shown, single line. */}
         <Row label={fr ? "Solde d'ouverture" : "Opening float"}
-             value={formatCFA(shift.opening_float || 0)} />
+             value={fmt(shift.opening_float || 0)} />
 
         {/* MP-VOID-AS-RETURN-AND-OWNER-REPORT Unit 3: per-category
             breakdown with expand-on-click drilldowns. Falls back
@@ -509,7 +513,7 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
               {cat.sales_cash.transactions.map(tx => (
                 <div key={tx.payment_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
                   <span>{tx.sale_number || "—"} {tx.customer_name ? `· ${tx.customer_name}` : ""}</span>
-                  <span style={{ fontFamily: "monospace" }}>{formatCFA(tx.amount)}</span>
+                  <span style={{ fontFamily: "monospace" }}>{fmt(tx.amount)}</span>
                 </div>
               ))}
             </CategoryRow>
@@ -519,7 +523,7 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
               {cat.debt_collection.transactions.map(tx => (
                 <div key={tx.payment_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
                   <span>{tx.sale_number || "—"} {tx.customer_name ? `· ${tx.customer_name}` : ""}</span>
-                  <span style={{ fontFamily: "monospace" }}>{formatCFA(tx.amount)}</span>
+                  <span style={{ fontFamily: "monospace" }}>{fmt(tx.amount)}</span>
                 </div>
               ))}
             </CategoryRow>
@@ -529,7 +533,7 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
               {cat.exchange_in.transactions.map(tx => (
                 <div key={tx.return_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
                   <span>{tx.return_ref || tx.sale_number || "—"} {tx.customer_name ? `· ${tx.customer_name}` : ""}</span>
-                  <span style={{ fontFamily: "monospace" }}>{formatCFA(tx.price_difference)}</span>
+                  <span style={{ fontFamily: "monospace" }}>{fmt(tx.price_difference)}</span>
                 </div>
               ))}
             </CategoryRow>
@@ -539,7 +543,7 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
               {cat.refunds.transactions.map(tx => (
                 <div key={tx.return_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
                   <span>{tx.return_ref || "—"} ← {tx.sale_number || "?"} {tx.customer_name ? `· ${tx.customer_name}` : ""}</span>
-                  <span style={{ fontFamily: "monospace" }}>{formatCFA(tx.refund_amount)}</span>
+                  <span style={{ fontFamily: "monospace" }}>{fmt(tx.refund_amount)}</span>
                 </div>
               ))}
             </CategoryRow>
@@ -549,7 +553,7 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
               {cat.void_refunds.transactions.map(tx => (
                 <div key={tx.return_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
                   <span>{tx.return_ref || "—"} ← {tx.sale_number || "?"} {tx.customer_name ? `· ${tx.customer_name}` : ""}</span>
-                  <span style={{ fontFamily: "monospace" }}>{formatCFA(tx.refund_amount)}</span>
+                  <span style={{ fontFamily: "monospace" }}>{fmt(tx.refund_amount)}</span>
                 </div>
               ))}
             </CategoryRow>
@@ -559,7 +563,7 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
               {cat.exchange_out.transactions.map(tx => (
                 <div key={tx.return_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
                   <span>{tx.return_ref || tx.sale_number || "—"} {tx.customer_name ? `· ${tx.customer_name}` : ""}</span>
-                  <span style={{ fontFamily: "monospace" }}>{formatCFA(Math.abs(tx.price_difference))}</span>
+                  <span style={{ fontFamily: "monospace" }}>{fmt(Math.abs(tx.price_difference))}</span>
                 </div>
               ))}
             </CategoryRow>
@@ -569,7 +573,7 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
               {cat.expenses.transactions.map(tx => (
                 <div key={tx.expense_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
                   <span>{tx.category || "—"} {tx.description ? `· ${tx.description}` : ""}</span>
-                  <span style={{ fontFamily: "monospace" }}>{formatCFA(tx.amount)}</span>
+                  <span style={{ fontFamily: "monospace" }}>{fmt(tx.amount)}</span>
                 </div>
               ))}
             </CategoryRow>
@@ -580,24 +584,24 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
              modal showed pre-Unit-3. */
           <>
             <Row label={fr ? "+ Ventes en espèces"      : "+ Cash sales"}
-                 value={formatCFA(shift.cash_sales_received || 0)} positive />
+                 value={fmt(shift.cash_sales_received || 0)} positive />
             <Row label={fr ? "− Remboursements espèces" : "− Cash refunds"}
-                 value={formatCFA(shift.cash_refunds || 0)} negative />
+                 value={fmt(shift.cash_refunds || 0)} negative />
             <Row label={fr ? "− Dépenses espèces"       : "− Cash expenses"}
-                 value={formatCFA(shift.cash_expenses || 0)} negative />
+                 value={fmt(shift.cash_expenses || 0)} negative />
           </>
         )}
 
         <div style={{ height: 1, background: "var(--border)", margin: "8px 0" }} />
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontWeight: 700 }}>{fr ? "Caisse attendue" : "Expected drawer"}</span>
-          <strong style={{ fontSize: 18, color: "var(--brand-light)" }}>{formatCFA(expected)}</strong>
+          <strong style={{ fontSize: 18, color: "var(--brand-light)" }}>{fmt(expected)}</strong>
         </div>
       </div>
 
       <div className="form-group">
         <label className="label">
-          {lang === "fr" ? "Solde réel comptabilisé (FCFA) *" : "Actual cash counted (FCFA) *"}
+          {lang === "fr" ? `Solde réel comptabilisé (${fmt.symbol}) *` : `Actual cash counted (${fmt.symbol}) *`}
         </label>
         <input className="input" type="number" min="0" step="1"
           value={actual}
@@ -791,6 +795,7 @@ export function ActiveShiftIndicator() {
   const { lang } = useLangStore();
   const { selectedLocation } = useSettingsStore();
   const locId = selectedLocation?.id || null;
+  const fmt = useCurrency();
 
   const [showOpen, setShowOpen]   = useState(false);
   const [showClose, setShowClose] = useState(false);
@@ -864,7 +869,7 @@ export function ActiveShiftIndicator() {
           <span style={{ color: "var(--text-muted)", fontSize: 12 }}>•</span>
           <span style={{ fontSize: 13 }}>
             {lang === "fr" ? "Caisse attendue : " : "Expected drawer: "}
-            <strong style={{ color: "var(--brand-light)" }}>{formatCFA(expected)}</strong>
+            <strong style={{ color: "var(--brand-light)" }}>{fmt(expected)}</strong>
           </span>
           {data?.cashier_name && (
             <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: "auto" }}>
