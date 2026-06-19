@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import { useLangStore, useAuthStore } from "../store";
-import api, { formatCFA } from "../utils/api";
+import api from "../utils/api";
+import { useCurrency } from "../utils/useCurrency";
 import CameraScanner from "../components/common/CameraScanner";
 
 export default function BarcodePage() {
   const { lang } = useLangStore();
   const { user, org } = useAuthStore();
+  const fmt = useCurrency();
 
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
@@ -63,7 +65,7 @@ export default function BarcodePage() {
         ${generateBarcodeLines(barcodeCode)}
       </g>
       <text x="${totalWidth/2}" y="${showOrg ? 35 + dims.barcodeH + 12 : 22 + dims.barcodeH + 12}" text-anchor="middle" font-size="${dims.fontSize - 1}" fill="#333" font-family="monospace">${barcodeCode}</text>
-      ${showPrice ? `<text x="${totalWidth/2}" y="${totalHeight - 8}" text-anchor="middle" font-size="${dims.fontSize + 1}" font-weight="bold" fill="#152B52">${formatCFA(price)}</text>` : ""}
+      ${showPrice ? `<text x="${totalWidth/2}" y="${totalHeight - 8}" text-anchor="middle" font-size="${dims.fontSize + 1}" font-weight="bold" fill="#152B52">${fmt(price)}</text>` : ""}
     </svg>`;
   };
 
@@ -181,7 +183,7 @@ export default function BarcodePage() {
                     {p.barcode || <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>no barcode</span>}
                   </div>
                 </div>
-                <div style={{ fontSize: 12, color: "var(--brand-light)", fontWeight: 600 }}>{formatCFA(p.sell_price)}</div>
+                <div style={{ fontSize: 12, color: "var(--brand-light)", fontWeight: 600 }}>{fmt(p.sell_price)}</div>
                 <button onClick={e => { e.stopPropagation(); setSelected(p); setTimeout(handlePrint, 100); }}
                   style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: "var(--text-secondary)" }}>
                   🖨️

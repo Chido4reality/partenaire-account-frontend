@@ -18,7 +18,8 @@
 import { useState } from "react";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
-import api, { formatCFA } from "../utils/api";
+import api from "../utils/api";
+import { useCurrency } from "../utils/useCurrency";
 import { ActiveShiftIndicator } from "../components/common/ShiftWidgets";
 
 const PAGE_LIMIT = 20;
@@ -31,6 +32,7 @@ export default function ShiftsPage() {
   const isManager = user?.role === "manager";
   const canSeeHistory = isOwner || isManager;
 
+  const fmt = useCurrency();
   const locId = selectedLocation?.id || null;
   const [offset, setOffset] = useState(0);
 
@@ -55,9 +57,9 @@ export default function ShiftsPage() {
                 "#f87171";
   const varianceLabel = (v) => {
     if (v == null) return "—";
-    if (v === 0)   return `${formatCFA(0)} ${lang === "fr" ? "(Exact)"     : "(Exact)"}`;
-    if (v > 0)     return `+${formatCFA(v)} ${lang === "fr" ? "(Excédent)" : "(Surplus)"}`;
-    return `−${formatCFA(Math.abs(v))} ${lang === "fr" ? "(Manquant)"      : "(Shortage)"}`;
+    if (v === 0)   return `${fmt(0)} ${lang === "fr" ? "(Exact)"     : "(Exact)"}`;
+    if (v > 0)     return `+${fmt(v)} ${lang === "fr" ? "(Excédent)" : "(Surplus)"}`;
+    return `−${fmt(Math.abs(v))} ${lang === "fr" ? "(Manquant)"      : "(Shortage)"}`;
   };
 
   return (
@@ -134,13 +136,13 @@ export default function ShiftsPage() {
                         <tr key={s.shift_id}>
                           <td style={{ fontWeight: 500 }}>{s.cashier_name || "—"}</td>
                           <td style={{ color: "var(--text-muted)", fontSize: 12 }}>{s.shift_date}</td>
-                          <td style={{ textAlign: "right" }}>{formatCFA(s.opening_float || 0)}</td>
-                          <td style={{ textAlign: "right" }}>{formatCFA(s.cash_sales_received || 0)}</td>
-                          <td style={{ textAlign: "right" }}>{formatCFA(s.cash_refunds || 0)}</td>
-                          <td style={{ textAlign: "right" }}>{formatCFA(s.cash_expenses || 0)}</td>
-                          <td style={{ textAlign: "right", fontWeight: 600 }}>{formatCFA(s.expected_drawer || 0)}</td>
+                          <td style={{ textAlign: "right" }}>{fmt(s.opening_float || 0)}</td>
+                          <td style={{ textAlign: "right" }}>{fmt(s.cash_sales_received || 0)}</td>
+                          <td style={{ textAlign: "right" }}>{fmt(s.cash_refunds || 0)}</td>
+                          <td style={{ textAlign: "right" }}>{fmt(s.cash_expenses || 0)}</td>
+                          <td style={{ textAlign: "right", fontWeight: 600 }}>{fmt(s.expected_drawer || 0)}</td>
                           <td style={{ textAlign: "right", fontWeight: 600 }}>
-                            {s.actual_cash != null ? formatCFA(s.actual_cash) : "—"}
+                            {s.actual_cash != null ? fmt(s.actual_cash) : "—"}
                           </td>
                           <td style={{ textAlign: "right", fontWeight: 700, color: varianceColor(v), whiteSpace: "nowrap" }}>
                             {varianceLabel(v)}

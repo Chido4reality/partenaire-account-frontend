@@ -8,6 +8,7 @@ import { useLiteMode } from "../../hooks/useLiteMode";
 import { useTrialState } from "../../hooks/useTrialState";
 import { useKeyboardInset } from "../../hooks/useKeyboardInset";
 import api from "../../utils/api";
+import { useCurrency } from "../../utils/useCurrency";
 import { cacheData } from "../../utils/offlineStore";
 import { safeSetItem } from "../../utils/safeStorage";
 import { cacheKeyFor } from "../../utils/offlineQuery";
@@ -848,6 +849,7 @@ export default function Layout() {
   // input via getBoundingClientRect because the sidebar is
   // overflow:hidden (same constraint NotifPanel works around).
   const OrderSearchBox = ({ idSuffix }) => {
+    const fmt = useCurrency();
     const inputId = "order-search-" + idSuffix;
     const [term, setTerm] = useState("");
     const [debounced, setDebounced] = useState("");
@@ -891,8 +893,8 @@ export default function Layout() {
       setOpen(false); setTerm("");
       if (res.link_to) navigate(res.link_to);
       else toast(lang === "en"
-        ? `${res.ref} — ${res.type === "sale" ? "Sale" : "Dozie order"} · ${Number(res.total).toLocaleString()} FCFA · ${res.status}`
-        : `${res.ref} — ${res.type === "sale" ? "Vente" : "Commande Dozie"} · ${Number(res.total).toLocaleString()} FCFA · ${res.status}`,
+        ? `${res.ref} — ${res.type === "sale" ? "Sale" : "Dozie order"} · ${Number(res.total).toLocaleString()} ${fmt.symbol} · ${res.status}`
+        : `${res.ref} — ${res.type === "sale" ? "Vente" : "Commande Dozie"} · ${Number(res.total).toLocaleString()} ${fmt.symbol} · ${res.status}`,
         { duration: 4000 });
     };
 
@@ -953,7 +955,7 @@ export default function Layout() {
                   </span>
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-                  {Number(res.total || 0).toLocaleString()} FCFA · {res.status}
+                  {Number(res.total || 0).toLocaleString()} {fmt.symbol} · {res.status}
                   {res.date ? " · " + new Date(res.date).toLocaleDateString() : ""}
                 </div>
               </div>

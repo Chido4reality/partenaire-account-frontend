@@ -15,7 +15,8 @@ import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useLangStore } from "../store";
-import api, { formatCFA, formatDate } from "../utils/api";
+import api, { formatDate } from "../utils/api";
+import { useCurrency } from "../utils/useCurrency";
 
 // Manual (offline) fallback methods → admin approval, ONLY for paying the owner
 // directly offline. MP-SUB-NO-PHANTOM-PENDING: Mobile Money / Orange are NOT
@@ -32,6 +33,7 @@ const DURATIONS = [1, 3, 6, 12];
 export default function RequestActivationPage() {
   const { lang } = useLangStore();
   const en = lang === "en";
+  const fmt = useCurrency();
   const qc = useQueryClient();
   const [searchParams] = useSearchParams();
   const deepLinkPlan = searchParams.get("plan"); // e.g. ?plan=pro_plus
@@ -160,7 +162,7 @@ export default function RequestActivationPage() {
                   </div>
                 </div>
                 <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
-                  <div style={{ fontWeight: 800, fontSize: 18, color: "var(--brand-light)" }}>{formatCFA(price)}</div>
+                  <div style={{ fontWeight: 800, fontSize: 18, color: "var(--brand-light)" }}>{fmt(price)}</div>
                   <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{en ? "/month" : "/mois"}</div>
                 </div>
               </div>
@@ -173,27 +175,27 @@ export default function RequestActivationPage() {
       <div className="label">{en ? "Duration" : "Durée"}</div>
       <select className="input" value={months} onChange={e => setMonths(+e.target.value)} style={{ marginBottom: 16 }}>
         {DURATIONS.map(m => (
-          <option key={m} value={m}>{m} {en ? (m === 1 ? "month" : "months") : "mois"} — {formatCFA(unitPrice * m)}</option>
+          <option key={m} value={m}>{m} {en ? (m === 1 ? "month" : "months") : "mois"} — {fmt(unitPrice * m)}</option>
         ))}
       </select>
 
       {/* Total */}
       <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 14, marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span style={{ color: "var(--text-secondary)", fontSize: 13 }}>{en ? "Total" : "Total"}</span>
-        <span style={{ fontWeight: 800, fontSize: 18, color: "var(--brand-light)" }}>{formatCFA(total)}</span>
+        <span style={{ fontWeight: 800, fontSize: 18, color: "var(--brand-light)" }}>{fmt(total)}</span>
       </div>
 
       {/* PRIMARY — Flutterwave */}
       <div style={{ background: "rgba(251,197,3,0.08)", border: "1px solid rgba(251,197,3,0.25)", borderRadius: 10, padding: 12, marginBottom: 12, fontSize: 12, color: "var(--brand-light)" }}>
         ⚡ {en
-          ? `Selecting "Pay with Flutterwave" takes you to Flutterwave's secure page to pay ${formatCFA(total)} by your preferred method (card, mobile money, bank or USSD). Your ${selected?.name} plan activates automatically once payment is confirmed.`
-          : `« Payer avec Flutterwave » vous amène à la page sécurisée de Flutterwave pour payer ${formatCFA(total)} par le moyen de votre choix (carte, mobile money, banque ou USSD). Votre forfait ${selected?.name} s'active automatiquement après confirmation.`}
+          ? `Selecting "Pay with Flutterwave" takes you to Flutterwave's secure page to pay ${fmt(total)} by your preferred method (card, mobile money, bank or USSD). Your ${selected?.name} plan activates automatically once payment is confirmed.`
+          : `« Payer avec Flutterwave » vous amène à la page sécurisée de Flutterwave pour payer ${fmt(total)} par le moyen de votre choix (carte, mobile money, banque ou USSD). Votre forfait ${selected?.name} s'active automatiquement après confirmation.`}
       </div>
       <button className="btn btn-primary btn-block" style={{ height: 48, fontWeight: 700 }}
         disabled={!selected || flwMutation.isPending} onClick={() => flwMutation.mutate()}>
         {flwMutation.isPending
           ? (en ? "⏳ Redirecting…" : "⏳ Redirection…")
-          : (en ? `⚡ Pay with Flutterwave — ${formatCFA(total)}` : `⚡ Payer avec Flutterwave — ${formatCFA(total)}`)}
+          : (en ? `⚡ Pay with Flutterwave — ${fmt(total)}` : `⚡ Payer avec Flutterwave — ${fmt(total)}`)}
       </button>
 
       {/* FALLBACK — manual / offline → admin approval */}

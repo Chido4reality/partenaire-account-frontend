@@ -3,7 +3,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
-import api, { formatCFA, formatDate } from "../utils/api";
+import api, { formatDate } from "../utils/api";
+import { useCurrency } from "../utils/useCurrency";
 import { useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 import useOwnerApproval from "../hooks/useOwnerApproval";
@@ -51,6 +52,7 @@ export default function CustomersPage() {
   // and gets gated. The customer CRUD form below is intentionally
   // NOT gated (admin operation per Decision 1's lenient list).
   const { hasShift: shiftIsOpen } = useActiveShift();
+  const fmt = useCurrency();
 
   const [search, setSearch]         = useState("");
   const [typeFilter, setTypeFilter] = useState("");
@@ -190,13 +192,13 @@ export default function CustomersPage() {
         if (creditChanged) {
           needsApproval = true; actionType = "edit_customer_credit";
           descSuffix = lang === "fr"
-            ? ` (limite de crédit : ${oldCredit.toLocaleString()} → ${newCredit.toLocaleString()} FCFA)`
-            : ` (credit limit: ${oldCredit.toLocaleString()} → ${newCredit.toLocaleString()} FCFA)`;
+            ? ` (limite de crédit : ${oldCredit.toLocaleString()} → ${newCredit.toLocaleString()} ${fmt.symbol})`
+            : ` (credit limit: ${oldCredit.toLocaleString()} → ${newCredit.toLocaleString()} ${fmt.symbol})`;
         } else if (debtChanged) {
           needsApproval = true; actionType = "edit_customer_debt";
           descSuffix = lang === "fr"
-            ? ` (solde : ${oldDebt.toLocaleString()} → ${newDebt.toLocaleString()} FCFA)`
-            : ` (debt: ${oldDebt.toLocaleString()} → ${newDebt.toLocaleString()} FCFA)`;
+            ? ` (solde : ${oldDebt.toLocaleString()} → ${newDebt.toLocaleString()} ${fmt.symbol})`
+            : ` (debt: ${oldDebt.toLocaleString()} → ${newDebt.toLocaleString()} ${fmt.symbol})`;
         }
       } else if (role === "cashier") {
         if (!creditChanged && !debtChanged && !safeChanged) {
@@ -287,8 +289,8 @@ export default function CustomersPage() {
       const displayAmount = offlineQueued ? amt : (d.amount ?? amt);
       const displayAfter  = offlineQueued ? debtAfter : (d.debt_after ?? debtAfter);
       toast.success(lang === "en"
-        ? `${offlineQueued ? "Queued · " : ""}Collected ${formatCFA(displayAmount)} — debt now ${formatCFA(displayAfter)}`
-        : `${offlineQueued ? "En attente · " : ""}Encaissé ${formatCFA(displayAmount)} — dette: ${formatCFA(displayAfter)}`);
+        ? `${offlineQueued ? "Queued · " : ""}Collected ${fmt(displayAmount)} — debt now ${fmt(displayAfter)}`
+        : `${offlineQueued ? "En attente · " : ""}Encaissé ${fmt(displayAmount)} — dette: ${fmt(displayAfter)}`);
       setShowCollectDebt(false);
       setCollectForm({ amount: "", payment_method: "cash", notes: "" });
       setCollectError(null);
@@ -423,8 +425,8 @@ export default function CustomersPage() {
       if (role !== "owner") {
         const debtClause = Number(confirmDel?.total_debt || 0) > 0
           ? (lang === "fr"
-              ? ` (solde dû : ${Number(confirmDel.total_debt).toLocaleString()} FCFA)`
-              : ` (outstanding debt: ${Number(confirmDel.total_debt).toLocaleString()} FCFA)`)
+              ? ` (solde dû : ${Number(confirmDel.total_debt).toLocaleString()} ${fmt.symbol})`
+              : ` (outstanding debt: ${Number(confirmDel.total_debt).toLocaleString()} ${fmt.symbol})`)
           : "";
         const { token } = await requestApproval({
           actionType:   "delete_customer",
@@ -499,7 +501,7 @@ export default function CustomersPage() {
               💰 {lang === "en" ? "Total owed to you" : "Total dû"}
             </div>
             <div style={{ fontSize: 20, fontWeight: 800, color: summary.total_debt > 0 ? "#f87171" : "var(--text-primary)" }}>
-              {formatCFA(summary.total_debt)}
+              {fmt(summary.total_debt)}
             </div>
           </div>
           <div style={{ flex: "1 1 120px" }}>
@@ -567,7 +569,7 @@ export default function CustomersPage() {
                     <div style={{ textAlign: "right" }}>
                       {c.total_debt > 0 ? (
                         <div>
-                          <div style={{ color: "#f87171", fontWeight: 700, fontSize: 14 }}>{formatCFA(c.total_debt)}</div>
+                          <div style={{ color: "#f87171", fontWeight: 700, fontSize: 14 }}>{fmt(c.total_debt)}</div>
                           <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{c.open_invoices} {lang === "en" ? "invoice(s)" : "facture(s)"}</div>
                         </div>
                       ) : (
@@ -620,7 +622,7 @@ export default function CustomersPage() {
                       💰 {lang === "en" ? "Current debt" : "Dette actuelle"}
                     </div>
                     <div style={{ fontSize: 22, fontWeight: 800, color: hasDebt ? "#f87171" : "var(--text-primary)" }}>
-                      {formatCFA(curDebt)}
+                      {fmt(curDebt)}
                     </div>
                   </div>
                   <button
@@ -674,7 +676,7 @@ export default function CustomersPage() {
                 onChange={e => setF("address", e.target.value)} />
             </div>
             <div className="form-group">
-              <label className="label">{lang === "en" ? "Credit limit (FCFA)" : "Limite credit (FCFA)"}</label>
+              <label className="label">{lang === "en" ? `Credit limit (${fmt.symbol})` : `Limite credit (${fmt.symbol})`}</label>
               <input className="input" type="number" value={form.credit_limit !== undefined ? form.credit_limit : (selected.credit_limit || "")}
                 onChange={e => setF("credit_limit", e.target.value)} placeholder="0" />
             </div>
@@ -720,7 +722,7 @@ export default function CustomersPage() {
                     <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{formatDate(s.sale_date)}</div>
                   </div>
                   <div style={{ textAlign: "right" }}>
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>{formatCFA(s.total_amount)}</div>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{fmt(s.total_amount)}</div>
                     <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 8,
                       background: s.payment_status === "paid" ? "rgba(16,185,129,0.15)" : s.payment_status === "partial" ? "rgba(245,158,11,0.15)" : "rgba(239,68,68,0.15)",
                       color: s.payment_status === "paid" ? "#34d399" : s.payment_status === "partial" ? "#fbbf24" : "#f87171"
@@ -743,7 +745,7 @@ export default function CustomersPage() {
                 {detail.data.payments.map((p, i) => (
                   <div key={i} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 14px", display: "flex", justifyContent: "space-between" }}>
                     <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{formatDate(p.payment_date)} - {p.payment_method}</div>
-                    <div style={{ fontWeight: 600, color: "#34d399", fontSize: 13 }}>+{formatCFA(p.amount)}</div>
+                    <div style={{ fontWeight: 600, color: "#34d399", fontSize: 13 }}>+{fmt(p.amount)}</div>
                   </div>
                 ))}
               </div>
@@ -778,7 +780,7 @@ export default function CustomersPage() {
               <input className="input" value={form.address} onChange={e => setF("address", e.target.value)} placeholder="Douala" />
             </div>
             <div className="form-group">
-              <label className="label">{lang === "en" ? "Credit limit (FCFA)" : "Limite credit (FCFA)"}</label>
+              <label className="label">{lang === "en" ? `Credit limit (${fmt.symbol})` : `Limite credit (${fmt.symbol})`}</label>
               <input className="input" type="number" value={form.credit_limit} onChange={e => setF("credit_limit", e.target.value)} placeholder="0" />
             </div>
             <div className="form-group">
@@ -849,19 +851,19 @@ export default function CustomersPage() {
                 <span style={{ color: "var(--text-muted)", fontSize: 12 }}>
                   {lang === "en" ? "Current debt" : "Dette actuelle"}
                 </span>
-                <strong style={{ color: "#f87171", fontSize: 14 }}>{formatCFA(curDebt)}</strong>
+                <strong style={{ color: "#f87171", fontSize: 14 }}>{fmt(curDebt)}</strong>
               </div>
 
               {/* Amount */}
               <div className="form-group">
-                <label className="label">{lang === "en" ? "Amount to collect (FCFA)" : "Montant à encaisser (FCFA)"}</label>
+                <label className="label">{lang === "en" ? `Amount to collect (${fmt.symbol})` : `Montant à encaisser (${fmt.symbol})`}</label>
                 <input className="input" type="number" min="0" max={curDebt}
                   value={collectForm.amount}
                   onChange={e => { setCollectForm(f => ({ ...f, amount: e.target.value })); setCollectError(null); }}
                   autoFocus placeholder="0" />
                 {overMax && (
                   <div style={{ fontSize: 11, color: "#f87171", marginTop: 4, fontWeight: 600 }}>
-                    {lang === "en" ? `Maximum: ${formatCFA(curDebt)}` : `Maximum: ${formatCFA(curDebt)}`}
+                    {lang === "en" ? `Maximum: ${fmt(curDebt)}` : `Maximum: ${fmt(curDebt)}`}
                   </div>
                 )}
               </div>
@@ -907,7 +909,7 @@ export default function CustomersPage() {
                   {lang === "en" ? "New debt after collection" : "Nouvelle dette"}
                 </span>
                 <strong style={{ color: newDebt === 0 ? "#34d399" : "var(--text-primary)", fontSize: 14 }}>
-                  {formatCFA(newDebt)}
+                  {fmt(newDebt)}
                 </strong>
               </div>
 
@@ -971,8 +973,8 @@ export default function CustomersPage() {
                 {Number(confirmDel.total_debt) > 0 && (
                   <div style={{ fontSize: 13, color: "#f87171", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>
                     {lang === "en"
-                      ? `This customer owes ${formatCFA(confirmDel.total_debt)}. Deleting will remove them from your records.`
-                      : `Ce client doit ${formatCFA(confirmDel.total_debt)}. La suppression le retirera de vos enregistrements.`}
+                      ? `This customer owes ${fmt(confirmDel.total_debt)}. Deleting will remove them from your records.`
+                      : `Ce client doit ${fmt(confirmDel.total_debt)}. La suppression le retirera de vos enregistrements.`}
                   </div>
                 )}
                 <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 18 }}>

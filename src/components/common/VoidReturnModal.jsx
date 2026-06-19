@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
-import api, { formatCFA } from "../../utils/api";
+import api from "../../utils/api";
+import { useCurrency } from "../../utils/useCurrency";
 import OwnerPIN from "./OwnerPIN";
 import { useSettingsStore, useAuthStore } from "../../store";
 import useOwnerApproval from "../../hooks/useOwnerApproval";
@@ -19,6 +20,7 @@ import useOwnerApproval from "../../hooks/useOwnerApproval";
 // data is the backend's enriched response payload.
 export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess }) {
   const qc = useQueryClient();
+  const fmt = useCurrency();
   const { selectedLocation } = useSettingsStore();
   // MP-REFUNDS-STAFF-ACCESS: cashier is allowed to see this modal
   // (refund + exchange flows) but NOT the Void button. Voiding wipes
@@ -176,7 +178,7 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
               context:     { sale_number: sale.sale_number, total: sale.total_amount, reason: reason.trim() },
               description: (lang === "fr"
                 ? `Annuler la vente ${sale.sale_number || ""}`
-                : `Void sale ${sale.sale_number || ""}`) + ` (${formatCFA(sale.total_amount || 0)})`,
+                : `Void sale ${sale.sale_number || ""}`) + ` (${fmt(sale.total_amount || 0)})`,
             });
             headers["Approval-Token"] = token;
           } catch (e) {
@@ -229,7 +231,7 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
               description: (lang === "fr"
                 ? `${mode === "exchange" ? "Échanger" : "Rembourser"} la vente ${sale.sale_number || ""}`
                 : `${mode === "exchange" ? "Exchange" : "Refund"} sale ${sale.sale_number || ""}`)
-                + ` (${formatCFA(refundTotal)})`,
+                + ` (${fmt(refundTotal)})`,
             });
             headers["Approval-Token"] = token;
           } catch (e) {
@@ -281,7 +283,7 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
           {lang === "en" ? "Void / Return" : "Annulation / Retour"}
         </div>
         <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 20 }}>
-          {sale.sale_number} · {formatCFA(total)}
+          {sale.sale_number} · {fmt(total)}
           {sale.pa_customers?.name && ` · ${sale.pa_customers.name}`}
           {sale.channel === "online" && sale.dozie_order_ref && (
             <> · <span style={{ fontFamily: "monospace" }}>{sale.dozie_order_ref}</span></>
@@ -360,13 +362,13 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
                           {item.pa_products?.unit && <span style={{ color: "var(--text-muted)", fontSize: 11 }}> {item.pa_products.unit}</span>}
                         </span>
                       )}
-                      <span style={{ color: "var(--text-muted)", whiteSpace: "nowrap" }}>{formatCFA(item.quantity * item.unit_price)}</span>
+                      <span style={{ color: "var(--text-muted)", whiteSpace: "nowrap" }}>{fmt(item.quantity * item.unit_price)}</span>
                     </div>
                   );
                 })}
                 <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, marginTop: 2, fontWeight: 800, fontSize: 14, borderTop: "1px solid var(--border)" }}>
                   <span>{lang === "en" ? "Total" : "Total"}</span>
-                  <span>{formatCFA(total)}</span>
+                  <span>{fmt(total)}</span>
                 </div>
               </>
             )}
@@ -423,7 +425,7 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
                 <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 13, borderBottom: "1px solid var(--border)" }}>
                   {isDebt ? (
                     <>
-                      <span>💰 {lang === "en" ? "Debt Repayment" : "Remboursement dette"} · {formatCFA(item.quantity * item.unit_price)}</span>
+                      <span>💰 {lang === "en" ? "Debt Repayment" : "Remboursement dette"} · {fmt(item.quantity * item.unit_price)}</span>
                       <span style={{ color: "#fbbf24", fontSize: 11 }}>{lang === "en" ? "debt NOT auto-restored" : "dette NON restaurée auto"}</span>
                     </>
                   ) : (
@@ -460,7 +462,7 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
                   <input type="checkbox" checked={item.selected} onChange={() => toggleItem(i)} style={{ width: 16, height: 16 }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 13 }}>{item.pa_products?.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Sold: {item.quantity} × {formatCFA(item.unit_price)}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Sold: {item.quantity} × {fmt(item.unit_price)}</div>
                   </div>
                   {item.selected && (
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -495,9 +497,9 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
             {/* Refund amount */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
               <div className="form-group">
-                <label className="label">{lang === "en" ? "Refund amount (FCFA)" : "Montant remboursé (FCFA)"}</label>
+                <label className="label">{lang === "en" ? `Refund amount (${fmt.symbol})` : `Montant remboursé (${fmt.symbol})`}</label>
                 <input className="input" type="number" value={refundAmount} onChange={e => setRefundAmount(e.target.value)} placeholder={total} />
-                <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 3 }}>Max: {formatCFA(total)}</div>
+                <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 3 }}>Max: {fmt(total)}</div>
               </div>
               <div className="form-group">
                 <label className="label">{lang === "en" ? "Refund method" : "Mode remboursement"}</label>
@@ -528,7 +530,7 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
                   <input type="checkbox" checked={item.selected} onChange={() => toggleItem(i)} style={{ width: 16, height: 16 }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 13 }}>{item.pa_products?.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{item.quantity} × {formatCFA(item.unit_price)}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{item.quantity} × {fmt(item.unit_price)}</div>
                   </div>
                   {item.selected && (
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -558,7 +560,7 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
                       onMouseEnter={e => e.currentTarget.style.background = "var(--bg-card)"}
                       onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                       <span>{p.name}</span>
-                      <span style={{ color: "var(--brand-light)", fontWeight: 600 }}>{formatCFA(p.sell_price || 0)}</span>
+                      <span style={{ color: "var(--brand-light)", fontWeight: 600 }}>{fmt(p.sell_price || 0)}</span>
                     </div>
                   ))}
                 </div>
@@ -574,13 +576,13 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 600, fontSize: 13 }}>{item.name}</div>
                   <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                    {lang === "en" ? "Negotiated price (editable)" : "Prix négocié (modifiable)"} · = {formatCFA((+item.sell_price || 0) * item.quantity)}
+                    {lang === "en" ? "Negotiated price (editable)" : "Prix négocié (modifiable)"} · = {fmt((+item.sell_price || 0) * item.quantity)}
                   </div>
                   {item.min_price > 0 && (+item.sell_price || 0) < item.min_price && (
                     <div style={{ fontSize: 10, color: "#fbbf24", marginTop: 2 }}>
                       ⚠ {lang === "en"
-                        ? `Below min ${formatCFA(item.min_price)} — owner PIN required`
-                        : `Sous le min ${formatCFA(item.min_price)} — PIN patron requis`}
+                        ? `Below min ${fmt(item.min_price)} — owner PIN required`
+                        : `Sous le min ${fmt(item.min_price)} — PIN patron requis`}
                     </div>
                   )}
                 </div>
@@ -599,16 +601,16 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
             <div style={{ background: "var(--bg-card)", borderRadius: 10, padding: "12px 14px", marginTop: 12, marginBottom: 14, border: "1px solid var(--border)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>
                 <span>{lang === "en" ? "Returned value:" : "Valeur retournée:"}</span>
-                <span style={{ color: "#34d399" }}>{formatCFA(returnedTotal)}</span>
+                <span style={{ color: "#34d399" }}>{fmt(returnedTotal)}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
                 <span>{lang === "en" ? "New items value:" : "Valeur nouveaux articles:"}</span>
-                <span style={{ color: "var(--brand-light)" }}>{formatCFA(newTotal)}</span>
+                <span style={{ color: "var(--brand-light)" }}>{fmt(newTotal)}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 14, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
                 <span>{cashDiff === 0 ? (lang === "en" ? "Even exchange" : "Échange égal") : cashDiff > 0 ? (lang === "en" ? "Customer pays:" : "Client paie:") : (lang === "en" ? "Refund to customer:" : "Remboursement client:")}</span>
                 <span style={{ color: cashDiff === 0 ? "var(--text-muted)" : cashDiff > 0 ? "#fbbf24" : "#34d399" }}>
-                  {cashDiff === 0 ? "—" : formatCFA(Math.abs(cashDiff))}
+                  {cashDiff === 0 ? "—" : fmt(Math.abs(cashDiff))}
                 </span>
               </div>
             </div>

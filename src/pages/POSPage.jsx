@@ -8,7 +8,8 @@ import { useLangStore, useSettingsStore, useAuthStore, useDraftCartStore } from 
 // override flow was dead code (imported, state set, never rendered).
 // Staff who attempt a sub-min price now get a toast.error explaining
 // why; the backend at sales.js:46-62 is the source of truth either way.
-import api, { formatCFA } from "../utils/api";
+import api from "../utils/api";
+import { useCurrency } from "../utils/useCurrency";
 import { formatMoney, currencySymbol } from "../utils/currency";
 import { t } from "../utils/i18n";
 import { cacheData, getCachedData } from "../utils/offlineStore";
@@ -77,6 +78,7 @@ export default function POSPage() {
   // via the ["current-shift", locId] cache, so this hook does not
   // trigger a second network request.
   const { hasShift: shiftIsOpen } = useActiveShift();
+  const fmt = useCurrency();
 
   const [cart, setCart]                   = useState([]);
   const [search, setSearch]               = useState("");
@@ -839,8 +841,8 @@ export default function POSPage() {
           targetId:    item.product_id,
           context:     { min_price: minPrice, attempted_price: p, product: item.name },
           description: lang === "en"
-            ? `Sell "${item.name}" below minimum (${minPrice.toLocaleString()} FCFA) at ${p.toLocaleString()} FCFA`
-            : `Vendre "${item.name}" sous le minimum (${minPrice.toLocaleString()} FCFA) à ${p.toLocaleString()} FCFA`,
+            ? `Sell "${item.name}" below minimum (${minPrice.toLocaleString()} ${fmt.symbol}) at ${p.toLocaleString()} ${fmt.symbol}`
+            : `Vendre "${item.name}" sous le minimum (${minPrice.toLocaleString()} ${fmt.symbol}) à ${p.toLocaleString()} ${fmt.symbol}`,
         });
         setCart(c => c.map(it => it.lineId === lineId
           ? { ...it, unit_price: p, price_overridden: true, price_approval_token: token }
@@ -1621,7 +1623,7 @@ export default function POSPage() {
                   <button onClick={() => removeLine(item.lineId)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: "0 2px", flexShrink: 0 }}>✕</button>
                 </div>
                 {item.isDebt ? (
-                  <div style={{ fontSize: 14, fontWeight: 800, color: "#f87171", textAlign: "right" }}>{formatCFA(item.unit_price)}</div>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: "#f87171", textAlign: "right" }}>{fmt(item.unit_price)}</div>
                 ) : (
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     <button onClick={() => updateQty(item.lineId, item.quantity - 1)} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: "pointer", fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
@@ -1631,7 +1633,7 @@ export default function POSPage() {
                       <input type="number" value={item.unit_price} onChange={e => onPriceInput(item.lineId, e.target.value)} onBlur={() => onPriceBlur(item.lineId)} style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "4px 6px 4px 18px", fontSize: 12 }} />
                       <span style={{ position: "absolute", left: 6, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "var(--text-muted)" }}>F</span>
                     </div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--brand-light)", minWidth: 56, textAlign: "right" }}>{formatCFA(item.quantity * item.unit_price)}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--brand-light)", minWidth: 56, textAlign: "right" }}>{fmt(item.quantity * item.unit_price)}</div>
                   </div>
                 )}
               </div>
@@ -1641,7 +1643,7 @@ export default function POSPage() {
           <div style={{ padding: "14px 16px", borderTop: "2px solid var(--border)", background: "var(--bg-elevated)", ...(mobile && showPayment ? { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" } : {}) }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexShrink: 0 }}>
               <span style={{ fontWeight: 600, fontSize: 13, color: "var(--text-secondary)" }}>Total</span>
-              <span style={{ fontWeight: 800, fontSize: 20, color: "var(--brand-light)", letterSpacing: "-0.5px" }}>{formatCFA(total)}</span>
+              <span style={{ fontWeight: 800, fontSize: 20, color: "var(--brand-light)", letterSpacing: "-0.5px" }}>{fmt(total)}</span>
             </div>
 
             {!showPayment ? (
@@ -1825,7 +1827,7 @@ export default function POSPage() {
                           Falls back to balance_due on older API
                           responses. */}
                       <div style={{ fontWeight: 700, color: "#f87171", fontSize: 14 }}>
-                        {formatCFA(inv.effective_balance_due ?? inv.balance_due)}
+                        {fmt(inv.effective_balance_due ?? inv.balance_due)}
                       </div>
                       <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{inv.payment_status}</div>
                     </div>
@@ -1841,13 +1843,13 @@ export default function POSPage() {
             {debtPaperBalance > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 14px", marginBottom: 8, fontSize: 12, color: "var(--text-muted)", borderTop: "1px dashed var(--border)", paddingTop: 10 }}>
                 <span>{lang === "en" ? "Previous balance" : "Solde antérieur"}</span>
-                <span style={{ fontWeight: 600 }}>{formatCFA(debtPaperBalance)}</span>
+                <span style={{ fontWeight: 600 }}>{fmt(debtPaperBalance)}</span>
               </div>
             )}
             {selectedDebtIds.size > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 14px", background: "rgba(239,68,68,0.08)", borderRadius: 10, marginBottom: 16, fontSize: 13 }}>
                 <span style={{ fontWeight: 600 }}>{lang === "en" ? "To collect:" : "À encaisser :"}</span>
-                <strong style={{ color: "#f87171" }}>{formatCFA(debtInvoices.filter(i => selectedDebtIds.has(i.id)).reduce((s, i) => s + parseFloat(i.effective_balance_due ?? i.balance_due), 0))}</strong>
+                <strong style={{ color: "#f87171" }}>{fmt(debtInvoices.filter(i => selectedDebtIds.has(i.id)).reduce((s, i) => s + parseFloat(i.effective_balance_due ?? i.balance_due), 0))}</strong>
               </div>
             )}
             <div style={{ display: "flex", gap: 10 }}>
@@ -1870,8 +1872,8 @@ export default function POSPage() {
         <div style={{ position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 1100, maxWidth: 460, width: "calc(100% - 24px)", background: "var(--bg-card)", border: "1px solid rgba(245,158,11,0.5)", borderRadius: 12, padding: "12px 16px", boxShadow: "0 8px 24px rgba(0,0,0,0.3)", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <div style={{ flex: "1 1 220px", fontSize: 13 }}>
             ⚠️ {lang === "en"
-              ? <>This customer owes <strong style={{ color: "#f87171" }}>{formatCFA(debtBanner.amount)}</strong>. Add debt payment to cart?</>
-              : <>Ce client doit <strong style={{ color: "#f87171" }}>{formatCFA(debtBanner.amount)}</strong>. Ajouter au panier ?</>}
+              ? <>This customer owes <strong style={{ color: "#f87171" }}>{fmt(debtBanner.amount)}</strong>. Add debt payment to cart?</>
+              : <>Ce client doit <strong style={{ color: "#f87171" }}>{fmt(debtBanner.amount)}</strong>. Ajouter au panier ?</>}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => setDebtBanner(null)}
@@ -1900,8 +1902,8 @@ export default function POSPage() {
         }}>
           <span>⚠</span>
           <span>{lang === "en"
-            ? `Debt detail unavailable offline. ${customer?.name || "Customer"} owes ${formatCFA(Number(customer?.total_debt) || 0)} — reconnect to load invoices.`
-            : `Détail dette indisponible hors-ligne. ${customer?.name || "Client"} doit ${formatCFA(Number(customer?.total_debt) || 0)} — reconnectez pour charger les factures.`}</span>
+            ? `Debt detail unavailable offline. ${customer?.name || "Customer"} owes ${fmt(Number(customer?.total_debt) || 0)} — reconnect to load invoices.`
+            : `Détail dette indisponible hors-ligne. ${customer?.name || "Client"} doit ${fmt(Number(customer?.total_debt) || 0)} — reconnectez pour charger les factures.`}</span>
         </div>
       )}
 
@@ -1994,7 +1996,7 @@ export default function POSPage() {
                   )}
                   {customer.total_debt > 0 && (
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-                      <div style={{ fontSize: 11, color: "#f87171", fontWeight: 600 }}>🧾 Owes {formatCFA(customer.total_debt)}</div>
+                      <div style={{ fontSize: 11, color: "#f87171", fontWeight: 600 }}>🧾 Owes {fmt(customer.total_debt)}</div>
                       {!debtLoading && customerDebtData?.data?.length > 0 && (
                         <button onClick={() => setShowDebtModal(true)} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 6, border: "1px solid #f87171", background: "rgba(239,68,68,0.1)", color: "#f87171", cursor: "pointer", fontWeight: 700 }}>
                           {lang === "en" ? "Collect" : "Encaisser"}
@@ -2030,7 +2032,7 @@ export default function POSPage() {
                         </div>
                         {c.total_debt > 0 && (
                           <div style={{ fontSize: 11, color: "#f87171", fontWeight: 700, background: "rgba(239,68,68,0.1)", padding: "2px 8px", borderRadius: 10 }}>
-                            {formatCFA(c.total_debt)}
+                            {fmt(c.total_debt)}
                           </div>
                         )}
                       </div>
@@ -2174,7 +2176,7 @@ export default function POSPage() {
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: mobile ? 6 : 2 }}>
                       <div style={{ fontWeight: 700, color: "var(--brand-light)", fontSize: mobile ? 15 : 14 }}>
-                        {formatCFA(priceForTier(p, tierForCustomer(customer)))}
+                        {fmt(priceForTier(p, tierForCustomer(customer)))}
                         {tierForCustomer(customer) === "wholesale" && p.wholesale_price > 0 && (
                           <span style={{ fontSize: 9, background: "#fbbf24", color: "#000", borderRadius: 4, padding: "1px 4px", marginLeft: 4, fontWeight: 700 }}>GROS</span>
                         )}
@@ -2231,7 +2233,7 @@ export default function POSPage() {
           itemCount={cart.length}
           heldCount={activeHolds.length}
           total={total}
-          formatTotal={formatCFA}
+          formatTotal={fmt}
           lang={lang}
         >
           {cartPaneInner}
@@ -2287,15 +2289,15 @@ export default function POSPage() {
             <div style={{ background: "var(--bg-elevated)", borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
               <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 13 }}>
                 <span style={{ color: "var(--text-muted)" }}>{lang === "en" ? "Limit" : "Limite"}</span>
-                <span style={{ fontWeight: 700 }}>{formatCFA(creditLimitModal.credit_limit)}</span>
+                <span style={{ fontWeight: 700 }}>{fmt(creditLimitModal.credit_limit)}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 13, borderTop: "1px solid var(--border)" }}>
                 <span style={{ color: "var(--text-muted)" }}>{lang === "en" ? "Current debt" : "Dette actuelle"}</span>
-                <span style={{ fontWeight: 700 }}>{formatCFA(creditLimitModal.current_debt)}</span>
+                <span style={{ fontWeight: 700 }}>{fmt(creditLimitModal.current_debt)}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 13, borderTop: "1px solid var(--border)" }}>
                 <span style={{ color: "var(--text-muted)" }}>{lang === "en" ? "New balance" : "Nouveau solde"}</span>
-                <span style={{ fontWeight: 700, color: "#f87171" }}>{formatCFA(creditLimitModal.new_balance)}</span>
+                <span style={{ fontWeight: 700, color: "#f87171" }}>{fmt(creditLimitModal.new_balance)}</span>
               </div>
             </div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5, marginBottom: 14 }}>
@@ -2534,7 +2536,7 @@ export default function POSPage() {
                       👤 {h.label || (lang === "en" ? "Walk-in" : "Client de passage")}
                     </div>
                     <div style={{ fontSize: 12, color: "var(--brand-light)", fontWeight: 600, marginBottom: 10 }}>
-                      {nItems} {lang === "en" ? (nItems === 1 ? "item" : "items") : "article(s)"} · {formatCFA(h.estimated_total)}
+                      {nItems} {lang === "en" ? (nItems === 1 ? "item" : "items") : "article(s)"} · {fmt(h.estimated_total)}
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
                       <button onClick={() => resumeHold(h.id)} className="btn btn-success" style={{ flex: 2, fontWeight: 700, fontSize: 13 }}>
@@ -2607,6 +2609,7 @@ export default function POSPage() {
 // hold_ref (shared genSaleCodes) so the cashier scans it to resume.
 // This is NOT a receipt — no payment, no totals owed.
 function HoldTicket({ hold, org, lang, cashierName, onClose }) {
+  const fmt = useCurrency();
   const en = lang === "en";
   const loc = en ? "en-US" : "fr-FR";
   const created = hold.created_at ? new Date(hold.created_at) : new Date();
@@ -2660,7 +2663,7 @@ function HoldTicket({ hold, org, lang, cashierName, onClose }) {
         <div class="line"></div>
         ${items.map(i => `<div class="row"><span>${i.name} ×${i.qty}</span><span>${(Number(i.line_total) || 0).toLocaleString()} F</span></div>`).join("")}
         <div class="line"></div>
-        <div class="row est"><span>${HT.est}</span><span>${(Number(hold.estimated_total) || 0).toLocaleString()} FCFA</span></div>
+        <div class="row est"><span>${HT.est}</span><span>${(Number(hold.estimated_total) || 0).toLocaleString()} ${fmt.symbol}</span></div>
         <div class="line"></div>
         ${codes.barcode ? `<div class="center"><img src="${codes.barcode}" style="height:44px;image-rendering:pixelated"/></div>` : ""}
         ${codes.qr ? `<div class="center"><img src="${codes.qr}" style="width:110px;height:110px"/></div>` : ""}

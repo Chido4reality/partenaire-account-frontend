@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
-import api, { formatCFA } from "../utils/api";
+import api from "../utils/api";
 import BarcodeInput from "../components/common/BarcodeInput";
 import CameraScanner from "../components/common/CameraScanner";
 

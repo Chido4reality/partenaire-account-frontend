@@ -375,10 +375,8 @@ api.interceptors.response.use(res => {
 
 export default api;
 
-export const formatCFA = (amount) => {
-  if (!amount && amount !== 0) return "—";
-  return new Intl.NumberFormat("fr-CM").format(Math.round(amount)) + " FCFA";
-};
+// MP-CURRENCY-DISPLAY: legacy formatCFA removed — money now formats per-org via
+// useCurrency()/formatMoney(amount, org.currency). See utils/currency.js.
 
 export const formatDate = (date) => {
   if (!date) return "—";

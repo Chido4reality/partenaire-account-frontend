@@ -30,7 +30,8 @@ import { useState, useEffect } from "react";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import { cacheData, getCachedData } from "../utils/offlineStore";
 import { useLangStore, useAuthStore } from "../store";
-import api, { formatCFA } from "../utils/api";
+import api from "../utils/api";
+import { useCurrency } from "../utils/useCurrency";
 import VoidReturnModal from "../components/common/VoidReturnModal";
 import CameraScanner from "../components/common/CameraScanner";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
@@ -80,6 +81,7 @@ export default function RefundsPage() {
   //                   replacement-out is documented in the audit
   //                   log and matters less to the customer)
   const [receiptEvent, setReceiptEvent] = useState(null);
+  const fmt = useCurrency();
   const { org } = useAuthStore();
   const { data: orgSettingsResp } = useOfflineCachedQuery({
     queryKey: ["org-settings"],
@@ -273,7 +275,7 @@ export default function RefundsPage() {
               autoFocus
               style={{ flex: 1, minWidth: 200, textAlign: "center", fontWeight: 700, fontSize: 16 }}
             />
-            <span style={{ color: "var(--text-muted)", fontSize: 13 }}>FCFA</span>
+            <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{fmt.symbol}</span>
             <button className="btn btn-primary" onClick={runAmountSearch} disabled={!amountInput.trim()}>
               💰 {fr ? "Chercher" : "Search"}
             </button>
@@ -324,8 +326,8 @@ export default function RefundsPage() {
             ? (fr ? "Aucun reçu trouvé." : "No receipt found.")
             : activeQuery.by === "amount"
               ? (fr
-                  ? `${sales.length} reçu(s) de ${formatCFA(Number(activeQuery.value))}.`
-                  : `${sales.length} receipt(s) of ${formatCFA(Number(activeQuery.value))}.`)
+                  ? `${sales.length} reçu(s) de ${fmt(Number(activeQuery.value))}.`
+                  : `${sales.length} receipt(s) of ${fmt(Number(activeQuery.value))}.`)
               : (fr
                   ? `${sales.length} résultat(s) pour « ${activeQuery.value} ».`
                   : `${sales.length} result(s) for "${activeQuery.value}".`)
@@ -401,8 +403,8 @@ export default function RefundsPage() {
                         )}
                       </td>
                       <td>{s.customer_name || s.pa_customers?.name || (fr ? "Comptoir" : "Walk-in")}</td>
-                      <td style={{ textAlign: "right", fontWeight: 600 }}>{formatCFA(s.total_amount)}</td>
-                      <td style={{ textAlign: "right" }}>{formatCFA(s.paid_amount)}</td>
+                      <td style={{ textAlign: "right", fontWeight: 600 }}>{fmt(s.total_amount)}</td>
+                      <td style={{ textAlign: "right" }}>{fmt(s.paid_amount)}</td>
                       <td>
                         <span style={{
                           fontSize: 11, padding: "2px 8px", borderRadius: 10, fontWeight: 700,

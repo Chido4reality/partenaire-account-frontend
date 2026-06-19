@@ -16,6 +16,9 @@
 //   Cash at hand         = drawer.actual − expenses.total
 //   Debt issued          = totals.impaye_aujourdhui      (today open balance)
 
+import { useAuthStore } from "../store";
+import { currencySymbol } from "./currency";
+
 const fmt = (x, en) => Number(x || 0).toLocaleString(en ? "en-US" : "fr-FR");
 
 // MP-REFUNDS-LIST-TYPED-LABELS — primary kind label per pa_returns
@@ -44,6 +47,8 @@ export function shortRetRef(ref) {
 
 export function buildLedgerText(ledger, lang) {
   if (!ledger) return "";
+  const currency = useAuthStore.getState().org?.currency;
+  const sym = currencySymbol(currency);
   const en   = lang === "en";
   const n    = (x) => fmt(x, en);
   const ps   = ledger.product_sales    || { total: 0, items: [] };
@@ -65,35 +70,35 @@ export function buildLedgerText(ledger, lang) {
   L.push(`*${en ? "DAILY REPORT" : "RAPPORT DU JOUR"} — ${locName}*`);
   L.push(`${longDate}${dr?.cashier_name ? " — " + dr.cashier_name : ""}`);
   L.push("");
-  L.push(`${en ? "Amount sold"    : "Ventes du jour"}: ${n(ps.total)} FCFA`);
-  L.push(`${en ? "Debt collected" : "Dette encaissée"}: ${n(dc.total)} FCFA`);
+  L.push(`${en ? "Amount sold"    : "Ventes du jour"}: ${n(ps.total)} ${sym}`);
+  L.push(`${en ? "Debt collected" : "Dette encaissée"}: ${n(dc.total)} ${sym}`);
   L.push("─────────────────────────");
-  L.push(`*${en ? "Total money received" : "Total reçu"}: ${n(totalReceived)} FCFA*`);
+  L.push(`*${en ? "Total money received" : "Total reçu"}: ${n(totalReceived)} ${sym}*`);
 
   if (drCounted != null) {
     L.push("");
-    L.push(`${en ? "Counted in drawer" : "Caisse comptée"}: ${n(drCounted)} FCFA`);
+    L.push(`${en ? "Counted in drawer" : "Caisse comptée"}: ${n(drCounted)} ${sym}`);
     if (drVariance != null && drVariance < 0) {
-      L.push(`${en ? "Lost (drawer short)" : "Manquant"}: ${n(Math.abs(drVariance))} FCFA`);
+      L.push(`${en ? "Lost (drawer short)" : "Manquant"}: ${n(Math.abs(drVariance))} ${sym}`);
     } else if (drVariance != null && drVariance > 0) {
-      L.push(`${en ? "Drawer surplus" : "Excédent caisse"}: +${n(drVariance)} FCFA`);
+      L.push(`${en ? "Drawer surplus" : "Excédent caisse"}: +${n(drVariance)} ${sym}`);
     }
     if (Number(ex.total) > 0) {
-      L.push(`${en ? "Expenses" : "Dépenses"}: ${n(ex.total)} FCFA`);
+      L.push(`${en ? "Expenses" : "Dépenses"}: ${n(ex.total)} ${sym}`);
     }
     L.push("─────────────────────────");
-    L.push(`*${en ? "Cash at hand" : "Cash en main"}: ${n(cashAtHand)} FCFA*`);
+    L.push(`*${en ? "Cash at hand" : "Cash en main"}: ${n(cashAtHand)} ${sym}*`);
   } else if (dr) {
     L.push("");
     L.push(en ? "Drawer not counted yet — shift still open" : "Caisse non comptée — poste encore ouvert");
     if (Number(ex.total) > 0) {
-      L.push(`${en ? "Expenses today" : "Dépenses du jour"}: ${n(ex.total)} FCFA`);
+      L.push(`${en ? "Expenses today" : "Dépenses du jour"}: ${n(ex.total)} ${sym}`);
     }
   }
 
   if (debtIssued > 0) {
     L.push("");
-    L.push(`${en ? "Debt issued (on credit)" : "Crédit du jour"}: ${n(debtIssued)} FCFA`);
+    L.push(`${en ? "Debt issued (on credit)" : "Crédit du jour"}: ${n(debtIssued)} ${sym}`);
   }
 
   L.push("");
@@ -115,6 +120,8 @@ export function buildLedgerText(ledger, lang) {
 export function buildLedgerTextV2(ledger, lang) {
   if (!ledger) return "";
   if (!ledger.blocks) return buildLedgerText(ledger, lang); // back-compat
+  const currency = useAuthStore.getState().org?.currency;
+  const sym = currencySymbol(currency);
   const en = lang === "en";
   const n  = (x) => fmt(x, en);
   const b  = ledger.blocks;
@@ -138,29 +145,29 @@ export function buildLedgerTextV2(ledger, lang) {
 
   // ── BLOCK 1 — DAY FLOW ──────────────────────────────────────
   L.push(`*1. ${en ? "DAY FLOW" : "MOUVEMENT DU JOUR"}*`);
-  L.push(`${en ? "Sales today" : "Ventes du jour"}: ${n(sales.total)} FCFA`);
-  L.push(`  • ${en ? "Paid cash" : "Payé espèces"}: ${n(sales.paid_cash)} FCFA`);
-  L.push(`  • ${en ? "Paid MoMo" : "Payé MoMo"}: ${n(sales.paid_momo)} FCFA`);
-  L.push(`  • ${en ? "Paid bank" : "Payé banque"}: ${n(sales.paid_bank)} FCFA`);
-  L.push(`  • ${en ? "On credit" : "À crédit"}: ${n(sales.on_credit)} FCFA`);
+  L.push(`${en ? "Sales today" : "Ventes du jour"}: ${n(sales.total)} ${sym}`);
+  L.push(`  • ${en ? "Paid cash" : "Payé espèces"}: ${n(sales.paid_cash)} ${sym}`);
+  L.push(`  • ${en ? "Paid MoMo" : "Payé MoMo"}: ${n(sales.paid_momo)} ${sym}`);
+  L.push(`  • ${en ? "Paid bank" : "Payé banque"}: ${n(sales.paid_bank)} ${sym}`);
+  L.push(`  • ${en ? "On credit" : "À crédit"}: ${n(sales.on_credit)} ${sym}`);
   L.push("");
-  L.push(`${en ? "Debt collected" : "Dette encaissée"}: ${n(dcol.total)} FCFA`);
-  L.push(`  • ${en ? "Cash" : "Espèces"}: ${n(dcol.cash)} FCFA`);
-  L.push(`  • MoMo: ${n(dcol.momo)} FCFA`);
-  L.push(`  • ${en ? "Bank" : "Banque"}: ${n(dcol.bank)} FCFA`);
+  L.push(`${en ? "Debt collected" : "Dette encaissée"}: ${n(dcol.total)} ${sym}`);
+  L.push(`  • ${en ? "Cash" : "Espèces"}: ${n(dcol.cash)} ${sym}`);
+  L.push(`  • MoMo: ${n(dcol.momo)} ${sym}`);
+  L.push(`  • ${en ? "Bank" : "Banque"}: ${n(dcol.bank)} ${sym}`);
   L.push("");
-  L.push(`${en ? "Refunds & voids (cash out)" : "Remboursements & annulations (sortie)"}: ${n(df.refunds_voids_cash_out)} FCFA`);
+  L.push(`${en ? "Refunds & voids (cash out)" : "Remboursements & annulations (sortie)"}: ${n(df.refunds_voids_cash_out)} ${sym}`);
   // MP-EXCHANGE-VISIBILITY: swaps as their own line with net effect.
   const ex = df.exchanges || {};
   if (ex.count) {
     const sgn = ex.net > 0 ? "+" : ex.net < 0 ? "−" : "";
-    L.push(`${en ? "Exchanges" : "Échanges"} (${ex.count}): ${en ? "net" : "net"} ${sgn}${n(Math.abs(ex.net || 0))} FCFA`);
-    if (ex.cash_in)  L.push(`  • ${en ? "Customer paid in" : "Client a payé"}: +${n(ex.cash_in)} FCFA`);
-    if (ex.cash_out) L.push(`  • ${en ? "Refunded out" : "Remboursé"}: −${n(ex.cash_out)} FCFA`);
+    L.push(`${en ? "Exchanges" : "Échanges"} (${ex.count}): ${en ? "net" : "net"} ${sgn}${n(Math.abs(ex.net || 0))} ${sym}`);
+    if (ex.cash_in)  L.push(`  • ${en ? "Customer paid in" : "Client a payé"}: +${n(ex.cash_in)} ${sym}`);
+    if (ex.cash_out) L.push(`  • ${en ? "Refunded out" : "Remboursé"}: −${n(ex.cash_out)} ${sym}`);
   }
-  L.push(`${en ? "Expenses" : "Dépenses"}: ${n(df.expenses)} FCFA`);
+  L.push(`${en ? "Expenses" : "Dépenses"}: ${n(df.expenses)} ${sym}`);
   L.push("─────────────────────────");
-  L.push(`*${en ? "Net cash flow" : "Flux net espèces"}: ${n(df.net_cash_flow)} FCFA*`);
+  L.push(`*${en ? "Net cash flow" : "Flux net espèces"}: ${n(df.net_cash_flow)} ${sym}*`);
   L.push("");
 
   // ── BLOCK 2 — SHIFTS ────────────────────────────────────────
@@ -173,24 +180,24 @@ export function buildLedgerTextV2(ledger, lang) {
       const head = `${s.cashier_name || "—"}${s.location_name ? " · " + s.location_name : ""}` +
                    ` (${tfmt(s.opened_at)} → ${closed ? tfmt(s.closed_at) : (en ? "open" : "ouvert")})`;
       L.push(`▸ ${en ? "Shift" : "Poste"} ${i + 1}: ${head}`);
-      L.push(`  ${en ? "Opening float" : "Fond d'ouverture"}: ${n(s.opening_float)} FCFA`);
-      L.push(`  ${en ? "Cash sales" : "Ventes espèces"}: ${n(s.cash_sales)} FCFA`);
-      L.push(`  ${en ? "Debt collected (cash)" : "Dette encaissée (espèces)"}: ${n(s.debt_collected_cash)} FCFA`);
-      L.push(`  ${en ? "Cash refunds" : "Remboursements espèces"}: ${n(s.cash_refunds)} FCFA`);
+      L.push(`  ${en ? "Opening float" : "Fond d'ouverture"}: ${n(s.opening_float)} ${sym}`);
+      L.push(`  ${en ? "Cash sales" : "Ventes espèces"}: ${n(s.cash_sales)} ${sym}`);
+      L.push(`  ${en ? "Debt collected (cash)" : "Dette encaissée (espèces)"}: ${n(s.debt_collected_cash)} ${sym}`);
+      L.push(`  ${en ? "Cash refunds" : "Remboursements espèces"}: ${n(s.cash_refunds)} ${sym}`);
       if (s.exchange_cash_in || s.exchange_cash_out) {
-        L.push(`  ${en ? "Exchanges (in / out)" : "Échanges (entrée / sortie)"}: +${n(s.exchange_cash_in || 0)} / −${n(s.exchange_cash_out || 0)} FCFA`);
+        L.push(`  ${en ? "Exchanges (in / out)" : "Échanges (entrée / sortie)"}: +${n(s.exchange_cash_in || 0)} / −${n(s.exchange_cash_out || 0)} ${sym}`);
       }
-      L.push(`  ${en ? "Expenses" : "Dépenses"}: ${n(s.expenses)} FCFA`);
-      L.push(`  ${en ? "Expected drawer" : "Caisse attendue"}: ${n(s.expected_drawer)} FCFA`);
+      L.push(`  ${en ? "Expenses" : "Dépenses"}: ${n(s.expenses)} ${sym}`);
+      L.push(`  ${en ? "Expected drawer" : "Caisse attendue"}: ${n(s.expected_drawer)} ${sym}`);
       if (closed && s.counted_at_close != null) {
-        L.push(`  ${en ? "Counted at close" : "Comptée à la clôture"}: ${n(s.counted_at_close)} FCFA`);
+        L.push(`  ${en ? "Counted at close" : "Comptée à la clôture"}: ${n(s.counted_at_close)} ${sym}`);
         if (s.variance != null) {
           if (s.variance < 0) {
-            L.push(`  ${en ? "Variance (short)" : "Écart (manquant)"}: −${n(Math.abs(s.variance))} FCFA`);
+            L.push(`  ${en ? "Variance (short)" : "Écart (manquant)"}: −${n(Math.abs(s.variance))} ${sym}`);
           } else if (s.variance > 0) {
-            L.push(`  ${en ? "Variance (surplus)" : "Écart (excédent)"}: +${n(s.variance)} FCFA`);
+            L.push(`  ${en ? "Variance (surplus)" : "Écart (excédent)"}: +${n(s.variance)} ${sym}`);
           } else {
-            L.push(`  ${en ? "Variance" : "Écart"}: 0 FCFA`);
+            L.push(`  ${en ? "Variance" : "Écart"}: 0 ${sym}`);
           }
         }
       } else {
@@ -203,8 +210,8 @@ export function buildLedgerTextV2(ledger, lang) {
 
   // ── BLOCK 3 — OUTSTANDING ───────────────────────────────────
   L.push(`*3. ${en ? "OUTSTANDING" : "EN SUSPENS"}*`);
-  L.push(`${en ? "Debt issued today" : "Crédit accordé aujourd'hui"}: ${n(ou.debt_issued_today)} FCFA`);
-  L.push(`${en ? "Total customer debt (all time)" : "Dette client totale (tous comptes)"}: ${n(ou.total_customer_debt_all_time)} FCFA`);
+  L.push(`${en ? "Debt issued today" : "Crédit accordé aujourd'hui"}: ${n(ou.debt_issued_today)} ${sym}`);
+  L.push(`${en ? "Total customer debt (all time)" : "Dette client totale (tous comptes)"}: ${n(ou.total_customer_debt_all_time)} ${sym}`);
 
   // ── REFUNDS DETAIL — typed list, compact form (only when any) ───
   //   MP-REFUNDS-LIST-TYPED-LABELS. Each row carries its kind label
@@ -231,7 +238,7 @@ export function buildLedgerTextV2(ledger, lang) {
         L.push(`  ${pdLine}`);
       }
       const amt = Number(r.refund_amount) || 0;
-      let amtLine = `  -${n(amt)} FCFA`;
+      let amtLine = `  -${n(amt)} ${sym}`;
       if (r.has_credit_split) {
         amtLine += en
           ? ` (${n(r.credit_portion)} credit / ${n(r.cash_portion)} cash)`
@@ -252,6 +259,8 @@ export function buildLedgerTextV2(ledger, lang) {
 // don't get empty bullets in the message.
 export function buildWeeklyText(w, lang) {
   if (!w) return "";
+  const currency = useAuthStore.getState().org?.currency;
+  const sym = currencySymbol(currency);
   const en = lang === "en";
   const n  = (x) => fmt(x, en);
   const dfmt = (d) => new Date(d + "T00:00:00").toLocaleDateString(en ? "en-GB" : "fr-FR",
@@ -261,14 +270,14 @@ export function buildWeeklyText(w, lang) {
   L.push("────────────────────────");
   L.push(`*${en ? "WEEKLY SUMMARY" : "RÉSUMÉ DE LA SEMAINE"} (${dfmt(w.week_start)} – ${dfmt(w.week_end)})*`);
   L.push("");
-  L.push(`${en ? "Total sales"     : "Total ventes"}: ${n(w.total_sales)} FCFA`);
-  L.push(`${en ? "Total refunds"   : "Total remboursements"}: ${n(w.total_refunds)} FCFA`);
-  L.push(`${en ? "Cash in (real)"  : "Argent reçu (réel)"}: ${n(w.cash_in_real)} FCFA`);
-  L.push(`${en ? "New debt issued" : "Crédit accordé"}: ${n(w.new_debt_issued)} FCFA`);
+  L.push(`${en ? "Total sales"     : "Total ventes"}: ${n(w.total_sales)} ${sym}`);
+  L.push(`${en ? "Total refunds"   : "Total remboursements"}: ${n(w.total_refunds)} ${sym}`);
+  L.push(`${en ? "Cash in (real)"  : "Argent reçu (réel)"}: ${n(w.cash_in_real)} ${sym}`);
+  L.push(`${en ? "New debt issued" : "Crédit accordé"}: ${n(w.new_debt_issued)} ${sym}`);
   if (w.best_customer) {
     L.push("");
     L.push(en ? "Best customer this week" : "Meilleur client de la semaine");
-    L.push(`  ${w.best_customer.customer_name} — ${n(w.best_customer.total_paid)} FCFA ${en ? "paid" : "payé"}`);
+    L.push(`  ${w.best_customer.customer_name} — ${n(w.best_customer.total_paid)} ${sym} ${en ? "paid" : "payé"}`);
   }
   if (w.best_product) {
     L.push("");
@@ -278,7 +287,7 @@ export function buildWeeklyText(w, lang) {
   if (w.highest_expense) {
     L.push("");
     L.push(en ? "Highest expense" : "Dépense la plus élevée");
-    L.push(`  ${w.highest_expense.description || w.highest_expense.category || "?"} — ${n(w.highest_expense.amount)} FCFA${w.highest_expense.date ? " (" + dfmt(w.highest_expense.date) + ")" : ""}`);
+    L.push(`  ${w.highest_expense.description || w.highest_expense.category || "?"} — ${n(w.highest_expense.amount)} ${sym}${w.highest_expense.date ? " (" + dfmt(w.highest_expense.date) + ")" : ""}`);
   }
   if (w.trend_pct != null) {
     const sign = w.trend_pct > 0 ? "📈" : w.trend_pct < 0 ? "📉" : "➡";

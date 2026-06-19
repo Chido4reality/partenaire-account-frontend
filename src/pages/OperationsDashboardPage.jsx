@@ -20,7 +20,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import { Link } from "react-router-dom";
 import { useLangStore } from "../store";
-import api, { formatCFA } from "../utils/api";
+import api from "../utils/api";
+import { useCurrency } from "../utils/useCurrency";
 import { openWhatsApp } from "../utils/whatsapp";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -89,10 +90,11 @@ function DeltaPill({ pct }) {
 }
 
 function MetricBlock({ label, value, delta }) {
+  const fmt = useCurrency();
   return (
     <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px" }}>
       <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>{label}</div>
-      <div style={{ fontWeight: 800, fontSize: 17 }}>{formatCFA(value)}</div>
+      <div style={{ fontWeight: 800, fontSize: 17 }}>{fmt(value)}</div>
       {delta != null && <div style={{ marginTop: 4 }}><DeltaPill pct={delta} /></div>}
     </div>
   );
@@ -103,6 +105,7 @@ function MetricBlock({ label, value, delta }) {
 export default function OperationsDashboardPage() {
   const lang = useLangStore(s => s.lang);
   const en = lang === "en";
+  const fmt = useCurrency();
 
   // Range state — default last 7 days. Custom range honoured via the
   // two date inputs; the chip presets reset to known windows.
@@ -209,7 +212,7 @@ export default function OperationsDashboardPage() {
                   <XAxis dataKey="date" tick={{ fontSize: 11, fill: "var(--text-muted)" }} />
                   <YAxis tick={{ fontSize: 11, fill: "var(--text-muted)" }} tickFormatter={(v) => (v / 1000).toFixed(0) + "k"} />
                   <Tooltip
-                    formatter={(value) => formatCFA(Math.abs(Number(value) || 0))}
+                    formatter={(value) => fmt(Math.abs(Number(value) || 0))}
                     contentStyle={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
                   />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
@@ -259,8 +262,8 @@ export default function OperationsDashboardPage() {
                       <strong>{c.cashier_name}</strong>
                     </td>
                     <td style={tdStyle}>{c.shifts_opened}</td>
-                    <td style={tdStyleRight}>{formatCFA(c.total_sales)}</td>
-                    <td style={tdStyleRight}><strong>{formatCFA(c.cash_collected)}</strong></td>
+                    <td style={tdStyleRight}>{fmt(c.total_sales)}</td>
+                    <td style={tdStyleRight}><strong>{fmt(c.cash_collected)}</strong></td>
                     <td style={tdStyleRight}>{c.refunds_processed}</td>
                     <td style={tdStyleRight} title={c.voids > 3 ? "flagged" : ""}>
                       <span style={{ color: c.voids > 3 ? "#f87171" : "inherit" }}>{c.voids}</span>
@@ -364,7 +367,7 @@ export default function OperationsDashboardPage() {
                   }}>
                     <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{b.label}</div>
                     <div style={{ fontWeight: 800, fontSize: 16, marginTop: 4, color: colors[i] }}>
-                      {formatCFA(b.total)}
+                      {fmt(b.total)}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>
                       {b.count} {en ? "customer(s)" : "client(s)"}
@@ -391,7 +394,7 @@ export default function OperationsDashboardPage() {
                   {(debtAging.data.top_debtors || []).map(d => (
                     <tr key={d.customer_id} style={{ borderTop: "1px solid var(--border)" }}>
                       <td style={tdStyle}><strong>{d.customer_name}</strong></td>
-                      <td style={tdStyleRight}><strong>{formatCFA(d.total_debt)}</strong></td>
+                      <td style={tdStyleRight}><strong>{fmt(d.total_debt)}</strong></td>
                       <td style={tdStyle}>{d.bucket}</td>
                       <td style={tdStyleRight}>{d.days_since_last_pay != null ? `${d.days_since_last_pay} j` : "—"}</td>
                       <td style={tdStyle}>
@@ -399,8 +402,8 @@ export default function OperationsDashboardPage() {
                           <button onClick={(e) => {
                             const phone = String(d.customer_phone).replace(/\D/g, "");
                             const msg = en
-                              ? `Hello ${d.customer_name}, this is a friendly reminder about your outstanding balance of ${formatCFA(d.total_debt)} FCFA. Thank you!`
-                              : `Bonjour ${d.customer_name}, petit rappel pour votre solde en attente de ${formatCFA(d.total_debt)} FCFA. Merci!`;
+                              ? `Hello ${d.customer_name}, this is a friendly reminder about your outstanding balance of ${fmt(d.total_debt)}. Thank you!`
+                              : `Bonjour ${d.customer_name}, petit rappel pour votre solde en attente de ${fmt(d.total_debt)}. Merci!`;
                             openWhatsApp(e, phone, msg);
                           }} style={{
                             ...smallBtnStyle,
@@ -422,8 +425,8 @@ export default function OperationsDashboardPage() {
             </div>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>
               {en
-                ? `Total open debtors: ${debtAging.data.total_debtors} · combined: ${formatCFA(debtAging.data.total_debt)}`
-                : `Total débiteurs: ${debtAging.data.total_debtors} · combiné: ${formatCFA(debtAging.data.total_debt)}`}
+                ? `Total open debtors: ${debtAging.data.total_debtors} · combined: ${fmt(debtAging.data.total_debt)}`
+                : `Total débiteurs: ${debtAging.data.total_debtors} · combiné: ${fmt(debtAging.data.total_debt)}`}
             </div>
           </>
         )}

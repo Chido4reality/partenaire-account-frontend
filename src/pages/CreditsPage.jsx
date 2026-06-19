@@ -3,13 +3,15 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useAuthStore, useLangStore } from "../store";
-import api, { formatCFA, formatDate } from "../utils/api";
+import api, { formatDate } from "../utils/api";
+import { useCurrency } from "../utils/useCurrency";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 
 export default function CreditsPage() {
   const { lang } = useLangStore();
   const { org }  = useAuthStore();
   const qc = useQueryClient();
+  const fmt = useCurrency();
 
   const [tab, setTab]           = useState("all");
   const [search, setSearch]     = useState("");
@@ -93,14 +95,14 @@ export default function CreditsPage() {
     const orgName = org?.name || "notre boutique";
 
     let msg = lang === "en"
-      ? `Bonjour ${customer.name},\n\nReminder from ${orgName}.\n\nYour outstanding balance as of ${today}:\n*${totalDebt.toLocaleString()} FCFA*\n`
-      : `Bonjour ${customer.name},\n\nRappel de ${orgName}.\n\nVotre solde impayé au ${today}:\n*${totalDebt.toLocaleString()} FCFA*\n`;
+      ? `Bonjour ${customer.name},\n\nReminder from ${orgName}.\n\nYour outstanding balance as of ${today}:\n*${totalDebt.toLocaleString()} ${fmt.symbol}*\n`
+      : `Bonjour ${customer.name},\n\nRappel de ${orgName}.\n\nVotre solde impayé au ${today}:\n*${totalDebt.toLocaleString()} ${fmt.symbol}*\n`;
 
     if (openInvoices.length > 0) {
       msg += lang === "en" ? "\nInvoice details:\n" : "\nDétails des factures:\n";
       openInvoices.slice(0, 3).forEach(s => {
         const date = new Date(s.sale_date || s.created_at).toLocaleDateString("fr-FR");
-        msg += `• ${s.sale_number} (${date}): ${(+(s.effective_balance_due ?? s.balance_due)).toLocaleString()} FCFA\n`;
+        msg += `• ${s.sale_number} (${date}): ${(+(s.effective_balance_due ?? s.balance_due)).toLocaleString()} ${fmt.symbol}\n`;
       });
       if (openInvoices.length > 3) msg += `• ...et ${openInvoices.length - 3} autre(s)\n`;
     }
@@ -144,7 +146,7 @@ export default function CreditsPage() {
           <div>
             <h1 className="page-title">{lang === "en" ? "Credit Management" : "Gestion des crédits"}</h1>
             <div className="page-sub" style={{ color: "#f87171" }}>
-              {lang === "en" ? "Total outstanding:" : "Total dû:"} {formatCFA(totalDebt)}
+              {lang === "en" ? "Total outstanding:" : "Total dû:"} {fmt(totalDebt)}
             </div>
           </div>
         </div>
@@ -223,7 +225,7 @@ export default function CreditsPage() {
                       </div>
                     </div>
                     <div style={{ textAlign: "right", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-                      <div style={{ color: "#f87171", fontWeight: 700, fontSize: 16 }}>{formatCFA(c.total_debt)}</div>
+                      <div style={{ color: "#f87171", fontWeight: 700, fontSize: 16 }}>{fmt(c.total_debt)}</div>
                       {c.phone && (
                         <button
                           onClick={e => { e.stopPropagation(); setSelected(c); setTimeout(() => sendWhatsAppReminder(c), 300); }}
@@ -246,7 +248,7 @@ export default function CreditsPage() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
             <div>
               <div style={{ fontWeight: 700, fontSize: 16 }}>{selected.name}</div>
-              <div style={{ color: "#f87171", fontWeight: 600, fontSize: 14, marginTop: 2 }}>{formatCFA(selected.total_debt)}</div>
+              <div style={{ color: "#f87171", fontWeight: 600, fontSize: 14, marginTop: 2 }}>{fmt(selected.total_debt)}</div>
               {selected.phone && <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>📞 {selected.phone}</div>}
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -286,7 +288,7 @@ export default function CreditsPage() {
                         : "Dette historique sans facture spécifique (papier / manuelle / résidu)"}
                     </div>
                   </div>
-                  <strong style={{ color: "#f87171", fontSize: 14 }}>{formatCFA(paperRecordBalance)}</strong>
+                  <strong style={{ color: "#f87171", fontSize: 14 }}>{fmt(paperRecordBalance)}</strong>
                 </div>
               )}
               {openInvoices.map(sale => (
@@ -297,16 +299,16 @@ export default function CreditsPage() {
                       <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{formatDate(sale.sale_date)}</div>
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>{formatCFA(sale.total_amount)}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{fmt(sale.total_amount)}</div>
                       <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                        {lang === "en" ? "Paid:" : "Payé:"} {formatCFA(sale.paid_amount)}
+                        {lang === "en" ? "Paid:" : "Payé:"} {fmt(sale.paid_amount)}
                       </div>
                     </div>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ fontSize: 12 }}>
                       <span style={{ color: "#f87171", fontWeight: 600 }}>
-                        {lang === "en" ? "Balance:" : "Reste:"} {formatCFA((sale.effective_balance_due ?? sale.balance_due))}
+                        {lang === "en" ? "Balance:" : "Reste:"} {fmt((sale.effective_balance_due ?? sale.balance_due))}
                       </span>
                       {sale.due_date && (
                         <span style={{ marginLeft: 10, color: sale.due_date < today ? "#f87171" : "var(--text-muted)", fontSize: 11 }}>
@@ -330,7 +332,7 @@ export default function CreditsPage() {
             <div style={{ marginTop: 20, padding: 14, background: "rgba(37,211,102,0.08)", border: "1px solid rgba(37,211,102,0.3)", borderRadius: 12 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: "#25D366", marginBottom: 8 }}>📱 WhatsApp Reminder Preview</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6, whiteSpace: "pre-line" }}>
-                {`Bonjour ${selected.name},\n\nRappel de ${org?.name || "notre boutique"}.\nSolde impayé: *${(selected.total_debt || 0).toLocaleString()} FCFA*\n\nMerci de nous contacter.`}
+                {`Bonjour ${selected.name},\n\nRappel de ${org?.name || "notre boutique"}.\nSolde impayé: *${(selected.total_debt || 0).toLocaleString()} ${fmt.symbol}*\n\nMerci de nous contacter.`}
               </div>
               <button onClick={() => sendWhatsAppReminder(selected)}
                 style={{ marginTop: 10, width: "100%", padding: "10px", background: "#25D366", border: "none", color: "#fff", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
@@ -355,20 +357,20 @@ export default function CreditsPage() {
             <div style={{ background: "var(--bg-elevated)", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
                 <span style={{ color: "var(--text-secondary)" }}>{lang === "en" ? "Invoice total" : "Total facture"}</span>
-                <span style={{ fontWeight: 600 }}>{formatCFA(showPay.total_amount)}</span>
+                <span style={{ fontWeight: 600 }}>{fmt(showPay.total_amount)}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
                 <span style={{ color: "var(--text-secondary)" }}>{lang === "en" ? "Already paid" : "Déjà payé"}</span>
-                <span style={{ color: "#34d399" }}>{formatCFA(showPay.paid_amount)}</span>
+                <span style={{ color: "#34d399" }}>{fmt(showPay.paid_amount)}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, paddingTop: 8, borderTop: "1px solid var(--border)", marginTop: 4 }}>
                 <span style={{ fontWeight: 600 }}>{lang === "en" ? "Balance due" : "Reste à payer"}</span>
-                <span style={{ color: "#f87171", fontWeight: 700 }}>{formatCFA((showPay.effective_balance_due ?? showPay.balance_due))}</span>
+                <span style={{ color: "#f87171", fontWeight: 700 }}>{fmt((showPay.effective_balance_due ?? showPay.balance_due))}</span>
               </div>
             </div>
 
             <div className="form-group">
-              <label className="label">{lang === "en" ? "Amount received (FCFA)" : "Montant reçu (FCFA)"} *</label>
+              <label className="label">{lang === "en" ? `Amount received (${fmt.symbol})` : `Montant reçu (${fmt.symbol})`} *</label>
               <input className="input" type="number" value={payForm.amount}
                 onChange={e => setP("amount", e.target.value)}
                 placeholder={String((showPay.effective_balance_due ?? showPay.balance_due))} />
