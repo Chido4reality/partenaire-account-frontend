@@ -1,7 +1,7 @@
 import InventoryPage from "./pages/InventoryPage";
 import { useEffect, useState, Component } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery, onlineManager } from "@tanstack/react-query";
 import { Toaster, toast } from "react-hot-toast";
 import { useAuthStore, useOfflineStore } from "./store";
 import api from "./utils/api";
@@ -161,7 +161,11 @@ function PlanGuard({ path, children }) {
     queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
     enabled: isAuth,
     staleTime: 60000,
-    retry: false
+    retry: false,
+    // MP-PROPLUS-NAV-RQ-ONLINE-FIX: entitlement must never depend on RQ's
+    // online-detection (paused 'online' queries → restricted fallback in the
+    // native WebView). Matches the offlineQuery helper used by 14 data modules.
+    networkMode: 'always'
   });
   const myPlan = planData?.data;
   const isSilverRestricted = myPlan?.plan_id === "silver" && !myPlan?.trial_active;
@@ -329,6 +333,26 @@ export default function App() {
       } catch (_) { /* native plugin not bundled in web; ignore */ }
     })();
 
+    // MP-PROPLUS-NAV-RQ-ONLINE-FIX: React Query's default online-detection uses
+    // navigator.onLine, which is unreliable in the Capacitor Android WebView and
+    // can read offline on cold start — pausing every 'online' query (incl.
+    // /subscriptions/my-plan, the entitlement source that drives the Pro Plus
+    // owner nav) so Assistant/Staff/Assets silently fall back to the restricted
+    // floor. Wire RQ's onlineManager to @capacitor/network's TRUE connectivity.
+    // Native only — the web/PWA keeps RQ's default navigator.onLine behavior.
+    let _netHandle;
+    (async () => {
+      try {
+        const { Capacitor } = await import("@capacitor/core");
+        if (!Capacitor.isNativePlatform()) return;
+        const { Network } = await import("@capacitor/network");
+        const s = await Network.getStatus();
+        onlineManager.setOnline(s.connected);
+        _netHandle = await Network.addListener("networkStatusChange",
+          (st) => onlineManager.setOnline(st.connected));
+      } catch (_) { /* @capacitor/network not bundled on web; ignore */ }
+    })();
+
     // Fire the impersonation consumer eagerly. It only does anything when
     // ?impersonate_token= is present in the URL, otherwise it's a quick
     // URLSearchParams check.
@@ -381,6 +405,7 @@ export default function App() {
     return () => {
       window.removeEventListener("online",  handleOnline);
       window.removeEventListener("offline", handleOffline);
+      try { _netHandle?.remove?.(); } catch (_) { /* ignore */ }
     };
   }, []);
 

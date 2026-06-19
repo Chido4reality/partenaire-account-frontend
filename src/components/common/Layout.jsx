@@ -291,6 +291,7 @@ function RestrictedBanner() {
     queryKey: ["my-plan"],
     queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
     enabled: isAuth, staleTime: 60000, retry: false,
+    networkMode: 'always', // MP-PROPLUS-NAV-RQ-ONLINE-FIX: entitlement must not depend on online-detection
   });
   const plan = data?.data;
   if (!plan?.is_restricted) return null;
@@ -366,6 +367,7 @@ export default function Layout() {
     queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
     refetchInterval: 300000,
     retry: 1,
+    networkMode: 'always', // MP-PROPLUS-NAV-RQ-ONLINE-FIX: entitlement must not depend on online-detection
     // MP-MODE-TRIAL-REWORK: always fetch. /my-plan is the SINGLE source of
     // trial/entitlement truth for every surface (nav gating, sidebar countdown,
     // TrialBanner, Settings Mode tab via useTrialState). Fetching it in Simple
