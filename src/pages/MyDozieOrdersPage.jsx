@@ -36,6 +36,10 @@ export default function MyDozieOrdersPage() {
   const qc = useQueryClient();
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
+  // Modal-open state lifted here so the orders auto-refresh can pause while an
+  // in-progress action is open (payment-mode picker / counter modal).
+  const [recordOrder, setRecordOrder] = useState(null);   // order awaiting payment-mode pick
+  const [counterOrder, setCounterOrder] = useState(null); // order being countered
 
   const { data: meData, isLoading: meLoading } = useQuery({
     queryKey: ["dozie-seller-me"],
@@ -52,6 +56,11 @@ export default function MyDozieOrdersPage() {
       return api.get(`/dozie/seller/orders${q.toString() ? "?" + q.toString() : ""}`).then(r => r.data);
     },
     enabled: linked,
+    // Auto-refresh new incoming orders every 30s (matches the attention-badge
+    // cadence). Paused while a payment-mode picker or counter modal is open so a
+    // background re-fetch can't disrupt an in-progress action.
+    refetchInterval: (recordOrder || counterOrder) ? false : 30000,
+    refetchIntervalInBackground: false,
   });
   const orders = ordersData?.data || [];
 
@@ -66,8 +75,6 @@ export default function MyDozieOrdersPage() {
   const ov = rep?.overview || {};
 
   const navigate = useNavigate();
-  const [recordOrder, setRecordOrder] = useState(null);   // order awaiting payment-mode pick
-  const [counterOrder, setCounterOrder] = useState(null); // order being countered
   const [counterLines, setCounterLines] = useState([]);
   const [counterNote, setCounterNote] = useState("");
 
