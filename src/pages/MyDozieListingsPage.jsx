@@ -1,10 +1,12 @@
 // MP-DOZIE-SELLER-MIGRATION Phase 1 — "My Dozie Listings".
 //
-// An MP-linked seller manages every Dozie marketplace listing field from inside
-// MP (publish/unpublish, Dozie price, stock, visibility) — no Dozie-portal login.
-// One save path → /api/dozie/seller/listings (which owns both the MP control row
-// and the buyer-facing ptn_products row). City is inherited from the shop city
-// (MP-CITY-UNIFY) and shown read-only. Standalone sellers never reach this page.
+// An MP-linked seller manages their Dozie marketplace presence from inside MP
+// (publish/unpublish, Dozie price, visibility) — no Dozie-portal login. One save
+// path → /api/dozie/seller/listings, which writes ONLY the MP control row
+// (pa_dozie_seller_listings). STEP 2: stock is the single source of truth in MP
+// Inventory (pa_stock) and is shown read-only here — there is no separate Dozie
+// stock to set. City is inherited from the shop city (MP-CITY-UNIFY) and shown
+// read-only. Standalone sellers never reach this page.
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
@@ -89,11 +91,11 @@ export default function MyDozieListingsPage() {
   function saveEdit() {
     const price = Number(editing.dozie_price);
     if (!Number.isFinite(price) || price < 0) { toast.error(en ? "Enter a valid price" : "Prix invalide"); return; }
-    const stock = Number(editing.stock);
+    // STEP 2: stock is not set here — it lives in pa_stock (MP Inventory).
     saveMutation.mutate({
       product_id: editing.product_id,
       isNew: editing.isNew,
-      body: { dozie_price: price, stock: Number.isFinite(stock) ? stock : 0, is_visible: true },
+      body: { dozie_price: price, is_visible: true },
     });
   }
 
@@ -160,8 +162,12 @@ export default function MyDozieListingsPage() {
                   </div>
                   <div>
                     <div className="label">{en ? "Stock" : "Stock"}</div>
-                    <input className="input" type="number" inputMode="numeric" style={{ width: 110 }}
-                      value={editing.stock} onChange={e => setEditing(s => ({ ...s, stock: e.target.value }))} />
+                    <div className="input" style={{ width: 110, display: "flex", alignItems: "center", opacity: 0.7, background: "var(--bg-muted, rgba(148,163,184,0.08))" }}>
+                      {editing.stock ?? 0}
+                    </div>
+                    <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2, maxWidth: 130 }}>
+                      {en ? "From Inventory" : "Depuis l'Inventaire"}
+                    </div>
                   </div>
                   <button className="btn btn-primary" disabled={saveMutation.isPending} onClick={saveEdit}>
                     {saveMutation.isPending ? "…" : (editing.isNew ? (en ? "Publish" : "Publier") : (en ? "Save" : "Enregistrer"))}
