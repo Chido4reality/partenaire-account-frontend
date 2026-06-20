@@ -138,6 +138,7 @@
     .btn-danger { color: var(--danger); border-color: rgba(239, 68, 68, 0.4); background: transparent; }
     .btn-danger:hover:not(:disabled) { background: rgba(239, 68, 68, 0.1); }
     .btn-block { width: 100%; }
+    .btn-sm { padding: 4px 8px; font-size: 12px; font-weight: 600; }
 
     /* ───────────────── LOGIN ───────────────── */
     .auth-screen {
@@ -1717,6 +1718,7 @@
     // are re-rendered, so use delegation on the (static) containers.
     let _srWired = false;
     let _srTowns = [];   // full city catalog across all countries
+    let _srEditKey = null;   // "country|town" of the row currently in inline-edit mode
     function wireSellRestrictionsOnce() {
       if (_srWired) return;
       _srWired = true;
@@ -1738,6 +1740,18 @@
         const t = e.target;
         if (t && t.matches && t.matches('input[type="checkbox"][data-town-field]'))
           toggleTownField(t.getAttribute('data-town'), t.getAttribute('data-country'), t.getAttribute('data-town-field'), t.checked, t);
+      });
+      // Cities — Edit / Delete / Save / Cancel buttons (click delegation).
+      if (towns) towns.addEventListener('click', e => {
+        const b = e.target && e.target.closest ? e.target.closest('button[data-town-act]') : null;
+        if (!b) return;
+        const act = b.getAttribute('data-town-act');
+        const town = decodeURIComponent(b.getAttribute('data-town') || '');
+        const country = decodeURIComponent(b.getAttribute('data-country') || '');
+        if (act === 'edit')   { _srEditKey = country + '|' + town; renderTownsCatalog(); }
+        else if (act === 'cancel') { _srEditKey = null; renderTownsCatalog(); }
+        else if (act === 'delete') deleteSellTown(town, country);
+        else if (act === 'save')   saveTownEdit(town, country);
       });
     }
 
@@ -1797,13 +1811,53 @@
       rows.sort((a, b) => (a.town || '').localeCompare(b.town || ''));
       const cnt = $('sr-town-count'); if (cnt) cnt.textContent = rows.length + ' / ' + all.length + ' cities';
       if (!rows.length) { el.innerHTML = '<div class="muted">No cities match.</div>'; return; }
-      el.innerHTML = rows.map(r =>
-        '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 2px;border-bottom:1px solid rgba(255,255,255,0.08);flex-wrap:wrap">'
-        + '<span style="font-weight:600">' + escapeHtml(r.town)
-        + (r.is_allowed ? '' : ' <span class="badge badge-admin" style="background:rgba(239,68,68,0.15);color:#f87171">no-sell</span>')
-        + (r.is_active ? '' : ' <span class="badge badge-admin" style="background:rgba(148,163,184,0.18);color:#94a3b8">hidden</span>') + '</span>'
-        + '<span style="display:flex;gap:14px;flex-wrap:wrap">' + _townCk(r, 'is_active') + _townCk(r, 'is_allowed') + _townCk(r, 'lite_allowed') + '</span>'
-        + '</div>').join('');
+      el.innerHTML = rows.map(r => {
+        const te = encodeURIComponent(r.town), ce = encodeURIComponent(r.country);
+        if (_srEditKey === r.country + '|' + r.town) {
+          // Inline editor: rename + move country.
+          const opt = (val) => '<option value="' + val + '"' + (r.country === val ? ' selected' : '') + '>' + val + '</option>';
+          return '<div style="display:flex;align-items:center;gap:8px;padding:9px 2px;border-bottom:1px solid rgba(255,255,255,0.08);flex-wrap:wrap">'
+            + '<input id="sr-edit-name" type="text" value="' + escapeHtml(r.town) + '" style="flex:1;min-width:140px;padding:6px 8px;background:#0f1623;border:1px solid rgba(255,255,255,0.18);border-radius:6px;color:#e7ebf3">'
+            + '<select id="sr-edit-country" style="padding:6px 8px;background:#0f1623;border:1px solid rgba(255,255,255,0.18);border-radius:6px;color:#e7ebf3">' + opt('Cameroun') + opt('Nigeria') + '</select>'
+            + '<button class="btn btn-sm" data-town-act="save" data-town="' + te + '" data-country="' + ce + '" style="background:#16a34a;color:#fff">Save</button>'
+            + '<button class="btn btn-sm" data-town-act="cancel" data-town="' + te + '" data-country="' + ce + '">Cancel</button>'
+            + '</div>';
+        }
+        return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 2px;border-bottom:1px solid rgba(255,255,255,0.08);flex-wrap:wrap">'
+          + '<span style="font-weight:600">' + escapeHtml(r.town)
+          + (r.is_allowed ? '' : ' <span class="badge badge-admin" style="background:rgba(239,68,68,0.15);color:#f87171">no-sell</span>')
+          + (r.is_active ? '' : ' <span class="badge badge-admin" style="background:rgba(148,163,184,0.18);color:#94a3b8">hidden</span>') + '</span>'
+          + '<span style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">' + _townCk(r, 'is_active') + _townCk(r, 'is_allowed') + _townCk(r, 'lite_allowed')
+          + '<button class="btn btn-sm" data-town-act="edit" data-town="' + te + '" data-country="' + ce + '" title="Rename / move">✏️</button>'
+          + '<button class="btn btn-sm" data-town-act="delete" data-town="' + te + '" data-country="' + ce + '" title="Delete" style="color:#f87171">🗑️</button>'
+          + '</span>'
+          + '</div>';
+      }).join('');
+    }
+    async function deleteSellTown(town, country) {
+      if (!confirm('Delete "' + town + '" (' + country + ')? This removes it from the catalog.')) return;
+      try {
+        await apiAdmin('DELETE', '/admin/dozie/sell-towns/' + encodeURIComponent(town) + '?country=' + encodeURIComponent(country));
+        _srTowns = _srTowns.filter(r => !(r.town === town && r.country === country));
+        _srEditKey = null;
+        showToast('Deleted: ' + town, 'success');
+        renderTownsCatalog();
+      } catch (e) { showToast(e.message, 'danger'); }
+    }
+    async function saveTownEdit(town, country) {
+      const newName = ($('sr-edit-name') && $('sr-edit-name').value || '').trim();
+      const newCountry = ($('sr-edit-country') && $('sr-edit-country').value) || country;
+      if (!newName) { showToast('Name is required', 'danger'); return; }
+      const payload = { country };
+      if (newName !== town) payload.new_town = newName;
+      if (newCountry !== country) payload.new_country = newCountry;
+      if (!payload.new_town && !payload.new_country) { _srEditKey = null; renderTownsCatalog(); return; }
+      try {
+        await apiAdmin('PATCH', '/admin/dozie/sell-towns/' + encodeURIComponent(town), payload);
+        _srEditKey = null;
+        showToast('Saved: ' + newName, 'success');
+        loadSellRestrictions();
+      } catch (e) { showToast(e.message, 'danger'); }
     }
     async function toggleTownField(townEnc, countryEnc, field, value, el) {
       const town = decodeURIComponent(townEnc), country = decodeURIComponent(countryEnc);
