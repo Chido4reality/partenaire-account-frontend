@@ -1349,6 +1349,19 @@
             <button class="btn" id="sr-add-town-btn">Add city</button>
           </div>
         </div>
+        <div class="settings-card" style="margin-top:16px">
+          <div class="settings-card-title">Targeted blocks (category × town)</div>
+          <div class="settings-card-sub">Block a specific category in a specific town — or use <b>Any</b> for a category-wide or town-wide block. Default-allow: a combination is blocked only when a rule matches. Enforced at publish/activate only — existing listings stay visible. The category &amp; city toggles above are shortcuts that create/remove the matching global rule here.</div>
+          <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <span style="color:#9aa3b2;font-size:13px">Block</span>
+            <select id="sb-category" style="min-width:170px"></select>
+            <span style="color:#9aa3b2;font-size:13px">in</span>
+            <select id="sb-country" style="min-width:130px"><option value="">Any country</option><option value="Cameroun">Cameroun</option><option value="Nigeria">Nigeria</option></select>
+            <select id="sb-town" style="min-width:150px"><option value="">Any town</option></select>
+            <button class="btn" id="sb-add-btn">Add block</button>
+          </div>
+          <div id="sb-list" style="margin-top:12px">…</div>
+        </div>
       </section>
 
       <section class="route" id="route-marketplace-finance">
@@ -1724,6 +1737,8 @@
     let _srWired = false;
     let _srTowns = [];   // full city catalog across all countries
     let _srEditKey = null;   // "country|town" of the row currently in inline-edit mode
+    let _srCats = [];    // categories (for the targeted-block builder dropdown)
+    let _sbBlocks = [];  // ptn_sell_blocks rows (targeted block rules)
     function wireSellRestrictionsOnce() {
       if (_srWired) return;
       _srWired = true;
@@ -1732,6 +1747,14 @@
       const newTown = $('sr-new-town');     if (newTown) newTown.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addSellTown(); } });
       const cf = $('sr-town-country');      if (cf) cf.addEventListener('change', renderTownsCatalog);
       const sf = $('sr-town-search');       if (sf) sf.addEventListener('input', renderTownsCatalog);
+      // Targeted blocks — builder + list.
+      const sbAdd = $('sb-add-btn');        if (sbAdd) sbAdd.addEventListener('click', addBlock);
+      const sbCtry = $('sb-country');       if (sbCtry) sbCtry.addEventListener('change', populateBlockTowns);
+      const sbList = $('sb-list');
+      if (sbList) sbList.addEventListener('click', e => {
+        const b = e.target && e.target.closest ? e.target.closest('button[data-block-id]') : null;
+        if (b) removeBlock(b.getAttribute('data-block-id'));
+      });
       // Categories — single is_allowed toggle (delegation).
       const cats = $('sr-categories');
       if (cats) cats.addEventListener('change', e => {
@@ -1764,15 +1787,20 @@
       wireSellRestrictionsOnce();
       const master = _isMasterAdmin();
       $('sr-notmaster').style.display = master ? 'none' : '';
-      if (!master) { $('sr-categories').innerHTML = ''; $('sr-towns').innerHTML = ''; return; }
+      if (!master) { $('sr-categories').innerHTML = ''; $('sr-towns').innerHTML = ''; if ($('sb-list')) $('sb-list').innerHTML = ''; return; }
       try {
-        const [c, t] = await Promise.all([
+        const [c, t, b] = await Promise.all([
           apiAdmin('GET', '/admin/dozie/sell-categories'),
           apiAdmin('GET', '/admin/dozie/sell-towns'),
+          apiAdmin('GET', '/admin/dozie/sell-blocks'),
         ]);
-        renderSellToggles('sr-categories', c.data || [], 'category', r => r.category_slug, r => r.label || r.category_slug);
+        _srCats = c.data || [];
+        renderSellToggles('sr-categories', _srCats, 'category', r => r.category_slug, r => r.label || r.category_slug);
         _srTowns = t.data || [];
         renderTownsCatalog();
+        _sbBlocks = b.data || [];
+        populateBlockBuilder();
+        renderBlocks();
       } catch (e) {
         $('sr-categories').innerHTML = '<div class="muted">' + escapeHtml(e.message) + '</div>';
       }
@@ -1888,6 +1916,51 @@
       const country = ($('sr-new-country') && $('sr-new-country').value) || 'Cameroun';
       if (!v) return;
       try { await apiAdmin('POST', '/admin/dozie/sell-towns', { country, town: v }); $('sr-new-town').value = ''; showToast('City added', 'success'); loadSellRestrictions(); }
+      catch (e) { showToast(e.message, 'danger'); }
+    }
+
+    // ── Targeted blocks (category × town) ──
+    function populateBlockBuilder() {
+      const cs = $('sb-category');
+      if (cs) cs.innerHTML = '<option value="">Any category</option>'
+        + _srCats.map(c => '<option value="' + escapeHtml(c.category_slug) + '">' + escapeHtml(c.label || c.category_slug) + '</option>').join('');
+      populateBlockTowns();
+    }
+    function populateBlockTowns() {
+      const sel = $('sb-town'); if (!sel) return;
+      const country = ($('sb-country') && $('sb-country').value) || '';
+      const towns = (country ? _srTowns.filter(r => r.country === country) : []).slice();
+      towns.sort((a, b) => (a.town || '').localeCompare(b.town || ''));
+      sel.innerHTML = '<option value="">Any town</option>'
+        + towns.map(r => '<option value="' + escapeHtml(r.town) + '">' + escapeHtml(r.town) + '</option>').join('');
+    }
+    function _blockLabel(r) {
+      const cat = r.category_slug ? (r.category_label || r.category_slug) : 'Any category';
+      const place = r.town ? (r.town + (r.country ? ' (' + r.country + ')' : '')) : (r.country ? ('Any town in ' + r.country) : 'Anywhere');
+      return cat + ' — ' + place;
+    }
+    function renderBlocks() {
+      const el = $('sb-list'); if (!el) return;
+      if (!_sbBlocks.length) { el.innerHTML = '<div class="muted">No targeted blocks. (The category &amp; city toggles above add global rules here.)</div>'; return; }
+      el.innerHTML = _sbBlocks.map(r =>
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 2px;border-bottom:1px solid rgba(255,255,255,0.08)">'
+        + '<span><span class="badge badge-admin" style="background:rgba(239,68,68,0.15);color:#f87171">blocked</span> ' + escapeHtml(_blockLabel(r)) + '</span>'
+        + '<button class="btn btn-sm" data-block-id="' + escapeHtml(r.id) + '" style="color:#f87171">Remove</button>'
+        + '</div>').join('');
+    }
+    async function addBlock() {
+      const category_slug = ($('sb-category') && $('sb-category').value) || '';
+      const country = ($('sb-country') && $('sb-country').value) || '';
+      const town = ($('sb-town') && $('sb-town').value) || '';
+      if (!category_slug && !country && !town) { showToast('Pick a category, country, or town to block', 'danger'); return; }
+      try {
+        await apiAdmin('POST', '/admin/dozie/sell-blocks', { category_slug: category_slug || null, country: country || null, town: town || null });
+        showToast('Block added', 'success');
+        loadSellRestrictions();
+      } catch (e) { showToast(e.message, 'danger'); }
+    }
+    async function removeBlock(id) {
+      try { await apiAdmin('DELETE', '/admin/dozie/sell-blocks/' + encodeURIComponent(id)); showToast('Block removed', 'success'); loadSellRestrictions(); }
       catch (e) { showToast(e.message, 'danger'); }
     }
 
