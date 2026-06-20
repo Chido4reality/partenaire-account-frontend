@@ -149,6 +149,11 @@ export default function CustomersPage() {
       setForm({ name: "", phone: "", address: "", customer_type: "retail", credit_limit: "", notes: "", total_debt: "" });
       qc.invalidateQueries(["customers"]);
       qc.invalidateQueries(["customer-summary"]);
+      // MP-POS-CUSTOMER-FINDABLE: the POS sale-flow quick-pick reads a SEPARATE
+      // cache key (["pos-customers"], 60s staleTime). The edit/collect paths
+      // already refresh it; the ADD path did not, so a just-added customer was
+      // absent from the sale search until the cache lapsed. Mirror the edit path.
+      qc.invalidateQueries(["pos-customers"]);
     },
     onError: (err) => {
       // MP-CUSTOMER-DEDUP: backend rejected a same-phone duplicate — surface
