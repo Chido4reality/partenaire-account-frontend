@@ -1835,12 +1835,22 @@
       }).join('');
     }
     async function deleteSellTown(town, country) {
-      if (!confirm('Delete "' + town + '" (' + country + ')? This removes it from the catalog.')) return;
+      // Warn-before-delete: how many shops sit on this city? (best-effort — a
+      // usage-check failure must never block the delete). Deleting NEVER changes
+      // an org's saved city; it just degrades to "(current)" in the dropdown.
+      let usedNote = '';
       try {
-        await apiAdmin('DELETE', '/admin/dozie/sell-towns/' + encodeURIComponent(town) + '?country=' + encodeURIComponent(country));
+        const u = await apiAdmin('GET', '/admin/dozie/sell-towns/' + encodeURIComponent(town) + '/usage?country=' + encodeURIComponent(country));
+        const n = (u && u.count) || 0;
+        if (n > 0) usedNote = '\n\n⚠️ ' + n + ' shop(s) currently use this city. They will KEEP "' + town + '" as their saved location (shown as "(current)" in their dropdown) — nothing is lost.';
+      } catch (e) { /* usage is advisory only */ }
+      if (!confirm('Delete "' + town + '" (' + country + ')? This removes it from the catalog.' + usedNote)) return;
+      try {
+        const res = await apiAdmin('DELETE', '/admin/dozie/sell-towns/' + encodeURIComponent(town) + '?country=' + encodeURIComponent(country));
         _srTowns = _srTowns.filter(r => !(r.town === town && r.country === country));
         _srEditKey = null;
-        showToast('Deleted: ' + town, 'success');
+        const usedBy = res && res.usedBy;
+        showToast('Deleted: ' + town + (usedBy ? ' — ' + usedBy + ' shop(s) keep it as "(current)"' : ''), 'success');
         renderTownsCatalog();
       } catch (e) { showToast(e.message, 'danger'); }
     }
