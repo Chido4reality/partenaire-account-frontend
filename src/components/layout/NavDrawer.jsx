@@ -35,7 +35,13 @@ const SECTIONS = [
   // it unreachable. Add it here so the drawer always carries it, independent of
   // the bottom-bar slot — same SECTIONS-omission pattern as the Pro Plus fix.
   { en: "DAILY WORK", fr: "TRAVAIL QUOTIDIEN", routes: ["/assistant", "/", "/pos", "/online-cart", "/shifts", "/refunds", "/pending-sync"] },
-  { en: "INVENTORY",  fr: "INVENTAIRE",        routes: ["/inventory", "/stock-count", "/barcodes", "/transfers"] },
+  // MP-DOZIE-SELLER-DRAWER-FIX: the migrated Dozie seller routes were added to
+  // Layout's NAV (section:"inventory") but never to this mobile SECTIONS map, so
+  // the drawer dropped them on phones — same omission pattern as the Pro Plus /
+  // pending-sync fixes above. They inherit the existing owner/manager gate from
+  // Layout's NAV; adding them here also lets their attention badges render on
+  // mobile (the nav nodes now exist).
+  { en: "INVENTORY",  fr: "INVENTAIRE",        routes: ["/inventory", "/stock-count", "/barcodes", "/transfers", "/dozie-listings", "/dozie-orders", "/dozie-messages", "/dozie-disputes"] },
   { en: "PEOPLE & MONEY", fr: "PERSONNES & ARGENT", routes: ["/customers", "/credits", "/expenditures", "/attendance", "/assets"] },
   { en: "REPORTING",  fr: "RAPPORTS",          routes: ["/reports", "/operations"] },
   { en: "SETTINGS",   fr: "PARAMÈTRES",        routes: ["/settings"] },
