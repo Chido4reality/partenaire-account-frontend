@@ -5,7 +5,8 @@ import { useAuthStore, useLangStore } from "../store";
 import api from "../utils/api";
 
 const CATS = [
-  { value: "moto_parts",       en: "Motorcycle & Vehicle parts", fr: "Pièces moto & véhicules" },
+  { value: "moto_parts",       en: "Motorcycle parts",           fr: "Pièces moto" },
+  { value: "auto_parts",       en: "Auto / Vehicle parts",       fr: "Pièces auto / véhicules" },
   { value: "electronics",      en: "Electronics & Accessories",  fr: "Électronique & accessoires" },
   { value: "general",          en: "General trade",              fr: "Commerce général" },
   { value: "food",             en: "Food & Grocery",             fr: "Alimentation & épicerie" },
