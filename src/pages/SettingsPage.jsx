@@ -234,7 +234,8 @@ export default function SettingsPage() {
   const { data: shopResp } = useQuery({
     queryKey: ["org-settings"],
     queryFn: () => api.get("/settings").then(r => r.data),
-    enabled: tab === "shop",
+    // MP-CITY-UNIFY: also needed in the Dozie tab to show the (single) shop city.
+    enabled: tab === "shop" || tab === "dozie",
   });
 
   const { data: cityResp } = useQuery({
@@ -243,13 +244,10 @@ export default function SettingsPage() {
     enabled: tab === "shop",
   });
   const cityOptions = cityResp?.data || [];
-
-  const { data: dozieCityResp } = useQuery({
-    queryKey: ["dozie-cities"],
-    queryFn: () => api.get("/cities/dozie").then(r => r.data),
-    enabled: tab === "dozie",
-  });
-  const allowedCities = dozieCityResp?.data || [];
+  // MP-CITY-UNIFY: the shop's city is the single source of truth — the Dozie
+  // seller city follows it (mirrored server-side). The separate Dozie city
+  // picker + /cities/dozie query were removed; the city below is read-only.
+  const dozieShopCity = shopResp?.data?.city || "";
   useEffect(() => {
     const d = shopResp?.data;
     if (!d || shopLoaded) return;
@@ -1431,20 +1429,19 @@ export default function SettingsPage() {
                 {lang === "en" ? "This will create your seller profile and list your products on the wholesale marketplace." : "Cela créera votre profil vendeur et listera vos produits sur le marché de gros."}
               </div>
 
+              {/* MP-CITY-UNIFY: city = the shop city (single source of truth),
+                  shown read-only. Change it in Shop Settings; the Dozie seller
+                  city follows automatically. */}
               <div className="form-group">
                 <label className="label">{lang === "en" ? "City" : "Ville"}</label>
-                <select className="input" value={dozieForm.city} onChange={e => setDozieForm(f => ({ ...f, city: e.target.value }))}>
-                  {allowedCities.map(c => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-                {isGoldTier && allowedCities.length > 0 && (
-                  <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 4 }}>
-                    🥇 {lang === "en"
-                      ? `Your plan covers: ${allowedCities.join(", ")}. Upgrade to Pro for all cities.`
-                      : `Votre forfait couvre : ${allowedCities.join(", ")}. Passez à Pro pour toutes les villes.`}
-                  </div>
-                )}
+                <div className="input" style={{ display: "flex", alignItems: "center", color: dozieShopCity ? "var(--text-primary)" : "var(--text-muted)", background: "var(--bg-card)" }}>
+                  {dozieShopCity || (lang === "en" ? "No city set" : "Aucune ville")}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                  {lang === "en"
+                    ? "Your Dozie city is your shop city — change it in Shop Settings."
+                    : "Votre ville Dozie est celle de votre boutique — modifiez-la dans Paramètres boutique."}
+                </div>
               </div>
 
               <div className="form-group">
