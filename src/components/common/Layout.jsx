@@ -53,8 +53,8 @@ const NAV = [
   { to: "/inventory",    en: "Inventory",  fr: "Inventaire",      icon: "📦", roles: ["owner","manager","warehouse"],          section: "inventory" },
   // MP-DOZIE-SELLER-MIGRATION Phase 1 — manage Dozie marketplace listings from MP.
   { to: "/dozie-listings", en: "Dozie Listings", fr: "Annonces Dozie", icon: "🛒", roles: ["owner","manager"], section: "inventory" },
-  // MP-DOZIE-SELLER-MIGRATION Phase 2 — incoming Dozie orders in MP.
-  { to: "/dozie-orders", en: "Dozie Orders", fr: "Commandes Dozie", icon: "📦", roles: ["owner","manager"], section: "inventory" },
+  // MP-DOZIE-SELLER-MIGRATION Phase 2 — incoming Dozie orders in MP (+ attention badge).
+  { to: "/dozie-orders", en: "Dozie Orders", fr: "Commandes Dozie", icon: "📦", roles: ["owner","manager"], section: "inventory", badge: "dozie_attention" },
   // MP-CASHIER-ROLE-GATING: cashier needs Customers for the
   // Encaisser-dette flow + on-the-fly customer creation during
   // sales. Backend collect-debt route already cashier-eligible.
@@ -625,6 +625,26 @@ export default function Layout() {
   });
   const onlineCartPending = ocPending?.count || 0;
 
+  // MP-DOZIE-SELLER-MIGRATION Phase 2 — "Online Dozie" attention badge. Polls the
+  // resolved seller's needs-attention count (pending orders now; messages/disputes
+  // later) on the same 30s cadence as the online-cart badge. Owner/manager only
+  // (the only roles that see the Dozie nav entries); returns 0 if not a Dozie seller.
+  const { data: dozieAttn } = useQuery({
+    queryKey: ["dozie-seller-attention"],
+    queryFn: () => api.get("/dozie/seller/attention").then(r => r.data),
+    refetchInterval: 30000,
+    enabled: role === "owner" || role === "manager",
+    retry: 1,
+    onError: () => {}
+  });
+  const dozieAttention = dozieAttn?.data?.total || 0;
+
+  // Resolve the count behind a nav item's badge flag (online_cart | dozie_attention).
+  const navBadge = (item) =>
+    item.badge === "online_cart" ? onlineCartPending
+    : item.badge === "dozie_attention" ? dozieAttention
+    : 0;
+
   // STOCK-UX-PASS Part A — cross-account location leak fix.
   // selectedLocation is persisted (zustand `mp-settings`) and survives a
   // logout→login on the same device/wrapper, so user B can inherit user
@@ -1072,8 +1092,8 @@ export default function Layout() {
                 style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "8px 4px", textDecoration: "none", color: isActive ? "var(--brand-light)" : "var(--text-muted)", fontSize: 10, fontWeight: isActive ? 600 : 400, borderTop: isActive ? "2px solid var(--brand)" : "2px solid transparent", gap: 2 }}>
                 <div style={{ fontSize: 16, position: "relative" }}>
                   {item.icon}
-                  {item.badge === "online_cart" && onlineCartPending > 0 && (
-                    <span style={{ position: "absolute", top: -4, right: -10, background: "#ef4444", color: "#fff", borderRadius: 10, padding: "0 4px", fontSize: 9, fontWeight: 700 }}>{onlineCartPending}</span>
+                  {navBadge(item) > 0 && (
+                    <span style={{ position: "absolute", top: -4, right: -10, background: "#ef4444", color: "#fff", borderRadius: 10, padding: "0 4px", fontSize: 9, fontWeight: 700 }}>{navBadge(item)}</span>
                   )}
                 </div>
                 {lang === "en" ? item.en : item.fr}
@@ -1199,13 +1219,13 @@ export default function Layout() {
               })}>
               <span style={{ fontSize: 15, flexShrink: 0, position: "relative" }}>
                 {item.icon}
-                {collapsed && item.badge === "online_cart" && onlineCartPending > 0 && (
-                  <span style={{ position: "absolute", top: -6, right: -8, background: "#ef4444", color: "#fff", borderRadius: 10, padding: "0 5px", fontSize: 9, fontWeight: 700 }}>{onlineCartPending}</span>
+                {collapsed && navBadge(item) > 0 && (
+                  <span style={{ position: "absolute", top: -6, right: -8, background: "#ef4444", color: "#fff", borderRadius: 10, padding: "0 5px", fontSize: 9, fontWeight: 700 }}>{navBadge(item)}</span>
                 )}
               </span>
               {!collapsed && <span style={{ flex: 1 }}>{lang === "en" ? item.en : item.fr}</span>}
-              {!collapsed && item.badge === "online_cart" && onlineCartPending > 0 && (
-                <span style={{ background: "#ef4444", color: "#fff", borderRadius: 10, padding: "0 6px", fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{onlineCartPending}</span>
+              {!collapsed && navBadge(item) > 0 && (
+                <span style={{ background: "#ef4444", color: "#fff", borderRadius: 10, padding: "0 6px", fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{navBadge(item)}</span>
               )}
             </NavLink>
           ))}
