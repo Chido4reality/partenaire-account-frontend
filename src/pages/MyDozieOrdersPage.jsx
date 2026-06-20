@@ -55,6 +55,16 @@ export default function MyDozieOrdersPage() {
   });
   const orders = ordersData?.data || [];
 
+  // Dozie marketplace KPIs (server-computed, seller-scoped — independent of the
+  // status/search filter on the orders list).
+  const { data: reportsData } = useQuery({
+    queryKey: ["dozie-seller-reports"],
+    queryFn: () => api.get("/dozie/seller/reports").then(r => r.data),
+    enabled: linked,
+  });
+  const rep = reportsData?.data || null;
+  const ov = rep?.overview || {};
+
   const navigate = useNavigate();
   const [recordOrder, setRecordOrder] = useState(null);   // order awaiting payment-mode pick
   const [counterOrder, setCounterOrder] = useState(null); // order being countered
@@ -118,6 +128,40 @@ export default function MyDozieOrdersPage() {
       <div style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 14 }}>
         {en ? "Incoming wholesale orders from Partenaire Dozie. Payment is handled at your shop (at-shop)." : "Commandes de gros reçues via Partenaire Dozie. Le paiement se fait à la boutique."}
       </div>
+
+      {rep && (
+        <div style={{ border: "1px solid var(--border)", borderRadius: 12, padding: "12px 14px", marginBottom: 14, background: "var(--bg-card)" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>
+            🛒 {en ? "Partenaire Dozie — marketplace" : "Partenaire Dozie — marché"}
+          </div>
+          <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+            {[
+              { label: en ? "Revenue" : "Revenu", value: fmt(ov.total_revenue || 0), accent: "var(--brand-light)" },
+              { label: en ? "Orders" : "Commandes", value: ov.order_count ?? rep.orders_total ?? 0 },
+              { label: en ? "Pending" : "En attente", value: ov.pending_orders ?? (rep.orders_by_status?.pending || 0), accent: "#fbbf24" },
+              { label: en ? "Products" : "Produits", value: ov.product_count ?? "—" },
+              { label: en ? "Revenue (30d)" : "Revenu (30j)", value: fmt(rep.revenue_30d || 0) },
+            ].map((s, i) => (
+              <div key={i} style={{ minWidth: 86 }}>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{s.label}</div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: s.accent || "var(--text-primary)" }}>{s.value}</div>
+              </div>
+            ))}
+          </div>
+          {rep.orders_by_status && Object.keys(rep.orders_by_status).length > 0 && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)" }}>
+              {Object.entries(rep.orders_by_status).sort((a, b) => b[1] - a[1]).map(([st, n]) => {
+                const sm = STATUS_META[st];
+                return (
+                  <span key={st} className="badge" style={{ background: sm ? sm.bg : "rgba(148,163,184,0.18)", color: sm ? sm.fg : "#94a3b8", fontSize: 11, padding: "2px 8px", borderRadius: 10 }}>
+                    {(sm ? (en ? sm.en : sm.fr) : st)}: {n}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
         <input className="input" style={{ flex: 1, minWidth: 160 }} placeholder={en ? "Search order ref (QOF-…)" : "Rechercher réf (QOF-…)"}
