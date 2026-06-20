@@ -2,6 +2,7 @@ import InventoryPage from "./pages/InventoryPage";
 import MyDozieListingsPage from "./pages/MyDozieListingsPage";
 import MyDozieOrdersPage from "./pages/MyDozieOrdersPage";
 import MyDozieMessagesPage from "./pages/MyDozieMessagesPage";
+import MyDozieDisputesPage from "./pages/MyDozieDisputesPage";
 import { useEffect, useState, Component } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider, useQuery, onlineManager } from "@tanstack/react-query";
@@ -92,6 +93,7 @@ const ROUTE_ACCESS = {
   "/dozie-listings": ["owner", "manager"],   // MP-DOZIE-SELLER-MIGRATION Phase 1
   "/dozie-orders": ["owner", "manager"],     // MP-DOZIE-SELLER-MIGRATION Phase 2
   "/dozie-messages": ["owner", "manager"],   // MP-DOZIE-SELLER-MIGRATION Phase 3
+  "/dozie-disputes": ["owner", "manager"],   // MP-DOZIE-SELLER-MIGRATION Phase 5
   "/customers":    ["owner", "manager", "cashier"],
   "/credits":      ["owner", "manager"],
   "/transfers":    ["owner", "manager", "warehouse"],
@@ -437,6 +439,7 @@ export default function App() {
             <Route path="dozie-listings" element={<RoleGuard path="/dozie-listings"><MyDozieListingsPage /></RoleGuard>} />
             <Route path="dozie-orders" element={<RoleGuard path="/dozie-orders"><MyDozieOrdersPage /></RoleGuard>} />
             <Route path="dozie-messages" element={<RoleGuard path="/dozie-messages"><MyDozieMessagesPage /></RoleGuard>} />
+            <Route path="dozie-disputes" element={<RoleGuard path="/dozie-disputes"><MyDozieDisputesPage /></RoleGuard>} />
             <Route path="customers"    element={<RoleGuard path="/customers"><PlanGuard path="/customers"><CustomersPage /></PlanGuard></RoleGuard>} />
             <Route path="credits"      element={<RoleGuard path="/credits"><PlanGuard path="/credits"><CreditsPage /></PlanGuard></RoleGuard>} />
             <Route path="transfers"    element={<RoleGuard path="/transfers"><PlanGuard path="/transfers"><TransfersPage /></PlanGuard></RoleGuard>} />
