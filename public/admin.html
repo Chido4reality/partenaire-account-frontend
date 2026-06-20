@@ -1006,17 +1006,22 @@
             <option value="trial">Trial</option>
             <option value="suspended">Suspended</option>
           </select>
+          <select id="biz-country">
+            <option value="">All countries</option>
+            <option value="Cameroun">🇨🇲 Cameroun</option>
+            <option value="Nigeria">🇳🇬 Nigeria</option>
+          </select>
         </div>
 
         <div class="table-wrap">
           <table class="data" id="biz-table">
             <thead><tr>
-              <th>MP-ID</th><th>Business</th><th>Plan</th><th>Status</th>
+              <th>MP-ID</th><th>Business</th><th>Country</th><th>Plan</th><th>Status</th>
               <th class="num">Users</th><th class="num">Sales</th><th class="num">Revenue</th>
               <th>Joined</th><th>Last active</th><th style="text-align:right">Actions</th>
             </tr></thead>
             <tbody id="biz-tbody">
-              <tr><td class="empty" colspan="10">Loading…</td></tr>
+              <tr><td class="empty" colspan="11">Loading…</td></tr>
             </tbody>
           </table>
         </div>
@@ -2387,7 +2392,7 @@
 
     // ────────────────────── BUSINESSES ──────────────────────
     let _bizCache = [];
-    let _bizFilter = { search: '', plan: '', status: '' };
+    let _bizFilter = { search: '', plan: '', status: '', country: '' };
     let _bizSearchTimer = null;
 
     function planBadgeHtml(plan) {
@@ -2415,19 +2420,20 @@
 
     async function loadBusinesses() {
       const tbody = $('biz-tbody');
-      tbody.innerHTML = '<tr><td class="empty" colspan="10">Loading…</td></tr>';
+      tbody.innerHTML = '<tr><td class="empty" colspan="11">Loading…</td></tr>';
       try {
         const q = new URLSearchParams();
-        if (_bizFilter.search) q.set('search', _bizFilter.search);
-        if (_bizFilter.plan)   q.set('plan', _bizFilter.plan);
-        if (_bizFilter.status) q.set('status', _bizFilter.status);
+        if (_bizFilter.search)  q.set('search', _bizFilter.search);
+        if (_bizFilter.plan)    q.set('plan', _bizFilter.plan);
+        if (_bizFilter.status)  q.set('status', _bizFilter.status);
+        if (_bizFilter.country) q.set('country', _bizFilter.country);
         const path = '/admin/businesses' + (q.toString() ? '?' + q.toString() : '');
         const res = await apiAdmin('GET', path);
         _bizCache = (res && res.data) || [];
         renderBusinessesTable();
         renderBusinessesStrip();
       } catch (e) {
-        tbody.innerHTML = '<tr><td class="empty" colspan="10">Error: ' + escapeHtml(e.message) + '</td></tr>';
+        tbody.innerHTML = '<tr><td class="empty" colspan="11">Error: ' + escapeHtml(e.message) + '</td></tr>';
       }
     }
 
@@ -2450,10 +2456,23 @@
       set(3, counts['suspended'] || 0);
     }
 
+    // MP-ADMIN-COUNTRY: compact country + currency badge so CM/NG shops are
+    // distinguishable at a glance. Defaults to Cameroun/FCFA for legacy rows.
+    function countryBadgeHtml(country, currency) {
+      const c = country || 'Cameroun';
+      const isNg = /nigeria/i.test(c);
+      const flag = isNg ? '🇳🇬' : '🇨🇲';
+      const cur = currency || (isNg ? 'NGN' : 'XAF');
+      const curLabel = cur === 'NGN' ? '₦' : (cur === 'XAF' ? 'FCFA' : escapeHtml(cur));
+      const bg = isNg ? 'rgba(16,185,129,0.14)' : 'rgba(59,130,246,0.14)';
+      const fg = isNg ? '#34d399' : '#60a5fa';
+      return '<span class="badge badge-admin" style="background:' + bg + ';color:' + fg + '">' + flag + ' ' + escapeHtml(c) + ' · ' + curLabel + '</span>';
+    }
+
     function renderBusinessesTable() {
       const tbody = $('biz-tbody');
       if (!_bizCache.length) {
-        tbody.innerHTML = '<tr><td class="empty" colspan="10">No businesses match the current filters.</td></tr>';
+        tbody.innerHTML = '<tr><td class="empty" colspan="11">No businesses match the current filters.</td></tr>';
         return;
       }
       tbody.innerHTML = _bizCache.map(o => {
@@ -2466,6 +2485,7 @@
           '<td>' + safeName +
             (o.owner_name ? '<div style="font-size:11px;color:var(--text-muted)">' + escapeHtml(o.owner_name) + '</div>' : '') +
           '</td>' +
+          '<td>' + countryBadgeHtml(o.country, o.currency) + '</td>' +
           '<td>' + planBadgeHtml(o.plan) + '</td>' +
           '<td>' + statusPillHtml(o.status) + '</td>' +
           '<td class="num">' + (o.users_count || 0) + '</td>' +
@@ -5654,6 +5674,10 @@
       });
       $('biz-status').addEventListener('change', (e) => {
         _bizFilter.status = e.target.value;
+        loadBusinesses();
+      });
+      $('biz-country').addEventListener('change', (e) => {
+        _bizFilter.country = e.target.value;
         loadBusinesses();
       });
 
