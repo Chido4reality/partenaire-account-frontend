@@ -57,6 +57,8 @@ const NAV = [
   { to: "/dozie-orders", en: "Dozie Orders", fr: "Commandes Dozie", icon: "📦", roles: ["owner","manager"], section: "inventory", badge: "dozie_orders" },
   // MP-DOZIE-SELLER-MIGRATION Phase 3 — Dozie buyer chat in MP (+ unread badge).
   { to: "/dozie-messages", en: "Dozie Messages", fr: "Messages Dozie", icon: "💬", roles: ["owner","manager"], section: "inventory", badge: "dozie_messages" },
+  // MP-DOZIE-SELLER-MIGRATION Phase 5 — buyer disputes in MP (+ open badge).
+  { to: "/dozie-disputes", en: "Dozie Disputes", fr: "Litiges Dozie", icon: "⚠️", roles: ["owner","manager"], section: "inventory", badge: "dozie_disputes" },
   // MP-CASHIER-ROLE-GATING: cashier needs Customers for the
   // Encaisser-dette flow + on-the-fly customer creation during
   // sales. Backend collect-debt route already cashier-eligible.
@@ -647,6 +649,7 @@ export default function Layout() {
     item.badge === "online_cart"    ? onlineCartPending
     : item.badge === "dozie_orders"   ? (dozieAttn_.orders || 0)
     : item.badge === "dozie_messages" ? (dozieAttn_.messages || 0)
+    : item.badge === "dozie_disputes" ? (dozieAttn_.disputes || 0)
     : item.badge === "dozie_attention" ? (dozieAttn_.total || 0)
     : 0;
 
