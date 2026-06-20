@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAuthStore, useLangStore } from "../store";
@@ -26,8 +26,16 @@ const CATS = [
 export default function RegisterPage() {
   // MP-NIGERIA: `country` drives currency (NGN/XAF), city default, and phone format.
   // Defaults to Cameroun so an unchanged CM signup is byte-identical to before.
-  const [form, setForm] = useState({ org_name: "", full_name: "", phone: "", password: "", category: "moto_parts", country: "Cameroun" });
+  const [form, setForm] = useState({ org_name: "", full_name: "", phone: "", password: "", category: "moto_parts", country: "Cameroun", city: "" });
   const [loading, setLoading] = useState(false);
+  const [cities, setCities] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    api.get(`/cities?country=${encodeURIComponent(form.country)}`)
+      .then(r => { if (!cancelled) setCities(r.data?.data || []); })
+      .catch(() => { if (!cancelled) setCities([]); });
+    return () => { cancelled = true; };
+  }, [form.country]);
   // MP-REGISTER-DUP-PHONE-HANDLING: inline error under the phone
   // field for the 409 PHONE_ALREADY_REGISTERED response. Cleared
   // when the user edits the phone input.
@@ -79,9 +87,16 @@ export default function RegisterPage() {
           <form onSubmit={handleSubmit}>
             <div className="form-group">
               <label className="label">{lang === "en" ? "Country" : "Pays"}</label>
-              <select className="input" value={form.country} onChange={e => set("country", e.target.value)}>
+              <select className="input" value={form.country} onChange={e => setForm(f => ({ ...f, country: e.target.value, city: "" }))}>
                 <option value="Cameroun">{lang === "en" ? "Cameroon" : "Cameroun"}</option>
                 <option value="Nigeria">Nigeria</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="label">{lang === "en" ? "City" : "Ville"}</label>
+              <select className="input" value={form.city} onChange={e => set("city", e.target.value)}>
+                <option value="">{lang === "en" ? "Select city…" : "Choisir la ville…"}</option>
+                {cities.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             {[

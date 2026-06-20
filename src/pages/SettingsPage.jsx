@@ -196,9 +196,6 @@ export default function SettingsPage() {
   const [brandingPaywall, setBrandingPaywall] = useState(false);
   const isSilverBlocked = planId === "silver" && !trialActive;
   const isGoldTier = planId === "gold" || (planId === "silver" && trialActive);
-  const GOLD_CITIES = ["Douala", "Yaoundé", "Bafoussam"];
-  const ALL_CITIES = ["Douala", "Yaoundé", "Bafoussam", "Garoua", "Maroua", "Bertoua", "Ebolowa"];
-  const allowedCities = isGoldTier ? GOLD_CITIES : ALL_CITIES;
 
   // ── QUERIES ────────────────────────────────────────────────────────────────
   const { data: locData } = useQuery({
@@ -239,6 +236,20 @@ export default function SettingsPage() {
     queryFn: () => api.get("/settings").then(r => r.data),
     enabled: tab === "shop",
   });
+
+  const { data: cityResp } = useQuery({
+    queryKey: ["cities", shopForm.country],
+    queryFn: () => api.get(`/cities?country=${encodeURIComponent(shopForm.country || "Cameroun")}`).then(r => r.data),
+    enabled: tab === "shop",
+  });
+  const cityOptions = cityResp?.data || [];
+
+  const { data: dozieCityResp } = useQuery({
+    queryKey: ["dozie-cities"],
+    queryFn: () => api.get("/cities/dozie").then(r => r.data),
+    enabled: tab === "dozie",
+  });
+  const allowedCities = dozieCityResp?.data || [];
   useEffect(() => {
     const d = shopResp?.data;
     if (!d || shopLoaded) return;
@@ -800,7 +811,13 @@ export default function SettingsPage() {
               </div>
               <div className="form-group">
                 <label className="label">{lang === "en" ? "City" : "Ville"}</label>
-                <input className="input" value={shopForm.city} onChange={e => setFF("city", e.target.value)} placeholder="Douala" />
+                <select className="input" value={shopForm.city} onChange={e => setFF("city", e.target.value)}>
+                  <option value="">{lang === "en" ? "Select city…" : "Choisir la ville…"}</option>
+                  {shopForm.city && !cityOptions.includes(shopForm.city) && (
+                    <option value={shopForm.city}>{shopForm.city} {lang === "en" ? "(current)" : "(actuel)"}</option>
+                  )}
+                  {cityOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
               </div>
               {/* FACTURE letterhead logo (Premium-gated, like receipt branding). */}
               <div className="form-group" style={{ gridColumn: "1 / -1" }}>
@@ -1421,9 +1438,11 @@ export default function SettingsPage() {
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
-                {isGoldTier && (
+                {isGoldTier && allowedCities.length > 0 && (
                   <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 4 }}>
-                    🥇 {lang === "en" ? "Gold plan: Douala, Yaoundé, Bafoussam only. Upgrade to Premium for all cities." : "Plan Gold: Douala, Yaoundé, Bafoussam uniquement. Passez à Premium pour toutes les villes."}
+                    🥇 {lang === "en"
+                      ? `Your plan covers: ${allowedCities.join(", ")}. Upgrade to Pro for all cities.`
+                      : `Votre forfait couvre : ${allowedCities.join(", ")}. Passez à Pro pour toutes les villes.`}
                   </div>
                 )}
               </div>
