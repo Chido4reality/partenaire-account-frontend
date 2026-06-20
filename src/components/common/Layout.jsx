@@ -51,6 +51,8 @@ const NAV = [
   { to: "/stock-count",  en: "Count",      fr: "Comptage",        icon: "🔢", roles: ["owner","manager","warehouse"],          section: "count" },
   { to: "/barcodes",     en: "Labels",     fr: "Étiquettes",      icon: "🏷️", roles: ["owner","manager","warehouse"],          section: "labels" },
   { to: "/inventory",    en: "Inventory",  fr: "Inventaire",      icon: "📦", roles: ["owner","manager","warehouse"],          section: "inventory" },
+  // MP-DOZIE-SELLER-MIGRATION Phase 1 — manage Dozie marketplace listings from MP.
+  { to: "/dozie-listings", en: "Dozie Listings", fr: "Annonces Dozie", icon: "🛒", roles: ["owner","manager"], section: "inventory" },
   // MP-CASHIER-ROLE-GATING: cashier needs Customers for the
   // Encaisser-dette flow + on-the-fly customer creation during
   // sales. Backend collect-debt route already cashier-eligible.
