@@ -52,6 +52,27 @@ function fuzzyMatch(str, pattern) {
   return score >= Math.floor(p.length * 0.4);
 }
 
+// Relevance rank for the POS customer quick-pick. Higher = better:
+// exact > whole-name prefix > any-word prefix > earliest substring > phone >
+// fuzzy-only. The list arrives sorted by NAME, so without this a search token
+// shared by many customers (e.g. a shop with 40+ "Bonaberi") only ever showed
+// the 8 alphabetically-first matches and hid everyone else (real bug: a valid
+// customer at alpha-rank 22 was unreachable). Ranking guarantees the closest
+// matches land inside the visible cap.
+function customerMatchScore(c, q) {
+  const s = String(c?.name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  const p = String(q || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  if (!p) return 0;
+  if (s === p) return 1000;
+  if (s.startsWith(p)) return 800;
+  if (s.split(/\s+/).some(w => w.startsWith(p))) return 600;
+  const idx = s.indexOf(p);
+  if (idx >= 0) return 400 - Math.min(idx, 200);   // earlier substring ranks higher
+  if (c?.phone && String(c.phone).includes(String(q).trim())) return 300;
+  return 0;   // passed the fuzzy filter but no direct hit → sorts last
+}
+const CUSTOMER_RESULT_CAP = 25;
+
 export default function POSPage() {
   const { lang } = useLangStore();
   const { selectedLocation, setLocation } = useSettingsStore();
@@ -628,12 +649,21 @@ export default function POSPage() {
     ? (serverHits !== null ? serverHits : clientFiltered).slice(0, 25)
     : [];
 
-  const filteredCustomers = custSearch.length >= 1 && !customer
+  // Sale-flow customer quick-pick. The list arrives sorted by NAME; rank the
+  // matches by RELEVANCE (customerMatchScore) before capping, so the closest
+  // matches always land inside the visible cap. Previously this was a flat
+  // .slice(0, 8) on the alphabetical list, so a search token shared by many
+  // customers (a shop with 40+ "Bonaberi") hid everyone past the 8th name.
+  const _custMatches = custSearch.length >= 1 && !customer
     ? (allCustomers?.data || []).filter(c =>
         fuzzyMatch(c.name, custSearch) ||
-        (c.phone && c.phone.includes(custSearch))
-      ).slice(0, 8)
+        (c.phone && c.phone.includes(custSearch)))
     : [];
+  const filteredCustomers = _custMatches
+    .slice()
+    .sort((a, b) => customerMatchScore(b, custSearch) - customerMatchScore(a, custSearch))
+    .slice(0, CUSTOMER_RESULT_CAP);
+  const customerMatchOverflow = Math.max(0, _custMatches.length - CUSTOMER_RESULT_CAP);
 
   // ── PRICE TIER: auto-apply by customer type ─────────────────────────────────
   // MP-CUSTOMER-TIER-PRICING: price ladder per product is
@@ -2017,7 +2047,7 @@ export default function POSPage() {
                   onFocus={() => setShowCustDrop(true)}
                   onBlur={() => setTimeout(() => setShowCustDrop(false), 200)} />
                 {showCustDrop && filteredCustomers.length > 0 && (
-                  <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50, background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", marginTop: 4, boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}>
+                  <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50, background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", overflowY: "auto", maxHeight: "min(60vh, 420px)", marginTop: 4, boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}>
                     {filteredCustomers.map(c => (
                       <div key={c.id} onMouseDown={() => { setCustomer(c); setCustSearch(""); setShowCustDrop(false); }}
                         style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, transition: "background 0.1s" }}
@@ -2037,6 +2067,13 @@ export default function POSPage() {
                         )}
                       </div>
                     ))}
+                    {customerMatchOverflow > 0 && (
+                      <div style={{ padding: "8px 14px", fontSize: 11, color: "var(--text-muted)", textAlign: "center", background: "rgba(255,255,255,0.03)" }}>
+                        {lang === "en"
+                          ? `+${customerMatchOverflow} more — type more of the name to narrow`
+                          : `+${customerMatchOverflow} autres — précisez le nom pour affiner`}
+                      </div>
+                    )}
                     {custSearch.length > 0 && filteredCustomers.length === 0 && (
                       <div style={{ padding: "12px 14px", fontSize: 12, color: "var(--text-muted)", textAlign: "center" }}>
                         {lang === "en" ? "No customer found" : "Aucun client trouvé"}
