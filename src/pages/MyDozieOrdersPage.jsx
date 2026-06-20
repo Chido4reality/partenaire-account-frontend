@@ -7,7 +7,7 @@
 // touches /campay; orders are at_shop. Standalone sellers never reach this page.
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useLangStore } from "../store";
 import api from "../utils/api";
@@ -55,11 +55,40 @@ export default function MyDozieOrdersPage() {
   });
   const orders = ordersData?.data || [];
 
+  const navigate = useNavigate();
+  const [recordOrder, setRecordOrder] = useState(null);   // order awaiting payment-mode pick
+  const [counterOrder, setCounterOrder] = useState(null); // order being countered
+  const [counterLines, setCounterLines] = useState([]);
+  const [counterNote, setCounterNote] = useState("");
+
   const actMutation = useMutation({
     mutationFn: ({ id, body }) => api.patch(`/dozie/seller/orders/${id}`, body),
     onSuccess: () => { toast.success(en ? "Updated — buyer notified" : "Mis à jour — acheteur notifié"); qc.invalidateQueries(["dozie-seller-orders"]); },
     onError: (e) => toast.error(e?.response?.data?.message || (en ? "Error" : "Erreur")),
   });
+  const recordMut = useMutation({
+    mutationFn: ({ id, payment_mode }) => api.post(`/dozie/seller/orders/${id}/record-sale`, { payment_mode }),
+    onSuccess: () => {
+      setRecordOrder(null);
+      toast.success(en ? "Recorded — finalize it in Online Cart" : "Enregistré — finalisez dans le Panier en ligne");
+      qc.invalidateQueries(["dozie-seller-orders"]);
+      qc.invalidateQueries(["online-cart-pending-count"]);
+      navigate("/online-cart");
+    },
+    onError: (e) => toast.error(e?.response?.data?.message || (en ? "Error" : "Erreur")),
+  });
+  const counterMut = useMutation({
+    mutationFn: ({ id, items, note }) => api.post(`/dozie/seller/orders/${id}/counter`, { items, note }),
+    onSuccess: () => { setCounterOrder(null); toast.success(en ? "Counter sent — buyer notified" : "Contre-offre envoyée — acheteur notifié"); qc.invalidateQueries(["dozie-seller-orders"]); },
+    onError: (e) => toast.error(e?.response?.data?.message || (en ? "Error" : "Erreur")),
+  });
+  function openCounter(o) {
+    const items = Array.isArray(o.items) ? o.items : [];
+    setCounterLines(items.map(it => ({ product_id: it.product_id || null, name: it.name || "?", qty: Number(it.qty || it.quantity || 1), price: Number(it.price || 0) })));
+    setCounterNote("");
+    setCounterOrder(o);
+  }
+  const counterTotal = counterLines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0);
 
   const wrap = (children) => <div style={{ maxWidth: 880, margin: "0 auto", padding: 20 }}>{children}</div>;
   if (meLoading) return wrap(<div style={{ color: "var(--text-muted)" }}>{en ? "Loading…" : "Chargement…"}</div>);
@@ -114,6 +143,10 @@ export default function MyDozieOrdersPage() {
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <span style={{ fontWeight: 700, fontSize: 14 }}>{o.order_ref || o.id.slice(0, 8)}</span>
                     <span className="badge" style={{ background: sm.bg, color: sm.fg, fontSize: 11, padding: "2px 8px", borderRadius: 10 }}>{en ? sm.en : sm.fr}</span>
+                    {o.counter_status === "pending" && <span className="badge" style={{ background: "rgba(245,158,11,0.15)", color: "#fbbf24", fontSize: 11, padding: "2px 8px", borderRadius: 10 }}>{en ? "✏️ Counter sent — awaiting buyer" : "✏️ Contre-offre envoyée"}</span>}
+                    {o.counter_status === "accepted" && <span className="badge" style={{ background: "rgba(16,185,129,0.15)", color: "#34d399", fontSize: 11, padding: "2px 8px", borderRadius: 10 }}>{en ? "✅ Counter accepted" : "✅ Contre-offre acceptée"}</span>}
+                    {o.counter_status === "rejected" && <span className="badge" style={{ background: "rgba(239,68,68,0.15)", color: "#f87171", fontSize: 11, padding: "2px 8px", borderRadius: 10 }}>{en ? "❌ Counter rejected" : "❌ Contre-offre refusée"}</span>}
+                    {o.mp_sale?.recorded && <span className="badge" style={{ background: "rgba(59,130,246,0.15)", color: "#60a5fa", fontSize: 11, padding: "2px 8px", borderRadius: 10 }}>{o.mp_sale.sale_id ? (en ? "💰 Sale recorded" : "💰 Vente enregistrée") : (en ? "🧾 In Online Cart" : "🧾 Dans le panier")}</span>}
                   </div>
                   <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
                     {o.buyer_name || (en ? "Buyer" : "Acheteur")}{o.buyer_phone ? ` · ${o.buyer_phone}` : ""} · {new Date(o.created_at).toLocaleDateString()}
@@ -124,22 +157,95 @@ export default function MyDozieOrdersPage() {
                   <div style={{ fontWeight: 800, fontSize: 16, color: "var(--brand-light)" }}>{fmt(o.total)}</div>
                 </div>
               </div>
-              {actions.length > 0 && (
-                <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-                  {actions.map((a, i) => (
-                    <button key={i} className={"btn btn-sm" + (a.primary ? " btn-primary" : "")}
-                      style={a.danger ? { color: "#f87171" } : {}}
-                      disabled={actMutation.isPending}
-                      onClick={() => actMutation.mutate({ id: o.id, body: a.action ? { action: a.action } : { status: a.status } })}>
-                      {en ? a.en : a.fr}
-                    </button>
-                  ))}
-                </div>
-              )}
+              {(() => {
+                const canRecord = ["confirmed", "shipped", "delivered"].includes(o.status) && !o.mp_sale?.recorded;
+                const finalizeOnly = o.mp_sale?.recorded && !o.mp_sale.sale_id;
+                if (!(actions.length || o.status === "pending" || canRecord || finalizeOnly)) return null;
+                return (
+                  <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                    {actions.map((a, i) => (
+                      <button key={i} className={"btn btn-sm" + (a.primary ? " btn-primary" : "")}
+                        style={a.danger ? { color: "#f87171" } : {}}
+                        disabled={actMutation.isPending}
+                        onClick={() => actMutation.mutate({ id: o.id, body: a.action ? { action: a.action } : { status: a.status } })}>
+                        {en ? a.en : a.fr}
+                      </button>
+                    ))}
+                    {o.status === "pending" && (
+                      <button className="btn btn-sm" onClick={() => openCounter(o)}>{en ? "Counter / adjust price" : "Contre-offre / prix"}</button>
+                    )}
+                    {canRecord && (
+                      <button className="btn btn-sm btn-primary" onClick={() => setRecordOrder(o)}>{en ? "Record as MP sale" : "Enregistrer comme vente MP"}</button>
+                    )}
+                    {finalizeOnly && (
+                      <button className="btn btn-sm" onClick={() => navigate("/online-cart")}>{en ? "Finalize in Online Cart →" : "Finaliser dans le Panier →"}</button>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           );
         })}
       </div>
+
+      {/* Record-as-MP-sale — payment-mode picker */}
+      {recordOrder && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onMouseDown={() => setRecordOrder(null)}>
+          <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 22, maxWidth: 420, width: "100%" }} onMouseDown={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 6 }}>{en ? "Record as MP sale" : "Enregistrer comme vente MP"}</div>
+            <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 14 }}>
+              {en ? `Order ${recordOrder.order_ref} — ${fmt(recordOrder.total)}. How was/will it be paid?` : `Commande ${recordOrder.order_ref} — ${fmt(recordOrder.total)}. Mode de paiement ?`}
+            </div>
+            <div style={{ display: "grid", gap: 8 }}>
+              {[
+                { pm: "paid_online_full", en: "Paid online in full", fr: "Payé en ligne intégralement" },
+                { pm: "pay_at_shop", en: "Pay at shop (cash on pickup)", fr: "Paiement à la boutique" },
+                { pm: "partial", en: "Partial / deposit", fr: "Partiel / acompte" },
+                { pm: "credit", en: "Credit (customer ledger)", fr: "Crédit (ardoise client)" },
+              ].map(opt => (
+                <button key={opt.pm} className="btn" style={{ justifyContent: "flex-start" }} disabled={recordMut.isPending}
+                  onClick={() => recordMut.mutate({ id: recordOrder.id, payment_mode: opt.pm })}>
+                  {en ? opt.en : opt.fr}
+                </button>
+              ))}
+            </div>
+            <button className="btn btn-sm" style={{ marginTop: 12 }} onClick={() => setRecordOrder(null)}>{en ? "Cancel" : "Annuler"}</button>
+          </div>
+        </div>
+      )}
+
+      {/* Counter-offer editor */}
+      {counterOrder && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onMouseDown={() => setCounterOrder(null)}>
+          <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 22, maxWidth: 480, width: "100%", maxHeight: "85vh", overflowY: "auto" }} onMouseDown={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>{en ? "Counter / adjust price" : "Contre-offre / ajuster le prix"}</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 14 }}>{en ? `Order ${counterOrder.order_ref} — the buyer reviews & accepts your new total.` : `Commande ${counterOrder.order_ref} — l'acheteur valide votre nouveau total.`}</div>
+            <div style={{ display: "grid", gap: 10 }}>
+              {counterLines.map((l, i) => (
+                <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <div style={{ flex: 1, minWidth: 120, fontSize: 13, fontWeight: 600 }}>{l.name}</div>
+                  <input className="input" type="number" style={{ width: 70 }} value={l.qty}
+                    onChange={e => setCounterLines(ls => ls.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} />
+                  <span style={{ color: "var(--text-muted)" }}>×</span>
+                  <input className="input" type="number" style={{ width: 100 }} value={l.price}
+                    onChange={e => setCounterLines(ls => ls.map((x, j) => j === i ? { ...x, price: e.target.value } : x))} />
+                </div>
+              ))}
+            </div>
+            <input className="input" style={{ marginTop: 10 }} placeholder={en ? "Note (optional)" : "Note (optionnel)"} value={counterNote} onChange={e => setCounterNote(e.target.value)} />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
+              <span style={{ fontWeight: 800 }}>{en ? "New total" : "Nouveau total"}: {fmt(counterTotal)}</span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-sm" onClick={() => setCounterOrder(null)}>{en ? "Cancel" : "Annuler"}</button>
+                <button className="btn btn-sm btn-primary" disabled={counterMut.isPending || !counterLines.length}
+                  onClick={() => counterMut.mutate({ id: counterOrder.id, items: counterLines.map(l => ({ product_id: l.product_id || null, name: l.name, qty: Number(l.qty) || 0, price: Number(l.price) || 0 })), note: counterNote })}>
+                  {counterMut.isPending ? "…" : (en ? "Send counter" : "Envoyer")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
