@@ -1323,12 +1323,24 @@
           <div id="sr-categories" style="margin-top:8px">…</div>
         </div>
         <div class="settings-card" style="margin-top:16px">
-          <div class="settings-card-title">Towns</div>
-          <div class="settings-card-sub">Towns currently in use are seeded as allowed. Off = no selling there. Add towns as you expand.</div>
+          <div class="settings-card-title">Cities (location catalog + Dozie sell rules)</div>
+          <div class="settings-card-sub">Per-country canonical city list — one source for the shop-location dropdown AND Dozie selling. <b>In dropdown</b> = selectable as a shop location. <b>Can sell</b> = Dozie selling allowed there (default-allow). <b>Lite plan</b> = available to Lite-tier Dozie sellers (Pro/Pro+ get all).</div>
+          <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <select id="sr-town-country" style="min-width:140px">
+              <option value="Cameroun">Cameroun</option>
+              <option value="Nigeria">Nigeria</option>
+            </select>
+            <input id="sr-town-search" placeholder="Search city…" style="flex:1;min-width:160px" />
+            <span id="sr-town-count" class="muted" style="font-size:12px"></span>
+          </div>
           <div id="sr-towns" style="margin-top:8px">…</div>
-          <div style="margin-top:12px;display:flex;gap:8px">
-            <input id="sr-new-town" placeholder="Add a town…" style="flex:1" />
-            <button class="btn" id="sr-add-town-btn">Add town</button>
+          <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+            <select id="sr-new-country" style="min-width:140px">
+              <option value="Cameroun">Cameroun</option>
+              <option value="Nigeria">Nigeria</option>
+            </select>
+            <input id="sr-new-town" placeholder="Add a city…" style="flex:1;min-width:160px" />
+            <button class="btn" id="sr-add-town-btn">Add city</button>
           </div>
         </div>
       </section>
@@ -1704,20 +1716,28 @@
     // Idempotent — the static buttons exist from page load; toggle checkboxes
     // are re-rendered, so use delegation on the (static) containers.
     let _srWired = false;
+    let _srTowns = [];   // full city catalog across all countries
     function wireSellRestrictionsOnce() {
       if (_srWired) return;
       _srWired = true;
       const addBtn = $('sr-add-town-btn'); if (addBtn) addBtn.addEventListener('click', addSellTown);
       const refBtn = $('sr-refresh-btn');  if (refBtn) refBtn.addEventListener('click', loadSellRestrictions);
       const newTown = $('sr-new-town');     if (newTown) newTown.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addSellTown(); } });
-      ['sr-categories', 'sr-towns'].forEach(id => {
-        const c = $(id);
-        if (c) c.addEventListener('change', e => {
-          const t = e.target;
-          if (t && t.matches && t.matches('input[type="checkbox"][data-sell-kind]')) {
-            toggleSell(t.getAttribute('data-sell-kind'), t.getAttribute('data-sell-key'), t.checked, t);
-          }
-        });
+      const cf = $('sr-town-country');      if (cf) cf.addEventListener('change', renderTownsCatalog);
+      const sf = $('sr-town-search');       if (sf) sf.addEventListener('input', renderTownsCatalog);
+      // Categories — single is_allowed toggle (delegation).
+      const cats = $('sr-categories');
+      if (cats) cats.addEventListener('change', e => {
+        const t = e.target;
+        if (t && t.matches && t.matches('input[type="checkbox"][data-sell-kind]'))
+          toggleSell(t.getAttribute('data-sell-kind'), t.getAttribute('data-sell-key'), t.checked, t);
+      });
+      // Cities — three independent field toggles (delegation).
+      const towns = $('sr-towns');
+      if (towns) towns.addEventListener('change', e => {
+        const t = e.target;
+        if (t && t.matches && t.matches('input[type="checkbox"][data-town-field]'))
+          toggleTownField(t.getAttribute('data-town'), t.getAttribute('data-country'), t.getAttribute('data-town-field'), t.checked, t);
       });
     }
 
@@ -1732,11 +1752,14 @@
           apiAdmin('GET', '/admin/dozie/sell-towns'),
         ]);
         renderSellToggles('sr-categories', c.data || [], 'category', r => r.category_slug, r => r.label || r.category_slug);
-        renderSellToggles('sr-towns', t.data || [], 'town', r => r.town, r => r.town);
+        _srTowns = t.data || [];
+        renderTownsCatalog();
       } catch (e) {
         $('sr-categories').innerHTML = '<div class="muted">' + escapeHtml(e.message) + '</div>';
       }
     }
+
+    // Categories — unchanged single is_allowed toggle.
     function renderSellToggles(containerId, rows, kind, keyFn, labelFn) {
       const el = $(containerId);
       if (!rows.length) { el.innerHTML = '<div class="muted">None.</div>'; return; }
@@ -1757,10 +1780,45 @@
         loadSellRestrictions();
       } catch (e) { if (el) el.checked = !isAllowed; showToast(e.message, 'danger'); }
     }
+
+    // Cities — country-filtered, searchable, three independent toggles.
+    const _TOWN_LABELS = { is_active: 'In dropdown', is_allowed: 'Can sell', lite_allowed: 'Lite plan' };
+    function _townCk(row, field) {
+      return '<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#9aa3b2">'
+        + '<input type="checkbox" data-town-field="' + field + '" data-town="' + encodeURIComponent(row.town) + '" data-country="' + encodeURIComponent(row.country) + '" ' + (row[field] ? 'checked' : '') + '>'
+        + _TOWN_LABELS[field] + '</label>';
+    }
+    function renderTownsCatalog() {
+      const el = $('sr-towns'); if (!el) return;
+      const country = ($('sr-town-country') && $('sr-town-country').value) || 'Cameroun';
+      const q = (($('sr-town-search') && $('sr-town-search').value) || '').trim().toLowerCase();
+      const all = _srTowns.filter(r => r.country === country);
+      let rows = q ? all.filter(r => (r.town || '').toLowerCase().includes(q)) : all.slice();
+      rows.sort((a, b) => (a.town || '').localeCompare(b.town || ''));
+      const cnt = $('sr-town-count'); if (cnt) cnt.textContent = rows.length + ' / ' + all.length + ' cities';
+      if (!rows.length) { el.innerHTML = '<div class="muted">No cities match.</div>'; return; }
+      el.innerHTML = rows.map(r =>
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 2px;border-bottom:1px solid rgba(255,255,255,0.08);flex-wrap:wrap">'
+        + '<span style="font-weight:600">' + escapeHtml(r.town)
+        + (r.is_allowed ? '' : ' <span class="badge badge-admin" style="background:rgba(239,68,68,0.15);color:#f87171">no-sell</span>')
+        + (r.is_active ? '' : ' <span class="badge badge-admin" style="background:rgba(148,163,184,0.18);color:#94a3b8">hidden</span>') + '</span>'
+        + '<span style="display:flex;gap:14px;flex-wrap:wrap">' + _townCk(r, 'is_active') + _townCk(r, 'is_allowed') + _townCk(r, 'lite_allowed') + '</span>'
+        + '</div>').join('');
+    }
+    async function toggleTownField(townEnc, countryEnc, field, value, el) {
+      const town = decodeURIComponent(townEnc), country = decodeURIComponent(countryEnc);
+      try {
+        await apiAdmin('PATCH', '/admin/dozie/sell-towns/' + encodeURIComponent(town), { country, [field]: value });
+        const row = _srTowns.find(r => r.town === town && r.country === country); if (row) row[field] = value;
+        showToast(_TOWN_LABELS[field] + (value ? ' ON: ' : ' OFF: ') + town, 'success');
+        renderTownsCatalog();
+      } catch (e) { if (el) el.checked = !value; showToast(e.message, 'danger'); }
+    }
     async function addSellTown() {
       const v = ($('sr-new-town').value || '').trim();
+      const country = ($('sr-new-country') && $('sr-new-country').value) || 'Cameroun';
       if (!v) return;
-      try { await apiAdmin('POST', '/admin/dozie/sell-towns', { town: v }); $('sr-new-town').value = ''; showToast('Town added', 'success'); loadSellRestrictions(); }
+      try { await apiAdmin('POST', '/admin/dozie/sell-towns', { country, town: v }); $('sr-new-town').value = ''; showToast('City added', 'success'); loadSellRestrictions(); }
       catch (e) { showToast(e.message, 'danger'); }
     }
 
