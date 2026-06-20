@@ -53,8 +53,10 @@ const NAV = [
   { to: "/inventory",    en: "Inventory",  fr: "Inventaire",      icon: "📦", roles: ["owner","manager","warehouse"],          section: "inventory" },
   // MP-DOZIE-SELLER-MIGRATION Phase 1 — manage Dozie marketplace listings from MP.
   { to: "/dozie-listings", en: "Dozie Listings", fr: "Annonces Dozie", icon: "🛒", roles: ["owner","manager"], section: "inventory" },
-  // MP-DOZIE-SELLER-MIGRATION Phase 2 — incoming Dozie orders in MP (+ attention badge).
-  { to: "/dozie-orders", en: "Dozie Orders", fr: "Commandes Dozie", icon: "📦", roles: ["owner","manager"], section: "inventory", badge: "dozie_attention" },
+  // MP-DOZIE-SELLER-MIGRATION Phase 2 — incoming Dozie orders in MP (+ pending badge).
+  { to: "/dozie-orders", en: "Dozie Orders", fr: "Commandes Dozie", icon: "📦", roles: ["owner","manager"], section: "inventory", badge: "dozie_orders" },
+  // MP-DOZIE-SELLER-MIGRATION Phase 3 — Dozie buyer chat in MP (+ unread badge).
+  { to: "/dozie-messages", en: "Dozie Messages", fr: "Messages Dozie", icon: "💬", roles: ["owner","manager"], section: "inventory", badge: "dozie_messages" },
   // MP-CASHIER-ROLE-GATING: cashier needs Customers for the
   // Encaisser-dette flow + on-the-fly customer creation during
   // sales. Backend collect-debt route already cashier-eligible.
@@ -637,12 +639,15 @@ export default function Layout() {
     retry: 1,
     onError: () => {}
   });
-  const dozieAttention = dozieAttn?.data?.total || 0;
+  const dozieAttn_ = dozieAttn?.data || {};
 
-  // Resolve the count behind a nav item's badge flag (online_cart | dozie_attention).
+  // Resolve the count behind a nav item's badge flag. Each Dozie surface badges
+  // its OWN source so the seller knows what needs attention where.
   const navBadge = (item) =>
-    item.badge === "online_cart" ? onlineCartPending
-    : item.badge === "dozie_attention" ? dozieAttention
+    item.badge === "online_cart"    ? onlineCartPending
+    : item.badge === "dozie_orders"   ? (dozieAttn_.orders || 0)
+    : item.badge === "dozie_messages" ? (dozieAttn_.messages || 0)
+    : item.badge === "dozie_attention" ? (dozieAttn_.total || 0)
     : 0;
 
   // STOCK-UX-PASS Part A — cross-account location leak fix.
