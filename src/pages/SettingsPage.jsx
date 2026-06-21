@@ -713,7 +713,14 @@ export default function SettingsPage() {
                               {ROLES.find(x => x.value === r.role)?.[lang === "en" ? "en" : "fr"] || r.role}</span>
                             {r.currently_clocked_in && <span style={{ fontSize: 10, fontWeight: 800, color: "#34d399" }}>ON</span>}
                           </div>
-                          <span style={{ fontWeight: 700, fontSize: 13, minWidth: 54, textAlign: "right" }}>{r.total_hours ?? 0} h</span>
+                          <div style={{ minWidth: 64, textAlign: "right" }}>
+                            <div style={{ fontWeight: 700, fontSize: 13 }}>{r.total_hours ?? 0} h</div>
+                            {r.currently_clocked_in && (r.open_session_hours || 0) > 0 && (
+                              <div style={{ fontSize: 10, color: "#34d399", fontWeight: 600 }}>
+                                {lang === "en" ? `incl. ${r.open_session_hours}h live` : `dont ${r.open_session_hours}h en cours`}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       );
                     })}
@@ -1824,9 +1831,11 @@ export default function SettingsPage() {
                             <div key={e.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 12, padding: "6px 10px", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8 }}>
                               <span style={{ minWidth: 78, color: "var(--text-muted)" }}>{fmtD(e.clock_in_at)}</span>
                               <span style={{ flex: 1, textAlign: "center" }}>
-                                {fmtT(e.clock_in_at)} → {e.open ? <em style={{ color: "#fbbf24" }}>{lang === "en" ? "open" : "ouvert"}</em> : fmtT(e.clock_out_at)}
+                                {fmtT(e.clock_in_at)} → {e.open
+                                  ? <em style={{ color: "#34d399" }}>{lang === "en" ? `open · ${e.running_hours ?? 0}h so far` : `en cours · ${e.running_hours ?? 0}h`}</em>
+                                  : fmtT(e.clock_out_at)}
                               </span>
-                              <span style={{ fontWeight: 700, minWidth: 48, textAlign: "right" }}>{e.hours != null ? `${e.hours} h` : "—"}</span>
+                              <span style={{ fontWeight: 700, minWidth: 48, textAlign: "right", color: e.open ? "#34d399" : undefined }}>{e.open ? `${e.running_hours ?? 0} h` : (e.hours != null ? `${e.hours} h` : "—")}</span>
                             </div>
                           ))}
                         </div>
