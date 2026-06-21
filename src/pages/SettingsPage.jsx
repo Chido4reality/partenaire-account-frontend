@@ -155,6 +155,10 @@ export default function SettingsPage() {
   const [staffForm, setStaffForm]       = useState({ ...BLANK_STAFF });
   // Phase 2 — per-staff Activity view (read-only, owner + Pro Plus).
   const [activityPeriod, setActivityPeriod] = useState("this_month");
+  // Team attendance (consolidated roster) — owner + Pro Plus. Period values match
+  // the GET /staff/attendance/team query params (today|week|month|all).
+  const [teamPeriod, setTeamPeriod] = useState("month");
+  const [teamSort, setTeamSort] = useState("hours"); // 'hours' (desc) | 'name'
 
   // Shop settings state
   const [shopForm, setShopForm] = useState({
@@ -221,6 +225,15 @@ export default function SettingsPage() {
     queryKey: ["staff-attendance", editStaff?.id, activityPeriod],
     queryFn: () => api.get(`/staff/${editStaff.id}/attendance?period=${activityPeriod}`).then(r => r.data),
     enabled: !!editStaff && isOwner && hasFeature(effectivePlan, "staff_maintenance"),
+  });
+
+  // Team attendance — consolidated roster for the period (owner + Pro Plus).
+  // 30s poll so the "clocked in now" indicator stays fresh while the tab is open.
+  const { data: teamAttData, isLoading: teamAttLoading } = useQuery({
+    queryKey: ["staff-attendance-team", teamPeriod],
+    queryFn: () => api.get(`/staff/attendance/team?period=${teamPeriod}`).then(r => r.data),
+    enabled: tab === "staff" && isOwner && hasFeature(effectivePlan, "staff_maintenance"),
+    refetchInterval: 30000,
   });
 
   // MP-SETTINGS-WIPE-BUG: React Query v5 removed the `onSuccess`
@@ -654,6 +667,61 @@ export default function SettingsPage() {
               <button className="btn btn-primary" onClick={() => setShowAddStaff(true)}>+ {lang === "en" ? "Add staff" : "Ajouter"}</button>
             )}
           </div>
+
+          {/* Team attendance — consolidated roster (owner + Pro Plus). The
+              per-worker detail (Settings → edit staff → Attendance) is unchanged;
+              tapping a row here deep-links into it. */}
+          {isOwner && hasFeature(effectivePlan, "staff_maintenance") && (
+            <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 16, marginBottom: 18 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>🕒 {lang === "en" ? "Team attendance" : "Présence de l'équipe"}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: (teamAttData?.data?.currently_clocked_in_count || 0) > 0 ? "#34d399" : "var(--text-muted)" }}>
+                  <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: (teamAttData?.data?.currently_clocked_in_count || 0) > 0 ? "#34d399" : "var(--text-muted)", marginRight: 6 }} />
+                  {(teamAttData?.data?.currently_clocked_in_count || 0)} {lang === "en" ? "clocked in now" : "pointés maintenant"}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                {[["today", "Today", "Aujourd'hui"], ["week", "This week", "Cette semaine"], ["month", "This month", "Ce mois"], ["all", "All", "Tout"]].map(([v, en, fr]) => (
+                  <button key={v} className={teamPeriod === v ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm"} onClick={() => setTeamPeriod(v)}>{lang === "en" ? en : fr}</button>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 6, marginBottom: 10, fontSize: 12, color: "var(--text-muted)", alignItems: "center" }}>
+                <span>{lang === "en" ? "Sort:" : "Tri :"}</span>
+                <button className={teamSort === "hours" ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm"} onClick={() => setTeamSort("hours")}>{lang === "en" ? "Hours" : "Heures"}</button>
+                <button className={teamSort === "name" ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm"} onClick={() => setTeamSort("name")}>{lang === "en" ? "Name" : "Nom"}</button>
+              </div>
+              {teamAttLoading ? (
+                <div style={{ color: "var(--text-muted)", fontSize: 13 }}>{lang === "en" ? "Loading…" : "Chargement…"}</div>
+              ) : (() => {
+                const list = [...(teamAttData?.data?.staff || [])].sort((a, b) =>
+                  teamSort === "name"
+                    ? (a.name || "").localeCompare(b.name || "")
+                    : ((b.total_hours || 0) - (a.total_hours || 0)) || (a.name || "").localeCompare(b.name || ""));
+                if (!list.length) return <div style={{ color: "var(--text-muted)", fontSize: 13 }}>{lang === "en" ? "No staff." : "Aucun personnel."}</div>;
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {list.map(r => {
+                      const rs = roleStyle(r.role);
+                      const full = activeStaff.find(x => x.id === r.user_id);
+                      return (
+                        <div key={r.user_id} onClick={() => full && openEditStaff(full)}
+                          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "8px 12px", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, cursor: full ? "pointer" : "default" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flex: 1 }}>
+                            {r.currently_clocked_in && <span title={lang === "en" ? "clocked in now" : "pointé maintenant"} style={{ width: 8, height: 8, borderRadius: "50%", background: "#34d399", flexShrink: 0 }} />}
+                            <span style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span>
+                            <span style={{ fontSize: 10, padding: "1px 8px", borderRadius: 10, background: rs.bg, color: rs.color, fontWeight: 600, flexShrink: 0 }}>
+                              {ROLES.find(x => x.value === r.role)?.[lang === "en" ? "en" : "fr"] || r.role}</span>
+                            {r.currently_clocked_in && <span style={{ fontSize: 10, fontWeight: 800, color: "#34d399" }}>ON</span>}
+                          </div>
+                          <span style={{ fontWeight: 700, fontSize: 13, minWidth: 54, textAlign: "right" }}>{r.total_hours ?? 0} h</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
 
           {staffLoading ? (
             <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>Loading...</div>
