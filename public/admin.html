@@ -4345,36 +4345,47 @@
       if (escBtn) escBtn.addEventListener('click', () => openDzDisputeEscalate(d));
     }
 
+    // REFUND/DISPUTE v1: admin arbitrates a SELLER-CONTESTED dispute. FULL-ORDER
+    // only. Calls the money-integrated, order-keyed endpoint (refund → reverses
+    // the MP sale + FLW refund via the Dozie server; reject → keeps the sale and
+    // clears the payout block). Supersedes the legacy state-only /disputes/:id/resolve.
     function openDzDisputeResolve(d, preselected) {
       const radio = (val, label) =>
-        '<label><input type="radio" name="dr-res" value="' + val + '"' +
-        (preselected === val ? ' checked' : '') + '> ' + label + '</label>';
+        '<label><input type="radio" name="dr-res" value="' + val + '"> ' + label + '</label>';
       openModal({
         title: 'Resolve dispute', sub: d.order_ref || '',
         content:
-          '<div class="field"><label>Resolution</label>' +
+          '<div class="field"><label>Outcome (full order only)</label>' +
             '<div style="display:flex;flex-direction:column;gap:6px">' +
-              radio('favor_buyer',    'Favor buyer (full refund from escrow)') +
-              radio('favor_seller',   'Favor seller (release escrow)') +
-              radio('partial_refund', 'Partial refund') +
+              radio('refund', 'Refund the buyer — reverses the sale + refunds the full order') +
+              radio('reject', 'Reject — keep the sale, allow the seller payout') +
             '</div></div>' +
-          '<div class="field"><label>Refund amount (only for partial)</label><input id="dr-amount" type="number" step="1" min="0"/></div>' +
-          '<div class="field"><label>Notes (required)</label><textarea id="dr-notes" placeholder="Explain the decision"></textarea></div>',
+          '<div style="font-size:12px;color:#94a3b8;margin-top:6px">Admin arbitration applies to a seller-contested dispute.</div>',
         secondary: { label: 'Cancel' },
         primary: { label: 'Resolve', onClick: async (close) => {
-          const resolution = (document.querySelector('input[name="dr-res"]:checked') || {}).value;
-          const refund_amount = Number($('dr-amount').value || 0);
-          const notes = $('dr-notes').value.trim();
-          if (!resolution) return showToast('Pick a resolution', 'danger');
-          if (!notes)      return showToast('Notes are required', 'danger');
-          if (resolution === 'partial_refund' && (!refund_amount || refund_amount <= 0))
-            return showToast('Refund amount required for partial', 'danger');
+          const outcome = (document.querySelector('input[name="dr-res"]:checked') || {}).value;
+          if (!outcome) return showToast('Pick an outcome', 'danger');
+          if (!d.order_id) return showToast('Dispute has no linked order', 'danger');
           try {
-            await apiAdmin('POST', '/admin/dozie/disputes/' + d.id + '/resolve', {
-              resolution, refund_amount: resolution === 'partial_refund' ? refund_amount : null, notes
-            });
-            showToast('Dispute resolved (' + resolution.replace(/_/g, ' ') + ')', 'success');
+            await apiAdmin('POST', '/admin/dozie/orders/' + d.order_id + '/resolve-dispute', { outcome });
+            showToast(outcome === 'refund' ? 'Refund issued' : 'Dispute rejected', 'success');
             close(); loadDzDisputes();
+          } catch (e) { showToast(e.message, 'danger'); }
+        }}
+      });
+    }
+
+    // Record an OUT-OF-BAND refund for an order stuck at refund_status='pending_manual'
+    // (corridor not API-refundable). Callable from the order detail.
+    async function markDzRefunded(orderId, orderRef) {
+      openModal({
+        title: 'Mark refunded', sub: orderRef || '',
+        content: '<div class="field"><label>Manual refund reference (optional)</label><input id="mr-ref" placeholder="e.g. MoMo payout ref"/></div>',
+        secondary: { label: 'Cancel' },
+        primary: { label: 'Mark refunded', onClick: async (close) => {
+          try {
+            await apiAdmin('POST', '/admin/dozie/orders/' + orderId + '/mark-refunded', { reference: $('mr-ref').value.trim() });
+            showToast('Marked refunded', 'success'); close(); if (typeof loadDzDisputes==='function') loadDzDisputes();
           } catch (e) { showToast(e.message, 'danger'); }
         }}
       });
