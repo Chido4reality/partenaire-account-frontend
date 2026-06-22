@@ -4106,7 +4106,16 @@
           '<table class="data"><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Line</th></tr></thead><tbody>' +
           items.map(it => '<tr><td>' + escapeHtml(it.name || it.product || '—') + '</td><td class="num">' + (it.qty || it.quantity || 1) + '</td><td class="num">' + fmtFCFA(it.price) + '</td><td class="num">' + fmtFCFA((it.qty || 1) * (it.price || 0)) + '</td></tr>').join('') +
           '</tbody></table>' +
-          (o.dispute ? '<div class="card" style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.3);margin-top:12px"><strong style="color:var(--danger)">Dispute open</strong><br><div style="font-size:13px;margin-top:4px">' + escapeHtml(o.dispute.buyer_claim || '') + '</div>' + (o.dispute.seller_reply ? '<div style="font-size:13px;margin-top:8px;color:var(--text-muted)">Seller reply: ' + escapeHtml(o.dispute.seller_reply) + '</div>' : '') + '</div>' : '');
+          (o.dispute ? '<div class="card" style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.3);margin-top:12px"><strong style="color:var(--danger)">Dispute open</strong><br><div style="font-size:13px;margin-top:4px">' + escapeHtml(o.dispute.buyer_claim || '') + '</div>' + (o.dispute.seller_reply ? '<div style="font-size:13px;margin-top:8px;color:var(--text-muted)">Seller reply: ' + escapeHtml(o.dispute.seller_reply) + '</div>' : '') + '</div>' : '') +
+          // Refund/dispute v1: a pending_manual refund (non-API-refundable corridor)
+          // surfaces a "Mark refunded" action; a completed refund shows its reference.
+          (o.refund_status === 'pending_manual'
+            ? '<div class="card" style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);margin-top:12px"><strong style="color:#f59e0b">Refund pending (manual)</strong>' +
+              '<div style="font-size:13px;margin-top:4px;color:var(--text-muted)">This corridor was not API-refundable — record the out-of-band refund.</div>' +
+              '<button class="btn btn-sm btn-primary" style="margin-top:8px" onclick="markDzRefunded(\'' + o.id + '\',\'' + escapeHtml(o.order_ref || '') + '\')">Mark refunded</button></div>'
+            : (o.refund_status === 'refunded'
+              ? '<div class="card" style="background:rgba(16,185,129,0.08);margin-top:12px;font-size:13px"><strong style="color:#34d399">Refunded</strong>' + (o.refund_reference ? ' · ref ' + escapeHtml(o.refund_reference) : '') + '</div>'
+              : ''));
       } catch (e) {
         const m = $('modal-host').querySelector('.modal-body');
         if (m) m.innerHTML = '<div style="padding:24px;color:var(--danger)">' + escapeHtml(e.message) + '</div>';
