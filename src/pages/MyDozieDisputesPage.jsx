@@ -14,6 +14,8 @@ import { useCurrency } from "../utils/useCurrency";
 
 const DISPUTE_STATUS = {
   open:              { en: "Open", fr: "Ouvert", bg: "rgba(245,158,11,0.15)", fg: "#fbbf24" },
+  seller_contested:  { en: "Contested — admin reviewing", fr: "Contesté — admin en revue", bg: "rgba(168,85,247,0.15)", fg: "#c084fc" },
+  resolved:          { en: "Resolved", fr: "Résolu", bg: "rgba(148,163,184,0.18)", fg: "#94a3b8" },
   resolved_refund:   { en: "Resolved — refunded buyer", fr: "Résolu — remboursé", bg: "rgba(239,68,68,0.15)", fg: "#f87171" },
   resolved_release:  { en: "Resolved — paid to you", fr: "Résolu — payé au vendeur", bg: "rgba(16,185,129,0.15)", fg: "#34d399" },
   resolved_partial:  { en: "Resolved — partial", fr: "Résolu — partiel", bg: "rgba(59,130,246,0.15)", fg: "#60a5fa" },
@@ -50,6 +52,20 @@ export default function MyDozieDisputesPage() {
     },
     onError: (e) => toast.error(e?.response?.data?.message || (en ? "Error" : "Erreur")),
   });
+
+  // Locked decision: the seller APPROVES the buyer's refund directly (full order),
+  // or CONTESTS (with a reason) so an admin arbitrates.
+  const approveMut = useMutation({
+    mutationFn: ({ id }) => api.post(`/dozie/seller/disputes/${id}/approve`),
+    onSuccess: () => { toast.success(en ? "Refund approved" : "Remboursement approuvé"); qc.invalidateQueries(["dozie-seller-disputes"]); },
+    onError: (e) => toast.error(e?.response?.data?.message || (en ? "Error" : "Erreur")),
+  });
+  const contestMut = useMutation({
+    mutationFn: ({ id, reply }) => api.post(`/dozie/seller/disputes/${id}/contest`, { reply }),
+    onSuccess: (_d, v) => { toast.success(en ? "Contested — admin will review" : "Contesté — l'admin examinera"); setDrafts(d => ({ ...d, [v.id]: undefined })); qc.invalidateQueries(["dozie-seller-disputes"]); },
+    onError: (e) => toast.error(e?.response?.data?.message || (en ? "Error" : "Erreur")),
+  });
+  const busy = approveMut.isPending || contestMut.isPending || replyMut.isPending;
 
   const wrap = (children) => <div style={{ maxWidth: 720, margin: "0 auto", padding: 20 }}>{children}</div>;
   if (meLoading) return wrap(<div style={{ color: "var(--text-muted)" }}>{en ? "Loading…" : "Chargement…"}</div>);
@@ -107,12 +123,18 @@ export default function MyDozieDisputesPage() {
               {isOpen ? (
                 <div style={{ marginTop: 10 }}>
                   <textarea className="input" rows={2} style={{ width: "100%", boxSizing: "border-box" }}
-                    placeholder={en ? "Your response to this dispute…" : "Votre réponse au litige…"}
+                    placeholder={en ? "Reason (required to contest)…" : "Motif (requis pour contester)…"}
                     value={draft} onChange={e => setDrafts(s => ({ ...s, [d.id]: e.target.value }))} />
-                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-                    <button className="btn btn-sm btn-primary" disabled={!draft.trim() || replyMut.isPending}
-                      onClick={() => replyMut.mutate({ id: d.id, reply: draft.trim() })}>
-                      {replyMut.isPending ? "…" : (d.seller_reply ? (en ? "Update reply" : "Mettre à jour") : (en ? "Send reply" : "Envoyer"))}
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                    <button className="btn btn-sm" style={{ background: "rgba(168,85,247,0.15)", color: "#c084fc" }}
+                      disabled={!draft.trim() || busy}
+                      onClick={() => contestMut.mutate({ id: d.id, reply: draft.trim() })}>
+                      {en ? "Contest" : "Contester"}
+                    </button>
+                    <button className="btn btn-sm" style={{ background: "rgba(16,185,129,0.18)", color: "#34d399", fontWeight: 700 }}
+                      disabled={busy}
+                      onClick={() => { if (window.confirm(en ? "Approve a FULL refund to the buyer?" : "Approuver un remboursement TOTAL à l'acheteur ?")) approveMut.mutate({ id: d.id }); }}>
+                      {en ? "✓ Approve refund" : "✓ Approuver le remboursement"}
                     </button>
                   </div>
                 </div>
