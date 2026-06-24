@@ -5,7 +5,7 @@
 // a 12s interval (the established fallback) so new buyer messages arrive without a
 // manual refresh; opening a thread clears its unread (and the nav badge). Block/
 // unblock a buyer (bidirectional). Standalone sellers never reach this page.
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -24,6 +24,16 @@ export default function MyDozieMessagesPage() {
     queryFn: () => api.get("/dozie/seller/me").then(r => r.data),
   });
   const linked = !!meData?.data?.linked;
+
+  // MP SIDEBAR NOTIFICATION SIGNAL — opening the Messages section clears the
+  // seller's unread message ptn_notifications (shared read-state with the Dozie
+  // app) and refreshes the sidebar badge.
+  useEffect(() => {
+    if (!linked) return;
+    api.post("/dozie/seller/notif-read", { types: ["message"] })
+      .then(() => qc.invalidateQueries({ queryKey: ["dozie-seller-notif-counts"] }))
+      .catch(() => {});
+  }, [linked]);
 
   const { data: convData, isLoading: convLoading } = useQuery({
     queryKey: ["dozie-seller-conversations"],

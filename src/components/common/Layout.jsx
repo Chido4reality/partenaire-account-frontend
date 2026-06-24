@@ -643,14 +643,29 @@ export default function Layout() {
   });
   const dozieAttn_ = dozieAttn?.data || {};
 
-  // Resolve the count behind a nav item's badge flag. Each Dozie surface badges
-  // its OWN source so the seller knows what needs attention where.
+  // MP SIDEBAR NOTIFICATION SIGNAL — unified Dozie unread badge off the SAME
+  // ptn_notifications feed the Dozie app uses (richer than /attention's pending-
+  // order fallback). Refetches on mount + window focus (React Query default) +
+  // a 30s poll. Owner/manager only; returns 0s for a non-Dozie-seller caller.
+  const { data: dozieNotif } = useQuery({
+    queryKey: ["dozie-seller-notif-counts"],
+    queryFn: () => api.get("/dozie/seller/notif-counts").then(r => r.data),
+    refetchInterval: 30000,
+    enabled: role === "owner" || role === "manager",
+    retry: 1,
+    onError: () => {}
+  });
+  const dozieNotif_ = dozieNotif?.data || {};
+
+  // Resolve the count behind a nav item's badge flag. Orders/Messages + the
+  // total come from the unified ptn_notifications feed; disputes keeps its
+  // dedicated /attention source.
   const navBadge = (item) =>
     item.badge === "online_cart"    ? onlineCartPending
-    : item.badge === "dozie_orders"   ? (dozieAttn_.orders || 0)
-    : item.badge === "dozie_messages" ? (dozieAttn_.messages || 0)
+    : item.badge === "dozie_orders"   ? ((dozieNotif_.order || 0) + (dozieNotif_.payment || 0))
+    : item.badge === "dozie_messages" ? (dozieNotif_.message || 0)
     : item.badge === "dozie_disputes" ? (dozieAttn_.disputes || 0)
-    : item.badge === "dozie_attention" ? (dozieAttn_.total || 0)
+    : item.badge === "dozie_attention" ? (dozieNotif_.total || 0)
     : 0;
 
   // STOCK-UX-PASS Part A — cross-account location leak fix.
@@ -1060,9 +1075,15 @@ export default function Layout() {
               cursor: "pointer", flexShrink: 0,
               color: "var(--text-primary)",
               fontSize: 18,
+              position: "relative",
             }}
           >
             ☰
+            {/* MP SIDEBAR NOTIFICATION SIGNAL — Dozie total-unread badge on the
+                hamburger so a seller sees the signal with the drawer closed. */}
+            {(dozieNotif_.total || 0) > 0 && (
+              <span style={{ position: "absolute", top: -5, right: -5, background: "#ef4444", color: "#fff", borderRadius: 10, minWidth: 16, height: 16, padding: "0 4px", fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1, boxSizing: "border-box" }}>{dozieNotif_.total > 99 ? "99+" : dozieNotif_.total}</span>
+            )}
           </button>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 800, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Mon Partenaire Dozie</div>

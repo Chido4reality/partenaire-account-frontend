@@ -5,7 +5,7 @@
 // /api/dozie/seller/orders/:id (status PATCH + buyer notification, ported from
 // the Dozie portal). PAYMENTS/ESCROW stay on the Dozie backend — nothing here
 // touches /campay; orders are at_shop. Standalone sellers never reach this page.
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -46,6 +46,16 @@ export default function MyDozieOrdersPage() {
     queryFn: () => api.get("/dozie/seller/me").then(r => r.data),
   });
   const linked = !!meData?.data?.linked;
+
+  // MP SIDEBAR NOTIFICATION SIGNAL — opening the Orders section clears the
+  // seller's unread order/payment ptn_notifications (shared read-state with the
+  // Dozie app) and refreshes the sidebar badge.
+  useEffect(() => {
+    if (!linked) return;
+    api.post("/dozie/seller/notif-read", { types: ["order", "payment"] })
+      .then(() => qc.invalidateQueries({ queryKey: ["dozie-seller-notif-counts"] }))
+      .catch(() => {});
+  }, [linked]);
 
   const { data: ordersData, isLoading: ordersLoading } = useQuery({
     queryKey: ["dozie-seller-orders", statusFilter, search],
