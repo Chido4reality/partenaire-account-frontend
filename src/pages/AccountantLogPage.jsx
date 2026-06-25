@@ -10,8 +10,8 @@
 //     starting PIN restricted to letters+numbers only)
 //   • a placeholder detail screen (Phase 2 fills it with the activity feed).
 // NO activity feed, NO approval logic here — those are later phases.
-import { useState, useMemo } from "react";
-import { Link } from "react-router-dom";
+import { useState, useMemo, useEffect } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useLangStore } from "../store";
@@ -61,7 +61,9 @@ export default function AccountantLogPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ full_name: "", phone: "", password: "" });
   const [confirmKill, setConfirmKill] = useState(null); // { staff, nextActive }
-  const [detailStaff, setDetailStaff] = useState(null);  // placeholder detail target
+  const [detailStaff, setDetailStaff] = useState(null);  // open staff's activity screen
+  const [deepLink, setDeepLink] = useState(null);        // { highlightId, initialDay } from a tapped alert
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const { data: watchedResp, isLoading } = useQuery({
     queryKey: ["accountant-log-watched"],
@@ -69,6 +71,67 @@ export default function AccountantLogPage() {
     enabled: entitled,
   });
   const staff = watchedResp?.data || [];
+
+  // ── Phase 3 alert on/off preference (org-level, default ON) ──
+  const { data: alertResp } = useQuery({
+    queryKey: ["accountant-alert-settings"],
+    queryFn: () => api.get("/staff/alert-settings").then(r => r.data),
+    enabled: entitled,
+  });
+  const alertsEnabled = alertResp?.data?.alerts_enabled !== false;
+  const toggleAlerts = useMutation({
+    mutationFn: (next) => api.patch("/staff/alert-settings", { alerts_enabled: next }),
+    onSuccess: (_d, next) => {
+      toast.success(next ? (en ? "Instant alerts on" : "Alertes instantanées activées")
+                         : (en ? "Instant alerts off" : "Alertes instantanées désactivées"));
+      qc.invalidateQueries({ queryKey: ["accountant-alert-settings"] });
+    },
+    onError: (e) => toast.error(e?.response?.data?.message || (en ? "Error" : "Erreur")),
+  });
+
+  // ── Phase 3 deep-link: a tapped alert in the bell lands here as ?audit=<id>.
+  // Resolve it → the staff member + the entry's day, open their activity screen
+  // and highlight the row. Clear the param so refresh/back doesn't re-fire. ──
+  useEffect(() => {
+    const auditId = searchParams.get("audit");
+    if (!auditId || !entitled) return;
+    let cancelled = false;
+    api.get(`/staff/activity/by-audit/${auditId}`)
+      .then((r) => {
+        if (cancelled) return;
+        const d = r.data?.data;
+        if (d?.staff) {
+          setDetailStaff(d.staff);
+          setDeepLink({ highlightId: d.audit_id, initialDay: (d.created_at || "").slice(0, 10) });
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (cancelled) return;
+        const sp = new URLSearchParams(searchParams);
+        sp.delete("audit");
+        setSearchParams(sp, { replace: true });
+      });
+    return () => { cancelled = true; };
+  }, [searchParams, entitled]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // WhatsApp share of today's summary — matches the app's client wa.me pattern
+  // (there is no server-side WhatsApp/push transport; see accountantDigest.js).
+  const shareTodayToWhatsApp = async () => {
+    try {
+      const { from, to } = computeRange("today", null);
+      const r = await api.get(`/staff/activity-summary?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+      const s = r.data?.data;
+      if (!s || Number(s.total_actions) === 0) { toast(en ? "No activity today" : "Aucune activité aujourd'hui"); return; }
+      const hi = Number(s.high_count || 0);
+      const msg = en
+        ? `Accountant Log — today: ${hi} thing${hi === 1 ? "" : "s"} to check. ${Number(s.voids)} cancelled sales, ${Number(s.refunds)} refunds, ${Number(s.stock_adjustments)} stock changes, ${Number(s.deletes)} deletions.`
+        : `Journal du comptable — aujourd'hui : ${hi} chose${hi === 1 ? "" : "s"} à vérifier. ${Number(s.voids)} ventes annulées, ${Number(s.refunds)} remboursements, ${Number(s.stock_adjustments)} modifs de stock, ${Number(s.deletes)} suppressions.`;
+      const enc = encodeURIComponent(msg);
+      try { window.open(`https://wa.me/?text=${enc}`, "_blank", "noopener"); }
+      catch (_) { window.location.href = `https://wa.me/?text=${enc}`; }
+    } catch (_) { toast.error(en ? "Error" : "Erreur"); }
+  };
 
   const addAccountant = useMutation({
     // Reuses the existing add-staff flow; role pre-set to 'accountant'.
@@ -118,10 +181,12 @@ export default function AccountantLogPage() {
     </div>
   );
 
-  // Tapping a watched-staff row opens this person's full activity screen
-  // (Phase 2) in place of the list — bigger + more scannable than a modal.
+  // Tapping a watched-staff row (or an alert in the bell) opens this person's
+  // full activity screen in place of the list — bigger + more scannable.
   if (detailStaff) return wrap(
-    <StaffActivityView staff={detailStaff} en={en} onBack={() => setDetailStaff(null)} />
+    <StaffActivityView staff={detailStaff} en={en}
+      initialDay={deepLink?.initialDay} highlightId={deepLink?.highlightId}
+      onBack={() => { setDetailStaff(null); setDeepLink(null); }} />
   );
 
   const canSubmitAdd = form.full_name.trim() && form.phone.trim() && form.password.length >= 4 && !addAccountant.isPending;
@@ -138,6 +203,33 @@ export default function AccountantLogPage() {
         </div>
         <button className="btn btn-primary" style={{ whiteSpace: "nowrap" }} onClick={() => setShowAdd(true)}>
           + {en ? "Add accountant" : "Ajouter un comptable"}
+        </button>
+      </div>
+
+      {/* Controls: instant-alerts on/off + WhatsApp share of today's summary */}
+      <div className="card" style={{ marginTop: 12, padding: "10px 14px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 160 }}>
+          <div style={{ fontWeight: 600, fontSize: 14 }}>🔔 {en ? "Instant alerts" : "Alertes instantanées"}</div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+            {en ? "Get warned the moment a staff member does something to check." : "Soyez prévenu dès qu'un employé fait une action à vérifier."}
+          </div>
+        </div>
+        {/* simple switch */}
+        <button
+          onClick={() => toggleAlerts.mutate(!alertsEnabled)}
+          disabled={toggleAlerts.isPending}
+          aria-label="toggle instant alerts"
+          style={{
+            width: 50, height: 28, borderRadius: 999, border: "none", cursor: "pointer", flexShrink: 0, position: "relative",
+            background: alertsEnabled ? "var(--brand)" : "var(--border-hover)", transition: "background .15s",
+          }}>
+          <span style={{
+            position: "absolute", top: 3, left: alertsEnabled ? 25 : 3, width: 22, height: 22, borderRadius: "50%",
+            background: "#fff", transition: "left .15s",
+          }} />
+        </button>
+        <button className="btn btn-secondary" style={{ whiteSpace: "nowrap" }} onClick={shareTodayToWhatsApp}>
+          📤 {en ? "WhatsApp" : "WhatsApp"}
         </button>
       </div>
 
@@ -314,10 +406,11 @@ function timeLabel(iso, en) {
     + " · " + d.toLocaleDateString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short" });
 }
 
-function StaffActivityView({ staff, en, onBack }) {
+function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
   const fmt = useCurrency();
-  const [range, setRange] = useState("today");       // today | week | day
-  const [pickedDay, setPickedDay] = useState(() => new Date().toISOString().slice(0, 10));
+  // Deep-linked from a tapped alert → land on that entry's day so it's visible.
+  const [range, setRange] = useState(initialDay ? "day" : "today"); // today | week | day
+  const [pickedDay, setPickedDay] = useState(() => initialDay || new Date().toISOString().slice(0, 10));
   const [tab, setTab] = useState("everything");      // everything | check
 
   const { from, to } = useMemo(() => computeRange(range, pickedDay), [range, pickedDay]);
@@ -462,11 +555,13 @@ function StaffActivityView({ staff, en, onBack }) {
         {rows.map((r, i) => {
           const rk = RISK[r.risk_level] || RISK.normal;
           const amt = r.amount != null && r.amount !== "" ? Number(r.amount) : null;
+          const highlighted = highlightId && r.id === highlightId;
           return (
             <div key={r.id} style={{
               display: "flex", alignItems: "center", gap: 10, padding: "12px 14px",
               borderTop: i === 0 ? "none" : "1px solid var(--border)",
-              background: r.risk_level === "high" ? "rgba(239,68,68,0.05)" : "transparent",
+              borderLeft: highlighted ? "3px solid var(--brand)" : "3px solid transparent",
+              background: highlighted ? "rgba(251,197,3,0.12)" : (r.risk_level === "high" ? "rgba(239,68,68,0.05)" : "transparent"),
             }}>
               <span style={{ width: 9, height: 9, borderRadius: 9, background: rk.dot, flexShrink: 0 }} />
               <div style={{ flex: 1, minWidth: 0 }}>

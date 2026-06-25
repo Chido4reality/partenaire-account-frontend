@@ -753,6 +753,10 @@ export default function Layout() {
       // backend fix) just mark-read on click — no navigation,
       // panel stays open.
       const focusUrlFor = (n) => {
+        // Accountant Log Phase 3: the instant alert carries the audit-log id so we
+        // can deep-link the matching activity entry; the daily digest has no ref_id.
+        if (n.ref_type === "audit_log" && n.ref_id) return `/accountant-log?audit=${n.ref_id}`;
+        if (n.ref_type === "accountant_log") return `/accountant-log`;
         if (!n.ref_type || !n.ref_id) return null;
         switch (n.ref_type) {
           case "product":  return `/inventory?focus=${n.ref_id}`;
@@ -763,17 +767,19 @@ export default function Layout() {
         }
       };
       const focusUrl = focusUrlFor(n);
+      // Accountant Log alerts get a distinct "review" treatment in the bell.
+      const isReview = (n.type || "").startsWith("staff_oversight");
       return (
       <div key={n.id} onClick={() => {
             if (!n.is_read) markReadMutation.mutate(n.id);
             if (focusUrl) { setShowNotif(false); navigate(focusUrl); }
           }}
-        style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", cursor: focusUrl ? "pointer" : "default", background: n.is_read ? "transparent" : "rgba(251,197,3,0.05)" }}>
+        style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", borderLeft: isReview ? "3px solid #ef4444" : "3px solid transparent", cursor: focusUrl ? "pointer" : "default", background: n.is_read ? (isReview ? "rgba(239,68,68,0.04)" : "transparent") : (isReview ? "rgba(239,68,68,0.1)" : "rgba(251,197,3,0.05)") }}>
         <div style={{ display: "flex", gap: 8 }}>
-          <div style={{ width: 6, height: 6, borderRadius: "50%", background: notifColor(n.type), marginTop: 5, flexShrink: 0 }} />
+          <div style={{ width: 6, height: 6, borderRadius: "50%", background: isReview ? "#ef4444" : notifColor(n.type), marginTop: 5, flexShrink: 0 }} />
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: 12, fontWeight: n.is_read ? 400 : 600 }}>{lang === "en" ? (n.title_en || n.title) : (n.title_fr || n.title_en || n.title)}</div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en" ? (n.body_en || n.body) : (n.body_fr || n.body_en || n.body)}</div>
+            <div style={{ fontSize: 12, fontWeight: n.is_read ? 400 : 600 }}>{lang === "en" ? (n.title_en || n.title) : (n.title || n.title_en)}</div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en" ? (n.body_en || n.body) : (n.body || n.body_en)}</div>
           </div>
         </div>
       </div>
