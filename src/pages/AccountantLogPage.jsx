@@ -406,12 +406,149 @@ function timeLabel(iso, en) {
     + " · " + d.toLocaleDateString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short" });
 }
 
+// ── Phase 4: build the printable EVIDENCE PACK as a self-contained HTML doc,
+// rendered in the app's print overlay (window.print → "Save as PDF") — the app
+// has no PDF library; this mirrors the FACTURE print path. Black-on-white, A4.
+// "What happened" REUSES the Phase-2 actionText() templates (same FR/EN
+// wording); amounts use the org currency formatter (fmt, handles NGN/XAF).
+function buildEvidenceHtml({ data, en, fmt }) {
+  const esc = (s) => String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const b = (data && data.business) || {};
+  const st = (data && data.staff) || {};
+  const rows = (data && data.rows) || [];
+  const range = (data && data.range) || {};
+  const p2 = (n) => String(n).padStart(2, "0");
+  const dt = (iso) => { const d = new Date(iso); return isNaN(d) ? "—" : `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()} ${p2(d.getHours())}:${p2(d.getMinutes())}`; };
+  const dateOnly = (iso) => { if (!iso) return null; const d = new Date(iso); return isNaN(d) ? null : `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()}`; };
+
+  const title = en ? "Staff Activity Evidence Report" : "Rapport d'activité du personnel (preuve)";
+  const fromTo = (() => {
+    const f = dateOnly(range.from);
+    // range.to is the EXCLUSIVE end (next-day midnight) — show the inclusive last day.
+    const t = range.to ? dateOnly(new Date(new Date(range.to).getTime() - 1).toISOString()) : null;
+    if (f && t) return `${f} → ${t}`;
+    if (f) return `${en ? "from" : "du"} ${f}`;
+    return en ? "All time" : "Tout l'historique";
+  })();
+  const gen = (() => { const d = new Date(); return `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()} ${p2(d.getHours())}:${p2(d.getMinutes())}`; })();
+
+  const letter = [];
+  if (b.logo_url) letter.push(`<img class="logo" src="${esc(b.logo_url)}" />`);
+  if (b.name) letter.push(`<div class="biz-name">${esc(b.name)}</div>`);
+  const sub1 = [b.mp_id, [b.address, b.city, b.country].filter(Boolean).join(", ")].filter(Boolean).map(esc).join(" · ");
+  if (sub1) letter.push(`<div class="biz-sub">${sub1}</div>`);
+  const tel = [b.phone, b.whatsapp_number].filter(Boolean).map(esc).join(" / ");
+  if (tel) letter.push(`<div class="biz-sub">${en ? "Tel" : "Tél"}: ${tel}</div>`);
+
+  const ident = [
+    `<tr><td class="k">${en ? "Name" : "Nom"}</td><td>${esc(st.full_name) || "—"}</td></tr>`,
+    `<tr><td class="k">${en ? "Role" : "Rôle"}</td><td>${esc(roleLabel(st.role, en))}${st.job_title ? ` — ${esc(st.job_title)}` : ""}</td></tr>`,
+    `<tr><td class="k">${en ? "National ID" : "Pièce d'identité"}</td><td>${esc(st.national_id) || "—"}</td></tr>`,
+    st.phone ? `<tr><td class="k">${en ? "Phone" : "Téléphone"}</td><td>${esc(st.phone)}</td></tr>` : "",
+    `<tr><td class="k">${en ? "Period" : "Période"}</td><td>${esc(fromTo)}</td></tr>`,
+    `<tr><td class="k">${en ? "Generated on" : "Généré le"}</td><td>${esc(gen)}</td></tr>`,
+  ].join("");
+
+  const head = `<tr><th>#</th><th>${en ? "Date & time" : "Date & heure"}</th><th>${en ? "What happened" : "Ce qui s'est passé"}</th><th>${en ? "Branch" : "Boutique"}</th><th class="r">${en ? "Amount" : "Montant"}</th><th>${en ? "Reason" : "Raison"}</th><th>${en ? "Approved by" : "Approuvé par"}</th></tr>`;
+
+  const body = rows.length ? rows.map((r) => {
+    const hi = r.risk_level === "high";
+    const amt = (r.amount != null && r.amount !== "") ? esc(fmt(Math.abs(Number(r.amount)))) : "—";
+    return `<tr class="${hi ? "hi" : ""}">`
+      + `<td class="c">${esc(r.seq)}${hi ? ' <span class="flag">⚠</span>' : ""}</td>`
+      + `<td>${dt(r.created_at)}</td>`
+      + `<td>${esc(actionText(r.action, en))}</td>`
+      + `<td>${esc(r.branch_name) || "—"}</td>`
+      + `<td class="r">${amt}</td>`
+      + `<td>${esc(r.reason) || "—"}</td>`
+      + `<td>${esc(r.approver_name) || "—"}</td></tr>`;
+  }).join("") : `<tr><td colspan="7" class="empty c">${en ? "No recorded activity in this period." : "Aucune activité enregistrée sur cette période."}</td></tr>`;
+
+  const footLine = en
+    ? "This report is generated from a tamper-proof, append-only activity log."
+    : "Ce rapport provient d'un journal d'activité infalsifiable et en ajout seul.";
+
+  return `<style>
+    .mp-ev, .mp-ev * { box-sizing:border-box; color:#000; }
+    .mp-ev { font-family:Arial,Helvetica,sans-serif; font-size:11px; background:#fff; max-width:820px; margin:0 auto; padding:16px; }
+    .mp-ev .head { text-align:center; border-bottom:2px solid #000; padding-bottom:8px; }
+    .mp-ev .logo { max-height:60px; max-width:180px; object-fit:contain; display:block; margin:0 auto 4px; }
+    .mp-ev .biz-name { font-weight:bold; font-size:16px; }
+    .mp-ev .biz-sub { font-size:11px; }
+    .mp-ev .title { text-align:center; font-weight:bold; font-size:14px; letter-spacing:.5px; margin:10px 0; text-transform:uppercase; }
+    .mp-ev .ident { display:flex; gap:12px; align-items:flex-start; margin-bottom:10px; }
+    .mp-ev .photo { width:84px; height:104px; object-fit:cover; border:1px solid #000; flex-shrink:0; }
+    .mp-ev table.id { border-collapse:collapse; flex:1; }
+    .mp-ev table.id td { border:1px solid #999; padding:3px 6px; font-size:11px; }
+    .mp-ev table.id td.k { background:#f0f0f0; font-weight:bold; width:130px; white-space:nowrap; }
+    .mp-ev table.log { border-collapse:collapse; width:100%; }
+    .mp-ev table.log th, .mp-ev table.log td { border:1px solid #999; padding:4px 5px; font-size:10px; vertical-align:top; word-break:break-word; }
+    .mp-ev table.log th { background:#e8e8e8; text-align:left; }
+    .mp-ev table.log .c { text-align:center; } .mp-ev table.log .r { text-align:right; white-space:nowrap; }
+    .mp-ev table.log tr.hi td { background:#fdecec; font-weight:bold; }
+    .mp-ev table.log tr.hi td:first-child { border-left:3px solid #d00; }
+    .mp-ev .flag { color:#d00; }
+    .mp-ev .empty { color:#666; padding:14px; }
+    .mp-ev table.log tfoot td { border:none; padding-top:6px; font-size:10px; text-align:center; font-style:italic; }
+    @media print {
+      .mp-ev table.log thead { display: table-header-group; }
+      .mp-ev table.log tfoot { display: table-footer-group; }
+      .mp-ev table.log tr { page-break-inside: avoid; }
+    }
+  </style>
+  <div class="mp-ev">
+    <div class="head">${letter.join("")}</div>
+    <div class="title">${esc(title)}</div>
+    <div class="ident">
+      ${st.photo_url ? `<img class="photo" src="${esc(st.photo_url)}" />` : ""}
+      <table class="id"><tbody>${ident}</tbody></table>
+    </div>
+    <table class="log">
+      <thead>${head}</thead>
+      <tfoot><tr><td colspan="7">${esc(footLine)}</td></tr></tfoot>
+      <tbody>${body}</tbody>
+    </table>
+  </div>`;
+}
+
 function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
   const fmt = useCurrency();
   // Deep-linked from a tapped alert → land on that entry's day so it's visible.
   const [range, setRange] = useState(initialDay ? "day" : "today"); // today | week | day
   const [pickedDay, setPickedDay] = useState(() => initialDay || new Date().toISOString().slice(0, 10));
   const [tab, setTab] = useState("everything");      // everything | check
+
+  // ── Phase 4 evidence export ──
+  const [showExport, setShowExport] = useState(false);
+  const [exFrom, setExFrom] = useState(() => new Date().toISOString().slice(0, 10));
+  const [exTo, setExTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [exporting, setExporting] = useState(false);
+  const [printHtml, setPrintHtml] = useState(null);
+
+  // Default the export range to whatever is selected on screen.
+  const openExport = () => {
+    const today = new Date().toISOString().slice(0, 10);
+    if (range === "day") { setExFrom(pickedDay); setExTo(pickedDay); }
+    else if (range === "week") {
+      const d = new Date(); const dow = (d.getDay() + 6) % 7; d.setDate(d.getDate() - dow);
+      setExFrom(d.toISOString().slice(0, 10)); setExTo(today);
+    } else { setExFrom(today); setExTo(today); }
+    setShowExport(true);
+  };
+
+  const doExport = async () => {
+    try {
+      setExporting(true);
+      const fromIso = new Date(exFrom + "T00:00:00").toISOString();
+      const toD = new Date(exTo + "T00:00:00"); toD.setDate(toD.getDate() + 1); // inclusive of exTo
+      const r = await api.get(`/staff/evidence?user_id=${staff.id}&from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toD.toISOString())}`);
+      setPrintHtml(buildEvidenceHtml({ data: r.data?.data, en, fmt }));
+      setShowExport(false);
+    } catch (_) {
+      toast.error(en ? "Could not generate the report" : "Impossible de générer le rapport");
+    } finally { setExporting(false); }
+  };
 
   const { from, to } = useMemo(() => computeRange(range, pickedDay), [range, pickedDay]);
   const qs = `user_id=${staff.id}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
@@ -479,6 +616,11 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
       <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3 }}>
         {staff.branch_name || (en ? "All branches" : "Toutes les boutiques")}
       </div>
+
+      {/* Phase 4 — printable evidence pack for this staff member */}
+      <button className="btn btn-secondary" style={{ width: "100%", marginTop: 12 }} onClick={openExport}>
+        📄 {en ? "Export evidence (PDF)" : "Exporter la preuve (PDF)"}
+      </button>
 
       {/* B) Date filter */}
       <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
@@ -580,6 +722,70 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
         })}
       </div>
       <div style={{ height: 24 }} />
+
+      {/* ── EXPORT DATE-RANGE MODAL ── */}
+      {showExport && (
+        <div className="modal-overlay" onClick={() => setShowExport(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 6 }}>
+              📄 {en ? "Export evidence" : "Exporter la preuve"}
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16 }}>
+              {en ? `A printable activity report for ${staff.full_name} over the dates you choose.`
+                  : `Un rapport d'activité imprimable pour ${staff.full_name} sur les dates choisies.`}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="label">{en ? "From" : "Du"}</label>
+                <input type="date" className="input" value={exFrom} max={exTo}
+                  onChange={(e) => setExFrom(e.target.value)} />
+              </div>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="label">{en ? "To" : "Au"}</label>
+                <input type="date" className="input" value={exTo} min={exFrom}
+                  max={new Date().toISOString().slice(0, 10)}
+                  onChange={(e) => setExTo(e.target.value)} />
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowExport(false)}>
+                {en ? "Cancel" : "Annuler"}
+              </button>
+              <button className="btn btn-primary" style={{ flex: 2 }} disabled={exporting || !exFrom || !exTo} onClick={doExport}>
+                {exporting ? "..." : (en ? "Generate report" : "Générer le rapport")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── PRINT OVERLAY (mirrors the FACTURE print path; window.print → Save as PDF).
+          @media print isolates this overlay so only the report prints; page numbers
+          come from the print dialog's footer, the credibility line repeats via tfoot. ── */}
+      {printHtml && (
+        <div className="mp-print-overlay"
+          style={{ position: "fixed", inset: 0, zIndex: 4000, background: "#fff", color: "#000", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+          <style>{`
+            @media print {
+              body * { visibility: hidden !important; }
+              .mp-print-overlay, .mp-print-overlay * { visibility: visible !important; }
+              .mp-print-overlay { position: absolute !important; inset: 0 !important; }
+              .mp-print-overlay .no-print { display: none !important; }
+            }
+          `}</style>
+          <div className="no-print" style={{ position: "sticky", top: 0, zIndex: 10, display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", padding: 10, background: "#fff", borderBottom: "1px solid #ccc" }}>
+            <button onClick={() => { try { window.print(); } catch (_) { /* ignore */ } }}
+              style={{ padding: "10px 16px", borderRadius: 8, fontWeight: 700, fontSize: 14, border: "none", background: "#152B52", color: "#fff", cursor: "pointer" }}>
+              🖨️ {en ? "Print / Save as PDF" : "Imprimer / Enregistrer en PDF"}
+            </button>
+            <button onClick={() => setPrintHtml(null)}
+              style={{ padding: "10px 16px", borderRadius: 8, fontWeight: 700, fontSize: 14, border: "1px solid #999", background: "#fff", color: "#333", cursor: "pointer" }}>
+              ✕ {en ? "Close" : "Fermer"}
+            </button>
+          </div>
+          <div dangerouslySetInnerHTML={{ __html: printHtml }} />
+        </div>
+      )}
     </>
   );
 }
