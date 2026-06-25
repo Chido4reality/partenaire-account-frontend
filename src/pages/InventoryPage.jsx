@@ -1,6 +1,7 @@
 // v20260509_0045 - slot + last_moved_by + global_search
 import BarcodeInput from "../components/common/BarcodeInput";
 import CameraScanner from "../components/common/CameraScanner";
+import ProductSearchBox from "../components/common/ProductSearchBox";
 import React, { useState, useEffect, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
@@ -2194,30 +2195,15 @@ function PricingSection({ data, onChange, lang }) {
 
 // ── RECEIVE ITEM ROW COMPONENT ────────────────────────────────────────────────
 function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemove, canSeePrices }) {
-  const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
-  const [showCam, setShowCam] = useState(false);
-
-  function fuzzyMatch(str, pattern) {
-    if (!str || !pattern) return false;
-    const s = str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const p = pattern.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    return s.includes(p);
-  }
-
-  const filtered = search.length >= 1
-    ? products.filter(p => fuzzyMatch(p.name, search) || (p.barcode && p.barcode.includes(search))).slice(0, 6)
-    : [];
 
   const pickProduct = (p) => {
     setSelected(p);
-    setSearch("");
     onSelect(p);
   };
 
   const clearProduct = () => {
     setSelected(null);
-    setSearch("");
     onChange("product_id", "");
     onChange("product_name", "");
     onChange("cost_price", "");
@@ -2291,64 +2277,23 @@ function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemov
         </div>
       ) : (
         <div>
-          {/* Search input */}
-          <div className="form-group" style={{ marginBottom: filtered.length > 0 ? 8 : 0 }}>
+          {/* Search input — shared fuzzy + scrollable product search (USB/keyboard
+              + camera scan built in via ProductSearchBox/BarcodeInput). */}
+          <div className="form-group">
             <label className="label">{lang === "en" ? "Product *" : "Produit *"}</label>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <div style={{ flex: 1 }}>
-                <BarcodeInput
-                  lang={lang}
-                  value={search}
-                  onChange={v => {
-                    setSearch(v);
-                    // Auto-pick if barcode matches exactly
-                    const match = products.find(p => p.barcode && p.barcode === v.trim());
-                    if (match) pickProduct(match);
-                  }}
-                  placeholder={lang === "en" ? "Type to search or scan barcode..." : "Tapez pour chercher ou scannez..."}
-                  autoFocus={idx === 0}
-                />
-              </div>
-              <button type="button" onClick={() => setShowCam(true)}
-                style={{ flexShrink: 0, height: 42, width: 42, borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elevated)", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" }}
-                title={lang === "en" ? "Scan with camera" : "Scanner avec la caméra"}>📷</button>
+            <ProductSearchBox
+              onSelect={pickProduct}
+              fallbackProducts={products}
+              clearOnSelect={false}
+              autoFocus={idx === 0}
+              lang={lang}
+              placeholder={lang === "en" ? "Type to search or scan barcode..." : "Tapez pour chercher ou scannez..."}
+              renderMeta={canSeePrices ? (p => <span style={{ fontSize: 12, color: "var(--brand-light)", fontWeight: 700 }}>{Number(p.sell_price || 0).toLocaleString()} F</span>) : undefined}
+            />
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
+              {lang === "en" ? "Typo-tolerant — scroll for more matches. No match? Use + Add Product." : "Tolérant aux fautes — défilez pour plus de résultats. Aucun ? + Ajouter produit."}
             </div>
           </div>
-          {showCam && (
-            <CameraScanner
-              lang={lang}
-              onScan={(code) => {
-                setShowCam(false);
-                setSearch(code);
-                // Same auto-pick path as the typed-input branch above
-                const match = products.find(p => p.barcode && p.barcode === code.trim());
-                if (match) pickProduct(match);
-              }}
-              onClose={() => setShowCam(false)}
-            />
-          )}
-          {/* Results shown INLINE — no dropdown, no blur issues */}
-          {filtered.length > 0 && (
-            <div style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", marginBottom: 8 }}>
-              {filtered.map((p, i) => (
-                <button key={p.id} onClick={() => pickProduct(p)}
-                  style={{ width: "100%", padding: "10px 14px", background: "none", border: "none", borderBottom: i < filtered.length - 1 ? "1px solid var(--border)" : "none", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", textAlign: "left" }}
-                  onMouseEnter={e => e.currentTarget.style.background = "rgba(251,197,3,0.08)"}
-                  onMouseLeave={e => e.currentTarget.style.background = "none"}>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>{p.name}</div>
-                    {p.barcode && <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>{p.barcode}</div>}
-                  </div>
-                  {canSeePrices && <div style={{ fontSize: 12, color: "var(--brand-light)", fontWeight: 700 }}>{Number(p.sell_price || 0).toLocaleString()} F</div>}
-                </button>
-              ))}
-            </div>
-          )}
-          {search.length > 1 && filtered.length === 0 && (
-            <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "8px 12px", background: "var(--bg-card)", borderRadius: 8, marginBottom: 8 }}>
-              {lang === "en" ? `No product found for "${search}". Use + Add Product for new items.` : `Aucun produit pour "${search}". Utilisez + Ajouter produit.`}
-            </div>
-          )}
           {/* Quantity disabled until product picked */}
           <div className="form-group">
             <label className="label">{lang === "en" ? "Quantity received *" : "Quantité reçue *"}</label>
