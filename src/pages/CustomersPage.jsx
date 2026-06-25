@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
@@ -471,6 +471,114 @@ export default function CustomersPage() {
 
   const customers = data?.data || [];
 
+  // ── MULTI-BRANCH CUSTOMERS VIEW ──────────────────────────────────────────
+  // Gated: ONLY when the org has >1 active location. CORE for pro/pro_plus,
+  // ADVANCED for pro_plus. free/lite/trial/single-location → screen unchanged.
+  // All data is read-only (the two STABLE branch RPCs), fetched once and joined
+  // to the existing customer list client-side.
+  const { data: planResp } = useOfflineCachedQuery({
+    queryKey: ["my-plan"],
+    queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
+  });
+  const effectivePlan = planResp?.data?.effective_plan || "silver";
+
+  const { data: locResp } = useOfflineCachedQuery({
+    queryKey: ["locations"],
+    queryFn: () => api.get("/locations").then(r => r.data),
+  });
+  const activeLocations = (locResp?.data || []).filter(l => l.is_active !== false);
+  const multiBranch    = activeLocations.length > 1;
+  const branchCore     = multiBranch && (effectivePlan === "pro" || effectivePlan === "pro_plus");
+  const branchAdvanced = multiBranch && effectivePlan === "pro_plus";
+
+  const { data: branchDebtResp } = useOfflineCachedQuery({
+    queryKey: ["customers-branch-debt"],
+    queryFn: () => api.get("/customers/branch-debt").then(r => r.data),
+    enabled: branchCore,
+  });
+  const { data: branchRecvResp } = useOfflineCachedQuery({
+    queryKey: ["customers-branch-receivables"],
+    queryFn: () => api.get("/customers/branch-receivables").then(r => r.data),
+    enabled: branchCore,
+  });
+  const branchDebtRows = branchDebtResp?.data || [];
+  const branchRecvRows = (branchRecvResp?.data || []).filter(r => r.location_id);
+
+  const [branchFilter, setBranchFilter]     = useState("");   // C2 — "" = all branches
+  const [showTopDebtors, setShowTopDebtors] = useState(false);
+
+  // Roll the per-(customer,branch) rows up by customer.
+  const branchByCustomer = useMemo(() => {
+    const m = {};
+    for (const r of branchDebtRows) {
+      const id = r.customer_id;
+      if (!m[id]) m[id] = { branches: [], totalOwed: 0, totalBalance: 0, anyOverdue: false, oldestDue: null, homeBranchId: null };
+      const e = m[id];
+      e.branches.push(r);
+      e.totalOwed    += Number(r.owed || 0);
+      e.totalBalance += Number(r.balance || 0);
+      if (Number(r.overdue || 0) > 0) e.anyOverdue = true;
+      if (r.oldest_due_date && (!e.oldestDue || r.oldest_due_date < e.oldestDue)) e.oldestDue = r.oldest_due_date;
+    }
+    for (const id in m) {
+      const e = m[id];
+      // A6 home branch: most sales; tie → most recent activity.
+      let home = null;
+      for (const b of e.branches) {
+        if (!home || Number(b.sale_count) > Number(home.sale_count) ||
+            (Number(b.sale_count) === Number(home.sale_count) && String(b.last_activity || "") > String(home.last_activity || ""))) home = b;
+      }
+      e.homeBranchId = home ? home.location_id : null;
+      e.branchesOwing = e.branches.filter(b => Number(b.owed || 0) > 0).sort((a, b) => Number(b.owed) - Number(a.owed));
+    }
+    return m;
+  }, [branchDebtRows]);
+
+  const nameById = useMemo(() => { const m = {}; for (const c of customers) m[c.id] = c.name; return m; }, [customers]);
+  const branchOf = (cid, locId) => (branchByCustomer[cid]?.branches || []).find(b => b.location_id === locId);
+
+  // C2 — when a branch is picked, restrict the (loaded) list to customers active there.
+  const displayedCustomers = (branchCore && branchFilter)
+    ? customers.filter(c => !!branchOf(c.id, branchFilter))
+    : customers;
+
+  // A5 — top debtors per branch (owing rows grouped by branch, top 5 by owed).
+  const topDebtorsByBranch = useMemo(() => {
+    if (!branchAdvanced) return [];
+    const byLoc = {};
+    for (const r of branchDebtRows) {
+      if (Number(r.owed || 0) <= 0) continue;
+      if (!byLoc[r.location_id]) byLoc[r.location_id] = { location_id: r.location_id, location_name: r.location_name, rows: [] };
+      byLoc[r.location_id].rows.push(r);
+    }
+    return Object.values(byLoc)
+      .map(g => ({ ...g, rows: g.rows.sort((a, b) => Number(b.owed) - Number(a.owed)).slice(0, 5),
+                   total: g.rows.reduce((s, r) => s + Number(r.owed), 0) }))
+      .sort((a, b) => b.total - a.total);
+  }, [branchDebtRows, branchAdvanced]);
+
+  // A10 — branch-aware WhatsApp reminder: names each branch + amount owed there.
+  const sendBranchReminder = (c) => {
+    if (!c?.phone) { toast.error(lang === "en" ? "No phone number for this customer" : "Pas de numéro pour ce client"); return; }
+    let phone = String(c.phone).replace(/\s+/g, "").replace(/^0/, "");
+    if (!phone.startsWith("237")) phone = "237" + phone;
+    const today = new Date().toLocaleDateString(lang === "en" ? "en-GB" : "fr-FR", { day: "2-digit", month: "long", year: "numeric" });
+    const orgName = org?.name || (lang === "en" ? "our shop" : "notre boutique");
+    const owing = branchByCustomer[c.id]?.branchesOwing || [];
+    let msg = lang === "en" ? `Hello ${c.name},\n\nReminder from ${orgName} (as of ${today}).\n\n`
+                            : `Bonjour ${c.name},\n\nRappel de ${orgName} (au ${today}).\n\n`;
+    if (owing.length) {
+      owing.forEach(b => { msg += (lang === "en" ? "Balance due: " : "Solde dû: ") + `*${Number(b.owed).toLocaleString()} ${fmt.symbol}* — ${b.location_name}\n`; });
+      if (owing.length > 1) msg += (lang === "en" ? "Total: " : "Total: ") + `*${owing.reduce((s, b) => s + Number(b.owed), 0).toLocaleString()} ${fmt.symbol}*\n`;
+    } else {
+      msg += lang === "en" ? "No outstanding balance.\n" : "Aucun solde impayé.\n";
+    }
+    msg += lang === "en" ? `\nPlease contact us to arrange payment.\nThank you!\n\n— ${orgName}`
+                         : `\nMerci de nous contacter pour régler ce montant.\nMerci de votre confiance!\n\n— ${orgName}`;
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
+    toast.success(lang === "en" ? "WhatsApp opened!" : "WhatsApp ouvert!");
+  };
+
   const typeColor = (type) => {
     if (type === "vip")       return { bg: "rgba(245,158,11,0.15)",  color: "#fbbf24" };
     if (type === "wholesale") return { bg: "rgba(251,197,3,0.15)",   color: "var(--brand-light)" };
@@ -537,6 +645,73 @@ export default function CustomersPage() {
           </button>
         </div>
 
+        {/* ── MULTI-BRANCH: per-branch receivables (C3) + aging (A4) + branch
+            filter (C2) + top debtors (A5). Hidden unless >1 location + plan. ── */}
+        {branchCore && (
+          <>
+            <div style={{ display: "grid", gap: 8, marginBottom: 16 }}>
+              {branchRecvRows.map(b => (
+                <div key={b.location_id}
+                  onClick={() => setBranchFilter(f => f === b.location_id ? "" : b.location_id)}
+                  style={{ background: branchFilter === b.location_id ? "rgba(251,197,3,0.1)" : "var(--bg-card)", border: `1px solid ${branchFilter === b.location_id ? "var(--brand)" : "var(--border)"}`, borderRadius: 12, padding: "12px 16px", cursor: "pointer" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>🏪 {b.location_name}</div>
+                    <div style={{ textAlign: "right" }}>
+                      <span style={{ color: Number(b.owed) > 0 ? "#f87171" : "var(--text-muted)", fontWeight: 800, fontSize: 16 }}>{fmt(b.owed)}</span>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>{b.debtors} {lang === "en" ? "debtor(s)" : "débiteur(s)"}</span>
+                    </div>
+                  </div>
+                  {branchAdvanced && Number(b.owed) > 0 && (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8, fontSize: 11 }}>
+                      {[
+                        { v: b.not_yet_due, en: "Not due", fr: "Pas dû",  c: "var(--text-muted)" },
+                        { v: b.d1_30,       en: "1–30d",   fr: "1–30j",   c: "#fbbf24" },
+                        { v: b.d31_60,      en: "31–60d",  fr: "31–60j",  c: "#fb923c" },
+                        { v: b.d60plus,     en: "60+d",    fr: "60+j",    c: "#f87171" },
+                      ].filter(x => Number(x.v) > 0).map((x, i) => (
+                        <span key={i} style={{ padding: "2px 8px", borderRadius: 8, background: "var(--bg-elevated)", color: x.c }}>{lang === "en" ? x.en : x.fr}: {fmt(x.v)}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{lang === "en" ? "Branch:" : "Succursale:"}</span>
+              <select className="input" value={branchFilter} onChange={e => setBranchFilter(e.target.value)} style={{ width: 200 }}>
+                <option value="">{lang === "en" ? "All branches" : "Toutes les succursales"}</option>
+                {activeLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+              {branchAdvanced && (
+                <button className={`btn btn-sm ${showTopDebtors ? "btn-primary" : "btn-secondary"}`} onClick={() => setShowTopDebtors(s => !s)}>
+                  🏆 {lang === "en" ? "Top debtors" : "Top débiteurs"}
+                </button>
+              )}
+            </div>
+
+            {branchAdvanced && showTopDebtors && (
+              <div style={{ display: "grid", gap: 10, marginBottom: 16 }}>
+                {topDebtorsByBranch.map(g => (
+                  <div key={g.location_id} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 16px" }}>
+                    <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>🏆 {g.location_name} — {lang === "en" ? "top debtors" : "top débiteurs"}</div>
+                    {g.rows.map((r, i) => {
+                      const c = customers.find(x => x.id === r.customer_id);
+                      return (
+                        <div key={r.customer_id} onClick={() => c && setSelected(c)}
+                          style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: i < g.rows.length - 1 ? "1px solid var(--border)" : "none", cursor: c ? "pointer" : "default", fontSize: 13 }}>
+                          <span>{i + 1}. {nameById[r.customer_id] || (lang === "en" ? "Customer" : "Client")}{Number(r.overdue) > 0 ? " ⚠️" : ""}</span>
+                          <span style={{ color: "#f87171", fontWeight: 700 }}>{fmt(r.owed)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
         {/* Customer list */}
         {isLoading ? (
           <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>
@@ -552,7 +727,12 @@ export default function CustomersPage() {
           </div>
         ) : (
           <div style={{ display: "grid", gap: 8 }}>
-            {customers.map(c => {
+            {branchCore && branchFilter && displayedCustomers.length === 0 && (
+              <div style={{ textAlign: "center", padding: 20, color: "var(--text-muted)", fontSize: 13 }}>
+                {lang === "en" ? "No customers with activity at this branch." : "Aucun client avec activité à cette succursale."}
+              </div>
+            )}
+            {displayedCustomers.map(c => {
               const tc = typeColor(c.customer_type);
               const isSelected = selected?.id === c.id;
               return (
@@ -584,6 +764,38 @@ export default function CustomersPage() {
                       )}
                     </div>
                   </div>
+                  {branchCore && branchByCustomer[c.id] && (() => {
+                    const e = branchByCustomer[c.id];
+                    const homeName = branchAdvanced && e.homeBranchId ? (activeLocations.find(l => l.id === e.homeBranchId) || {}).name : null;
+                    const owing = e.branchesOwing || [];
+                    const fb = branchFilter ? branchOf(c.id, branchFilter) : null;
+                    const hasFooter = homeName || fb || owing.length > 1 || (e.totalBalance < 0 && e.totalOwed === 0) || (branchAdvanced && e.anyOverdue);
+                    if (!hasFooter) return null;
+                    return (
+                      <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px dashed var(--border)", display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", fontSize: 11 }}>
+                        {homeName && <span style={{ padding: "2px 8px", borderRadius: 8, background: "rgba(59,130,246,0.12)", color: "#60a5fa" }}>🏠 {homeName}</span>}
+                        {fb ? (
+                          Number(fb.owed) > 0
+                            ? <span style={{ color: "#f87171", fontWeight: 700 }}>{fb.location_name}: {fmt(fb.owed)}</span>
+                            : Number(fb.balance) < 0
+                              ? <span style={{ color: "#34d399" }}>{fb.location_name}: {lang === "en" ? "in credit" : "en crédit"} {fmt(Math.abs(fb.balance))}</span>
+                              : null
+                        ) : (
+                          e.totalBalance < 0 && e.totalOwed === 0
+                            ? <span style={{ color: "#34d399" }}>{lang === "en" ? "In credit" : "En crédit"} {fmt(Math.abs(e.totalBalance))}</span>
+                            : owing.length > 1
+                              ? <>
+                                  {owing.map((b, i) => (
+                                    <span key={b.location_id} style={{ color: "var(--text-secondary)" }}>{i > 0 ? " · " : ""}{b.location_name}: {fmt(b.owed)}</span>
+                                  ))}
+                                  <span style={{ color: "#f87171", fontWeight: 700, marginLeft: 4 }}>· {lang === "en" ? "Total" : "Total"} {fmt(e.totalOwed)}</span>
+                                </>
+                              : null
+                        )}
+                        {branchAdvanced && e.anyOverdue && <span style={{ padding: "2px 8px", borderRadius: 8, background: "rgba(239,68,68,0.12)", color: "#f87171" }}>⚠️ {lang === "en" ? "Overdue" : "En retard"}{e.oldestDue ? ` · ${formatDate(e.oldestDue)}` : ""}</span>}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}
@@ -651,6 +863,45 @@ export default function CustomersPage() {
                     💵 {lang === "en" ? "Collect debt" : "Encaisser dette"}
                   </button>
                 </div>
+              </div>
+            );
+          })()}
+
+          {/* ── MULTI-BRANCH: per-branch debt + branch-aware WhatsApp reminder ── */}
+          {branchCore && branchByCustomer[selected.id] && (() => {
+            const e = branchByCustomer[selected.id];
+            const homeName = branchAdvanced && e.homeBranchId ? (activeLocations.find(l => l.id === e.homeBranchId) || {}).name : null;
+            return (
+              <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 16, marginBottom: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>🏪 {lang === "en" ? "Debt by branch" : "Dette par succursale"}</div>
+                  {homeName && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 8, background: "rgba(59,130,246,0.12)", color: "#60a5fa" }}>🏠 {homeName}</span>}
+                </div>
+                {e.branches.map(b => {
+                  const owed = Number(b.owed || 0), bal = Number(b.balance || 0), overdue = Number(b.overdue || 0);
+                  return (
+                    <div key={b.location_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--border)", fontSize: 13 }}>
+                      <span>{b.location_name}{branchAdvanced && overdue > 0 && b.oldest_due_date ? <span style={{ color: "#f87171", fontSize: 11, marginLeft: 6 }}>⚠️ {formatDate(b.oldest_due_date)}</span> : null}</span>
+                      {owed > 0
+                        ? <span style={{ color: overdue > 0 ? "#f87171" : "var(--text-primary)", fontWeight: 700 }}>{fmt(owed)}</span>
+                        : bal < 0
+                          ? <span style={{ color: "#34d399" }}>{lang === "en" ? "in credit" : "en crédit"} {fmt(Math.abs(bal))}</span>
+                          : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>{lang === "en" ? "settled" : "réglé"}</span>}
+                    </div>
+                  );
+                })}
+                {e.branchesOwing && e.branchesOwing.length > 1 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, fontWeight: 800, fontSize: 14 }}>
+                    <span>{lang === "en" ? "Total owed" : "Total dû"}</span>
+                    <span style={{ color: "#f87171" }}>{fmt(e.totalOwed)}</span>
+                  </div>
+                )}
+                {branchAdvanced && selected.phone && e.totalOwed > 0 && (
+                  <button onClick={() => sendBranchReminder(selected)}
+                    style={{ width: "100%", marginTop: 12, padding: "10px", borderRadius: 10, border: "1px solid #25D366", background: "rgba(37,211,102,0.12)", color: "#25D366", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                    📲 {lang === "en" ? "WhatsApp reminder (per branch)" : "Rappel WhatsApp (par succursale)"}
+                  </button>
+                )}
               </div>
             );
           })()}
