@@ -1,4 +1,5 @@
 import BarcodeInput from "../components/common/BarcodeInput";
+import ProductSearchBox from "../components/common/ProductSearchBox";
 import { useState, useEffect, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
@@ -16,7 +17,6 @@ export default function TransfersPage() {
   const [toLoc, setToLoc]           = useState("");
   const [notes, setNotes]           = useState("");
   const [scannedItems, setScannedItems] = useState([]);
-  const [manualSearch, setManualSearch] = useState("");
   const [searchQty, setSearchQty]   = useState(1);      // quick-entry qty for the name search
   const [scanInput, setScanInput]   = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -27,7 +27,6 @@ export default function TransfersPage() {
   const [pickerSel, setPickerSel]       = useState({}); // { [product_id]: qty }
 
   const scanRef   = useRef(null);
-  const searchRef = useRef(null);
 
   // USB/keyboard barcode buffer
   const barcodeBuffer = useRef("");
@@ -108,14 +107,6 @@ export default function TransfersPage() {
     queryFn: () => api.get("/locations").then(r => r.data)
   });
 
-  const { data: searchResults } = useOfflineCachedQuery({
-    queryKey: ["transfer-search", manualSearch, fromLoc],
-    queryFn: () => manualSearch.length >= 2
-      ? api.get(`/products?search=${manualSearch}&location_id=${fromLoc}`).then(r => r.data)
-      : { data: [] },
-    enabled: manualSearch.length >= 2
-  });
-
   // (A) all SOURCE-location products (same /products data source, filtered to
   // from_location). Only those with stock > 0 are tick-list candidates. Skipped
   // when the source is external (no fromLoc).
@@ -154,17 +145,6 @@ export default function TransfersPage() {
     });
     if (ids.length) toast.success((lang === "en" ? "Added " : "Ajouté ") + ids.length + (lang === "en" ? " item(s)" : " article(s)"));
     setPickerSel({}); setPickerSearch(""); setPickerOpen(false);
-  };
-
-  // (B) quick-entry: Enter on the name search adds the top match with searchQty,
-  // then clears + refocuses for the next one.
-  const quickAddTopSearch = () => {
-    const top = searchResults?.data?.[0];
-    if (!top) return;
-    addItem(top, searchQty || 1);
-    toast.success(top.name);
-    setManualSearch(""); setSearchQty(1);
-    searchRef.current?.focus();
   };
 
   const createMutation = useMutation({
@@ -295,34 +275,24 @@ export default function TransfersPage() {
               </div>
             </div>
 
-            {/* Quick-entry by name: qty + search; Enter adds the top match + refocuses */}
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ display: "flex", gap: 8 }}>
-                <input type="number" min="1" value={searchQty}
-                  onChange={e => setSearchQty(Math.max(1, +e.target.value || 1))}
-                  title={lang === "en" ? "Quantity to add" : "Quantité à ajouter"}
-                  style={{ width: 64, textAlign: "center", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 10, color: "var(--text-primary)", padding: "10px", fontSize: 14 }} />
-                <input className="input" style={{ flex: 1 }} value={manualSearch} ref={searchRef}
-                  onChange={e => setManualSearch(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); quickAddTopSearch(); } }}
-                  placeholder={lang === "en" ? "Search by name — Enter to add" : "Chercher par nom — Entrée pour ajouter"} />
+            {/* Quick-entry by name: qty + the SHARED fuzzy/scrollable search.
+                Enter (or a clicked result) adds the top match with this qty. */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+              <input type="number" min="1" value={searchQty}
+                onChange={e => setSearchQty(Math.max(1, +e.target.value || 1))}
+                title={lang === "en" ? "Quantity to add" : "Quantité à ajouter"}
+                style={{ width: 64, textAlign: "center", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 10, color: "var(--text-primary)", padding: "10px", fontSize: 14 }} />
+              <div style={{ flex: 1 }}>
+                <ProductSearchBox
+                  onSelect={p => { addItem(p, searchQty || 1); setSearchQty(1); }}
+                  locationId={fromLoc}
+                  lang={lang}
+                  placeholder={lang === "en" ? "Search by name — Enter to add" : "Chercher par nom — Entrée pour ajouter"}
+                  renderMeta={p => p.stock != null
+                    ? <span style={{ color: "var(--text-muted)", fontSize: 11 }}>{lang === "en" ? "Avail:" : "Disp:"} {p.stock?.quantity ?? 0} {p.unit}</span>
+                    : (p.barcode ? <span style={{ color: "var(--text-muted)", fontSize: 11, fontFamily: "monospace" }}>{p.barcode}</span> : undefined)}
+                />
               </div>
-              {searchResults?.data?.length > 0 && (
-                <div style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", marginTop: 4, background: "var(--bg-elevated)" }}>
-                  {searchResults.data.map((p, i) => (
-                    <div key={p.id} onClick={() => { addItem(p, searchQty || 1); setManualSearch(""); setSearchQty(1); searchRef.current?.focus(); }}
-                      style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid var(--border)", fontSize: 13, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, background: i === 0 ? "rgba(251,197,3,0.06)" : "transparent" }}
-                      onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
-                      onMouseLeave={e => e.currentTarget.style.background = i === 0 ? "rgba(251,197,3,0.06)" : "transparent"}>
-                      <span style={{ display: "flex", flexDirection: "column" }}>
-                        <span>{p.name}{i === 0 && <span style={{ color: "var(--brand-light)", fontSize: 10, marginLeft: 6 }}>{lang === "en" ? "↵ Enter" : "↵ Entrée"}</span>}</span>
-                        {p.stock != null && <span style={{ color: "var(--text-muted)", fontSize: 11 }}>{lang === "en" ? "Available:" : "Disponible:"} {p.stock?.quantity ?? 0} {p.unit}</span>}
-                      </span>
-                      <span style={{ color: "var(--text-muted)", fontSize: 11 }}>{p.barcode}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
             {/* (A) Tick-list multi-select — only when a source location is chosen */}
