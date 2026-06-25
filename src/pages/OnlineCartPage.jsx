@@ -90,7 +90,7 @@ function MappingModal({ entry, lang, busy, onConfirm, onClose, confirmLabel }) {
     const term = (q || "").trim();
     if (!term) { setRows(r => r.map((x, i) => i === idx ? { ...x, candidates: [] } : x)); return; }
     try {
-      const res = await api.get(`/products/search?q=${encodeURIComponent(term)}&limit=10`);
+      const res = await api.get(`/products?search=${encodeURIComponent(term)}&limit=30`);
       const list = res.data?.data || [];
       setRows(r => r.map((x, i) => {
         if (i !== idx) return x;
