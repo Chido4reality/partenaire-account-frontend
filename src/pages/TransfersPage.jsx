@@ -17,9 +17,17 @@ export default function TransfersPage() {
   const [notes, setNotes]           = useState("");
   const [scannedItems, setScannedItems] = useState([]);
   const [manualSearch, setManualSearch] = useState("");
+  const [searchQty, setSearchQty]   = useState(1);      // quick-entry qty for the name search
   const [scanInput, setScanInput]   = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const scanRef = useRef(null);
+
+  // (A) tick-list multi-select picker state
+  const [pickerOpen, setPickerOpen]     = useState(false);
+  const [pickerSearch, setPickerSearch] = useState("");
+  const [pickerSel, setPickerSel]       = useState({}); // { [product_id]: qty }
+
+  const scanRef   = useRef(null);
+  const searchRef = useRef(null);
 
   // USB/keyboard barcode buffer
   const barcodeBuffer = useRef("");
@@ -52,26 +60,41 @@ export default function TransfersPage() {
       addItem(product);
       toast.success(product.name);
       setScanInput("");
+      // (B) rapid quick-entry: keep the scan field focused for the next scan.
+      scanRef.current?.focus();
     } catch {
       toast.error(lang === "en" ? "Barcode not found: " + code : "Code-barres introuvable: " + code);
+      scanRef.current?.focus();
     }
   };
 
+  // Available stock at the SOURCE location for a product (null = unknown/external).
+  const availOf = (product) => (product?.stock?.quantity ?? null);
+
+  // Add a product to the transfer list. MERGES on duplicate (increments qty) and
+  // CLAMPS each line to the available stock at source (when known).
   const addItem = (product, qty = 1) => {
     setScannedItems(prev => {
       const idx = prev.findIndex(i => i.product_id === product.id);
       if (idx >= 0) {
         const u = [...prev];
-        u[idx] = { ...u[idx], quantity: u[idx].quantity + qty };
+        const max = (u[idx].stock != null) ? u[idx].stock : Infinity;
+        u[idx] = { ...u[idx], quantity: Math.min(u[idx].quantity + qty, max) };
         return u;
       }
-      return [...prev, { product_id: product.id, name: product.name, unit: product.unit, barcode: product.barcode, quantity: qty, stock: product.stock?.quantity }];
+      const stock = availOf(product);
+      const initQty = (stock != null) ? Math.min(qty, stock) : qty;
+      return [...prev, { product_id: product.id, name: product.name, unit: product.unit, barcode: product.barcode, quantity: Math.max(1, initQty), stock }];
     });
   };
 
   const updateQty = (idx, qty) => {
-    if (qty <= 0) setScannedItems(p => p.filter((_, i) => i !== idx));
-    else setScannedItems(p => p.map((it, i) => i === idx ? { ...it, quantity: qty } : it));
+    if (qty <= 0) { setScannedItems(p => p.filter((_, i) => i !== idx)); return; }
+    setScannedItems(p => p.map((it, i) => {
+      if (i !== idx) return it;
+      const max = (it.stock != null) ? it.stock : Infinity;
+      return { ...it, quantity: Math.min(qty, max) };
+    }));
   };
 
   const { data: transferData, isLoading } = useOfflineCachedQuery({
@@ -86,12 +109,63 @@ export default function TransfersPage() {
   });
 
   const { data: searchResults } = useOfflineCachedQuery({
-    queryKey: ["transfer-search", manualSearch],
+    queryKey: ["transfer-search", manualSearch, fromLoc],
     queryFn: () => manualSearch.length >= 2
       ? api.get(`/products?search=${manualSearch}&location_id=${fromLoc}`).then(r => r.data)
       : { data: [] },
     enabled: manualSearch.length >= 2
   });
+
+  // (A) all SOURCE-location products (same /products data source, filtered to
+  // from_location). Only those with stock > 0 are tick-list candidates. Skipped
+  // when the source is external (no fromLoc).
+  const { data: sourceProdData, isFetching: sourceLoading } = useOfflineCachedQuery({
+    queryKey: ["transfer-source-products", fromLoc],
+    queryFn: () => fromLoc
+      ? api.get(`/products?location_id=${fromLoc}`).then(r => r.data)
+      : { data: [] },
+    enabled: !!fromLoc
+  });
+  const sourceProducts = (sourceProdData?.data || []).filter(p => (p.stock?.quantity || 0) > 0);
+  const pickerFiltered = sourceProducts.filter(p => {
+    const q = pickerSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (p.name || "").toLowerCase().includes(q)
+      || (p.name_en || "").toLowerCase().includes(q)
+      || (p.barcode || "").toLowerCase().includes(q);
+  });
+  const pickedCount = Object.keys(pickerSel).length;
+
+  const togglePick = (p) => setPickerSel(prev => {
+    const u = { ...prev };
+    if (u[p.id] != null) delete u[p.id];
+    else u[p.id] = 1;
+    return u;
+  });
+  const setPickQty = (p, qty) => setPickerSel(prev => {
+    const max = p.stock?.quantity ?? Infinity;
+    return { ...prev, [p.id]: Math.max(1, Math.min(qty || 1, max)) };
+  });
+  const addPicked = () => {
+    const ids = Object.keys(pickerSel);
+    ids.forEach(id => {
+      const p = sourceProducts.find(x => x.id === id);
+      if (p) addItem(p, pickerSel[id]);
+    });
+    if (ids.length) toast.success((lang === "en" ? "Added " : "Ajouté ") + ids.length + (lang === "en" ? " item(s)" : " article(s)"));
+    setPickerSel({}); setPickerSearch(""); setPickerOpen(false);
+  };
+
+  // (B) quick-entry: Enter on the name search adds the top match with searchQty,
+  // then clears + refocuses for the next one.
+  const quickAddTopSearch = () => {
+    const top = searchResults?.data?.[0];
+    if (!top) return;
+    addItem(top, searchQty || 1);
+    toast.success(top.name);
+    setManualSearch(""); setSearchQty(1);
+    searchRef.current?.focus();
+  };
 
   const createMutation = useMutation({
     mutationFn: () => api.post("/transfers", {
@@ -103,6 +177,7 @@ export default function TransfersPage() {
     onSuccess: () => {
       toast.success(lang === "en" ? "Transfer created!" : "Transfert cree!");
       setMode("list"); setStep(1); setFromLoc(""); setToLoc(""); setNotes(""); setScannedItems([]);
+      setPickerSel({}); setPickerSearch(""); setPickerOpen(false);
       qc.invalidateQueries(["transfers"]);
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
@@ -128,7 +203,10 @@ export default function TransfersPage() {
     return { bg: "rgba(251,197,3,0.15)", color: "var(--brand-light)" };
   };
 
-  const resetNew = () => { setMode("list"); setStep(1); setFromLoc(""); setToLoc(""); setNotes(""); setScannedItems([]); };
+  const resetNew = () => {
+    setMode("list"); setStep(1); setFromLoc(""); setToLoc(""); setNotes(""); setScannedItems([]);
+    setPickerSel({}); setPickerSearch(""); setPickerOpen(false); setManualSearch(""); setSearchQty(1);
+  };
 
   // -- NEW TRANSFER FLOW --------------------------------------
   if (mode === "new") {
@@ -154,7 +232,7 @@ export default function TransfersPage() {
 
             <div className="form-group">
               <label className="label">{lang === "en" ? "FROM (source)" : "DE (source)"}</label>
-              <select className="input" value={fromLoc} onChange={e => setFromLoc(e.target.value)}
+              <select className="input" value={fromLoc} onChange={e => { setFromLoc(e.target.value); setPickerSel({}); setPickerOpen(false); }}
                 style={{ fontSize: 15, padding: "12px 14px" }}>
                 <option value="">{lang === "en" ? "Select source location" : "Choisir emplacement source"}</option>
                 {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
@@ -186,7 +264,7 @@ export default function TransfersPage() {
           </div>
         )}
 
-        {/* STEP 2: Scan items */}
+        {/* STEP 2: Scan / search / pick items */}
         {step === 2 && (
           <div style={{ animation: "fadeUp 0.2s ease both" }}>
             <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 6 }}>
@@ -196,7 +274,7 @@ export default function TransfersPage() {
               {locations.find(l => l.id === fromLoc)?.name || "External"} > {locations.find(l => l.id === toLoc)?.name || "External"}
             </div>
 
-            {/* Scan input */}
+            {/* Scan input — rapid: each scan adds 1 (merges) + keeps focus */}
             <div style={{ background: "var(--bg-card)", border: "2px dashed var(--brand)", borderRadius: 14, padding: 20, textAlign: "center", marginBottom: 16 }}>
               <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 10 }}>
                 {lang === "en" ? "Point camera at barcode OR type barcode below" : "Pointer la camera sur le code-barres OU taper ci-dessous"}
@@ -212,21 +290,34 @@ export default function TransfersPage() {
                 style={{ marginBottom: 4 }}
                 autoFocus
               />
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>
+                {lang === "en" ? "Scan, Enter, scan, Enter — adds each instantly" : "Scanner, Entrée, scanner, Entrée — ajout instantané"}
+              </div>
             </div>
 
-            {/* Manual search */}
+            {/* Quick-entry by name: qty + search; Enter adds the top match + refocuses */}
             <div style={{ marginBottom: 16 }}>
-              <input className="input" value={manualSearch}
-                onChange={e => setManualSearch(e.target.value)}
-                placeholder={lang === "en" ? "Or search by product name..." : "Ou chercher par nom de produit..."} />
+              <div style={{ display: "flex", gap: 8 }}>
+                <input type="number" min="1" value={searchQty}
+                  onChange={e => setSearchQty(Math.max(1, +e.target.value || 1))}
+                  title={lang === "en" ? "Quantity to add" : "Quantité à ajouter"}
+                  style={{ width: 64, textAlign: "center", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 10, color: "var(--text-primary)", padding: "10px", fontSize: 14 }} />
+                <input className="input" style={{ flex: 1 }} value={manualSearch} ref={searchRef}
+                  onChange={e => setManualSearch(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); quickAddTopSearch(); } }}
+                  placeholder={lang === "en" ? "Search by name — Enter to add" : "Chercher par nom — Entrée pour ajouter"} />
+              </div>
               {searchResults?.data?.length > 0 && (
                 <div style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", marginTop: 4, background: "var(--bg-elevated)" }}>
-                  {searchResults.data.map(p => (
-                    <div key={p.id} onClick={() => { addItem(p); setManualSearch(""); }}
-                      style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid var(--border)", fontSize: 13, display: "flex", justifyContent: "space-between" }}
+                  {searchResults.data.map((p, i) => (
+                    <div key={p.id} onClick={() => { addItem(p, searchQty || 1); setManualSearch(""); setSearchQty(1); searchRef.current?.focus(); }}
+                      style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid var(--border)", fontSize: 13, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, background: i === 0 ? "rgba(251,197,3,0.06)" : "transparent" }}
                       onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
-                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                      <span>{p.name}</span>
+                      onMouseLeave={e => e.currentTarget.style.background = i === 0 ? "rgba(251,197,3,0.06)" : "transparent"}>
+                      <span style={{ display: "flex", flexDirection: "column" }}>
+                        <span>{p.name}{i === 0 && <span style={{ color: "var(--brand-light)", fontSize: 10, marginLeft: 6 }}>{lang === "en" ? "↵ Enter" : "↵ Entrée"}</span>}</span>
+                        {p.stock != null && <span style={{ color: "var(--text-muted)", fontSize: 11 }}>{lang === "en" ? "Available:" : "Disponible:"} {p.stock?.quantity ?? 0} {p.unit}</span>}
+                      </span>
                       <span style={{ color: "var(--text-muted)", fontSize: 11 }}>{p.barcode}</span>
                     </div>
                   ))}
@@ -234,29 +325,97 @@ export default function TransfersPage() {
               )}
             </div>
 
-            {/* Scanned items */}
+            {/* (A) Tick-list multi-select — only when a source location is chosen */}
+            {fromLoc && (
+              <div style={{ marginBottom: 16 }}>
+                <button className="btn btn-secondary btn-block"
+                  onClick={() => setPickerOpen(o => !o)}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                  📋 {pickerOpen
+                    ? (lang === "en" ? "Hide source stock list" : "Masquer la liste du stock source")
+                    : (lang === "en" ? `Browse source stock (${sourceProducts.length})` : `Parcourir le stock source (${sourceProducts.length})`)}
+                </button>
+
+                {pickerOpen && (
+                  <div style={{ marginTop: 8, border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden", background: "var(--bg-card)" }}>
+                    <div style={{ padding: 10, borderBottom: "1px solid var(--border)" }}>
+                      <input className="input" value={pickerSearch} onChange={e => setPickerSearch(e.target.value)}
+                        placeholder={lang === "en" ? "Filter list..." : "Filtrer la liste..."} />
+                    </div>
+                    <div style={{ maxHeight: 320, overflowY: "auto" }}>
+                      {sourceLoading && sourceProducts.length === 0 ? (
+                        <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>Loading...</div>
+                      ) : pickerFiltered.length === 0 ? (
+                        <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
+                          {lang === "en" ? "No products in stock at source" : "Aucun produit en stock à la source"}
+                        </div>
+                      ) : pickerFiltered.map(p => {
+                        const checked = pickerSel[p.id] != null;
+                        const avail = p.stock?.quantity ?? 0;
+                        return (
+                          <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderBottom: "1px solid var(--border)", background: checked ? "rgba(251,197,3,0.06)" : "transparent" }}>
+                            <label style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, cursor: "pointer", minWidth: 0 }}>
+                              <input type="checkbox" checked={checked} onChange={() => togglePick(p)}
+                                style={{ width: 18, height: 18, accentColor: "var(--brand)", flexShrink: 0 }} />
+                              <span style={{ minWidth: 0 }}>
+                                <span style={{ fontSize: 13, fontWeight: 500, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en" ? "Available:" : "Disponible:"} {avail} {p.unit}</span>
+                              </span>
+                            </label>
+                            {checked && (
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                                <button onClick={() => setPickQty(p, (pickerSel[p.id] || 1) - 1)} style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: "pointer", fontSize: 15 }}>-</button>
+                                <input type="number" min="1" max={avail} value={pickerSel[p.id]}
+                                  onChange={e => setPickQty(p, +e.target.value)}
+                                  style={{ width: 46, textAlign: "center", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "4px", fontSize: 13 }} />
+                                <button onClick={() => setPickQty(p, (pickerSel[p.id] || 1) + 1)} disabled={(pickerSel[p.id] || 1) >= avail} style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: (pickerSel[p.id] || 1) >= avail ? "not-allowed" : "pointer", fontSize: 15, opacity: (pickerSel[p.id] || 1) >= avail ? 0.4 : 1 }}>+</button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {/* Sticky add bar */}
+                    <div style={{ position: "sticky", bottom: 0, display: "flex", gap: 8, padding: 10, borderTop: "1px solid var(--border)", background: "var(--bg-elevated)" }}>
+                      <button className="btn btn-secondary btn-sm" disabled={pickedCount === 0} onClick={() => setPickerSel({})}>
+                        {lang === "en" ? "Clear" : "Effacer"}
+                      </button>
+                      <button className="btn btn-primary" style={{ flex: 1 }} disabled={pickedCount === 0} onClick={addPicked}>
+                        {lang === "en" ? `Add (${pickedCount}) item(s)` : `Ajouter (${pickedCount}) article(s)`}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Items to transfer */}
             {scannedItems.length > 0 && (
               <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden", marginBottom: 16 }}>
                 <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--border)", fontSize: 13, fontWeight: 600 }}>
                   {scannedItems.length} {lang === "en" ? "item(s) to transfer" : "article(s) a transferer"}
                 </div>
-                {scannedItems.map((item, idx) => (
-                  <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", borderBottom: "1px solid var(--border)" }}>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 500 }}>{item.name}</div>
-                      {item.barcode && <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>{item.barcode}</div>}
-                      {item.stock != null && <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en" ? "Available:" : "Disponible:"} {item.stock} {item.unit}</div>}
+                {scannedItems.map((item, idx) => {
+                  const atMax = item.stock != null && item.quantity >= item.stock;
+                  return (
+                    <div key={item.product_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", borderBottom: "1px solid var(--border)" }}>
+                      <div style={{ minWidth: 0, marginRight: 8 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500 }}>{item.name}</div>
+                        {item.barcode && <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>{item.barcode}</div>}
+                        {item.stock != null && <div style={{ fontSize: 11, color: atMax ? "#fbbf24" : "var(--text-muted)" }}>{lang === "en" ? "Available:" : "Disponible:"} {item.stock} {item.unit}{atMax ? (lang === "en" ? " (max)" : " (max)") : ""}</div>}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                        <button onClick={() => updateQty(idx, item.quantity - 1)} style={{ width: 28, height: 28, borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: "pointer", fontSize: 16 }}>-</button>
+                        <input type="number" value={item.quantity} onChange={e => updateQty(idx, +e.target.value)}
+                          style={{ width: 50, textAlign: "center", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "4px", fontSize: 14 }} />
+                        <span style={{ fontSize: 12, color: "var(--text-muted)", minWidth: 30 }}>{item.unit}</span>
+                        <button onClick={() => updateQty(idx, item.quantity + 1)} disabled={atMax}
+                          style={{ width: 28, height: 28, borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: atMax ? "not-allowed" : "pointer", fontSize: 16, opacity: atMax ? 0.4 : 1 }}>+</button>
+                        <button onClick={() => updateQty(idx, 0)} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: 16, marginLeft: 4 }}>x</button>
+                      </div>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <button onClick={() => updateQty(idx, item.quantity - 1)} style={{ width: 28, height: 28, borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: "pointer", fontSize: 16 }}>-</button>
-                      <input type="number" value={item.quantity} onChange={e => updateQty(idx, +e.target.value)}
-                        style={{ width: 50, textAlign: "center", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "4px", fontSize: 14 }} />
-                      <span style={{ fontSize: 12, color: "var(--text-muted)", minWidth: 30 }}>{item.unit}</span>
-                      <button onClick={() => updateQty(idx, item.quantity + 1)} style={{ width: 28, height: 28, borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: "pointer", fontSize: 16 }}>+</button>
-                      <button onClick={() => updateQty(idx, 0)} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: 16, marginLeft: 4 }}>x</button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
@@ -397,5 +556,3 @@ export default function TransfersPage() {
     </div>
   );
 }
-
-
