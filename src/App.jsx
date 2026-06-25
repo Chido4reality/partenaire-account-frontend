@@ -31,6 +31,7 @@ import PendingSyncPage from "./pages/PendingSyncPage"; // MP-PENDING-SYNC-SCREEN
 import AssistantPage from "./pages/AssistantPage"; // Pro Plus Feature 1 — AI Assistant chat UI
 import AttendancePage from "./pages/AttendancePage"; // Staff Maintenance Phase 3 — shared-device PIN attendance
 import AssetsPage from "./pages/AssetsPage"; // Pro Plus Feature 3 — Asset ledger
+import AccountantLogPage from "./pages/AccountantLogPage"; // Accountant Log Phase 1 — owner-only staff oversight
 
 // MP-INVALIDATE-AFTER-SALE: refetch stale data when the user returns to
 // the tab/app or reconnects (e.g. after making a sale on another device
@@ -124,6 +125,9 @@ const ROUTE_ACCESS = {
   // Pro Plus Feature 3 — Asset ledger. OWNER ONLY (Pro Plus handled in-page +
   // nav locked deep-link).
   "/assets":       ["owner"],
+  // Accountant Log Phase 1 — OWNER ONLY oversight surface (Pro Plus handled
+  // in-page + nav locked deep-link; server enforces owner + pro_plus 403).
+  "/accountant-log": ["owner"],
 };
 
 function Guard({ children }) {
@@ -133,7 +137,13 @@ function Guard({ children }) {
 function RoleGuard({ path, children }) {
   const user = useAuthStore(s => s.user);
   const allowed = ROUTE_ACCESS[path] || ["owner"];
-  if (!user || !allowed.includes(user.role)) {
+  // Accountant Log Phase 1: the 'accountant' role inherits the MANAGER's broad
+  // operational access — but never the owner-only surfaces: Settings (staff
+  // management + billing) and the Accountant Log itself. Mirrors Layout's NAV
+  // filter; the server enforces the authoritative per-route gate.
+  const accountantInherits = user?.role === "accountant" && allowed.includes("manager")
+    && path !== "/settings" && path !== "/accountant-log";
+  if (!user || (!allowed.includes(user.role) && !accountantInherits)) {
     // MP-CASHIER-ROLE-GATING: cashier hitting a gated route is
     // redirected to /pos (their primary workspace) rather than
     // shown the Access Restricted message — they were never
@@ -462,6 +472,7 @@ export default function App() {
             <Route path="attendance"   element={<RoleGuard path="/attendance"><AttendancePage /></RoleGuard>} />
             {/* Asset ledger — owner-only (RoleGuard); Pro Plus gating + upsell in-page. */}
             <Route path="assets"       element={<RoleGuard path="/assets"><AssetsPage /></RoleGuard>} />
+            <Route path="accountant-log" element={<RoleGuard path="/accountant-log"><AccountantLogPage /></RoleGuard>} />
             <Route path="settings"     element={<RoleGuard path="/settings"><PlanGuard path="/settings"><SettingsPage /></PlanGuard></RoleGuard>} />
             {/* MP-RESTRICTED-MODE (B2): reachable even when restricted — no PlanGuard. */}
             <Route path="request-activation" element={<RequestActivationPage />} />

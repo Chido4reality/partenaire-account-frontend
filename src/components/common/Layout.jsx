@@ -89,6 +89,10 @@ const NAV = [
   { to: "/attendance",   en: "Attendance", fr: "Pointage",        icon: "🕒", roles: ["owner","manager","cashier","warehouse"], section: "sales", feature: "staff_maintenance" },
   // Pro Plus Feature 3 — Asset ledger. Owner-only; locked→upsell when not entitled.
   { to: "/assets",       en: "Assets",     fr: "Avoirs",          icon: "💼", roles: ["owner"],                                section: "settings", feature: "asset_ledger" },
+  // Accountant Log Phase 1 — OWNER-only oversight surface. Pro Plus only;
+  // locked→upsell when not entitled (same pattern as /assistant + /assets).
+  // No other role (incl. accountant) sees it — roles:["owner"] + server 403.
+  { to: "/accountant-log", en: "Accountant Log", fr: "Journal du comptable", icon: "🛡️", roles: ["owner"],                   section: "settings", feature: "accountant_log" },
   { to: "/settings",     en: "Settings",   fr: "Paramètres",      icon: "⚙️", roles: ["owner","manager"],                       section: "settings" },
 ];
 
@@ -571,7 +575,15 @@ export default function Layout() {
   // basic Transfers remain first-class in Lite.
   const LITE_HIDDEN_ROUTES = new Set(["/online-cart", "/operations"]);
   const visibleNav = NAV.filter(item => {
-    if (!item.roles.includes(role)) return false;
+    if (!item.roles.includes(role)) {
+      // Accountant Log Phase 1: the 'accountant' role gets the MANAGER's broad
+      // OPERATIONAL nav (sales, inventory, customers, reports, etc.) — but never
+      // the owner-only surfaces: Settings (staff management + billing live there)
+      // and the Accountant Log itself. Server enforces the matching per-route gates.
+      const inheritsManager = role === "accountant" && item.roles.includes("manager")
+        && item.to !== "/settings" && item.feature !== "accountant_log";
+      if (!inheritsManager) return false;
+    }
     if (!hasSection(effectivePlan, item.section)) return false;
     if (lite && LITE_HIDDEN_ROUTES.has(item.to)) return false;
     return true;
@@ -713,8 +725,8 @@ export default function Layout() {
   };
 
   const roleLabel = () => {
-    const icons = { owner: "👑", manager: "🔑", cashier: "🛒", warehouse: "📦" };
-    const roleNames = { owner: "Owner", manager: "Manager", cashier: "Cashier", warehouse: "Warehouse" };
+    const icons = { owner: "👑", manager: "🔑", cashier: "🛒", warehouse: "📦", accountant: "🧮" };
+    const roleNames = { owner: "Owner", manager: "Manager", cashier: "Cashier", warehouse: "Warehouse", accountant: "Accountant" };
     const firstName = user?.full_name?.split(" ")[0] || "";
     const icon = icons[role] || "👤";
     const roleName = roleNames[role] || role;

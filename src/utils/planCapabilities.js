@@ -88,7 +88,10 @@ export const PLAN_CAPABILITIES = {
     staff_maintenance: true,
     // Standalone manual cash/asset-location ledger (holdings + append-only
     // movements, derived balances). Owner-only; never touches POS sales/till.
-    asset_ledger: true
+    asset_ledger: true,
+    // Owner-only Accountant Log oversight surface (watch non-owner staff).
+    // Mirror of backend lib/planCapabilities.js.
+    accountant_log: true
   },
 
   // Legacy aliases — DO NOT REFERENCE FROM NEW CODE.
