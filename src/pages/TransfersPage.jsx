@@ -20,6 +20,7 @@ export default function TransfersPage() {
   const [searchQty, setSearchQty]   = useState(1);      // quick-entry qty for the name search
   const [scanInput, setScanInput]   = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [editingId, setEditingId]   = useState(null);  // (B) null = creating; id = editing a pending transfer
 
   // (A) tick-list multi-select picker state
   const [pickerOpen, setPickerOpen]     = useState(false);
@@ -87,14 +88,18 @@ export default function TransfersPage() {
     });
   };
 
-  const updateQty = (idx, qty) => {
-    if (qty <= 0) { setScannedItems(p => p.filter((_, i) => i !== idx)); return; }
+  // CLAMP to [1, available]; allow a transient empty value while typing (the
+  // input's onBlur normalises "" -> 1). NEVER removes a line — the × button does.
+  const updateQty = (idx, val) => {
     setScannedItems(p => p.map((it, i) => {
       if (i !== idx) return it;
+      if (val === "" || val == null) return { ...it, quantity: "" };
       const max = (it.stock != null) ? it.stock : Infinity;
-      return { ...it, quantity: Math.min(qty, max) };
+      return { ...it, quantity: Math.max(1, Math.min(Number(val) || 1, max)) };
     }));
   };
+  // The ONLY way to remove a line (the explicit × button).
+  const removeItem = (idx) => setScannedItems(p => p.filter((_, i) => i !== idx));
 
   const { data: transferData, isLoading } = useOfflineCachedQuery({
     queryKey: ["transfers", statusFilter],
@@ -152,7 +157,7 @@ export default function TransfersPage() {
       from_location: fromLoc || null,
       to_location: toLoc || null,
       notes: notes || null,
-      items: scannedItems.map(i => ({ product_id: i.product_id, quantity: i.quantity }))
+      items: scannedItems.map(i => ({ product_id: i.product_id, quantity: Math.max(1, Number(i.quantity) || 1) }))
     }),
     onSuccess: () => {
       toast.success(lang === "en" ? "Transfer created!" : "Transfert cree!");
@@ -173,6 +178,49 @@ export default function TransfersPage() {
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
 
+  // (B) EDIT a PENDING transfer: reopen the editor preloaded with its from/to +
+  // items. from/to are read-only here (to change them, cancel + start fresh).
+  const startEdit = async (tr) => {
+    try {
+      const t = (await api.get(`/transfers/${tr.id}`)).data.data;
+      if (t.status !== "pending") { toast.error(lang === "en" ? "Only pending transfers can be edited" : "Seuls les transferts en attente sont modifiables"); return; }
+      setEditingId(t.id);
+      setFromLoc(t.from_location || "");
+      setToLoc(t.to_location || "");
+      setNotes(t.notes || "");
+      setScannedItems((t.pa_transfer_items || []).map(it => ({
+        product_id: it.product_id, name: it.pa_products?.name || "—", unit: it.pa_products?.unit || "",
+        barcode: it.pa_products?.barcode || null, quantity: it.quantity, stock: null,
+      })));
+      setPickerSel({}); setPickerSearch(""); setPickerOpen(false); setSearchQty(1);
+      setMode("new"); setStep(2);
+    } catch (err) { toast.error(err.response?.data?.message || "Error"); }
+  };
+
+  // (B) SAVE edits to a pending transfer — replaces its items (status stays pending).
+  const saveMutation = useMutation({
+    mutationFn: () => api.patch(`/transfers/${editingId}/items`, {
+      notes: notes || null,
+      items: scannedItems.map(i => ({ product_id: i.product_id, quantity: Math.max(1, Number(i.quantity) || 1) }))
+    }),
+    onSuccess: () => {
+      toast.success(lang === "en" ? "Transfer updated!" : "Transfert mis à jour!");
+      resetNew();
+      qc.invalidateQueries(["transfers"]);
+    },
+    onError: (err) => toast.error(err.response?.data?.message || "Error")
+  });
+
+  // (B) CANCEL a pending transfer (soft) — server hard-rejects non-pending.
+  const cancelMutation = useMutation({
+    mutationFn: (id) => api.patch(`/transfers/${id}/cancel`),
+    onSuccess: () => {
+      toast.success(lang === "en" ? "Transfer cancelled" : "Transfert annulé");
+      qc.invalidateQueries(["transfers"]);
+    },
+    onError: (err) => toast.error(err.response?.data?.message || "Error")
+  });
+
   const transfers = transferData?.data || [];
   const locations = locData?.data || [];
 
@@ -185,7 +233,7 @@ export default function TransfersPage() {
 
   const resetNew = () => {
     setMode("list"); setStep(1); setFromLoc(""); setToLoc(""); setNotes(""); setScannedItems([]);
-    setPickerSel({}); setPickerSearch(""); setPickerOpen(false); setManualSearch(""); setSearchQty(1);
+    setPickerSel({}); setPickerSearch(""); setPickerOpen(false); setSearchQty(1); setEditingId(null);
   };
 
   // -- NEW TRANSFER FLOW --------------------------------------
@@ -195,7 +243,7 @@ export default function TransfersPage() {
         {/* Header with steps */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 28 }}>
           <button onClick={resetNew} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 18 }}>{"←"}</button>
-          <h1 className="page-title">{lang === "en" ? "New Transfer" : "Nouveau transfert"}</h1>
+          <h1 className="page-title">{editingId ? (lang === "en" ? "Edit Transfer" : "Modifier le transfert") : (lang === "en" ? "New Transfer" : "Nouveau transfert")}</h1>
           <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
             {[1,2,3].map(s => (
               <div key={s} style={{ width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, background: step >= s ? "var(--brand)" : "var(--bg-elevated)", color: step >= s ? "#152B52" : "var(--text-muted)", border: "1px solid " + (step >= s ? "var(--brand)" : "var(--border)") }}>{s}</div>
@@ -334,9 +382,11 @@ export default function TransfersPage() {
                             </label>
                             {checked && (
                               <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-                                <button onClick={() => setPickQty(p, (pickerSel[p.id] || 1) - 1)} style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: "pointer", fontSize: 15 }}>-</button>
+                                <button onClick={() => setPickQty(p, (pickerSel[p.id] || 1) - 1)} disabled={(pickerSel[p.id] || 1) <= 1}
+                                  style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: (pickerSel[p.id] || 1) <= 1 ? "not-allowed" : "pointer", fontSize: 15, opacity: (pickerSel[p.id] || 1) <= 1 ? 0.4 : 1 }}>−</button>
                                 <input type="number" min="1" max={avail} value={pickerSel[p.id]}
                                   onChange={e => setPickQty(p, +e.target.value)}
+                                  onFocus={e => e.target.select()}
                                   style={{ width: 46, textAlign: "center", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "4px", fontSize: 13 }} />
                                 <button onClick={() => setPickQty(p, (pickerSel[p.id] || 1) + 1)} disabled={(pickerSel[p.id] || 1) >= avail} style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: (pickerSel[p.id] || 1) >= avail ? "not-allowed" : "pointer", fontSize: 15, opacity: (pickerSel[p.id] || 1) >= avail ? 0.4 : 1 }}>+</button>
                               </div>
@@ -366,7 +416,9 @@ export default function TransfersPage() {
                   {scannedItems.length} {lang === "en" ? "item(s) to transfer" : "article(s) a transferer"}
                 </div>
                 {scannedItems.map((item, idx) => {
-                  const atMax = item.stock != null && item.quantity >= item.stock;
+                  const qtyNum = Number(item.quantity) || 1;
+                  const atMax = item.stock != null && qtyNum >= item.stock;
+                  const atMin = qtyNum <= 1;
                   return (
                     <div key={item.product_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", borderBottom: "1px solid var(--border)" }}>
                       <div style={{ minWidth: 0, marginRight: 8 }}>
@@ -374,14 +426,23 @@ export default function TransfersPage() {
                         {item.barcode && <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>{item.barcode}</div>}
                         {item.stock != null && <div style={{ fontSize: 11, color: atMax ? "#fbbf24" : "var(--text-muted)" }}>{lang === "en" ? "Available:" : "Disponible:"} {item.stock} {item.unit}{atMax ? (lang === "en" ? " (max)" : " (max)") : ""}</div>}
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                        <button onClick={() => updateQty(idx, item.quantity - 1)} style={{ width: 28, height: 28, borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: "pointer", fontSize: 16 }}>-</button>
-                        <input type="number" value={item.quantity} onChange={e => updateQty(idx, +e.target.value)}
-                          style={{ width: 50, textAlign: "center", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "4px", fontSize: 14 }} />
-                        <span style={{ fontSize: 12, color: "var(--text-muted)", minWidth: 30 }}>{item.unit}</span>
-                        <button onClick={() => updateQty(idx, item.quantity + 1)} disabled={atMax}
-                          style={{ width: 28, height: 28, borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: atMax ? "not-allowed" : "pointer", fontSize: 16, opacity: atMax ? 0.4 : 1 }}>+</button>
-                        <button onClick={() => updateQty(idx, 0)} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: 16, marginLeft: 4 }}>x</button>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                        {/* − clamps at 1 and is disabled there — it NEVER removes the line. */}
+                        <button onClick={() => updateQty(idx, qtyNum - 1)} disabled={atMin} title={lang === "en" ? "Less" : "Moins"}
+                          style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: atMin ? "not-allowed" : "pointer", fontSize: 16, opacity: atMin ? 0.4 : 1 }}>−</button>
+                        {/* Select-all on focus so typing replaces the value; empty → 1 on blur. */}
+                        <input type="number" min="1" value={item.quantity}
+                          onChange={e => updateQty(idx, e.target.value)}
+                          onFocus={e => e.target.select()}
+                          onBlur={e => { if (e.target.value === "" || Number(e.target.value) < 1) updateQty(idx, 1); }}
+                          style={{ width: 52, textAlign: "center", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "5px", fontSize: 14 }} />
+                        <button onClick={() => updateQty(idx, qtyNum + 1)} disabled={atMax} title={lang === "en" ? "More" : "Plus"}
+                          style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: atMax ? "not-allowed" : "pointer", fontSize: 16, opacity: atMax ? 0.4 : 1 }}>+</button>
+                        <span style={{ fontSize: 12, color: "var(--text-muted)", minWidth: 24 }}>{item.unit}</span>
+                        {/* × removal — visually DISTINCT from − (red bordered box, set apart) so a
+                            stray tap on − can't delete the line. */}
+                        <button onClick={() => removeItem(idx)} title={lang === "en" ? "Remove item" : "Retirer l'article"}
+                          style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid rgba(239,68,68,0.45)", background: "rgba(239,68,68,0.12)", color: "#f87171", cursor: "pointer", fontSize: 14, marginLeft: 10 }}>✕</button>
                       </div>
                     </div>
                   );
@@ -390,7 +451,9 @@ export default function TransfersPage() {
             )}
 
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setStep(1)}>{"←"} {lang === "en" ? "Back" : "Retour"}</button>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => editingId ? resetNew() : setStep(1)}>
+                {"←"} {editingId ? (lang === "en" ? "Cancel edit" : "Annuler") : (lang === "en" ? "Back" : "Retour")}
+              </button>
               <button className="btn btn-primary" style={{ flex: 2 }}
                 disabled={scannedItems.length === 0}
                 onClick={() => setStep(3)}>
@@ -424,7 +487,7 @@ export default function TransfersPage() {
                 {scannedItems.map((item, i) => (
                   <div key={i} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 13 }}>
                     <span>{item.name}</span>
-                    <span style={{ color: "var(--brand-light)", fontWeight: 600 }}>{item.quantity} {item.unit}</span>
+                    <span style={{ color: "var(--brand-light)", fontWeight: 600 }}>{Math.max(1, Number(item.quantity) || 1)} {item.unit}</span>
                   </div>
                 ))}
               </div>
@@ -435,9 +498,10 @@ export default function TransfersPage() {
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setStep(2)}>{"←"} {lang === "en" ? "Back" : "Retour"}</button>
               <button className="btn btn-success" style={{ flex: 2 }}
-                disabled={createMutation.isPending}
-                onClick={() => createMutation.mutate()}>
-                {createMutation.isPending ? "..." : (lang === "en" ? "Confirm Transfer" : "Confirmer le transfert")}
+                disabled={editingId ? saveMutation.isPending : createMutation.isPending}
+                onClick={() => editingId ? saveMutation.mutate() : createMutation.mutate()}>
+                {(editingId ? saveMutation.isPending : createMutation.isPending) ? "..."
+                  : (editingId ? (lang === "en" ? "Save changes" : "Enregistrer") : (lang === "en" ? "Confirm Transfer" : "Confirmer le transfert"))}
               </button>
             </div>
           </div>
@@ -461,6 +525,7 @@ export default function TransfersPage() {
           { value: "", en: "All", fr: "Tous" },
           { value: "pending", en: "Pending", fr: "En attente" },
           { value: "completed", en: "Completed", fr: "Termines" },
+          { value: "cancelled", en: "Cancelled", fr: "Annulés" },
         ].map(f => (
           <button key={f.value} onClick={() => setStatusFilter(f.value)}
             className={"btn btn-sm " + (statusFilter === f.value ? "btn-primary" : "btn-secondary")}>
@@ -503,10 +568,21 @@ export default function TransfersPage() {
                     </div>
                   </div>
                   {tr.status === "pending" && (
-                    <button className="btn btn-success btn-sm" disabled={completeMutation.isPending}
-                      onClick={() => completeMutation.mutate(tr.id)}>
-                      {lang === "en" ? "Mark done" : "Marquer termine"}
-                    </button>
+                    <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      <button className="btn btn-secondary btn-sm" onClick={() => startEdit(tr)}>
+                        {lang === "en" ? "Edit" : "Modifier"}
+                      </button>
+                      <button className="btn btn-sm"
+                        disabled={cancelMutation.isPending}
+                        onClick={() => { if (window.confirm(lang === "en" ? "Cancel this pending transfer?" : "Annuler ce transfert en attente ?")) cancelMutation.mutate(tr.id); }}
+                        style={{ background: "transparent", border: "1px solid #f87171", color: "#f87171" }}>
+                        {lang === "en" ? "Cancel" : "Annuler"}
+                      </button>
+                      <button className="btn btn-success btn-sm" disabled={completeMutation.isPending}
+                        onClick={() => completeMutation.mutate(tr.id)}>
+                        {lang === "en" ? "Mark done" : "Marquer termine"}
+                      </button>
+                    </div>
                   )}
                 </div>
                 {tr.pa_transfer_items?.length > 0 && (
