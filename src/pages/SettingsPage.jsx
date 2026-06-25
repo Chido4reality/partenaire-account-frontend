@@ -11,10 +11,14 @@ import { useLiteMode } from "../hooks/useLiteMode";
 import { useTrialState } from "../hooks/useTrialState";
 
 const ROLES = [
-  { value: "cashier",   en: "Cashier",    fr: "Caissier",     color: "#94a3b8" },
-  { value: "manager",   en: "Manager",    fr: "Gestionnaire", color: "#818cf8" },
-  { value: "warehouse", en: "Warehouse",  fr: "Magasinier",   color: "#34d399" },
-  { value: "owner",     en: "Owner",      fr: "Propriétaire", color: "#fbbf24" },
+  { value: "cashier",    en: "Cashier",    fr: "Caissier",     color: "#94a3b8" },
+  { value: "manager",    en: "Manager",    fr: "Gestionnaire", color: "#818cf8" },
+  { value: "warehouse",  en: "Warehouse",  fr: "Magasinier",   color: "#34d399" },
+  // Accountant Log (Phase 1): a literate helper who runs the app for the boss.
+  // Same broad operational access as a manager, but never staff management,
+  // billing, or the Accountant Log itself.
+  { value: "accountant", en: "Accountant", fr: "Comptable",    color: "#22d3ee" },
+  { value: "owner",      en: "Owner",      fr: "Propriétaire", color: "#fbbf24" },
 ];
 
 const roleStyle = (role) => {
@@ -836,6 +840,7 @@ export default function SettingsPage() {
                     {r.value === "cashier" && (lang === "en" ? "POS sales only, no inventory access" : "Ventes POS uniquement, pas d'accès inventaire")}
                     {r.value === "manager" && (lang === "en" ? "Sales + inventory + staff management" : "Ventes + inventaire + gestion personnel")}
                     {r.value === "warehouse" && (lang === "en" ? "Stock management only, no prices visible" : "Gestion du stock uniquement, prix masqués")}
+                    {r.value === "accountant" && (lang === "en" ? "Runs the app like a manager, but no staff or billing access" : "Gère l'app comme un gestionnaire, sans accès personnel ni facturation")}
                   </span>
                 </div>
               ))}
@@ -1631,6 +1636,7 @@ export default function SettingsPage() {
               {staffForm.role === "cashier" && (lang === "en" ? "✓ Can: make sales, view own sales" : "✓ Peut: faire des ventes, voir ses propres ventes")}
               {staffForm.role === "manager" && (lang === "en" ? "✓ Can: all sales + inventory + add staff" : "✓ Peut: ventes + inventaire + ajouter personnel")}
               {staffForm.role === "warehouse" && (lang === "en" ? "✓ Can: receive goods, adjust stock" : "✓ Peut: réceptionner, ajuster le stock")}
+              {staffForm.role === "accountant" && (lang === "en" ? "✓ Can: sales + inventory + reports. ✗ No staff, billing, or Accountant Log" : "✓ Peut: ventes + inventaire + rapports. ✗ Pas de personnel, facturation, ni Journal du comptable")}
             </div>
 
             {/* ── HR-LITE ENRICHMENT (Staff Maintenance) — Pro Plus + OWNER only.
