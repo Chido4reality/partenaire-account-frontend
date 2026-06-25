@@ -646,7 +646,7 @@ export default function POSPage() {
     (p.barcode && p.barcode.includes(search))
   );
   const filteredProducts = search.length >= 1
-    ? (serverHits !== null ? serverHits : clientFiltered).slice(0, 25)
+    ? (serverHits !== null ? serverHits : clientFiltered).slice(0, 50)
     : [];
 
   // Sale-flow customer quick-pick. The list arrives sorted by NAME; rank the
