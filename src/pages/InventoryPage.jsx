@@ -8,7 +8,7 @@ import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import api from "../utils/api";
-import { isPendingApproval, pendingApprovalMessage } from "../utils/approval";
+import { isPendingApproval, keepWorkingToast } from "../utils/approval";
 import { useCurrency } from "../utils/useCurrency";
 import OwnerPIN from "../components/common/OwnerPIN";
 import PhotoUploadButtons from "../components/common/PhotoUploadButtons";
@@ -2395,10 +2395,10 @@ function AdjustModal({ product, role, requestApproval, lang, onClose, onSuccess 
       const res = await api.patch("/stock/adjust",
         { product_id: product.product_id, location_id: product.location_id, new_quantity: +qty, min_quantity: +minQty, alert_enabled: alertEnabled, reason },
         { headers });
-      // Phase 5b: HELD for owner approval → nothing adjusted. Don't run the
-      // is_active write or show "adjusted"; show the held confirmation + close.
+      // Non-blocking model: PARKED for owner approval → nothing adjusted. Don't
+      // run the is_active write or show "adjusted"; toast + close, keep working.
       if (isPendingApproval(res?.data)) {
-        toast(pendingApprovalMessage(res?.data, lang === "en"), { icon: "⏳", duration: 6000 });
+        toast(keepWorkingToast(lang === "en"), { icon: "⏳", duration: 4000 });
         setLoading(false);
         onClose();
         return;

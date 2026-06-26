@@ -189,7 +189,7 @@ export default function AccountantLogPage() {
   const approveMut = useMutation({
     mutationFn: ({ id, pin }) => api.post(`/staff/approvals/${id}/approve`, { pin }),
     onSuccess: () => {
-      toast.success(en ? "Approved & done" : "Approuvé et exécuté");
+      toast.success(en ? "Approved — staff will complete it" : "Approuvé — le personnel le finalisera");
       setPinFor(null); setPinValue("");
       qc.invalidateQueries({ queryKey: ["staff-approvals-pending"] });
       qc.invalidateQueries({ queryKey: ["accountant-log-watched"] });
@@ -424,7 +424,7 @@ export default function AccountantLogPage() {
             <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 14 }}>
               {(pinFor.requested_by_name || (en ? "A staff member" : "Un employé"))} {en ? "wants to" : "veut"} {APPROVAL_VERB[pinFor.action_type] || pinFor.action_type}
               {pinFor.amount != null ? ` — ${fmtCur(Math.abs(Number(pinFor.amount)))}` : ""}{pinFor.target_ref ? ` — ${pinFor.target_ref}` : ""}.
-              <br />{en ? "It will be done immediately." : "Elle sera exécutée immédiatement."}
+              <br />{en ? "Approving gives the green light — the staff member completes it at the counter." : "Approuver donne le feu vert — l'employé la finalise au comptoir."}
             </div>
             <div className="form-group"><label className="label">{en ? "Enter your PIN to approve" : "Entrez votre code PIN pour approuver"}</label>
               <input className="input" type="password" inputMode="numeric" value={pinValue}

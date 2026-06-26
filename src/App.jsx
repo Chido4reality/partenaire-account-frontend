@@ -32,6 +32,7 @@ import AssistantPage from "./pages/AssistantPage"; // Pro Plus Feature 1 — AI 
 import AttendancePage from "./pages/AttendancePage"; // Staff Maintenance Phase 3 — shared-device PIN attendance
 import AssetsPage from "./pages/AssetsPage"; // Pro Plus Feature 3 — Asset ledger
 import AccountantLogPage from "./pages/AccountantLogPage"; // Accountant Log Phase 1 — owner-only staff oversight
+import MyRequestsPage from "./pages/MyRequestsPage"; // staffer-facing approval queue (non-owner)
 
 // MP-INVALIDATE-AFTER-SALE: refetch stale data when the user returns to
 // the tab/app or reconnects (e.g. after making a sale on another device
@@ -128,6 +129,8 @@ const ROUTE_ACCESS = {
   // Accountant Log Phase 1 — OWNER ONLY oversight surface (Pro Plus handled
   // in-page + nav locked deep-link; server enforces owner + pro_plus 403).
   "/accountant-log": ["owner"],
+  // My Requests — staffer's own approval queue. Any NON-OWNER staffer.
+  "/my-requests": ["manager", "cashier", "warehouse", "accountant"],
 };
 
 function Guard({ children }) {
@@ -473,6 +476,7 @@ export default function App() {
             {/* Asset ledger — owner-only (RoleGuard); Pro Plus gating + upsell in-page. */}
             <Route path="assets"       element={<RoleGuard path="/assets"><AssetsPage /></RoleGuard>} />
             <Route path="accountant-log" element={<RoleGuard path="/accountant-log"><AccountantLogPage /></RoleGuard>} />
+            <Route path="my-requests" element={<RoleGuard path="/my-requests"><MyRequestsPage /></RoleGuard>} />
             <Route path="settings"     element={<RoleGuard path="/settings"><PlanGuard path="/settings"><SettingsPage /></PlanGuard></RoleGuard>} />
             {/* MP-RESTRICTED-MODE (B2): reachable even when restricted — no PlanGuard. */}
             <Route path="request-activation" element={<RequestActivationPage />} />
