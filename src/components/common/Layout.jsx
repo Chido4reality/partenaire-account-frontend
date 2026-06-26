@@ -93,6 +93,9 @@ const NAV = [
   // locked→upsell when not entitled (same pattern as /assistant + /assets).
   // No other role (incl. accountant) sees it — roles:["owner"] + server 403.
   { to: "/accountant-log", en: "Accountant Log", fr: "Journal du comptable", icon: "🛡️", roles: ["owner"],                   section: "settings", feature: "accountant_log", badge: "accountant_log" },
+  // Staffer-facing approval queue. Non-owner staff only; section:"sales" so it's
+  // always visible (no plan-gate); badge = count of APPROVED-not-finalized items.
+  { to: "/my-requests", en: "My Requests", fr: "Mes demandes", icon: "📨", roles: ["manager","cashier","warehouse","accountant"], section: "sales", badge: "my_requests" },
   { to: "/settings",     en: "Settings",   fr: "Paramètres",      icon: "⚙️", roles: ["owner","manager"],                       section: "settings" },
 ];
 
@@ -657,6 +660,18 @@ export default function Layout() {
   });
   const approvalsPending = (apprPending?.data || []).length;
 
+  // Staffer "My Requests" badge — count of their APPROVED-not-finalized items,
+  // live 7s poll. Non-owner staffers only.
+  const { data: myReqResp } = useQuery({
+    queryKey: ["my-requests-approved-count"],
+    queryFn: () => api.get("/staff/my-requests").then(r => r.data),
+    refetchInterval: 7000,
+    enabled: role !== "owner",
+    retry: 1,
+    onError: () => {}
+  });
+  const myRequestsApproved = (myReqResp?.data || []).filter(r => r.status === "approved").length;
+
   // MP-DOZIE-SELLER-MIGRATION Phase 2 — "Online Dozie" attention badge. Polls the
   // resolved seller's needs-attention count (pending orders now; messages/disputes
   // later) on the same 30s cadence as the online-cart badge. Owner/manager only
@@ -691,6 +706,7 @@ export default function Layout() {
   const navBadge = (item) =>
     item.badge === "online_cart"    ? onlineCartPending
     : item.badge === "accountant_log" ? approvalsPending
+    : item.badge === "my_requests"    ? myRequestsApproved
     : item.badge === "dozie_orders"   ? ((dozieNotif_.order || 0) + (dozieNotif_.payment || 0))
     : item.badge === "dozie_messages" ? (dozieNotif_.message || 0)
     : item.badge === "dozie_disputes" ? (dozieAttn_.disputes || 0)
@@ -1067,6 +1083,7 @@ export default function Layout() {
           navItems={visibleNav}
           onlineCartPending={onlineCartPending}
           approvalsPending={approvalsPending}
+          myRequestsApproved={myRequestsApproved}
           onLogout={handleLogout}
         />
         <motion.div

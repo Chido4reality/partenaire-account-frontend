@@ -6,7 +6,7 @@ import { useCurrency } from "../../utils/useCurrency";
 import OwnerPIN from "./OwnerPIN";
 import { useSettingsStore, useAuthStore } from "../../store";
 import useOwnerApproval from "../../hooks/useOwnerApproval";
-import { isPendingApproval, pendingApprovalMessage } from "../../utils/approval";
+import { isPendingApproval, keepWorkingToast } from "../../utils/approval";
 
 /**
  * VoidReturnModal — handles void, refund, exchange
@@ -59,10 +59,6 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
   );
   const [overrideReason, setOverrideReason] = useState("");
   const [loading, setLoading] = useState(false);
-  // Phase 5b: when a gated staffer's action is HELD for owner approval the server
-  // returns 202 pending_approval and nothing happened — show this instead of a
-  // receipt (which would wrongly read "Refund Recorded / 0 FCFA").
-  const [held, setHeld] = useState(null); // the held message string
 
   // Sprint L: return-window banner. <30d OK, 30d–1y needs an
   // override reason, >1y the server rejects.
@@ -89,6 +85,19 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
     queryFn: () => api.get("/products?limit=500").then(r => r.data),
     enabled: mode === "exchange",
   });
+
+  // Part C: the staffer's own void policy decides how a void is gated:
+  //   'approve' → skip the PIN modal, route through the async request queue.
+  //   'allow'/unset → existing on-the-spot owner-PIN modal.  'block' → blocked.
+  const { data: myPermResp } = useQuery({
+    queryKey: ["my-permissions"],
+    queryFn: () => api.get("/staff/my-permissions").then(r => r.data),
+    enabled: user?.role !== "owner",
+    staleTime: 60000,
+    retry: 1,
+    onError: () => {},
+  });
+  const voidPolicy = myPermResp?.data?.void_policy || "allow";
   const allProducts = productsData?.data || [];
   const filteredProducts = exchSearch.trim().length > 0
     ? allProducts.filter(p => p.name.toLowerCase().includes(exchSearch.toLowerCase()) && p.is_active !== false)
@@ -175,20 +184,29 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
         // the modal throws code:'cancelled' which we swallow.
         const headers = {};
         if (user?.role !== "owner") {
-          try {
-            const { token } = await requestApproval({
-              actionType:  "void_sale",
-              targetTable: "pa_sales",
-              targetId:    sale.id,
-              context:     { sale_number: sale.sale_number, total: sale.total_amount, reason: reason.trim() },
-              description: (lang === "fr"
-                ? `Annuler la vente ${sale.sale_number || ""}`
-                : `Void sale ${sale.sale_number || ""}`) + ` (${fmt(sale.total_amount || 0)})`,
-            });
-            headers["Approval-Token"] = token;
-          } catch (e) {
-            if (e?.code === "cancelled") { setLoading(false); return; }
-            throw e;
+          if (voidPolicy === "block") {
+            toast.error(lang === "en" ? "You don't have permission to do this. Ask the shop owner." : "Vous n'avez pas la permission. Demandez au propriétaire.");
+            setLoading(false); return;
+          }
+          // Part C: 'approve' policy → route async (no PIN modal, no token). The
+          // backend returns 202 pending; the held-handler below parks it.
+          if (voidPolicy !== "approve") {
+            // 'allow'/unset → keep the existing on-the-spot owner-PIN flow.
+            try {
+              const { token } = await requestApproval({
+                actionType:  "void_sale",
+                targetTable: "pa_sales",
+                targetId:    sale.id,
+                context:     { sale_number: sale.sale_number, total: sale.total_amount, reason: reason.trim() },
+                description: (lang === "fr"
+                  ? `Annuler la vente ${sale.sale_number || ""}`
+                  : `Void sale ${sale.sale_number || ""}`) + ` (${fmt(sale.total_amount || 0)})`,
+              });
+              headers["Approval-Token"] = token;
+            } catch (e) {
+              if (e?.code === "cancelled") { setLoading(false); return; }
+              throw e;
+            }
           }
         }
         res = await api.post(`/returns/void/${sale.id}`, { reason }, { headers });
@@ -248,11 +266,13 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
         res = await api.post(`/returns/${mode === "exchange" ? "exchange" : "return"}/${sale.id}`, body, { headers });
       }
 
-      // Phase 5b: action HELD for owner approval → nothing executed. Show the
-      // held confirmation (no receipt, no amount, no "recorded").
+      // Non-blocking model: action PARKED for owner approval → nothing executed,
+      // no receipt. Brief toast + return to normal workflow immediately; it lives
+      // in My Requests until the owner approves and the staffer finalizes there.
       if (isPendingApproval(res?.data)) {
-        setHeld(pendingApprovalMessage(res?.data, lang === "en"));
+        toast(keepWorkingToast(lang === "en"), { icon: "⏳", duration: 4000 });
         setLoading(false);
+        onClose();
         return;
       }
 
@@ -282,20 +302,6 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
       else toast.error(msg);
     } finally { setLoading(false); }
   };
-
-  // Phase 5b: held-for-approval confirmation — replaces the receipt entirely.
-  if (held) {
-    return (
-      <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-        <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 28, maxWidth: 420, width: "100%", textAlign: "center" }}>
-          <div style={{ fontSize: 48, marginBottom: 10 }}>⏳</div>
-          <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 8 }}>{lang === "en" ? "Waiting for owner approval" : "En attente de l'approbation du propriétaire"}</div>
-          <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 22 }}>{held}</div>
-          <button className="btn btn-primary" style={{ width: "100%" }} onClick={onClose}>{lang === "en" ? "OK" : "OK"}</button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>

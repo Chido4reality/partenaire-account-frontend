@@ -34,7 +34,7 @@ const SECTIONS = [
   // bottom bar; in Full view /online-cart bumps it out (it's index 5), leaving
   // it unreachable. Add it here so the drawer always carries it, independent of
   // the bottom-bar slot — same SECTIONS-omission pattern as the Pro Plus fix.
-  { en: "DAILY WORK", fr: "TRAVAIL QUOTIDIEN", routes: ["/assistant", "/", "/pos", "/online-cart", "/shifts", "/refunds", "/pending-sync"] },
+  { en: "DAILY WORK", fr: "TRAVAIL QUOTIDIEN", routes: ["/assistant", "/", "/pos", "/online-cart", "/shifts", "/refunds", "/my-requests", "/pending-sync"] },
   // MP-DOZIE-SELLER-DRAWER-FIX: the migrated Dozie seller routes were added to
   // Layout's NAV (section:"inventory") but never to this mobile SECTIONS map, so
   // the drawer dropped them on phones — same omission pattern as the Pro Plus /
@@ -56,6 +56,7 @@ export default function NavDrawer({
   navItems,           // already role + plan filtered by Layout
   onlineCartPending,
   approvalsPending,
+  myRequestsApproved,
   onLogout,
 }) {
   const { lang, setLang } = useLangStore();
@@ -212,6 +213,8 @@ export default function NavDrawer({
                           ? onlineCartPending
                           : item.badge === "accountant_log" && approvalsPending > 0
                           ? approvalsPending
+                          : item.badge === "my_requests" && myRequestsApproved > 0
+                          ? myRequestsApproved
                           : undefined
                       }
                       onTap={handleNav}

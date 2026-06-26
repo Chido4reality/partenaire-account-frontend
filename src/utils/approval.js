@@ -18,3 +18,11 @@ export function pendingApprovalMessage(x, en) {
   if (en) return d.message_en || "Sent to the owner for approval.";
   return d.message_fr || d.message || "Envoyé au propriétaire pour approbation.";
 }
+
+// Non-blocking model: after a gated action is parked, tell the staffer they can
+// keep serving — the request lives in My Requests until the owner approves.
+export function keepWorkingToast(en) {
+  return en
+    ? "Sent to the owner for approval — you can keep working"
+    : "Envoyé au propriétaire — vous pouvez continuer à travailler";
+}

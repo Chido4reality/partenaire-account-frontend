@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
-import { isPendingApproval, pendingApprovalMessage } from "../utils/approval";
+import { isPendingApproval, keepWorkingToast } from "../utils/approval";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import api, { formatDate } from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
@@ -242,7 +242,7 @@ export default function CustomersPage() {
     onSuccess: (res) => {
       // Phase 5b: debt/credit change HELD for owner approval → nothing changed.
       if (isPendingApproval(res)) {
-        toast(pendingApprovalMessage(res, lang === "en"), { icon: "⏳", duration: 6000 });
+        toast(keepWorkingToast(lang === "en"), { icon: "⏳", duration: 4000 });
         return;
       }
       toast.success(lang === "en" ? "Customer updated!" : "Client mis a jour!");
@@ -455,7 +455,7 @@ export default function CustomersPage() {
     onSuccess: (res) => {
       // Phase 5b: delete HELD for owner approval → nothing deleted.
       if (isPendingApproval(res)) {
-        toast(pendingApprovalMessage(res, lang === "en"), { icon: "⏳", duration: 6000 });
+        toast(keepWorkingToast(lang === "en"), { icon: "⏳", duration: 4000 });
         setConfirmDel(null); setDelError(null);
         return;
       }
