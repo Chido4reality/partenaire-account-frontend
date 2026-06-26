@@ -912,6 +912,7 @@
         <a class="sb-link" data-route="broadcasts"><span class="sb-link-icon">📣</span><span class="sb-link-label">Broadcasts</span></a>
         <a class="sb-link" data-route="admin-team"><span class="sb-link-icon">👤</span><span class="sb-link-label">Admin team</span></a>
         <a class="sb-link" data-route="audit-log"><span class="sb-link-icon">📋</span><span class="sb-link-label">Audit log</span></a>
+        <a class="sb-link" data-route="admin-activity"><span class="sb-link-icon">📜</span><span class="sb-link-label">Admin Staff Activity</span></a>
         <a class="sb-link" data-route="cart-reconcile"><span class="sb-link-icon">🔗</span><span class="sb-link-label">Cart reconcile</span></a>
         <a class="sb-link" data-route="settings"><span class="sb-link-icon">🔐</span><span class="sb-link-label">Settings</span></a>
       </nav>
@@ -1506,6 +1507,41 @@
         </div>
       </section>
 
+      <!-- ADMIN ACTIVITY (master_admin only) -->
+      <section class="route" id="route-admin-activity">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Admin Staff Activity</div>
+            <div class="page-sub">What the admin team did — approvals, broadcasts, impersonations. Platform-wide, newest first. (Background system jobs are hidden.)</div>
+          </div>
+        </div>
+        <div class="card" style="margin-bottom:16px">
+          <div class="al-filter-grid">
+            <div class="field"><label>Admin</label>
+              <select id="aa-admin"><option value="">All admins</option></select>
+            </div>
+            <div class="field"><label>Action (use * for prefix)</label>
+              <input type="text" id="aa-action" list="aa-action-list" placeholder="e.g. impersonate* or approve_payment" />
+              <datalist id="aa-action-list"></datalist>
+            </div>
+            <div class="field"><label>From</label><input type="date" id="aa-date-from" /></div>
+            <div class="field"><label>To</label><input type="date" id="aa-date-to" /></div>
+            <div class="field al-filter-actions">
+              <button class="btn btn-primary" id="aa-apply">Apply filters</button>
+              <button class="btn" id="aa-clear">Clear</button>
+            </div>
+          </div>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <table class="data-table" id="aa-table">
+            <thead><tr>
+              <th>When</th><th>Admin</th><th>What happened</th><th>Target</th><th class="ta-right">Amount</th>
+            </tr></thead>
+            <tbody id="aa-tbody"><tr><td colspan="5" class="muted ta-center" style="padding:20px">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
       <!-- CART RECONCILE -->
       <section class="route" id="route-cart-reconcile">
         <div class="page-head">
@@ -1969,7 +2005,7 @@
       'dashboard', 'live', 'businesses', 'subscriptions', 'subscription-requests', 'mp-finance',
       'marketplace-users', 'verifications', 'dozie-subscriptions', 'orders', 'disputes', 'marketplace-finance',
       'sell-restrictions',
-      'broadcasts', 'admin-team', 'audit-log', 'cart-reconcile', 'settings'
+      'broadcasts', 'admin-team', 'audit-log', 'admin-activity', 'cart-reconcile', 'settings'
     ]);
 
     function parseHashRoute() {
@@ -2009,6 +2045,7 @@
       if (route === 'broadcasts')          loadBroadcasts();
       if (route === 'admin-team')          loadAdminTeam();
       if (route === 'audit-log')           { loadAuditLogActions(); loadAuditLog(); }
+      if (route === 'admin-activity')      { loadAdminActivityAdmins(); loadAdminActivity(); }
       if (route === 'cart-reconcile')      loadCartReconcile();
       // Render placeholders lazily on first visit (cheap; idempotent).
       if (ROUTE_PLACEHOLDERS[route]) renderPlaceholder(route);
@@ -2311,6 +2348,9 @@
       // Sell restrictions is master-admin-only (endpoints are gated too).
       const srLink = document.querySelector('.sb-link[data-route="sell-restrictions"]');
       if (srLink) srLink.style.display = isMaster ? '' : 'none';
+      // Admin activity is master-admin-only (endpoint is requireAdminRole('master_admin')).
+      const aaLink = document.querySelector('.sb-link[data-route="admin-activity"]');
+      if (aaLink) aaLink.style.display = isMaster ? '' : 'none';
 
       $('login-screen').style.display = 'none';
       $('app-shell').classList.add('active');
@@ -5507,6 +5547,117 @@
       } catch (_) { /* autocomplete is nice-to-have */ }
     }
 
+    // ────────────────────── ADMIN ACTIVITY (master_admin only) ──────────────────────
+    let _aaRows = [];
+
+    function aaAmount(r) {
+      return (r.amount != null && r.amount !== '') ? Number(r.amount).toLocaleString() : '';
+    }
+
+    // Plain-language description of an admin action.
+    function aaDescribe(r) {
+      const amt  = aaAmount(r);
+      const plan = r.plan_id || '';
+      const org  = r.target_org || '';
+      const user = r.target_user || '';
+      switch (r.action) {
+        case 'approve_payment':           return 'approved a ' + (plan ? plan + ' ' : '') + 'payment' + (amt ? ' of ' + amt : '');
+        case 'approve_sub_request':       return 'approved a ' + (plan ? plan + ' ' : '') + 'subscription request';
+        case 'impersonate_token_issued':
+        case 'impersonate_exchange':      return 'opened (impersonated) ' + (org || 'an organisation') + (user ? ' — ' + user : '');
+        case 'broadcast_create':          return 'sent a broadcast';
+        case 'broadcast_delete':          return 'deleted a broadcast';
+        default:                          return (r.action || '').replace(/_/g, ' ');
+      }
+    }
+
+    // Sensitive-action badge: impersonations + deletions = critical (red);
+    // payment/subscription approvals + plan changes = elevated (amber).
+    function aaSensitive(r) {
+      const a = (r.action || '').toLowerCase();
+      if (a.includes('impersonate')) return { label: 'Impersonation', cls: 'crit' };
+      if (a.includes('delete') || a.includes('deleted') || a.includes('remove')) return { label: 'Deletion', cls: 'crit' };
+      if (a === 'approve_payment' || a === 'approve_sub_request' || a.includes('approve')) return { label: 'Approval', cls: 'warn' };
+      if (a.includes('plan')) return { label: 'Plan change', cls: 'warn' };
+      return null;
+    }
+
+    async function loadAdminActivityAdmins() {
+      try {
+        const res = await apiAdmin('GET', '/admin/activity/admins');
+        const sel = $('aa-admin'); if (!sel) return;
+        const cur = sel.value;
+        sel.innerHTML = '<option value="">All admins</option>' +
+          (res.data || []).map(a => `<option value="${escapeHtml(a.email)}">${escapeHtml(a.email)}${a.role ? ' (' + escapeHtml(a.role) + ')' : ''}</option>`).join('');
+        sel.value = cur;
+      } catch (_) { /* dropdown is nice-to-have */ }
+    }
+
+    async function loadAdminActivity() {
+      const params = new URLSearchParams();
+      if ($('aa-admin').value)             params.set('admin_email', $('aa-admin').value);
+      if ($('aa-action').value.trim())     params.set('action',      $('aa-action').value.trim());
+      if ($('aa-date-from').value)         params.set('from',        $('aa-date-from').value);
+      if ($('aa-date-to').value)           params.set('to',          $('aa-date-to').value + 'T23:59:59');
+      params.set('limit', '200');
+      try {
+        const res = await apiAdmin('GET', '/admin/activity?' + params.toString());
+        _aaRows = res.data || [];
+        renderAdminActivity();
+      } catch (e) {
+        showToast('Admin Staff Activity load failed: ' + e.message, 'danger');
+      }
+    }
+
+    function renderAdminActivity() {
+      const tb = $('aa-tbody');
+      // Refresh the action autocomplete from whatever is loaded.
+      const dl = $('aa-action-list');
+      if (dl) {
+        const set = new Set();
+        _aaRows.forEach(r => r.action && set.add(r.action));
+        dl.innerHTML = [...set].sort().map(a => `<option value="${escapeHtml(a)}"></option>`).join('');
+      }
+      if (!_aaRows.length) {
+        tb.innerHTML = '<tr><td colspan="5" class="muted ta-center" style="padding:20px">No admin staff activity matches these filters.</td></tr>';
+        return;
+      }
+      tb.innerHTML = _aaRows.map((r, i) => {
+        const sens = aaSensitive(r);
+        const badge = sens
+          ? `<span style="${sens.cls === 'crit' ? 'background:rgba(239,68,68,.18);color:#ef4444;' : 'background:rgba(245,158,11,.18);color:#f59e0b;'}padding:1px 7px;border-radius:8px;font-size:11px;font-weight:600;margin-left:6px">${escapeHtml(sens.label)}</span>`
+          : '';
+        const amt = aaAmount(r);
+        const target = [r.target_org, r.target_user].filter(Boolean).map(escapeHtml).join(' — ') || '<span class="muted">—</span>';
+        return `<tr data-aa-i="${i}" style="cursor:pointer">
+          <td>${new Date(r.created_at).toLocaleString()}</td>
+          <td>${escapeHtml(r.admin_email || '—')}${r.admin_role ? ' <span class="muted">(' + escapeHtml(r.admin_role) + ')</span>' : ''}</td>
+          <td>${escapeHtml(aaDescribe(r))}${badge}</td>
+          <td>${target}</td>
+          <td class="ta-right">${amt ? escapeHtml(amt) : '<span class="muted">—</span>'}</td>
+        </tr>`;
+      }).join('');
+      tb.querySelectorAll('[data-aa-i]').forEach(tr =>
+        tr.addEventListener('click', () => openAdminActivityDetail(_aaRows[parseInt(tr.getAttribute('data-aa-i'), 10)])));
+    }
+
+    function openAdminActivityDetail(r) {
+      if (!r) return;
+      openModal({
+        title: aaDescribe(r),
+        sub: (r.admin_email || '—') + (r.admin_role ? ' · ' + r.admin_role : '') + ' · ' + new Date(r.created_at).toLocaleString(),
+        content: `
+          <div class="field"><label>Action</label><div>${escapeHtml(r.action || '—')}</div></div>
+          <div class="field"><label>Target</label><div>${escapeHtml([r.target_org, r.target_user].filter(Boolean).join(' — ') || '—')}</div></div>
+          ${r.plan_id ? `<div class="field"><label>Plan</label><div>${escapeHtml(r.plan_id)}</div></div>` : ''}
+          ${(r.amount != null && r.amount !== '') ? `<div class="field"><label>Amount</label><div>${escapeHtml(Number(r.amount).toLocaleString())}</div></div>` : ''}
+          <div class="field"><label>Details</label>
+            <pre style="background:var(--bg-tertiary);padding:10px;border-radius:6px;overflow:auto;max-height:240px;font-size:12px">${escapeHtml(JSON.stringify(r.details || {}, null, 2))}</pre></div>
+        `,
+        secondary: { label: 'Close' }
+      });
+    }
+
     // ════════════════════════════════════════════════════════════════
     //  D-F — NOTIFICATIONS BELL
     //
@@ -5896,6 +6047,13 @@
       });
       $('al-export-btn').addEventListener('click', exportAuditLogCsv);
       $('al-load-more').addEventListener('click', () => loadAuditLog({ append: true }));
+      // Admin activity wire-up (master_admin only)
+      $('aa-apply').addEventListener('click', () => loadAdminActivity());
+      $('aa-clear').addEventListener('click', () => {
+        ['aa-action', 'aa-date-from', 'aa-date-to'].forEach(id => $(id).value = '');
+        $('aa-admin').value = '';
+        loadAdminActivity();
+      });
       // PHASE D — Notifications bell. Outside-click + Escape + scroll +
       // resize handlers are installed inside openNotifDropdown so they
       // get cleanly torn down on close. No "Mark all read" — admin
