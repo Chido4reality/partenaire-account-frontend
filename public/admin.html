@@ -912,7 +912,7 @@
         <a class="sb-link" data-route="broadcasts"><span class="sb-link-icon">📣</span><span class="sb-link-label">Broadcasts</span></a>
         <a class="sb-link" data-route="admin-team"><span class="sb-link-icon">👤</span><span class="sb-link-label">Admin team</span></a>
         <a class="sb-link" data-route="audit-log"><span class="sb-link-icon">📋</span><span class="sb-link-label">Audit log</span></a>
-        <a class="sb-link" data-route="admin-activity"><span class="sb-link-icon">📜</span><span class="sb-link-label">Admin activity</span></a>
+        <a class="sb-link" data-route="admin-activity"><span class="sb-link-icon">📜</span><span class="sb-link-label">Admin Staff Activity</span></a>
         <a class="sb-link" data-route="cart-reconcile"><span class="sb-link-icon">🔗</span><span class="sb-link-label">Cart reconcile</span></a>
         <a class="sb-link" data-route="settings"><span class="sb-link-icon">🔐</span><span class="sb-link-label">Settings</span></a>
       </nav>
@@ -1511,7 +1511,7 @@
       <section class="route" id="route-admin-activity">
         <div class="page-head">
           <div>
-            <div class="page-title">Admin activity</div>
+            <div class="page-title">Admin Staff Activity</div>
             <div class="page-sub">What the admin team did — approvals, broadcasts, impersonations. Platform-wide, newest first. (Background system jobs are hidden.)</div>
           </div>
         </div>
@@ -5605,7 +5605,7 @@
         _aaRows = res.data || [];
         renderAdminActivity();
       } catch (e) {
-        showToast('Admin activity load failed: ' + e.message, 'danger');
+        showToast('Admin Staff Activity load failed: ' + e.message, 'danger');
       }
     }
 
@@ -5619,7 +5619,7 @@
         dl.innerHTML = [...set].sort().map(a => `<option value="${escapeHtml(a)}"></option>`).join('');
       }
       if (!_aaRows.length) {
-        tb.innerHTML = '<tr><td colspan="5" class="muted ta-center" style="padding:20px">No admin activity matches these filters.</td></tr>';
+        tb.innerHTML = '<tr><td colspan="5" class="muted ta-center" style="padding:20px">No admin staff activity matches these filters.</td></tr>';
         return;
       }
       tb.innerHTML = _aaRows.map((r, i) => {
