@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
+import { isPendingApproval, pendingApprovalMessage } from "../utils/approval";
 import { useLangStore } from "../store";
 import api, { formatDate } from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
@@ -91,7 +92,14 @@ export default function ExpenditurePage() {
 
   const addMutation = useMutation({
     mutationFn: () => api.post("/expenditures", { ...form, amount: +form.amount }),
-    onSuccess: () => {
+    onSuccess: (res) => {
+      // Phase 5b: expense HELD for owner approval → nothing recorded.
+      if (isPendingApproval(res)) {
+        toast(pendingApprovalMessage(res, lang === "en"), { icon: "⏳", duration: 6000 });
+        setShowAdd(false);
+        setForm({ location_id: "", category_id: "", amount: "", description: "", exp_date: new Date().toISOString().split("T")[0] });
+        return;
+      }
       toast.success(lang === "en" ? "Expense recorded!" : "Depense enregistree!");
       setShowAdd(false);
       setForm({ location_id: "", category_id: "", amount: "", description: "", exp_date: new Date().toISOString().split("T")[0] });

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
+import { isPendingApproval, pendingApprovalMessage } from "../utils/approval";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import api, { formatDate } from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
@@ -238,7 +239,12 @@ export default function CustomersPage() {
       }
       return api.patch(`/customers/${selected.id}`, body, { headers });
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
+      // Phase 5b: debt/credit change HELD for owner approval → nothing changed.
+      if (isPendingApproval(res)) {
+        toast(pendingApprovalMessage(res, lang === "en"), { icon: "⏳", duration: 6000 });
+        return;
+      }
       toast.success(lang === "en" ? "Customer updated!" : "Client mis a jour!");
       qc.invalidateQueries(["customers"]);
       qc.invalidateQueries(["customer-summary"]);
@@ -446,7 +452,13 @@ export default function CustomersPage() {
       }
       return api.delete(`/customers/${confirmDel.id}`, { headers });
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
+      // Phase 5b: delete HELD for owner approval → nothing deleted.
+      if (isPendingApproval(res)) {
+        toast(pendingApprovalMessage(res, lang === "en"), { icon: "⏳", duration: 6000 });
+        setConfirmDel(null); setDelError(null);
+        return;
+      }
       toast.success(lang === "en" ? "Customer deleted" : "Client supprimé");
       if (selected?.id === confirmDel.id) setSelected(null);
       setConfirmDel(null); setDelError(null);

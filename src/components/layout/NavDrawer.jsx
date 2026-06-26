@@ -55,6 +55,7 @@ export default function NavDrawer({
   onClose,
   navItems,           // already role + plan filtered by Layout
   onlineCartPending,
+  approvalsPending,
   onLogout,
 }) {
   const { lang, setLang } = useLangStore();
@@ -209,6 +210,8 @@ export default function NavDrawer({
                       badge={
                         item.badge === "online_cart" && onlineCartPending > 0
                           ? onlineCartPending
+                          : item.badge === "accountant_log" && approvalsPending > 0
+                          ? approvalsPending
                           : undefined
                       }
                       onTap={handleNav}
