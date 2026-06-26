@@ -264,24 +264,21 @@ async function consumeImpersonateToken() {
       // through a cold-start; a 4xx still fails fast below.
       const res = await impFetch(apiBase + "/auth/impersonate-exchange?token=" + encodeURIComponent(exchangeToken));
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data?.success || !data?.session_token) {
+      // The exchange now returns the FULL owner session in ONE response
+      // (session_token + user-with-org). Require BOTH so we never establish a
+      // half-session — and never fall back to a cached/other-org session.
+      if (!res.ok || !data?.success || !data?.session_token || !data?.user) {
         toast.dismiss("imp-cold");
         toast.error(data?.message || "Impersonation token expired or invalid. Close this tab and try again from the admin portal.", { duration: 8000 });
         stripUrl();
         return false;
       }
       toast.dismiss("imp-cold");
-      // Fetch the user record so the existing app code (which reads
-      // authStore.user / authStore.org) keeps working unchanged.
-      const meRes = await impFetch(apiBase + "/auth/me", { headers: { Authorization: "Bearer " + data.session_token } });
-      const me = await meRes.json().catch(() => ({}));
-      const user = me?.user;
+      // Establish a COMPLETE owner session directly from the exchange response —
+      // no second /auth/me call, no dependency on any cached/prior login. This is
+      // the root fix for "drops to sign-in for every shop but the cached one".
+      const user = data.user;
       const org = user?.pa_organisations || null;
-      if (!user) {
-        toast.error("Could not load impersonated user.", { duration: 6000 });
-        stripUrl();
-        return false;
-      }
       useAuthStore.getState().loginImpersonated(user, org, data.session_token, {
         admin_email:      data.admin_email,
         target_org_name:  data.target_org_name,

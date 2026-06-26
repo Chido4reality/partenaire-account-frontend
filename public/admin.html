@@ -2626,7 +2626,9 @@
             { action: 'extend-sub',      label: 'Extend subscription' },
             { separator: true },
             { action: 'reset',           label: 'Force password reset' },
-            { action: 'impersonate',     label: 'Impersonate (View as owner)' },
+            // Impersonation is full-CRUD only (master_admin / admin). Hidden for
+            // staff; the backend also 403s the route (defence in depth).
+            ...(adminCanMutate() ? [{ action: 'impersonate', label: 'Impersonate (View as owner)' }] : []),
             { separator: true },
             { action: 'csv-sales',       label: 'Export sales CSV' },
             { action: 'csv-inventory',   label: 'Export inventory CSV' },
@@ -3594,7 +3596,8 @@
           openRowActionMenu(btn, [
             { action: 'view',        label: 'View profile' },
             { action: 'status',      label: isSuspended ? 'Reactivate' : 'Suspend' },
-            { action: 'impersonate', label: 'Impersonate (View as user)' }
+            // Impersonation is full-CRUD only (master_admin / admin); hidden for staff.
+            ...(adminCanMutate() ? [{ action: 'impersonate', label: 'Impersonate (View as user)' }] : [])
           ], (action) => handleDzUserAction(action, id));
         });
       });
