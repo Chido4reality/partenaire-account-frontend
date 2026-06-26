@@ -513,10 +513,151 @@ const ACTION_TEXT = {
   debt_collected_no_invoice:        { en: "Collected debt (no bill)",    fr: "Dette encaissée (sans facture)", money: true },
   credit_extended_in_sale:          { en: "Gave credit in a sale",       fr: "Crédit accordé dans une vente",  money: true },
 };
-function actionText(a, en) {
-  const t = ACTION_TEXT[a];
-  if (t) return en ? t.en : t.fr;
-  return String(a || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+// Rich plain-language wording pulled straight from the audit row's new_data.
+// `nd` = new_data; `money` = the org currency formatter (n)=>string. Every piece
+// is gracefully omitted when missing. SHARED by the Phase-2 list, the bell deep-
+// link target, and the Phase-4 PDF "What happened" column — one source of truth.
+function actionText(a, en, nd, money) {
+  const d = nd || {};
+  const has = (v) => v != null && v !== "";
+  const m = (v) => (money ? money(Math.abs(Number(v) || 0)) : String(Math.round(Math.abs(Number(v) || 0))));
+  switch (a) {
+    case "sale_voided":
+    case "sale_voided_approval": {
+      let s = has(d.sale_number)
+        ? (en ? `cancelled invoice ${d.sale_number}` : `a annulé la facture ${d.sale_number}`)
+        : (en ? "cancelled a sale" : "a annulé une vente");
+      if (has(d.customer_name)) s += ` — ${d.customer_name}`;
+      if (has(d.original_total_amount)) s += ` — ${m(d.original_total_amount)}`;
+      if (has(d.reason)) s += en ? ` — reason: ${d.reason}` : ` — motif : ${d.reason}`;
+      return s;
+    }
+    case "return_processed": {
+      const ref = has(d.sale_number)
+        ? (en ? `invoice ${d.sale_number}` : `facture ${d.sale_number}`)
+        : (en ? "a sale" : "une vente");
+      const amt = Number(d.refund_amount) || 0;
+      if (amt > 0) {
+        const method = has(d.refund_method) ? ` (${d.refund_method})` : "";
+        return en ? `refunded ${m(amt)}${method} on ${ref}` : `a remboursé ${m(amt)}${method} sur ${ref}`;
+      }
+      return en ? `exchange on ${ref}` : `échange sur ${ref}`;
+    }
+    case "credit_extended_in_sale": {
+      const who = has(d.target_name) ? d.target_name : (en ? "a customer" : "un client");
+      const ext = has(d.extended) ? m(d.extended) : "";
+      const inv = has(d.sale_number) ? (en ? ` (invoice ${d.sale_number})` : ` (facture ${d.sale_number})`) : "";
+      return en ? `sold ${ext} on credit to ${who}${inv}`.replace(/\s+/g, " ").trim()
+                : `a vendu ${ext} à crédit à ${who}${inv}`.replace(/\s+/g, " ").trim();
+    }
+    case "customer_debt_manual_adjustment": {
+      const nm = d.customer_name || d.target_name;
+      const who = has(nm) ? (en ? ` for ${nm}` : ` de ${nm}`) : "";
+      let s = has(d.delta)
+        ? (en ? `adjusted a customer's debt by ${m(d.delta)}${who}` : `a ajusté la dette d'un client de ${m(d.delta)}${who}`)
+        : (en ? `adjusted a customer's debt${who}` : `a ajusté la dette d'un client${who}`);
+      if (has(d.note)) s += ` — ${d.note}`;
+      return s;
+    }
+    case "customer_credit_edited": {
+      const who = has(d.target_name) ? d.target_name : (en ? "a customer" : "un client");
+      let s = en ? `edited ${who}` : `a modifié ${who}`;
+      const ch = d.changes && d.changes.credit_limit;
+      if (ch && (has(ch.from) || has(ch.to))) {
+        s += en ? ` — credit limit ${m(ch.from)} → ${m(ch.to)}` : ` — limite de crédit ${m(ch.from)} → ${m(ch.to)}`;
+      }
+      return s;
+    }
+    case "customer_deleted": {
+      const who = has(d.target_name) ? d.target_name : (en ? "a customer" : "un client");
+      let s = en ? `deleted customer ${who}` : `a supprimé le client ${who}`;
+      if (has(d.total_debt)) s += en ? ` (debt was ${m(d.total_debt)})` : ` (dette : ${m(d.total_debt)})`;
+      return s;
+    }
+    case "stock_adjusted_manually": {
+      const prod = has(d.product_name) ? ` ${d.product_name}` : "";
+      const from = has(d.from_quantity) ? d.from_quantity : "?";
+      const to = has(d.to_quantity) ? d.to_quantity : "?";
+      let s = en ? `changed stock${prod} ${from} → ${to}` : `a modifié le stock${prod} ${from} → ${to}`;
+      if (has(d.reason)) s += ` — ${d.reason}`;
+      return s;
+    }
+    default: {
+      const t = ACTION_TEXT[a];
+      if (t) return en ? t.en : t.fr;
+      return String(a || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+  }
+}
+
+// Phase-enhancement — readable label/value breakdown for the tap-detail modal
+// (NOT raw JSON). Returns [{ label, value }] where value is a string or, for
+// item lists, an array of lines. Amounts via `money`; everything missing-safe.
+function detailFields(r, en, money) {
+  const d = (r && r.new_data) || {};
+  const has = (v) => v != null && v !== "";
+  const m = (v) => (money ? money(Math.abs(Number(v) || 0)) : String(Math.round(Math.abs(Number(v) || 0))));
+  const lines = (arr) => (arr || []).map((it) => {
+    const qty = it.qty != null ? it.qty : (it.quantity != null ? it.quantity : 0);
+    const nm = it.name || it.product_name || it.product_id || "?";
+    return `${qty} × ${nm}${has(it.unit_price) ? ` @ ${m(it.unit_price)}` : ""}`;
+  });
+  const F = [];
+  switch (r && r.action) {
+    case "sale_voided":
+    case "sale_voided_approval":
+      if (has(d.sale_number)) F.push({ label: en ? "Invoice" : "Facture", value: d.sale_number });
+      if (has(d.customer_name)) F.push({ label: en ? "Customer" : "Client", value: d.customer_name });
+      if (has(d.reason)) F.push({ label: en ? "Reason" : "Motif", value: d.reason });
+      if (has(d.original_total_amount)) F.push({ label: en ? "Original total" : "Total initial", value: m(d.original_total_amount) });
+      if (Array.isArray(d.items_returned) && d.items_returned.length) F.push({ label: en ? "Items" : "Articles", value: lines(d.items_returned) });
+      if (has(d.customer_debt_before) || has(d.customer_debt_after))
+        F.push({ label: en ? "Customer debt" : "Dette client", value: `${has(d.customer_debt_before) ? m(d.customer_debt_before) : "?"} → ${has(d.customer_debt_after) ? m(d.customer_debt_after) : "?"}` });
+      break;
+    case "return_processed": {
+      if (has(d.sale_number)) F.push({ label: en ? "Invoice" : "Facture", value: d.sale_number });
+      if (has(d.refund_amount)) F.push({ label: en ? "Refund" : "Remboursement", value: `${m(d.refund_amount)}${has(d.refund_method) ? ` (${d.refund_method})` : ""}` });
+      if (has(d.return_type)) F.push({ label: "Type", value: d.return_type });
+      const items = d.items || d.items_returned;
+      if (Array.isArray(items) && items.length) F.push({ label: en ? "Items" : "Articles", value: lines(items) });
+      const rep = d.replacements || d.replacement_items;
+      if (Array.isArray(rep) && rep.length) F.push({ label: en ? "Replacements" : "Remplacements", value: lines(rep) });
+      break;
+    }
+    case "customer_credit_edited":
+    case "customer_edited":
+    case "customer_edited_by_cashier":
+    case "customer_debt_adjusted":
+      if (has(d.target_name)) F.push({ label: en ? "Customer" : "Client", value: d.target_name });
+      if (d.changes && typeof d.changes === "object") {
+        Object.entries(d.changes).forEach(([field, ch]) => {
+          if (!ch || typeof ch !== "object" || ch.from === ch.to) return;
+          const moneyish = /limit|debt|amount|price/i.test(field);
+          const fromV = moneyish && has(ch.from) ? m(ch.from) : (has(ch.from) ? String(ch.from) : "—");
+          const toV = moneyish && has(ch.to) ? m(ch.to) : (has(ch.to) ? String(ch.to) : "—");
+          F.push({ label: field.replace(/_/g, " "), value: `${fromV} → ${toV}` });
+        });
+      }
+      break;
+    case "customer_debt_manual_adjustment":
+      if (has(d.delta)) F.push({ label: en ? "Change" : "Changement", value: m(d.delta) });
+      if (has(d.customer_name || d.target_name)) F.push({ label: en ? "Customer" : "Client", value: d.customer_name || d.target_name });
+      if (has(d.note)) F.push({ label: "Note", value: d.note });
+      if (has(d.total_debt_after)) F.push({ label: en ? "New balance" : "Nouveau solde", value: m(d.total_debt_after) });
+      break;
+    case "stock_adjusted_manually":
+      if (has(d.product_name)) F.push({ label: en ? "Product" : "Produit", value: d.product_name });
+      F.push({ label: "Stock", value: `${has(d.from_quantity) ? d.from_quantity : "?"} → ${has(d.to_quantity) ? d.to_quantity : "?"}` });
+      if (has(d.reason)) F.push({ label: en ? "Reason" : "Motif", value: d.reason });
+      break;
+    case "customer_deleted":
+      if (has(d.target_name)) F.push({ label: en ? "Customer" : "Client", value: d.target_name });
+      if (has(d.total_debt)) F.push({ label: en ? "Debt was" : "Dette", value: m(d.total_debt) });
+      break;
+    default:
+      break;
+  }
+  return F;
 }
 
 const RISK = {
@@ -584,7 +725,7 @@ function buildEvidenceHtml({ data, en, fmt }) {
     return `<tr class="${hi ? "hi" : ""}">`
       + `<td class="c">${esc(r.seq)}${hi ? ' <span class="flag">⚠</span>' : ""}</td>`
       + `<td>${dt(r.created_at)}</td>`
-      + `<td>${esc(actionText(r.action, en))}</td>`
+      + `<td>${esc(actionText(r.action, en, r.new_data, fmt))}</td>`
       + `<td>${esc(r.branch_name) || "—"}</td>`
       + `<td class="r">${amt}</td>`
       + `<td>${esc(r.reason) || "—"}</td>`
@@ -656,6 +797,7 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
   const [range, setRange] = useState(initialDay ? "day" : "today"); // today | week | day
   const [pickedDay, setPickedDay] = useState(() => initialDay || new Date().toISOString().slice(0, 10));
   const [tab, setTab] = useState("everything");      // everything | check
+  const [detailRow, setDetailRow] = useState(null);  // tapped activity row → detail modal
 
   // ── Phase 4 evidence export ──
   const [showExport, setShowExport] = useState(false);
@@ -880,15 +1022,15 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
           const amt = r.amount != null && r.amount !== "" ? Number(r.amount) : null;
           const highlighted = highlightId && r.id === highlightId;
           return (
-            <div key={r.id} style={{
-              display: "flex", alignItems: "center", gap: 10, padding: "12px 14px",
+            <div key={r.id} onClick={() => setDetailRow(r)} style={{
+              display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", cursor: "pointer",
               borderTop: i === 0 ? "none" : "1px solid var(--border)",
               borderLeft: highlighted ? "3px solid var(--brand)" : "3px solid transparent",
               background: highlighted ? "rgba(251,197,3,0.12)" : (r.risk_level === "high" ? "rgba(239,68,68,0.05)" : "transparent"),
             }}>
               <span style={{ width: 9, height: 9, borderRadius: 9, background: rk.dot, flexShrink: 0 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: 15 }}>{actionText(r.action, en)}</div>
+                <div style={{ fontWeight: 600, fontSize: 15 }}>{actionText(r.action, en, r.new_data, fmt)}</div>
                 <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
                   {timeLabel(r.created_at, en)}{r.branch_name ? ` · ${r.branch_name}` : ""}
                 </div>
@@ -903,6 +1045,32 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
         })}
       </div>
       <div style={{ height: 24 }} />
+
+      {/* ── ACTIVITY DETAIL (tap a row) — readable label/value breakdown ── */}
+      {detailRow && (
+        <div className="modal-overlay" onClick={() => setDetailRow(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>{actionText(detailRow.action, en, detailRow.new_data, fmt)}</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 14 }}>
+              {timeLabel(detailRow.created_at, en)}{detailRow.branch_name ? ` · ${detailRow.branch_name}` : ""}
+              {detailRow.amount != null && detailRow.amount !== "" ? ` · ${fmt(Math.abs(Number(detailRow.amount)))}` : ""}
+            </div>
+            {(() => {
+              const F = detailFields(detailRow, en, fmt);
+              if (!F.length) return <div style={{ fontSize: 13, color: "var(--text-muted)" }}>{en ? "No extra detail recorded." : "Aucun détail supplémentaire."}</div>;
+              return F.map((f, i) => (
+                <div key={i} style={{ display: "flex", gap: 10, padding: "6px 0", borderTop: i === 0 ? "none" : "1px solid var(--border)" }}>
+                  <div style={{ width: 118, flexShrink: 0, fontSize: 12.5, color: "var(--text-muted)", textTransform: "capitalize" }}>{f.label}</div>
+                  <div style={{ flex: 1, fontSize: 13.5, fontWeight: 600, minWidth: 0, wordBreak: "break-word" }}>
+                    {Array.isArray(f.value) ? f.value.map((line, j) => <div key={j}>{line}</div>) : f.value}
+                  </div>
+                </div>
+              ));
+            })()}
+            <button className="btn btn-secondary" style={{ width: "100%", marginTop: 16 }} onClick={() => setDetailRow(null)}>{en ? "Close" : "Fermer"}</button>
+          </div>
+        </div>
+      )}
 
       {/* ── EXPORT DATE-RANGE MODAL ── */}
       {showExport && (
