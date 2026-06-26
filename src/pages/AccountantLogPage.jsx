@@ -512,6 +512,18 @@ function buildEvidenceHtml({ data, en, fmt }) {
   </div>`;
 }
 
+// Phase 5a — the actions an owner can Allow/Block per staff member. Keys map to
+// pa_staff_permissions policy columns. Plain, low-literacy wording.
+const PERM_ACTIONS = [
+  { key: "void_policy",         en: "Cancel a sale",        fr: "Annuler une vente" },
+  { key: "refund_policy",       en: "Give a refund",        fr: "Faire un remboursement" },
+  { key: "stock_adjust_policy", en: "Change stock by hand", fr: "Modifier le stock à la main" },
+  { key: "debt_adjust_policy",  en: "Change / forgive debt", fr: "Modifier / annuler une dette" },
+  { key: "delete_policy",       en: "Delete a customer",    fr: "Supprimer un client" },
+  { key: "discount_policy",     en: "Give a discount",      fr: "Faire une remise" },
+  { key: "expense_policy",      en: "Record an expense",    fr: "Enregistrer une dépense" },
+];
+
 function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
   const fmt = useCurrency();
   // Deep-linked from a tapped alert → land on that entry's day so it's visible.
@@ -548,6 +560,38 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
     } catch (_) {
       toast.error(en ? "Could not generate the report" : "Impossible de générer le rapport");
     } finally { setExporting(false); }
+  };
+
+  // ── Phase 5a staff limits (allow/block + caps) ──
+  const [showPerms, setShowPerms] = useState(false);
+  const [perms, setPerms] = useState(null);
+  const [permsBusy, setPermsBusy] = useState(false);
+
+  const openPerms = async () => {
+    setShowPerms(true); setPerms(null);
+    try {
+      const r = await api.get(`/staff/permissions/${staff.id}`);
+      setPerms(r.data?.data || null);
+    } catch (_) {
+      toast.error(en ? "Could not load permissions" : "Impossible de charger les permissions");
+      setShowPerms(false);
+    }
+  };
+  const setPolicy = (key, value) => setPerms((p) => ({ ...p, [key]: value }));
+  const setCap = (key, value) => setPerms((p) => ({ ...p, [key]: value }));
+  const savePerms = async () => {
+    if (!perms) return;
+    try {
+      setPermsBusy(true);
+      const body = { max_discount_pct: perms.max_discount_pct === "" ? null : perms.max_discount_pct,
+                     max_expense_amount: perms.max_expense_amount === "" ? null : perms.max_expense_amount };
+      PERM_ACTIONS.forEach((a) => { body[a.key] = perms[a.key] === "block" ? "block" : "allow"; });
+      await api.put(`/staff/permissions/${staff.id}`, body);
+      toast.success(en ? "Permissions saved" : "Permissions enregistrées");
+      setShowPerms(false);
+    } catch (e) {
+      toast.error(e?.response?.data?.message || (en ? "Could not save" : "Échec de l'enregistrement"));
+    } finally { setPermsBusy(false); }
   };
 
   const { from, to } = useMemo(() => computeRange(range, pickedDay), [range, pickedDay]);
@@ -617,10 +661,15 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
         {staff.branch_name || (en ? "All branches" : "Toutes les boutiques")}
       </div>
 
-      {/* Phase 4 — printable evidence pack for this staff member */}
-      <button className="btn btn-secondary" style={{ width: "100%", marginTop: 12 }} onClick={openExport}>
-        📄 {en ? "Export evidence (PDF)" : "Exporter la preuve (PDF)"}
-      </button>
+      {/* Phase 4 evidence pack + Phase 5a staff limits */}
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button className="btn btn-secondary" style={{ flex: 1 }} onClick={openExport}>
+          📄 {en ? "Export evidence (PDF)" : "Exporter la preuve (PDF)"}
+        </button>
+        <button className="btn btn-secondary" style={{ flex: 1 }} onClick={openPerms}>
+          🔒 {en ? "Permissions" : "Permissions"}
+        </button>
+      </div>
 
       {/* B) Date filter */}
       <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
@@ -755,6 +804,75 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                 {exporting ? "..." : (en ? "Generate report" : "Générer le rapport")}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── PERMISSIONS PANEL (Phase 5a staff limits) ── */}
+      {showPerms && (
+        <div className="modal-overlay" onClick={() => setShowPerms(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 4 }}>
+              🔒 {en ? "Permissions" : "Permissions"} — {staff.full_name}
+            </div>
+            <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginBottom: 14, background: "var(--bg-elevated)", borderRadius: 8, padding: "8px 10px" }}>
+              {en
+                ? "By default everyone is allowed everything. Block only what you want to restrict."
+                : "Par défaut, tout le monde a le droit de tout faire. Bloquez seulement ce que vous voulez limiter."}
+            </div>
+            {!perms ? (
+              <div style={{ padding: 18, color: "var(--text-muted)" }}>{en ? "Loading…" : "Chargement…"}</div>
+            ) : (
+              <>
+                {PERM_ACTIONS.map((a) => {
+                  const blocked = perms[a.key] === "block";
+                  return (
+                    <div key={a.key} style={{ marginBottom: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ flex: 1, fontWeight: 600, fontSize: 14 }}>{en ? a.en : a.fr}</div>
+                        <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>
+                          <button onClick={() => setPolicy(a.key, "allow")}
+                            style={{ padding: "6px 12px", fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer",
+                              background: !blocked ? "rgba(16,185,129,0.9)" : "var(--bg-elevated)",
+                              color: !blocked ? "#06281d" : "var(--text-muted)" }}>
+                            {en ? "Allowed" : "Autorisé"}
+                          </button>
+                          <button onClick={() => setPolicy(a.key, "block")}
+                            style={{ padding: "6px 12px", fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer",
+                              background: blocked ? "rgba(239,68,68,0.9)" : "var(--bg-elevated)",
+                              color: blocked ? "#fff" : "var(--text-muted)" }}>
+                            {en ? "Blocked" : "Bloqué"}
+                          </button>
+                        </div>
+                      </div>
+                      {/* Caps tied to discount / expense */}
+                      {a.key === "discount_policy" && !blocked && (
+                        <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 12.5, color: "var(--text-muted)", flex: 1 }}>{en ? "Max discount %" : "Remise max %"}</span>
+                          <input type="number" min="0" max="100" className="input" style={{ width: 110 }}
+                            value={perms.max_discount_pct ?? ""} placeholder={en ? "no limit" : "sans limite"}
+                            onChange={(e) => setCap("max_discount_pct", e.target.value)} />
+                        </div>
+                      )}
+                      {a.key === "expense_policy" && !blocked && (
+                        <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 12.5, color: "var(--text-muted)", flex: 1 }}>{en ? "Max expense amount" : "Dépense max"} ({fmt.symbol})</span>
+                          <input type="number" min="0" className="input" style={{ width: 130 }}
+                            value={perms.max_expense_amount ?? ""} placeholder={en ? "no limit" : "sans limite"}
+                            onChange={(e) => setCap("max_expense_amount", e.target.value)} />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                  <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowPerms(false)}>{en ? "Cancel" : "Annuler"}</button>
+                  <button className="btn btn-primary" style={{ flex: 2 }} disabled={permsBusy} onClick={savePerms}>
+                    {permsBusy ? "..." : (en ? "Save permissions" : "Enregistrer")}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
