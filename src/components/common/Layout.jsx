@@ -250,7 +250,7 @@ function TrialBanner() {
 
 // Pull-based admin-broadcast banner for ALL signed-in MP users (owner + staff,
 // not plan-gated). Reads /api/broadcasts/active (exact active-filter; NULL-expiry
-// broadcasts included), polls every 60s + on window focus, stacks up to 3
+// broadcasts included), polls every 10s + on window focus, stacks up to 3
 // newest-first, and remembers per-id dismissals in localStorage so they don't
 // reappear on reload. A broadcast also vanishes on its own once it expires
 // (the endpoint stops returning it).
@@ -271,7 +271,7 @@ function BroadcastBanner() {
   const { data } = useQuery({
     queryKey: ["mp-broadcasts-active"],
     queryFn: () => api.get("/broadcasts/active").then(r => r.data),
-    refetchInterval: 60000,
+    refetchInterval: 10000,
     refetchOnWindowFocus: true,
     enabled: isAuth,
     retry: 1,
