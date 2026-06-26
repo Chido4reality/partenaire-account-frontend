@@ -6,6 +6,7 @@ import { useCurrency } from "../../utils/useCurrency";
 import OwnerPIN from "./OwnerPIN";
 import { useSettingsStore, useAuthStore } from "../../store";
 import useOwnerApproval from "../../hooks/useOwnerApproval";
+import { isPendingApproval, pendingApprovalMessage } from "../../utils/approval";
 
 /**
  * VoidReturnModal — handles void, refund, exchange
@@ -58,6 +59,10 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
   );
   const [overrideReason, setOverrideReason] = useState("");
   const [loading, setLoading] = useState(false);
+  // Phase 5b: when a gated staffer's action is HELD for owner approval the server
+  // returns 202 pending_approval and nothing happened — show this instead of a
+  // receipt (which would wrongly read "Refund Recorded / 0 FCFA").
+  const [held, setHeld] = useState(null); // the held message string
 
   // Sprint L: return-window banner. <30d OK, 30d–1y needs an
   // override reason, >1y the server rejects.
@@ -243,6 +248,14 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
         res = await api.post(`/returns/${mode === "exchange" ? "exchange" : "return"}/${sale.id}`, body, { headers });
       }
 
+      // Phase 5b: action HELD for owner approval → nothing executed. Show the
+      // held confirmation (no receipt, no amount, no "recorded").
+      if (isPendingApproval(res?.data)) {
+        setHeld(pendingApprovalMessage(res?.data, lang === "en"));
+        setLoading(false);
+        return;
+      }
+
       const ref = res?.data?.data?.return_ref;
       toast.success(ref
         ? (lang === "en" ? `✓ Return ${ref} recorded` : `✓ Retour ${ref} enregistré`)
@@ -269,6 +282,20 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
       else toast.error(msg);
     } finally { setLoading(false); }
   };
+
+  // Phase 5b: held-for-approval confirmation — replaces the receipt entirely.
+  if (held) {
+    return (
+      <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 28, maxWidth: 420, width: "100%", textAlign: "center" }}>
+          <div style={{ fontSize: 48, marginBottom: 10 }}>⏳</div>
+          <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 8 }}>{lang === "en" ? "Waiting for owner approval" : "En attente de l'approbation du propriétaire"}</div>
+          <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 22 }}>{held}</div>
+          <button className="btn btn-primary" style={{ width: "100%" }} onClick={onClose}>{lang === "en" ? "OK" : "OK"}</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>

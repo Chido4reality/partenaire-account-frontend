@@ -92,7 +92,7 @@ const NAV = [
   // Accountant Log Phase 1 — OWNER-only oversight surface. Pro Plus only;
   // locked→upsell when not entitled (same pattern as /assistant + /assets).
   // No other role (incl. accountant) sees it — roles:["owner"] + server 403.
-  { to: "/accountant-log", en: "Accountant Log", fr: "Journal du comptable", icon: "🛡️", roles: ["owner"],                   section: "settings", feature: "accountant_log" },
+  { to: "/accountant-log", en: "Accountant Log", fr: "Journal du comptable", icon: "🛡️", roles: ["owner"],                   section: "settings", feature: "accountant_log", badge: "accountant_log" },
   { to: "/settings",     en: "Settings",   fr: "Paramètres",      icon: "⚙️", roles: ["owner","manager"],                       section: "settings" },
 ];
 
@@ -632,7 +632,10 @@ export default function Layout() {
   const { data: ocPending } = useQuery({
     queryKey: ["online-cart-pending-count"],
     queryFn: () => api.get("/online-cart/pending-count").then(r => r.data),
-    refetchInterval: 30000,
+    // FIX 3: 7s live poll for the sidebar count badges. React Query auto-clears
+    // the timer on unmount and (refetchIntervalInBackground defaults to false)
+    // pauses polling while the tab is backgrounded.
+    refetchInterval: 7000,
     // MP-LITE-MODE-PHASE-1: Online Cart nav entry is hidden in Lite,
     // so the badge poll has nothing to drive. Skip the request.
     enabled: !lite && hasSection(effectivePlan, "online_cart"),
@@ -640,6 +643,19 @@ export default function Layout() {
     onError: () => {}
   });
   const onlineCartPending = ocPending?.count || 0;
+
+  // FIX 2/3: Accountant Log sidebar badge — number of PENDING approvals, live
+  // 7s poll. Only fetched for an owner on a pro_plus (accountant_log) org —
+  // exactly the gate on the nav item — so it never fires for other roles/plans.
+  const { data: apprPending } = useQuery({
+    queryKey: ["accountant-approvals-pending-count"],
+    queryFn: () => api.get("/staff/approvals?status=pending").then(r => r.data),
+    refetchInterval: 7000,
+    enabled: role === "owner" && hasFeature(effectivePlan, "accountant_log"),
+    retry: 1,
+    onError: () => {}
+  });
+  const approvalsPending = (apprPending?.data || []).length;
 
   // MP-DOZIE-SELLER-MIGRATION Phase 2 — "Online Dozie" attention badge. Polls the
   // resolved seller's needs-attention count (pending orders now; messages/disputes
@@ -674,6 +690,7 @@ export default function Layout() {
   // dedicated /attention source.
   const navBadge = (item) =>
     item.badge === "online_cart"    ? onlineCartPending
+    : item.badge === "accountant_log" ? approvalsPending
     : item.badge === "dozie_orders"   ? ((dozieNotif_.order || 0) + (dozieNotif_.payment || 0))
     : item.badge === "dozie_messages" ? (dozieNotif_.message || 0)
     : item.badge === "dozie_disputes" ? (dozieAttn_.disputes || 0)
@@ -747,7 +764,7 @@ export default function Layout() {
       <div style={{ padding: 16, textAlign: "center", color: "var(--text-muted)", fontSize: 12 }}>
         {lang === "en" ? "No notifications" : "Aucune notification"}
       </div>
-    ) : notifications.slice(0, 15).map(n => {
+    ) : notifications.slice(0, 50).map(n => {
       // Map ref_type → in-app route. Older notifications with NULL
       // refs (the existing 122 low-stock rows generated before the
       // backend fix) just mark-read on click — no navigation,
@@ -757,6 +774,9 @@ export default function Layout() {
         // can deep-link the matching activity entry; the daily digest has no ref_id.
         if (n.ref_type === "audit_log" && n.ref_id) return `/accountant-log?audit=${n.ref_id}`;
         if (n.ref_type === "accountant_log") return `/accountant-log`;
+        // Phase 5b: approval request/result alerts deep-link to the Accountant Log
+        // (the owner's pending-approvals inbox sits at the top of that screen).
+        if (n.ref_type === "action_approval") return `/accountant-log`;
         if (!n.ref_type || !n.ref_id) return null;
         switch (n.ref_type) {
           case "product":  return `/inventory?focus=${n.ref_id}`;
@@ -778,8 +798,8 @@ export default function Layout() {
         <div style={{ display: "flex", gap: 8 }}>
           <div style={{ width: 6, height: 6, borderRadius: "50%", background: isReview ? "#ef4444" : notifColor(n.type), marginTop: 5, flexShrink: 0 }} />
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: 12, fontWeight: n.is_read ? 400 : 600 }}>{lang === "en" ? (n.title_en || n.title) : (n.title || n.title_en)}</div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en" ? (n.body_en || n.body) : (n.body || n.body_en)}</div>
+            <div style={{ fontSize: 12, fontWeight: n.is_read ? 400 : 600, whiteSpace: "normal", wordBreak: "break-word" }}>{lang === "en" ? (n.title_en || n.title) : (n.title || n.title_en)}</div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "normal", wordBreak: "break-word" }}>{lang === "en" ? (n.body_en || n.body) : (n.body || n.body_en)}</div>
           </div>
         </div>
       </div>
@@ -901,7 +921,7 @@ export default function Layout() {
             <button onClick={() => setShowNotif(false)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}>✕</button>
           </div>
         </div>
-        <div style={{ maxHeight: 300, overflowY: "auto" }}>
+        <div style={{ maxHeight: "70vh", overflowY: "auto" }}>
           {renderNotifBody()}
         </div>
       </div>
@@ -1046,6 +1066,7 @@ export default function Layout() {
           onClose={() => setDrawerOpen(false)}
           navItems={visibleNav}
           onlineCartPending={onlineCartPending}
+          approvalsPending={approvalsPending}
           onLogout={handleLogout}
         />
         <motion.div
