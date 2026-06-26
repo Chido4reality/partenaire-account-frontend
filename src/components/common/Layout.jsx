@@ -248,53 +248,67 @@ function TrialBanner() {
   return null;
 }
 
+// Pull-based admin-broadcast banner for ALL signed-in MP users (owner + staff,
+// not plan-gated). Reads /api/broadcasts/active (exact active-filter; NULL-expiry
+// broadcasts included), polls every 60s + on window focus, stacks up to 3
+// newest-first, and remembers per-id dismissals in localStorage so they don't
+// reappear on reload. A broadcast also vanishes on its own once it expires
+// (the endpoint stops returning it).
+function bcastPalette(sev) {
+  return (sev === "critical" || sev === "danger")
+    ? { bg: "rgba(239,68,68,0.16)", bd: "rgba(239,68,68,0.5)", fg: "#fca5a5", icon: "⛔" }
+    : sev === "warning"
+    ? { bg: "rgba(245,158,11,0.16)", bd: "rgba(245,158,11,0.5)", fg: "#fbbf24", icon: "⚠" }
+    : { bg: "rgba(59,130,246,0.16)", bd: "rgba(59,130,246,0.5)", fg: "#93c5fd", icon: "📢" };
+}
 function BroadcastBanner() {
   const { lang } = useLangStore();
-  const lite = useLiteMode();
+  const isAuth = useAuthStore(s => s.isAuthenticated);
   const [dismissed, setDismissed] = useState(() => {
     try { return JSON.parse(localStorage.getItem(BCAST_DISMISS_KEY) || "[]"); }
     catch { return []; }
   });
   const { data } = useQuery({
-    queryKey: ["mp-broadcasts"],
-    queryFn: () => api.get("/notifications/broadcasts").then(r => r.data),
-    refetchInterval: 300000,
+    queryKey: ["mp-broadcasts-active"],
+    queryFn: () => api.get("/broadcasts/active").then(r => r.data),
+    refetchInterval: 60000,
+    refetchOnWindowFocus: true,
+    enabled: isAuth,
     retry: 1,
-    enabled: !lite, // MP-LITE-MODE-PHASE-1: skip in Lite (no broadcasts UI)
     onError: () => {}
   });
-  if (lite) return null;
-  const list = (data?.data || []).filter(b => !dismissed.includes(b.id));
+  const list = (data?.data || []).filter(b => !dismissed.includes(b.id)).slice(0, 3);
   if (!list.length) return null;
-  const b = list[0];
-  const palette = b.severity === "critical"
-    ? { bg: "rgba(239,68,68,0.16)", bd: "rgba(239,68,68,0.5)", fg: "#fca5a5", icon: "⛔" }
-    : b.severity === "warning"
-    ? { bg: "rgba(245,158,11,0.16)", bd: "rgba(245,158,11,0.5)", fg: "#fbbf24", icon: "⚠" }
-    : { bg: "rgba(251,197,3,0.16)", bd: "rgba(251,197,3,0.5)", fg: "var(--brand-light)", icon: "📢" };
-  const dismiss = () => {
-    const next = [...dismissed, b.id];
+  const dismiss = (id) => {
+    const next = [...dismissed, id];
     setDismissed(next);
     try { localStorage.setItem(BCAST_DISMISS_KEY, JSON.stringify(next.slice(-100))); } catch {}
   };
   return (
-    <div style={{
-      width: "100%", padding: "8px 16px", background: palette.bg, color: palette.fg,
-      borderBottom: `1px solid ${palette.bd}`, display: "flex", alignItems: "center",
-      gap: 12, fontSize: 13, flexShrink: 0
-    }}>
-      <span style={{ fontSize: 16 }}>{palette.icon}</span>
-      <span style={{ flex: 1, minWidth: 0 }}>
-        <strong>{b.title}</strong>
-        {b.body ? <span style={{ opacity: 0.9 }}> — {b.body}</span> : null}
-      </span>
-      <button onClick={dismiss}
-        style={{ background: "transparent", border: `1px solid ${palette.bd}`,
-                 color: palette.fg, padding: "4px 10px", borderRadius: 8,
-                 fontWeight: 700, fontSize: 12, cursor: "pointer", flexShrink: 0 }}>
-        {lang === "en" ? "Dismiss" : "Fermer"}
-      </button>
-    </div>
+    <>
+      {list.map(b => {
+        const palette = bcastPalette(b.severity);
+        return (
+          <div key={b.id} style={{
+            width: "100%", padding: "8px 16px", background: palette.bg, color: palette.fg,
+            borderBottom: `1px solid ${palette.bd}`, display: "flex", alignItems: "center",
+            gap: 12, fontSize: 13, flexShrink: 0
+          }}>
+            <span style={{ fontSize: 16 }}>{palette.icon}</span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <strong>{b.title}</strong>
+              {b.body ? <span style={{ opacity: 0.9 }}> — {b.body}</span> : null}
+            </span>
+            <button onClick={() => dismiss(b.id)}
+              style={{ background: "transparent", border: `1px solid ${palette.bd}`,
+                       color: palette.fg, padding: "4px 10px", borderRadius: 8,
+                       fontWeight: 700, fontSize: 12, cursor: "pointer", flexShrink: 0 }}>
+              {lang === "en" ? "Dismiss" : "Fermer"}
+            </button>
+          </div>
+        );
+      })}
+    </>
   );
 }
 
