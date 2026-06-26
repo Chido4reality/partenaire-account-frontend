@@ -163,6 +163,49 @@ export default function AccountantLogPage() {
     onError: (e) => toast.error(e?.response?.data?.message || (en ? "Error" : "Erreur")),
   });
 
+  // ── Phase 5b: pending approvals (owner inbox) ──
+  const fmtCur = useCurrency();
+  const { data: approvalsResp } = useQuery({
+    queryKey: ["staff-approvals-pending"],
+    queryFn: () => api.get("/staff/approvals?status=pending").then((r) => r.data),
+    enabled: entitled,
+    refetchInterval: 30000, // keep the owner's inbox fresh
+  });
+  const pendingApprovals = approvalsResp?.data || [];
+  const [pinFor, setPinFor] = useState(null);     // approval row being approved (PIN prompt)
+  const [pinValue, setPinValue] = useState("");
+  const [rejectFor, setRejectFor] = useState(null); // approval row being rejected (note prompt)
+  const [rejectNote, setRejectNote] = useState("");
+
+  const APPROVAL_VERB = {
+    void: en ? "cancel a sale" : "annuler une vente",
+    refund: en ? "give a refund" : "faire un remboursement",
+    stock_adjust: en ? "change stock" : "modifier le stock",
+    debt_adjust: en ? "change a customer's debt" : "modifier la dette d'un client",
+    delete_customer: en ? "delete a customer" : "supprimer un client",
+    expense: en ? "record an expense" : "enregistrer une dépense",
+  };
+
+  const approveMut = useMutation({
+    mutationFn: ({ id, pin }) => api.post(`/staff/approvals/${id}/approve`, { pin }),
+    onSuccess: () => {
+      toast.success(en ? "Approved & done" : "Approuvé et exécuté");
+      setPinFor(null); setPinValue("");
+      qc.invalidateQueries({ queryKey: ["staff-approvals-pending"] });
+      qc.invalidateQueries({ queryKey: ["accountant-log-watched"] });
+    },
+    onError: (e) => toast.error(e?.response?.data?.message || (en ? "Could not approve" : "Échec de l'approbation")),
+  });
+  const rejectMut = useMutation({
+    mutationFn: ({ id, note }) => api.post(`/staff/approvals/${id}/reject`, { note }),
+    onSuccess: () => {
+      toast.success(en ? "Rejected" : "Rejeté");
+      setRejectFor(null); setRejectNote("");
+      qc.invalidateQueries({ queryKey: ["staff-approvals-pending"] });
+    },
+    onError: (e) => toast.error(e?.response?.data?.message || (en ? "Could not reject" : "Échec du rejet")),
+  });
+
   const wrap = (c) => <div style={{ maxWidth: 640, margin: "0 auto", padding: 20 }}>{c}</div>;
 
   // ── Pro Plus paywall (server also enforces a hard 403). ──
@@ -232,6 +275,40 @@ export default function AccountantLogPage() {
           📤 {en ? "WhatsApp" : "WhatsApp"}
         </button>
       </div>
+
+      {/* Phase 5b — pending approvals (owner inbox) */}
+      {pendingApprovals.length > 0 && (
+        <div className="card" style={{ marginTop: 12, padding: 0, overflow: "hidden", border: "1px solid rgba(245,158,11,0.5)" }}>
+          <div style={{ padding: "10px 14px", display: "flex", alignItems: "center", gap: 8, background: "rgba(245,158,11,0.12)" }}>
+            <span style={{ fontSize: 18 }}>⏳</span>
+            <span style={{ fontWeight: 700, fontSize: 15, color: "#fbbf24" }}>
+              {en ? "Waiting for your approval" : "En attente de votre approbation"}
+            </span>
+            <span style={{ marginLeft: "auto", background: "#f59e0b", color: "#1a1a1a", borderRadius: 999, padding: "1px 9px", fontSize: 13, fontWeight: 800 }}>
+              {pendingApprovals.length}
+            </span>
+          </div>
+          {pendingApprovals.map((a, i) => (
+            <div key={a.id} style={{ padding: "12px 14px", borderTop: i === 0 ? "none" : "1px solid var(--border)" }}>
+              <div style={{ fontWeight: 600, fontSize: 14.5 }}>
+                {(a.requested_by_name || (en ? "A staff member" : "Un employé"))} {en ? "wants to" : "veut"} {APPROVAL_VERB[a.action_type] || a.action_type}
+              </div>
+              <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 2 }}>
+                {[a.amount != null ? fmtCur(Math.abs(Number(a.amount))) : null, a.target_ref, a.branch_name].filter(Boolean).join(" · ")}
+                {" · "}{new Date(a.created_at).toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setRejectNote(""); setRejectFor(a); }}>
+                  ✕ {en ? "Reject" : "Rejeter"}
+                </button>
+                <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => { setPinValue(""); setPinFor(a); }}>
+                  ✓ {en ? "Approve" : "Approuver"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Watched-staff list */}
       <div className="card" style={{ marginTop: 14, padding: 0, overflow: "hidden" }}>
@@ -333,6 +410,55 @@ export default function AccountantLogPage() {
               <button className="btn btn-primary" style={{ flex: 2 }} disabled={toggleActive.isPending}
                 onClick={() => toggleActive.mutate({ id: confirmKill.staff.id, nextActive: confirmKill.nextActive })}>
                 {toggleActive.isPending ? "..." : (confirmKill.nextActive ? (en ? "Reactivate" : "Réactiver") : (en ? "Deactivate" : "Désactiver"))}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── APPROVE (PIN) MODAL ── */}
+      {pinFor && (
+        <div className="modal-overlay" onClick={() => setPinFor(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 6 }}>{en ? "Approve this action?" : "Approuver cette action ?"}</div>
+            <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 14 }}>
+              {(pinFor.requested_by_name || (en ? "A staff member" : "Un employé"))} {en ? "wants to" : "veut"} {APPROVAL_VERB[pinFor.action_type] || pinFor.action_type}
+              {pinFor.amount != null ? ` — ${fmtCur(Math.abs(Number(pinFor.amount)))}` : ""}{pinFor.target_ref ? ` — ${pinFor.target_ref}` : ""}.
+              <br />{en ? "It will be done immediately." : "Elle sera exécutée immédiatement."}
+            </div>
+            <div className="form-group"><label className="label">{en ? "Enter your PIN to approve" : "Entrez votre code PIN pour approuver"}</label>
+              <input className="input" type="password" inputMode="numeric" value={pinValue}
+                onChange={e => setPinValue(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder="••••" autoFocus />
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setPinFor(null)}>{en ? "Cancel" : "Annuler"}</button>
+              <button className="btn btn-primary" style={{ flex: 2 }} disabled={pinValue.length < 4 || approveMut.isPending}
+                onClick={() => approveMut.mutate({ id: pinFor.id, pin: pinValue })}>
+                {approveMut.isPending ? "..." : (en ? "Approve & do it" : "Approuver et exécuter")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── REJECT MODAL ── */}
+      {rejectFor && (
+        <div className="modal-overlay" onClick={() => setRejectFor(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 6 }}>{en ? "Reject this request?" : "Rejeter cette demande ?"}</div>
+            <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 14 }}>
+              {(rejectFor.requested_by_name || (en ? "A staff member" : "Un employé"))} {en ? "wanted to" : "voulait"} {APPROVAL_VERB[rejectFor.action_type] || rejectFor.action_type}.
+            </div>
+            <div className="form-group"><label className="label">{en ? "Reason (optional)" : "Raison (facultatif)"}</label>
+              <input className="input" value={rejectNote} onChange={e => setRejectNote(e.target.value)}
+                placeholder={en ? "e.g. not needed" : "ex. pas nécessaire"} />
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setRejectFor(null)}>{en ? "Cancel" : "Annuler"}</button>
+              <button className="btn btn-primary" style={{ flex: 2 }} disabled={rejectMut.isPending}
+                onClick={() => rejectMut.mutate({ id: rejectFor.id, note: rejectNote.trim() || null })}>
+                {rejectMut.isPending ? "..." : (en ? "Reject" : "Rejeter")}
               </button>
             </div>
           </div>
@@ -583,9 +709,15 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
     if (!perms) return;
     try {
       setPermsBusy(true);
-      const body = { max_discount_pct: perms.max_discount_pct === "" ? null : perms.max_discount_pct,
-                     max_expense_amount: perms.max_expense_amount === "" ? null : perms.max_expense_amount };
-      PERM_ACTIONS.forEach((a) => { body[a.key] = perms[a.key] === "block" ? "block" : "allow"; });
+      const body = {
+        max_discount_pct: perms.max_discount_pct === "" ? null : perms.max_discount_pct,
+        max_expense_amount: perms.max_expense_amount === "" ? null : perms.max_expense_amount,
+        approve_above_amount: perms.approve_above_amount === "" ? null : perms.approve_above_amount,
+      };
+      PERM_ACTIONS.forEach((a) => {
+        const v = perms[a.key];
+        body[a.key] = ["allow", "approve", "block"].includes(v) ? v : "allow";
+      });
       await api.put(`/staff/permissions/${staff.id}`, body);
       toast.success(en ? "Permissions saved" : "Permissions enregistrées");
       setShowPerms(false);
@@ -825,25 +957,22 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
             ) : (
               <>
                 {PERM_ACTIONS.map((a) => {
-                  const blocked = perms[a.key] === "block";
+                  const pol = perms[a.key] || "allow";
+                  const seg = (val, label, bg, fg) => (
+                    <button key={val} onClick={() => setPolicy(a.key, val)}
+                      style={{ flex: 1, padding: "7px 4px", fontSize: 12.5, fontWeight: 700, border: "none", cursor: "pointer",
+                        background: pol === val ? bg : "var(--bg-elevated)", color: pol === val ? fg : "var(--text-muted)" }}>
+                      {label}
+                    </button>
+                  );
+                  const blocked = pol === "block";
                   return (
-                    <div key={a.key} style={{ marginBottom: 10 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ flex: 1, fontWeight: 600, fontSize: 14 }}>{en ? a.en : a.fr}</div>
-                        <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>
-                          <button onClick={() => setPolicy(a.key, "allow")}
-                            style={{ padding: "6px 12px", fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer",
-                              background: !blocked ? "rgba(16,185,129,0.9)" : "var(--bg-elevated)",
-                              color: !blocked ? "#06281d" : "var(--text-muted)" }}>
-                            {en ? "Allowed" : "Autorisé"}
-                          </button>
-                          <button onClick={() => setPolicy(a.key, "block")}
-                            style={{ padding: "6px 12px", fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer",
-                              background: blocked ? "rgba(239,68,68,0.9)" : "var(--bg-elevated)",
-                              color: blocked ? "#fff" : "var(--text-muted)" }}>
-                            {en ? "Blocked" : "Bloqué"}
-                          </button>
-                        </div>
+                    <div key={a.key} style={{ marginBottom: 12 }}>
+                      <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 5 }}>{en ? a.en : a.fr}</div>
+                      <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>
+                        {seg("allow", en ? "Allowed" : "Autorisé", "rgba(16,185,129,0.9)", "#06281d")}
+                        {seg("approve", en ? "Needs approval" : "Approbation", "rgba(245,158,11,0.9)", "#3a2400")}
+                        {seg("block", en ? "Blocked" : "Bloqué", "rgba(239,68,68,0.9)", "#fff")}
                       </div>
                       {/* Caps tied to discount / expense */}
                       {a.key === "discount_policy" && !blocked && (
@@ -865,7 +994,24 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                     </div>
                   );
                 })}
-                <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                {/* Approve-above threshold — even 'Allowed' actions ask for approval over this. */}
+                <div style={{ marginTop: 4, marginBottom: 8, padding: "9px 11px", background: "var(--bg-elevated)", borderRadius: 8 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 5 }}>
+                    {en ? "Approve any action above" : "Approuver toute action au-dessus de"}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input type="number" min="0" className="input" style={{ flex: 1 }}
+                      value={perms.approve_above_amount ?? ""} placeholder={en ? "no threshold" : "sans seuil"}
+                      onChange={(e) => setCap("approve_above_amount", e.target.value)} />
+                    <span style={{ fontSize: 12.5, color: "var(--text-muted)" }}>{fmt.symbol}</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                    {en
+                      ? "Even allowed actions will ask for your approval when the amount is this high or more."
+                      : "Même les actions autorisées demanderont votre approbation à partir de ce montant."}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
                   <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowPerms(false)}>{en ? "Cancel" : "Annuler"}</button>
                   <button className="btn btn-primary" style={{ flex: 2 }} disabled={permsBusy} onClick={savePerms}>
                     {permsBusy ? "..." : (en ? "Save permissions" : "Enregistrer")}
