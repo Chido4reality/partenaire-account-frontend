@@ -889,16 +889,33 @@ export default function Layout() {
     // ── DESKTOP: existing fixed-position dropdown ─────────────────
     const panelRef = useRef(null);
     useLayoutEffect(() => {
-      if (!panelRef.current) return;
+      const el = panelRef.current;
+      if (!el) return;
       const trigger = document.getElementById("notif-bell-desktop");
       if (!trigger) return;
       const r = trigger.getBoundingClientRect();
-      // Anchor below the trigger, aligned to its left edge. Clamp so
-      // the 320px panel never runs off the right of the viewport on
-      // narrow desktops.
-      const left = Math.min(r.left, window.innerWidth - 320 - 8);
-      panelRef.current.style.top  = (r.bottom + 4) + "px";
-      panelRef.current.style.left = Math.max(8, left) + "px";
+      const GAP = 6, MARGIN = 8;
+      // Horizontal: align to the trigger's left, clamped so the 320px
+      // panel never runs off the right edge on narrow desktops.
+      const left = Math.max(MARGIN, Math.min(r.left, window.innerWidth - 320 - MARGIN));
+      el.style.left = left + "px";
+      // Vertical: the Alerts trigger sits near the BOTTOM of the sidebar,
+      // so opening downward (the old behaviour) ran the panel off-screen
+      // and only ~2 rows were reachable. Open whichever way has more room
+      // — in practice UPWARD: bottom edge just above the trigger, growing
+      // up — and cap max-height to that available space so the whole panel
+      // always stays inside the viewport with the list scrolling within.
+      const spaceBelow = window.innerHeight - r.bottom - GAP - MARGIN;
+      const spaceAbove = r.top - GAP - MARGIN;
+      if (spaceBelow >= spaceAbove) {
+        el.style.top    = (r.bottom + GAP) + "px";
+        el.style.bottom = "auto";
+        el.style.maxHeight = Math.max(160, spaceBelow) + "px";
+      } else {
+        el.style.bottom = (window.innerHeight - r.top + GAP) + "px";
+        el.style.top    = "auto";
+        el.style.maxHeight = Math.max(160, spaceAbove) + "px";
+      }
     });
 
     // Close on outside-click / Esc / scroll / resize. The click and
@@ -933,8 +950,8 @@ export default function Layout() {
     }, []);
     return (
       <div id="notif-panel-pos" ref={panelRef}
-        style={{ position: "fixed", top: 0, left: -9999, width: 320, marginBottom: 0, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.4)", overflow: "hidden", zIndex: 1000 }}>
-        <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        style={{ position: "fixed", top: 0, left: -9999, width: 320, marginBottom: 0, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.4)", overflow: "hidden", zIndex: 1000, display: "flex", flexDirection: "column" }}>
+        <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexShrink: 0 }}>
           <span style={{ fontWeight: 600, fontSize: 13, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Notifications {unread > 0 && `(${unread})`}</span>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
             {unread > 0 && (
@@ -951,7 +968,7 @@ export default function Layout() {
             <button onClick={() => setShowNotif(false)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}>✕</button>
           </div>
         </div>
-        <div style={{ maxHeight: "70vh", overflowY: "auto" }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
           {renderNotifBody()}
         </div>
       </div>
