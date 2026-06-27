@@ -236,13 +236,60 @@ export default function TransfersPage() {
     setPickerSel({}); setPickerSearch(""); setPickerOpen(false); setSearchQty(1); setEditingId(null);
   };
 
+  // MP-TRANSFER-BACK-PRESERVE: a back press must step back ONE level, never
+  // nuke an in-progress transfer. Header ←, the step footer button, and the
+  // hardware/browser back button all route through goBack():
+  //   step 3 (review) → step 2 (items)   — keep everything entered
+  //   step 2 (items)  → step 1 (locations) — items preserved
+  //   step 1          → leave the wizard   — only here is the transfer
+  //                                          discarded, and only after a
+  //                                          confirm when items were added.
+  // Editing an existing pending transfer has no step 1 (locations are
+  // read-only), so back from step 2 exits the edit (confirm first).
+  const confirmDiscard = () =>
+    window.confirm(lang === "en" ? "Discard this transfer?" : "Abandonner ce transfert ?");
+
+  const goBack = () => {
+    if (step === 3) { setStep(2); return; }
+    if (step === 2) {
+      if (editingId) {
+        if (scannedItems.length > 0 && !confirmDiscard()) return;
+        resetNew();
+        return;
+      }
+      setStep(1);
+      return;
+    }
+    // step === 1 — leaving the wizard entirely
+    if (scannedItems.length > 0 && !confirmDiscard()) return;
+    resetNew();
+  };
+
+  // Trap the hardware/browser back button while the wizard is open so it
+  // runs goBack() instead of navigating away (which used to drop the whole
+  // transfer). Push a sentinel history entry on entry and re-arm on each
+  // pop so multi-step back-stepping stays trapped. goBackRef keeps the
+  // listener pointed at the latest state without re-binding every render.
+  const goBackRef = useRef(goBack);
+  goBackRef.current = goBack;
+  useEffect(() => {
+    if (mode === "list") return;
+    window.history.pushState({ mpTransferWizard: true }, "");
+    const onPop = () => {
+      window.history.pushState({ mpTransferWizard: true }, "");
+      goBackRef.current();
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [mode]);
+
   // -- NEW TRANSFER FLOW --------------------------------------
   if (mode === "new") {
     return (
       <div style={{ padding: 24, maxWidth: 700, margin: "0 auto" }}>
         {/* Header with steps */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 28 }}>
-          <button onClick={resetNew} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 18 }}>{"←"}</button>
+          <button onClick={goBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 18 }}>{"←"}</button>
           <h1 className="page-title">{editingId ? (lang === "en" ? "Edit Transfer" : "Modifier le transfert") : (lang === "en" ? "New Transfer" : "Nouveau transfert")}</h1>
           <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
             {[1,2,3].map(s => (
@@ -451,7 +498,7 @@ export default function TransfersPage() {
             )}
 
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => editingId ? resetNew() : setStep(1)}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={goBack}>
                 {"←"} {editingId ? (lang === "en" ? "Cancel edit" : "Annuler") : (lang === "en" ? "Back" : "Retour")}
               </button>
               <button className="btn btn-primary" style={{ flex: 2 }}
