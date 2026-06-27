@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <application
         android:allowBackup="true"
@@ -47,4 +48,18 @@
          the scanner branches in JS will surface a "no camera" toast instead. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!-- MP-BT-THERMAL: direct Bluetooth (Classic SPP) ESC/POS receipt printing.
+         Legacy BLUETOOTH/BLUETOOTH_ADMIN are install-time and only needed up to
+         Android 11; Android 12+ uses the runtime BLUETOOTH_CONNECT (and SCAN).
+         neverForLocation declares we don't derive physical location from BT, so
+         no location permission is pulled in. Bluetooth is optional hardware so
+         the APK still installs on devices without it (the BT print button just
+         falls back to the system print dialog). -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" tools:targetApi="s" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
 </manifest>
