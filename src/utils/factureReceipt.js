@@ -212,3 +212,103 @@ export function buildFactureInner({ org = {}, lang = "fr", saleNumber = "", sale
     <div class="sign"><div class="sigcell">Signature client</div><div class="sigcell">Signature vendeur</div></div>
   </div>`;
 }
+
+// MP-THERMAL-RECEIPT — narrow single-column receipt for 58mm / 80mm thermal
+// rolls. Monospace, monochrome, no tables/borders/backgrounds (thermal printers
+// can't render those). Reuses the SAME sale data as the A4 facture (incl. the
+// discount net fields + cashier name). Printed via window.print() on the
+// in-app overlay; @page size narrows the print dialog's paper.
+//
+// params:
+//   org, lang, widthMm (58|80),
+//   saleNumber, saleDate, saleTime, customerName, cashierName,
+//   items: [{name, quantity, unit_price}],
+//   discountTotal, paidAmount, balanceDue, paymentMethod, paymentStatus
+export function buildThermalReceipt({
+  org = {}, lang = "fr", widthMm = 58,
+  saleNumber = "", saleDate = "", saleTime = "",
+  customerName, cashierName,
+  items = [], discountTotal = 0,
+  paidAmount = null, balanceDue = null, paymentMethod = "", paymentStatus = "",
+} = {}) {
+  const en = lang === "en";
+  const W = (Number(widthMm) === 80) ? 80 : 58;
+  const fontPx = W === 80 ? 12 : 11;
+  const currency = esc(currencySymbol(org.currency));
+
+  const gross = (items || []).reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0);
+  const disc = Math.max(0, Number(discountTotal) || 0);
+  const total = gross - disc;
+  const paid = paidAmount == null ? null : (Number(paidAmount) || 0);
+  const balance = balanceDue != null ? (Number(balanceDue) || 0) : (paid == null ? null : Math.max(0, total - paid));
+  const change = (paid != null && paid > total) ? (paid - total) : 0;
+
+  const methodLabel = (m) => {
+    const k = String(m || "").toLowerCase();
+    if (k === "cash")          return en ? "Cash" : "Espèces";
+    if (k === "mobile_money")  return "Mobile Money";
+    if (k === "bank" || k === "bank_transfer") return en ? "Bank" : "Virement";
+    return m || (en ? "Cash" : "Espèces");
+  };
+
+  // Header (skip empty fields).
+  const head = [];
+  if (org.name)   head.push(`<div class="ctr b big">${esc(org.name)}</div>`);
+  if (org.slogan) head.push(`<div class="ctr sm">${esc(org.slogan)}</div>`);
+  const addr = [org.address, org.city, org.country].filter(Boolean).map(esc).join(", ");
+  if (addr)       head.push(`<div class="ctr sm">${addr}</div>`);
+  const tel = [org.phone, org.whatsapp_number].filter(Boolean).map(esc).join(" / ");
+  if (tel)        head.push(`<div class="ctr sm">${en ? "Tel" : "Tél"}: ${tel}</div>`);
+
+  const meta = [];
+  meta.push(`<div class="row sm"><span>N°</span><span class="r">${esc(saleNumber || "—")}</span></div>`);
+  meta.push(`<div class="row sm"><span>Date</span><span class="r">${factureDate(saleDate)}${saleTime ? " " + esc(saleTime) : ""}</span></div>`);
+  if (cashierName)  meta.push(`<div class="row sm"><span>${en ? "Served by" : "Servi par"}</span><span class="r">${esc(cashierName)}</span></div>`);
+  meta.push(`<div class="row sm"><span>${en ? "Customer" : "Client"}</span><span class="r">${esc(customerName || (en ? "Walk-in" : "Comptant"))}</span></div>`);
+
+  const lines = (items || []).map((i) => {
+    const qty = Number(i.quantity) || 0;
+    const pu = Number(i.unit_price) || 0;
+    return `<div class="it"><div class="nm">${esc(i.name || "?")}</div>`
+      + `<div class="row sm"><span>${qty} × ${money(pu)}</span><span class="r">${money(qty * pu)}</span></div></div>`;
+  }).join("");
+
+  const totals = [];
+  if (disc > 0) {
+    totals.push(`<div class="row sm"><span>${en ? "Subtotal" : "Sous-total"}</span><span class="r">${money(gross)} ${currency}</span></div>`);
+    totals.push(`<div class="row sm"><span>${en ? "Discount" : "Remise"}</span><span class="r">−${money(disc)} ${currency}</span></div>`);
+  }
+  totals.push(`<div class="row b big"><span>TOTAL</span><span class="r">${money(total)} ${currency}</span></div>`);
+  if (paid != null) totals.push(`<div class="row"><span>${en ? "Paid" : "Payé"}</span><span class="r">${money(paid)} ${currency}</span></div>`);
+  if (balance != null && balance > 0) totals.push(`<div class="row b"><span>${en ? "Balance due" : "Reste à payer"}</span><span class="r">${money(balance)} ${currency}</span></div>`);
+  if (change > 0) totals.push(`<div class="row"><span>${en ? "Change" : "Monnaie"}</span><span class="r">${money(change)} ${currency}</span></div>`);
+  if (paymentMethod) totals.push(`<div class="row sm"><span>${en ? "Method" : "Mode"}</span><span class="r">${esc(methodLabel(paymentMethod))}</span></div>`);
+
+  const footer = org.receipt_footer || (en ? "Thank you!" : "Merci !");
+
+  return `<style>
+    @page { size: ${W}mm auto; margin: 2mm; }
+    .mp-th, .mp-th * { color:#000 !important; background:#fff !important; box-sizing:border-box; -webkit-print-color-adjust:exact; }
+    .mp-th { font-family:'Courier New',ui-monospace,monospace; width:${W}mm; max-width:${W}mm; margin:0 auto; padding:2mm; font-size:${fontPx}px; line-height:1.35; }
+    .mp-th .ctr{ text-align:center; }
+    .mp-th .b{ font-weight:bold; }
+    .mp-th .big{ font-size:${fontPx + 2}px; }
+    .mp-th .sm{ font-size:${fontPx - 1}px; }
+    .mp-th hr{ border:none; border-top:1px dashed #000; margin:4px 0; }
+    .mp-th .row{ display:flex; justify-content:space-between; gap:6px; align-items:baseline; }
+    .mp-th .row .r{ text-align:right; white-space:nowrap; }
+    .mp-th .nm{ word-break:break-word; overflow-wrap:anywhere; }
+    .mp-th .it{ margin:2px 0; }
+  </style>
+  <div class="mp-th">
+    ${head.join("")}
+    <hr>
+    ${meta.join("")}
+    <hr>
+    ${lines || `<div class="sm ctr">—</div>`}
+    <hr>
+    ${totals.join("")}
+    <hr>
+    <div class="ctr sm">${esc(footer)}</div>
+  </div>`;
+}
