@@ -56,12 +56,20 @@ export default function CreditsPage() {
   const customerEffectiveTotal = Number(debtDetail?.customer_total_debt || 0);
 
   const payMutation = useMutation({
-    mutationFn: ({ saleId }) => api.post(`/sales/${saleId}/payment`, {
-      amount: +payForm.amount,
-      payment_method: payForm.payment_method,
-      reference: payForm.reference || null,
-      notes: payForm.notes || null
-    }),
+    mutationFn: ({ saleId }) => {
+      // MP-OVERPAY-CAP: the APPLIED payment is capped at the balance due. Any
+      // excess tendered is change (cash) — never sent/stored. (Backend
+      // /:id/payment also clamps via Math.min, this keeps the row + receipt
+      // exact.)
+      const due = Number(showPay?.effective_balance_due ?? showPay?.balance_due) || 0;
+      const applied = Math.min(+payForm.amount || 0, due);
+      return api.post(`/sales/${saleId}/payment`, {
+        amount: applied,
+        payment_method: payForm.payment_method,
+        reference: payForm.reference || null,
+        notes: payForm.notes || null
+      });
+    },
     onSuccess: (res) => {
       const d = res?.data?.data || {};
       toast.success(lang === "en" ? "✓ Payment recorded!" : "✓ Paiement enregistré!");
@@ -137,6 +145,14 @@ export default function CreditsPage() {
   ];
 
   const setP = (k, v) => setPayForm(f => ({ ...f, [k]: v }));
+
+  // MP-OVERPAY-CAP: amount-due is the invoice balance; applied = min(tendered,
+  // due); excess is change (cash) or blocked for non-cash. (showPay is false
+  // when the modal is closed → all zero, harmless.)
+  const payDue        = Number(showPay?.effective_balance_due ?? showPay?.balance_due) || 0;
+  const payTendered   = +payForm.amount || 0;
+  const payChange     = Math.max(0, payTendered - payDue);
+  const payOverNonCash = payForm.payment_method !== "cash" && payTendered > payDue;
 
   return (
     <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
@@ -387,12 +403,26 @@ export default function CreditsPage() {
                 placeholder={lang === "en" ? "Transaction ID..." : "ID transaction..."} />
             </div>
 
+            {/* MP-OVERPAY-CAP: non-cash can't give change → block over-due; cash shows change. */}
+            {payOverNonCash && (
+              <div style={{ background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: "#f87171", fontWeight: 600 }}>
+                {lang === "en"
+                  ? `Amount can't exceed what's due (${fmt(payDue)}).`
+                  : `Le montant ne peut pas dépasser le montant dû (${fmt(payDue)}).`}
+              </div>
+            )}
+            {payForm.payment_method === "cash" && payChange > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", background: "rgba(16,185,129,0.10)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 13, color: "#34d399", fontWeight: 700 }}>
+                <span>{lang === "en" ? "Change" : "Monnaie"}</span><span>{fmt(payChange)}</span>
+              </div>
+            )}
+
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowPay(false)}>
                 {lang === "en" ? "Cancel" : "Annuler"}
               </button>
               <button className="btn btn-success" style={{ flex: 2 }}
-                disabled={!payForm.amount || payMutation.isPending}
+                disabled={!payForm.amount || payMutation.isPending || payOverNonCash}
                 onClick={() => payMutation.mutate({ saleId: showPay.id })}>
                 {payMutation.isPending ? "..." : `✓ ${lang === "en" ? "Confirm payment" : "Confirmer"}`}
               </button>
