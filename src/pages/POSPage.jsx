@@ -1179,7 +1179,11 @@ export default function POSPage() {
         // the cart.
         items:          cart.filter(isSubmittableLine).map(i => {
                           if (i.type === "debt_payment") {
-                            return { type: "debt_payment", product_id: null, quantity: 1, unit_price: Number(i.unit_price) || 0, customer_id: i.customer_id };
+                            // MP-OFFLINE-DISCOUNT-NULL-FIX: non-product lines must emit
+                            // discount_amount: 0 (NOT null) so an offline replay can't
+                            // violate pa_sale_items NOT NULL DEFAULT 0. net_amount is a
+                            // GENERATED column → never sent (the DB computes it).
+                            return { type: "debt_payment", product_id: null, quantity: 1, unit_price: Number(i.unit_price) || 0, customer_id: i.customer_id, discount_amount: 0 };
                           }
                           if (i.product_id === "__DEBT__") {
                             // MP-CART-DEBT-LINE-FIFO-APPLY: preserve the
@@ -1195,6 +1199,7 @@ export default function POSPage() {
                               quantity: 1,
                               unit_price: Number(i.unit_price) || 0,
                               customer_id: customer?.id,
+                              discount_amount: 0, // MP-OFFLINE-DISCOUNT-NULL-FIX: non-product line → 0, never null
                               target_sale_ids: Array.isArray(i.debtSaleIds) && i.debtSaleIds.length
                                 ? i.debtSaleIds
                                 : undefined,
@@ -1210,6 +1215,8 @@ export default function POSPage() {
                             // MP-DISCOUNT: per-line discount (backend resolves the FCFA amount + net_amount).
                             discount_type:   (i.discount_type && Number(i.discount_value) > 0) ? i.discount_type : null,
                             discount_value:  (i.discount_type && Number(i.discount_value) > 0) ? Number(i.discount_value) : null,
+                            // MP-OFFLINE-DISCOUNT-NULL-FIX: explicit 0 (never null) for symmetry with debt lines.
+                            discount_amount: 0,
                             discount_reason: (i.discount_type && Number(i.discount_value) > 0) ? (String(i.discount_reason || "").trim() || null) : null };
                         }),
         payment_method: payMethod,
