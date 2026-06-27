@@ -36,7 +36,7 @@ function factureDate(sd) {
 // org: { logo_url, name, slogan, address, city, country, phone, whatsapp_number,
 //        email, currency, receipt_footer }  (empty fields are skipped)
 // items: [{ name, quantity, unit_price }]   (debt lines: pass quantity 1, unit_price = amount)
-export function buildFactureHtml({ org = {}, lang = "fr", saleNumber = "", saleDate = "", customerName, items = [], discountTotal = 0 }) {
+export function buildFactureHtml({ org = {}, lang = "fr", saleNumber = "", saleDate = "", customerName, cashierName, items = [], discountTotal = 0 }) {
   const currency = esc(currencySymbol(org.currency));   // XAF -> FCFA, etc.
   const footer = org.receipt_footer || "";
 
@@ -117,6 +117,7 @@ export function buildFactureHtml({ org = {}, lang = "fr", saleNumber = "", saleD
     <div class="meta">N°: ${esc(saleNumber)}</div>
     <div class="meta">Date: ${factureDate(saleDate)}</div>
     <div class="client">Client: ${esc(customerName || "Comptant")}</div>
+    ${cashierName ? `<div class="client" style="font-weight:normal">${lang === "en" ? "Served by" : "Servi par"}: ${esc(cashierName)}</div>` : ""}
     <table>
       <thead><tr><th class="c">Qté</th><th>Désignation</th><th class="r">P.U.</th><th class="r">P. Total</th></tr></thead>
       <tbody>${rows}</tbody>
@@ -146,7 +147,7 @@ export function buildFactureHtml({ org = {}, lang = "fr", saleNumber = "", saleD
 // window.open()-spawned windows can't be reliably closed on Android WebView
 // (window.close() is a no-op), which left an uncloseable layer over the app.
 // All styles are scoped under .mp-fac so nothing leaks to the host app.
-export function buildFactureInner({ org = {}, lang = "fr", saleNumber = "", saleDate = "", customerName, items = [], discountTotal = 0 }) {
+export function buildFactureInner({ org = {}, lang = "fr", saleNumber = "", saleDate = "", customerName, cashierName, items = [], discountTotal = 0 }) {
   const currency = esc(currencySymbol(org.currency));
   const footer = org.receipt_footer || "";
 
@@ -196,6 +197,7 @@ export function buildFactureInner({ org = {}, lang = "fr", saleNumber = "", sale
     <div class="meta">N°: ${esc(saleNumber)}</div>
     <div class="meta">Date: ${factureDate(saleDate)}</div>
     <div class="client">Client: ${esc(customerName || "Comptant")}</div>
+    ${cashierName ? `<div class="client" style="font-weight:normal">${lang === "en" ? "Served by" : "Servi par"}: ${esc(cashierName)}</div>` : ""}
     <table>
       <thead><tr><th class="c">Qté</th><th>Désignation</th><th class="r">P.U.</th><th class="r">P. Total</th></tr></thead>
       <tbody>${rows}</tbody>
