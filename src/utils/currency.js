@@ -21,10 +21,21 @@ export function currencySymbol(code) {
 }
 
 // Grouped number (fr-CM: space thousands), no decimals, + currency symbol.
-// BYTE-IDENTICAL to the legacy formatCFA() when the currency is XAF/unset — same
-// "—" guard (`!amount && amount !== 0`) and same `Math.round(amount)` — so FCFA
-// shops keep pixel-identical output after the formatCFA -> fmt migration.
+// Keeps the legacy formatCFA() "—" guard (`!amount && amount !== 0`) and
+// `Math.round(amount)`.
+//
+// SEPARATOR FIX: Intl "fr-CM" groups with U+202F (NARROW no-break space), which
+// renders at near-zero width in several Android WebViews / fonts — so
+// "1 000 000" visually collapsed to "1000000" and big amounts on the dashboard
+// scorebar were indistinguishable from smaller ones (1000000 vs 100000 looked
+// the same length). Normalise that separator to U+00A0 (regular no-break
+// space): visibly wide in every webview AND non-breaking, so a number never
+// wraps mid-figure. One shared formatter -> every money figure (scorebar
+// included) groups identically; no second formatting style is introduced.
 export function formatMoney(amount, code) {
   if (!amount && amount !== 0) return "—";
-  return new Intl.NumberFormat("fr-CM").format(Math.round(amount)) + " " + currencySymbol(code);
+  const grouped = new Intl.NumberFormat("fr-CM")
+    .format(Math.round(amount))
+    .replace(/ /g, " "); // narrow NBSP -> regular NBSP (visible everywhere)
+  return grouped + " " + currencySymbol(code);
 }
