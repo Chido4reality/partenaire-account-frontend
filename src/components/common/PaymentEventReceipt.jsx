@@ -505,6 +505,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
         saleNumber: reference || data.sale_number || "",
         saleDate: data.sale_date || "",
         customerName: data.customer_name || data.customer?.name || "Comptant",
+        cashierName: data.cashier_name || null, // MP-SALE-CASHIER-NAME: "Served by"
         items,
         discountTotal: Math.max(0, grossItems - netTotal),
       }));
@@ -694,7 +695,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
             </div>
 
             <div style={{ borderTop: "1px dashed var(--border)", marginTop: 8, paddingTop: 6, fontSize: 11, color: "var(--text-muted)", display: "flex", flexDirection: "column", gap: 2 }}>
-              {data.cashier_name && <div>{en ? "Cashier" : "Caissier"}: <strong>{data.cashier_name}</strong></div>}
+              {data.cashier_name && <div>{en ? "Served by" : "Servi par"}: <strong>{data.cashier_name}</strong></div>}
               {data.location_name && <div>{en ? "Location" : "Emplacement"}: <strong>{data.location_name}</strong></div>}
               <div>{dateStr} · {timeStr}</div>
             </div>

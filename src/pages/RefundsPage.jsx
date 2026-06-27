@@ -402,7 +402,15 @@ export default function RefundsPage() {
                           </div>
                         )}
                       </td>
-                      <td>{s.customer_name || s.pa_customers?.name || (fr ? "Comptoir" : "Walk-in")}</td>
+                      <td>
+                        {s.customer_name || s.pa_customers?.name || (fr ? "Comptoir" : "Walk-in")}
+                        {/* MP-SALE-CASHIER-NAME: accountability — who rang this sale. */}
+                        {(s.cashier_name || s.pa_users?.full_name) && (
+                          <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+                            {fr ? "Vendu par" : "Sold by"}: {s.cashier_name || s.pa_users?.full_name}
+                          </div>
+                        )}
+                      </td>
                       <td style={{ textAlign: "right", fontWeight: 600 }}>{fmt(s.total_amount)}</td>
                       <td style={{ textAlign: "right" }}>{fmt(s.paid_amount)}</td>
                       <td>

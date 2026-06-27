@@ -563,6 +563,8 @@ export default function ReportsPage() {
                                   {sale.pa_customers?.name || (lang === "en" ? "Walk-in customer" : "Client de passage")}
                                   {" · "}
                                   {items.length} {lang === "en" ? "item(s)" : "article(s)"}
+                                  {/* MP-SALE-CASHIER-NAME: who rang this sale. */}
+                                  {sale.cashier_name && <> · {lang === "en" ? "Sold by" : "Vendu par"}: {sale.cashier_name}</>}
                                 </div>
                               </div>
                               <div style={{ textAlign: "right" }}>
@@ -617,6 +619,7 @@ export default function ReportsPage() {
                                     saleNumber: sale.sale_number || "",
                                     saleDate: sale.sale_date || "",
                                     customerName: sale.pa_customers?.name || "Comptant",
+                                    cashierName: sale.cashier_name || null, // MP-SALE-CASHIER-NAME
                                     items,
                                   });
                                   // Viewer with Imprimer/Partager/Fermer action bar; the user
