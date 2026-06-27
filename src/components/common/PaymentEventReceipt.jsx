@@ -29,6 +29,9 @@ import { genSaleCodes } from "../../utils/receiptCodes";
 import { buildMonospaceReceipt, wrapMonospaceFence } from "../../utils/receiptText";
 import { buildFactureInner, buildThermalReceipt } from "../../utils/factureReceipt";
 import { currencySymbol } from "../../utils/currency";
+import toast from "react-hot-toast";
+// MP-BT-THERMAL: direct Bluetooth (Classic SPP) ESC/POS printing.
+import { isBtPrintSupported, getSavedPrinter, saveSavedPrinter, listPairedPrinters, printSaleViaBluetooth } from "../../utils/btPrint";
 
 // MP-VOID-PARTIAL-COMMIT-FIX: scoped error boundary so a render
 // crash in the receipt (bad payload shape, missing field, etc.)
@@ -413,6 +416,12 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
     setThermalWidth(w);
     try { localStorage.setItem("mp_thermal_width", String(w)); } catch { /* ignore */ }
   };
+  // MP-BT-THERMAL: Bluetooth printer picker state.
+  const [btOpen, setBtOpen] = useState(false);
+  const [btDevices, setBtDevices] = useState([]);
+  const [btBusy, setBtBusy] = useState(false);
+  const [btMsg, setBtMsg] = useState("");
+  const btSupported = isBtPrintSupported();
   const closePrint = () => {
     setPrintHtml(null);
     document.body.classList.remove("mp-printing"); // defensive: never leave print state behind
@@ -495,7 +504,9 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
   // MP-THERMAL-RECEIPT: narrow 58/80mm paper receipt for thermal printers.
   // Reuses the SAME sale data as the A4 facture (items, discount net, cashier,
   // paid/balance) — opens in the existing print overlay → window.print().
-  const printThermal = (widthMm) => {
+  // Shared receipt-data shape used by BOTH the thermal-via-dialog and the
+  // Bluetooth ESC/POS paths (same sale data, single source of truth).
+  const saleReceiptOpts = (widthMm) => {
     const isDebt = (i) => i.type === "debt_payment" || i.isDebt || i.isDebtPayment
       || i.product_id === "__DEBT__" || i.product_id === "__DEBT_PAYMENT__";
     const items = (data.items || []).map((i) => isDebt(i)
@@ -506,7 +517,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
     let saleTime = "";
     const ts = data.created_at || data.sale_date;
     if (ts && /T\d{2}:\d{2}/.test(String(ts))) saleTime = String(ts).slice(11, 16);
-    openPrint(buildThermalReceipt({
+    return {
       org: org || {},
       lang,
       widthMm: widthMm || thermalWidth,
@@ -521,8 +532,52 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
       balanceDue: data.balance_due != null ? Number(data.balance_due) : null,
       paymentMethod: data.payment_method || "",
       paymentStatus: data.payment_status || "",
-    }));
+    };
   };
+  const printThermal = (widthMm) => openPrint(buildThermalReceipt(saleReceiptOpts(widthMm)));
+
+  // ── MP-BT-THERMAL: direct Bluetooth ESC/POS print ─────────────────────────
+  const openBtPicker = async () => {
+    setBtMsg("");
+    setBtOpen(true);
+    setBtBusy(true);
+    try {
+      const devs = await listPairedPrinters();
+      setBtDevices(devs);
+      if (!devs.length) setBtMsg(en
+        ? "No paired printers. Pair your printer in Android Bluetooth settings first, then refresh."
+        : "Aucune imprimante jumelée. Jumelez-la dans les réglages Bluetooth Android, puis actualisez.");
+    } catch (e) {
+      setBtDevices([]);
+      setBtMsg(e?.message || (en ? "Bluetooth unavailable" : "Bluetooth indisponible"));
+    } finally { setBtBusy(false); }
+  };
+
+  const doBtPrint = async (deviceId) => {
+    setBtBusy(true);
+    try {
+      await printSaleViaBluetooth(saleReceiptOpts(thermalWidth), deviceId);
+      setBtOpen(false);
+      toast.success(en ? "Sent to printer" : "Envoyé à l'imprimante");
+    } catch (e) {
+      const code = e?.code;
+      if (code === "NO_DEVICE") { openBtPicker(); return; }
+      toast.error(e?.message || (en ? "Print failed" : "Échec de l'impression"));
+      // Graceful fallback to the system print dialog (thermal layout).
+      if (code === "CONNECT_FAILED" || code === "BT_OFF" || code === "NO_BT" || code === "NOT_NATIVE") {
+        setBtOpen(false);
+        printThermal(thermalWidth);
+      }
+    } finally { setBtBusy(false); }
+  };
+
+  const printViaBluetooth = () => {
+    const saved = getSavedPrinter();
+    if (saved && saved.id) doBtPrint(saved.id);
+    else openBtPicker();
+  };
+
+  const pickBtDevice = (dev) => { saveSavedPrinter(dev); doBtPrint(dev.id); };
 
   const printReceipt = () => {
     // SALE → shared Cameroon FACTURE builder (identical to the Reports → Sales
@@ -782,6 +837,14 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
               </div>
             </div>
           )}
+          {/* MP-BT-THERMAL: direct Bluetooth printing (Android app only). */}
+          {eventType === "sale" && btSupported && (
+            <button onClick={printViaBluetooth} disabled={btBusy}
+              style={{ width: "100%", padding: "11px", background: "var(--bg-card)", border: "1px solid var(--brand)", color: "var(--brand-light)", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: btBusy ? "wait" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              🖨️ {btBusy ? (en ? "Printing…" : "Impression…") : (en ? "Print (Bluetooth)" : "Imprimer (Bluetooth)")}
+              {(() => { const sp = getSavedPrinter(); return sp && sp.name ? <span style={{ fontWeight: 500, fontSize: 11, opacity: 0.8 }}>· {sp.name}</span> : null; })()}
+            </button>
+          )}
           <button onClick={onClose}
             style={{ width: "100%", padding: "9px", background: "transparent", border: "none", color: "var(--text-muted)", borderRadius: 12, fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
             {en ? "Close" : "Fermer"}
@@ -789,6 +852,35 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
         </div>
       </div>
     </div>
+
+    {/* MP-BT-THERMAL: paired-printer picker. */}
+    {btOpen && (
+      <div style={{ position: "fixed", inset: 0, zIndex: 4100, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+        onClick={() => { if (!btBusy) setBtOpen(false); }}>
+        <div onClick={(e) => e.stopPropagation()}
+          style={{ width: "100%", maxWidth: 480, background: "var(--bg-surface, #1b2436)", borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, maxHeight: "70vh", overflowY: "auto" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <strong style={{ fontSize: 15 }}>{en ? "Choose Bluetooth printer" : "Choisir l'imprimante Bluetooth"}</strong>
+            <button onClick={openBtPicker} disabled={btBusy}
+              style={{ fontSize: 12, fontWeight: 700, padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "transparent", color: "var(--text-secondary)", cursor: "pointer" }}>
+              {btBusy ? (en ? "Scanning…" : "Recherche…") : (en ? "Refresh" : "Actualiser")}
+            </button>
+          </div>
+          {btMsg && <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>{btMsg}</div>}
+          {btDevices.map((d) => (
+            <button key={d.id} onClick={() => pickBtDevice(d)} disabled={btBusy}
+              style={{ width: "100%", textAlign: "left", padding: "12px", marginBottom: 8, borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", cursor: "pointer" }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>{d.name || (en ? "Unnamed device" : "Appareil sans nom")}</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>{d.id}</div>
+            </button>
+          ))}
+          <button onClick={() => setBtOpen(false)} disabled={btBusy}
+            style={{ width: "100%", padding: "9px", marginTop: 4, background: "transparent", border: "none", color: "var(--text-muted)", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+            {en ? "Cancel" : "Annuler"}
+          </button>
+        </div>
+      </div>
+    )}
 
     {/* MP-RECEIPT-PRINT-CLOSE-FIX: in-app print overlay (replaces window.open).
         z-index 4000 sits ABOVE the receipt modal (300); its Fermer button is the
