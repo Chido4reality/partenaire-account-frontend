@@ -198,7 +198,7 @@ export default function OperationsDashboardPage() {
           <>
             {overview.data.deltas && (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 14 }}>
-                <MetricBlock label={en ? "Cash sales (today)"   : "Ventes espèces (jour)"} value={overview.data.deltas.cash_sales.current}     delta={overview.data.deltas.cash_sales.pct} />
+                <MetricBlock label={en ? "Sales received (today)" : "Ventes encaissées (jour)"} value={overview.data.deltas.cash_sales.current}     delta={overview.data.deltas.cash_sales.pct} />
                 <MetricBlock label={en ? "Debt collected"       : "Dette encaissée"}        value={overview.data.deltas.debt_collected.current} delta={overview.data.deltas.debt_collected.pct} />
                 <MetricBlock label={en ? "Refunds & voids"      : "Remb. & annulations"}     value={overview.data.deltas.refunds_voids.current}  delta={overview.data.deltas.refunds_voids.pct} />
                 <MetricBlock label={en ? "Expenses"             : "Dépenses"}                value={overview.data.deltas.expenses.current}       delta={overview.data.deltas.expenses.pct} />
@@ -216,7 +216,7 @@ export default function OperationsDashboardPage() {
                     contentStyle={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
                   />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="cash_sales"     name={en ? "Cash sales"     : "Ventes espèces"} stackId="a" fill="#10b981" />
+                  <Bar dataKey="cash_sales"     name={en ? "Sales received"  : "Ventes encaissées"} stackId="a" fill="#10b981" />
                   <Bar dataKey="debt_collected" name={en ? "Debt collected" : "Dette encaissée"} stackId="a" fill="#3b82f6" />
                   <Bar dataKey="refunds_voids"  name={en ? "Refunds & voids" : "Remb. & annulations"} stackId="b" fill="#ef4444" />
                   <Bar dataKey="expenses"       name={en ? "Expenses" : "Dépenses"} stackId="b" fill="#f59e0b" />
