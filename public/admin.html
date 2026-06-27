@@ -4954,6 +4954,27 @@
     let _sdBound = false;
     let _sdLoc = null; // { countries:[...], cities:[{country,city}] } from /locations
 
+    // MP-SUBSCRIPTION-DISCOUNT: bundled major-city catalog per country, so a
+    // promo rule can target a city BEFORE any shop registers there. Unioned at
+    // render time with the distinct org cities from /locations (so a real
+    // shop's city always shows even if absent here). Canonical spellings must
+    // match what shops register with ("Cameroun", "Yaoundé"). Extend freely.
+    const SD_CITY_CATALOG = {
+      "Nigeria": [
+        "Aba","Abakaliki","Abeokuta","Abuja","Ado-Ekiti","Akure","Asaba","Awka","Bauchi",
+        "Benin City","Birnin Kebbi","Calabar","Damaturu","Dutse","Ekpoma","Enugu","Gombe",
+        "Gusau","Ibadan","Ife","Ijebu-Ode","Ikeja","Ikorodu","Ilorin","Jalingo","Jos",
+        "Kaduna","Kano","Katsina","Lafia","Lagos","Lokoja","Maiduguri","Makurdi","Minna",
+        "Nnewi","Nsukka","Onitsha","Osogbo","Owerri","Port Harcourt","Sokoto","Sapele",
+        "Umuahia","Uyo","Warri","Yenagoa","Yola","Zaria"
+      ],
+      "Cameroun": [
+        "Bafang","Bafoussam","Bamenda","Bertoua","Buea","Douala","Dschang","Ebolowa","Edéa",
+        "Foumban","Garoua","Kribi","Kumba","Limbe","Maroua","Mbalmayo","Ngaoundéré",
+        "Nkongsamba","Sangmélima","Tiko","Yaoundé"
+      ]
+    };
+
     function sdMoney(n) { return Math.round(Number(n) || 0).toLocaleString('en-US').replace(/,/g, ' '); }
 
     async function sdLoadLocations() {
@@ -4970,9 +4991,18 @@
     }
     function sdPopulateCities(country, selected) {
       const el = $('sd-city'); if (!el) return;
-      const list = ((_sdLoc && _sdLoc.cities) || []).filter(x => x.country === country);
+      const norm = (s) => String(s || "").trim().toLowerCase();
+      // Union: bundled catalog (canonical) + distinct org cities for this
+      // country + the currently-selected value (so an edit never loses it).
+      // Dedupe case/whitespace-insensitively; catalog spelling wins on collision.
+      const byKey = new Map(); // normkey -> display
+      const add = (c) => { const k = norm(c); if (k && !byKey.has(k)) byKey.set(k, String(c).trim()); };
+      (SD_CITY_CATALOG[country] || []).forEach(add);
+      ((_sdLoc && _sdLoc.cities) || []).filter(x => x.country === country).forEach(x => add(x.city));
+      if (selected) add(selected);
+      const list = [...byKey.values()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
       el.innerHTML = '<option value="">— choose —</option>'
-        + list.map(x => '<option value="' + escapeHtml(x.city) + '"' + (x.city === selected ? ' selected' : '') + '>' + escapeHtml(x.city) + '</option>').join('');
+        + list.map(c => '<option value="' + escapeHtml(c) + '"' + (norm(c) === norm(selected) ? ' selected' : '') + '>' + escapeHtml(c) + '</option>').join('');
     }
     // Enable/disable the scope controls per the two "apply to all" checkboxes.
     function sdSyncScopeControls() {
