@@ -932,10 +932,25 @@ export default function POSPage() {
   // read by the legacy __DEBT__ allocation loop).
   const isDebtOnlyCart = cart.length > 0 && cart.every(i =>
     i.product_id === "__DEBT__" || i.type === "debt_payment");
+  // MP-OVERPAY-CAP: the APPLIED payment is capped at the amount due (cart total,
+  // or the debt total for a debt-only cart). Excess tendered is CHANGE — shown,
+  // never sent/stored. partialTendered is what the cashier typed; partialChange
+  // is the over-amount. Under-payments (partial < due) behave exactly as before.
+  const partialTendered = +paidAmt || 0;
+  const debtTendered     = +debtPayAmt || 0;
   const paid    = isDebtOnlyCart
-    ? (debtPayAmt ? Math.min(+debtPayAmt, total) : total)
-    : (payMode === "paid" ? total : payMode === "credit" ? 0 : (+paidAmt || 0));
-  const balance = total - paid;
+    ? (debtPayAmt ? Math.min(debtTendered, total) : total)
+    : (payMode === "paid" ? total : payMode === "credit" ? 0 : Math.min(partialTendered, total));
+  const balance = Math.max(0, total - paid);
+  // Change to hand back (cash only): tendered over the amount due.
+  const tenderChange = isDebtOnlyCart
+    ? Math.max(0, debtTendered - total)
+    : (payMode === "partial" ? Math.max(0, partialTendered - total) : 0);
+  // Non-cash methods can't give change → block an over-due amount.
+  const overDueNonCash = payMethod !== "cash" && (
+    (payMode === "partial" && partialTendered > total) ||
+    (isDebtOnlyCart && debtTendered > total)
+  );
 
   // MP-PHASE-4 WAVE 2 — optimistic UI seed for POST /sales offline_queued.
   // Mirrors Wave 1's collect-debt + stock-adjust pattern. Touches every
@@ -1512,6 +1527,13 @@ export default function POSPage() {
       toast.error(lang === "en" ? "Enter a reason for every discount." : "Saisissez une raison pour chaque remise.");
       return;
     }
+    // MP-OVERPAY-CAP: non-cash can't give change → refuse an amount over due.
+    if (overDueNonCash) {
+      toast.error(lang === "en"
+        ? `Amount can't exceed what's due (${formatMoney(total, orgSettings.currency)}).`
+        : `Le montant ne peut pas dépasser le montant dû (${formatMoney(total, orgSettings.currency)}).`);
+      return;
+    }
     setOversellModal(null); saleMutation.mutate();
   };
   const attemptCheckout = () => {
@@ -1880,6 +1902,20 @@ export default function POSPage() {
                       <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                         {lang === "en" ? "Leave blank to collect full balance" : "Laissez vide pour encaisser le solde total"}
                       </div>
+                      {/* MP-OVERPAY-CAP: collection is capped at the balance. */}
+                      {overDueNonCash && (
+                        <div style={{ marginTop: 6, padding: "8px 12px", background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.30)", borderRadius: 8, fontSize: 12, color: "#f87171", fontWeight: 600 }}>
+                          {lang === "en"
+                            ? `Amount can't exceed what's due (${formatMoney(total, orgSettings.currency)}).`
+                            : `Le montant ne peut pas dépasser le montant dû (${formatMoney(total, orgSettings.currency)}).`}
+                        </div>
+                      )}
+                      {payMethod === "cash" && tenderChange > 0 && (
+                        <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "rgba(16,185,129,0.10)", border: "1px solid rgba(16,185,129,0.30)", borderRadius: 8, fontSize: 13, color: "#34d399", fontWeight: 700 }}>
+                          <span>{lang === "en" ? "Change" : "Monnaie"}</span>
+                          <span>{formatMoney(tenderChange, orgSettings.currency)}</span>
+                        </div>
+                      )}
                     </div>
                   )}
                   {!isDebtOnlyCart && (
@@ -1908,6 +1944,20 @@ export default function POSPage() {
                   )}
                   {payMode === "partial" && !isDebtOnlyCart && (
                     <input className="input" type="number" placeholder={`${t("amount_paid", lang)} (${currencySymbol(orgSettings.currency)})`} value={paidAmt} onChange={e => setPaidAmt(e.target.value)} style={{ marginBottom: 8 }} />
+                  )}
+                  {/* MP-OVERPAY-CAP: cash → show change; non-cash over-due → block message. */}
+                  {payMode === "partial" && !isDebtOnlyCart && overDueNonCash && (
+                    <div style={{ padding: "8px 12px", background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.30)", borderRadius: 8, fontSize: 12, color: "#f87171", fontWeight: 600, marginBottom: 8 }}>
+                      {lang === "en"
+                        ? `Amount can't exceed what's due (${formatMoney(total, orgSettings.currency)}).`
+                        : `Le montant ne peut pas dépasser le montant dû (${formatMoney(total, orgSettings.currency)}).`}
+                    </div>
+                  )}
+                  {payMode === "partial" && !isDebtOnlyCart && payMethod === "cash" && tenderChange > 0 && (
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "rgba(16,185,129,0.10)", border: "1px solid rgba(16,185,129,0.30)", borderRadius: 8, fontSize: 13, color: "#34d399", fontWeight: 700, marginBottom: 8 }}>
+                      <span>{lang === "en" ? "Change" : "Monnaie"}</span>
+                      <span>{formatMoney(tenderChange, orgSettings.currency)}</span>
+                    </div>
                   )}
                   {(payMode === "partial" || payMode === "credit") && !isDebtOnlyCart && (
                     <input className="input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={{ marginBottom: 8 }} title={t("due_date", lang)} />
