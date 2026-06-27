@@ -1456,10 +1456,12 @@
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
               <div class="field"><label>Plan</label>
                 <select id="sd-plan"><option value="lite">Lite</option><option value="pro">Pro</option><option value="pro_plus">Pro Plus</option></select></div>
-              <div class="field"><label>Scope</label>
-                <select id="sd-scope-type"><option value="country">Country</option><option value="city">City</option></select></div>
-              <div class="field"><label>Scope value (e.g. Cameroun / Douala)</label>
-                <input type="text" id="sd-scope-value" placeholder="Cameroun" /></div>
+              <div class="field"><label>Country</label>
+                <select id="sd-country"><option value="">— choose —</option></select>
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-top:6px"><input type="checkbox" id="sd-all-countries" /> Apply to ALL countries (global)</label></div>
+              <div class="field"><label>City</label>
+                <select id="sd-city"><option value="">— choose —</option></select>
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-top:6px"><input type="checkbox" id="sd-all-cities" /> All cities in this country</label></div>
               <div class="field"><label>Discount type</label>
                 <select id="sd-disc-type"><option value="percent">Percent (%)</option><option value="amount">Fixed amount</option></select></div>
               <div class="field"><label>Discount value</label>
@@ -4950,14 +4952,45 @@
     let _sdRules = [];
     let _sdEditId = null;
     let _sdBound = false;
+    let _sdLoc = null; // { countries:[...], cities:[{country,city}] } from /locations
 
     function sdMoney(n) { return Math.round(Number(n) || 0).toLocaleString('en-US').replace(/,/g, ' '); }
+
+    async function sdLoadLocations() {
+      if (_sdLoc) return _sdLoc;
+      try { const r = await apiAdmin('GET', '/admin/subscription-discounts/locations'); _sdLoc = (r && r.data) || { countries: [], cities: [] }; }
+      catch (e) { _sdLoc = { countries: [], cities: [] }; }
+      return _sdLoc;
+    }
+    function sdPopulateCountries(selected) {
+      const el = $('sd-country'); if (!el) return;
+      const list = (_sdLoc && _sdLoc.countries) || [];
+      el.innerHTML = '<option value="">— choose —</option>'
+        + list.map(c => '<option value="' + escapeHtml(c) + '"' + (c === selected ? ' selected' : '') + '>' + escapeHtml(c) + '</option>').join('');
+    }
+    function sdPopulateCities(country, selected) {
+      const el = $('sd-city'); if (!el) return;
+      const list = ((_sdLoc && _sdLoc.cities) || []).filter(x => x.country === country);
+      el.innerHTML = '<option value="">— choose —</option>'
+        + list.map(x => '<option value="' + escapeHtml(x.city) + '"' + (x.city === selected ? ' selected' : '') + '>' + escapeHtml(x.city) + '</option>').join('');
+    }
+    // Enable/disable the scope controls per the two "apply to all" checkboxes.
+    function sdSyncScopeControls() {
+      const allC = $('sd-all-countries').checked;
+      const allCity = $('sd-all-cities').checked;
+      $('sd-country').disabled = allC;
+      $('sd-all-cities').disabled = allC;
+      $('sd-city').disabled = allC || allCity || !$('sd-country').value;
+    }
 
     function sdBind() {
       if (_sdBound) return; _sdBound = true;
       const nb = $('sd-new-btn'); if (nb) nb.addEventListener('click', () => sdOpenForm(null));
       const cb = $('sd-cancel-btn'); if (cb) cb.addEventListener('click', () => { $('sd-form-card').hidden = true; _sdEditId = null; });
       const sb = $('sd-save-btn'); if (sb) sb.addEventListener('click', sdSave);
+      const ac = $('sd-all-countries'); if (ac) ac.addEventListener('change', sdSyncScopeControls);
+      const acy = $('sd-all-cities');   if (acy) acy.addEventListener('change', sdSyncScopeControls);
+      const co = $('sd-country');        if (co) co.addEventListener('change', () => { sdPopulateCities($('sd-country').value); sdSyncScopeControls(); });
       const tb = $('sd-tbody');
       if (tb) tb.addEventListener('click', (e) => {
         const b = e.target && e.target.closest ? e.target.closest('button[data-sd-action]') : null;
@@ -4970,31 +5003,61 @@
       });
     }
 
-    function sdOpenForm(rule) {
+    async function sdOpenForm(rule) {
       _sdEditId = rule ? rule.id : null;
       $('sd-plan').value        = rule ? rule.plan_id : 'pro';
-      $('sd-scope-type').value  = rule ? rule.scope_type : 'country';
-      $('sd-scope-value').value = rule ? (rule.scope_value || '') : '';
       $('sd-disc-type').value   = rule ? rule.discount_type : 'percent';
       $('sd-disc-value').value  = rule ? rule.discount_value : '';
       $('sd-starts').value      = rule && rule.starts_at  ? String(rule.starts_at).slice(0, 10)  : '';
       $('sd-expires').value     = rule && rule.expires_at ? String(rule.expires_at).slice(0, 10) : '';
       $('sd-active').checked     = rule ? !!rule.is_active : true;
+
+      // Scope controls from real org locations.
+      await sdLoadLocations();
+      $('sd-all-countries').checked = false;
+      $('sd-all-cities').checked = false;
+      let country = '', city = '';
+      if (rule) {
+        if (rule.scope_type === 'global') { $('sd-all-countries').checked = true; }
+        else if (rule.scope_type === 'country') { country = rule.scope_value || ''; $('sd-all-cities').checked = true; }
+        else if (rule.scope_type === 'city') {
+          city = rule.scope_value || '';
+          const m = ((_sdLoc.cities) || []).find(x => x.city === city);
+          country = m ? m.country : '';
+        }
+      }
+      sdPopulateCountries(country);
+      sdPopulateCities(country, city);
+      sdSyncScopeControls();
       $('sd-form-card').hidden = false;
     }
 
     async function sdSave() {
+      // Map the dropdowns/checkboxes → {scope_type, scope_value}.
+      const allCountries = $('sd-all-countries').checked;
+      const allCities    = $('sd-all-cities').checked;
+      const country = $('sd-country').value;
+      const city    = $('sd-city').value;
+      let scope_type, scope_value = null;
+      if (allCountries) {
+        scope_type = 'global';
+      } else {
+        if (!country) { showToast('Choose a country (or tick “Apply to ALL countries”)', 'danger'); return; }
+        if (allCities) { scope_type = 'country'; scope_value = country; }
+        else {
+          if (!city) { showToast('Choose a city (or tick “All cities in this country”)', 'danger'); return; }
+          scope_type = 'city'; scope_value = city;
+        }
+      }
       const body = {
         plan_id:        $('sd-plan').value,
-        scope_type:     $('sd-scope-type').value,
-        scope_value:    $('sd-scope-value').value.trim(),
+        scope_type, scope_value,
         discount_type:  $('sd-disc-type').value,
         discount_value: Number($('sd-disc-value').value),
         starts_at:      $('sd-starts').value || null,
         expires_at:     $('sd-expires').value || null,
         is_active:      $('sd-active').checked,
       };
-      if (!body.scope_value) { showToast('Scope value is required', 'danger'); return; }
       if (!(body.discount_value > 0)) { showToast('Discount value must be greater than 0', 'danger'); return; }
       try {
         if (_sdEditId) await apiAdmin('PATCH', '/admin/subscription-discounts/' + _sdEditId, body);
@@ -5036,9 +5099,14 @@
           const pill = d.is_active
             ? '<span class="badge badge-master" style="background:rgba(16,185,129,0.15);color:#34d399">Active</span>'
             : '<span class="badge badge-admin" style="background:rgba(148,163,184,0.15);color:#94a3b8">Off</span>';
+          const scopeLabel = d.scope_type === 'global'
+            ? '<strong>All countries</strong>'
+            : d.scope_type === 'country'
+              ? '<strong>' + escapeHtml(d.scope_value) + '</strong> — all cities'
+              : '<strong>' + escapeHtml(d.scope_value) + '</strong>';
           return '<tr>'
             + '<td>' + escapeHtml(d.plan_id) + '</td>'
-            + '<td>' + escapeHtml(d.scope_type) + ': <strong>' + escapeHtml(d.scope_value) + '</strong></td>'
+            + '<td>' + scopeLabel + '</td>'
             + '<td>' + escapeHtml(disc) + '</td>'
             + '<td class="muted">' + escapeHtml(win) + '</td>'
             + '<td>' + pill + '</td>'
