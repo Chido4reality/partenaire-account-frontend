@@ -892,6 +892,7 @@
         <div class="sb-section">Mon Partenaire</div>
         <a class="sb-link" data-route="businesses"><span class="sb-link-icon">🏪</span><span class="sb-link-label">Businesses</span></a>
         <a class="sb-link" data-route="subscriptions"><span class="sb-link-icon">💳</span><span class="sb-link-label">Subscriptions</span></a>
+        <a class="sb-link" data-route="subscription-discounts" id="sb-link-subdiscounts"><span class="sb-link-icon">🏷️</span><span class="sb-link-label">Plan discounts</span></a>
         <!-- MP-SUB-CONSOLIDATION (v2): "Sub. requests" tab retired. It read the
              orphaned pa_subscription_requests table (always empty), while the
              app's upgrade requests go to pa_subscription_payments shown in the
@@ -1433,6 +1434,54 @@
             </tr></thead>
             <tbody id="bc-tbody"><tr><td colspan="7" class="muted ta-center" style="padding:20px">Loading…</td></tr></tbody>
           </table>
+        </div>
+      </section>
+
+      <!-- PLAN DISCOUNTS (MP-SUBSCRIPTION-DISCOUNT) -->
+      <section class="route" id="route-subscription-discounts">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Plan discounts</div>
+            <div class="page-sub">Subscription pricing rules — plan + scope (country or city) + discount. A city rule beats a country rule; the discounted price is what shops are charged.</div>
+          </div>
+          <button class="btn btn-primary" id="sd-new-btn">+ New rule</button>
+        </div>
+        <div id="sd-no-permission" class="placeholder" hidden>
+          <div class="placeholder-icon">🔒</div>
+          <div class="placeholder-title">Admins only</div>
+          <div class="placeholder-text">Discount rules can only be managed by full admins.</div>
+        </div>
+        <div id="sd-body">
+          <div class="card" id="sd-form-card" hidden style="margin-bottom:16px;padding:14px">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+              <div class="field"><label>Plan</label>
+                <select id="sd-plan"><option value="lite">Lite</option><option value="pro">Pro</option><option value="pro_plus">Pro Plus</option></select></div>
+              <div class="field"><label>Scope</label>
+                <select id="sd-scope-type"><option value="country">Country</option><option value="city">City</option></select></div>
+              <div class="field"><label>Scope value (e.g. Cameroun / Douala)</label>
+                <input type="text" id="sd-scope-value" placeholder="Cameroun" /></div>
+              <div class="field"><label>Discount type</label>
+                <select id="sd-disc-type"><option value="percent">Percent (%)</option><option value="amount">Fixed amount</option></select></div>
+              <div class="field"><label>Discount value</label>
+                <input type="number" id="sd-disc-value" placeholder="10" /></div>
+              <div class="field"><label>Starts (optional)</label><input type="date" id="sd-starts" /></div>
+              <div class="field"><label>Expires (optional)</label><input type="date" id="sd-expires" /></div>
+              <div class="field"><label>Active</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="sd-active" checked /> Enabled</label></div>
+            </div>
+            <div style="margin-top:12px;display:flex;gap:8px">
+              <button class="btn btn-primary" id="sd-save-btn">Save rule</button>
+              <button class="btn" id="sd-cancel-btn">Cancel</button>
+            </div>
+          </div>
+          <div class="card" style="padding:0;overflow:hidden">
+            <table class="data-table" id="sd-table">
+              <thead><tr>
+                <th>Plan</th><th>Scope</th><th>Discount</th><th>Window</th><th>Active</th><th class="ta-right">Actions</th>
+              </tr></thead>
+              <tbody id="sd-tbody"><tr><td colspan="6" class="muted ta-center" style="padding:20px">Loading…</td></tr></tbody>
+            </table>
+          </div>
         </div>
       </section>
 
@@ -2004,7 +2053,7 @@
     const VALID_ROUTES = new Set([
       'dashboard', 'live', 'businesses', 'subscriptions', 'subscription-requests', 'mp-finance',
       'marketplace-users', 'verifications', 'dozie-subscriptions', 'orders', 'disputes', 'marketplace-finance',
-      'sell-restrictions',
+      'sell-restrictions', 'subscription-discounts',
       'broadcasts', 'admin-team', 'audit-log', 'admin-activity', 'cart-reconcile', 'settings'
     ]);
 
@@ -2033,6 +2082,7 @@
       if (route === 'settings')           loadSettings();
       if (route === 'businesses')         loadBusinesses();
       if (route === 'subscriptions')      loadSubscriptions();
+      if (route === 'subscription-discounts') loadSubDiscounts();
       if (route === 'subscription-requests') loadSubscriptionRequests();
       if (route === 'mp-finance')         loadFinance();
       if (route === 'marketplace-users')  loadDzUsers();
@@ -2351,6 +2401,11 @@
       // Admin activity is master-admin-only (endpoint is requireAdminRole('master_admin')).
       const aaLink = document.querySelector('.sb-link[data-route="admin-activity"]');
       if (aaLink) aaLink.style.display = isMaster ? '' : 'none';
+      // MP-SUBSCRIPTION-DISCOUNT: Plan discounts is full-CRUD admins only
+      // (write endpoints are requireAdminRole('master_admin','admin')) — hide
+      // for staff admins.
+      const sdLink = $('sb-link-subdiscounts');
+      if (sdLink) sdLink.style.display = (role === 'staff') ? 'none' : '';
 
       $('login-screen').style.display = 'none';
       $('app-shell').classList.add('active');
@@ -4887,6 +4942,117 @@
 
     // ════════════════════════════════════════════════════════════════
     //  D-C — BROADCASTS
+    // ════════════════════════════════════════════════════════════════
+    // PLAN DISCOUNTS (MP-SUBSCRIPTION-DISCOUNT) — CRUD over
+    // /api/admin/subscription-discounts. Full-CRUD admins only; staff sees
+    // the permission placeholder.
+    // ════════════════════════════════════════════════════════════════
+    let _sdRules = [];
+    let _sdEditId = null;
+    let _sdBound = false;
+
+    function sdMoney(n) { return Math.round(Number(n) || 0).toLocaleString('en-US').replace(/,/g, ' '); }
+
+    function sdBind() {
+      if (_sdBound) return; _sdBound = true;
+      const nb = $('sd-new-btn'); if (nb) nb.addEventListener('click', () => sdOpenForm(null));
+      const cb = $('sd-cancel-btn'); if (cb) cb.addEventListener('click', () => { $('sd-form-card').hidden = true; _sdEditId = null; });
+      const sb = $('sd-save-btn'); if (sb) sb.addEventListener('click', sdSave);
+      const tb = $('sd-tbody');
+      if (tb) tb.addEventListener('click', (e) => {
+        const b = e.target && e.target.closest ? e.target.closest('button[data-sd-action]') : null;
+        if (!b) return;
+        const id = b.getAttribute('data-sd-id');
+        const act = b.getAttribute('data-sd-action');
+        if (act === 'edit')   { const r = _sdRules.find(x => x.id === id); if (r) sdOpenForm(r); }
+        if (act === 'toggle') sdToggle(id, b.getAttribute('data-sd-active') === 'true');
+        if (act === 'delete') sdDelete(id);
+      });
+    }
+
+    function sdOpenForm(rule) {
+      _sdEditId = rule ? rule.id : null;
+      $('sd-plan').value        = rule ? rule.plan_id : 'pro';
+      $('sd-scope-type').value  = rule ? rule.scope_type : 'country';
+      $('sd-scope-value').value = rule ? (rule.scope_value || '') : '';
+      $('sd-disc-type').value   = rule ? rule.discount_type : 'percent';
+      $('sd-disc-value').value  = rule ? rule.discount_value : '';
+      $('sd-starts').value      = rule && rule.starts_at  ? String(rule.starts_at).slice(0, 10)  : '';
+      $('sd-expires').value     = rule && rule.expires_at ? String(rule.expires_at).slice(0, 10) : '';
+      $('sd-active').checked     = rule ? !!rule.is_active : true;
+      $('sd-form-card').hidden = false;
+    }
+
+    async function sdSave() {
+      const body = {
+        plan_id:        $('sd-plan').value,
+        scope_type:     $('sd-scope-type').value,
+        scope_value:    $('sd-scope-value').value.trim(),
+        discount_type:  $('sd-disc-type').value,
+        discount_value: Number($('sd-disc-value').value),
+        starts_at:      $('sd-starts').value || null,
+        expires_at:     $('sd-expires').value || null,
+        is_active:      $('sd-active').checked,
+      };
+      if (!body.scope_value) { showToast('Scope value is required', 'danger'); return; }
+      if (!(body.discount_value > 0)) { showToast('Discount value must be greater than 0', 'danger'); return; }
+      try {
+        if (_sdEditId) await apiAdmin('PATCH', '/admin/subscription-discounts/' + _sdEditId, body);
+        else           await apiAdmin('POST',  '/admin/subscription-discounts', body);
+        showToast('Discount rule saved', 'success');
+        $('sd-form-card').hidden = true; _sdEditId = null;
+        loadSubDiscounts();
+      } catch (e) { showToast(e.message, 'danger'); }
+    }
+
+    async function sdToggle(id, active) {
+      try { await apiAdmin('PATCH', '/admin/subscription-discounts/' + id, { is_active: active }); loadSubDiscounts(); }
+      catch (e) { showToast(e.message, 'danger'); }
+    }
+
+    async function sdDelete(id) {
+      if (!confirm('Delete this discount rule? Shops will pay the normal price afterwards.')) return;
+      try { await apiAdmin('DELETE', '/admin/subscription-discounts/' + id); showToast('Deleted', 'success'); loadSubDiscounts(); }
+      catch (e) { showToast(e.message, 'danger'); }
+    }
+
+    async function loadSubDiscounts() {
+      sdBind();
+      const role = ((currentAdmin && currentAdmin.role) || '').toLowerCase();
+      const canWrite = role !== 'staff';
+      $('sd-no-permission').hidden = canWrite;
+      $('sd-body').hidden = !canWrite;
+      const nb = $('sd-new-btn'); if (nb) nb.style.display = canWrite ? '' : 'none';
+      if (!canWrite) return;
+      const tb = $('sd-tbody');
+      tb.innerHTML = '<tr><td colspan="6" class="muted ta-center" style="padding:20px">Loading…</td></tr>';
+      try {
+        const r = await apiAdmin('GET', '/admin/subscription-discounts');
+        _sdRules = (r && r.data) || [];
+        if (!_sdRules.length) { tb.innerHTML = '<tr><td colspan="6" class="muted ta-center" style="padding:20px">No discount rules yet. Click “+ New rule”.</td></tr>'; return; }
+        tb.innerHTML = _sdRules.map(function (d) {
+          const disc = d.discount_type === 'percent' ? (d.discount_value + '%') : (sdMoney(d.discount_value) + ' off');
+          const win = (d.starts_at ? String(d.starts_at).slice(0, 10) : '—') + ' → ' + (d.expires_at ? String(d.expires_at).slice(0, 10) : '∞');
+          const pill = d.is_active
+            ? '<span class="badge badge-master" style="background:rgba(16,185,129,0.15);color:#34d399">Active</span>'
+            : '<span class="badge badge-admin" style="background:rgba(148,163,184,0.15);color:#94a3b8">Off</span>';
+          return '<tr>'
+            + '<td>' + escapeHtml(d.plan_id) + '</td>'
+            + '<td>' + escapeHtml(d.scope_type) + ': <strong>' + escapeHtml(d.scope_value) + '</strong></td>'
+            + '<td>' + escapeHtml(disc) + '</td>'
+            + '<td class="muted">' + escapeHtml(win) + '</td>'
+            + '<td>' + pill + '</td>'
+            + '<td class="ta-right">'
+              + '<button class="btn btn-sm" data-sd-action="edit" data-sd-id="' + escapeHtml(d.id) + '">Edit</button> '
+              + '<button class="btn btn-sm" data-sd-action="toggle" data-sd-id="' + escapeHtml(d.id) + '" data-sd-active="' + (!d.is_active) + '">' + (d.is_active ? 'Deactivate' : 'Activate') + '</button> '
+              + '<button class="btn btn-sm" style="color:#f87171" data-sd-action="delete" data-sd-id="' + escapeHtml(d.id) + '">Delete</button>'
+            + '</td></tr>';
+        }).join('');
+      } catch (e) {
+        tb.innerHTML = '<tr><td colspan="6" class="muted ta-center" style="padding:20px;color:#f87171">' + escapeHtml(e.message) + '</td></tr>';
+      }
+    }
+
     // ════════════════════════════════════════════════════════════════
     let _bcTab = 'active';
     let _bcRowsByTab = { active: [], expired: [], drafts: [], all: [] };

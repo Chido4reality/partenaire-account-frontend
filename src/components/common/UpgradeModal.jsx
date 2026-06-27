@@ -241,8 +241,17 @@ export default function UpgradeModal({ onClose, currentPlan }) {
                     </div>
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
-                    <div style={{ fontWeight: 800, fontSize: 18, color: "var(--brand-light)" }}>{fmt(plan.price ?? plan.price_monthly)}</div>
+                    {/* MP-DISCOUNT: struck-through original when an admin pricing rule applies. */}
+                    {plan.discount && plan.original_price != null && plan.original_price > (plan.price ?? plan.price_monthly) && (
+                      <div style={{ fontSize: 12, color: "var(--text-muted)", textDecoration: "line-through" }}>{fmt(plan.original_price)}</div>
+                    )}
+                    <div style={{ fontWeight: 800, fontSize: 18, color: plan.discount ? "#34d399" : "var(--brand-light)" }}>{fmt(plan.price ?? plan.price_monthly)}</div>
                     <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en" ? "/month" : "/mois"}</div>
+                    {plan.discount && (
+                      <div style={{ fontSize: 10, fontWeight: 700, color: "#34d399", marginTop: 2 }}>
+                        {plan.discount.discount_type === "percent" ? `−${plan.discount.discount_value}%` : `−${fmt(plan.discount.amount_off)}`}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
