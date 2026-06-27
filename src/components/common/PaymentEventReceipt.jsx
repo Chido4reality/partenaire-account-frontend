@@ -27,7 +27,7 @@
 import { Component, useEffect, useState } from "react";
 import { genSaleCodes } from "../../utils/receiptCodes";
 import { buildMonospaceReceipt, wrapMonospaceFence } from "../../utils/receiptText";
-import { buildFactureInner } from "../../utils/factureReceipt";
+import { buildFactureInner, buildThermalReceipt } from "../../utils/factureReceipt";
 import { currencySymbol } from "../../utils/currency";
 
 // MP-VOID-PARTIAL-COMMIT-FIX: scoped error boundary so a render
@@ -404,6 +404,15 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
   // so closePrint() ALWAYS dismisses and returns to the live app.
   const [printHtml, setPrintHtml] = useState(null);
   const openPrint = (inner) => setPrintHtml(inner);
+  // MP-THERMAL-RECEIPT: 58mm (default, cheapest/most common) vs 80mm roll width,
+  // remembered across receipts.
+  const [thermalWidth, setThermalWidth] = useState(() => {
+    try { return Number(localStorage.getItem("mp_thermal_width")) === 80 ? 80 : 58; } catch { return 58; }
+  });
+  const pickThermalWidth = (w) => {
+    setThermalWidth(w);
+    try { localStorage.setItem("mp_thermal_width", String(w)); } catch { /* ignore */ }
+  };
   const closePrint = () => {
     setPrintHtml(null);
     document.body.classList.remove("mp-printing"); // defensive: never leave print state behind
@@ -483,6 +492,38 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
   // same letterhead — they aren't invoices. Narrow/thermal printers get the
   // same structure: the container is a centered max-width box that condenses
   // to the paper width, and the table wraps the Désignation column.
+  // MP-THERMAL-RECEIPT: narrow 58/80mm paper receipt for thermal printers.
+  // Reuses the SAME sale data as the A4 facture (items, discount net, cashier,
+  // paid/balance) — opens in the existing print overlay → window.print().
+  const printThermal = (widthMm) => {
+    const isDebt = (i) => i.type === "debt_payment" || i.isDebt || i.isDebtPayment
+      || i.product_id === "__DEBT__" || i.product_id === "__DEBT_PAYMENT__";
+    const items = (data.items || []).map((i) => isDebt(i)
+      ? { name: i.name, quantity: 1, unit_price: Number(i.unit_price) || 0 }
+      : { name: i.name, quantity: Number(i.quantity) || 0, unit_price: Number(i.unit_price) || 0 });
+    const grossItems = items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0);
+    const netTotal = Number(data.total_amount != null ? data.total_amount : grossItems) || 0;
+    let saleTime = "";
+    const ts = data.created_at || data.sale_date;
+    if (ts && /T\d{2}:\d{2}/.test(String(ts))) saleTime = String(ts).slice(11, 16);
+    openPrint(buildThermalReceipt({
+      org: org || {},
+      lang,
+      widthMm: widthMm || thermalWidth,
+      saleNumber: reference || data.sale_number || "",
+      saleDate: data.sale_date || "",
+      saleTime,
+      customerName: data.customer_name || data.customer?.name || null,
+      cashierName: data.cashier_name || null,
+      items,
+      discountTotal: Math.max(0, grossItems - netTotal),
+      paidAmount: data.paid_amount != null ? Number(data.paid_amount) : null,
+      balanceDue: data.balance_due != null ? Number(data.balance_due) : null,
+      paymentMethod: data.payment_method || "",
+      paymentStatus: data.payment_status || "",
+    }));
+  };
+
   const printReceipt = () => {
     // SALE → shared Cameroon FACTURE builder (identical to the Reports → Sales
     // details print). No barcode/QR; amounts space-separated, no decimals.
@@ -720,8 +761,27 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
           </button>
           <button onClick={printReceipt}
             style={{ width: "100%", padding: "11px", background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-primary)", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-            🖨️ {en ? "Print Receipt" : "Imprimer reçu"}
+            🖨️ {en ? "Print Receipt (A4)" : "Imprimer reçu (A4)"}
           </button>
+          {/* MP-THERMAL-RECEIPT: paper receipt for 58/80mm thermal printers. */}
+          {eventType === "sale" && (
+            <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+              <button onClick={() => printThermal()}
+                style={{ flex: 1, padding: "11px", background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-primary)", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                🧾 {en ? "Thermal" : "Reçu thermique"}
+              </button>
+              <div style={{ display: "flex", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden", flexShrink: 0 }}>
+                {[58, 80].map((w) => (
+                  <button key={w} onClick={() => pickThermalWidth(w)} title={`${w}mm`}
+                    style={{ padding: "0 12px", fontSize: 13, fontWeight: 700, cursor: "pointer", border: "none",
+                      background: thermalWidth === w ? "var(--brand)" : "transparent",
+                      color: thermalWidth === w ? "#152B52" : "var(--text-secondary)" }}>
+                    {w}mm
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <button onClick={onClose}
             style={{ width: "100%", padding: "9px", background: "transparent", border: "none", color: "var(--text-muted)", borderRadius: 12, fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
             {en ? "Close" : "Fermer"}
