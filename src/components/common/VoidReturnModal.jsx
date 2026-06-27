@@ -24,17 +24,20 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
   const qc = useQueryClient();
   const fmt = useCurrency();
   const { selectedLocation } = useSettingsStore();
-  // MP-REFUNDS-STAFF-ACCESS: cashier is allowed to see this modal
-  // (refund + exchange flows) but NOT the Void button. Voiding wipes
-  // a sale entirely and restores stock — fraud vector if a cashier
-  // could do it alone. Backend mirrors this gate
-  // (returns.js: /void requires owner/manager; /return + /exchange
-  // open to cashier).
   const { user } = useAuthStore();
-  // MP-OWNER-PIN-APPROVAL (Wave 2): voiding is now token-gated, so
-  // cashier can void too (with an owner/manager PIN at the counter).
-  // Same-day rule still enforced server-side for non-owner.
-  const canVoid = ["owner", "manager", "cashier"].includes(user?.role);
+  // MP-VOID-OPTION-RESTORE: the Void choice is shown alongside
+  // Return+Refund and Exchange, WITHOUT a client-side role-hide. It
+  // previously rendered only when user.role ∈ {owner,manager,cashier}
+  // (the old `canVoid` gate); that silently HID the whole option for
+  // every other session — accountants, warehouse staff, and (the
+  // common case) admin "View as owner" impersonation whose user object
+  // can arrive without a role — which is how the button went
+  // "missing". Authorisation is the BACKEND's job: POST /returns/void
+  // enforces owner|manager|cashier (403 otherwise), the same-day rule
+  // for non-owners, and the owner-PIN / approval-token flow. This
+  // matches how Refund/Exchange already behave here (shown to all
+  // roles; server enforces). The sale-state guard + confirm step below
+  // are the only client gates on Void.
   const { requestApproval, modal: approvalModal } = useOwnerApproval();
   // The return inherits the sale's location. Some report payloads
   // don't include location_id (pre-multi-location / trimmed select),
@@ -60,6 +63,11 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
   );
   const [overrideReason, setOverrideReason] = useState("");
   const [loading, setLoading] = useState(false);
+  // MP-VOID-OPTION-RESTORE: two-step confirm for the destructive void.
+  // First "Confirm Void" press arms it (shows the warning banner +
+  // changes the button to "Yes, cancel the sale"); the second press
+  // actually submits. Reset whenever the user leaves the void screen.
+  const [voidConfirm, setVoidConfirm] = useState(false);
 
   // Sprint L: return-window banner. <30d OK, 30d–1y needs an
   // override reason, >1y the server rejects.
@@ -176,6 +184,42 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
       🔌 {blockMsg}
     </div>
   ) : null;
+
+  // MP-VOID-OPTION-RESTORE: sale-state guard for the Void option. Void is
+  // disabled (with a reason shown) when the sale is ALREADY voided, or when it
+  // already has a return/refund/exchange recorded against it — a partially
+  // returned sale can't be cleanly cancelled, so the staffer is steered to
+  // Return + Refund for the remaining items instead. Detection is tolerant of
+  // both payload shapes the modal receives: RefundsPage's `has_existing_refund`
+  // and ReportsPage's `refunded_total` / embedded `pa_returns`.
+  const alreadyVoided = sale?.is_voided === true;
+  const priorReturnsTotal = Number(sale?.refunded_total) || 0;
+  const hasReturns =
+    sale?.has_existing_refund === true ||
+    priorReturnsTotal > 0 ||
+    (Array.isArray(sale?.pa_returns) && sale.pa_returns.length > 0);
+  const voidOptionDisabled = alreadyVoided || hasReturns;
+  const voidBlockedReason = alreadyVoided
+    ? (lang === "en" ? "This sale is already voided." : "Cette vente est déjà annulée.")
+    : hasReturns
+      ? (lang === "en"
+          ? "This sale already has a return/refund — void is disabled. Use Return + Refund for the rest."
+          : "Cette vente a déjà un retour/remboursement — annulation désactivée. Utilisez Retour + Remboursement pour le reste.")
+      : "";
+
+  // MP-VOID-OPTION-RESTORE: gate the destructive void behind a two-step
+  // confirm. First click arms (banner + relabel); second click submits.
+  const handleVoidClick = () => {
+    if (!canProcess) { toast.error(blockMsg); return; }
+    if (!voidReasonValid) {
+      toast.error(lang === "en"
+        ? "Reason required (helps the owner understand voids)."
+        : "Raison obligatoire (aide le patron à comprendre les annulations).");
+      return;
+    }
+    if (!voidConfirm) { setVoidConfirm(true); return; }
+    handleSubmit();
+  };
 
   const handleSubmit = async () => {
     // MP-REFUNDS-ONLINE-ONLY: hard backstop — never process a return-family
@@ -446,15 +490,19 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
             <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 4 }}>
               {lang === "en" ? "What do you want to do?" : "Que souhaitez-vous faire?"}
             </div>
-            {canVoid && (
-              <button onClick={() => setMode("void")}
-                style={{ padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.08)", color: "#f87171", cursor: "pointer", textAlign: "left", fontWeight: 600 }}>
-                ⚠️ {lang === "en" ? "Void sale (full cancellation, stock restored)" : "Annuler la vente (annulation totale, stock restauré)"}
-                <div style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)", marginTop: 3 }}>
-                  {lang === "en" ? "For same-day mistakes — owner/manager only" : "Pour les erreurs du jour — propriétaire/manager seulement"}
-                </div>
-              </button>
-            )}
+            {/* MP-VOID-OPTION-RESTORE: the Void choice — always shown (no
+                role-hide; the backend authorises). Disabled with a reason when
+                the sale is already voided or already has a return against it. */}
+            <button onClick={voidOptionDisabled ? undefined : () => setMode("void")}
+              disabled={voidOptionDisabled}
+              style={{ padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.08)", color: "#f87171", cursor: voidOptionDisabled ? "not-allowed" : "pointer", textAlign: "left", fontWeight: 600, opacity: voidOptionDisabled ? 0.5 : 1 }}>
+              ⚠️ {lang === "en" ? "Void (cancel sale)" : "Annuler la vente"}
+              <div style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)", marginTop: 3 }}>
+                {voidOptionDisabled
+                  ? voidBlockedReason
+                  : (lang === "en" ? "Reverses the whole sale — use for mistakes" : "Inverse toute la vente — à utiliser pour les erreurs")}
+              </div>
+            </button>
             <button onClick={() => setMode("refund")}
               style={{ padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(251,191,36,0.4)", background: "rgba(251,191,36,0.08)", color: "#fbbf24", cursor: "pointer", textAlign: "left", fontWeight: 600 }}>
               ↩️ {lang === "en" ? "Return + Refund (full or partial)" : "Retour + Remboursement (total ou partiel)"}
@@ -512,7 +560,19 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
             {mode !== "void" && pastWindow && <WindowBanner days={saleAgeDays} value={overrideReason} setValue={setOverrideReason} lang={lang} />}
             <VoidPinAndReason pin={pin} setPin={setPin} reason={reason} setReason={setReason} pinError={pinError} lang={lang} reasonValid={voidReasonValid} noPin />
             {blockBanner}
-            <ActionButtons mode="void" loading={loading} disabled={!voidReasonValid || !canProcess} onBack={() => setMode(null)} onConfirm={handleSubmit} lang={lang} />
+            {/* MP-VOID-OPTION-RESTORE: destructive-action confirmation step. */}
+            {voidConfirm && canProcess && (
+              <div style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.45)", borderRadius: 10, padding: "10px 12px", marginBottom: 10, fontSize: 12.5, fontWeight: 600, color: "#f87171" }}>
+                ⚠️ {lang === "en"
+                  ? "This cancels the entire sale and reverses payment & stock. This cannot be undone. Continue?"
+                  : "Ceci annule toute la vente et inverse le paiement et le stock. Action irréversible. Continuer ?"}
+              </div>
+            )}
+            <ActionButtons mode="void" loading={loading} disabled={!voidReasonValid || !canProcess}
+              onBack={() => { setVoidConfirm(false); setMode(null); }}
+              onConfirm={handleVoidClick}
+              confirmLabelOverride={voidConfirm ? (lang === "en" ? "✓ Yes, cancel the sale" : "✓ Oui, annuler la vente") : undefined}
+              lang={lang} />
           </div>
         )}
 
@@ -795,7 +855,7 @@ function PinAndReason({ reason, setReason, lang }) {
   );
 }
 
-function ActionButtons({ mode, loading, disabled, onBack, onConfirm, lang }) {
+function ActionButtons({ mode, loading, disabled, onBack, onConfirm, lang, confirmLabelOverride }) {
   const labels = {
     void: { en: "✓ Confirm Void", fr: "✓ Confirmer l'annulation" },
     refund: { en: "✓ Confirm Refund", fr: "✓ Confirmer le remboursement" },
@@ -813,7 +873,7 @@ function ActionButtons({ mode, loading, disabled, onBack, onConfirm, lang }) {
       </button>
       <button onClick={onConfirm} disabled={isDisabled}
         style={{ flex: 2, padding: "10px", border: "none", borderRadius: 10, background: mode === "void" ? "#ef4444" : mode === "refund" ? "#fbbf24" : "var(--brand)", color: "#152B52", cursor: isDisabled ? "not-allowed" : "pointer", opacity: isDisabled ? 0.55 : 1, fontWeight: 700, fontSize: 14 }}>
-        {loading ? "..." : (lang === "en" ? labels[mode].en : labels[mode].fr)}
+        {loading ? "..." : (confirmLabelOverride || (lang === "en" ? labels[mode].en : labels[mode].fr))}
       </button>
     </div>
   );
