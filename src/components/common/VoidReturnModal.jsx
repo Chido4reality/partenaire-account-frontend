@@ -24,20 +24,27 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
   const qc = useQueryClient();
   const fmt = useCurrency();
   const { selectedLocation } = useSettingsStore();
-  const { user } = useAuthStore();
-  // MP-VOID-OPTION-RESTORE: the Void choice is shown alongside
-  // Return+Refund and Exchange, WITHOUT a client-side role-hide. It
-  // previously rendered only when user.role ∈ {owner,manager,cashier}
-  // (the old `canVoid` gate); that silently HID the whole option for
-  // every other session — accountants, warehouse staff, and (the
-  // common case) admin "View as owner" impersonation whose user object
-  // can arrive without a role — which is how the button went
-  // "missing". Authorisation is the BACKEND's job: POST /returns/void
-  // enforces owner|manager|cashier (403 otherwise), the same-day rule
-  // for non-owners, and the owner-PIN / approval-token flow. This
-  // matches how Refund/Exchange already behave here (shown to all
-  // roles; server enforces). The sale-state guard + confirm step below
-  // are the only client gates on Void.
+  const { user, impersonating, impersonation } = useAuthStore();
+  // MP-VOID-OPTION-REGATE: the Void choice is shown ONLY for the roles the
+  // backend actually permits — owner | manager | cashier (POST /returns/void
+  // 403s accountant + warehouse). Showing it to a forbidden role meant an
+  // accountant could open Void, enter the owner-approval PIN, and only THEN hit
+  // a 403 — a dead PIN prompt. Refund + Exchange stay unconditional.
+  //
+  // Effective-role resolution (the original "Void disappeared for owners" bug):
+  // user.role comes from the backend session object stored at login /
+  // loginImpersonated (store/index.js). On the admin "View as owner"
+  // impersonation path (App.jsx impersonate-exchange) the stored user object can
+  // arrive WITHOUT a populated role, so user?.role alone wrongly hid Void from a
+  // legitimate owner. The reliable signal there is the impersonation metadata's
+  // target_user_role; and an active impersonation with no resolvable role is, by
+  // definition, an admin viewing AS the owner → treat as owner. So:
+  //   effectiveRole = user.role  ??  impersonation.target_user_role  ??  (impersonating ? "owner")
+  // Authorisation is still enforced server-side (same-day rule + owner-PIN /
+  // approval-token flow); this gate only avoids offering a dead action.
+  const effectiveRole =
+    user?.role || impersonation?.target_user_role || (impersonating ? "owner" : null);
+  const canVoid = ["owner", "manager", "cashier"].includes(effectiveRole);
   const { requestApproval, modal: approvalModal } = useOwnerApproval();
   // The return inherits the sale's location. Some report payloads
   // don't include location_id (pre-multi-location / trimmed select),
@@ -490,19 +497,22 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
             <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 4 }}>
               {lang === "en" ? "What do you want to do?" : "Que souhaitez-vous faire?"}
             </div>
-            {/* MP-VOID-OPTION-RESTORE: the Void choice — always shown (no
-                role-hide; the backend authorises). Disabled with a reason when
-                the sale is already voided or already has a return against it. */}
-            <button onClick={voidOptionDisabled ? undefined : () => setMode("void")}
-              disabled={voidOptionDisabled}
-              style={{ padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.08)", color: "#f87171", cursor: voidOptionDisabled ? "not-allowed" : "pointer", textAlign: "left", fontWeight: 600, opacity: voidOptionDisabled ? 0.5 : 1 }}>
-              ⚠️ {lang === "en" ? "Void (cancel sale)" : "Annuler la vente"}
-              <div style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)", marginTop: 3 }}>
-                {voidOptionDisabled
-                  ? voidBlockedReason
-                  : (lang === "en" ? "Reverses the whole sale — use for mistakes" : "Inverse toute la vente — à utiliser pour les erreurs")}
-              </div>
-            </button>
+            {/* MP-VOID-OPTION-REGATE: shown ONLY to backend-permitted roles
+                (owner|manager|cashier via effectiveRole) so accountant/warehouse
+                never see a dead PIN prompt. Within that, disabled with a reason
+                when the sale is already voided or already has a return. */}
+            {canVoid && (
+              <button onClick={voidOptionDisabled ? undefined : () => setMode("void")}
+                disabled={voidOptionDisabled}
+                style={{ padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.08)", color: "#f87171", cursor: voidOptionDisabled ? "not-allowed" : "pointer", textAlign: "left", fontWeight: 600, opacity: voidOptionDisabled ? 0.5 : 1 }}>
+                ⚠️ {lang === "en" ? "Void (cancel sale)" : "Annuler la vente"}
+                <div style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)", marginTop: 3 }}>
+                  {voidOptionDisabled
+                    ? voidBlockedReason
+                    : (lang === "en" ? "Reverses the whole sale — use for mistakes" : "Inverse toute la vente — à utiliser pour les erreurs")}
+                </div>
+              </button>
+            )}
             <button onClick={() => setMode("refund")}
               style={{ padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(251,191,36,0.4)", background: "rgba(251,191,36,0.08)", color: "#fbbf24", cursor: "pointer", textAlign: "left", fontWeight: 600 }}>
               ↩️ {lang === "en" ? "Return + Refund (full or partial)" : "Retour + Remboursement (total ou partiel)"}

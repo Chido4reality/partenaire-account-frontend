@@ -23,10 +23,12 @@
 // original-channel refund flow ("Simple" approach; channel-
 // aware refund routing is future work).
 //
-// VoidReturnModal shows the Void option to all roles (no client
-// role-hide); the backend POST /returns/void enforces who may void.
-// Void is disabled there when the sale is already voided or already
-// has a return against it (is_voided / has_existing_refund).
+// VoidReturnModal shows the Void option only to backend-permitted
+// roles (owner|manager|cashier; accountant/warehouse are 403'd by
+// POST /returns/void, so they don't see it). Impersonated "View as
+// owner" sessions resolve as owner. Void is also disabled there when
+// the sale is already voided or already has a return against it
+// (is_voided / has_existing_refund).
 
 import { useState, useEffect } from "react";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
