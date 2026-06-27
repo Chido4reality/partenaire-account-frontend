@@ -36,7 +36,7 @@ function factureDate(sd) {
 // org: { logo_url, name, slogan, address, city, country, phone, whatsapp_number,
 //        email, currency, receipt_footer }  (empty fields are skipped)
 // items: [{ name, quantity, unit_price }]   (debt lines: pass quantity 1, unit_price = amount)
-export function buildFactureHtml({ org = {}, lang = "fr", saleNumber = "", saleDate = "", customerName, items = [] }) {
+export function buildFactureHtml({ org = {}, lang = "fr", saleNumber = "", saleDate = "", customerName, items = [], discountTotal = 0 }) {
   const currency = esc(currencySymbol(org.currency));   // XAF -> FCFA, etc.
   const footer = org.receipt_footer || "";
 
@@ -121,7 +121,11 @@ export function buildFactureHtml({ org = {}, lang = "fr", saleNumber = "", saleD
       <thead><tr><th class="c">Qté</th><th>Désignation</th><th class="r">P.U.</th><th class="r">P. Total</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    <div class="total">TOTAL: ${money(grand)} ${currency}</div>
+    ${Number(discountTotal) > 0
+      ? `<div class="total" style="font-weight:normal;font-size:12px">${lang === "en" ? "Subtotal" : "Sous-total"}: ${money(grand)} ${currency}</div>
+         <div class="total" style="font-weight:normal;font-size:12px">${lang === "en" ? "Discount" : "Remise"}: −${money(discountTotal)} ${currency}</div>
+         <div class="total">TOTAL: ${money(grand - Number(discountTotal))} ${currency}</div>`
+      : `<div class="total">TOTAL: ${money(grand)} ${currency}</div>`}
     ${footer ? `<div class="footer">${esc(footer)}</div>` : ""}
     <div class="arrete">Arrêtée la présente facture à la somme de : ________________________________</div>
     <div class="sign"><div class="sigcell">Signature client</div><div class="sigcell">Signature vendeur</div></div>
@@ -142,7 +146,7 @@ export function buildFactureHtml({ org = {}, lang = "fr", saleNumber = "", saleD
 // window.open()-spawned windows can't be reliably closed on Android WebView
 // (window.close() is a no-op), which left an uncloseable layer over the app.
 // All styles are scoped under .mp-fac so nothing leaks to the host app.
-export function buildFactureInner({ org = {}, lang = "fr", saleNumber = "", saleDate = "", customerName, items = [] }) {
+export function buildFactureInner({ org = {}, lang = "fr", saleNumber = "", saleDate = "", customerName, items = [], discountTotal = 0 }) {
   const currency = esc(currencySymbol(org.currency));
   const footer = org.receipt_footer || "";
 
@@ -196,7 +200,11 @@ export function buildFactureInner({ org = {}, lang = "fr", saleNumber = "", sale
       <thead><tr><th class="c">Qté</th><th>Désignation</th><th class="r">P.U.</th><th class="r">P. Total</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    <div class="total">TOTAL: ${money(grand)} ${currency}</div>
+    ${Number(discountTotal) > 0
+      ? `<div class="total" style="font-weight:normal;font-size:12px">${lang === "en" ? "Subtotal" : "Sous-total"}: ${money(grand)} ${currency}</div>
+         <div class="total" style="font-weight:normal;font-size:12px">${lang === "en" ? "Discount" : "Remise"}: −${money(discountTotal)} ${currency}</div>
+         <div class="total">TOTAL: ${money(grand - Number(discountTotal))} ${currency}</div>`
+      : `<div class="total">TOTAL: ${money(grand)} ${currency}</div>`}
     ${footer ? `<div class="footer">${esc(footer)}</div>` : ""}
     <div class="arrete">Arrêtée la présente facture à la somme de : ________________________________</div>
     <div class="sign"><div class="sigcell">Signature client</div><div class="sigcell">Signature vendeur</div></div>

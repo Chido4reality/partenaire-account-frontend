@@ -153,10 +153,17 @@ function buildBodyLines(eventType, data, lang, org) {
         lines.push(`${i.name} × ${i.quantity} ........ ${fmtAmt(i.quantity * i.unit_price)} F`);
       }
     });
-    const total = items.reduce((s, i) => s + i.quantity * i.unit_price, 0);
+    // MP-DISCOUNT: NET total is data.total_amount; discount = gross − net.
+    const grossSum = items.reduce((s, i) => s + i.quantity * i.unit_price, 0);
+    const total = Number(data.total_amount != null ? data.total_amount : grossSum) || 0;
+    const discount = Math.max(0, grossSum - total);
     const paid = Number(data.paid_amount ?? total) || 0;
     const balance = total - paid;
     lines.push("─────────────────────");
+    if (discount > 0) {
+      lines.push(`${en ? "Subtotal" : "Sous-total"}: ${fmtAmt(grossSum)} ${sym}`);
+      lines.push(`${en ? "Discount" : "Remise"}: −${fmtAmt(discount)} ${sym}`);
+    }
     lines.push(`${en ? "Total" : "Total"}: ${fmtAmt(total)} ${sym}`);
     if (data.payment_status === "paid") {
       lines.push(`✅ ${en ? "PAID" : "PAYÉ"}: ${fmtAmt(paid)} ${sym}`);
@@ -489,6 +496,9 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
       // (black-on-white + Imprimer/Partager/Fermer bar) instead of a separate
       // window.open() window. The overlay's Fermer is plain React state so it
       // ALWAYS dismisses; window.open() windows are uncloseable on Android WebView.
+      // MP-DISCOUNT: facture shows Subtotal/Discount/Net when discounted.
+      const grossItems = items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0);
+      const netTotal = Number(data.total_amount != null ? data.total_amount : grossItems) || 0;
       openPrint(buildFactureInner({
         org: org || {},
         lang,
@@ -496,6 +506,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
         saleDate: data.sale_date || "",
         customerName: data.customer_name || data.customer?.name || "Comptant",
         items,
+        discountTotal: Math.max(0, grossItems - netTotal),
       }));
       return;
     }

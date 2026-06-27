@@ -125,6 +125,13 @@ export default function POSPage() {
   const [payMethod, setPayMethod]         = useState("cash");
   const [notes, setNotes]                 = useState("");
   const [showPayment, setShowPayment]     = useState(false);
+  // MP-DISCOUNT: sale-level discount (line discounts live on each cart item).
+  const [saleDiscType, setSaleDiscType]     = useState("");   // "" | "amount" | "percent"
+  const [saleDiscValue, setSaleDiscValue]   = useState("");
+  const [saleDiscReason, setSaleDiscReason] = useState("");
+  // Owner-PIN token minted when the backend returns DISCOUNT_APPROVAL_REQUIRED;
+  // a ref so the immediate resubmit reads it without waiting on a state flush.
+  const discountTokenRef = useRef(null);
   const [showCamera, setShowCamera]       = useState(false);
   const [scanMode, setScanMode]           = useState(isMobile() ? "camera" : "usb");
   const [scanning, setScanning]           = useState(false);
@@ -891,7 +898,30 @@ export default function POSPage() {
       : it));
   };
 
-  const total   = cart.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0);
+  // MP-DISCOUNT: patch a cart line's discount fields (type/value/reason) +
+  // a toggle to open/clear the line discount control.
+  const setLineDisc = (lineId, patch) =>
+    setCart(c => c.map(it => it.lineId === lineId ? { ...it, ...patch } : it));
+
+  // ── MP-DISCOUNT: net totals (mirror backend order — line discounts first,
+  // then sale-level on the product subtotal). Debt lines are never discounted.
+  const resolveDisc = (type, value, base) => {
+    const v = Number(value) || 0;
+    if (!type || v <= 0) return 0;
+    const a = type === "percent" ? Math.round(base * v / 100) : Math.round(v);
+    return Math.max(0, Math.min(a, Math.round(base)));
+  };
+  const isDebtish = (i) => i.product_id === "__DEBT__" || i.type === "debt_payment";
+  const lineGross = (i) => (Number(i.quantity) || 0) * (Number(i.unit_price) || 0);
+  const lineDisc  = (i) => isDebtish(i) ? 0 : resolveDisc(i.discount_type, i.discount_value, lineGross(i));
+  const grossProducts   = cart.reduce((s, i) => s + (isDebtish(i) ? 0 : lineGross(i)), 0);
+  const debtAmt         = cart.reduce((s, i) => s + (isDebtish(i) ? lineGross(i) : 0), 0);
+  const lineDiscTotal   = cart.reduce((s, i) => s + lineDisc(i), 0);
+  const subtotalAfterLines = grossProducts - lineDiscTotal;
+  const saleDiscAmount  = resolveDisc(saleDiscType, saleDiscValue, subtotalAfterLines);
+  const totalDiscount   = lineDiscTotal + saleDiscAmount;
+  const grossTotal      = grossProducts + debtAmt;                       // before any discount
+  const total   = (subtotalAfterLines - saleDiscAmount) + debtAmt;       // NET — what the cashier collects
   const hasDebt = cart.some(i => i.product_id === "__DEBT__");
   // MP-DEBT-ONLY-PARTIAL-PAY-FIX: detect carts that contain ONLY debt
   // lines (legacy __DEBT__ invoice-settle, or new debt_payment line, or
@@ -1176,12 +1206,22 @@ export default function POSPage() {
                           // queued payload (no server call). The backend inserts
                           // pa_sale_items by explicit columns, so this extra
                           // field is harmless/ignored server-side.
-                          return { product_id: i.product_id, name: i.name, quantity: Number(i.quantity) || 1, unit_price: Number(i.unit_price) || 0, cost_price: i.cost_price, price_tier: i.price_tier || "walk_in", price_approval_token: i.price_approval_token };
+                          return { product_id: i.product_id, name: i.name, quantity: Number(i.quantity) || 1, unit_price: Number(i.unit_price) || 0, cost_price: i.cost_price, price_tier: i.price_tier || "walk_in", price_approval_token: i.price_approval_token,
+                            // MP-DISCOUNT: per-line discount (backend resolves the FCFA amount + net_amount).
+                            discount_type:   (i.discount_type && Number(i.discount_value) > 0) ? i.discount_type : null,
+                            discount_value:  (i.discount_type && Number(i.discount_value) > 0) ? Number(i.discount_value) : null,
+                            discount_reason: (i.discount_type && Number(i.discount_value) > 0) ? (String(i.discount_reason || "").trim() || null) : null };
                         }),
         payment_method: payMethod,
         paid_amount:    paid,
         due_date:       dueDate || null,
         notes:          notes || null,
+        // MP-DISCOUNT: sale-level discount + owner-PIN token (set on resubmit
+        // after DISCOUNT_APPROVAL_REQUIRED). Backend resolves the FCFA amount.
+        discount_type:   (saleDiscType && Number(saleDiscValue) > 0) ? saleDiscType : null,
+        discount_value:  (saleDiscType && Number(saleDiscValue) > 0) ? Number(saleDiscValue) : null,
+        discount_reason: (saleDiscType && Number(saleDiscValue) > 0) ? (saleDiscReason.trim() || null) : null,
+        discount_approval_token: discountTokenRef.current || undefined,
       };
 
       // MP-OFFLINE-WARNING-FALSE-POSITIVE: the SW used to intercept
@@ -1198,6 +1238,8 @@ export default function POSPage() {
       const resetCart = () => {
         setCart([]); setCustomer(null); setPayMode("paid"); setPayModeChosen(false);
         setPaidAmt(""); setDueDate(""); setNotes(""); setShowPayment(false);
+        // MP-DISCOUNT: clear sale-level discount + any minted approval token.
+        setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason(""); discountTokenRef.current = null;
         setDebtInvoices([]); setSelectedDebtIds(new Set()); setDebtPayAmt("");
         setDebtBanner(null);
         setOnlineCtx(null);
@@ -1376,6 +1418,36 @@ export default function POSPage() {
     },
     onError: (err) => {
       const d = err.response?.data;
+      // ── MP-DISCOUNT control responses ────────────────────────────────────
+      if (d?.code === "DISCOUNT_BLOCKED") {
+        discountTokenRef.current = null;
+        toast.error(lang === "en"
+          ? "You are not allowed to apply discounts. Ask the owner."
+          : "Vous n'êtes pas autorisé à faire des remises. Demandez au propriétaire.",
+          { duration: 5000 });
+        return;
+      }
+      if (d?.code === "DISCOUNT_APPROVAL_REQUIRED") {
+        // Over the cashier's cap — mint an owner-PIN token (action_type
+        // 'discount'), exactly like the below-min-price override, then resubmit.
+        requestApproval({
+          actionType:  "discount",
+          targetTable: "pa_sales",
+          targetId:    null,
+          context:     { effective_pct: d.effective_pct, total_discount: d.total_discount },
+          description: lang === "en"
+            ? `Approve a ${d.effective_pct}% discount on this sale (${fmt(d.total_discount || totalDiscount)})`
+            : `Approuver une remise de ${d.effective_pct}% sur cette vente (${fmt(d.total_discount || totalDiscount)})`,
+        })
+          .then(({ token }) => { discountTokenRef.current = token; saleMutation.mutate(); })
+          .catch((e) => {
+            discountTokenRef.current = null;
+            if (e?.code !== "cancelled") {
+              toast.error(e?.response?.data?.message || (lang === "en" ? "Approval failed" : "Échec de l'approbation"));
+            }
+          });
+        return;
+      }
       if (d?.code === "NOT_STOCKED_AT_LOCATION") {
         // Backend is the source of truth — show the blocking modal
         // even if the frontend stock snapshot looked fine.
@@ -1411,6 +1483,8 @@ export default function POSPage() {
           { duration: 5000 });
         return;
       }
+      // MP-DISCOUNT: drop any stale approval token so it can't be reused.
+      discountTokenRef.current = null;
       toast.error(d?.message || "Error");
     }
   });
@@ -1422,7 +1496,17 @@ export default function POSPage() {
   // inventory check: __DEBT__ (invoice settle) and, per MP-POS-DEBT-
   // LINE-LOCATION-FIX, __DEBT_PAYMENT__ / type:'debt_payment' (manual
   // debt). Debt is org-level, never location-stocked.
-  const runCheckout = () => { setOversellModal(null); saleMutation.mutate(); };
+  const runCheckout = () => {
+    // MP-DISCOUNT: a reason is REQUIRED whenever a discount is entered (matches
+    // the backend guard; caught here first for a clean cashier message).
+    const lineMissing = cart.some(i => !isDebtish(i) && i.discount_type && Number(i.discount_value) > 0 && !String(i.discount_reason || "").trim());
+    const saleMissing = saleDiscType && Number(saleDiscValue) > 0 && !saleDiscReason.trim();
+    if (lineMissing || saleMissing) {
+      toast.error(lang === "en" ? "Enter a reason for every discount." : "Saisissez une raison pour chaque remise.");
+      return;
+    }
+    setOversellModal(null); saleMutation.mutate();
+  };
   const attemptCheckout = () => {
     const real = cart.filter(i =>
       i.product_id && i.product_id !== "__DEBT__" &&
@@ -1663,16 +1747,81 @@ export default function POSPage() {
                       <input type="number" value={item.unit_price} onChange={e => onPriceInput(item.lineId, e.target.value)} onBlur={() => onPriceBlur(item.lineId)} style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "4px 6px 4px 18px", fontSize: 12 }} />
                       <span style={{ position: "absolute", left: 6, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "var(--text-muted)" }}>F</span>
                     </div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--brand-light)", minWidth: 56, textAlign: "right" }}>{fmt(item.quantity * item.unit_price)}</div>
+                    {/* MP-DISCOUNT: line total — struck gross + net when discounted. */}
+                    {lineDisc(item) > 0 ? (
+                      <div style={{ minWidth: 70, textAlign: "right", lineHeight: 1.15 }}>
+                        <div style={{ fontSize: 10, color: "var(--text-muted)", textDecoration: "line-through" }}>{fmt(lineGross(item))}</div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "#34d399" }}>{fmt(lineGross(item) - lineDisc(item))}</div>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--brand-light)", minWidth: 56, textAlign: "right" }}>{fmt(lineGross(item))}</div>
+                    )}
                   </div>
+                )}
+                {/* MP-DISCOUNT: per-line discount control (product lines only). */}
+                {!item.isDebt && !isDebtish(item) && (
+                  item.discount_type ? (
+                    <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
+                      <button onClick={() => setLineDisc(item.lineId, { discount_type: item.discount_type === "amount" ? "percent" : "amount" })}
+                        style={{ width: 30, height: 26, borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: "pointer", fontSize: 12, fontWeight: 700 }}
+                        title={lang === "en" ? "Toggle amount / percent" : "Basculer montant / %"}>{item.discount_type === "amount" ? "F" : "%"}</button>
+                      <input type="number" value={item.discount_value ?? ""} placeholder={lang === "en" ? "off" : "remise"}
+                        onChange={e => setLineDisc(item.lineId, { discount_value: e.target.value })}
+                        style={{ width: 56, background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "3px 6px", fontSize: 12 }} />
+                      <input type="text" value={item.discount_reason ?? ""} placeholder={lang === "en" ? "reason *" : "raison *"}
+                        onChange={e => setLineDisc(item.lineId, { discount_reason: e.target.value })}
+                        style={{ flex: 1, minWidth: 80, background: "var(--bg-elevated)", border: `1px solid ${(Number(item.discount_value) > 0 && !String(item.discount_reason || "").trim()) ? "#f87171" : "var(--border)"}`, borderRadius: 6, color: "var(--text-primary)", padding: "3px 6px", fontSize: 12 }} />
+                      <button onClick={() => setLineDisc(item.lineId, { discount_type: null, discount_value: "", discount_reason: "" })}
+                        style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13 }} title={lang === "en" ? "Remove discount" : "Retirer la remise"}>✕</button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setLineDisc(item.lineId, { discount_type: "percent", discount_value: "", discount_reason: "" })}
+                      style={{ marginTop: 4, background: "none", border: "none", color: "var(--brand-light)", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: 0 }}>
+                      − {lang === "en" ? "Add discount" : "Ajouter une remise"}
+                    </button>
+                  )
                 )}
               </div>
             ))}
           </div>
 
           <div style={{ padding: "14px 16px", borderTop: "2px solid var(--border)", background: "var(--bg-elevated)", ...(mobile && showPayment ? { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" } : {}) }}>
+            {/* MP-DISCOUNT: sale-level discount control (only with product lines). */}
+            {grossProducts > 0 && (
+              saleDiscType ? (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center", marginBottom: 8 }}>
+                  <span style={{ fontSize: 11, color: "var(--text-secondary)", fontWeight: 600 }}>{lang === "en" ? "Sale discount" : "Remise globale"}</span>
+                  <button onClick={() => setSaleDiscType(saleDiscType === "amount" ? "percent" : "amount")}
+                    style={{ width: 30, height: 26, borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>{saleDiscType === "amount" ? "F" : "%"}</button>
+                  <input type="number" value={saleDiscValue} placeholder={lang === "en" ? "off" : "remise"} onChange={e => setSaleDiscValue(e.target.value)}
+                    style={{ width: 56, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "3px 6px", fontSize: 12 }} />
+                  <input type="text" value={saleDiscReason} placeholder={lang === "en" ? "reason *" : "raison *"} onChange={e => setSaleDiscReason(e.target.value)}
+                    style={{ flex: 1, minWidth: 80, background: "var(--bg-card)", border: `1px solid ${(Number(saleDiscValue) > 0 && !saleDiscReason.trim()) ? "#f87171" : "var(--border)"}`, borderRadius: 6, color: "var(--text-primary)", padding: "3px 6px", fontSize: 12 }} />
+                  <button onClick={() => { setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason(""); }}
+                    style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13 }}>✕</button>
+                </div>
+              ) : (
+                <button onClick={() => setSaleDiscType("percent")}
+                  style={{ marginBottom: 8, background: "none", border: "none", color: "var(--brand-light)", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: 0 }}>
+                  − {lang === "en" ? "Add sale discount" : "Ajouter une remise globale"}
+                </button>
+              )
+            )}
+
+            {/* MP-DISCOUNT: Gross → −Discount → Net summary when any discount applies. */}
+            {totalDiscount > 0 && (
+              <div style={{ marginBottom: 8, fontSize: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
+                  <span>{lang === "en" ? "Gross" : "Brut"}</span><span>{fmt(grossTotal)}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#34d399" }}>
+                  <span>{lang === "en" ? "Discount" : "Remise"}</span><span>−{fmt(totalDiscount)}</span>
+                </div>
+              </div>
+            )}
+
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexShrink: 0 }}>
-              <span style={{ fontWeight: 600, fontSize: 13, color: "var(--text-secondary)" }}>Total</span>
+              <span style={{ fontWeight: 600, fontSize: 13, color: "var(--text-secondary)" }}>{totalDiscount > 0 ? (lang === "en" ? "Net total" : "Total net") : "Total"}</span>
               <span style={{ fontWeight: 800, fontSize: 20, color: "var(--brand-light)", letterSpacing: "-0.5px" }}>{fmt(total)}</span>
             </div>
 
