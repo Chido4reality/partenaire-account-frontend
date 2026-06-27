@@ -7,6 +7,7 @@ import OwnerPIN from "./OwnerPIN";
 import { useSettingsStore, useAuthStore } from "../../store";
 import useOwnerApproval from "../../hooks/useOwnerApproval";
 import { isPendingApproval, keepWorkingToast } from "../../utils/approval";
+import { useNetworkStatus } from "../../utils/useNetworkStatus";
 
 /**
  * VoidReturnModal — handles void, refund, exchange
@@ -148,7 +149,38 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
   // 400 VOID_REASON_REQUIRED + DB CHECK void_reason_when_voided.
   const voidReasonValid = reason.trim().length >= 3;
 
+  // MP-REFUNDS-ONLINE-ONLY: void / refund / exchange all run through the
+  // server-side atomic RPC (process_return_exchange / void_sale) and CANNOT be
+  // done offline or against an unsynced sale. Gate on real connectivity AND on
+  // the target sale being a synced server row (UUID id + a real sale_number,
+  // not an OFFLINE-/temp placeholder).
+  const { isOnline } = useNetworkStatus();
+  const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const saleSynced = !!sale
+    && UUID_RX.test(String(sale.id || ""))
+    && !!sale.sale_number
+    && !String(sale.id || "").toUpperCase().startsWith("OFFLINE")
+    && !String(sale.sale_number || "").toUpperCase().startsWith("OFFLINE");
+  const canProcess = isOnline && saleSynced;
+  const blockMsg = !isOnline
+    ? (lang === "en"
+        ? "Refunds need an internet connection. Reconnect to process this refund."
+        : "Les remboursements nécessitent une connexion Internet. Reconnectez-vous pour effectuer ce remboursement.")
+    : (!saleSynced
+        ? (lang === "en"
+            ? "This sale hasn't finished syncing yet. It must sync before it can be refunded."
+            : "Cette vente n'est pas encore synchronisée. Elle doit se synchroniser avant tout remboursement.")
+        : "");
+  const blockBanner = !canProcess ? (
+    <div style={{ background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.30)", color: "#f87171", borderRadius: 10, padding: "10px 12px", fontSize: 12.5, fontWeight: 600, marginBottom: 10 }}>
+      🔌 {blockMsg}
+    </div>
+  ) : null;
+
   const handleSubmit = async () => {
+    // MP-REFUNDS-ONLINE-ONLY: hard backstop — never process a return-family
+    // action offline or against an unsynced sale (buttons are also disabled).
+    if (!canProcess) { toast.error(blockMsg); return; }
     // MP-OWNER-PIN-APPROVAL (Wave 3): refund + exchange now use the
     // same useOwnerApproval flow as void (Wave 2). No inline PIN
     // input anywhere in this modal; the PIN modal pops on submit.
@@ -479,7 +511,8 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
             )}
             {mode !== "void" && pastWindow && <WindowBanner days={saleAgeDays} value={overrideReason} setValue={setOverrideReason} lang={lang} />}
             <VoidPinAndReason pin={pin} setPin={setPin} reason={reason} setReason={setReason} pinError={pinError} lang={lang} reasonValid={voidReasonValid} noPin />
-            <ActionButtons mode="void" loading={loading} disabled={!voidReasonValid} onBack={() => setMode(null)} onConfirm={handleSubmit} lang={lang} />
+            {blockBanner}
+            <ActionButtons mode="void" loading={loading} disabled={!voidReasonValid || !canProcess} onBack={() => setMode(null)} onConfirm={handleSubmit} lang={lang} />
           </div>
         )}
 
@@ -546,7 +579,8 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
 
             {mode !== "void" && pastWindow && <WindowBanner days={saleAgeDays} value={overrideReason} setValue={setOverrideReason} lang={lang} />}
             <PinAndReason reason={reason} setReason={setReason} lang={lang} />
-            <ActionButtons mode="refund" loading={loading} onBack={() => setMode(null)} onConfirm={handleSubmit} lang={lang} />
+            {blockBanner}
+            <ActionButtons mode="refund" loading={loading} disabled={!canProcess} onBack={() => setMode(null)} onConfirm={handleSubmit} lang={lang} />
           </div>
         )}
 
@@ -650,7 +684,8 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
 
             {mode !== "void" && pastWindow && <WindowBanner days={saleAgeDays} value={overrideReason} setValue={setOverrideReason} lang={lang} />}
             <PinAndReason reason={reason} setReason={setReason} lang={lang} />
-            <ActionButtons mode="exchange" loading={loading} onBack={() => setMode(null)} onConfirm={handleSubmit} lang={lang} />
+            {blockBanner}
+            <ActionButtons mode="exchange" loading={loading} disabled={!canProcess} onBack={() => setMode(null)} onConfirm={handleSubmit} lang={lang} />
           </div>
         )}
       </div>

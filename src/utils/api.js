@@ -31,13 +31,17 @@ startWorker();
 // but a 5xx still gets caught + enqueued so a transient outage
 // doesn't lose the write either.
 //
-// /returns/{return,exchange,void}/:saleId are the three return-flow
-// shapes; all three go through the same backend handler (processReturn
-// or void_sale RPC) that supports local_id idempotency.
+// MP-REFUNDS-ONLINE-ONLY: refunds / exchanges / voids are NO LONGER offline-
+// eligible. They rely on the server-side atomic RPC (process_return_exchange /
+// void_sale) and cannot be replayed safely from the queue — an offline one
+// can't resolve the original sale line (product + net_amount), so it produced
+// malformed "Refund 0" rows. The return flow now hard-gates on connectivity in
+// VoidReturnModal; keeping these OUT of OFFLINE_ELIGIBLE means a POST while
+// offline simply fails (and is never queued) instead of being optimistically
+// enqueued. Normal sales (/sales, /sales/:id/payment) stay offline-first.
 const OFFLINE_ELIGIBLE = [
   { rx: /^\/sales\/?$/,                            method: "POST" },
   { rx: /^\/sales\/[^/]+\/payment\/?$/,            method: "POST" },
-  { rx: /^\/returns\/(return|exchange|void)\/[^/]+\/?$/, method: "POST" },
   { rx: /^\/expenditures\/?$/,                     method: "POST" },
   // MP-PHASE-4.2: actual backend route is /api/transfers (not /stock-transfers).
   // The misnamed regex meant offline transfers fell through to the network and
