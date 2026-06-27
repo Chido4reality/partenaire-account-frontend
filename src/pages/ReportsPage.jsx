@@ -36,6 +36,7 @@ export default function ReportsPage() {
   const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().split("T")[0]; });
   const [to, setTo]     = useState(new Date().toISOString().split("T")[0]);
   const [expandedSale, setExpandedSale] = useState(null);
+  const [expandedDisc, setExpandedDisc] = useState(null); // MP-DISCOUNT drill-down
   const [voidSale, setVoidSale] = useState(null);
   // MP-DASHBOARD-REPORT-CONSISTENCY: location filter for the daily /
   // daily-sales / sales-detail aggregations. "" = All locations (default,
@@ -96,6 +97,13 @@ export default function ReportsPage() {
     queryKey: ["reports-daily", from, to, repLoc],
     queryFn: () => api.get("/reports/daily?from=" + from + "&to=" + to + locQS).then(r => r.data)
   });
+
+  // MP-DISCOUNT: Gross → −Discounts → Net + breakdowns + drill-down.
+  const { data: discData } = useOfflineCachedQuery({
+    queryKey: ["reports-discounts", from, to, repLoc],
+    queryFn: () => api.get("/reports/discounts?from=" + from + "&to=" + to + locQS).then(r => r.data),
+  });
+  const disc = discData?.data || null;
 
   const { data: debtData, isLoading: debtLoading } = useOfflineCachedQuery({
     queryKey: ["reports-debts"],
@@ -420,6 +428,66 @@ export default function ReportsPage() {
                 </tfoot>
               </table>
             </div>
+          )}
+
+          {/* ── MP-DISCOUNT: Gross → −Discounts → Net + breakdowns + drill-down ── */}
+          {disc && disc.totals && disc.totals.discounted_sale_count > 0 && (
+            <CollapsibleBlock title={`${lang === "en" ? "Discounts" : "Remises"} (${disc.totals.discounted_sale_count})`} defaultExpanded={false}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px,1fr))", gap: 10, marginBottom: 14 }}>
+                {[
+                  { label: lang === "en" ? "Gross" : "Brut", value: fmt(disc.totals.gross), color: "var(--text-secondary)" },
+                  { label: lang === "en" ? "Discounts" : "Remises", value: "−" + fmt(disc.totals.discount), color: "#34d399" },
+                  { label: lang === "en" ? "Net" : "Net", value: fmt(disc.totals.net), color: "var(--brand-light)" },
+                ].map(c => (
+                  <div key={c.label} className="stat-card">
+                    <div className="stat-label">{c.label}</div>
+                    <div className="stat-value" style={{ color: c.color, fontSize: 18 }}>{c.value}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>{lang === "en" ? "By cashier" : "Par caissier"}</div>
+                  {(disc.by_cashier || []).map(c => (
+                    <div key={c.cashier_id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: "1px solid var(--border)" }}>
+                      <span>{c.name} <span style={{ color: "var(--text-muted)" }}>({c.count})</span></span>
+                      <strong style={{ color: "#34d399" }}>−{fmt(c.discount_total)}</strong>
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>{lang === "en" ? "By day" : "Par jour"}</div>
+                  {(disc.by_day || []).map(d => (
+                    <div key={d.date} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: "1px solid var(--border)" }}>
+                      <span>{formatDate(d.date, lang)} <span style={{ color: "var(--text-muted)" }}>({d.count})</span></span>
+                      <strong style={{ color: "#34d399" }}>−{fmt(d.discount_total)}</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>{lang === "en" ? "Discounted sales" : "Ventes avec remise"}</div>
+              {(disc.sales || []).map(s => (
+                <div key={s.sale_id} style={{ borderBottom: "1px solid var(--border)" }}>
+                  <div onClick={() => setExpandedDisc(expandedDisc === s.sale_id ? null : s.sale_id)}
+                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", cursor: "pointer", fontSize: 12, gap: 8 }}>
+                    <span style={{ fontFamily: "monospace" }}>{s.sale_number} <span style={{ color: "var(--text-muted)" }}>· {formatDate(s.date, lang)} · {s.cashier_name}</span></span>
+                    <span style={{ whiteSpace: "nowrap" }}><span style={{ color: "var(--text-muted)", textDecoration: "line-through", marginRight: 6 }}>{fmt(s.gross)}</span><strong style={{ color: "var(--brand-light)" }}>{fmt(s.net)}</strong> <span style={{ color: "#34d399" }}>(−{fmt(s.discount_total)})</span></span>
+                  </div>
+                  {expandedDisc === s.sale_id && (
+                    <div style={{ padding: "4px 0 10px 12px", fontSize: 11, color: "var(--text-secondary)" }}>
+                      {(s.line_discounts || []).map((l, i) => (
+                        <div key={i}>• {l.name}: <span style={{ textDecoration: "line-through" }}>{fmt(l.original)}</span> −{fmt(l.discount_amount)} {l.type === "percent" ? `(${l.value}%)` : ""} — <em>{l.reason || "—"}</em></div>
+                      ))}
+                      {s.sale_discount && (
+                        <div>• {lang === "en" ? "Whole sale" : "Vente entière"}: −{fmt(s.sale_discount.amount)} {s.sale_discount.type === "percent" ? `(${s.sale_discount.value}%)` : ""} — <em>{s.sale_discount.reason || "—"}</em></div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </CollapsibleBlock>
           )}
         </div>
       )}
