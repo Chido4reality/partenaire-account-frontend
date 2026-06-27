@@ -185,7 +185,9 @@ export function startWorker() {
   // Reset stranded 'sending' → 'queued' so it retries. Safe: the stamped
   // local_id + backend dedupe make replay idempotent (a row that did
   // land returns dedup_replay → sent, no duplicate).
-  recoverStranded().then(() => flushIfOnline(true));
+  // MP-REFUNDS-ONLINE-ONLY: drop any stale offline refund/exchange/void ops
+  // BEFORE the first flush so they can never POST as real data.
+  purgeOnlineOnlyOps().then(() => recoverStranded()).then(() => flushIfOnline(true));
 }
 
 async function recoverStranded() {
@@ -193,6 +195,33 @@ async function recoverStranded() {
     await exec(`UPDATE pending_sync SET status = ? WHERE status = ?`, ['queued', 'sending']);
     notify();
   } catch { /* best-effort; queued rows still flush regardless */ }
+}
+
+// MP-REFUNDS-ONLINE-ONLY: refunds / exchanges / voids rely on a server-side
+// atomic RPC (process_return_exchange / void_sale) and can NEVER be replayed
+// safely from an offline queue — an offline-created one can't resolve the
+// original sale line (product + net_amount), producing malformed "Refund 0"
+// rows. They are now online-only, so any such op already sitting in the queue
+// (e.g. the malformed OFFLINE-… refund from before this change) must be DROPPED,
+// never POSTed. The shim has no LIKE, so we scan + delete by id.
+const ONLINE_ONLY_RX = /^\/returns\/(return|exchange|void)\//i;
+async function purgeOnlineOnlyOps() {
+  try {
+    const all = await query(`SELECT * FROM pending_sync`, []);
+    const doomed = (all || []).filter(r => ONLINE_ONLY_RX.test(String(r.endpoint || '')));
+    if (!doomed.length) return 0;
+    for (const r of doomed) {
+      await exec(`DELETE FROM pending_sync WHERE id = ?`, [r.id]);
+      console.warn('[pendingSync] purged online-only op (refunds/exchanges/voids are online-only, never queued):', {
+        id: r.id, endpoint: r.endpoint, local_id: r.local_id, status: r.status,
+      });
+    }
+    notify();
+    return doomed.length;
+  } catch (e) {
+    console.warn('[pendingSync] purgeOnlineOnlyOps failed (best-effort):', e?.message || e);
+    return 0;
+  }
 }
 
 // force=true ignores per-row backoff cooldowns for this pass — used on
@@ -211,6 +240,9 @@ async function flushIfOnline(force = false) {
 }
 
 async function flushOnce(force = false) {
+  // MP-REFUNDS-ONLINE-ONLY: belt-and-suspenders — never attempt a refund/
+  // exchange/void op from the queue (they're online-only). Drop them first.
+  await purgeOnlineOnlyOps();
   // MP-PAUL-FIX-2 (3 Jun): watchdog log for stale 'sending' rows. If a
   // row has been in 'sending' for >2 min, attempt() probably crashed
   // mid-fetch in a way recoverStranded didn't catch (or the device
