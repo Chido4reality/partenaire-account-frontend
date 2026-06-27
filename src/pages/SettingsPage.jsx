@@ -169,8 +169,13 @@ export default function SettingsPage() {
     name: "", slogan: "", email: "", phone: "", address: "", city: "", country: "Cameroun",
     whatsapp_number: "", receipt_footer: "", daily_summary_time: "17:30",
     daily_summary_enabled: true, low_stock_alerts_enabled: true,
-    drawer_mode: "shared"
+    drawer_mode: "shared",
+    whatsapp_alerts_addon: false
   });
+  // MP-WHATSAPP-ALERTS: per-month add-on fee (read-only, from mp_pricing_config
+  // via GET /settings) + the org currency, for the billing toggle label.
+  const [waAlertsFee, setWaAlertsFee] = useState(0);
+  const [waAlertsCur, setWaAlertsCur] = useState("XAF");
   const [pinForm, setPinForm]     = useState({ current_pin: "", new_pin: "", confirm_pin: "" });
   const [showPinSection, setShowPinSection] = useState(false);
   const [pinError, setPinError]   = useState("");
@@ -282,7 +287,10 @@ export default function SettingsPage() {
       daily_summary_enabled:    d.daily_summary_enabled ?? true,
       low_stock_alerts_enabled: d.low_stock_alerts_enabled ?? true,
       drawer_mode:              d.drawer_mode || "shared",
+      whatsapp_alerts_addon:    d.whatsapp_alerts_addon === true,
     });
+    setWaAlertsFee(Number(d.whatsapp_alerts_fee) || 0);
+    setWaAlertsCur(d.currency || "XAF");
     setShopLoaded(true);
   }, [shopResp, shopLoaded]);
 
@@ -1055,6 +1063,40 @@ export default function SettingsPage() {
                 </span>
               </label>
             </div>
+
+            {/* MP-WHATSAPP-ALERTS: paid add-on (owner billing toggle). Turning it
+                on adds the monthly fee to the NEXT subscription bill (plan
+                discounts never apply to it). The alerts themselves stay inert
+                until the global WHATSAPP_ALERTS_ENABLED flag is on server-side —
+                so this only governs entitlement + billing, never live sends. */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--bg-elevated)", borderRadius: 10, marginTop: 12 }}>
+              <div style={{ paddingRight: 12 }}>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>
+                  {lang === "en" ? "WhatsApp instant alerts" : "Alertes WhatsApp instantanées"}
+                  {waAlertsFee > 0 && (
+                    <span style={{ color: "var(--brand)", fontWeight: 700 }}>
+                      {" "}+{Math.round(waAlertsFee).toLocaleString("en-US").replace(/,/g, " ")} {waAlertsCur}/{lang === "en" ? "mo" : "mois"}
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>{lang === "en"
+                  ? "Shift close + staff oversight, up to 5/day. Billed on your next subscription."
+                  : "Fermeture de caisse + surveillance du personnel, jusqu'à 5/jour. Facturé sur votre prochain abonnement."}</div>
+              </div>
+              <label style={{ position: "relative", width: 44, height: 24, cursor: "pointer", flexShrink: 0 }}>
+                <input type="checkbox" checked={shopForm.whatsapp_alerts_addon} onChange={e => setFF("whatsapp_alerts_addon", e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+                <span style={{ position: "absolute", inset: 0, borderRadius: 12, background: shopForm.whatsapp_alerts_addon ? "var(--brand)" : "var(--border)", transition: "0.2s" }}>
+                  <span style={{ position: "absolute", width: 18, height: 18, borderRadius: "50%", background: "#fff", top: 3, left: shopForm.whatsapp_alerts_addon ? 23 : 3, transition: "0.2s" }} />
+                </span>
+              </label>
+            </div>
+            {shopForm.whatsapp_alerts_addon && (
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, padding: "0 4px" }}>
+                {lang === "en"
+                  ? "✓ The add-on fee will be added to your next subscription charge."
+                  : "✓ Les frais de l'option seront ajoutés à votre prochain paiement d'abonnement."}
+              </div>
+            )}
           </div>
 
           {/* Owner PIN */}
