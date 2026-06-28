@@ -1654,23 +1654,27 @@ export default function SettingsPage() {
               </select>
             </div>
 
-            {/* MP-PROPLUS-CASHIER-LOCATION: owner pins a cashier to a home
+            {/* MP-PROPLUS-CASHIER-LOCATION: owner pins a staff member to a home
                 location that follows them onto any device. Pro Plus only —
-                hidden for every other plan (server also gates the write). */}
-            {staffForm.role === "cashier" && hasFeature(effectivePlan, "staff_location_binding") && (
+                hidden for every other plan (server also gates the write).
+                MP-STAFF-LOCATION-ACCT-MGR: shown for cashier, accountant AND
+                manager. OPTIONAL for all three (blank = org-wide / all
+                branches). Owner is always org-wide (no field, role filtered out
+                of the picker above). */}
+            {["cashier", "accountant", "manager"].includes(staffForm.role) && hasFeature(effectivePlan, "staff_location_binding") && (
               <div className="form-group">
                 <label className="label">
                   {lang === "en" ? "Assigned location (Pro Plus)" : "Emplacement assigné (Pro Plus)"}
                 </label>
                 <select className="input" value={staffForm.assigned_location_id || ""}
                   onChange={e => setSF("assigned_location_id", e.target.value)}>
-                  <option value="">{lang === "en" ? "— None (device decides) —" : "— Aucun (l'appareil décide) —"}</option>
+                  <option value="">{lang === "en" ? "— None (org-wide / all branches) —" : "— Aucun (toute l'organisation / toutes les branches) —"}</option>
                   {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
                 </select>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
                   {lang === "en"
-                    ? "This cashier will sell only at this location, on any device. Leave as None to keep the per-device default."
-                    : "Ce caissier ne vendra qu'à cet emplacement, sur tout appareil. Laissez Aucun pour garder le réglage par appareil."}
+                    ? "Optional. Pins this staff member to one branch, on any device. Leave as None for org-wide access to all branches."
+                    : "Optionnel. Rattache ce membre à une seule branche, sur tout appareil. Laissez Aucun pour un accès à toutes les branches."}
                 </div>
               </div>
             )}
