@@ -506,7 +506,12 @@ export default function ReportsPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               {sortedDates.map(date => {
                 const daySales = salesByDate[date];
-                const dayTotal = daySales.reduce((s, sale) => s + parseFloat(sale.total_amount), 0);
+                // MP-REPORTS-DEBT-DOUBLECOUNT: day SALES = Σ product-line net
+                // (server `product_net`), NOT total_amount (which includes the
+                // debt_payment line). Falls back to total_amount for any older
+                // cached row lacking product_net.
+                const saleSalesValue = (sale) => Number(sale.product_net != null ? sale.product_net : sale.total_amount) || 0;
+                const dayTotal = daySales.reduce((s, sale) => s + saleSalesValue(sale), 0);
                 const dayReturns = daySales.reduce((s, sale) => s + (Number(sale.refunded_total) || 0), 0);
                 const dayNet = dayTotal - dayReturns;
                 return (
@@ -568,15 +573,21 @@ export default function ReportsPage() {
                                 </div>
                               </div>
                               <div style={{ textAlign: "right" }}>
+                                {/* MP-REPORTS-DEBT-DOUBLECOUNT: the sale's value is its
+                                    product-line net (goods). A debt_payment line is shown
+                                    separately as "Debt collected", never as sale revenue. */}
                                 {Number(sale.refunded_total) > 0 ? (
                                   <>
-                                    <div style={{ fontSize: 12, color: "var(--text-muted)", textDecoration: "line-through" }}>{fmt(sale.total_amount)}</div>
+                                    <div style={{ fontSize: 12, color: "var(--text-muted)", textDecoration: "line-through" }}>{fmt(sale.product_net != null ? sale.product_net : sale.total_amount)}</div>
                                     <div style={{ fontWeight: 800, fontSize: 15, color: Number(sale.net_amount) <= 0 ? "var(--text-muted)" : "var(--brand-light)" }}>
                                       {fmt(sale.net_amount)} {lang === "en" ? "NET" : "NET"}
                                     </div>
                                   </>
                                 ) : (
-                                  <div style={{ fontWeight: 800, fontSize: 15, color: "var(--brand-light)" }}>{fmt(sale.total_amount)}</div>
+                                  <div style={{ fontWeight: 800, fontSize: 15, color: "var(--brand-light)" }}>{fmt(sale.product_net != null ? sale.product_net : sale.total_amount)}</div>
+                                )}
+                                {Number(sale.debt_payment_amount) > 0 && (
+                                  <div style={{ fontSize: 11, color: "#fbbf24" }}>💰 {lang === "en" ? "Debt collected" : "Dette encaissée"}: {fmt(sale.debt_payment_amount)}</div>
                                 )}
                                 {sale.balance_due > 0 && <div style={{ fontSize: 11, color: "#f87171" }}>Due: {fmt(sale.balance_due)}</div>}
                               </div>
@@ -651,10 +662,17 @@ export default function ReportsPage() {
                                     </div>
                                   </div>
                                 ))}
+                                {/* MP-REPORTS-DEBT-DOUBLECOUNT: goods vs debt split. */}
                                 <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 20px", borderTop: "1px solid var(--border)", fontWeight: 700 }}>
-                                  <span>{lang === "en" ? "Sold total" : "Total vendu"}</span>
-                                  <span style={{ color: "var(--brand-light)" }}>{fmt(sale.total_amount)}</span>
+                                  <span>{lang === "en" ? "Goods total" : "Total marchandise"}</span>
+                                  <span style={{ color: "var(--brand-light)" }}>{fmt(sale.product_net != null ? sale.product_net : sale.total_amount)}</span>
                                 </div>
+                                {Number(sale.debt_payment_amount) > 0 && (
+                                  <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 20px", fontSize: 12, color: "#fbbf24" }}>
+                                    <span>💰 {lang === "en" ? "Debt collected (not sales)" : "Dette encaissée (hors ventes)"}</span>
+                                    <span>{fmt(sale.debt_payment_amount)}</span>
+                                  </div>
+                                )}
                                 {(sale.returns || []).length > 0 && (
                                   <div style={{ borderTop: "2px solid rgba(248,113,113,0.4)", background: "rgba(248,113,113,0.06)" }}>
                                     <div style={{ padding: "8px 20px", fontWeight: 700, fontSize: 12, color: "#f87171" }}>
@@ -1103,7 +1121,10 @@ export default function ReportsPage() {
                   const shiftsSubtotal = shiftsList.length === 0
                     ? (lang === "en" ? "no shifts" : "aucun poste")
                     : `${fmt(shiftDrawer)} ${fmt.symbol}`;
-                  const outstandingSubtotal = `${fmt(bl.outstanding.debt_issued_today)} ${fmt.symbol}`;
+                  // MP-REPORTS-DEBT-DOUBLECOUNT: the Outstanding headline is the
+                  // ACTUAL current receivable (Σ customer debt), not gross credit
+                  // issued today. "Debt issued today" stays as a detail row.
+                  const outstandingSubtotal = `${fmt(bl.outstanding.total_customer_debt_all_time)} ${fmt.symbol}`;
                   return (
                   <>
                     <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 12, textAlign: "center", letterSpacing: "0.3px" }}>
