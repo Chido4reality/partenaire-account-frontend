@@ -132,6 +132,14 @@ export default function POSPage() {
   // Owner-PIN token minted when the backend returns DISCOUNT_APPROVAL_REQUIRED;
   // a ref so the immediate resubmit reads it without waiting on a state flush.
   const discountTokenRef = useRef(null);
+  // MP-DISCOUNT-HYBRID-APPROVAL: when a resumed held sale carries a boss-approved
+  // discount, its approval id rides the next /sales POST (server re-verifies the
+  // cart signature + single-uses it).
+  const discountApprovalIdRef = useRef(null);
+  // The hybrid over-cap choice modal payload ({ effective_pct, total_discount });
+  // null = closed. Offers "Enter owner PIN" (sync) OR "Send request to boss" (async).
+  const [discountChoice, setDiscountChoice] = useState(null);
+  const [sendingToBoss, setSendingToBoss] = useState(false);
   const [showCamera, setShowCamera]       = useState(false);
   const [scanMode, setScanMode]           = useState(isMobile() ? "camera" : "usb");
   const [scanning, setScanning]           = useState(false);
@@ -1244,6 +1252,9 @@ export default function POSPage() {
         discount_value:  (saleDiscType && Number(saleDiscValue) > 0) ? Number(saleDiscValue) : null,
         discount_reason: (saleDiscType && Number(saleDiscValue) > 0) ? (saleDiscReason.trim() || null) : null,
         discount_approval_token: discountTokenRef.current || undefined,
+        // MP-DISCOUNT-HYBRID-APPROVAL: async-approved discount (resumed held sale).
+        // Server re-verifies the cart signature + single-uses it.
+        discount_approval_id: discountApprovalIdRef.current || undefined,
       };
 
       // MP-OFFLINE-WARNING-FALSE-POSITIVE: the SW used to intercept
@@ -1260,8 +1271,9 @@ export default function POSPage() {
       const resetCart = () => {
         setCart([]); setCustomer(null); setPayMode("paid"); setPayModeChosen(false);
         setPaidAmt(""); setDueDate(""); setNotes(""); setShowPayment(false);
-        // MP-DISCOUNT: clear sale-level discount + any minted approval token.
-        setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason(""); discountTokenRef.current = null;
+        // MP-DISCOUNT: clear sale-level discount + any minted approval token + a
+        // consumed async approval id.
+        setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason(""); discountTokenRef.current = null; discountApprovalIdRef.current = null;
         setDebtInvoices([]); setSelectedDebtIds(new Set()); setDebtPayAmt("");
         setDebtBanner(null);
         setOnlineCtx(null);
@@ -1450,24 +1462,21 @@ export default function POSPage() {
         return;
       }
       if (d?.code === "DISCOUNT_APPROVAL_REQUIRED") {
-        // Over the cashier's cap — mint an owner-PIN token (action_type
-        // 'discount'), exactly like the below-min-price override, then resubmit.
-        requestApproval({
-          actionType:  "discount",
-          targetTable: "pa_sales",
-          targetId:    null,
-          context:     { effective_pct: d.effective_pct, total_discount: d.total_discount },
-          description: lang === "en"
-            ? `Approve a ${d.effective_pct}% discount on this sale (${fmt(d.total_discount || totalDiscount)})`
-            : `Approuver une remise de ${d.effective_pct}% sur cette vente (${fmt(d.total_discount || totalDiscount)})`,
-        })
-          .then(({ token }) => { discountTokenRef.current = token; saleMutation.mutate(); })
-          .catch((e) => {
-            discountTokenRef.current = null;
-            if (e?.code !== "cancelled") {
-              toast.error(e?.response?.data?.message || (lang === "en" ? "Approval failed" : "Échec de l'approbation"));
-            }
-          });
+        // MP-DISCOUNT-HYBRID-APPROVAL: over the cashier's cap → open the HYBRID
+        // choice (Enter owner PIN now, OR send the request to the boss's phone).
+        // A stale parked approval id must not ride along.
+        discountApprovalIdRef.current = null;
+        setDiscountChoice({ effective_pct: d.effective_pct, total_discount: d.total_discount });
+        return;
+      }
+      if (d?.code === "DISCOUNT_APPROVAL_VOID") {
+        // The boss-approved discount no longer matches this cart (items or the
+        // discount changed since approval). Drop it; a fresh request is needed.
+        discountApprovalIdRef.current = null;
+        toast.error(lang === "en"
+          ? "The cart or discount changed since approval — the approval is void. Request a new one."
+          : "Le panier ou la remise a changé depuis l'approbation — approbation annulée. Refaites une demande.",
+          { duration: 6000 });
         return;
       }
       if (d?.code === "NOT_STOCKED_AT_LOCATION") {
@@ -1518,6 +1527,84 @@ export default function POSPage() {
   // inventory check: __DEBT__ (invoice settle) and, per MP-POS-DEBT-
   // LINE-LOCATION-FIX, __DEBT_PAYMENT__ / type:'debt_payment' (manual
   // debt). Debt is org-level, never location-stocked.
+
+  // MP-DISCOUNT-HYBRID-APPROVAL — option 1: boss is HERE. Existing synchronous
+  // owner-PIN path (OwnerApprovalModal → action_type 'discount' token → resubmit).
+  // Unchanged behaviour, just triggered from the hybrid choice modal now.
+  const discountViaPin = () => {
+    const choice = discountChoice;
+    setDiscountChoice(null);
+    requestApproval({
+      actionType:  "discount",
+      targetTable: "pa_sales",
+      targetId:    null,
+      context:     { effective_pct: choice?.effective_pct, total_discount: choice?.total_discount },
+      description: lang === "en"
+        ? `Approve a ${choice?.effective_pct}% discount on this sale (${fmt(choice?.total_discount || totalDiscount)})`
+        : `Approuver une remise de ${choice?.effective_pct}% sur cette vente (${fmt(choice?.total_discount || totalDiscount)})`,
+    })
+      .then(({ token }) => { discountTokenRef.current = token; saleMutation.mutate(); })
+      .catch((e) => {
+        discountTokenRef.current = null;
+        if (e?.code !== "cancelled") {
+          toast.error(e?.response?.data?.message || (lang === "en" ? "Approval failed" : "Échec de l'approbation"));
+        }
+      });
+  };
+
+  // MP-DISCOUNT-HYBRID-APPROVAL — option 2: boss is AWAY. Park the discount as a
+  // pending approval (notifies the owner), HOLD the cart so the cashier serves
+  // others, and clear the screen. The boss approves on their own device; the
+  // cashier later resumes the held sale (discount pre-approved) and completes it.
+  const sendDiscountToBoss = async () => {
+    setSendingToBoss(true);
+    try {
+      const lineItems = cart
+        .filter(i => i.product_id && !isDebtish(i))
+        .map(i => ({
+          product_id: i.product_id, name: i.name,
+          quantity: Number(i.quantity) || 1, unit_price: Number(i.unit_price) || 0,
+          discount_type:  (i.discount_type && Number(i.discount_value) > 0) ? i.discount_type : null,
+          discount_value: (i.discount_type && Number(i.discount_value) > 0) ? Number(i.discount_value) : null,
+          discount_reason: (i.discount_type && Number(i.discount_value) > 0) ? (String(i.discount_reason || "").trim() || null) : null,
+        }));
+      // 1) park the approval (server recomputes decision + signature)
+      const ar = await api.post("/sales/discount-approval-request", {
+        location_id: selectedLocation?.id,
+        customer_id: customer?.id || null,
+        customer_name: customer?.name || null,
+        items: lineItems,
+        discount_type:  (saleDiscType && Number(saleDiscValue) > 0) ? saleDiscType : null,
+        discount_value: (saleDiscType && Number(saleDiscValue) > 0) ? Number(saleDiscValue) : null,
+        discount_reason: (saleDiscType && Number(saleDiscValue) > 0) ? (saleDiscReason.trim() || null) : null,
+      }).then(r => r.data);
+      const approvalId = ar?.approval_id;
+      // 2) hold the cart, linked to that approval
+      const hr = await api.post("/held-carts", {
+        location_id: selectedLocation?.id,
+        customer_id: customer?.id || null,
+        label: lang === "en" ? "Discount — boss approval" : "Remise — approbation patron",
+        items: lineItems.map(i => ({ product_id: i.product_id, qty: i.quantity, unit_price: i.unit_price, line_total: i.quantity * i.unit_price })),
+        discount_approval_id: approvalId,
+      }).then(r => r.data);
+      // 3) clear the screen so the cashier serves other customers
+      setDiscountChoice(null);
+      setCart([]); setCustomer(null); setOnlineCtx(null);
+      setShowPayment(false); setPayMode("paid"); setPayModeChosen(false); setPaidAmt("");
+      setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason("");
+      discountTokenRef.current = null; discountApprovalIdRef.current = null;
+      qc.invalidateQueries(["held-carts"]);
+      toast.success(lang === "en"
+        ? `Sent to the boss + held as ${hr?.data?.hold_ref || ""}. Resume it once approved.`
+        : `Envoyé au patron + mis en attente ${hr?.data?.hold_ref || ""}. Reprenez après approbation.`,
+        { duration: 7000 });
+    } catch (e) {
+      toast.error(e?.response?.data?.message || (lang === "en" ? "Could not send the request" : "Échec de l'envoi de la demande"));
+    } finally {
+      setSendingToBoss(false);
+    }
+  };
+
   const runCheckout = () => {
     // MP-DISCOUNT: a reason is REQUIRED whenever a discount is entered (matches
     // the backend guard; caught here first for a clean cashier message).
@@ -1623,16 +1710,29 @@ export default function POSPage() {
     try {
       const res = await api.post(`/held-carts/${id}/resume`).then(r => r.data);
       const h = res?.data;
-      const held = h?.items || [];
-      const hydrated = await Promise.all(held.map(async it => {
+      // MP-DISCOUNT-HYBRID-APPROVAL: a hold linked to a discount approval rebuilds
+      // WITH the boss-approved discount only when the approval is 'approved'. While
+      // pending, or if rejected/expired, it resumes WITHOUT the discount. The
+      // approval payload carries the discounted line items + sale-level discount.
+      const da = h?.discount_approval || null;
+      const approved = !!da && da.status === "approved";
+      // current_stock lives on the held-cart items; index it by product so we keep
+      // the low-stock warning even when rebuilding from the approval payload.
+      const stockByProduct = {};
+      (h?.items || []).forEach(it => { if (it.product_id) stockByProduct[it.product_id] = it.current_stock; });
+      const srcItems = (approved && Array.isArray(da.payload?.items) && da.payload.items.length)
+        ? da.payload.items
+        : (h?.items || []);
+      const hydrated = await Promise.all(srcItems.map(async it => {
         let p = null;
         try { p = await api.get(`/products/${it.product_id}`).then(r => r.data?.data); } catch { /* ignore */ }
+        const cs = stockByProduct[it.product_id];
         return {
           lineId: genLineId(),
           product_id: it.product_id,
           name: it.name || p?.name || "—",
           unit: p?.unit, barcode: p?.barcode,
-          quantity: Number(it.qty) || 1,
+          quantity: Number(it.qty != null ? it.qty : it.quantity) || 1,
           unit_price: Number(it.unit_price) || Number(p?.sell_price) || 0,
           original_price: Number(p?.sell_price) || 0,
           price_tier: "walk_in", // resume clears the customer; re-prices if one is re-attached
@@ -1640,15 +1740,39 @@ export default function POSPage() {
           wholesale_price: Number(p?.wholesale_price) || 0,
           min_price: p?.min_price || 0,
           cost_price: p?.cost_price,
-          stock: it.current_stock != null ? Number(it.current_stock) : null,
+          stock: cs != null ? Number(cs) : null,
+          // line discount restored only on an approved discount-hold.
+          discount_type:  approved && it.discount_type ? it.discount_type : "",
+          discount_value: approved && it.discount_value != null ? String(it.discount_value) : "",
+          discount_reason: approved && it.discount_reason ? it.discount_reason : "",
         };
       }));
       setCart(hydrated.filter(isSubmittableLine));
-      setCustomer(null);
+
+      // Sale-level discount + customer + approval id (approved holds only).
+      const sd = approved ? (da.payload?.sale_discount || null) : null;
+      if (sd && sd.discount_type && Number(sd.discount_value) > 0) {
+        setSaleDiscType(sd.discount_type); setSaleDiscValue(String(sd.discount_value)); setSaleDiscReason(sd.discount_reason || "");
+      } else {
+        setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason("");
+      }
+      discountApprovalIdRef.current = approved ? da.id : null;
+      discountTokenRef.current = null;
+      let resumedCustomer = null;
+      if (approved && da.payload?.customer_id) {
+        try { resumedCustomer = await api.get(`/customers/${da.payload.customer_id}`).then(r => r.data?.data); } catch { /* ignore */ }
+      }
+      setCustomer(resumedCustomer || null);
       setShowResume(false);
       const short = hydrated.filter(i => typeof i.stock === "number" && i.quantity > i.stock);
-      toast.success(lang === "en"
-        ? `Resumed ${h.hold_ref}` : `Reprise ${h.hold_ref}`, { duration: 3000 });
+      const resumeMsg = approved
+        ? (lang === "en" ? `Resumed ${h.hold_ref} — boss-approved discount applied` : `Reprise ${h.hold_ref} — remise approuvée appliquée`)
+        : (da && da.status === "pending")
+          ? (lang === "en" ? `Resumed ${h.hold_ref} — still awaiting boss approval; discount NOT applied yet` : `Reprise ${h.hold_ref} — approbation en attente; remise NON appliquée`)
+          : da
+            ? (lang === "en" ? `Resumed ${h.hold_ref} — discount was not approved; resuming without it` : `Reprise ${h.hold_ref} — remise non approuvée; reprise sans remise`)
+            : (lang === "en" ? `Resumed ${h.hold_ref}` : `Reprise ${h.hold_ref}`);
+      toast.success(resumeMsg, { duration: da ? 6000 : 3000 });
       if (short.length) {
         toast(lang === "en"
           ? `⚠️ Low stock: ${short.map(i => `${i.name} (${i.stock} left, ${i.quantity} held)`).join("; ")}. Adjust before completing.`
@@ -2025,6 +2149,39 @@ export default function POSPage() {
   return (
     <>
       {approvalModal}
+      {/* ── MP-DISCOUNT-HYBRID-APPROVAL: over-cap choice ─────── */}
+      {discountChoice && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 320, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, maxWidth: 420, width: "100%" }}>
+            <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 6 }}>
+              🔐 {lang === "en" ? "Discount needs approval" : "Remise à approuver"}
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 18, lineHeight: 1.5 }}>
+              {lang === "en"
+                ? `A ${discountChoice.effective_pct}% discount (${fmt(discountChoice.total_discount || totalDiscount)}) is over your limit. Choose how to get the owner's approval:`
+                : `Une remise de ${discountChoice.effective_pct}% (${fmt(discountChoice.total_discount || totalDiscount)}) dépasse votre limite. Choisissez comment obtenir l'approbation :`}
+            </div>
+            <button onClick={discountViaPin} disabled={sendingToBoss}
+              style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid var(--brand)", background: "var(--brand)", color: "#152B52", cursor: "pointer", textAlign: "left", fontWeight: 700, marginBottom: 10 }}>
+              🔑 {lang === "en" ? "Enter owner PIN now" : "Saisir le PIN du patron"}
+              <div style={{ fontSize: 11, fontWeight: 400, color: "#152B52", opacity: 0.8, marginTop: 3 }}>
+                {lang === "en" ? "The owner is here — applies the discount immediately." : "Le patron est présent — applique la remise immédiatement."}
+              </div>
+            </button>
+            <button onClick={sendDiscountToBoss} disabled={sendingToBoss}
+              style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", cursor: sendingToBoss ? "wait" : "pointer", textAlign: "left", fontWeight: 700, marginBottom: 10 }}>
+              📲 {sendingToBoss ? (lang === "en" ? "Sending…" : "Envoi…") : (lang === "en" ? "Send request to boss" : "Envoyer la demande au patron")}
+              <div style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)", marginTop: 3 }}>
+                {lang === "en" ? "Boss is away — holds this sale; resume it once approved on their phone." : "Le patron est absent — met la vente en attente ; reprenez-la après approbation sur son téléphone."}
+              </div>
+            </button>
+            <button onClick={() => setDiscountChoice(null)} disabled={sendingToBoss}
+              style={{ width: "100%", padding: "10px", border: "none", background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 13 }}>
+              {lang === "en" ? "Cancel" : "Annuler"}
+            </button>
+          </div>
+        </div>
+      )}
       {/* ── DEBT MODAL ─────────────────────────────────────── */}
       {showDebtModal && debtInvoices.length > 0 && (
         <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
