@@ -75,6 +75,15 @@ export default function RequestActivationPage() {
 
   const unitPrice = selected ? (selected.price ?? selected.price_monthly) : 0;
   const total = unitPrice * months;
+  // MP-SUBSCRIPTION-DISCOUNT: the backend already resolves the admin pricing rule
+  // and returns original_price + discount on each plan. Surface it (struck-through
+  // original + −X% badge + savings) — without this the discounted price looked
+  // like a plain full price (e.g. a 45,000 → 40,500 −10% showed only "40,500").
+  const unitOriginal = selected ? (selected.original_price ?? unitPrice) : 0;
+  const totalOriginal = unitOriginal * months;
+  const selDiscount = selected?.discount || null;
+  const discBadge = (d) => !d ? null
+    : (d.discount_type === "percent" ? `−${d.discount_value}%` : `−${fmt(d.amount_off)}`);
   const pendingPlan = plans.find(p => p.id === pendingPlanId);
 
   // PRIMARY — Flutterwave Standard Checkout. Backend creates the hosted payment
@@ -162,8 +171,17 @@ export default function RequestActivationPage() {
                   </div>
                 </div>
                 <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
-                  <div style={{ fontWeight: 800, fontSize: 18, color: "var(--brand-light)" }}>{fmt(price)}</div>
+                  {/* MP-SUBSCRIPTION-DISCOUNT: struck-through original when an admin rule applies. */}
+                  {p.discount && p.original_price != null && p.original_price > price && (
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", textDecoration: "line-through" }}>{fmt(p.original_price)}</div>
+                  )}
+                  <div style={{ fontWeight: 800, fontSize: 18, color: p.discount ? "#34d399" : "var(--brand-light)" }}>{fmt(price)}</div>
                   <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{en ? "/month" : "/mois"}</div>
+                  {p.discount && (
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#34d399", marginTop: 2 }}>
+                      {p.discount.discount_type === "percent" ? `−${p.discount.discount_value}%` : `−${fmt(p.discount.amount_off)}`}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -179,10 +197,27 @@ export default function RequestActivationPage() {
         ))}
       </select>
 
-      {/* Total */}
-      <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 14, marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ color: "var(--text-secondary)", fontSize: 13 }}>{en ? "Total" : "Total"}</span>
-        <span style={{ fontWeight: 800, fontSize: 18, color: "var(--brand-light)" }}>{fmt(total)}</span>
+      {/* Total — MP-SUBSCRIPTION-DISCOUNT: struck-through original + −X% badge + savings. */}
+      <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 14, marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ color: "var(--text-secondary)", fontSize: 13 }}>{en ? "Total" : "Total"}</span>
+          <span style={{ textAlign: "right" }}>
+            {selDiscount && totalOriginal > total && (
+              <span style={{ fontSize: 13, color: "var(--text-muted)", textDecoration: "line-through", marginRight: 8 }}>{fmt(totalOriginal)}</span>
+            )}
+            <span style={{ fontWeight: 800, fontSize: 18, color: selDiscount ? "#34d399" : "var(--brand-light)" }}>{fmt(total)}</span>
+            {selDiscount && (
+              <span style={{ fontSize: 10, fontWeight: 700, color: "#34d399", marginLeft: 8, padding: "2px 6px", borderRadius: 8, background: "rgba(52,211,153,0.15)" }}>
+                {discBadge(selDiscount)}
+              </span>
+            )}
+          </span>
+        </div>
+        {selDiscount && totalOriginal > total && (
+          <div style={{ fontSize: 11, color: "#34d399", marginTop: 6, textAlign: "right" }}>
+            {en ? `You save ${fmt(totalOriginal - total)}` : `Vous économisez ${fmt(totalOriginal - total)}`}
+          </div>
+        )}
       </div>
 
       {/* PRIMARY — Flutterwave */}
