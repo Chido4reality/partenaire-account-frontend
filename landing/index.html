@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<!--
+  MP-BRANDED-DOMAINS — root chooser landing for partenairedozie.com (+ www).
+  "One door, two apps": Mon Partenaire (POS) and Partenaire Dozie (Marketplace).
+  Pure static, zero build, self-contained (no external assets/fonts/JS deps).
+  Hosting: its OWN small Vercel project (Root Directory = landing/, framework
+  "Other", no build). Point @ + www at it in Vercel. See report.
+-->
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Partenaire Dozie</title>
+  <meta name="theme-color" content="#152B52" />
+  <meta name="description" content="Mon Partenaire (POS) & Partenaire Dozie (Marché) — choisissez votre application." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23152B52'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='%23FBC503' font-family='Arial' font-weight='bold'%3EP%3C/text%3E%3C/svg%3E" />
+  <style>
+    :root{
+      --navy:#152B52; --navy-2:#1A2B4A; --gold:#FBC503; --gold-soft:rgba(251,197,3,.12);
+      --ink:#0f1f3d; --muted:rgba(255,255,255,.72); --card:#1e3258;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%}
+    body{
+      background:radial-gradient(1200px 600px at 50% -10%, #20396b 0%, var(--navy) 55%, var(--navy-2) 100%);
+      color:#fff; font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      min-height:100vh; padding:28px 18px; text-align:center;
+    }
+    .wrap{width:100%; max-width:560px}
+    .brand{font-weight:800; font-size:26px; letter-spacing:.3px}
+    .brand .dot{color:var(--gold)}
+    .tag{color:var(--muted); font-size:14px; margin-top:6px; line-height:1.5}
+    .cards{display:grid; gap:16px; margin-top:30px}
+    a.card{
+      display:block; text-decoration:none; color:inherit; text-align:left;
+      background:#1e3258; border:1px solid rgba(255,255,255,.10); border-radius:18px;
+      padding:20px 22px; transition:transform .15s ease, border-color .15s ease, background .15s ease;
+    }
+    a.card:hover{transform:translateY(-2px); border-color:var(--gold); background:#243c69}
+    a.card .row{display:flex; align-items:center; gap:14px}
+    .emoji{font-size:30px; flex:0 0 auto}
+    .title{font-weight:700; font-size:18px}
+    .sub{color:var(--muted); font-size:13px; margin-top:3px; line-height:1.45}
+    .go{margin-left:auto; color:var(--gold); font-weight:800; font-size:22px}
+    .pos:hover{border-color:var(--gold)}
+    .foot{margin-top:26px; color:rgba(255,255,255,.45); font-size:12px}
+    .lang{margin-top:18px}
+    .lang button{
+      background:transparent; border:1px solid rgba(255,255,255,.22); color:var(--muted);
+      border-radius:999px; padding:6px 14px; font-size:12px; cursor:pointer; margin:0 4px;
+    }
+    .lang button.active{background:var(--gold-soft); border-color:var(--gold); color:var(--gold); font-weight:700}
+    [data-en]{display:none}
+    html[lang="en"] [data-fr]{display:none}
+    html[lang="en"] [data-en]{display:inline}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">Partenaire<span class="dot"> ·</span> Dozie</div>
+    <div class="tag">
+      <span data-fr>Une porte, deux applications. Choisissez la vôtre.</span>
+      <span data-en>One door, two apps. Pick yours.</span>
+    </div>
+
+    <div class="cards">
+      <a class="card pos" href="https://pos.partenairedozie.com">
+        <div class="row">
+          <span class="emoji">🛒</span>
+          <span>
+            <div class="title">Mon Partenaire <span style="opacity:.7;font-weight:600">(POS)</span></div>
+            <div class="sub">
+              <span data-fr>Caisse, stock & gestion de votre boutique.</span>
+              <span data-en>Point of sale, stock & shop management.</span>
+            </div>
+          </span>
+          <span class="go">→</span>
+        </div>
+      </a>
+
+      <a class="card" href="https://market.partenairedozie.com">
+        <div class="row">
+          <span class="emoji">🏪</span>
+          <span>
+            <div class="title">Partenaire Dozie <span style="opacity:.7;font-weight:600">(<span data-fr>Marché</span><span data-en>Marketplace</span>)</span></div>
+            <div class="sub">
+              <span data-fr>Achetez des produits ou gérez votre boutique en ligne.</span>
+              <span data-en>Buy products or manage your online shop.</span>
+            </div>
+          </span>
+          <span class="go">→</span>
+        </div>
+      </a>
+    </div>
+
+    <div class="lang">
+      <button id="fr" class="active" onclick="setLang('fr')">Français</button>
+      <button id="en" onclick="setLang('en')">English</button>
+    </div>
+
+    <div class="foot">© <span id="yr"></span> Partenaire Dozie</div>
+  </div>
+
+  <script>
+    function setLang(l){
+      document.documentElement.lang = l;
+      document.getElementById('fr').classList.toggle('active', l === 'fr');
+      document.getElementById('en').classList.toggle('active', l === 'en');
+      try { localStorage.setItem('pd_lang', l); } catch (_) {}
+    }
+    try {
+      var saved = localStorage.getItem('pd_lang');
+      var pref = saved || ((navigator.language || 'fr').toLowerCase().indexOf('en') === 0 ? 'en' : 'fr');
+      setLang(pref);
+    } catch (_) { setLang('fr'); }
+    document.getElementById('yr').textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>
