@@ -18,6 +18,7 @@ const VERB = {
   debt_adjust:     { en: "debt/credit change",   fr: "modif dette/crédit" },
   delete_customer: { en: "delete a customer",    fr: "supprimer un client" },
   expense:         { en: "expense",              fr: "dépense" },
+  discount:        { en: "discount",             fr: "remise" },
 };
 const verb = (a, en) => (VERB[a] ? (en ? VERB[a].en : VERB[a].fr) : a);
 
@@ -125,7 +126,16 @@ export default function MyRequestsPage() {
               {r.status === "failed" && r.execution_error && (
                 <div style={{ fontSize: 12.5, color: "#fca5a5", marginTop: 4 }}>{r.execution_error}</div>
               )}
-              {isApproved && (
+              {/* MP-DISCOUNT-HYBRID-APPROVAL: a discount isn't finalized here — the
+                  cashier resumes the held sale in the POS to apply it. */}
+              {isApproved && r.action_type === "discount" && (
+                <div style={{ marginTop: 10, fontSize: 12.5, color: "#34d399", fontWeight: 600 }}>
+                  {en
+                    ? "✅ Approved — open Sales and resume the held sale to apply this discount."
+                    : "✅ Approuvé — ouvrez Ventes et reprenez la vente en attente pour appliquer cette remise."}
+                </div>
+              )}
+              {isApproved && r.action_type !== "discount" && (
                 <button className="btn btn-primary" style={{ width: "100%", marginTop: 10 }}
                   disabled={finalizingId === r.id}
                   onClick={() => finalize(r.id)}>

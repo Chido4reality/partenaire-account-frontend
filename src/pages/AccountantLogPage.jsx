@@ -184,6 +184,7 @@ export default function AccountantLogPage() {
     debt_adjust: en ? "change a customer's debt" : "modifier la dette d'un client",
     delete_customer: en ? "delete a customer" : "supprimer un client",
     expense: en ? "record an expense" : "enregistrer une dépense",
+    discount: en ? "apply a discount" : "appliquer une remise",
   };
 
   const approveMut = useMutation({
