@@ -256,25 +256,50 @@ function buildBodyLines(eventType, data, lang, org) {
     if (data.source_sale_number) {
       lines.push(`${en ? "Original sale" : "Vente d'origine"}: ${data.source_sale_number}`);
     }
+    // MP-EXCHANGE-HEADER-RECONCILE: an exchange is a refund event with
+    // replacement items / a non-zero price difference. For a collect-more
+    // exchange show what was COLLECTED (not "Refund total: 0 / Method: none");
+    // for an even swap say so; otherwise it's a real refund/credit.
+    const diff = Number(data.price_difference || 0);
+    const replacements = Array.isArray(data.replacement_items) ? data.replacement_items : [];
+    const isExchange = replacements.length > 0 || diff !== 0;
     lines.push("─────────────────────");
     (data.items_returned || []).forEach(i => {
       const total = Number(i.qty || 0) * Number(i.unit_price || 0);
-      lines.push(`${i.name || "?"} × ${i.qty} ........ ${fmtAmt(total)} F`);
+      lines.push(`${isExchange ? (en ? "Returned: " : "Retour : ") : ""}${i.name || "?"} × ${i.qty} ........ ${fmtAmt(total)} F`);
     });
+    if (isExchange && replacements.length) {
+      replacements.forEach(i => {
+        const up = Number(i.unit_price != null ? i.unit_price : (i.sell_price || 0));
+        const total = Number(i.qty || i.quantity || 0) * up;
+        lines.push(`${en ? "New: " : "Nouveau : "}${i.name || "?"} × ${i.qty || i.quantity} ........ ${fmtAmt(total)} F`);
+      });
+    }
     lines.push("─────────────────────");
-    lines.push(`*${en ? "Refund total" : "Total remboursé"}: ${fmtAmt(data.refund_amount)} ${sym}*`);
-    if (data.refund_method) lines.push(`${en ? "Method" : "Mode"}: ${data.refund_method}`);
-    const credit = Number(data.credit_portion || 0);
-    const cash = Number(data.cash_portion || 0);
-    if (credit > 0 && cash > 0) {
-      lines.push("");
-      lines.push(en
-        ? `↳ ${fmtAmt(credit)} F applied to your account balance, ${fmtAmt(cash)} F returned as cash.`
-        : `↳ ${fmtAmt(credit)} F imputé sur votre solde client, ${fmtAmt(cash)} F restitué en espèces.`);
-    } else if (credit > 0) {
-      lines.push(en
-        ? `↳ ${fmtAmt(credit)} F applied to your account balance.`
-        : `↳ ${fmtAmt(credit)} F imputé sur votre solde client.`);
+    if (isExchange && diff > 0) {
+      // Customer paid the difference — show the amount collected.
+      lines.push(`*${en ? "Collected" : "Différence encaissée"}: ${fmtAmt(diff)} ${sym}*`);
+      lines.push(`${en ? "Method" : "Mode"}: ${data.settlement_method || "cash"}`);
+    } else if (isExchange && diff === 0) {
+      lines.push(`*${en ? "Even exchange — no payment" : "Échange égal — aucun paiement"}*`);
+    } else {
+      // Pure refund OR cheaper-replacement exchange (refund/credit the diff).
+      lines.push(`*${en ? "Refund total" : "Total remboursé"}: ${fmtAmt(data.refund_amount)} ${sym}*`);
+      if (data.refund_method && data.refund_method !== "none") {
+        lines.push(`${en ? "Method" : "Mode"}: ${data.refund_method}`);
+      }
+      const credit = Number(data.credit_portion || 0);
+      const cash = Number(data.cash_portion || 0);
+      if (credit > 0 && cash > 0) {
+        lines.push("");
+        lines.push(en
+          ? `↳ ${fmtAmt(credit)} F applied to your account balance, ${fmtAmt(cash)} F returned as cash.`
+          : `↳ ${fmtAmt(credit)} F imputé sur votre solde client, ${fmtAmt(cash)} F restitué en espèces.`);
+      } else if (credit > 0) {
+        lines.push(en
+          ? `↳ ${fmtAmt(credit)} F applied to your account balance.`
+          : `↳ ${fmtAmt(credit)} F imputé sur votre solde client.`);
+      }
     }
     if (data.customer_new_balance != null) {
       lines.push(`${en ? "New balance" : "Nouveau solde"}: ${fmtAmt(data.customer_new_balance)} ${sym}`);
