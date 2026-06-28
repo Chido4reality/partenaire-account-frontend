@@ -1,120 +1,182 @@
 <!DOCTYPE html>
-<!--
-  MP-BRANDED-DOMAINS — root chooser landing for partenairedozie.com (+ www).
-  "One door, two apps": Mon Partenaire (POS) and Partenaire Dozie (Marketplace).
-  Pure static, zero build, self-contained (no external assets/fonts/JS deps).
-  Hosting: its OWN small Vercel project (Root Directory = landing/, framework
-  "Other", no build). Point @ + www at it in Vercel. See report.
--->
-<html lang="fr">
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Partenaire Dozie</title>
-  <meta name="theme-color" content="#152B52" />
-  <meta name="description" content="Mon Partenaire (POS) & Partenaire Dozie (Marché) — choisissez votre application." />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23152B52'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='%23FBC503' font-family='Arial' font-weight='bold'%3EP%3C/text%3E%3C/svg%3E" />
-  <style>
-    :root{
-      --navy:#152B52; --navy-2:#1A2B4A; --gold:#FBC503; --gold-soft:rgba(251,197,3,.12);
-      --ink:#0f1f3d; --muted:rgba(255,255,255,.72); --card:#1e3258;
-    }
-    *{box-sizing:border-box}
-    html,body{margin:0;min-height:100%}
-    body{
-      background:radial-gradient(1200px 600px at 50% -10%, #20396b 0%, var(--navy) 55%, var(--navy-2) 100%);
-      color:#fff; font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
-      display:flex; flex-direction:column; align-items:center; justify-content:center;
-      min-height:100vh; padding:28px 18px; text-align:center;
-    }
-    .wrap{width:100%; max-width:560px}
-    .brand{font-weight:800; font-size:26px; letter-spacing:.3px}
-    .brand .dot{color:var(--gold)}
-    .tag{color:var(--muted); font-size:14px; margin-top:6px; line-height:1.5}
-    .cards{display:grid; gap:16px; margin-top:30px}
-    a.card{
-      display:block; text-decoration:none; color:inherit; text-align:left;
-      background:#1e3258; border:1px solid rgba(255,255,255,.10); border-radius:18px;
-      padding:20px 22px; transition:transform .15s ease, border-color .15s ease, background .15s ease;
-    }
-    a.card:hover{transform:translateY(-2px); border-color:var(--gold); background:#243c69}
-    a.card .row{display:flex; align-items:center; gap:14px}
-    .emoji{font-size:30px; flex:0 0 auto}
-    .title{font-weight:700; font-size:18px}
-    .sub{color:var(--muted); font-size:13px; margin-top:3px; line-height:1.45}
-    .go{margin-left:auto; color:var(--gold); font-weight:800; font-size:22px}
-    .pos:hover{border-color:var(--gold)}
-    .foot{margin-top:26px; color:rgba(255,255,255,.45); font-size:12px}
-    .lang{margin-top:18px}
-    .lang button{
-      background:transparent; border:1px solid rgba(255,255,255,.22); color:var(--muted);
-      border-radius:999px; padding:6px 14px; font-size:12px; cursor:pointer; margin:0 4px;
-    }
-    .lang button.active{background:var(--gold-soft); border-color:var(--gold); color:var(--gold); font-weight:700}
-    [data-en]{display:none}
-    html[lang="en"] [data-fr]{display:none}
-    html[lang="en"] [data-en]{display:inline}
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Partenaire Dozie — One door, two apps</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --navy-900:#07111f; --navy-800:#0a1830; --navy-700:#0f2547;
+    --navy-650:#13315c; --gold:#e6be5c; --gold-bright:#f5d488; --gold-deep:#c69736;
+    --ink:#f5f2ea; --muted:#9db0ce; --hair:rgba(230,190,92,.24);
+    --display:'Fraunces',Georgia,'Times New Roman',serif;
+    --body:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{min-height:100%}
+  body{
+    font-family:var(--body); color:var(--ink);
+    background:
+      radial-gradient(800px 460px at 50% 0%, rgba(230,190,92,.13), rgba(230,190,92,0) 62%),
+      linear-gradient(180deg,#0b1c38 0%,#0a1830 60%,#07111f 100%);
+    -webkit-font-smoothing:antialiased;
+    padding:clamp(14px,3vw,26px);
+  }
+  .frame{
+    border:1px solid var(--hair); border-radius:20px;
+    max-width:880px; margin:0 auto; min-height:calc(100vh - clamp(28px,6vw,52px));
+    padding:clamp(30px,5vw,52px) clamp(20px,4vw,46px) clamp(22px,4vw,34px);
+    display:flex; flex-direction:column; align-items:center; text-align:center;
+    position:relative; overflow:hidden;
+  }
+  .frame::before{
+    content:""; position:absolute; left:0; right:0; top:0; height:3px;
+    background:linear-gradient(90deg,transparent,var(--gold),transparent);
+    opacity:.7;
+  }
+  .eyebrow{
+    font-family:var(--body); font-weight:600; font-size:11.5px; letter-spacing:.34em;
+    text-transform:uppercase; color:var(--gold); margin-bottom:18px;
+  }
+  .wordmark{
+    font-family:var(--display); font-optical-sizing:auto; font-weight:500;
+    font-size:clamp(36px,8vw,58px); line-height:1; letter-spacing:-.01em; color:var(--ink);
+  }
+  .wordmark .sep{color:var(--gold); font-style:italic; margin:0 .1em}
+  .wordmark em{font-style:italic; font-weight:500; color:var(--gold-bright)}
+  .tagline{margin-top:14px; color:var(--muted); font-size:clamp(14px,2.4vw,16px); max-width:34ch; line-height:1.5}
+
+  .quote{
+    margin:30px auto 4px; max-width:40ch; position:relative; padding-top:14px;
+  }
+  .quote .mark{
+    font-family:var(--display); font-style:italic; font-size:60px; line-height:0;
+    color:var(--gold); opacity:.55; position:absolute; top:24px; left:50%; transform:translateX(-50%);
+  }
+  .quote p{
+    font-family:var(--display); font-style:italic; font-weight:500;
+    font-size:clamp(17px,3.2vw,22px); line-height:1.45; color:var(--ink); margin-top:18px;
+  }
+  .quote cite{
+    display:block; margin-top:14px; font-family:var(--body); font-style:normal;
+    font-weight:600; font-size:11.5px; letter-spacing:.22em; text-transform:uppercase; color:var(--gold);
+  }
+
+  .doors{
+    width:100%; margin-top:32px;
+    display:grid; grid-template-columns:1fr 1fr;
+    border:1px solid var(--hair); border-radius:16px; overflow:hidden;
+    background:rgba(8,18,36,.4);
+  }
+  .door{
+    text-decoration:none; color:inherit;
+    padding:30px 24px 28px; display:flex; flex-direction:column; align-items:center; gap:14px;
+    transition:background .2s ease, transform .2s ease;
+    position:relative;
+  }
+  .door + .door{border-left:1px solid var(--hair)}
+  .door:hover, .door:focus-visible{background:rgba(19,49,92,.55); outline:none}
+  .medallion{
+    width:96px; height:96px; border-radius:50%;
+    background:radial-gradient(circle at 32% 28%, rgba(230,190,92,.22), rgba(230,190,92,.05));
+    border:1px solid var(--hair); display:flex; align-items:center; justify-content:center;
+    transition:transform .2s ease, border-color .2s ease;
+  }
+  .door:hover .medallion, .door:focus-visible .medallion{transform:translateY(-3px) scale(1.03); border-color:rgba(230,190,92,.55)}
+  .medallion svg{width:50px;height:50px;fill:none;stroke:var(--gold);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  .door h2{font-family:var(--display); font-weight:600; font-size:clamp(19px,3.4vw,23px); color:var(--ink); line-height:1.1}
+  .door .pill{
+    font-family:var(--body); font-weight:600; font-size:10.5px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--navy-900); background:var(--gold); border-radius:999px; padding:2px 9px; margin-left:7px; vertical-align:middle;
+  }
+  .door p{color:var(--muted); font-size:13.5px; line-height:1.45; max-width:26ch; min-height:38px}
+  .cta{
+    margin-top:4px; font-family:var(--body); font-weight:600; font-size:13.5px;
+    color:var(--gold); border:1px solid var(--gold-deep); border-radius:999px;
+    padding:9px 20px; display:inline-flex; align-items:center; gap:8px;
+    transition:.18s ease;
+  }
+  .cta svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;transition:transform .18s ease}
+  .door:hover .cta, .door:focus-visible .cta{background:var(--gold); color:var(--navy-900); border-color:var(--gold)}
+  .door:hover .cta svg, .door:focus-visible .cta svg{transform:translateX(3px)}
+
+  .foot{margin-top:auto; padding-top:28px; display:flex; flex-direction:column; align-items:center; gap:14px}
+  .lang{display:inline-flex; gap:6px; padding:4px; border:1px solid var(--hair); border-radius:999px; background:rgba(7,17,31,.5)}
+  .lang button{font-family:var(--body); font-weight:600; font-size:13px; cursor:pointer; border:0; background:transparent; color:var(--muted); padding:6px 16px; border-radius:999px; transition:.15s ease}
+  .lang button.active{background:var(--gold); color:var(--navy-900)}
+  .lang button:hover:not(.active){color:var(--ink)}
+  .copy{color:rgba(157,176,206,.65); font-size:12px; letter-spacing:.02em}
+
+  .reveal{opacity:0; transform:translateY(10px); animation:rise .6s cubic-bezier(.2,.7,.3,1) forwards}
+  .d1{animation-delay:.05s}.d2{animation-delay:.14s}.d3{animation-delay:.24s}.d4{animation-delay:.34s}
+  @keyframes rise{to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){.reveal{animation:none;opacity:1;transform:none}.door,.medallion,.cta{transition:none}}
+  @media (max-width:560px){
+    .doors{grid-template-columns:1fr}
+    .door + .door{border-left:0; border-top:1px solid var(--hair)}
+    .door p{min-height:0}
+  }
+</style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="brand">Partenaire<span class="dot"> ·</span> Dozie</div>
-    <div class="tag">
-      <span data-fr>Une porte, deux applications. Choisissez la vôtre.</span>
-      <span data-en>One door, two apps. Pick yours.</span>
-    </div>
+  <div class="frame">
+    <div class="eyebrow reveal d1" data-en="Business, in your hand" data-fr="Votre commerce, en main">Business, in your hand</div>
+    <h1 class="wordmark reveal d1">Partenaire<span class="sep">·</span><em>Dozie</em></h1>
+    <p class="tagline reveal d2" data-en="Sell, track stock, and get paid — in your shop and online." data-fr="Vendez, suivez le stock et encaissez — en boutique et en ligne.">Sell, track stock, and get paid — in your shop and online.</p>
 
-    <div class="cards">
-      <a class="card pos" href="https://pos.partenairedozie.com">
-        <div class="row">
-          <span class="emoji">🛒</span>
-          <span>
-            <div class="title">Mon Partenaire <span style="opacity:.7;font-weight:600">(POS)</span></div>
-            <div class="sub">
-              <span data-fr>Caisse, stock & gestion de votre boutique.</span>
-              <span data-en>Point of sale, stock & shop management.</span>
-            </div>
-          </span>
-          <span class="go">→</span>
-        </div>
+    <blockquote class="quote reveal d2">
+      <span class="mark" aria-hidden="true">“</span>
+      <p>Money is a number, but Wealth is a System. Build the System and you build the Wealth.</p>
+      <cite>— Peter O.</cite>
+    </blockquote>
+    <p class="reveal d2" style="font-family:var(--display);font-weight:500;font-size:clamp(16px,3vw,20px);line-height:1.4;color:var(--gold);margin:8px auto 0;max-width:34ch">With Mon Partenaire Dozie, <span style="color:var(--gold-bright)">You build the Wealth.</span></p>
+
+    <div class="doors">
+      <a class="door reveal d3" href="https://pos.partenairedozie.com">
+        <span class="medallion" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M4 9h16M4 9l1.4-4.2A1 1 0 0 1 6.3 4h11.4a1 1 0 0 1 .95.7L20 9M5 9v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9M10 13h4"/></svg>
+        </span>
+        <h2>Mon Partenaire<span class="pill">POS</span></h2>
+        <p data-en="Point of sale, stock &amp; shop management." data-fr="Caisse, stock et gestion de boutique.">Point of sale, stock &amp; shop management.</p>
+        <span class="cta"><span data-en="Open the shop" data-fr="Ouvrir la boutique">Open the shop</span><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
       </a>
-
-      <a class="card" href="https://market.partenairedozie.com">
-        <div class="row">
-          <span class="emoji">🏪</span>
-          <span>
-            <div class="title">Partenaire Dozie <span style="opacity:.7;font-weight:600">(<span data-fr>Marché</span><span data-en>Marketplace</span>)</span></div>
-            <div class="sub">
-              <span data-fr>Achetez des produits ou gérez votre boutique en ligne.</span>
-              <span data-en>Buy products or manage your online shop.</span>
-            </div>
-          </span>
-          <span class="go">→</span>
-        </div>
+      <a class="door reveal d4" href="https://market.partenairedozie.com">
+        <span class="medallion" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="2.5"/><path d="M10 5h4M9.5 11h5l-.5 5.5a1 1 0 0 1-1 .9h-2a1 1 0 0 1-1-.9zM11 11v-1.2a1 1 0 0 1 2 0V11"/></svg>
+        </span>
+        <h2>Partenaire Dozie<span class="pill">Market</span></h2>
+        <p data-en="Buy products, or sell to other businesses." data-fr="Achetez des produits ou vendez à d’autres commerces.">Buy products, or sell to other businesses.</p>
+        <span class="cta"><span data-en="Enter the market" data-fr="Entrer au marché">Enter the market</span><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
       </a>
     </div>
 
-    <div class="lang">
-      <button id="fr" class="active" onclick="setLang('fr')">Français</button>
-      <button id="en" onclick="setLang('en')">English</button>
+    <div class="foot">
+      <div class="lang" role="group" aria-label="Language">
+        <button type="button" data-lang="fr">Français</button>
+        <button type="button" data-lang="en" class="active">English</button>
+      </div>
+      <div class="copy">© 2026 Partenaire Dozie</div>
     </div>
-
-    <div class="foot">© <span id="yr"></span> Partenaire Dozie</div>
   </div>
 
-  <script>
+<script>
+  (function(){
+    var nodes = document.querySelectorAll('[data-en]');
     function setLang(l){
-      document.documentElement.lang = l;
-      document.getElementById('fr').classList.toggle('active', l === 'fr');
-      document.getElementById('en').classList.toggle('active', l === 'en');
-      try { localStorage.setItem('pd_lang', l); } catch (_) {}
+      nodes.forEach(function(n){ var v=n.getAttribute('data-'+l); if(v!=null) n.textContent=v; });
+      document.documentElement.lang=l;
+      document.querySelectorAll('.lang button').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-lang')===l); });
+      try{ localStorage.setItem('pd_lang', l); }catch(e){}
     }
-    try {
-      var saved = localStorage.getItem('pd_lang');
-      var pref = saved || ((navigator.language || 'fr').toLowerCase().indexOf('en') === 0 ? 'en' : 'fr');
-      setLang(pref);
-    } catch (_) { setLang('fr'); }
-    document.getElementById('yr').textContent = new Date().getFullYear();
-  </script>
+    document.querySelectorAll('.lang button').forEach(function(b){
+      b.addEventListener('click', function(){ setLang(b.getAttribute('data-lang')); });
+    });
+    var saved; try{ saved=localStorage.getItem('pd_lang'); }catch(e){}
+    if(saved==='fr') setLang('fr');
+  })();
+</script>
 </body>
 </html>
