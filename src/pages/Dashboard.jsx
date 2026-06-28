@@ -349,7 +349,17 @@ export default function Dashboard() {
                         <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{sale.sale_number}</td>
                         <td style={{ color: 'var(--text-secondary)' }}>{formatDate(sale.sale_date, lang)}</td>
                         <td>{sale.pa_customers?.name || <span style={{ color: 'var(--text-muted)' }}>{t('pos.noCustomer')}</span>}</td>
-                        <td style={{ textAlign: 'right', fontWeight: 500 }}>{fmt(sale.total_amount)}</td>
+                        {/* MP-REPORTS-DEBT-DOUBLECOUNT: show the sale's GOODS value
+                            (product-line net), with any debt collected on the same
+                            invoice noted separately — not a combined sale+debt total. */}
+                        <td style={{ textAlign: 'right', fontWeight: 500 }}>
+                          {fmt(sale.product_net != null ? sale.product_net : sale.total_amount)}
+                          {Number(sale.debt_payment_amount) > 0 && (
+                            <div style={{ fontSize: 10, color: '#fbbf24', fontWeight: 600 }}>
+                              +{fmt(sale.debt_payment_amount)} {lang === 'en' ? 'debt' : 'dette'}
+                            </div>
+                          )}
+                        </td>
                         <td>
                           <span className="badge" style={{ background: `${statusColor(sale.payment_status)}20`, color: statusColor(sale.payment_status) }}>
                             {t(`common.${sale.payment_status}`)}
