@@ -86,21 +86,52 @@ export default function RefundsPage() {
   //                   log and matters less to the customer)
   const [receiptEvent, setReceiptEvent] = useState(null);
   const fmt = useCurrency();
-  const { org } = useAuthStore();
+  const { org, user } = useAuthStore();
   const { data: orgSettingsResp } = useOfflineCachedQuery({
     queryKey: ["org-settings"],
     queryFn: () => api.get("/settings").then(r => r.data),
   });
   const orgSettings = orgSettingsResp?.data || org || {};
 
+  // MP-REFUNDS-LOCATION-SCOPING: a Pro-Plus pinned cashier
+  // (pa_users.assigned_location_id) is confined to their own location — the
+  // backend FORCES this on GET /sales regardless of what we send, so this is
+  // belt-and-braces: we mirror it client-side to hide the chooser and show the
+  // right list. Owner/manager get a chooser ("All" + each location).
+  const role = user?.role;
+  const isOwnerOrManager = role === "owner" || role === "manager";
+  const { data: myPlanResp } = useOfflineCachedQuery({
+    queryKey: ["my-plan"],
+    queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
+  });
+  // forced_location is populated by getForcedLocationId server-side (only for a
+  // pinned cashier on a capable plan) — same authoritative helper the search now
+  // uses, so client + server can't disagree.
+  const forcedLoc = myPlanResp?.data?.forced_location || null;
+  const forcedLocId = forcedLoc?.id || null;
+  const { data: locationsResp } = useOfflineCachedQuery({
+    queryKey: ["locations"],
+    queryFn: () => api.get("/locations").then(r => r.data),
+    enabled: isOwnerOrManager,
+  });
+  const orgLocations = locationsResp?.data || [];
+  // Owner/manager chooser value: "" = All locations (default).
+  const [locFilter, setLocFilter] = useState("");
+  const showLocationChooser = isOwnerOrManager && !forcedLocId;
+  // Effective location_id sent to GET /sales: a confined cashier → their forced
+  // location; owner/manager → their chosen filter (omitted for "All"). Empty
+  // string = no filter.
+  const effLocId = forcedLocId || (isOwnerOrManager ? (locFilter || "") : "");
+
   const PAGE_LIMIT = 50;
 
   // Search query — only fires when activeQuery is set.
   const { data: searchResp, isLoading: searchLoading, refetch: refetchSearch } = useOfflineCachedQuery({
-    queryKey: ["refunds-search", activeQuery],
+    queryKey: ["refunds-search", activeQuery, effLocId],
     queryFn: () => {
       const { by, value } = activeQuery;
       const params = new URLSearchParams({ search_by: by, value, limit: String(PAGE_LIMIT) });
+      if (effLocId) params.set("location_id", effLocId);
       return api.get(`/sales?${params.toString()}`).then(r => r.data);
     },
     enabled: !!activeQuery,
@@ -109,9 +140,9 @@ export default function RefundsPage() {
   // Date-list query — drives the "By date" tab. include_online=true
   // so the cashier sees both channels in one list (POS + online).
   const { data: dateResp, isLoading: dateLoading, refetch: refetchDate } = useOfflineCachedQuery({
-    queryKey: ["refunds-by-date", date, page, PAGE_LIMIT],
+    queryKey: ["refunds-by-date", date, page, PAGE_LIMIT, effLocId],
     queryFn: () =>
-      api.get(`/sales?date=${date}&include_online=true&limit=${PAGE_LIMIT}&page=${page}`)
+      api.get(`/sales?date=${date}&include_online=true&limit=${PAGE_LIMIT}&page=${page}${effLocId ? `&location_id=${effLocId}` : ""}`)
         .then(r => r.data),
     enabled: tab === "date",
   });
@@ -222,6 +253,32 @@ export default function RefundsPage() {
 
       {/* MP-REQUIRE-OPEN-SHIFT Phase 3 blocker */}
       <ShiftRequiredBlocker />
+
+      {/* MP-REFUNDS-LOCATION-SCOPING: owner/manager location chooser. Default
+          "All". Choosing a location filters the refundable-sale list to it
+          (passed as ?location_id on every GET /sales call). */}
+      {showLocationChooser && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+          <label className="label" style={{ margin: 0 }}>📍 {fr ? "Site" : "Location"}</label>
+          <select className="input" value={locFilter}
+            onChange={e => { setLocFilter(e.target.value); setPage(1); }}
+            style={{ width: 240 }}>
+            <option value="">{fr ? "Tous les sites" : "All locations"}</option>
+            {orgLocations.map(l => (
+              <option key={l.id} value={l.id}>{l.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Confined cashier: read-only note so they understand why only one
+          location's sales appear (the server enforces this). */}
+      {forcedLocId && forcedLoc?.name && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, fontSize: 12, color: "var(--text-muted)" }}>
+          📍 {fr ? "Remboursements limités à votre site :" : "Refunds limited to your location:"}{" "}
+          <strong style={{ color: "var(--text-secondary)" }}>{forcedLoc.name}</strong>
+        </div>
+      )}
 
       {/* Tab selector */}
       <div style={{
