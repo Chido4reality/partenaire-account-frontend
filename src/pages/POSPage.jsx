@@ -139,6 +139,12 @@ export default function POSPage() {
   // The hybrid over-cap choice modal payload ({ effective_pct, total_discount });
   // null = closed. Offers "Enter owner PIN" (sync) OR "Send request to boss" (async).
   const [discountChoice, setDiscountChoice] = useState(null);
+  // MP-BELOW-COST-HYBRID-APPROVAL: same hybrid as discounts but for a line priced
+  // below its floor. belowCostApprovalIdRef rides the next /sales POST when a
+  // resumed held sale carries a boss-approved below_cost_sale; belowCostChoice
+  // holds the line being approved while the two-option modal is open.
+  const belowCostApprovalIdRef = useRef(null);
+  const [belowCostChoice, setBelowCostChoice] = useState(null);
   const [sendingToBoss, setSendingToBoss] = useState(false);
   const [showCamera, setShowCamera]       = useState(false);
   const [scanMode, setScanMode]           = useState(isMobile() ? "camera" : "usb");
@@ -864,10 +870,11 @@ export default function POSPage() {
   }));
   const onPriceInput = (lineId, raw) => updatePrice(lineId, raw);
 
-  // MIN-PRICE FLOOR: on blur, a below-min price requires the existing boss/
-  // owner PIN override (OwnerApprovalModal). Owners set any price freely. On
-  // approval the line keeps the price + carries the token to checkout; on
-  // cancel/failure it reverts to the last valid price.
+  // MIN-PRICE FLOOR: on blur, a below-min price needs the boss's approval.
+  // MP-BELOW-COST-HYBRID-APPROVAL: instead of immediately popping the PIN, open
+  // the SAME two-option prompt as an over-cap discount — (A) Enter owner PIN now
+  // (the existing OwnerApprovalModal path, unchanged), or (B) Send the request to
+  // the boss (park + hold). Owners set any price freely. Cancel reverts.
   const onPriceBlur = async (lineId) => {
     const item = cart.find(it => it.lineId === lineId);
     if (!item) return;
@@ -879,31 +886,103 @@ export default function POSPage() {
       return;
     }
     if (!isOwner && minPrice > 0 && p < minPrice) {
-      try {
-        const { token } = await requestApproval({
-          actionType:  "edit_product_price",
-          targetTable: "pa_products",
-          targetId:    item.product_id,
-          context:     { min_price: minPrice, attempted_price: p, product: item.name },
-          description: lang === "en"
-            ? `Sell "${item.name}" below minimum (${minPrice.toLocaleString()} ${fmt.symbol}) at ${p.toLocaleString()} ${fmt.symbol}`
-            : `Vendre "${item.name}" sous le minimum (${minPrice.toLocaleString()} ${fmt.symbol}) à ${p.toLocaleString()} ${fmt.symbol}`,
-        });
-        setCart(c => c.map(it => it.lineId === lineId
-          ? { ...it, unit_price: p, price_overridden: true, price_approval_token: token }
-          : it));
-      } catch (e) {
-        if (e?.code !== "cancelled") {
-          toast.error(e?.response?.data?.message || (lang === "en" ? "Approval failed" : "Échec de l'approbation"));
-        }
-        setCart(c => c.map(it => it.lineId === lineId ? { ...it, unit_price: revertTo } : it));
-      }
+      // Keep the typed price on the line while the modal is open; the modal's
+      // choice either commits it (PIN now / send-to-boss) or reverts (cancel).
+      setCart(c => c.map(it => it.lineId === lineId ? { ...it, unit_price: p } : it));
+      setBelowCostChoice({ lineId, product_id: item.product_id, name: item.name, attempted_price: p, min_price: minPrice, revertTo });
       return;
     }
     // Valid price (>= min, or owner): commit and drop any stale override.
     setCart(c => c.map(it => it.lineId === lineId
       ? { ...it, unit_price: p, price_overridden: false, price_approval_token: undefined }
       : it));
+  };
+
+  // MP-BELOW-COST-HYBRID-APPROVAL — option 1: boss is HERE. The EXISTING
+  // synchronous owner-PIN path (OwnerApprovalModal → action_type
+  // 'edit_product_price' token stamped on the line → rides to checkout). Unchanged
+  // behaviour, just triggered from the hybrid choice modal now.
+  const belowCostViaPin = () => {
+    const choice = belowCostChoice;
+    setBelowCostChoice(null);
+    if (!choice) return;
+    requestApproval({
+      actionType:  "edit_product_price",
+      targetTable: "pa_products",
+      targetId:    choice.product_id,
+      context:     { min_price: choice.min_price, attempted_price: choice.attempted_price, product: choice.name },
+      description: lang === "en"
+        ? `Sell "${choice.name}" below minimum (${choice.min_price.toLocaleString()} ${fmt.symbol}) at ${choice.attempted_price.toLocaleString()} ${fmt.symbol}`
+        : `Vendre "${choice.name}" sous le minimum (${choice.min_price.toLocaleString()} ${fmt.symbol}) à ${choice.attempted_price.toLocaleString()} ${fmt.symbol}`,
+    })
+      .then(({ token }) => {
+        setCart(c => c.map(it => it.lineId === choice.lineId
+          ? { ...it, unit_price: choice.attempted_price, price_overridden: true, price_approval_token: token }
+          : it));
+      })
+      .catch((e) => {
+        if (e?.code !== "cancelled") {
+          toast.error(e?.response?.data?.message || (lang === "en" ? "Approval failed" : "Échec de l'approbation"));
+        }
+        setCart(c => c.map(it => it.lineId === choice.lineId ? { ...it, unit_price: choice.revertTo } : it));
+      });
+  };
+
+  // MP-BELOW-COST-HYBRID-APPROVAL — option 2: boss is AWAY. Park the below-cost
+  // sale as a pending approval (notifies the owner), HOLD the cart, and clear the
+  // screen — exactly like sendDiscountToBoss. The cashier later resumes the held
+  // sale (price pre-approved) and completes it.
+  const sendBelowCostToBoss = async () => {
+    setSendingToBoss(true);
+    try {
+      const lineItems = cart
+        .filter(i => i.product_id && !isDebtish(i))
+        .map(i => ({
+          product_id: i.product_id, name: i.name,
+          quantity: Number(i.quantity) || 1, unit_price: Number(i.unit_price) || 0,
+          discount_type:  (i.discount_type && Number(i.discount_value) > 0) ? i.discount_type : null,
+          discount_value: (i.discount_type && Number(i.discount_value) > 0) ? Number(i.discount_value) : null,
+          discount_reason: (i.discount_type && Number(i.discount_value) > 0) ? (String(i.discount_reason || "").trim() || null) : null,
+        }));
+      // 1) park the approval (server recomputes the below-cost lines + signature)
+      const ar = await api.post("/sales/below-cost-approval-request", {
+        location_id: selectedLocation?.id,
+        customer_id: customer?.id || null,
+        customer_name: customer?.name || null,
+        items: lineItems,
+      }).then(r => r.data);
+      const approvalId = ar?.approval_id;
+      // 2) hold the cart, linked to that approval (reuses the held-cart approval link)
+      const hr = await api.post("/held-carts", {
+        location_id: selectedLocation?.id,
+        customer_id: customer?.id || null,
+        label: lang === "en" ? "Below cost — boss approval" : "Sous le prix — approbation patron",
+        items: lineItems.map(i => ({ product_id: i.product_id, qty: i.quantity, unit_price: i.unit_price, line_total: i.quantity * i.unit_price })),
+        discount_approval_id: approvalId,
+      }).then(r => r.data);
+      // 3) clear the screen so the cashier serves other customers
+      setBelowCostChoice(null);
+      setCart([]); setCustomer(null); setOnlineCtx(null);
+      setShowPayment(false); setPayMode("paid"); setPayModeChosen(false); setPaidAmt("");
+      setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason("");
+      discountTokenRef.current = null; discountApprovalIdRef.current = null; belowCostApprovalIdRef.current = null;
+      qc.invalidateQueries(["held-carts"]);
+      toast.success(lang === "en"
+        ? `Sent to the boss + held as ${hr?.data?.hold_ref || ""}. Resume it once approved.`
+        : `Envoyé au patron + mis en attente ${hr?.data?.hold_ref || ""}. Reprenez après approbation.`,
+        { duration: 7000 });
+    } catch (e) {
+      toast.error(e?.response?.data?.message || (lang === "en" ? "Could not send the request" : "Échec de l'envoi de la demande"));
+    } finally {
+      setSendingToBoss(false);
+    }
+  };
+
+  // Cancel the below-cost choice → revert the line to its last valid price.
+  const cancelBelowCostChoice = () => {
+    const choice = belowCostChoice;
+    setBelowCostChoice(null);
+    if (choice) setCart(c => c.map(it => it.lineId === choice.lineId ? { ...it, unit_price: choice.revertTo } : it));
   };
 
   // MP-DISCOUNT: patch a cart line's discount fields (type/value/reason) +
@@ -1255,6 +1334,9 @@ export default function POSPage() {
         // MP-DISCOUNT-HYBRID-APPROVAL: async-approved discount (resumed held sale).
         // Server re-verifies the cart signature + single-uses it.
         discount_approval_id: discountApprovalIdRef.current || undefined,
+        // MP-BELOW-COST-HYBRID-APPROVAL: async-approved below-cost sale (resumed
+        // held sale). Server re-verifies the cart signature + single-uses it.
+        below_cost_approval_id: belowCostApprovalIdRef.current || undefined,
       };
 
       // MP-OFFLINE-WARNING-FALSE-POSITIVE: the SW used to intercept
@@ -1273,7 +1355,7 @@ export default function POSPage() {
         setPaidAmt(""); setDueDate(""); setNotes(""); setShowPayment(false);
         // MP-DISCOUNT: clear sale-level discount + any minted approval token + a
         // consumed async approval id.
-        setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason(""); discountTokenRef.current = null; discountApprovalIdRef.current = null;
+        setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason(""); discountTokenRef.current = null; discountApprovalIdRef.current = null; belowCostApprovalIdRef.current = null;
         setDebtInvoices([]); setSelectedDebtIds(new Set()); setDebtPayAmt("");
         setDebtBanner(null);
         setOnlineCtx(null);
@@ -1476,6 +1558,15 @@ export default function POSPage() {
         toast.error(lang === "en"
           ? "The cart or discount changed since approval — the approval is void. Request a new one."
           : "Le panier ou la remise a changé depuis l'approbation — approbation annulée. Refaites une demande.",
+          { duration: 6000 });
+        return;
+      }
+      if (d?.code === "BELOW_COST_APPROVAL_VOID") {
+        // The boss-approved below-cost sale no longer matches this cart. Drop it.
+        belowCostApprovalIdRef.current = null;
+        toast.error(lang === "en"
+          ? "The cart changed since approval — the below-cost approval is void. Request a new one."
+          : "Le panier a changé depuis l'approbation — approbation annulée. Refaites une demande.",
           { duration: 6000 });
         return;
       }
@@ -1716,6 +1807,10 @@ export default function POSPage() {
       // approval payload carries the discounted line items + sale-level discount.
       const da = h?.discount_approval || null;
       const approved = !!da && da.status === "approved";
+      // MP-BELOW-COST-HYBRID-APPROVAL: the held cart's approval link is shared —
+      // distinguish a below_cost_sale from a discount so we set the right ref +
+      // skip discount-only handling.
+      const isBelowCost = !!da && da.action_type === "below_cost_sale";
       // current_stock lives on the held-cart items; index it by product so we keep
       // the low-stock warning even when rebuilding from the approval payload.
       const stockByProduct = {};
@@ -1750,13 +1845,17 @@ export default function POSPage() {
       setCart(hydrated.filter(isSubmittableLine));
 
       // Sale-level discount + customer + approval id (approved holds only).
-      const sd = approved ? (da.payload?.sale_discount || null) : null;
+      // A below_cost_sale carries no sale-level discount.
+      const sd = (approved && !isBelowCost) ? (da.payload?.sale_discount || null) : null;
       if (sd && sd.discount_type && Number(sd.discount_value) > 0) {
         setSaleDiscType(sd.discount_type); setSaleDiscValue(String(sd.discount_value)); setSaleDiscReason(sd.discount_reason || "");
       } else {
         setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason("");
       }
-      discountApprovalIdRef.current = approved ? da.id : null;
+      // Route the resumed approval to the right ref so finalize sends the correct
+      // field (discount_approval_id vs below_cost_approval_id).
+      discountApprovalIdRef.current  = (approved && !isBelowCost) ? da.id : null;
+      belowCostApprovalIdRef.current = (approved &&  isBelowCost) ? da.id : null;
       discountTokenRef.current = null;
       let resumedCustomer = null;
       if (approved && da.payload?.customer_id) {
@@ -1765,12 +1864,15 @@ export default function POSPage() {
       setCustomer(resumedCustomer || null);
       setShowResume(false);
       const short = hydrated.filter(i => typeof i.stock === "number" && i.quantity > i.stock);
+      const what = isBelowCost
+        ? { en: "below-cost price", fr: "prix sous le coût", enApplied: "below-cost price approved", frApplied: "prix sous le coût approuvé" }
+        : { en: "discount", fr: "remise", enApplied: "discount applied", frApplied: "remise appliquée" };
       const resumeMsg = approved
-        ? (lang === "en" ? `Resumed ${h.hold_ref} — boss-approved discount applied` : `Reprise ${h.hold_ref} — remise approuvée appliquée`)
+        ? (lang === "en" ? `Resumed ${h.hold_ref} — boss-approved ${what.enApplied}` : `Reprise ${h.hold_ref} — ${what.frApplied} (patron)`)
         : (da && da.status === "pending")
-          ? (lang === "en" ? `Resumed ${h.hold_ref} — still awaiting boss approval; discount NOT applied yet` : `Reprise ${h.hold_ref} — approbation en attente; remise NON appliquée`)
+          ? (lang === "en" ? `Resumed ${h.hold_ref} — still awaiting boss approval; ${what.en} NOT applied yet` : `Reprise ${h.hold_ref} — approbation en attente; ${what.fr} NON appliqué`)
           : da
-            ? (lang === "en" ? `Resumed ${h.hold_ref} — discount was not approved; resuming without it` : `Reprise ${h.hold_ref} — remise non approuvée; reprise sans remise`)
+            ? (lang === "en" ? `Resumed ${h.hold_ref} — ${what.en} was not approved; resuming without it` : `Reprise ${h.hold_ref} — ${what.fr} non approuvé; reprise sans`)
             : (lang === "en" ? `Resumed ${h.hold_ref}` : `Reprise ${h.hold_ref}`);
       toast.success(resumeMsg, { duration: da ? 6000 : 3000 });
       if (short.length) {
@@ -2176,6 +2278,39 @@ export default function POSPage() {
               </div>
             </button>
             <button onClick={() => setDiscountChoice(null)} disabled={sendingToBoss}
+              style={{ width: "100%", padding: "10px", border: "none", background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 13 }}>
+              {lang === "en" ? "Cancel" : "Annuler"}
+            </button>
+          </div>
+        </div>
+      )}
+      {/* ── MP-BELOW-COST-HYBRID-APPROVAL: below-cost choice (mirror of discount) ── */}
+      {belowCostChoice && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 320, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, maxWidth: 420, width: "100%" }}>
+            <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 6 }}>
+              🔐 {lang === "en" ? "Below-cost price needs approval" : "Prix sous le coût à approuver"}
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 18, lineHeight: 1.5 }}>
+              {lang === "en"
+                ? `"${belowCostChoice.name}" at ${fmt(belowCostChoice.attempted_price)} is below the floor of ${fmt(belowCostChoice.min_price)}. Choose how to get the owner's approval:`
+                : `"${belowCostChoice.name}" à ${fmt(belowCostChoice.attempted_price)} est sous le plancher de ${fmt(belowCostChoice.min_price)}. Choisissez comment obtenir l'approbation :`}
+            </div>
+            <button onClick={belowCostViaPin} disabled={sendingToBoss}
+              style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid var(--brand)", background: "var(--brand)", color: "#152B52", cursor: "pointer", textAlign: "left", fontWeight: 700, marginBottom: 10 }}>
+              🔑 {lang === "en" ? "Enter owner PIN now" : "Saisir le PIN du patron"}
+              <div style={{ fontSize: 11, fontWeight: 400, color: "#152B52", opacity: 0.8, marginTop: 3 }}>
+                {lang === "en" ? "The owner is here — applies the price immediately." : "Le patron est présent — applique le prix immédiatement."}
+              </div>
+            </button>
+            <button onClick={sendBelowCostToBoss} disabled={sendingToBoss}
+              style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", cursor: sendingToBoss ? "wait" : "pointer", textAlign: "left", fontWeight: 700, marginBottom: 10 }}>
+              📲 {sendingToBoss ? (lang === "en" ? "Sending…" : "Envoi…") : (lang === "en" ? "Send request to boss" : "Envoyer la demande au patron")}
+              <div style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)", marginTop: 3 }}>
+                {lang === "en" ? "Boss is away — holds this sale; resume it once approved on their phone." : "Le patron est absent — met la vente en attente ; reprenez-la après approbation sur son téléphone."}
+              </div>
+            </button>
+            <button onClick={cancelBelowCostChoice} disabled={sendingToBoss}
               style={{ width: "100%", padding: "10px", border: "none", background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 13 }}>
               {lang === "en" ? "Cancel" : "Annuler"}
             </button>
