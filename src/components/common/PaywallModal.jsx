@@ -11,11 +11,38 @@
 // fallback for when CamPay times out / network is bad.
 
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useLangStore } from "../../store";
 import { useCurrency } from "../../utils/useCurrency";
+import api from "../../utils/api";
 import UpgradeModal from "./UpgradeModal";
-import { PLAN_CAPABILITIES, getCapabilities } from "../../utils/planCapabilities";
+import { getCapabilities, hasSection, hasFeature } from "../../utils/planCapabilities";
 import { openWhatsApp } from "../../utils/whatsapp";
+
+// MP-PAYWALL-LOCALIZED-PRICING (29 Jun): the tier list + prices shown here now
+// come from the SAME localized GET /subscriptions/plans response the checkout /
+// RequestActivationPage uses — so a Nigeria org sees NGN and a Cameroon org sees
+// XAF, each with the right symbol via useCurrency(). We no longer read
+// pa_plans.price_monthly / planCapabilities.price_fcfa_month for display (those
+// are XAF base only — rendering them under a ₦ sign was the NG pricing bug).
+
+// Rank used to (a) label the org's CURRENT plan and (b) only offer tiers ABOVE
+// it. trial/silver are the free floor (rank 0). Matches pa_plans ordering.
+const PLAN_RANK = { trial: 0, silver: 0, lite: 1, gold: 1, pro: 2, premium: 2, pro_plus: 3 };
+// Lowest→highest paid tier, used to resolve the minimum plan a gated feature
+// needs by walking capabilities (no hardcoded feature→tier table to drift).
+const PAID_TIER_ORDER = ["lite", "pro", "pro_plus"];
+
+// Minimum paid tier whose capabilities satisfy this gate. Sections (dashboard,
+// customers, …) and feature flags (csv_exports, dozie_access, ai_assistant, …)
+// are resolved from planCapabilities; caps / trial_countdown / unknown keys fall
+// back to the lowest paid tier.
+function minimumTierFor(feature) {
+  for (const tier of PAID_TIER_ORDER) {
+    if (hasSection(tier, feature) || hasFeature(tier, feature)) return tier;
+  }
+  return "lite";
+}
 
 const SUPPORT_PHONE = "237621840952";
 
@@ -50,7 +77,11 @@ const FEATURE_COPY = {
   customers:  { en: { title: "Customers requires a higher plan",  body: "Upgrade to access customers."     }, fr: { title: "Clients nécessite un plan supérieur",            body: "Mise à niveau requise pour accéder aux clients." } },
   credits:    { en: { title: "Credits requires a higher plan",    body: "Upgrade to access credits."       }, fr: { title: "Crédits nécessite un plan supérieur",            body: "Mise à niveau requise pour accéder aux crédits." } },
   cashflow:   { en: { title: "Cash flow requires a higher plan",  body: "Upgrade to access cash flow."     }, fr: { title: "Trésorerie nécessite un plan supérieur",         body: "Mise à niveau requise pour la trésorerie." } },
-  reports:    { en: { title: "Reports require a higher plan",     body: "Upgrade to access reports."       }, fr: { title: "Les rapports nécessitent un plan supérieur",     body: "Mise à niveau requise pour les rapports." } }
+  reports:    { en: { title: "Reports require a higher plan",     body: "Upgrade to access reports."       }, fr: { title: "Les rapports nécessitent un plan supérieur",     body: "Mise à niveau requise pour les rapports." } },
+  trial_countdown: {
+    en: { title: "Your free trial is ending", body: "Pick a plan to keep full access after your trial ends." },
+    fr: { title: "Votre essai gratuit se termine", body: "Choisissez un plan pour garder l'accès complet après votre essai." }
+  }
 };
 
 function copyFor(feature, lang) {
@@ -65,66 +96,85 @@ function copyFor(feature, lang) {
     : { title: `${titled} requires a higher plan`, body: "Upgrade required." };
 }
 
-// MP-BILLING-V2 (2 Jun): rekeyed alongside planCapabilities. Primary
-// keys are lite/pro now; gold/premium retained as alias_of fallbacks
-// so any pre-deploy cached bundle reading the old keys finds copy
-// without going through getCapabilities() name-resolution.
-const PLAN_PERKS = {
-  lite: {
-    en: ["Dashboard, Customers, Credits, Reports, Dozie", "Up to 2 staff, 2 locations"],
-    fr: ["Tableau de bord, Clients, Crédits, Rapports, Dozie", "Jusqu'à 2 utilisateurs, 2 emplacements"]
-  },
-  pro: {
-    en: ["Everything Lite has", "Unlimited inventory, staff, locations", "CSV exports + custom receipt branding"],
-    fr: ["Tout ce qu'inclut Lite", "Inventaire, utilisateurs, emplacements illimités", "Exports CSV + reçus personnalisés"]
-  },
-  // Legacy alias fallbacks — keep the same content but under old keys.
-  gold: {
-    en: ["Dashboard, Customers, Credits, Reports, Dozie", "Up to 2 staff, 2 locations"],
-    fr: ["Tableau de bord, Clients, Crédits, Rapports, Dozie", "Jusqu'à 2 utilisateurs, 2 emplacements"]
-  },
-  premium: {
-    en: ["Everything Lite has", "Unlimited inventory, staff, locations", "CSV exports + custom receipt branding"],
-    fr: ["Tout ce qu'inclut Lite", "Inventaire, utilisateurs, emplacements illimités", "Exports CSV + reçus personnalisés"]
-  }
-};
-
 export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
   const { lang } = useLangStore();
   const fmt = useCurrency();
-  // MP-BILLING-V2 (2 Jun): default-selected tier rekeyed gold → lite.
-  // Under the rekey, PLAN_CAPABILITIES.gold is { legacy: true,
-  // alias_of: 'lite' } — selecting it as the initial state and then
-  // doing a direct PLAN_CAPABILITIES[tier] lookup (line ~150 below)
-  // returns the alias shape, which has no price_fcfa_month, which
-  // crashed PaywallModal at render time when any 403 upgrade_required
-  // event fired (test_account trial-login repro, 2 Jun).
-  const [selectedTier, setSelectedTier] = useState("lite");
+  const [selectedTier, setSelectedTier] = useState(null);
   const [openUpgrade, setOpenUpgrade] = useState(false);
 
+  // Localized, country-correct tier list + prices — SAME source as the checkout
+  // (UpgradeModal) and RequestActivationPage. Backend attaches .price/.currency
+  // per the org's country (NGN for NG, XAF for CM). Cached under the shared
+  // ["plans"]/["my-plan"] keys so reopening the gate is free.
+  const { data: plansData, isLoading: plansLoading, error: plansError } = useQuery({
+    queryKey: ["plans"],
+    queryFn: () => api.get("/subscriptions/plans").then(r => r.data),
+    retry: 2
+  });
+  const { data: myPlanData } = useQuery({
+    queryKey: ["my-plan"],
+    queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
+  });
+  const myPlan = myPlanData?.data;
+
   const copy = copyFor(feature, lang);
-  const currentCaps = getCapabilities(currentPlan);
   const isDozie = feature === "dozie_access";
+
+  // CURRENT plan = the org's REAL plan_id (NOT the effective/entitlement plan —
+  // a trial org runs on the 'pro' entitlement during its window, which used to
+  // mislabel the header "Current plan: Pro"). Label prefers the localized name
+  // from /my-plan, falling back to planCapabilities.
+  const realPlanId = myPlan?.plan_id || currentPlan || "trial";
+  const currentRank = PLAN_RANK[realPlanId] ?? 0;
+  const currentCaps = getCapabilities(realPlanId);
+  const currentPlanLabel = myPlan?.plan?.name
+    || (lang === "fr" ? currentCaps.label_fr : currentCaps.label)
+    || realPlanId;
+
+  // Purchasable paid tiers (Lite / Pro / Pro Plus) from the API, minus the free
+  // floor — Pro Plus appears automatically once is_active. Only offer tiers
+  // ABOVE the org's current plan.
+  const allPaid = (plansData?.data || [])
+    .filter(p => p.id !== "silver" && p.id !== "trial" && (p.price ?? p.price_monthly) > 0);
+  const tiers = allPaid
+    .filter(p => (PLAN_RANK[p.id] ?? 0) > currentRank)
+    .sort((a, b) => (PLAN_RANK[a.id] ?? 0) - (PLAN_RANK[b.id] ?? 0));
+
+  // Default-select the minimum tier this gate actually needs (so the primary
+  // button points at the correct target), clamped to an offered tier.
+  const requiredTier = minimumTierFor(feature);
+  const effectiveSelected =
+    selectedTier && tiers.some(t => t.id === selectedTier)
+      ? selectedTier
+      : (tiers.find(t => t.id === requiredTier)?.id || tiers[0]?.id || null);
+  const selectedPlan = tiers.find(t => t.id === effectiveSelected) || null;
+  const selectedLabel = selectedPlan?.name
+    || getCapabilities(effectiveSelected).label
+    || effectiveSelected;
 
   // Mount UpgradeModal in place of this paywall when the user confirms.
   if (openUpgrade) {
     return (
       <UpgradeModal
         onClose={onClose}
-        currentPlan={{ id: currentPlan, name: currentCaps.label }}
+        currentPlan={{ id: realPlanId, name: currentPlanLabel }}
       />
     );
   }
 
   const whatsappMsg = () => {
-    // MP-BILLING-V2: getCapabilities resolves legacy aliases so a
-    // stale selectedTier value still surfaces the canonical label.
-    const planName = getCapabilities(selectedTier).label || selectedTier;
+    const planName = selectedLabel;
     return lang === "fr"
       ? `Bonjour Partenaire Support, je voudrais mettre à niveau mon compte ${mpId || ""} vers le plan ${planName}.`
       : `Hello Partenaire Support, I would like to upgrade my account ${mpId || ""} to the ${planName} plan.`;
   };
   const whatsappUrl = () => `https://wa.me/${SUPPORT_PHONE}?text=${encodeURIComponent(whatsappMsg())}`;
+
+  // Feature chips per plan — tolerate array or JSON-string shape from the API.
+  const planFeatures = (p) =>
+    Array.isArray(p.features)
+      ? p.features
+      : (() => { try { return JSON.parse(p.features || "[]"); } catch { return []; } })();
 
   return (
     <div
@@ -164,23 +214,30 @@ export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
           <span style={{ color: "var(--text-muted)" }}>
             {lang === "fr" ? "Plan actuel" : "Current plan"}
           </span>
-          <strong>{currentCaps.label}</strong>
+          <strong>{currentPlanLabel}</strong>
         </div>
 
-        {/* MP-BILLING-V2 (2 Jun): tier choice rekeyed gold/premium → lite/pro.
-            Trial is the floor — never offered. Using getCapabilities()
-            instead of a direct PLAN_CAPABILITIES[tier] lookup so any
-            future alias indirection stays handled. PLAN_PERKS is also
-            indexed by tier — fall back to the alias's canonical key
-            via getCapabilities's .alias_of resolution so a stale code
-            path with old keys still finds copy. */}
+        {/* MP-PAYWALL-LOCALIZED-PRICING (29 Jun): tier list + prices are now
+            data-driven from /subscriptions/plans (country-correct NGN/XAF),
+            include Pro Plus, and only offer tiers ABOVE the org's real plan.
+            Price is rendered with fmt() so the symbol matches the org currency
+            (₦ for NG, FCFA for CM) — never pa_plans XAF base under a ₦ sign. */}
         <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
-          {["lite", "pro"].map(tier => {
-            const caps = getCapabilities(tier);
-            const perks = (PLAN_PERKS[tier] || PLAN_PERKS[caps.label?.toLowerCase() || tier] || { en: [], fr: [] })[lang === "fr" ? "fr" : "en"];
-            const selected = selectedTier === tier;
+          {plansLoading && (
+            <div style={{ textAlign: "center", padding: 16, color: "var(--text-muted)", fontSize: 13 }}>
+              {lang === "fr" ? "Chargement des plans…" : "Loading plans…"}
+            </div>
+          )}
+          {plansError && (
+            <div style={{ textAlign: "center", padding: 16, color: "#f87171", fontSize: 13 }}>
+              {lang === "fr" ? "Échec du chargement des plans." : "Failed to load plans."}
+            </div>
+          )}
+          {!plansLoading && !plansError && tiers.map(plan => {
+            const selected = effectiveSelected === plan.id;
+            const isRequired = plan.id === requiredTier;
             return (
-              <div key={tier} onClick={() => setSelectedTier(tier)}
+              <div key={plan.id} onClick={() => setSelectedTier(plan.id)}
                 style={{
                   padding: "14px 16px", borderRadius: 12,
                   border: `2px solid ${selected ? "var(--brand)" : "var(--border)"}`,
@@ -189,21 +246,28 @@ export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
                 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <div>
-                    <div style={{ fontWeight: 800, fontSize: 15 }}>{caps.label}</div>
-                    <ul style={{ fontSize: 12, color: "var(--text-secondary)", margin: "8px 0 0 0", paddingLeft: 18, lineHeight: 1.6 }}>
-                      {perks.map((p, i) => <li key={i}>{p}</li>)}
-                    </ul>
+                    <div style={{ fontWeight: 800, fontSize: 15, display: "flex", alignItems: "center", gap: 6 }}>
+                      {plan.badge_icon ? `${plan.badge_icon} ` : ""}{plan.name}
+                      {isRequired && (
+                        <span style={{ fontSize: 10, fontWeight: 700, color: "var(--brand-light)", background: "rgba(251,197,3,0.12)", borderRadius: 8, padding: "1px 7px" }}>
+                          {lang === "fr" ? "Recommandé" : "Recommended"}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>
+                      {plan.max_locations === -1 ? "∞" : plan.max_locations} {lang === "fr" ? "emplacement(s)" : "location(s)"} ·{" "}
+                      {plan.max_products === -1 ? "∞" : plan.max_products} {lang === "fr" ? "produits" : "products"} ·{" "}
+                      {plan.max_users === -1 ? "∞" : plan.max_users} {lang === "fr" ? "utilisateur(s)" : "user(s)"}
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                      {planFeatures(plan).map((f, i) => (
+                        <span key={i} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: "rgba(251,197,3,0.1)", color: "var(--brand-light)" }}>✓ {f}</span>
+                      ))}
+                    </div>
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
                     <div style={{ fontWeight: 800, fontSize: 16, color: "var(--brand-light)" }}>
-                      {/* MP-BILLING-V2: defensive guard. A getCapabilities()
-                          resolution always returns a primary tier shape with
-                          price_fcfa_month present — but if a future code path
-                          loses the alias_of resolution and lands on a legacy
-                          alias, this Number coercion + nullish fallback
-                          keeps the modal renderable instead of crashing the
-                          whole app shell. */}
-                      {Number(caps?.price_fcfa_month ?? 0).toLocaleString("fr-CM")} {fmt.symbol}
+                      {fmt(plan.price ?? plan.price_monthly)}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                       {lang === "fr" ? "/ mois" : "/ month"}
@@ -213,6 +277,11 @@ export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
               </div>
             );
           })}
+          {!plansLoading && !plansError && tiers.length === 0 && (
+            <div style={{ textAlign: "center", padding: 16, color: "var(--text-muted)", fontSize: 13 }}>
+              {lang === "fr" ? "Vous êtes déjà sur le plan le plus élevé." : "You're already on the highest plan."}
+            </div>
+          )}
         </div>
 
         {/* Actions */}
@@ -225,15 +294,16 @@ export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
             }}>
             {lang === "fr" ? "Annuler" : "Cancel"}
           </button>
-          <button onClick={() => setOpenUpgrade(true)}
+          <button onClick={() => setOpenUpgrade(true)} disabled={!selectedPlan}
             style={{
               flex: 2, padding: "10px 14px", borderRadius: 10,
               background: "var(--brand)", border: "1px solid var(--brand)",
-              color: "#152B52", cursor: "pointer", fontSize: 13, fontWeight: 700
+              color: "#152B52", cursor: selectedPlan ? "pointer" : "not-allowed",
+              opacity: selectedPlan ? 1 : 0.5, fontSize: 13, fontWeight: 700
             }}>
             {lang === "fr"
-              ? `Mettre à niveau vers ${getCapabilities(selectedTier).label || selectedTier}`
-              : `Upgrade to ${getCapabilities(selectedTier).label || selectedTier}`}
+              ? `Mettre à niveau vers ${selectedLabel}`
+              : `Upgrade to ${selectedLabel}`}
           </button>
         </div>
 
