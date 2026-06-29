@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Refund & Dispute Policy — Partenaire Dozie</title>
+<meta name="description" content="Partenaire Dozie protects every order with escrow. Raise a dispute before confirming delivery; upheld disputes are refunded to the original payment method." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --navy:#102347;
+    --navy-2:#19305f;
+    --gold:#E6A532;
+    --gold-deep:#c98a1d;
+    --ink:#1A2233;
+    --slate:#5B6675;
+    --mist:#F4F7FB;
+    --line:#E4E9F1;
+    --green:#1F8A5B;
+    --paper:#ffffff;
+    --maxw:1080px;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    font-family:"Inter",system-ui,sans-serif;
+    color:var(--ink);
+    background:var(--paper);
+    line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3{font-family:"Sora",sans-serif;line-height:1.15;margin:0;color:var(--navy);}
+  p{margin:0 0 1rem;}
+  a{color:var(--navy);}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px;}
+  .eyebrow{
+    font-family:"Sora",sans-serif;font-weight:600;font-size:.78rem;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--gold-deep);margin-bottom:.6rem;
+  }
+
+  /* header */
+  header.site{
+    position:sticky;top:0;z-index:50;background:rgba(255,255,255,.92);
+    backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  }
+  .nav{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;max-width:var(--maxw);margin:0 auto;}
+  .brand{display:flex;align-items:center;gap:11px;font-family:"Sora",sans-serif;font-weight:700;color:var(--navy);font-size:1.12rem;text-decoration:none;}
+  .mark{
+    width:34px;height:34px;border-radius:9px;display:grid;place-items:center;
+    background:linear-gradient(150deg,var(--navy),var(--navy-2));color:var(--gold);
+    font-family:"Sora",sans-serif;font-weight:800;font-size:1.05rem;
+  }
+  .nav-links{display:flex;gap:26px;align-items:center;}
+  .nav-links a{color:var(--slate);text-decoration:none;font-size:.93rem;font-weight:500;}
+  .nav-links a:hover{color:var(--navy);}
+  .btn{
+    display:inline-block;background:var(--gold);color:#23170a;text-decoration:none;
+    font-family:"Sora",sans-serif;font-weight:600;font-size:.92rem;
+    padding:11px 20px;border-radius:10px;border:1px solid var(--gold-deep);
+    transition:transform .12s ease, background .12s ease;
+  }
+  .btn:hover{background:var(--gold-deep);color:#fff;transform:translateY(-1px);}
+  .btn.ghost{background:transparent;color:var(--navy);border:1px solid var(--line);}
+  .btn.ghost:hover{border-color:var(--navy);color:var(--navy);background:#fff;}
+  @media(max-width:760px){.nav-links a:not(.btn){display:none;}}
+
+  /* page hero */
+  .page-hero{background:linear-gradient(170deg,#0d1f40 0%,#16284f 60%,#1b3160 100%);color:#eaf0fb;position:relative;overflow:hidden;}
+  .page-hero::after{
+    content:"";position:absolute;right:-160px;top:-120px;width:480px;height:480px;border-radius:50%;
+    background:radial-gradient(circle at center, rgba(230,165,50,.28), transparent 62%);
+  }
+  .page-hero .wrap{padding:56px 24px 48px;position:relative;z-index:2;}
+  .page-hero .eyebrow{color:var(--gold);}
+  .page-hero h1{color:#fff;font-size:clamp(1.9rem,4.4vw,2.9rem);font-weight:800;letter-spacing:-.5px;max-width:22ch;}
+  .page-hero p.lead{color:#c7d3ec;font-size:1.12rem;max-width:58ch;margin-top:1rem;margin-bottom:0;}
+  .crumbs{margin-bottom:18px;font-size:.86rem;}
+  .crumbs a{color:#c7d3ec;text-decoration:none;}
+  .crumbs a:hover{color:#fff;}
+
+  /* sections */
+  section{padding:64px 0;}
+  section.alt{background:var(--mist);}
+  .sec-head{max-width:60ch;margin-bottom:42px;}
+  .sec-head h2{font-size:clamp(1.6rem,3.2vw,2.25rem);font-weight:700;}
+  .sec-head p{color:var(--slate);font-size:1.08rem;margin-top:.8rem;}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:26px;}
+  @media(max-width:780px){.grid2{grid-template-columns:1fr;}}
+  .card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:30px;}
+  .card h3{font-size:1.22rem;font-weight:600;margin-bottom:.5rem;}
+  .card p{color:var(--slate);margin-bottom:0;}
+  .card .tag{font-family:"Sora",sans-serif;font-size:.74rem;letter-spacing:.12em;text-transform:uppercase;color:var(--gold-deep);font-weight:600;display:block;margin-bottom:14px;}
+
+  /* steps */
+  .steps{display:grid;grid-template-columns:repeat(5,1fr);gap:18px;counter-reset:step;}
+  @media(max-width:880px){.steps{grid-template-columns:1fr 1fr;}}
+  @media(max-width:520px){.steps{grid-template-columns:1fr;}}
+  .step{position:relative;padding:24px 18px;background:#fff;border:1px solid var(--line);border-radius:14px;}
+  .step .num{
+    width:32px;height:32px;border-radius:8px;background:var(--navy);color:var(--gold);
+    font-family:"Sora",sans-serif;font-weight:700;display:grid;place-items:center;font-size:.95rem;margin-bottom:14px;
+  }
+  .step h4{font-family:"Sora",sans-serif;font-size:1rem;color:var(--navy);margin:0 0 6px;font-weight:600;}
+  .step p{font-size:.9rem;color:var(--slate);margin:0;}
+
+  /* pay pills */
+  .pills{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;}
+  .pill{border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 16px;font-size:.88rem;font-weight:500;color:var(--ink);}
+  .secure-note{display:flex;align-items:center;gap:10px;margin-top:22px;color:var(--green);font-weight:500;font-size:.95rem;}
+  .secure-note span.dot{width:9px;height:9px;border-radius:50%;background:var(--green);display:inline-block;}
+
+  /* pricing */
+  .price-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;}
+  @media(max-width:780px){.price-grid{grid-template-columns:1fr;}}
+  .price{border:1px solid var(--line);border-radius:16px;padding:30px;background:#fff;}
+  .price.featured{border:1.5px solid var(--gold);box-shadow:0 10px 30px rgba(16,35,71,.07);}
+  .price h3{font-size:1.2rem;}
+  .price .amt{font-family:"Sora",sans-serif;font-size:1.7rem;color:var(--navy);font-weight:700;margin:10px 0 4px;}
+  .price ul{list-style:none;padding:0;margin:16px 0 0;}
+  .price li{padding:7px 0 7px 26px;position:relative;color:var(--slate);font-size:.95rem;border-top:1px solid var(--line);}
+  .price li:first-child{border-top:0;}
+  .price li::before{content:"\2713";position:absolute;left:0;color:var(--green);font-weight:700;}
+
+  /* contact */
+  .contact-grid{display:grid;grid-template-columns:1.1fr 1fr;gap:30px;align-items:start;}
+  @media(max-width:780px){.contact-grid{grid-template-columns:1fr;}}
+  .contact-card{background:var(--navy);color:#dce5f5;border-radius:18px;padding:34px;}
+  .contact-card h3{color:#fff;font-size:1.35rem;}
+  .contact-line{display:flex;gap:12px;align-items:flex-start;margin-top:18px;font-size:.98rem;}
+  .contact-line .lbl{font-family:"Sora",sans-serif;font-weight:600;color:var(--gold);min-width:96px;}
+  .contact-card a{color:#fff;}
+
+  /* legal */
+  .legal{font-size:.95rem;color:var(--slate);}
+  .legal h2{font-size:1.5rem;margin-bottom:6px;}
+  .legal h3{font-size:1.05rem;color:var(--navy);margin:26px 0 6px;font-family:"Sora",sans-serif;font-weight:600;}
+  .legal p{margin-bottom:.9rem;}
+  .legal .updated{font-size:.85rem;color:var(--slate);font-style:italic;margin-bottom:24px;}
+  hr.div{border:0;border-top:1px solid var(--line);margin:0;}
+
+  /* footer */
+  footer.site{background:#0c1a36;color:#9fb0cf;padding:48px 0 36px;}
+  footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:24px;}
+  footer .brand{color:#fff;}
+  footer a{color:#c4d1e8;text-decoration:none;font-size:.92rem;}
+  footer a:hover{color:#fff;}
+  .foot-links{display:flex;gap:22px;flex-wrap:wrap;}
+  .foot-legal{width:100%;border-top:1px solid rgba(255,255,255,.12);margin-top:30px;padding-top:22px;font-size:.86rem;color:#8294b5;}
+  .foot-legal b{color:#cdd9ee;font-weight:600;}
+  .foot-legal a{color:#cdd9ee;}
+</style>
+</head>
+<body>
+
+<header class="site">
+  <div class="nav">
+    <a class="brand" href="/"><span class="mark">PD</span> Partenaire&nbsp;Dozie</a>
+    <nav class="nav-links">
+      <a href="/about">About</a>
+      <a href="/how-it-works">How it works</a>
+      <a href="/payments">Payments</a>
+      <a href="/pricing">Pricing</a>
+      <a class="btn" href="/contact">Contact</a>
+    </nav>
+  </div>
+</header>
+
+<section class="page-hero">
+  <div class="wrap">
+    <div class="crumbs"><a href="/">&larr; Home</a></div>
+    <div class="eyebrow">Policy</div>
+    <h1>Refund &amp; Dispute Policy</h1>
+    
+  </div>
+</section>
+<section class="legal">
+  <div class="wrap" style="max-width:780px;">
+    <p class="updated">Last updated: June 2026</p>
+    <p>Partenaire Dozie protects every online order with escrow. When you pay for an order, your payment is held securely and is only released to the shop after the order is delivered and you confirm it.</p>
+    <h3>Raising a dispute</h3>
+    <p>If your order is not delivered, arrives incomplete, or is not as described, you can raise a dispute from your order before confirming delivery. Raising a dispute pauses the release of funds to the shop while the issue is reviewed.</p>
+    <h3>Refunds</h3>
+    <p>Where a dispute is upheld, or an order is cancelled before delivery, the payment is refunded to the original payment method used (Mobile Money, OPay, bank, or card). Refunds are processed promptly once approved; the time for funds to appear depends on your payment provider. Orders already delivered and confirmed are generally not refundable except where required by law.</p>
+    <h3>How to request</h3>
+    <p>Contact us on WhatsApp at +237 621 840 952 or by email at <a href="mailto:support@partenairedozie.com">support@partenairedozie.com</a> with your order number, and we will help resolve it.</p>
+  </div>
+</section>
+
+<footer class="site">
+  <div class="wrap">
+    <a class="brand" href="/" style="text-decoration:none;"><span class="mark">PD</span> Partenaire&nbsp;Dozie</a>
+    <div class="foot-links">
+      <a href="/">Home</a>
+      <a href="/about">About</a>
+      <a href="/how-it-works">How it works</a>
+      <a href="/payments">Payments &amp; Security</a>
+      <a href="/pricing">Pricing</a>
+      <a href="/refund">Refund</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+      <a href="/contact">Contact</a>
+    </div>
+    <div class="foot-legal">
+      <b>Partenaire Dozie</b> &mdash; online marketplace &amp; business software, operated by Peter Okafor, serving Cameroon and Nigeria.<br/>
+      Contact: +237&nbsp;621&nbsp;840&nbsp;952 &middot; <a href="mailto:support@partenairedozie.com">support@partenairedozie.com</a> &middot; &copy; 2026 Partenaire Dozie. All rights reserved.
+    </div>
+  </div>
+</footer>
+</body>
+</html>
