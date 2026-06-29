@@ -87,7 +87,15 @@ export default function UpgradeModal({ onClose, currentPlan }) {
       if (link) { window.location.href = link; }
       else toast.error(lang === "en" ? "Could not start payment." : "Impossible de démarrer le paiement.");
     },
-    onError: (err) => toast.error(err.response?.data?.message || "Payment error"),
+    onError: (err) => {
+      // MP-FLW-MIN-AMOUNT-GUARD: a below-minimum charge returns a clear bilingual
+      // message + code instead of the generic provider error — show the right one.
+      const d = err.response?.data;
+      const msg = d?.code === "amount_below_minimum"
+        ? (lang === "en" ? d.message_en : d.message_fr) || d.message
+        : (d?.message || (lang === "en" ? "Payment error" : "Erreur de paiement"));
+      toast.error(msg, { duration: 6000 });
+    },
   });
 
   // Manual payment (offline → admin approval)
