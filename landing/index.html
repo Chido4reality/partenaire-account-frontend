@@ -109,6 +109,10 @@
   .lang button.active{background:var(--gold); color:var(--navy-900)}
   .lang button:hover:not(.active){color:var(--ink)}
   .copy{color:rgba(157,176,206,.65); font-size:12px; letter-spacing:.02em}
+  .legal-links{display:flex; flex-wrap:wrap; justify-content:center; gap:7px 16px; max-width:580px; line-height:1.5}
+  .legal-links a{color:var(--muted); font-size:12.5px; text-decoration:none; transition:color .15s ease}
+  .legal-links a:hover{color:var(--gold)}
+  .legal-links a.mail{color:var(--gold-bright)}
 
   .reveal{opacity:0; transform:translateY(10px); animation:rise .6s cubic-bezier(.2,.7,.3,1) forwards}
   .d1{animation-delay:.05s}.d2{animation-delay:.14s}.d3{animation-delay:.24s}.d4{animation-delay:.34s}
@@ -158,7 +162,18 @@
         <button type="button" data-lang="fr">Français</button>
         <button type="button" data-lang="en" class="active">English</button>
       </div>
-      <div class="copy">© 2026 Partenaire Dozie</div>
+      <nav class="legal-links reveal d4" aria-label="Company &amp; legal">
+        <a href="/about" data-en="About" data-fr="À propos">About</a>
+        <a href="/how-it-works" data-en="How it works" data-fr="Comment ça marche">How it works</a>
+        <a href="/payments" data-en="Payments &amp; Security" data-fr="Paiements &amp; sécurité">Payments &amp; Security</a>
+        <a href="/pricing" data-en="Pricing" data-fr="Tarifs">Pricing</a>
+        <a href="/refund" data-en="Refund" data-fr="Remboursement">Refund</a>
+        <a href="/privacy" data-en="Privacy" data-fr="Confidentialité">Privacy</a>
+        <a href="/terms" data-en="Terms" data-fr="Conditions">Terms</a>
+        <a href="/contact" data-en="Contact" data-fr="Contact">Contact</a>
+        <a class="mail" href="mailto:support@partenairedozie.com">support@partenairedozie.com</a>
+      </nav>
+      <div class="copy" data-en="Operated by Peter Okafor · serving Cameroon &amp; Nigeria · © 2026 Partenaire Dozie" data-fr="Exploité par Peter Okafor · Cameroun &amp; Nigéria · © 2026 Partenaire Dozie">Operated by Peter Okafor · serving Cameroon &amp; Nigeria · © 2026 Partenaire Dozie</div>
     </div>
   </div>
 
