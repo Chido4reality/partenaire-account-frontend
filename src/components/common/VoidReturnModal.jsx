@@ -398,13 +398,21 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
         <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>
           {lang === "en" ? "Void / Return" : "Annulation / Retour"}
         </div>
-        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 20 }}>
+        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>
           {sale.sale_number} · {fmt(total)}
           {sale.pa_customers?.name && ` · ${sale.pa_customers.name}`}
           {sale.channel === "online" && sale.dozie_order_ref && (
             <> · <span style={{ fontFamily: "monospace" }}>{sale.dozie_order_ref}</span></>
           )}
         </div>
+        {/* MP-OPS-MONEY-EXPLAINABLE: the receipt's issued time (pa_sales.created_at). */}
+        {(sale.created_at || sale.sale_date) && (
+          <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginBottom: 20 }}>
+            {lang === "en" ? "Issued " : "Émis le "}
+            {new Date(sale.created_at || sale.sale_date).toLocaleString(lang === "en" ? "en-GB" : "fr-FR",
+              { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+          </div>
+        )}
 
         {/* MP-REFUND-SEARCH-ENHANCED: online-channel warning. Cashier
             refunds CASH from the till; original-channel re-refund

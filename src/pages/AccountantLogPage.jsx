@@ -881,6 +881,17 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
     queryFn: () => api.get(`/staff/activity?${qs}&risk_only=${tab === "check"}&limit=200`).then((r) => r.data),
   });
 
+  // MP-OPS-MONEY-EXPLAINABLE: the per-cashier money BRIDGE — read from the SAME
+  // shared source as Operations (/dashboard/overview) so it can't diverge. Finds
+  // this staff's scoreboard row to explain Total sales vs cash collected.
+  const fromDate = String(from).slice(0, 10);
+  const toDate = (() => { try { const d = new Date(to); d.setMilliseconds(d.getMilliseconds() - 1); return d.toISOString().slice(0, 10); } catch { return fromDate; } })();
+  const bridgeQ = useQuery({
+    queryKey: ["accountant-bridge", staff.id, fromDate, toDate],
+    queryFn: () => api.get(`/dashboard/overview?from=${fromDate}&to=${toDate}`).then(r => r.data?.data || null),
+  });
+  const bridge = (bridgeQ.data?.cashiers || []).find(c => c.cashier_id === staff.id) || null;
+
   const summary = summaryQ.data?.data || null;
   let rows = activityQ.data?.data || [];
   // "Things to check" = HIGH risk only. The RPC's risk_only returns high+medium,
@@ -1004,6 +1015,57 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
           </div>
         )}
       </div>
+
+      {/* D2) MONEY BRIDGE — why Total sales ≠ Cash collected (shared source). */}
+      {bridge && (Number(bridge.total_sales) > 0 || Number(bridge.voided_receipts_total) > 0) && (
+        <div className="card" style={{ marginTop: 12, padding: 14 }}>
+          <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 2 }}>
+            {en ? "Money bridge" : "Pont d'argent"}
+          </div>
+          <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginBottom: 12 }}>
+            {en
+              ? "Total sales = Cash (valid) + MoMo (valid) + Credit given. Voided receipts sit OUTSIDE — never inside cash."
+              : "Ventes totales = Espèces (valides) + MoMo (valides) + Crédit accordé. Les reçus annulés sont EN DEHORS — jamais dans les espèces."}
+          </div>
+          {(() => {
+            const Row = ({ label, val, note, color, strong, indent }) => (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "6px 0", borderTop: "1px solid var(--border)", paddingLeft: indent ? 12 : 0 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: strong ? 800 : 600, fontSize: 13, color: color || "var(--text-primary)" }}>{label}</div>
+                  {note && <div style={{ fontSize: 10.5, color: "var(--text-muted)" }}>{note}</div>}
+                </div>
+                <div style={{ fontWeight: strong ? 800 : 600, fontSize: 13, color: color || "var(--text-primary)", whiteSpace: "nowrap" }}>{fmt(val || 0)}</div>
+              </div>
+            );
+            return (
+              <div>
+                <Row strong label={en ? "Total sales" : "Ventes totales"} val={bridge.total_sales}
+                  note={en ? "goods sold (excludes voided & debt lines)" : "marchandises vendues (hors annulés & lignes de dette)"} />
+                <Row indent label={en ? "= Cash (valid)" : "= Espèces (valides)"} val={bridge.cash_valid != null ? bridge.cash_valid : bridge.cash_collected}
+                  note={en ? "cash received for valid sales; excludes cancelled receipts" : "espèces reçues pour ventes valides; hors reçus annulés"} />
+                <Row indent label={en ? "+ MoMo (valid)" : "+ MoMo (valides)"} val={bridge.momo_collected}
+                  note={en ? "mobile money received" : "mobile money reçu"} />
+                <Row indent label={en ? "+ Credit given" : "+ Crédit accordé"} val={bridge.credit_given}
+                  note={en ? "left unpaid on valid sales today" : "resté impayé sur ventes valides"} />
+                {Number(bridge.debt_collected) > 0 && (
+                  <Row indent label={en ? "Debt collected (old credit)" : "Dette encaissée (ancien crédit)"} val={bridge.debt_collected}
+                    note={en ? "old credit repaid — not a new sale" : "ancien crédit remboursé — pas une nouvelle vente"} />
+                )}
+                {Number(bridge.voided_receipts_total) > 0 && (
+                  <Row strong color="#f87171" label={en ? "⚠ Voided receipts (paid then cancelled)" : "⚠ Reçus annulés (payés puis annulés)"} val={bridge.voided_receipts_total}
+                    note={en ? "OUTSIDE cash collected — confirm the money was returned" : "EN DEHORS des espèces — confirmez que l'argent a été rendu"} />
+                )}
+                {Array.isArray(bridge.voided_receipts) && bridge.voided_receipts.map((v, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "var(--text-muted)", padding: "3px 0 3px 16px" }}>
+                    <span style={{ fontFamily: "monospace" }}>{v.sale_number || "—"}{v.void_reason ? ` · ${v.void_reason}` : ""}</span>
+                    <span style={{ color: "#f87171" }}>{fmt(v.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {/* E) Activity list */}
       <div className="card" style={{ marginTop: 12, padding: 0, overflow: "hidden" }}>

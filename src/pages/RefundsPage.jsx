@@ -31,6 +31,7 @@
 // (is_voided / has_existing_refund).
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import { cacheData, getCachedData } from "../utils/offlineStore";
 import { useLangStore, useAuthStore } from "../store";
@@ -75,6 +76,10 @@ export default function RefundsPage() {
 
   const [selected, setSelected] = useState(null);          // hydrated sale for modal
   const [loadingSale, setLoadingSale] = useState(null);    // id being fetched
+  // MP-OPS-MONEY-EXPLAINABLE: deep-link from Operations (?ref=VNT-…) → auto-search
+  // and open that receipt so an anomaly / voided / MoMo row "opens the sale".
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [autoOpenRef, setAutoOpenRef] = useState(null);
 
   // MP-PAYMENT-EVENT-RECEIPTS Phase 3: receipt modal opens after
   // VoidReturnModal succeeds. Mapping:
@@ -237,6 +242,28 @@ export default function RefundsPage() {
   useEffect(() => {
     if (tab === "scan") setScannerOpen(true);
   }, [tab]);
+
+  // MP-OPS-MONEY-EXPLAINABLE: consume ?ref=VNT-… → run the number search and
+  // remember to auto-open that receipt; then drop the param so it fires once.
+  useEffect(() => {
+    const ref = searchParams.get("ref");
+    if (!ref) return;
+    setTab("number");
+    setNumberInput(ref);
+    setActiveQuery({ by: detectRefMode(ref), value: ref });
+    setAutoOpenRef(ref.trim().toUpperCase());
+    const next = new URLSearchParams(searchParams);
+    next.delete("ref");
+    setSearchParams(next, { replace: true });
+  }, [searchParams]);
+
+  // When the deep-linked search resolves to exactly that receipt, open it.
+  useEffect(() => {
+    if (!autoOpenRef) return;
+    const rows = searchResp?.data || [];
+    const match = rows.find(s => String(s.sale_number || "").toUpperCase() === autoOpenRef);
+    if (match && match.id) { handleRefund(match.id); setAutoOpenRef(null); }
+  }, [autoOpenRef, searchResp]);
 
   return (
     <div style={{ padding: 24, maxWidth: 1000, margin: "0 auto" }}>

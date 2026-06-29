@@ -18,7 +18,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useLangStore } from "../store";
 import api from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
@@ -106,6 +106,13 @@ export default function OperationsDashboardPage() {
   const lang = useLangStore(s => s.lang);
   const en = lang === "en";
   const fmt = useCurrency();
+  const navigate = useNavigate();
+  // MP-OPS-MONEY-EXPLAINABLE: open the underlying receipt — the Refunds portal
+  // searches by sale_number and opens the sale (with its issued timestamp).
+  const openReceipt = (saleNumber) => {
+    if (!saleNumber) return;
+    navigate(`/refunds?ref=${encodeURIComponent(saleNumber)}`);
+  };
 
   // Range state — default last 7 days. Custom range honoured via the
   // two date inputs; the chip presets reset to known windows.
@@ -233,8 +240,8 @@ export default function OperationsDashboardPage() {
       <Card
         title={en ? "2. Cashier scoreboard" : "2. Performance par caissier"}
         sub={en
-          ? "Sorted by cash collected. Flag = drawer variance on 2+ shifts, refund rate > 5%, or > 3 voids in range."
-          : "Trié par espèces encaissées. Drapeau = écarts de caisse sur 2+ postes, taux remb. > 5%, ou > 3 annulations."}
+          ? "Bridge: Total sales = Cash (valid) + MoMo (valid) + Credit given. Voided receipts (paid then cancelled) sit OUTSIDE — never inside cash. Flag = variance 2+ shifts, refunds > 5%, > 3 voids, or a void after payment."
+          : "Pont : Ventes totales = Espèces (valides) + MoMo (valides) + Crédit accordé. Les reçus annulés (payés puis annulés) sont EN DEHORS — jamais dans les espèces. Drapeau = écart 2+ postes, remb. > 5%, > 3 annul., ou annulation après paiement."}
       >
         {overview.isLoading && <div style={loadingStyle}>{en ? "Loading…" : "Chargement…"}</div>}
         {overview.data && (
@@ -245,7 +252,10 @@ export default function OperationsDashboardPage() {
                   <th style={thStyle}>{en ? "Cashier" : "Caissier"}</th>
                   <th style={thStyle}>{en ? "Shifts" : "Postes"}</th>
                   <th style={thStyleRight}>{en ? "Total sales" : "Ventes totales"}</th>
-                  <th style={thStyleRight}>{en ? "Cash collected" : "Espèces encaissées"}</th>
+                  <th style={thStyleRight}>{en ? "Cash (valid)" : "Espèces (valides)"}</th>
+                  <th style={thStyleRight}>{en ? "MoMo" : "MoMo"}</th>
+                  <th style={thStyleRight}>{en ? "Credit given" : "Crédit accordé"}</th>
+                  <th style={thStyleRight}>{en ? "Voided ⚠" : "Annulés ⚠"}</th>
                   <th style={thStyleRight}>{en ? "Refunds" : "Remb."}</th>
                   <th style={thStyleRight}>{en ? "Voids" : "Annul."}</th>
                   <th style={thStyleRight}>{en ? "Avg shift" : "Poste moyen"}</th>
@@ -263,7 +273,14 @@ export default function OperationsDashboardPage() {
                     </td>
                     <td style={tdStyle}>{c.shifts_opened}</td>
                     <td style={tdStyleRight}>{fmt(c.total_sales)}</td>
-                    <td style={tdStyleRight}><strong>{fmt(c.cash_collected)}</strong></td>
+                    <td style={tdStyleRight}><strong>{fmt(c.cash_valid != null ? c.cash_valid : c.cash_collected)}</strong></td>
+                    <td style={tdStyleRight}>{fmt(c.momo_collected || 0)}</td>
+                    <td style={tdStyleRight}>{fmt(c.credit_given || 0)}</td>
+                    <td style={tdStyleRight}>
+                      {Number(c.voided_receipts_total) > 0
+                        ? <span style={{ color: "#f87171", fontWeight: 700 }}>{fmt(c.voided_receipts_total)}</span>
+                        : <span style={{ color: "var(--text-muted)" }}>—</span>}
+                    </td>
                     <td style={tdStyleRight}>{c.refunds_processed}</td>
                     <td style={tdStyleRight} title={c.voids > 3 ? "flagged" : ""}>
                       <span style={{ color: c.voids > 3 ? "#f87171" : "inherit" }}>{c.voids}</span>
@@ -282,7 +299,7 @@ export default function OperationsDashboardPage() {
                   </tr>
                 ))}
                 {(overview.data.cashiers || []).length === 0 && (
-                  <tr><td colSpan={9} style={{ ...tdStyle, color: "var(--text-muted)", textAlign: "center", padding: 14 }}>
+                  <tr><td colSpan={13} style={{ ...tdStyle, color: "var(--text-muted)", textAlign: "center", padding: 14 }}>
                     {en ? "No cashier activity in this range." : "Aucune activité de caissier dans cette plage."}
                   </td></tr>
                 )}
@@ -318,18 +335,28 @@ export default function OperationsDashboardPage() {
           const sevBg = a.severity === "critical" ? "rgba(248,113,113,0.08)"
                       : a.severity === "warning"  ? "rgba(251,191,36,0.08)"
                       : "rgba(59,130,246,0.08)";
+          // MP-OPS-MONEY-EXPLAINABLE: prefer the bilingual message; tap a
+          // sale-linked anomaly to open the underlying receipt.
+          const text = (en ? a.message_en : a.message_fr) || a.message;
+          const saleNo = a.link && a.link.type === "sale" ? a.link.sale_number : null;
+          const tappable = !!saleNo;
           return (
             <div key={a.id} style={{
               padding: "10px 12px", marginBottom: 6, borderRadius: 8,
               background: sevBg, border: `1px solid ${sevColor}33`,
               display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12,
             }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+              <div
+                onClick={tappable ? () => openReceipt(saleNo) : undefined}
+                style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0,
+                  cursor: tappable ? "pointer" : "default" }}
+                title={tappable ? (en ? "Open receipt" : "Ouvrir le reçu") : ""}>
                 <span style={{ color: sevColor, fontWeight: 800, fontSize: 11, textTransform: "uppercase", whiteSpace: "nowrap" }}>
                   {a.severity}
                 </span>
-                <span style={{ fontSize: 13, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {a.message}
+                <span style={{ fontSize: 13, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis",
+                  textDecoration: tappable ? "underline" : "none" }}>
+                  {text}
                 </span>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -341,6 +368,103 @@ export default function OperationsDashboardPage() {
             </div>
           );
         })}
+      </Card>
+
+      {/* ── Voided receipts (paid then cancelled) ──────────── */}
+      <Card
+        title={en ? "Voided receipts (paid then cancelled)" : "Reçus annulés (payés puis annulés)"}
+        sub={en
+          ? "Receipts cancelled after a payment was recorded. NOT counted in cash collected — confirm the cash was returned. Tap to open the receipt."
+          : "Reçus annulés après l'enregistrement d'un paiement. NON comptés dans les espèces — confirmez que l'argent a été rendu. Touchez pour ouvrir le reçu."}
+      >
+        {overview.isLoading && <div style={loadingStyle}>{en ? "Loading…" : "Chargement…"}</div>}
+        {overview.data && (() => {
+          const vr = overview.data.voided_receipts || { items: [], total: 0 };
+          if (!vr.items.length) return (
+            <div style={{ padding: 12, fontSize: 13, color: "var(--text-muted)", textAlign: "center" }}>
+              {en ? "No voided receipts in this range. ✓" : "Aucun reçu annulé dans cette plage. ✓"}
+            </div>
+          );
+          return (
+            <div style={{ overflowX: "auto" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: "#f87171" }}>
+                {en ? "Total voided: " : "Total annulé : "}{fmt(vr.total)}
+              </div>
+              <table style={tableStyle}>
+                <thead><tr>
+                  <th style={thStyle}>{en ? "Receipt" : "Reçu"}</th>
+                  <th style={thStyle}>{en ? "Cashier" : "Caissier"}</th>
+                  <th style={thStyleRight}>{en ? "Amount" : "Montant"}</th>
+                  <th style={thStyle}>{en ? "Method" : "Méthode"}</th>
+                  <th style={thStyle}>{en ? "Paid / Voided" : "Payé / Annulé"}</th>
+                  <th style={thStyle}>{en ? "Reason" : "Raison"}</th>
+                </tr></thead>
+                <tbody>
+                  {vr.items.map((v, i) => (
+                    <tr key={i} style={{ borderTop: "1px solid var(--border)", cursor: v.sale_number ? "pointer" : "default" }}
+                      onClick={v.sale_number ? () => openReceipt(v.sale_number) : undefined}>
+                      <td style={{ ...tdStyle, fontFamily: "monospace", textDecoration: v.sale_number ? "underline" : "none" }}>{v.sale_number || "—"}</td>
+                      <td style={tdStyle}>{v.cashier_name || "—"}</td>
+                      <td style={{ ...tdStyleRight, color: "#f87171", fontWeight: 700 }}>{fmt(v.amount)}</td>
+                      <td style={tdStyle}>{v.method === "mobile_money" ? "MoMo" : v.method === "cash" ? (en ? "Cash" : "Espèces") : (v.method || "—")}</td>
+                      <td style={{ ...tdStyle, fontSize: 11, color: "var(--text-muted)" }}>
+                        {v.paid_at ? new Date(v.paid_at).toLocaleTimeString(en ? "en-GB" : "fr-FR", { hour: "2-digit", minute: "2-digit" }) : "—"}
+                        {v.voided_at ? " → " + new Date(v.voided_at).toLocaleTimeString(en ? "en-GB" : "fr-FR", { hour: "2-digit", minute: "2-digit" }) : ""}
+                      </td>
+                      <td style={{ ...tdStyle, fontSize: 12 }}>{v.void_reason || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        })()}
+      </Card>
+
+      {/* ── MoMo received (mobile money, valid receipts) ────── */}
+      <Card
+        title={en ? "Mobile money received" : "Mobile money reçu"}
+        sub={en
+          ? "Mobile-money payments on valid receipts — who, which receipt, when, how much. Tap to open the receipt."
+          : "Paiements mobile money sur reçus valides — qui, quel reçu, quand, combien. Touchez pour ouvrir le reçu."}
+      >
+        {overview.isLoading && <div style={loadingStyle}>{en ? "Loading…" : "Chargement…"}</div>}
+        {overview.data && (() => {
+          const mm = overview.data.momo_received || { items: [], total: 0 };
+          if (!mm.items.length) return (
+            <div style={{ padding: 12, fontSize: 13, color: "var(--text-muted)", textAlign: "center" }}>
+              {en ? "No mobile-money payments in this range." : "Aucun paiement mobile money dans cette plage."}
+            </div>
+          );
+          return (
+            <div style={{ overflowX: "auto" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: "#10b981" }}>
+                {en ? "Total MoMo: " : "Total MoMo : "}{fmt(mm.total)}
+              </div>
+              <table style={tableStyle}>
+                <thead><tr>
+                  <th style={thStyle}>{en ? "Receipt" : "Reçu"}</th>
+                  <th style={thStyle}>{en ? "Cashier" : "Caissier"}</th>
+                  <th style={thStyleRight}>{en ? "Amount" : "Montant"}</th>
+                  <th style={thStyle}>{en ? "When" : "Quand"}</th>
+                </tr></thead>
+                <tbody>
+                  {mm.items.map((m, i) => (
+                    <tr key={i} style={{ borderTop: "1px solid var(--border)", cursor: m.sale_number ? "pointer" : "default" }}
+                      onClick={m.sale_number ? () => openReceipt(m.sale_number) : undefined}>
+                      <td style={{ ...tdStyle, fontFamily: "monospace", textDecoration: m.sale_number ? "underline" : "none" }}>{m.sale_number || "—"}</td>
+                      <td style={tdStyle}>{m.cashier_name || "—"}</td>
+                      <td style={{ ...tdStyleRight, color: "#10b981", fontWeight: 700 }}>{fmt(m.amount)}</td>
+                      <td style={{ ...tdStyle, fontSize: 11, color: "var(--text-muted)" }}>
+                        {m.paid_at ? new Date(m.paid_at).toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        })()}
       </Card>
 
       {/* ── SECTION 4: Debt aging ──────────────────────────── */}

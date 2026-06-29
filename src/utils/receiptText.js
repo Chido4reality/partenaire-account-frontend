@@ -114,11 +114,16 @@ function pickReference(eventType, data) {
 
 // ── Date helpers ────────────────────────────────────────────────
 
-function fmtDateTime(lang) {
+// MP-OPS-MONEY-EXPLAINABLE: print the SALE's own time (pa_sales.created_at),
+// not "now" — a reprint hours later must still show when the receipt was issued.
+// Falls back to now only when the source row carries no timestamp.
+function fmtDateTime(lang, iso) {
   const loc = lang === "en" ? "en-GB" : "fr-FR";
-  const d = new Date();
-  const dateStr = d.toLocaleDateString(loc, { day: "2-digit", month: "short", year: "numeric" });
-  const timeStr = d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
+  const d = iso ? new Date(iso) : new Date();
+  const valid = d instanceof Date && !isNaN(d.getTime());
+  const dt = valid ? d : new Date();
+  const dateStr = dt.toLocaleDateString(loc, { day: "2-digit", month: "short", year: "numeric" });
+  const timeStr = dt.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
   return `${dateStr}, ${timeStr}`;
 }
 
@@ -323,12 +328,16 @@ export function buildMonospaceReceipt(eventType, data, lang, org) {
   const title = (TITLE_BY_TYPE[eventType] || TITLE_BY_TYPE.sale)[en ? "en" : "fr"];
   const ref   = pickReference(eventType, data);
   const customerName = data.customer_name || data.customer?.name || null;
-  const dateTime = fmtDateTime(lang);
+  // Prefer the sale's real issue time across the response shapes the receipt
+  // is built from (fresh sale, reprint, refund/void event referencing a sale).
+  const saleIso = data.created_at || data.sale_created_at || data.source_sale_created_at
+    || data.sale?.created_at || null;
+  const dateTime = fmtDateTime(lang, saleIso);
 
   const L = [];
   pushHeader(L, org);
   L.push(kvLine(title, ref || ""));
-  L.push(kvLine(en ? "Date" : "Date", dateTime));
+  L.push(kvLine(en ? "Issued" : "Émis le", dateTime));
   if (data.cashier_name)  L.push(kvLine(en ? "Cashier" : "Caissier", data.cashier_name));
   if (data.location_name) L.push(kvLine(en ? "Location" : "Site",    data.location_name));
   if (customerName)       L.push(kvLine(en ? "Customer" : "Client",  customerName));
