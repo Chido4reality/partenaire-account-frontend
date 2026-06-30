@@ -24,6 +24,7 @@ import PayButton from "../components/pos/PayButton";
 import { tapHaptic } from "../utils/haptics";
 import { motion } from "framer-motion";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
+import RestrictedAction from "../components/common/RestrictedAction";
 import useOwnerApproval from "../hooks/useOwnerApproval";
 
 const PAYMENT_MODES = [
@@ -2082,9 +2083,11 @@ export default function POSPage() {
 
             {!showPayment ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <button className="btn btn-primary btn-block" disabled={cart.length === 0 || !selectedLocation} onClick={() => setShowPayment(true)} style={{ height: 44, fontSize: 14, fontWeight: 700, borderRadius: 12 }}>
-                  {!selectedLocation ? (lang === "en" ? "Select location first" : "Choisir emplacement") : hasDebt ? (lang === "en" ? "Collect Payment →" : "Encaisser →") : (lang === "en" ? "Proceed to Payment →" : "Paiement →")}
-                </button>
+                <RestrictedAction block>
+                  <button className="btn btn-primary btn-block" disabled={cart.length === 0 || !selectedLocation} onClick={() => setShowPayment(true)} style={{ height: 44, fontSize: 14, fontWeight: 700, borderRadius: 12 }}>
+                    {!selectedLocation ? (lang === "en" ? "Select location first" : "Choisir emplacement") : hasDebt ? (lang === "en" ? "Collect Payment →" : "Encaisser →") : (lang === "en" ? "Proceed to Payment →" : "Paiement →")}
+                  </button>
+                </RestrictedAction>
                 {!hasDebt && (
                   <button disabled={cart.length === 0 || !selectedLocation} onClick={() => { setHoldLabel(""); setHoldNotes(""); setShowHold(true); }}
                     style={{ height: 40, fontSize: 13, fontWeight: 700, borderRadius: 12, cursor: cart.length === 0 ? "not-allowed" : "pointer", background: "transparent", border: "1.5px solid rgba(245,158,11,0.5)", color: cart.length === 0 ? "var(--text-muted)" : "#fbbf24", opacity: cart.length === 0 || !selectedLocation ? 0.5 : 1 }}>

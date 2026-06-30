@@ -8,6 +8,7 @@ import { useSettingsStore, useAuthStore } from "../../store";
 import useOwnerApproval from "../../hooks/useOwnerApproval";
 import { isPendingApproval, keepWorkingToast } from "../../utils/approval";
 import { useNetworkStatus } from "../../utils/useNetworkStatus";
+import RestrictedAction from "./RestrictedAction";
 
 /**
  * VoidReturnModal — handles void, refund, exchange
@@ -510,9 +511,10 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
                 never see a dead PIN prompt. Within that, disabled with a reason
                 when the sale is already voided or already has a return. */}
             {canVoid && (
+              <RestrictedAction block>
               <button onClick={voidOptionDisabled ? undefined : () => setMode("void")}
                 disabled={voidOptionDisabled}
-                style={{ padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.08)", color: "#f87171", cursor: voidOptionDisabled ? "not-allowed" : "pointer", textAlign: "left", fontWeight: 600, opacity: voidOptionDisabled ? 0.5 : 1 }}>
+                style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.08)", color: "#f87171", cursor: voidOptionDisabled ? "not-allowed" : "pointer", textAlign: "left", fontWeight: 600, opacity: voidOptionDisabled ? 0.5 : 1 }}>
                 ⚠️ {lang === "en" ? "Void (cancel sale)" : "Annuler la vente"}
                 <div style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)", marginTop: 3 }}>
                   {voidOptionDisabled
@@ -520,21 +522,26 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
                     : (lang === "en" ? "Reverses the whole sale — use for mistakes" : "Inverse toute la vente — à utiliser pour les erreurs")}
                 </div>
               </button>
+              </RestrictedAction>
             )}
+            <RestrictedAction block>
             <button onClick={() => setMode("refund")}
-              style={{ padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(251,191,36,0.4)", background: "rgba(251,191,36,0.08)", color: "#fbbf24", cursor: "pointer", textAlign: "left", fontWeight: 600 }}>
+              style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(251,191,36,0.4)", background: "rgba(251,191,36,0.08)", color: "#fbbf24", cursor: "pointer", textAlign: "left", fontWeight: 600 }}>
               ↩️ {lang === "en" ? "Return + Refund (full or partial)" : "Retour + Remboursement (total ou partiel)"}
               <div style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)", marginTop: 3 }}>
                 {lang === "en" ? "Customer returns product, gets money back" : "Client retourne produit, reçoit remboursement"}
               </div>
             </button>
+            </RestrictedAction>
+            <RestrictedAction block>
             <button onClick={() => setMode("exchange")}
-              style={{ padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(251,197,3,0.4)", background: "rgba(251,197,3,0.08)", color: "var(--brand-light)", cursor: "pointer", textAlign: "left", fontWeight: 600 }}>
+              style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(251,197,3,0.4)", background: "rgba(251,197,3,0.08)", color: "var(--brand-light)", cursor: "pointer", textAlign: "left", fontWeight: 600 }}>
               🔄 {lang === "en" ? "Exchange (swap for another product)" : "Échange (contre un autre produit)"}
               <div style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)", marginTop: 3 }}>
                 {lang === "en" ? "Customer swaps product" : "Client échange un produit"}
               </div>
             </button>
+            </RestrictedAction>
             <button onClick={onClose} style={{ padding: "10px", border: "none", background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 13 }}>
               {lang === "en" ? "Cancel" : "Annuler"}
             </button>

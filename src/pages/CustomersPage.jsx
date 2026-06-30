@@ -9,6 +9,7 @@ import { useCurrency } from "../utils/useCurrency";
 import { useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 import useOwnerApproval from "../hooks/useOwnerApproval";
+import RestrictedAction from "../components/common/RestrictedAction";
 
 const PAYMENT_METHODS = [
   { key: "cash",         icon: "💵", en: "Cash",        fr: "Espèces" },
@@ -854,6 +855,7 @@ export default function CustomersPage() {
                       {fmt(curDebt)}
                     </div>
                   </div>
+                  <RestrictedAction>
                   <button
                     title={tooltip}
                     disabled={disabled}
@@ -874,6 +876,7 @@ export default function CustomersPage() {
                     }}>
                     💵 {lang === "en" ? "Collect debt" : "Encaisser dette"}
                   </button>
+                  </RestrictedAction>
                 </div>
               </div>
             );

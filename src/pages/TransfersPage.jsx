@@ -6,6 +6,7 @@ import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useLangStore } from "../store";
 import api, { formatDate } from "../utils/api";
+import RestrictedAction from "../components/common/RestrictedAction";
 
 export default function TransfersPage() {
   const { lang } = useLangStore();
@@ -562,9 +563,11 @@ export default function TransfersPage() {
     <div style={{ padding: 24, maxWidth: 1000, margin: "0 auto" }}>
       <div className="page-header">
         <h1 className="page-title">{lang === "en" ? "Stock Transfers" : "Transferts de stock"}</h1>
-        <button className="btn btn-primary btn-lg" onClick={() => setMode("new")} style={{ gap: 8 }}>
-          + {lang === "en" ? "Transfer Stock" : "Transferer du stock"}
-        </button>
+        <RestrictedAction>
+          <button className="btn btn-primary btn-lg" onClick={() => setMode("new")} style={{ gap: 8 }}>
+            + {lang === "en" ? "Transfer Stock" : "Transferer du stock"}
+          </button>
+        </RestrictedAction>
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
@@ -587,9 +590,11 @@ export default function TransfersPage() {
         <div className="empty-state">
           <div style={{ fontSize: 28, marginBottom: 12, opacity: 0.4 }}>[ ]</div>
           <div style={{ fontWeight: 600, marginBottom: 6 }}>{lang === "en" ? "No transfers yet" : "Aucun transfert"}</div>
-          <button className="btn btn-primary" onClick={() => setMode("new")} style={{ marginTop: 12 }}>
-            + {lang === "en" ? "Create first transfer" : "Premier transfert"}
-          </button>
+          <RestrictedAction>
+            <button className="btn btn-primary" onClick={() => setMode("new")} style={{ marginTop: 12 }}>
+              + {lang === "en" ? "Create first transfer" : "Premier transfert"}
+            </button>
+          </RestrictedAction>
         </div>
       ) : (
         <div style={{ display: "grid", gap: 10 }}>

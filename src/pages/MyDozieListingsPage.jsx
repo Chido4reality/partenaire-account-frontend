@@ -14,6 +14,7 @@ import toast from "react-hot-toast";
 import { useLangStore } from "../store";
 import api from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
+import RestrictedAction from "../components/common/RestrictedAction";
 
 export default function MyDozieListingsPage() {
   const { lang } = useLangStore();
@@ -134,6 +135,7 @@ export default function MyDozieListingsPage() {
                   </div>
                 </div>
 
+                <RestrictedAction>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                   {listing && (
                     <button className="btn btn-sm" disabled={visibilityMutation.isPending}
@@ -151,6 +153,7 @@ export default function MyDozieListingsPage() {
                     </button>
                   )}
                 </div>
+                </RestrictedAction>
               </div>
 
               {isEditing && (
