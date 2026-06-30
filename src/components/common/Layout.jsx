@@ -507,6 +507,26 @@ export default function Layout() {
     return () => window.removeEventListener("partenaire:paywall", handler);
   }, []);
 
+  // MP-TRIAL-EXPIRY-RESTRICTION: a server-blocked write on a restricted org
+  // (403 'subscription_restricted', fired app-wide by api.js) → show the
+  // bilingual "trial ended — upgrade" prompt and route to the upgrade page,
+  // rather than a raw error. Throttled so multiple in-flight writes don't stack.
+  useEffect(() => {
+    let last = 0;
+    const handler = (e) => {
+      const now = Date.now();
+      if (now - last < 1500) return;
+      last = now;
+      const d = e.detail || {};
+      const msg = (lang === "en" ? d.message_en : d.message_fr) || d.message
+        || (lang === "en" ? "Your trial has ended — upgrade to continue." : "Votre essai est terminé — passez à un forfait pour continuer.");
+      toast.error(msg, { duration: 5000 });
+      navigate("/request-activation");
+    };
+    window.addEventListener("partenaire:restricted", handler);
+    return () => window.removeEventListener("partenaire:restricted", handler);
+  }, [lang, navigate]);
+
   // MP-MODE-TRIAL-REWORK: the Settings "Switch to Full view" CTA (when the org
   // is trial-expired & unpaid) opens the subscription/payment form directly.
   useEffect(() => {
@@ -581,12 +601,29 @@ export default function Layout() {
   const isGrace        = !!myPlan?.is_grace;
   const trialDaysLeft  = myPlan?.days_remaining_in_trial;
   const graceDaysLeft  = myPlan?.days_remaining_in_grace;
-  // MP-RESTRICTED-MODE (B1): hard lock for expired/suspended orgs. Only the
-  // dashboard, settings, and the activation page stay reachable.
+  // MP-TRIAL-EXPIRY-RESTRICTION: an expired/unpaid trial (or expired paid plan)
+  // is READ-ONLY, NOT a hard wall. The org keeps full VIEW access to every screen
+  // (past sales, inventory, reports, customers, dashboards); only create/modify
+  // revenue actions are blocked — enforced server-side (403 'subscription_restricted')
+  // and surfaced here as a banner + a graceful upgrade redirect. So we no longer
+  // replace the page with RestrictedLock; reads always render.
   const isRestricted       = !!myPlan?.is_restricted;
   const hasPendingRequest  = !!myPlan?.has_pending_request;
-  const RESTRICTED_ALLOWED = ["/", "/settings", "/request-activation"];
-  const restrictedBlock    = isRestricted && !RESTRICTED_ALLOWED.includes(location.pathname);
+  const restrictedBlock    = false; // read-only model — never wall the view
+  // MP-TRIAL-EXPIRY-RESTRICTION: a slim, persistent read-only banner shown on
+  // every screen when the org is restricted. Views still work; creating/modifying
+  // revenue actions is blocked (server-enforced) — tap to upgrade.
+  const restrictedBanner = isRestricted ? (
+    <div role="status" onClick={() => navigate("/request-activation")}
+      style={{ cursor: "pointer", background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.4)",
+        color: "#f87171", borderRadius: 10, padding: "10px 14px", margin: "0 0 12px", fontSize: 13, fontWeight: 600,
+        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+      <span>🔒 {lang === "en"
+        ? "Your trial has ended — read-only mode. Upgrade to make sales again."
+        : "Votre essai est terminé — mode lecture seule. Passez à un forfait pour vendre à nouveau."}</span>
+      <span style={{ whiteSpace: "nowrap", textDecoration: "underline" }}>{lang === "en" ? "Upgrade" : "Mettre à niveau"}</span>
+    </div>
+  ) : null;
   // MP-LITE-MODE-PHASE-1: hide Online Cart, Operations dashboard nav
   // entries in Lite. Settings, POS, Inventory, Customers, Credits,
   // Reports etc. stay — per directive amendment, multi-location and
@@ -1198,7 +1235,7 @@ export default function Layout() {
         </div>
 
         <main style={{ flex: 1, overflowY: "auto", background: "var(--bg-base)" }}>
-          {restrictedBlock ? <RestrictedLock lang={lang} hasPending={hasPendingRequest} onRequest={() => navigate("/request-activation")} /> : <Outlet />}
+          {restrictedBlock ? <RestrictedLock lang={lang} hasPending={hasPendingRequest} onRequest={() => navigate("/request-activation")} /> : <>{restrictedBanner}<Outlet /></>}
         </main>
 
         <div style={{ background: "var(--bg-surface)", borderTop: "1px solid var(--border)", display: "flex", flexShrink: 0, paddingBottom: "var(--safe-area-bottom)" }}>
@@ -1403,7 +1440,7 @@ export default function Layout() {
       </aside>
 
       <main style={{ flex: 1, overflowY: "auto", background: "var(--bg-base)" }}>
-        {restrictedBlock ? <RestrictedLock lang={lang} hasPending={hasPendingRequest} onRequest={() => navigate("/request-activation")} /> : <Outlet />}
+        {restrictedBlock ? <RestrictedLock lang={lang} hasPending={hasPendingRequest} onRequest={() => navigate("/request-activation")} /> : <>{restrictedBanner}<Outlet /></>}
       </main>
 
       {paywall && <PaywallModal feature={paywall.feature} currentPlan={effectivePlan} mpId={myPlan?.user_id_number} onClose={() => setPaywall(null)} />}

@@ -374,6 +374,14 @@ api.interceptors.response.use(res => {
       }));
     } catch (_) { /* SSR / no-window env */ }
   }
+  // MP-TRIAL-EXPIRY-RESTRICTION: a blocked write on a restricted (expired/unpaid
+  // trial) org → fire one app-wide event so Layout shows the "trial ended —
+  // upgrade" prompt + routes to /request-activation, instead of a raw error toast.
+  if (err.response?.status === 403 && err.response?.data?.code === "subscription_restricted") {
+    try {
+      window.dispatchEvent(new CustomEvent("partenaire:restricted", { detail: err.response.data }));
+    } catch (_) { /* SSR / no-window env */ }
+  }
   return Promise.reject(err);
 });
 
