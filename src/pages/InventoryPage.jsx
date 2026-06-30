@@ -14,6 +14,7 @@ import OwnerPIN from "../components/common/OwnerPIN";
 import PhotoUploadButtons from "../components/common/PhotoUploadButtons";
 import PaywallModal from "../components/common/PaywallModal";
 import useOwnerApproval from "../hooks/useOwnerApproval";
+import RestrictedAction from "../components/common/RestrictedAction";
 import DoziePublishModal from "../components/common/DoziePublishModal";
 import { getCapabilities, isAtCap } from "../utils/planCapabilities";
 import { useLiteMode } from "../hooks/useLiteMode";
@@ -1035,10 +1036,12 @@ export default function InventoryPage() {
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {canReceiveGoods && (
-            <button className="btn btn-secondary" onClick={() => guardAdd(() => setShowReceive(true))}
-              style={atInventoryCap ? { opacity: 0.55 } : {}}>
-              📦 {lang === "en" ? "Receive Goods" : "Réceptionner"}{atInventoryCap ? " 🔒" : ""}
-            </button>
+            <RestrictedAction>
+              <button className="btn btn-secondary" onClick={() => guardAdd(() => setShowReceive(true))}
+                style={atInventoryCap ? { opacity: 0.55 } : {}}>
+                📦 {lang === "en" ? "Receive Goods" : "Réceptionner"}{atInventoryCap ? " 🔒" : ""}
+              </button>
+            </RestrictedAction>
           )}
           {canAddProduct && (
             <>
@@ -1247,7 +1250,7 @@ export default function InventoryPage() {
                       {canAdjustStock && (
                         <td>
                           <div style={{ display: "flex", gap: 6 }}>
-                            <button className="btn btn-secondary btn-sm" onClick={() => { setSelectedStockRow(s); setShowAdjust(true); }}>{lang === "en" ? "Adjust" : "Ajuster"}</button>
+                            <RestrictedAction><button className="btn btn-secondary btn-sm" onClick={() => { setSelectedStockRow(s); setShowAdjust(true); }}>{lang === "en" ? "Adjust" : "Ajuster"}</button></RestrictedAction>
                             {isOwner && <button className="btn btn-secondary btn-sm" onClick={() => { setEditProduct({ ...p, id: s.product_id }); setShowEditProduct(true); }} style={{ color: "var(--brand-light)" }}>✏️</button>}
                             {/* MP-DOZIE-INVENTORY-PUBLISH-UI: per-product
                                 Dozie publish action. Renders only on the
