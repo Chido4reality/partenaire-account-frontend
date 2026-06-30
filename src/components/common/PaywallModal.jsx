@@ -6,16 +6,17 @@
 // changes per feature, with a special prominent treatment for
 // dozie_access per Peter's spec.
 //
-// Primary action: "Continue to upgrade" opens the existing
-// UpgradeModal (full CamPay flow). WhatsApp link is a secondary
-// fallback for when CamPay times out / network is bad.
+// MP-SUB-FLOW-MERGE: primary action "Upgrade to …" routes into the ONE canonical
+// checkout (/request-activation → RequestActivationPage → Flutterwave), with the
+// chosen tier preselected. There is no second modal/checkout path. WhatsApp link
+// is a secondary fallback for when online payment isn't possible.
 
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useLangStore } from "../../store";
 import { useCurrency } from "../../utils/useCurrency";
 import api from "../../utils/api";
-import UpgradeModal from "./UpgradeModal";
 import { getCapabilities, hasSection, hasFeature } from "../../utils/planCapabilities";
 import { openWhatsApp } from "../../utils/whatsapp";
 
@@ -99,8 +100,8 @@ function copyFor(feature, lang) {
 export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
   const { lang } = useLangStore();
   const fmt = useCurrency();
+  const navigate = useNavigate();
   const [selectedTier, setSelectedTier] = useState(null);
-  const [openUpgrade, setOpenUpgrade] = useState(false);
 
   // Localized, country-correct tier list + prices — SAME source as the checkout
   // (UpgradeModal) and RequestActivationPage. Backend attaches .price/.currency
@@ -152,15 +153,13 @@ export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
     || getCapabilities(effectiveSelected).label
     || effectiveSelected;
 
-  // Mount UpgradeModal in place of this paywall when the user confirms.
-  if (openUpgrade) {
-    return (
-      <UpgradeModal
-        onClose={onClose}
-        currentPlan={{ id: realPlanId, name: currentPlanLabel }}
-      />
-    );
-  }
+  // MP-SUB-FLOW-MERGE: "Continue to upgrade" routes into the ONE canonical
+  // checkout (RequestActivationPage) with the chosen tier preselected — no
+  // second modal / checkout path.
+  const goToUpgrade = () => {
+    onClose();
+    navigate(`/request-activation${effectiveSelected ? `?plan=${encodeURIComponent(effectiveSelected)}` : ""}`);
+  };
 
   const whatsappMsg = () => {
     const planName = selectedLabel;
@@ -266,12 +265,27 @@ export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
                     </div>
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
-                    <div style={{ fontWeight: 800, fontSize: 16, color: "var(--brand-light)" }}>
+                    {/* MP-SUB-FLOW-MERGE / discount display: when an admin pricing
+                        rule applies, show the struck-through original + −X% badge
+                        + the discounted price — same shape + source as the
+                        RequestActivationPage cards. Without this a 25,000→2,500
+                        (−90%) read as a bare "2 500" and looked like a typo. */}
+                    {plan.discount && plan.original_price != null && plan.original_price > (plan.price ?? plan.price_monthly) && (
+                      <div style={{ fontSize: 12, color: "var(--text-muted)", textDecoration: "line-through" }}>
+                        {fmt(plan.original_price)}
+                      </div>
+                    )}
+                    <div style={{ fontWeight: 800, fontSize: 16, color: plan.discount ? "#34d399" : "var(--brand-light)" }}>
                       {fmt(plan.price ?? plan.price_monthly)}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                       {lang === "fr" ? "/ mois" : "/ month"}
                     </div>
+                    {plan.discount && (
+                      <div style={{ fontSize: 10, fontWeight: 700, color: "#34d399", marginTop: 2 }}>
+                        {plan.discount.discount_type === "percent" ? `−${plan.discount.discount_value}%` : `−${fmt(plan.discount.amount_off)}`}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -294,7 +308,7 @@ export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
             }}>
             {lang === "fr" ? "Annuler" : "Cancel"}
           </button>
-          <button onClick={() => setOpenUpgrade(true)} disabled={!selectedPlan}
+          <button onClick={goToUpgrade} disabled={!selectedPlan}
             style={{
               flex: 2, padding: "10px 14px", borderRadius: 10,
               background: "var(--brand)", border: "1px solid var(--brand)",
