@@ -14,7 +14,9 @@ import { safeSetItem } from "../../utils/safeStorage";
 import { cacheKeyFor } from "../../utils/offlineQuery";
 import { openWhatsApp } from "../../utils/whatsapp";
 import { nukeClientState, hardRedirectToLogin } from "../../utils/authReset";
-import UpgradeModal from "./UpgradeModal";
+// MP-SUB-FLOW-MERGE: UpgradeModal retired — both entry points now use the one
+// canonical /request-activation flow (RequestActivationPage). No second checkout
+// path / confirmation handler left to drift.
 import PaywallModal from "./PaywallModal";
 import OnlineOfflineBar from "./OnlineOfflineBar";
 import { onSyncEvent } from "../../utils/pendingSync";
@@ -390,7 +392,6 @@ export default function Layout() {
     };
   }, []);
   const [collapsed, setCollapsed] = useState(false);
-  const [showUpgrade, setShowUpgrade] = useState(false);
   // Sprint A: paywall state — { feature, mpId } when something gated was
   // clicked. PaywallModal owns the upgrade flow from there.
   const [paywall, setPaywall] = useState(null);
@@ -509,7 +510,7 @@ export default function Layout() {
   // MP-MODE-TRIAL-REWORK: the Settings "Switch to Full view" CTA (when the org
   // is trial-expired & unpaid) opens the subscription/payment form directly.
   useEffect(() => {
-    const openUpgrade = () => setShowUpgrade(true);
+    const openUpgrade = () => navigate("/request-activation");
     window.addEventListener("mp-open-upgrade", openUpgrade);
     return () => window.removeEventListener("mp-open-upgrade", openUpgrade);
   }, []);
@@ -1217,7 +1218,6 @@ export default function Layout() {
             );
           })}
         </div>
-        {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} currentPlan={myPlan?.plan} />}
         {paywall && <PaywallModal feature={paywall.feature} currentPlan={effectivePlan} mpId={myPlan?.user_id_number} onClose={() => setPaywall(null)} />}
         </motion.div>
       </div>
@@ -1304,7 +1304,7 @@ export default function Layout() {
                     ⏳ {lang === "en" ? "Pending approval — awaiting admin" : "En attente d'approbation admin"}
                   </div>
                 ) : (
-                  <button onClick={() => setShowUpgrade(true)}
+                  <button onClick={() => navigate("/request-activation")}
                     style={{ marginTop: 6, width: "100%", padding: "5px 10px", borderRadius: 8, border: "1px solid var(--brand)", background: "rgba(251,197,3,0.1)", color: "var(--brand-light)", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
                     ⬆️ {lang === "en" ? "Upgrade plan" : "Améliorer le plan"}
                   </button>
@@ -1406,7 +1406,6 @@ export default function Layout() {
         {restrictedBlock ? <RestrictedLock lang={lang} hasPending={hasPendingRequest} onRequest={() => navigate("/request-activation")} /> : <Outlet />}
       </main>
 
-      {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} currentPlan={myPlan?.plan} />}
       {paywall && <PaywallModal feature={paywall.feature} currentPlan={effectivePlan} mpId={myPlan?.user_id_number} onClose={() => setPaywall(null)} />}
       </div>
     </div>

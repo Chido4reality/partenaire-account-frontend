@@ -379,17 +379,37 @@ export default function App() {
       finally { setBootstrapping(false); }
     })();
 
-    // MP-BILLING-V3: returning from the Flutterwave hosted checkout (?flw_tx=).
-    // Activation is driven by the verified webhook, NOT this redirect — so we
-    // just show a "verifying" toast, refetch my-plan a few times to catch the
-    // activation, and strip the param so a refresh can't re-trigger it.
+    // MP-FLW-SUB-CONFIRM-FIX: returning from the Flutterwave hosted checkout
+    // (?flw_tx=<ref>&transaction_id=<id>&status=…). The redirect now ACTIVELY
+    // confirms server-side (POST /subscriptions/flw/verify-return) instead of
+    // only waiting on the webhook — the webhook may be unconfigured/blocked, so
+    // this client-driven verify is the reliable path. Idempotent server-side, so
+    // it's safe even if the webhook also fires. Strip the params so a refresh
+    // can't re-trigger.
     (() => {
       const params = new URLSearchParams(window.location.search);
-      if (!params.get("flw_tx")) return;
+      const txRef = params.get("flw_tx");
+      if (!txRef) return;
+      const transactionId = params.get("transaction_id") || params.get("tx_id") || null;
       window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
-      toast("⏳ Verifying payment… your plan will update shortly / Vérification du paiement…", { duration: 7000 });
-      let n = 0;
-      const iv = setInterval(() => { qc.invalidateQueries(["my-plan"]); if (++n >= 6) clearInterval(iv); }, 4000);
+      toast("⏳ Verifying payment… / Vérification du paiement…", { duration: 6000 });
+      (async () => {
+        try {
+          const r = await api.post("/subscriptions/flw/verify-return", { tx_ref: txRef, transaction_id: transactionId });
+          if (r.data?.success) {
+            toast.success("✅ Payment confirmed — plan upgraded / Paiement confirmé — plan mis à niveau", { duration: 6000 });
+          } else {
+            // Not settled yet — the webhook / 15-min reconcile sweep will finish it.
+            toast("⏳ Payment is still being confirmed — your plan will update shortly / Paiement en cours de confirmation…", { duration: 7000 });
+          }
+        } catch (_) {
+          toast("⏳ Verifying payment… your plan will update shortly / Vérification…", { duration: 7000 });
+        } finally {
+          // Refresh my-plan a few times to catch the activation either way.
+          let n = 0;
+          const iv = setInterval(() => { qc.invalidateQueries(["my-plan"]); if (++n >= 6) clearInterval(iv); }, 4000);
+        }
+      })();
     })();
 
     // MP-RENDER-COLDSTART-WARMUP: fire-and-forget HEAD ping at app launch
