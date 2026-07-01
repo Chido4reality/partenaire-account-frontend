@@ -19,6 +19,7 @@ const VERB = {
   delete_customer: { en: "delete a customer",    fr: "supprimer un client" },
   expense:         { en: "expense",              fr: "dépense" },
   discount:        { en: "discount",             fr: "remise" },
+  below_cost_sale: { en: "below-cost sale",       fr: "vente sous le prix plancher" },
 };
 const verb = (a, en) => (VERB[a] ? (en ? VERB[a].en : VERB[a].fr) : a);
 
@@ -66,6 +67,9 @@ export default function MyRequestsPage() {
     onSuccess: (data) => {
       if (data?.receipt && data.receipt.data) {
         setReceiptEvent({ eventType: data.receipt.eventType, data: data.receipt.data });
+      } else if (data?.note === "already_completed") {
+        // Idempotent replay — the sale already exists; never a duplicate.
+        toast(en ? (data.message || "Already completed.") : (data.message_fr || "Déjà finalisée."));
       } else {
         toast.success(en ? "Done" : "Terminé");
       }
@@ -73,13 +77,12 @@ export default function MyRequestsPage() {
       qc.invalidateQueries({ queryKey: ["my-requests-approved-count"] });
     },
     onError: (e) => {
-      const status = e?.response?.status;
-      if (status === 409) {
-        toast(en ? "This request changed — refreshing." : "Demande modifiée — actualisation.");
-        qc.invalidateQueries({ queryKey: ["my-requests"] });
-      } else {
-        toast.error(e?.response?.data?.message || (en ? "Could not complete the action." : "Impossible de finaliser."));
-      }
+      const d = e?.response?.data || {};
+      // Bilingual, never a silent dead tap. The server sends message_en/message_fr.
+      const msg = (en ? (d.message_en || d.message) : (d.message_fr || d.message))
+        || (en ? "Could not complete the action." : "Impossible de finaliser.");
+      toast.error(msg);
+      qc.invalidateQueries({ queryKey: ["my-requests"] });
     },
     onSettled: () => setFinalizingId(null),
   });
