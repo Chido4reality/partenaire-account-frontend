@@ -480,6 +480,12 @@ export default function AccountantLogPage() {
 // EXCLUSIVE upper bound (the RPC compares created_at < p_to), so each window is
 // [start-of-day, start-of-next-day).
 function dayStartLocal(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
+// MP-REPORT-LOCAL-DAY: a Date's LOCAL calendar date as YYYY-MM-DD (from local
+// components — never toISOString(), which shifts to UTC and off-by-ones a UTC+ org).
+function localDayStr(d) {
+  const x = new Date(d);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+}
 function computeRange(range, pickedDay) {
   const now = new Date();
   if (range === "today") {
@@ -884,8 +890,20 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
   // MP-OPS-MONEY-EXPLAINABLE: the per-cashier money BRIDGE — read from the SAME
   // shared source as Operations (/dashboard/overview) so it can't diverge. Finds
   // this staff's scoreboard row to explain Total sales vs cash collected.
-  const fromDate = String(from).slice(0, 10);
-  const toDate = (() => { try { const d = new Date(to); d.setMilliseconds(d.getMilliseconds() - 1); return d.toISOString().slice(0, 10); } catch { return fromDate; } })();
+  // MP-REPORT-LOCAL-DAY: send LOCAL calendar dates derived from the on-screen
+  // range/pickedDay directly — NOT sliced from `from`/`to` (those are local-
+  // midnight-as-UTC ISO strings, whose first 10 chars are the PREVIOUS day for a
+  // UTC+ org → the "Today shows yesterday" bug). The backend interprets these
+  // plain dates in the org's timezone.
+  const { fromDate, toDate } = useMemo(() => {
+    if (range === "day") return { fromDate: pickedDay, toDate: pickedDay };
+    if (range === "week") {
+      const s = new Date(); const dow = (s.getDay() + 6) % 7; s.setDate(s.getDate() - dow);
+      return { fromDate: localDayStr(s), toDate: localDayStr(new Date()) };
+    }
+    const t = localDayStr(new Date()); // "today"
+    return { fromDate: t, toDate: t };
+  }, [range, pickedDay]);
   const bridgeQ = useQuery({
     queryKey: ["accountant-bridge", staff.id, fromDate, toDate],
     queryFn: () => api.get(`/dashboard/overview?from=${fromDate}&to=${toDate}`).then(r => r.data?.data || null),

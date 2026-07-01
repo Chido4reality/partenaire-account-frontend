@@ -30,8 +30,10 @@ import {
 
 // ── Date helpers ────────────────────────────────────────────────
 
-const toIso = (d) => d.toISOString().slice(0, 10);
-const daysAgo = (n) => { const d = new Date(); d.setUTCDate(d.getUTCDate() - n); return toIso(d); };
+// MP-REPORT-LOCAL-DAY: LOCAL calendar date (YYYY-MM-DD) from local components,
+// NOT toISOString() (which shifts to UTC and off-by-ones a UTC+ org at night).
+const toIso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return toIso(d); };
 
 // ── Anomaly suppression (sessionStorage, v1) ────────────────────
 //
