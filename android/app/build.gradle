@@ -30,8 +30,8 @@ android {
         // duplicates). versionName is the human-facing semver visible
         // in About / Play Store. Bump versionCode by +1 every release;
         // bump versionName per semver rules.
-        versionCode 33
-        versionName "2.0.5"
+        versionCode 34
+        versionName "2.0.6"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
