@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
@@ -18,6 +18,23 @@ export default function CreditsPage() {
   const [selected, setSelected] = useState(null);
   const [payForm, setPayForm]   = useState({ amount: "", payment_method: "cash", reference: "", notes: "" });
   const [showPay, setShowPay]   = useState(false);
+  // MP-COLLECT-INVOICE-ATOMIC: idempotency + double-tap guard for the collect
+  // action. payKeyRef is a stable per-modal-open key sent as local_id so a rapid
+  // re-submit is deduped server-side to ONE payment; submitLockRef synchronously
+  // blocks a second fire before React re-renders the disabled button.
+  const payKeyRef = useRef(null);
+  const submitLockRef = useRef(false);
+  const genKey = () => (typeof crypto !== "undefined" && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : `pay_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  // Open the collect modal for an invoice: prefill NET-of-returns owed + mint a
+  // fresh idempotency key + release the submit lock.
+  const openPay = (sale) => {
+    payKeyRef.current = genKey();
+    submitLockRef.current = false;
+    setPayForm(f => ({ ...f, amount: (sale.effective_balance_due ?? sale.balance_due) }));
+    setShowPay(sale);
+  };
 
   // MP-PAYMENT-EVENT-RECEIPTS Bug 2: receipt modal on invoice
   // payment success. Backend POST /sales/:id/payment now returns
@@ -67,26 +84,40 @@ export default function CreditsPage() {
         amount: applied,
         payment_method: payForm.payment_method,
         reference: payForm.reference || null,
-        notes: payForm.notes || null
+        notes: payForm.notes || null,
+        // Idempotency key — a double-tap re-sends the SAME key, so the server
+        // records ONE payment (never two).
+        local_id: payKeyRef.current,
       });
     },
     onSuccess: (res) => {
       const d = res?.data?.data || {};
-      toast.success(lang === "en" ? "✓ Payment recorded!" : "✓ Paiement enregistré!");
       setShowPay(false);
       setPayForm({ amount: "", payment_method: "cash", reference: "", notes: "" });
       qc.invalidateQueries(["credits"]);
       qc.invalidateQueries(["customer-debt", selected?.id]);
       qc.invalidateQueries(["daily-summary"]);
-      // MP-PAYMENT-EVENT-RECEIPTS Bug 2: surface the receipt so
-      // the cashier can print/share + the customer gets proof
-      // of payment. Same UX as POS sale / refund / void / debt
-      // collection — all five cash-movement events now produce
-      // a receipt.
+      // A duplicate/replayed tap: the original payment already recorded (+ its
+      // receipt shown) — acknowledge, don't render a second receipt.
+      if (res?.data?.duplicate === true) {
+        toast(lang === "en" ? "Already recorded" : "Déjà enregistré");
+        return;
+      }
+      toast.success(lang === "en" ? "✓ Payment recorded!" : "✓ Paiement enregistré!");
+      // MP-PAYMENT-EVENT-RECEIPTS Bug 2: surface the receipt so the cashier can
+      // print/share + the customer gets proof of payment.
       setReceiptEvent({ eventType: "invoice_payment", data: d });
     },
-    onError: (err) => toast.error(err.response?.data?.message || "Error")
+    onError: (err) => toast.error(err.response?.data?.message || "Error"),
+    onSettled: () => { submitLockRef.current = false; }, // release the double-tap lock
   });
+  // Guarded submit: the synchronous ref lock kills a rapid second click before
+  // React can disable the button on re-render.
+  const submitPay = (saleId) => {
+    if (submitLockRef.current || payMutation.isPending) return;
+    submitLockRef.current = true;
+    payMutation.mutate({ saleId });
+  };
 
   // ── WHATSAPP REMINDER ─────────────────────────────────────────────────────
   const sendWhatsAppReminder = (customer) => {
@@ -334,7 +365,7 @@ export default function CreditsPage() {
                       )}
                     </div>
                     <button className="btn btn-success btn-sm"
-                      onClick={() => { setPayForm(f => ({ ...f, amount: (sale.effective_balance_due ?? sale.balance_due) })); setShowPay(sale); }}>
+                      onClick={() => openPay(sale)}>
                       💰 {lang === "en" ? "Record payment" : "Paiement"}
                     </button>
                   </div>
@@ -423,7 +454,7 @@ export default function CreditsPage() {
               </button>
               <button className="btn btn-success" style={{ flex: 2 }}
                 disabled={!payForm.amount || payMutation.isPending || payOverNonCash}
-                onClick={() => payMutation.mutate({ saleId: showPay.id })}>
+                onClick={() => submitPay(showPay.id)}>
                 {payMutation.isPending ? "..." : `✓ ${lang === "en" ? "Confirm payment" : "Confirmer"}`}
               </button>
             </div>
