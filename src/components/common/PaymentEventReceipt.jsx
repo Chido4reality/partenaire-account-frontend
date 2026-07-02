@@ -28,6 +28,7 @@ import { Component, useEffect, useState } from "react";
 import { genSaleCodes } from "../../utils/receiptCodes";
 import { buildMonospaceReceipt, wrapMonospaceFence } from "../../utils/receiptText";
 import { buildFactureInner, buildThermalReceipt } from "../../utils/factureReceipt";
+import { advertLines } from "../../utils/receiptExtras";
 import { currencySymbol } from "../../utils/currency";
 import toast from "react-hot-toast";
 // MP-BT-THERMAL: direct Bluetooth (Classic SPP) ESC/POS printing.
@@ -557,6 +558,9 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
       balanceDue: data.balance_due != null ? Number(data.balance_due) : null,
       paymentMethod: data.payment_method || "",
       paymentStatus: data.payment_status || "",
+      // MP-RECEIPT-RETURN-BARCODE: CODE128 PNG of the sale_number for the thermal
+      // HTML path (the ESC/POS path draws its own native barcode from saleNumber).
+      barcodeDataUrl: codes.barcode || "",
     };
   };
   const printThermal = (widthMm) => openPrint(buildThermalReceipt(saleReceiptOpts(widthMm)));
@@ -629,6 +633,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
         cashierName: data.cashier_name || null, // MP-SALE-CASHIER-NAME: "Served by"
         items,
         discountTotal: Math.max(0, grossItems - netTotal),
+        barcodeDataUrl: codes.barcode || "", // MP-RECEIPT-RETURN-BARCODE
       }));
       return;
     }
@@ -826,6 +831,12 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
                 {codes.barcode && <img src={codes.barcode} alt="barcode" style={{ height: 44, maxWidth: "90%" }} />}
                 {codes.qr && <div><img src={codes.qr} alt="qr" style={{ width: 96, height: 96 }} /></div>}
                 <div style={{ fontSize: 11, color: "#000", fontFamily: "monospace", fontWeight: 700 }}>{reference}</div>
+              </div>
+            )}
+            {/* MP-RECEIPT-ADVERT: bottom advert, language by org country, org toggle. */}
+            {advertLines(org).length > 0 && (
+              <div style={{ marginTop: 8, textAlign: "center", fontSize: 11, color: "#000", lineHeight: 1.4 }}>
+                {advertLines(org).map((l, i) => <div key={i}>{l}</div>)}
               </div>
             )}
           </div>
