@@ -23,6 +23,7 @@ import { onSyncEvent } from "../../utils/pendingSync";
 import { hasSection, hasFeature } from "../../utils/planCapabilities";
 import NavDrawer, { DRAWER_WIDTH } from "../layout/NavDrawer";
 import { tapHaptic } from "../../utils/haptics";
+import CameraScanner from "./CameraScanner";
 import toast from "react-hot-toast";
 
 // Sprint A: each nav item declares the capability section it belongs to.
@@ -1032,6 +1033,9 @@ export default function Layout() {
     const [debounced, setDebounced] = useState("");
     const [open, setOpen] = useState(false);
     const panelRef = useRef(null);
+    // MP-GLOBAL-SEARCH-CAMERA-SCAN: phone-camera scan → same resolver as typing.
+    const [scanOpen, setScanOpen] = useState(false);
+    const [autoGoRef, setAutoGoRef] = useState(null);
 
     useEffect(() => {
       const id = setTimeout(() => setDebounced(term.trim()), 300);
@@ -1067,7 +1071,7 @@ export default function Layout() {
     }, [inputId]);
 
     const go = (res) => {
-      setOpen(false); setTerm("");
+      setOpen(false); setTerm(""); setAutoGoRef(null);
       if (res.link_to) navigate(res.link_to);
       else toast(lang === "en"
         ? `${res.ref} — ${res.type === "sale" ? "Sale" : "Dozie order"} · ${Number(res.total).toLocaleString()} ${fmt.symbol} · ${res.status}`
@@ -1075,12 +1079,33 @@ export default function Layout() {
         { duration: 4000 });
     };
 
+    // MP-GLOBAL-SEARCH-CAMERA-SCAN: feed a camera-decoded ref into the SAME
+    // routing typing uses — HLD → POS resume (like Enter), otherwise populate the
+    // field + search, and auto-open the exact/sole match once results resolve
+    // (mirrors the Enter handler; no routing re-implemented). '+' → '-' for
+    // scanners that round-trip the dash.
+    const handleScannedRef = (raw) => {
+      let v = String(raw || "").trim();
+      if (!v) return;
+      if (/^(vnt|ret|qof|hld)/i.test(v)) v = v.replace(/\+/g, "-");
+      if (/^hld-/i.test(v)) { setOpen(false); setTerm(""); navigate("/pos?hold=" + encodeURIComponent(v.toUpperCase())); return; }
+      setTerm(v); setOpen(true); setAutoGoRef(v.toUpperCase());
+    };
+    useEffect(() => {
+      if (!autoGoRef) return;
+      const exact = results.find(r => String(r.ref || "").toUpperCase() === autoGoRef);
+      if (exact) { go(exact); return; }
+      if (!isFetching && debounced.toUpperCase() === autoGoRef && results.length === 1) { go(results[0]); return; }
+      if (!isFetching && debounced.toUpperCase() === autoGoRef && results.length === 0) { setAutoGoRef(null); } // no match → leave the term for manual review
+    }, [autoGoRef, results, isFetching, debounced]);
+
     const panelBase = isMobile
       ? { position: "absolute", top: 44, left: 0, right: 0, width: "100%" }
       : { position: "fixed", top: 0, left: -9999, width: 340 };
 
     return (
       <div style={{ position: "relative", width: "100%" }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "stretch" }}>
         <input id={inputId} value={term}
           onChange={e => {
             // Some Code128 scanners round-trip '-' as '+'. Only for
@@ -1112,7 +1137,13 @@ export default function Layout() {
             else if (results.length === 1) go(results[0]);
           }}
           placeholder={lang === "en" ? "🔎 Find / scan (VNT / QOF / HLD / digits)" : "🔎 Chercher / scanner (VNT / QOF / HLD / chiffres)"}
-          style={{ width: "100%", padding: "6px 10px", borderRadius: 8, background: "rgba(255,255,255,0.06)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: 11 }} />
+          style={{ flex: 1, minWidth: 0, padding: "6px 10px", borderRadius: 8, background: "rgba(255,255,255,0.06)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: 11 }} />
+          {/* MP-GLOBAL-SEARCH-CAMERA-SCAN: open the phone camera to scan a receipt/order barcode. */}
+          <button type="button" onClick={() => setScanOpen(true)}
+            aria-label={lang === "en" ? "Scan with camera" : "Scanner avec la caméra"}
+            title={lang === "en" ? "Scan with camera" : "Scanner avec la caméra"}
+            style={{ flexShrink: 0, width: 34, borderRadius: 8, background: "rgba(255,255,255,0.06)", border: "1px solid var(--border)", color: "var(--text-primary)", cursor: "pointer", fontSize: 15 }}>📷</button>
+        </div>
         {showPanel && (
           <div id="order-search-panel" ref={panelRef}
             style={{ ...panelBase, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.4)", overflow: "hidden", zIndex: 1000, maxHeight: 320, overflowY: "auto" }}>
@@ -1138,6 +1169,13 @@ export default function Layout() {
               </div>
             ))}
           </div>
+        )}
+        {scanOpen && (
+          <CameraScanner lang={lang} inputMode="text"
+            title={lang === "en" ? "Scan receipt / order" : "Scanner reçu / commande"}
+            placeholder={lang === "en" ? "Type ref (VNT / QOF / HLD)…" : "Saisir réf (VNT / QOF / HLD)…"}
+            onScan={(code) => { setScanOpen(false); handleScannedRef(code); }}
+            onClose={() => setScanOpen(false)} />
         )}
       </div>
     );

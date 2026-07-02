@@ -373,6 +373,12 @@ export default function RefundsPage() {
               autoFocus
               style={{ flex: 1, minWidth: 240, fontFamily: "monospace" }}
             />
+            {/* MP-GLOBAL-SEARCH-CAMERA-SCAN: phone-camera scan on the inline field
+                (feeds the same onScanResult the separate Scan tab uses). */}
+            <button className="btn btn-secondary" onClick={() => setScannerOpen(true)}
+              title={fr ? "Scanner avec la caméra" : "Scan with camera"}>
+              📷 {fr ? "Scanner" : "Scan"}
+            </button>
             <button className="btn btn-primary" onClick={runNumberSearch} disabled={!numberInput.trim()}>
               🔍 {fr ? "Chercher" : "Search"}
             </button>

@@ -484,6 +484,28 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
     try { window.open("https://wa.me/?text=" + encodeURIComponent(txt), "_blank"); } catch (e) { /* ignore */ }
   };
 
+  // MP-RECEIPT-PRINT-ANDROID-FIX: the print overlay's "Print" button.
+  // window.print() shows the browser print dialog on WEB, but in the Capacitor
+  // Android System WebView it is a NO-OP that can FREEZE the WebView JS thread —
+  // which left BOTH Print and the subsequent Close tap unresponsive (the reported
+  // "stuck, must force-quit"). So on native we NEVER call window.print(): we route
+  // to the OS share sheet (from there the user can Print / Save-as-PDF / send).
+  // A direct thermal printout on native is the on-screen Bluetooth button, which
+  // sends ESC/POS straight to the paired printer. btSupported === native app.
+  const doOverlayPrint = async () => {
+    if (!btSupported) { try { window.print(); } catch (e) { /* ignore */ } return; }
+    // Native: hand the FULL receipt to the OS share sheet (Capacitor Share plugin)
+    // so the user can Print / Save-as-PDF / send it; fall back to navigator.share
+    // / wa.me if the plugin is unavailable. Never call window.print() here.
+    const num = reference || data.sale_number || "";
+    try {
+      const { Share } = await import("@capacitor/share");
+      await Share.share({ title: `${en ? "Receipt" : "Reçu"} ${num}`, text: buildWhatsApp(), dialogTitle: en ? "Print / Share receipt" : "Imprimer / Partager le reçu" });
+      return;
+    } catch (e) { /* fall through */ }
+    shareFacture();
+  };
+
   // Body lines (shared by WhatsApp + print + on-screen summary).
   const bodyLines = buildBodyLines(eventType, data, lang, org);
 
@@ -933,12 +955,16 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
             .mp-print-overlay, .mp-print-overlay * { visibility: visible !important; }
             .mp-print-overlay { position: absolute !important; inset: 0 !important; }
             .mp-print-overlay .no-print { display: none !important; }
+            .mp-print-overlay .mp-print-body { padding-top: 0 !important; }
           }
         `}</style>
-        <div className="no-print" style={{ position: "sticky", top: 0, zIndex: 10, display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", padding: 10, background: "#fff", borderBottom: "1px solid #ccc" }}>
-          <button onClick={() => { try { window.print(); } catch (e) { /* ignore */ } }}
+        {/* MP-RECEIPT-PRINT-ANDROID-FIX: FIXED (not sticky) action bar so it can
+            never scroll off-screen on the Android WebView — Close is always
+            reachable. Print routes through doOverlayPrint (native-safe). */}
+        <div className="no-print" style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 4001, display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", padding: 10, background: "#fff", borderBottom: "1px solid #ccc" }}>
+          <button onClick={doOverlayPrint}
             style={{ padding: "10px 16px", borderRadius: 8, fontWeight: 700, fontSize: 14, border: "none", background: "#152B52", color: "#fff", cursor: "pointer" }}>
-            🖨️ {en ? "Print" : "Imprimer"}
+            🖨️ {btSupported ? (en ? "Print / Share" : "Imprimer / Partager") : (en ? "Print" : "Imprimer")}
           </button>
           <button onClick={shareFacture}
             style={{ padding: "10px 16px", borderRadius: 8, fontWeight: 700, fontSize: 14, border: "1px solid #152B52", background: "#fff", color: "#152B52", cursor: "pointer" }}>
@@ -949,7 +975,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
             ✕ {en ? "Close" : "Fermer"}
           </button>
         </div>
-        <div dangerouslySetInnerHTML={{ __html: printHtml }} />
+        <div className="mp-print-body" style={{ paddingTop: 60 }} dangerouslySetInnerHTML={{ __html: printHtml }} />
       </div>
     )}
     </>
