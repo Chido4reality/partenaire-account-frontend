@@ -17,6 +17,10 @@ export const useAuthStore = create(persist(
     impersonating: false,
     impersonation: null, // { admin_email, target_org_name, target_org_mp_id, target_user_name }
     login: (user, org, token) => set({ user, org, token, isAuthenticated: true, impersonating: false, impersonation: null }),
+    // MP-RECEIPT-LIVE-CASHIER-NAME: merge fresh fields (e.g. a renamed full_name)
+    // into the cached user without a re-login, so receipts / "served by" reflect
+    // the current pa_users.full_name. No-op when logged out.
+    patchUser: (patch) => set((s) => (s.user ? { user: { ...s.user, ...patch } } : {})),
     loginImpersonated: (user, org, token, meta) => set({ user, org, token, isAuthenticated: true, impersonating: true, impersonation: meta || null }),
     endImpersonation: () => set({ user: null, org: null, token: null, isAuthenticated: false, impersonating: false, impersonation: null }),
     logout: () => set({ user: null, org: null, token: null, isAuthenticated: false, impersonating: false, impersonation: null }),
@@ -88,6 +92,10 @@ const DRAFT_ITEM_FIELDS = [
   "unit_price", "original_price", "price_tier", "sell_price",
   "wholesale_price", "min_price", "cost_price", "stock",
   "isDebt", "debtSaleIds", "debtAmount",
+  // MP-BELOW-COST-PERSIST: keep the boss-approval markers on the line so a
+  // restored draft (navigate-away-and-back) keeps the APPROVED below-cost price
+  // instead of reverting to the tier price + forcing re-approval.
+  "price_overridden", "price_approval_token", "below_cost_approved",
 ];
 function slimDraftItems(items) {
   if (!Array.isArray(items)) return [];
@@ -101,7 +109,7 @@ function slimDraftItems(items) {
 export const useDraftCartStore = create(persist(
   (set, get) => ({
     drafts: {},
-    saveDraft: ({ userId, locationId, items, customer, payMode, paidAmt, dueDate, notes }) => {
+    saveDraft: ({ userId, locationId, items, customer, payMode, paidAmt, dueDate, notes, belowCostApprovalId, discountApprovalId }) => {
       if (!userId || !locationId) return;
       const key = `${userId}::${locationId}`;
       const now = Date.now();
@@ -115,6 +123,11 @@ export const useDraftCartStore = create(persist(
         kept[key] = {
           items: slimDraftItems(items),
           customer, payMode, paidAmt, dueDate, notes, updatedAt: now,
+          // MP-BELOW-COST-PERSIST: the cart-level boss-approval links survive
+          // navigation so checkout still sends below_cost_approval_id /
+          // discount_approval_id after the page remounts.
+          belowCostApprovalId: belowCostApprovalId || null,
+          discountApprovalId: discountApprovalId || null,
         };
         // Hard cap: keep only the most-recently-updated MAX_DRAFTS scopes.
         const entries = Object.entries(kept);

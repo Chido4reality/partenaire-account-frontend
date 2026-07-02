@@ -335,6 +335,27 @@ export default function App() {
       return p.has("impersonate") || p.has("impersonate_token");
     } catch { return false; }
   });
+  // MP-RECEIPT-LIVE-CASHIER-NAME: refresh the cached profile once on load so a
+  // rename (e.g. owner changed to "Paul Le Soldeur") reflects on receipts / the
+  // "served by" line WITHOUT a manual re-login. pa_users.full_name is the only
+  // source of truth (no snapshot column); the session just caches it. Skips
+  // impersonation sessions (that user is deliberately the impersonated target).
+  useEffect(() => {
+    const { isAuthenticated, impersonating, patchUser } = useAuthStore.getState();
+    if (!isAuthenticated || impersonating) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get("/auth/me");
+        const fresh = res?.data?.user;
+        if (!cancelled && fresh?.full_name) {
+          patchUser({ full_name: fresh.full_name, name: fresh.full_name, role: fresh.role });
+        }
+      } catch (_) { /* offline / transient — keep the cached name */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     // MP-MOBILE-UI-PHASE-1: belt-and-suspenders runtime StatusBar config.
     // capacitor.config.ts already declares Style.Dark + bg #1a1f2e on

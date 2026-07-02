@@ -597,6 +597,38 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
           <span style={{ fontWeight: 700 }}>{fr ? "Caisse attendue" : "Expected drawer"}</span>
           <strong style={{ fontSize: 18, color: "var(--brand-light)" }}>{fmt(expected)}</strong>
         </div>
+
+        {/* MP-SHIFT-CLOSE-DEBT-VOID-MOMO: money received that is NOT in the
+            physical cash drawer — shown so the owner can see it was collected
+            (e.g. a mobile-money debt payment) without it distorting the count. */}
+        {cat && cat.mobile_money_received && cat.mobile_money_received.total > 0 && (
+          <>
+            <div style={{ height: 1, background: "var(--border)", margin: "10px 0 6px" }} />
+            <CategoryRow
+              label={fr ? "Mobile money reçu (hors caisse)" : "Mobile money received (not in cash drawer)"}
+              total={cat.mobile_money_received.total} count={cat.mobile_money_received.count} sign="">
+              {cat.mobile_money_received.transactions.map(tx => (
+                <div key={tx.payment_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
+                  <span>{tx.sale_number || "—"} {tx.customer_name ? `· ${tx.customer_name}` : ""}</span>
+                  <span style={{ fontFamily: "monospace" }}>{fmt(tx.amount)}</span>
+                </div>
+              ))}
+            </CategoryRow>
+          </>
+        )}
+        {/* Payments taken then voided — transparency only, ZERO drawer effect. */}
+        {cat && cat.voided_collections && cat.voided_collections.total > 0 && (
+          <CategoryRow
+            label={fr ? "Encaissements annulés (sans effet)" : "Voided collections (cancelled — no effect)"}
+            total={cat.voided_collections.total} count={cat.voided_collections.count} sign="" color="var(--text-muted)">
+            {cat.voided_collections.transactions.map(tx => (
+              <div key={tx.payment_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", opacity: 0.7, textDecoration: "line-through" }}>
+                <span>{tx.sale_number || "—"} {tx.customer_name ? `· ${tx.customer_name}` : ""}</span>
+                <span style={{ fontFamily: "monospace" }}>{fmt(tx.amount)}</span>
+              </div>
+            ))}
+          </CategoryRow>
+        )}
       </div>
 
       <div className="form-group">

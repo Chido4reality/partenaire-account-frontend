@@ -353,17 +353,22 @@ export default function AccountantLogPage() {
                 {(s.branch_name || (en ? "All branches" : "Toutes les boutiques"))} · {en ? "Last seen" : "Vu"} {lastActivityLabel(s.last_activity, en)}
               </div>
             </div>
-            <button
-              className="btn"
-              style={{
-                whiteSpace: "nowrap", padding: "6px 12px", fontSize: 13,
-                background: s.is_active ? "rgba(239,68,68,0.12)" : "rgba(16,185,129,0.12)",
-                color: s.is_active ? "#fca5a5" : "#34d399",
-                border: `1px solid ${s.is_active ? "rgba(239,68,68,0.4)" : "rgba(16,185,129,0.4)"}`,
-              }}
-              onClick={(e) => { e.stopPropagation(); setConfirmKill({ staff: s, nextActive: !s.is_active }); }}>
-              {s.is_active ? (en ? "Deactivate" : "Désactiver") : (en ? "Reactivate" : "Réactiver")}
-            </button>
+            {/* MP-OWNER-MANAGER-IN-PERSON-VIEWS: owners appear in the roster so
+                they can view their own numbers, but never get a deactivate
+                toggle (an owner can't lock themselves out). */}
+            {s.role !== "owner" && (
+              <button
+                className="btn"
+                style={{
+                  whiteSpace: "nowrap", padding: "6px 12px", fontSize: 13,
+                  background: s.is_active ? "rgba(239,68,68,0.12)" : "rgba(16,185,129,0.12)",
+                  color: s.is_active ? "#fca5a5" : "#34d399",
+                  border: `1px solid ${s.is_active ? "rgba(239,68,68,0.4)" : "rgba(16,185,129,0.4)"}`,
+                }}
+                onClick={(e) => { e.stopPropagation(); setConfirmKill({ staff: s, nextActive: !s.is_active }); }}>
+                {s.is_active ? (en ? "Deactivate" : "Désactiver") : (en ? "Reactivate" : "Réactiver")}
+              </button>
+            )}
           </div>
         ))}
       </div>
@@ -1068,7 +1073,10 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
             );
             return (
               <div>
-                <Row strong label={en ? "Total sales" : "Ventes totales"} val={bridge.total_sales}
+                <Row strong label={en
+                    ? `Total sales${bridge.sales_count != null ? ` (${bridge.sales_count} sale${bridge.sales_count === 1 ? "" : "s"})` : ""}`
+                    : `Ventes totales${bridge.sales_count != null ? ` (${bridge.sales_count} vente${bridge.sales_count === 1 ? "" : "s"})` : ""}`}
+                  val={bridge.total_sales}
                   note={en ? "goods sold (excludes voided & debt lines)" : "marchandises vendues (hors annulés & lignes de dette)"} />
                 <Row indent label={en ? "= Cash (valid)" : "= Espèces (valides)"} val={bridge.cash_valid != null ? bridge.cash_valid : bridge.cash_collected}
                   note={en ? "cash received for valid sales; excludes cancelled receipts" : "espèces reçues pour ventes valides; hors reçus annulés"} />

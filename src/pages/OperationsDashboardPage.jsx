@@ -454,7 +454,14 @@ export default function OperationsDashboardPage() {
                   {mm.items.map((m, i) => (
                     <tr key={i} style={{ borderTop: "1px solid var(--border)", cursor: m.sale_number ? "pointer" : "default" }}
                       onClick={m.sale_number ? () => openReceipt(m.sale_number) : undefined}>
-                      <td style={{ ...tdStyle, fontFamily: "monospace", textDecoration: m.sale_number ? "underline" : "none" }}>{m.sale_number || "—"}</td>
+                      <td style={{ ...tdStyle, fontFamily: "monospace", textDecoration: m.sale_number ? "underline" : "none" }}>
+                        {m.sale_number || "—"}
+                        {m.kind === "debt_collection" && (
+                          <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "#3b82f6", fontFamily: "system-ui" }}>
+                            {en ? "· debt" : "· dette"}
+                          </span>
+                        )}
+                      </td>
                       <td style={tdStyle}>{m.cashier_name || "—"}</td>
                       <td style={{ ...tdStyleRight, color: "#10b981", fontWeight: 700 }}>{fmt(m.amount)}</td>
                       <td style={{ ...tdStyle, fontSize: 11, color: "var(--text-muted)" }}>
