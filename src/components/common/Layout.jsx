@@ -24,6 +24,8 @@ import { hasSection, hasFeature } from "../../utils/planCapabilities";
 import NavDrawer, { DRAWER_WIDTH } from "../layout/NavDrawer";
 import { tapHaptic } from "../../utils/haptics";
 import CameraScanner from "./CameraScanner";
+import OnboardingGuide from "./OnboardingGuide";
+import { hasSeenOnboarding } from "../../utils/onboarding";
 import toast from "react-hot-toast";
 
 // Sprint A: each nav item declares the capability section it belongs to.
@@ -170,33 +172,6 @@ function ModeBadge() {
   );
 }
 
-// MP-WHATS-NEW-2.0: persistent gold "2.0" version marker, same size/shape as
-// ModeBadge so it sits cleanly next to the PRO/LITE pill (and next to the shop
-// name when there's no paid badge — ModeBadge always renders, so it's always
-// visible). Gold-forward (gold fill, navy text) per the dark theme's gold
-// accent. Tapping it re-opens the What's-New card (in-page nicety).
-function VersionBadge() {
-  return (
-    <span
-      onClick={() => { try { window.dispatchEvent(new CustomEvent("mp-open-whatsnew")); } catch { /* no-op */ } }}
-      title="2.0"
-      aria-label="App version 2.0"
-      style={{
-        display: "inline-block",
-        marginLeft: 6,
-        background: "#FBC503",
-        color: "#152B52",
-        fontSize: 10, padding: "2px 6px",
-        borderRadius: 4, fontWeight: 700,
-        letterSpacing: 0.3,
-        verticalAlign: "middle",
-        cursor: "pointer",
-      }}
-    >
-      2.0
-    </span>
-  );
-}
 
 // MP-LITE-PRO-VISUAL-POLISH (2 Jun): 2px accent strip at the very top
 // of the app shell. First thing the eye catches. Same two palettes as
@@ -368,7 +343,26 @@ function RestrictedLock({ lang, hasPending, onRequest }) {
 }
 
 export default function Layout() {
-  const { user, org, logout } = useAuthStore();
+  const { user, org, logout, impersonating } = useAuthStore();
+  // MP-ONBOARDING-FIRST-RUN: show the first-run quick guide ONCE per user per
+  // device (owner AND staff). Skipped for impersonation sessions. The per-user
+  // set lives in Capacitor Preferences so each staffer on a shared shop phone
+  // gets it once. Guarded so the async check runs a single time per mount.
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const onboardCheckedRef = useRef(false);
+  useEffect(() => {
+    if (onboardCheckedRef.current) return;
+    if (!user?.id || impersonating) return;
+    onboardCheckedRef.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        const seen = await hasSeenOnboarding(user.id);
+        if (!cancelled && !seen) setShowOnboarding(true);
+      } catch { /* never block the app on the guide */ }
+    })();
+    return () => { cancelled = true; };
+  }, [user?.id, impersonating]);
   // MP-MOBILE-UI: publish the IME height as --kb-inset + keep the focused
   // field centered, so inputs below the fold in mobile drawers/sheets stay
   // reachable when the keyboard is open.
@@ -1191,6 +1185,9 @@ export default function Layout() {
       // opens — keeps the visual hierarchy consistent and avoids the
       // backdrop having to dodge a sticky element.
       <div style={{ position: "relative", height: "100dvh", overflow: "hidden" }}>
+        {showOnboarding && user?.id && (
+          <OnboardingGuide userId={user.id} lang={lang} onClose={() => setShowOnboarding(false)} />
+        )}
         <NavDrawer
           open={drawerOpen}
           onClose={() => setDrawerOpen(false)}
@@ -1258,7 +1255,7 @@ export default function Layout() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 800, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Mon Partenaire Dozie</div>
             <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {org?.name}<ModeBadge /><VersionBadge />
+              {org?.name}<ModeBadge />
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
@@ -1309,6 +1306,9 @@ export default function Layout() {
   // ── DESKTOP LAYOUT ────────────────────────────────────────────────────────────
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
+      {showOnboarding && user?.id && (
+        <OnboardingGuide userId={user.id} lang={lang} onClose={() => setShowOnboarding(false)} />
+      )}
       {/* MP-CAPACITOR Slice 2: connectivity bar at very top — same
           placement as mobile so the cashier sees the same indicator
           regardless of viewport. */}
@@ -1323,7 +1323,7 @@ export default function Layout() {
             <div>
               <div style={{ fontWeight: 800, fontSize: 14 }}>Mon Partenaire Dozie</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1 }}>
-                {org?.name}<ModeBadge /><VersionBadge />
+                {org?.name}<ModeBadge />
               </div>
             </div>
           )}
