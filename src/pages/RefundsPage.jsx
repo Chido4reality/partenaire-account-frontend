@@ -32,6 +32,7 @@
 
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
+import toast from "react-hot-toast";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import { cacheData, getCachedData } from "../utils/offlineStore";
 import { useLangStore, useAuthStore } from "../store";
@@ -80,6 +81,9 @@ export default function RefundsPage() {
   // and open that receipt so an anomaly / voided / MoMo row "opens the sale".
   const [searchParams, setSearchParams] = useSearchParams();
   const [autoOpenRef, setAutoOpenRef] = useState(null);
+  // MP-RECEIPT-RETURN-BARCODE: when a scanned/typed complete receipt ref finds
+  // no sale, show "not found — enter manually" (manual entry still works).
+  const [notFoundRef, setNotFoundRef] = useState(null);
 
   // MP-PAYMENT-EVENT-RECEIPTS Phase 3: receipt modal opens after
   // VoidReturnModal succeeds. Mapping:
@@ -165,31 +169,53 @@ export default function RefundsPage() {
   // switches tabs — keeps the visible list aligned with the tab.
   useEffect(() => {
     setPage(1);
+    setNotFoundRef(null);
     if (tab === "date") setActiveQuery(null);
   }, [tab]);
+
+  // A COMPLETE POS receipt ref (VNT-YYYYMMDD-NNNN) — safe to auto-open the exact
+  // match. Partial numbers fall through to the results list (no auto-open).
+  const isCompleteVnt = (v) => /^VNT-\d{8}-\d+$/i.test(String(v || "").trim());
 
   const runNumberSearch = () => {
     const v = numberInput.trim();
     if (!v) return;
+    setNotFoundRef(null);
     setActiveQuery({ by: detectRefMode(v), value: v });
+    // Full receipt number (typed OR sent by a 1D keyboard-wedge scanner + Enter)
+    // → pre-open the exact sale; partial number → just show the results list.
+    setAutoOpenRef(isCompleteVnt(v) ? v.trim().toUpperCase() : null);
   };
   const runAmountSearch = () => {
     const v = amountInput.trim();
     if (!v || !Number.isFinite(Number(v)) || Number(v) < 0) return;
     setActiveQuery({ by: "amount", value: v });
   };
+  // MP-RECEIPT-RETURN-BARCODE: decode from the camera scanner OR the 1D
+  // keyboard-wedge field. The receipt barcode encodes the sale_number verbatim
+  // (VNT-…). Validate the prefix so a stray PRODUCT barcode doesn't run a junk
+  // search; a VNT- match pre-loads the return flow, DOZ- keeps the online path,
+  // anything else is rejected with a clear message. Manual entry always works.
   const onScanResult = (code) => {
     setScannerOpen(false);
     const v = String(code || "").trim();
     if (!v) return;
-    // Scanner can produce either a sale_number string or a dozie_ref
-    // string depending on which receipt the cashier scanned. Funnel
-    // through the same auto-detect.
-    setActiveQuery({ by: detectRefMode(v), value: v });
-    // Surface the decoded value in the receipt-number input box so
-    // the cashier sees what was scanned and can edit if needed.
+    const up = v.toUpperCase();
     setTab("number");
-    setNumberInput(v);
+    setNumberInput(v); // show what was scanned so the cashier can edit if needed
+    if (!up.startsWith("VNT-") && !up.startsWith("DOZ-")) {
+      setActiveQuery(null);
+      setAutoOpenRef(null);
+      setNotFoundRef(null);
+      toast.error(fr
+        ? "Ce n'est pas un code de reçu. Scannez le code-barres au bas du reçu, ou saisissez le N°."
+        : "Not a receipt barcode. Scan the barcode at the bottom of the receipt, or type the number.");
+      return;
+    }
+    setNotFoundRef(null);
+    setActiveQuery({ by: detectRefMode(v), value: v });
+    // VNT receipts pre-open the exact sale; DOZ- keeps the existing results flow.
+    setAutoOpenRef(up.startsWith("VNT-") ? up : null);
   };
 
   const handleRefund = async (saleId) => {
@@ -234,7 +260,7 @@ export default function RefundsPage() {
   const TABS = [
     { key: "number", emoji: "🔍", en: "Receipt #", fr: "N° Reçu" },
     { key: "amount", emoji: "💰", en: "Amount",    fr: "Montant" },
-    { key: "scan",   emoji: "📷", en: "Scan QR",   fr: "Scanner" },
+    { key: "scan",   emoji: "📷", en: "Scan receipt", fr: "Scanner reçu" },
     { key: "date",   emoji: "📅", en: "By date",   fr: "Par date" },
   ];
 
@@ -257,13 +283,15 @@ export default function RefundsPage() {
     setSearchParams(next, { replace: true });
   }, [searchParams]);
 
-  // When the deep-linked search resolves to exactly that receipt, open it.
+  // When a deep-linked / scanned / typed complete receipt ref resolves, open the
+  // exact sale — or flag "not found" so the cashier knows to enter it manually.
   useEffect(() => {
-    if (!autoOpenRef) return;
+    if (!autoOpenRef || searchLoading) return;
     const rows = searchResp?.data || [];
     const match = rows.find(s => String(s.sale_number || "").toUpperCase() === autoOpenRef);
-    if (match && match.id) { handleRefund(match.id); setAutoOpenRef(null); }
-  }, [autoOpenRef, searchResp]);
+    if (match && match.id) { handleRefund(match.id); setAutoOpenRef(null); setNotFoundRef(null); }
+    else if (searchResp) { setNotFoundRef(autoOpenRef); setAutoOpenRef(null); }
+  }, [autoOpenRef, searchResp, searchLoading]);
 
   return (
     <div style={{ padding: 24, maxWidth: 1000, margin: "0 auto" }}>
@@ -406,6 +434,16 @@ export default function RefundsPage() {
           </div>
         )}
       </div>
+
+      {/* MP-RECEIPT-RETURN-BARCODE: scanned/typed receipt not found → tell the
+          cashier to enter it manually (the manual field above still works). */}
+      {notFoundRef && (
+        <div style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.4)", color: "#fbbf24", fontSize: 13, fontWeight: 600 }}>
+          {fr
+            ? `Vente introuvable pour « ${notFoundRef} » — saisissez le N° manuellement.`
+            : `Sale not found for "${notFoundRef}" — enter the number manually.`}
+        </div>
+      )}
 
       {/* Result count line for search modes */}
       {isSearching && activeQuery && !isLoading && (

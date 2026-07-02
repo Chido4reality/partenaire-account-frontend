@@ -11,6 +11,8 @@
 // typography on the paper slip. (The HTML/window.print thermal path keeps
 // accents.)
 
+import { advertLines } from "./receiptExtras";
+
 const ESC = 0x1b, GS = 0x1d, LF = 0x0a;
 
 function asciiFold(s) {
@@ -62,6 +64,22 @@ function newDoc(widthChars) {
       return api;
     },
     rule() { api.line("-".repeat(widthChars)); return api; },
+    // MP-RECEIPT-RETURN-BARCODE: native CODE128 barcode (code set B) with the
+    // human-readable value printed BELOW by the printer (HRI = 2). Height ~12mm.
+    barcode128(value) {
+      const v = asciiFold(value);
+      if (!v) return api;
+      api.raw(GS, 0x68, widthChars >= 48 ? 110 : 96); // GS h  barcode height (dots)
+      api.raw(GS, 0x77, 2);                            // GS w  module width
+      api.raw(GS, 0x48, 2);                            // GS H  HRI text below the bars
+      api.align("C");
+      const payload = [0x7b, 0x42];                    // "{B" = CODE128 code set B
+      for (let i = 0; i < v.length; i++) payload.push(v.charCodeAt(i) & 0xff);
+      api.raw(GS, 0x6b, 73, payload.length & 0xff);    // GS k 73 n  (CODE128)
+      for (const b of payload) bytes.push(b & 0xff);
+      bytes.push(LF);
+      return api;
+    },
     cut() { return api.raw(GS, 0x56, 66, 0); }, // GS V 66 0 = feed + partial cut (ignored if no cutter)
   };
   return api;
@@ -147,6 +165,20 @@ export function buildSaleEscposBytes({
   d.rule();
   // Footer
   d.align("C").line(org.receipt_footer || (en ? "Thank you!" : "Merci !"));
+
+  // MP-RECEIPT-RETURN-BARCODE: scannable sale_number CODE128 (readable value
+  // printed beneath by the printer) at the bottom, above the advert.
+  if (saleNumber) { d.feed(1).barcode128(saleNumber); }
+
+  // MP-RECEIPT-ADVERT: text-only "Powered by Mon Partenaire" at the very bottom,
+  // language by org country; ASCII-folded for cheap printers. Omitted when off.
+  const adverts = advertLines(org);
+  if (adverts.length) {
+    d.rule();
+    d.align("C");
+    for (const l of adverts) d.wrapped(l);
+  }
+
   d.feed(3).cut();
 
   return Uint8Array.from(d.bytes);

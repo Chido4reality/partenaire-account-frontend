@@ -167,7 +167,7 @@ export default function SettingsPage() {
   // Shop settings state
   const [shopForm, setShopForm] = useState({
     name: "", slogan: "", email: "", phone: "", address: "", city: "", country: "Cameroun",
-    whatsapp_number: "", receipt_footer: "", daily_summary_time: "17:30",
+    whatsapp_number: "", receipt_footer: "", receipt_advert_enabled: true, daily_summary_time: "17:30",
     daily_summary_enabled: true, low_stock_alerts_enabled: true,
     drawer_mode: "shared",
     whatsapp_alerts_addon: false
@@ -283,6 +283,7 @@ export default function SettingsPage() {
       country:                  d.country || "Cameroun",
       whatsapp_number:          d.whatsapp_number || "",
       receipt_footer:           d.receipt_footer || "",
+      receipt_advert_enabled:   d.receipt_advert_enabled ?? true,
       daily_summary_time:       d.daily_summary_time || "17:30",
       daily_summary_enabled:    d.daily_summary_enabled ?? true,
       low_stock_alerts_enabled: d.low_stock_alerts_enabled ?? true,
@@ -1023,6 +1024,25 @@ export default function SettingsPage() {
                     {lang === "en" ? "Custom receipt branding is a Premium feature." : "La personnalisation du reçu est réservée au plan Premium."}
                   </div>
                 )}
+              </div>
+
+              {/* MP-RECEIPT-ADVERT: per-org toggle for the "Powered by Mon
+                  Partenaire" advert at the bottom of receipts. Default ON. */}
+              <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--bg-elevated)", borderRadius: 10, gap: 12 }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{lang === "en" ? "Show Mon Partenaire advert on receipts" : "Afficher la pub Mon Partenaire sur les reçus"}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en"
+                      ? "A small \"Powered by Mon Partenaire\" line at the very bottom of each receipt."
+                      : "Une petite ligne « Propulsé par Mon Partenaire » tout en bas de chaque reçu."}</div>
+                  </div>
+                  <label style={{ position: "relative", width: 44, height: 24, cursor: "pointer", flexShrink: 0 }}>
+                    <input type="checkbox" checked={shopForm.receipt_advert_enabled} onChange={e => setFF("receipt_advert_enabled", e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+                    <span style={{ position: "absolute", inset: 0, borderRadius: 12, background: shopForm.receipt_advert_enabled ? "var(--brand)" : "var(--border)", transition: "0.2s" }}>
+                      <span style={{ position: "absolute", width: 18, height: 18, borderRadius: "50%", background: "#fff", top: 3, left: shopForm.receipt_advert_enabled ? 23 : 3, transition: "0.2s" }} />
+                    </span>
+                  </label>
+                </div>
               </div>
             </div>
           </div>
