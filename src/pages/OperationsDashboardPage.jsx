@@ -251,16 +251,20 @@ export default function OperationsDashboardPage() {
             <table style={tableStyle}>
               <thead>
                 <tr>
-                  <th style={thStyle}>{en ? "Cashier" : "Caissier"}</th>
+                  <th style={thStickyLeft}>{en ? "Cashier" : "Caissier"}</th>
                   <th style={thStyle}>{en ? "Shifts" : "Postes"}</th>
                   <th style={thStyleRight}>{en ? "Total sales" : "Ventes totales"}</th>
                   <th style={thStyleRight}>{en ? "Cash (valid)" : "Espèces (valides)"}</th>
                   <th style={thStyleRight}>{en ? "MoMo" : "MoMo"}</th>
                   <th style={thStyleRight}>{en ? "Credit given" : "Crédit accordé"}</th>
                   <th style={thStyleRight}>{en ? "Debt collected" : "Dette encaissée"}</th>
+                  <th style={thStyleRight}>{en ? "Debt (Cash)" : "Dette (Espèces)"}</th>
+                  <th style={thStyleRight}>{en ? "Debt (MoMo)" : "Dette (MoMo)"}</th>
+                  <th style={thStyleRight}>{en ? "Total income" : "Revenu total"}</th>
                   <th style={thStyleRight}>{en ? "Voided ⚠" : "Annulés ⚠"}</th>
                   <th style={thStyleRight}>{en ? "Refunds" : "Remb."}</th>
                   <th style={thStyleRight}>{en ? "Voids" : "Annul."}</th>
+                  <th style={thStyleRight}>{en ? "Cancels" : "Annulations"}</th>
                   <th style={thStyleRight}>{en ? "Avg shift" : "Poste moyen"}</th>
                   <th style={thStyleRight}>{en ? "Variance ct" : "Écart x"}</th>
                   <th style={thStyle}></th>
@@ -271,7 +275,7 @@ export default function OperationsDashboardPage() {
                   <tr key={c.cashier_id}
                     style={{ borderTop: "1px solid var(--border)",
                              background: c.flagged ? "rgba(251,191,36,0.05)" : "transparent" }}>
-                    <td style={tdStyle}>
+                    <td style={tdStickyLeft}>
                       <strong>{c.cashier_name}</strong>
                     </td>
                     <td style={tdStyle}>{c.shifts_opened}</td>
@@ -287,6 +291,34 @@ export default function OperationsDashboardPage() {
                         ? <span style={{ color: "#3b82f6", fontWeight: 700 }}>{fmt(c.debt_collected)}</span>
                         : <span style={{ color: "var(--text-muted)" }}>—</span>}
                     </td>
+                    {/* MP-SCOREBOARD-INCOME: debt split by method */}
+                    <td style={tdStyleRight}>
+                      {Number(c.debt_collected_cash) > 0
+                        ? fmt(c.debt_collected_cash)
+                        : <span style={{ color: "var(--text-muted)" }}>—</span>}
+                    </td>
+                    <td style={tdStyleRight}>
+                      {Number(c.debt_collected_momo) > 0
+                        ? fmt(c.debt_collected_momo)
+                        : <span style={{ color: "var(--text-muted)" }}>—</span>}
+                    </td>
+                    {/* Total income = all money RECEIVED (sales cash+MoMo + debt cash+MoMo),
+                        excludes Credit given. Small split shows cash-in vs momo-in. */}
+                    <td style={tdStyleRight}>
+                      {(() => {
+                        const cashIn = (Number(c.cash_valid ?? c.cash_collected) || 0) + (Number(c.debt_collected_cash) || 0);
+                        const momoIn = (Number(c.momo_collected) || 0) + (Number(c.debt_collected_momo) || 0);
+                        const income = c.total_income != null ? Number(c.total_income) : cashIn + momoIn;
+                        return (
+                          <>
+                            <div style={{ fontWeight: 800, color: "#34d399" }}>{fmt(income)}</div>
+                            <div style={{ fontSize: 10, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                              {en ? "Cash" : "Esp."} {fmt(cashIn)} · MoMo {fmt(momoIn)}
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </td>
                     <td style={tdStyleRight}>
                       {Number(c.voided_receipts_total) > 0
                         ? <span style={{ color: "#f87171", fontWeight: 700 }}>{fmt(c.voided_receipts_total)}</span>
@@ -296,6 +328,8 @@ export default function OperationsDashboardPage() {
                     <td style={tdStyleRight} title={c.voids > 3 ? "flagged" : ""}>
                       <span style={{ color: c.voids > 3 ? "#f87171" : "inherit" }}>{c.voids}</span>
                     </td>
+                    {/* MP-SCOREBOARD-INCOME: approval requests THIS cashier cancelled. */}
+                    <td style={tdStyleRight}>{Number(c.cancels) > 0 ? c.cancels : <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
                     <td style={tdStyleRight}>{c.avg_shift_minutes != null ? `${c.avg_shift_minutes} min` : "—"}</td>
                     <td style={tdStyleRight}>
                       <span style={{ color: c.drawer_variance_count >= 2 ? "#f87171" : "inherit" }}>
@@ -310,7 +344,7 @@ export default function OperationsDashboardPage() {
                   </tr>
                 ))}
                 {(overview.data.cashiers || []).length === 0 && (
-                  <tr><td colSpan={14} style={{ ...tdStyle, color: "var(--text-muted)", textAlign: "center", padding: 14 }}>
+                  <tr><td colSpan={17} style={{ ...tdStyle, color: "var(--text-muted)", textAlign: "center", padding: 14 }}>
                     {en ? "No cashier activity in this range." : "Aucune activité de caissier dans cette plage."}
                   </td></tr>
                 )}
@@ -653,6 +687,11 @@ const thStyle      = { padding: "8px 10px", textAlign: "left",  fontWeight: 700,
 const thStyleRight = { ...thStyle, textAlign: "right" };
 const tdStyle      = { padding: "8px 10px", textAlign: "left",  color: "var(--text-primary)" };
 const tdStyleRight = { ...tdStyle, textAlign: "right" };
+// MP-SCOREBOARD-INCOME: the board is now wide — keep the Cashier column pinned
+// (sticky) while the rest scrolls horizontally on a phone. Solid background so
+// scrolling cells pass underneath it cleanly.
+const thStickyLeft = { ...thStyle, position: "sticky", left: 0, zIndex: 2, background: "var(--bg-elevated)" };
+const tdStickyLeft = { ...tdStyle, position: "sticky", left: 0, zIndex: 1, background: "var(--bg-elevated)" };
 const smallBtnStyle = {
   padding: "4px 10px", fontSize: 11, fontWeight: 700, borderRadius: 6,
   border: "1px solid var(--border)", background: "var(--bg-card)",
