@@ -278,6 +278,11 @@ export default function POSPage() {
       if (draft.paidAmt)       setPaidAmt(draft.paidAmt);
       if (draft.dueDate)       setDueDate(draft.dueDate);
       if (draft.notes)         setNotes(draft.notes);
+      // MP-BELOW-COST-PERSIST: restore the cart-level boss-approval links so the
+      // resumed below-cost/discount cart still finalizes with its approval
+      // without a re-approval after navigating away and back.
+      belowCostApprovalIdRef.current = draft.belowCostApprovalId || null;
+      discountApprovalIdRef.current  = draft.discountApprovalId || null;
       if (isMobile())          setSheetOpen(true);
       cartScopeRef.current = { userId, locId };
       toast.success(lang === "en"
@@ -314,7 +319,11 @@ export default function POSPage() {
       return;
     }
     saveDraft({ userId, locationId: locId,
-      items: cart, customer, payMode, paidAmt, dueDate, notes });
+      items: cart, customer, payMode, paidAmt, dueDate, notes,
+      // MP-BELOW-COST-PERSIST: keep the boss-approval links with the draft so a
+      // remount still sends them at checkout (refs are wiped on unmount).
+      belowCostApprovalId: belowCostApprovalIdRef.current,
+      discountApprovalId: discountApprovalIdRef.current });
   }, [cart, customer, payMode, paidAmt, dueDate, notes,
       userId, locId, saveDraft, clearDraft]);
   // MP-STORAGE-QUOTA-CRASH-FIX: safeStorage fires this (at most once/session)
@@ -727,6 +736,13 @@ export default function POSPage() {
     setCart(prev => prev.map(it => {
       if (it.isDebt || it.isDebtPayment || it.type === "debt_payment"
           || it.product_id === "__DEBT__" || it.product_id === "__DEBT_PAYMENT__") return it;
+      // MP-BELOW-COST-PERSIST: a boss-APPROVED below-cost line (sync PIN override
+      // OR async send-to-boss) keeps its approved price when the customer/tier
+      // changes — the boss approved THIS exact price. Re-pricing it would revert
+      // to the tier price and (for below-cost) break the approval signature,
+      // forcing needless re-approval. The backend still voids the approval if the
+      // product/qty/price actually changes.
+      if (it.price_overridden || it.below_cost_approved) return it;
       // Legacy lines (drafts saved before this change) may lack ladder fields →
       // priceForTier would yield 0; fall back to the line's current price.
       const price = priceForTier(it, tier) || Number(it.unit_price) || Number(it.original_price) || 0;
@@ -1841,6 +1857,10 @@ export default function POSPage() {
           discount_type:  approved && it.discount_type ? it.discount_type : "",
           discount_value: approved && it.discount_value != null ? String(it.discount_value) : "",
           discount_reason: approved && it.discount_reason ? it.discount_reason : "",
+          // MP-BELOW-COST-PERSIST: mark every line of a boss-approved below-cost
+          // cart so re-attaching the customer / restoring the draft keeps the
+          // approved price (the whole cart is signature-bound to these prices).
+          below_cost_approved: (approved && isBelowCost) ? true : undefined,
         };
       }));
       setCart(hydrated.filter(isSubmittableLine));
