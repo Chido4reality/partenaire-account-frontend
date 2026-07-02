@@ -6,7 +6,7 @@ import api, { formatDate } from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
 import VoidReturnModal from "../components/common/VoidReturnModal";
 import { genSaleCodes } from "../utils/receiptCodes";
-import { buildFactureHtml } from "../utils/factureReceipt";
+import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 import { buildLedgerTextV2 as buildLedgerTextUtil, buildWeeklyText as buildWeeklyTextUtil,
   refundKindLabel, shortRetRef } from "../utils/reportText";
 import CollapsibleBlock from "../components/common/CollapsibleBlock";
@@ -38,6 +38,10 @@ export default function ReportsPage() {
   const [expandedSale, setExpandedSale] = useState(null);
   const [expandedDisc, setExpandedDisc] = useState(null); // MP-DISCOUNT drill-down
   const [voidSale, setVoidSale] = useState(null);
+  // MP-REPORTS-REPRINT-OVERLAY: reprint a past receipt through the SAME in-app
+  // overlay the completed-sale receipt uses (PaymentEventReceipt), instead of the
+  // old window.open()/window.print() facture that dead-ended on the Android WebView.
+  const [receiptSale, setReceiptSale] = useState(null);
   // MP-DASHBOARD-REPORT-CONSISTENCY: location filter for the daily /
   // daily-sales / sales-detail aggregations. "" = All locations (default,
   // same as Dashboard) so the two pages show the same canonical number.
@@ -618,26 +622,28 @@ export default function ReportsPage() {
                                   📱
                                 </button>
 <button onClick={() => {
-                                  // MP-FACTURE-STANDARD: print the Cameroon FACTURE (shared builder),
-                                  // not the old thermal REÇU. Debt-payment lines map to qty 1 with the
-                                  // amount as P.U. so they still total correctly.
+                                  // MP-REPORTS-REPRINT-OVERLAY: reprint through the shared
+                                  // PaymentEventReceipt overlay (A4 facture + 58/80mm thermal +
+                                  // Bluetooth ESC/POS), the SAME path the completed-sale receipt
+                                  // uses. Debt-payment lines map to qty 1 (amount as P.U.) and are
+                                  // tagged type:'debt_payment' so the receipt renders them correctly.
                                   const items = (sale.pa_sale_items || []).map(i => isDebtItem(i)
-                                    ? { name: itemLabel(i, lang), quantity: 1, unit_price: itemAmount(i) }
+                                    ? { name: itemLabel(i, lang), quantity: 1, unit_price: itemAmount(i), type: "debt_payment" }
                                     : { name: itemLabel(i, lang), quantity: Number(i.quantity) || 0, unit_price: Number(i.unit_price) || 0 });
-                                  const html = buildFactureHtml({
-                                    org: orgSettings,
-                                    lang,
-                                    saleNumber: sale.sale_number || "",
-                                    saleDate: sale.sale_date || "",
-                                    customerName: sale.pa_customers?.name || "Comptant",
-                                    cashierName: sale.cashier_name || null, // MP-SALE-CASHIER-NAME
+                                  setReceiptSale({
+                                    sale_number:    sale.sale_number || "",
+                                    sale_date:      sale.sale_date || "",
+                                    created_at:     sale.created_at || sale.sale_date || null,
+                                    total_amount:   sale.total_amount != null ? Number(sale.total_amount) : null,
+                                    paid_amount:    sale.paid_amount != null ? Number(sale.paid_amount) : null,
+                                    balance_due:    sale.balance_due != null ? Number(sale.balance_due) : null,
+                                    payment_status: sale.payment_status || "",
+                                    payment_method: sale.payment_method || "",
+                                    customer_name:  sale.pa_customers?.name || null,
+                                    customer_phone: sale.pa_customers?.phone || null,
+                                    cashier_name:   sale.cashier_name || null, // MP-SALE-CASHIER-NAME
                                     items,
                                   });
-                                  // Viewer with Imprimer/Partager/Fermer action bar; the user
-                                  // drives print/close — no auto-print (works on phones too).
-                                  const w = window.open("", "_blank", "width=400,height=600");
-                                  w.document.write(html);
-                                  w.document.close(); w.focus();
                                 }} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-primary)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11 }}>
                                   🖨️
                                 </button>
@@ -1559,6 +1565,19 @@ export default function ReportsPage() {
           sale={voidSale}
           lang={lang}
           onClose={() => setVoidSale(null)}
+        />
+      )}
+
+      {/* MP-REPORTS-REPRINT-OVERLAY: reprint a past receipt via the shared,
+          Android-safe overlay (Print → share sheet on native / window.print on
+          web; Close = React state; Bluetooth ESC/POS for real thermal). */}
+      {receiptSale && (
+        <PaymentEventReceipt
+          eventType="sale"
+          data={receiptSale}
+          org={orgSettings}
+          lang={lang}
+          onClose={() => setReceiptSale(null)}
         />
       )}
     </div>
