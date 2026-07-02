@@ -18,6 +18,7 @@ import RestrictedAction from "../components/common/RestrictedAction";
 import DoziePublishModal from "../components/common/DoziePublishModal";
 import { getCapabilities, isAtCap } from "../utils/planCapabilities";
 import { useLiteMode } from "../hooks/useLiteMode";
+import { parseProductImport, buildProductTemplateXlsx } from "../utils/productImport";
 
 // Sprint C — shared helper for the 4 product entry paths. Reads a File
 // from the camera/file picker, resizes if larger than 1920px on the
@@ -77,6 +78,7 @@ const EMPTY_PRODUCT = {
 
 export default function InventoryPage() {
   const { lang } = useLangStore();
+  const en = lang === "en";
   const { selectedLocation } = useSettingsStore();
   const { user } = useAuthStore();
   const qc = useQueryClient();
@@ -191,6 +193,8 @@ export default function InventoryPage() {
   const [importFile, setImportFile] = useState(null);
   const [importPreview, setImportPreview] = useState([]);
   const [importError, setImportError] = useState("");
+  const [importParsing, setImportParsing] = useState(false);
+  const [importResults, setImportResults] = useState(null); // per-row outcome after Import
 
   const searchRef = useRef(null);
   const barcodeBuffer = useRef("");
@@ -856,11 +860,16 @@ export default function InventoryPage() {
   });
 
   // ── IMPORT MUTATION ─────────────────────────────────────────────────────────
+  // Only the VALID rows are sent; invalid rows are reported as skips (never
+  // silently dropped). Each product also seeds its stock row (qty + slot_code).
   const importMutation = useMutation({
     mutationFn: async () => {
       const results = [];
       for (const row of importPreview) {
-        if (!row.name || !row.sell_price) continue;
+        if (!row.ok) {
+          results.push({ rowNum: row._rowNum, name: row.name, success: false, reason: (en ? row.errors[0]?.en : row.errors[0]?.fr) });
+          continue;
+        }
         try {
           const res = await api.post("/products", {
             name: row.name, barcode: row.barcode || null, unit: row.unit || "pce",
@@ -868,15 +877,15 @@ export default function InventoryPage() {
             wholesale_price: +row.wholesale_price || 0, min_price: +row.min_price || 0,
           });
           const product = res.data.data;
-          if (row.location_id && row.initial_quantity) {
+          if (row.location_id && row.qty !== "" && +row.qty > 0) {
             await api.post("/stock/arrivals", {
               location_id: row.location_id,
-              items: [{ product_id: product.id, quantity: +row.initial_quantity, cost_price: +row.cost_price || 0 }]
+              items: [{ product_id: product.id, quantity: +row.qty, cost_price: +row.cost_price || 0, slot_code: row.slot_zone || null }]
             });
           }
-          results.push({ name: row.name, success: true });
+          results.push({ rowNum: row._rowNum, name: row.name, success: true });
         } catch (e) {
-          results.push({ name: row.name, success: false, error: e.response?.data?.message });
+          results.push({ rowNum: row._rowNum, name: row.name, success: false, reason: e.response?.data?.message || (en ? "server error" : "erreur serveur") });
         }
       }
       return results;
@@ -884,63 +893,42 @@ export default function InventoryPage() {
     onSuccess: (results) => {
       const ok = results.filter(r => r.success).length;
       const fail = results.filter(r => !r.success).length;
-      toast.success(`✓ ${ok} products imported${fail > 0 ? `, ${fail} failed` : ""}`, { duration: 4000 });
-      setShowImport(false); setImportFile(null); setImportPreview([]);
+      toast.success(en ? `✓ ${ok} imported${fail ? `, ${fail} skipped` : ""}` : `✓ ${ok} importés${fail ? `, ${fail} ignorés` : ""}`, { duration: 4000 });
+      setImportResults(results);
       invalidateAll();
+      if (fail === 0) { setShowImport(false); setImportFile(null); setImportPreview([]); setImportResults(null); }
     },
     onError: (err) => toast.error(err.message || "Import failed")
   });
 
-  // ── CSV PARSER ──────────────────────────────────────────────────────────────
-  const parseCSV = (text) => {
-    const lines = text.trim().split("\n");
-    const headers = lines[0].split(",").map(h => h.trim().toLowerCase().replace(/\s+/g, "_"));
-    const rows = [];
-    for (let i = 1; i < lines.length; i++) {
-      const vals = lines[i].split(",").map(v => v.trim().replace(/^"|"$/g, ""));
-      const row = {};
-      headers.forEach((h, idx) => { row[h] = vals[idx] || ""; });
-      // Map location name to id. Fall back to the most-likely-intended
-      // location (top-bar selectedLocation, else first location) when
-      // the row's location cell is blank or doesn't match any known
-      // location name — same Paint-at-qty-0 trap the modal forms hit.
-      // The Preview UI still surfaces which location resolved, so
-      // surprises stay visible before the user hits Import.
-      const loc = locations.find(l => l.name.toLowerCase() === (row.location || "").toLowerCase());
-      row.location_id = loc?.id || defaultInitialLocId || "";
-      row.initial_quantity = row.qty || row.quantity || row.initial_quantity || "";
-      if (row.name) rows.push(row);
-    }
-    return rows;
-  };
-
-  const handleFileUpload = (e) => {
+  // ── FILE UPLOAD → PARSE + VALIDATE (xlsx / csv) ───────────────────────────────
+  const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    setImportFile(file);
-    setImportError("");
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const rows = parseCSV(ev.target.result);
-        if (rows.length === 0) { setImportError("No valid rows found. Check your file format."); return; }
+    setImportFile(file); setImportError(""); setImportResults(null); setImportPreview([]); setImportParsing(true);
+    try {
+      const { rows } = await parseProductImport(file, locations);
+      if (rows.length === 0) {
+        setImportError(en ? "No rows found. Fill the 'Products' sheet and try again." : "Aucune ligne trouvée. Remplissez la feuille 'Products' et réessayez.");
+      } else {
         setImportPreview(rows);
-      } catch (err) {
-        setImportError("Could not parse file. Make sure it is a valid CSV.");
       }
-    };
-    reader.readAsText(file);
+    } catch (err) {
+      setImportError(en ? "Could not read the file. Use the .xlsx template (or a CSV with the same columns)." : "Lecture du fichier impossible. Utilisez le modèle .xlsx (ou un CSV avec les mêmes colonnes).");
+    } finally {
+      setImportParsing(false);
+    }
   };
 
-  const downloadTemplate = () => {
-    const headers = "name,barcode,unit,cost_price,sell_price,wholesale_price,min_price,qty,location";
-    const example1 = `Tube,1234567890,pce,2500,4000,3500,2500,100,${locations[0]?.name || "Bonaberri Store"}`;
-    const example2 = `Huile palme,0987654321,litre,1800,3000,2500,1800,50,${locations[0]?.name || "Bonaberri Store"}`;
-    const csv = [headers, example1, example2].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "inventory_import_template.csv";
-    a.click(); URL.revokeObjectURL(url);
+  const downloadTemplate = async () => {
+    try {
+      const blob = await buildProductTemplateXlsx(locations, lang === "en");
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = "mon_partenaire_products_template.xlsx";
+      a.click(); URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error(lang === "en" ? "Could not build the template." : "Impossible de créer le modèle.");
+    }
   };
 
   // ── RECEIVE GOODS HELPERS ───────────────────────────────────────────────────
@@ -1860,11 +1848,22 @@ export default function InventoryPage() {
                 <span style={{ background: "var(--brand)", color: "#152B52", borderRadius: "50%", width: 22, height: 22, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, marginRight: 8 }}>1</span>
                 {lang === "en" ? "Download the template" : "Télécharger le modèle"}
               </div>
-              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>
-                {lang === "en" ? "Fill in your products. Columns: name, barcode, unit, cost_price, sell_price, wholesale_price, min_price, qty, location" : "Remplissez vos produits. Colonnes: name, barcode, unit, cost_price, sell_price, wholesale_price, min_price, qty, location"}
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>
+                {lang === "en"
+                  ? "Excel file with an example row. Fill the 'Products' sheet; the 'Instructions' sheet explains each column."
+                  : "Fichier Excel avec une ligne d'exemple. Remplissez la feuille 'Products' ; la feuille 'Instructions' explique chaque colonne."}
+              </div>
+              <div style={{ fontSize: 11.5, color: "var(--text-secondary)", marginBottom: 6, lineHeight: 1.5 }}>
+                <b>{lang === "en" ? "Required:" : "Obligatoire :"}</b> name, unit, cost_price, walk_in_price, qty, location<br />
+                <b>{lang === "en" ? "Optional:" : "Facultatif :"}</b> barcode, wholesale_price, min_price, slot_zone
+              </div>
+              <div style={{ fontSize: 11.5, color: "#fbbf24", marginBottom: 10, lineHeight: 1.4 }}>
+                ⚠️ {lang === "en"
+                  ? "Keep the barcode column as Text — if it shows like 1.23E+09, that row is rejected (the real digits are lost)."
+                  : "Gardez la colonne code-barres en Texte — si elle affiche 1.23E+09, la ligne est refusée (les vrais chiffres sont perdus)."}
               </div>
               <button className="btn btn-secondary" onClick={downloadTemplate}>
-                ⬇️ {lang === "en" ? "Download CSV Template" : "Télécharger le modèle CSV"}
+                ⬇️ {lang === "en" ? "Download Excel Template (.xlsx)" : "Télécharger le modèle Excel (.xlsx)"}
               </button>
             </div>
 
@@ -1875,58 +1874,86 @@ export default function InventoryPage() {
                 {lang === "en" ? "Upload your filled file" : "Téléverser votre fichier rempli"}
               </div>
               <label style={{ display: "block", padding: "20px", border: "2px dashed var(--border)", borderRadius: 10, textAlign: "center", cursor: "pointer", color: "var(--text-muted)", fontSize: 13 }}>
-                {importFile ? <span style={{ color: "#10b981", fontWeight: 600 }}>✓ {importFile.name}</span> : (lang === "en" ? "Click to select CSV file" : "Cliquer pour sélectionner le fichier CSV")}
-                <input type="file" accept=".csv,.txt" onChange={handleFileUpload} style={{ display: "none" }} />
+                {importParsing
+                  ? <span style={{ fontWeight: 600 }}>⏳ {lang === "en" ? "Reading file…" : "Lecture du fichier…"}</span>
+                  : importFile
+                    ? <span style={{ color: "#10b981", fontWeight: 600 }}>✓ {importFile.name}</span>
+                    : (lang === "en" ? "Click to select your Excel/CSV file" : "Cliquer pour sélectionner votre fichier Excel/CSV")}
+                <input type="file" accept=".xlsx,.xls,.csv,.txt" onChange={handleFileUpload} style={{ display: "none" }} />
               </label>
               {importError && <div style={{ color: "#f87171", fontSize: 12, marginTop: 8 }}>{importError}</div>}
             </div>
 
-            {/* Step 3: Preview */}
-            {importPreview.length > 0 && (
+            {/* Step 3: Preview — per-row validation (good rows import, bad rows skip). */}
+            {importPreview.length > 0 && (() => {
+              const okCount = importPreview.filter(r => r.ok).length;
+              const badCount = importPreview.length - okCount;
+              return (
               <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 16 }}>
                 <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>
                   <span style={{ background: "var(--brand)", color: "#152B52", borderRadius: "50%", width: 22, height: 22, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, marginRight: 8 }}>3</span>
-                  {lang === "en" ? `Preview — ${importPreview.length} products found` : `Aperçu — ${importPreview.length} produits trouvés`}
+                  {lang === "en" ? `Preview — ${okCount} ready${badCount ? `, ${badCount} to fix` : ""}` : `Aperçu — ${okCount} prêts${badCount ? `, ${badCount} à corriger` : ""}`}
                 </div>
                 <div style={{ overflowX: "auto", maxHeight: 240, overflowY: "auto" }}>
                   <table className="table" style={{ fontSize: 11 }}>
                     <thead><tr>
-                      <th>Name</th><th>Barcode</th><th>Unit</th>
+                      <th></th><th>Name</th><th>Barcode</th><th>Unit</th>
                       <th>Cost</th><th>Walk-in</th><th>Wholesale</th><th>Min</th>
-                      <th>Qty</th><th>Location</th>
+                      <th>Qty</th><th>Location</th><th>Slot</th>
                     </tr></thead>
                     <tbody>
-                      {importPreview.slice(0, 20).map((row, i) => (
-                        <tr key={i} style={{ background: !row.sell_price ? "rgba(239,68,68,0.05)" : "transparent" }}>
-                          <td style={{ fontWeight: 500 }}>{row.name}</td>
+                      {importPreview.slice(0, 30).map((row, i) => (
+                        <tr key={i} style={{ background: row.ok ? "transparent" : "rgba(239,68,68,0.06)" }}>
+                          <td title={row.ok ? "" : (en ? row.errors.map(e => e.en).join(" ") : row.errors.map(e => e.fr).join(" "))}>{row.ok ? "✅" : "⚠️"}</td>
+                          <td style={{ fontWeight: 500 }}>{row.name || "—"}</td>
                           <td style={{ fontFamily: "monospace" }}>{row.barcode || "—"}</td>
                           <td>{row.unit || "pce"}</td>
                           <td>{row.cost_price || "—"}</td>
-                          <td style={{ color: row.sell_price ? "var(--brand-light)" : "#f87171", fontWeight: 600 }}>{row.sell_price || "⚠️ missing"}</td>
+                          <td style={{ color: row.sell_price ? "var(--brand-light)" : "#f87171", fontWeight: 600 }}>{row.sell_price || "—"}</td>
                           <td>{row.wholesale_price || "—"}</td>
                           <td>{row.min_price || "—"}</td>
-                          <td>{row.initial_quantity || "—"}</td>
-                          <td style={{ fontSize: 10 }}>{row.location_id ? locations.find(l => l.id === row.location_id)?.name : <span style={{ color: "#fbbf24" }}>not matched</span>}</td>
+                          <td>{row.qty || "—"}</td>
+                          <td style={{ fontSize: 10 }}>{row.location_id ? locations.find(l => l.id === row.location_id)?.name : <span style={{ color: "#f87171" }}>{row.location_name || (en ? "missing" : "manquant")}</span>}</td>
+                          <td style={{ fontSize: 10 }}>{row.slot_zone || "—"}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                  {importPreview.length > 20 && <div style={{ textAlign: "center", padding: 8, fontSize: 12, color: "var(--text-muted)" }}>...and {importPreview.length - 20} more</div>}
+                  {importPreview.length > 30 && <div style={{ textAlign: "center", padding: 8, fontSize: 12, color: "var(--text-muted)" }}>...{lang === "en" ? "and" : "et"} {importPreview.length - 30} {lang === "en" ? "more" : "de plus"}</div>}
                 </div>
-                {importPreview.some(r => !r.sell_price) && (
-                  <div style={{ color: "#f87171", fontSize: 12, marginTop: 8 }}>⚠️ {lang === "en" ? "Rows highlighted in red are missing sell_price and will be skipped." : "Les lignes en rouge n'ont pas de sell_price et seront ignorées."}</div>
+                {badCount > 0 && (
+                  <div style={{ color: "#f87171", fontSize: 12, marginTop: 8 }}>
+                    ⚠️ {lang === "en"
+                      ? `${badCount} row(s) marked ⚠️ will be skipped (hover the ⚠️ for the reason). The ${okCount} good rows still import.`
+                      : `${badCount} ligne(s) ⚠️ seront ignorées (survolez le ⚠️ pour la raison). Les ${okCount} bonnes lignes s'importent quand même.`}
+                  </div>
                 )}
+              </div>
+              );
+            })()}
+
+            {/* Import result — per-row outcome (kept open when some rows were skipped). */}
+            {importResults && importResults.some(r => !r.success) && (
+              <div style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 12, padding: 16, marginBottom: 16 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>
+                  {lang === "en" ? `Skipped rows (${importResults.filter(r => !r.success).length})` : `Lignes ignorées (${importResults.filter(r => !r.success).length})`}
+                </div>
+                {importResults.filter(r => !r.success).map((r, i) => (
+                  <div key={i} style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 3 }}>
+                    <b>{lang === "en" ? `Row ${r.rowNum}` : `Ligne ${r.rowNum}`}{r.name ? ` (${r.name})` : ""}:</b> {r.reason}
+                  </div>
+                ))}
               </div>
             )}
 
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setShowImport(false); setImportFile(null); setImportPreview([]); }}>
-                {lang === "en" ? "Cancel" : "Annuler"}
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setShowImport(false); setImportFile(null); setImportPreview([]); setImportResults(null); }}>
+                {lang === "en" ? "Close" : "Fermer"}
               </button>
               <button className="btn btn-primary" style={{ flex: 2 }}
-                disabled={importPreview.length === 0 || importMutation.isPending}
+                disabled={importPreview.filter(r => r.ok).length === 0 || importMutation.isPending}
                 onClick={() => importMutation.mutate()}>
-                {importMutation.isPending ? `⏳ ${lang === "en" ? "Importing..." : "Importation..."}` : (lang === "en" ? `✓ Import ${importPreview.filter(r => r.sell_price).length} Products` : `✓ Importer ${importPreview.filter(r => r.sell_price).length} produits`)}
+                {importMutation.isPending ? `⏳ ${lang === "en" ? "Importing..." : "Importation..."}` : (lang === "en" ? `✓ Import ${importPreview.filter(r => r.ok).length} products` : `✓ Importer ${importPreview.filter(r => r.ok).length} produits`)}
               </button>
             </div>
           </div>
