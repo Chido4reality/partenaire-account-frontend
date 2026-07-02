@@ -257,6 +257,7 @@ export default function OperationsDashboardPage() {
                   <th style={thStyleRight}>{en ? "Cash (valid)" : "Espèces (valides)"}</th>
                   <th style={thStyleRight}>{en ? "MoMo" : "MoMo"}</th>
                   <th style={thStyleRight}>{en ? "Credit given" : "Crédit accordé"}</th>
+                  <th style={thStyleRight}>{en ? "Debt collected" : "Dette encaissée"}</th>
                   <th style={thStyleRight}>{en ? "Voided ⚠" : "Annulés ⚠"}</th>
                   <th style={thStyleRight}>{en ? "Refunds" : "Remb."}</th>
                   <th style={thStyleRight}>{en ? "Voids" : "Annul."}</th>
@@ -278,6 +279,14 @@ export default function OperationsDashboardPage() {
                     <td style={tdStyleRight}><strong>{fmt(c.cash_valid != null ? c.cash_valid : c.cash_collected)}</strong></td>
                     <td style={tdStyleRight}>{fmt(c.momo_collected || 0)}</td>
                     <td style={tdStyleRight}>{fmt(c.credit_given || 0)}</td>
+                    {/* MP-SCOREBOARD-DEBT-COLLECTED: debt collected this period (all
+                        methods, payment date, non-voided) — distinct from Cash (valid),
+                        which is sales cash. Makes a debt-collecting day visible. */}
+                    <td style={tdStyleRight}>
+                      {Number(c.debt_collected) > 0
+                        ? <span style={{ color: "#3b82f6", fontWeight: 700 }}>{fmt(c.debt_collected)}</span>
+                        : <span style={{ color: "var(--text-muted)" }}>—</span>}
+                    </td>
                     <td style={tdStyleRight}>
                       {Number(c.voided_receipts_total) > 0
                         ? <span style={{ color: "#f87171", fontWeight: 700 }}>{fmt(c.voided_receipts_total)}</span>
@@ -301,7 +310,7 @@ export default function OperationsDashboardPage() {
                   </tr>
                 ))}
                 {(overview.data.cashiers || []).length === 0 && (
-                  <tr><td colSpan={13} style={{ ...tdStyle, color: "var(--text-muted)", textAlign: "center", padding: 14 }}>
+                  <tr><td colSpan={14} style={{ ...tdStyle, color: "var(--text-muted)", textAlign: "center", padding: 14 }}>
                     {en ? "No cashier activity in this range." : "Aucune activité de caissier dans cette plage."}
                   </td></tr>
                 )}
