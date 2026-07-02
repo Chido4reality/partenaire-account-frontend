@@ -539,19 +539,20 @@ export default function POSPage() {
     if (!debtors.length) return;
     let cancelled = false;
     (async () => {
-      // Promise.all so the warm-up parallelizes; each request is small.
-      await Promise.all(debtors.map(async (c) => {
+      // MP-CUSTOMER-DEBT-N1-FIX: ONE batched request for all debtors instead of
+      // a Promise.all fan-out of dozens of concurrent GET /customer-debt/:id
+      // calls (the app-open burst that overloaded the API). Same cache seeding.
+      try {
+        const batch = await api.post("/sales/customer-debt-batch", { customer_ids: debtors.map(c => c.id) })
+          .then(res => res.data?.data || {});
         if (cancelled) return;
-        try {
-          const r = await api.get(`/sales/customer-debt/${c.id}`).then(res => res.data);
-          if (cancelled) return;
-          // Persist for offline reads via useOfflineCachedQuery's
-          // catch path, AND seed React Query so the consumer hits a
-          // warm slot without a refetch on first read.
+        for (const c of debtors) {
+          const r = batch[c.id];
+          if (!r) continue;
           try { cacheData(cacheKeyFor(["customer-debt", c.id]), r); } catch { /* swallow storage errors */ }
           qc.setQueryData(["customer-debt", c.id], r);
-        } catch { /* silent — best-effort warm-up */ }
-      }));
+        }
+      } catch { /* silent — best-effort warm-up */ }
     })();
     return () => { cancelled = true; };
   }, [allCustomers?.data, qc, lite]);

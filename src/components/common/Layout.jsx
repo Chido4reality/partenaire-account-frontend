@@ -472,16 +472,23 @@ export default function Layout() {
         if (cancelled) return;
         qc.setQueryData(["pos-customers"], r);
         try { cacheData("pos-customers", r); } catch { /* swallow storage errors */ }
+        // MP-CUSTOMER-DEBT-N1-FIX: warm every debtor's cache in ONE batched
+        // request instead of a Promise.all fan-out of dozens of concurrent
+        // GET /customer-debt/:id calls (the burst that hammered the API).
         const debtors = (r?.data || []).filter(c => c?.id && Number(c?.total_debt || 0) > 0);
-        await Promise.all(debtors.map(async (c) => {
-          if (cancelled) return;
+        if (debtors.length) {
           try {
-            const dr = await api.get(`/sales/customer-debt/${c.id}`).then(res => res.data);
+            const batch = await api.post("/sales/customer-debt-batch", { customer_ids: debtors.map(c => c.id) })
+              .then(res => res.data?.data || {});
             if (cancelled) return;
-            try { cacheData(cacheKeyFor(["customer-debt", c.id]), dr); } catch { /* swallow */ }
-            qc.setQueryData(["customer-debt", c.id], dr);
+            for (const c of debtors) {
+              const dr = batch[c.id];
+              if (!dr) continue;
+              try { cacheData(cacheKeyFor(["customer-debt", c.id]), dr); } catch { /* swallow */ }
+              qc.setQueryData(["customer-debt", c.id], dr);
+            }
           } catch { /* silent — best-effort warm-up */ }
-        }));
+        }
       } catch { /* silent — Layout warm-up is opportunistic */ }
     })();
     return () => { cancelled = true; };
