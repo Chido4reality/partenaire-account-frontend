@@ -177,6 +177,7 @@ export default function AccountantLogPage() {
   const [pinValue, setPinValue] = useState("");
   const [rejectFor, setRejectFor] = useState(null); // approval row being rejected (note prompt)
   const [rejectNote, setRejectNote] = useState("");
+  const [cancelFor, setCancelFor] = useState(null); // approval row being cancelled (confirm)
 
   const APPROVAL_VERB = {
     void: en ? "cancel a sale" : "annuler une vente",
@@ -207,6 +208,16 @@ export default function AccountantLogPage() {
       qc.invalidateQueries({ queryKey: ["staff-approvals-pending"] });
     },
     onError: (e) => toast.error(e?.response?.data?.message || (en ? "Could not reject" : "Échec du rejet")),
+  });
+  // MP-APPROVAL-CANCEL: drop a request that's no longer needed — no sale recorded.
+  const cancelMut = useMutation({
+    mutationFn: ({ id }) => api.post(`/staff/approvals/${id}/cancel`),
+    onSuccess: () => {
+      toast.success(en ? "Request cancelled — no sale recorded" : "Demande annulée — aucune vente");
+      setCancelFor(null);
+      qc.invalidateQueries({ queryKey: ["staff-approvals-pending"] });
+    },
+    onError: (e) => { toast.error(e?.response?.data?.message || (en ? "Could not cancel" : "Échec de l'annulation")); setCancelFor(null); },
   });
 
   const wrap = (c) => <div style={{ maxWidth: 640, margin: "0 auto", padding: 20 }}>{c}</div>;
@@ -313,6 +324,11 @@ export default function AccountantLogPage() {
                   ✓ {en ? "Approve" : "Approuver"}
                 </button>
               </div>
+              {/* MP-APPROVAL-CANCEL: drop a no-longer-needed request outright (no sale). */}
+              <button className="btn" style={{ width: "100%", marginTop: 6, fontSize: 12.5, color: "var(--text-muted)", background: "transparent", border: "1px solid var(--border)" }}
+                onClick={() => setCancelFor(a)}>
+                {en ? "Cancel request (no sale)" : "Annuler la demande (sans vente)"}
+              </button>
             </div>
           ))}
         </div>
@@ -476,6 +492,26 @@ export default function AccountantLogPage() {
               <button className="btn btn-primary" style={{ flex: 2 }} disabled={rejectMut.isPending}
                 onClick={() => rejectMut.mutate({ id: rejectFor.id, note: rejectNote.trim() || null })}>
                 {rejectMut.isPending ? "..." : (en ? "Reject" : "Rejeter")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── CANCEL CONFIRM ── MP-APPROVAL-CANCEL */}
+      {cancelFor && (
+        <div className="modal-overlay" onClick={() => { if (!cancelMut.isPending) setCancelFor(null); }}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 8 }}>{en ? "Cancel this request?" : "Annuler cette demande ?"}</div>
+            <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 16 }}>
+              {en ? "No sale will be recorded." : "Aucune vente ne sera enregistrée."}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} disabled={cancelMut.isPending}
+                onClick={() => setCancelFor(null)}>{en ? "Keep it" : "Garder"}</button>
+              <button className="btn btn-primary" style={{ flex: 2 }} disabled={cancelMut.isPending}
+                onClick={() => cancelMut.mutate({ id: cancelFor.id })}>
+                {cancelMut.isPending ? "..." : (en ? "Yes, cancel" : "Oui, annuler")}
               </button>
             </div>
           </div>
