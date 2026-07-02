@@ -31,6 +31,7 @@ const STATUS = {
   executed: { en: "Done",     fr: "Terminé",    bg: "rgba(100,116,139,0.18)", fg: "var(--text-muted)" },
   failed:   { en: "Failed",   fr: "Échoué",     bg: "rgba(239,68,68,0.18)",  fg: "#fca5a5" },
   expired:  { en: "Expired",  fr: "Expiré",     bg: "rgba(100,116,139,0.18)", fg: "var(--text-muted)" },
+  cancelled:{ en: "Cancelled",fr: "Annulé",     bg: "rgba(100,116,139,0.18)", fg: "var(--text-muted)" },
 };
 
 function whenLabel(iso, en) {
@@ -46,6 +47,7 @@ export default function MyRequestsPage() {
   const qc = useQueryClient();
   const [receiptEvent, setReceiptEvent] = useState(null);
   const [finalizingId, setFinalizingId] = useState(null);
+  const [cancelFor, setCancelFor] = useState(null); // request row pending a cancel confirm
 
   const { data: resp, isLoading } = useQuery({
     queryKey: ["my-requests"],
@@ -89,6 +91,24 @@ export default function MyRequestsPage() {
   });
 
   const finalize = (id) => { setFinalizingId(id); finalizeMut.mutate(id); };
+
+  // MP-APPROVAL-CANCEL: drop a pending/approved request without recording a sale.
+  const cancelMut = useMutation({
+    mutationFn: (id) => api.post(`/staff/approvals/${id}/cancel`).then((r) => r.data),
+    onSuccess: () => {
+      toast.success(en ? "Request cancelled — no sale recorded" : "Demande annulée — aucune vente");
+      setCancelFor(null);
+      qc.invalidateQueries({ queryKey: ["my-requests"] });
+      qc.invalidateQueries({ queryKey: ["my-requests-approved-count"] });
+    },
+    onError: (e) => {
+      const d = e?.response?.data || {};
+      toast.error((en ? (d.message || d.message_en) : (d.message_fr || d.message))
+        || (en ? "Could not cancel." : "Impossible d'annuler."));
+      setCancelFor(null);
+      qc.invalidateQueries({ queryKey: ["my-requests"] });
+    },
+  });
 
   return (
     <div style={{ maxWidth: 640, margin: "0 auto", padding: 20 }}>
@@ -150,10 +170,43 @@ export default function MyRequestsPage() {
                   {finalizingId === r.id ? "..." : (en ? "✓ Complete & print receipt" : "✓ Finaliser et imprimer le reçu")}
                 </button>
               )}
+              {/* MP-APPROVAL-CANCEL: a pending/approved request the cashier no
+                  longer needs can be cancelled — no sale is recorded. */}
+              {(r.status === "pending" || r.status === "approved") && (
+                <button className="btn btn-secondary" style={{ width: "100%", marginTop: 8 }}
+                  disabled={cancelMut.isPending}
+                  onClick={() => setCancelFor(r)}>
+                  ✕ {en ? "Cancel request" : "Annuler la demande"}
+                </button>
+              )}
             </div>
           );
         })}
       </div>
+
+      {/* MP-APPROVAL-CANCEL: confirm so it isn't tapped by accident. */}
+      {cancelFor && (
+        <div className="modal-overlay" onClick={() => { if (!cancelMut.isPending) setCancelFor(null); }}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 8 }}>
+              {en ? "Cancel this request?" : "Annuler cette demande ?"}
+            </div>
+            <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 16 }}>
+              {en ? "No sale will be recorded." : "Aucune vente ne sera enregistrée."}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} disabled={cancelMut.isPending}
+                onClick={() => setCancelFor(null)}>
+                {en ? "Keep it" : "Garder"}
+              </button>
+              <button className="btn btn-primary" style={{ flex: 2 }} disabled={cancelMut.isPending}
+                onClick={() => cancelMut.mutate(cancelFor.id)}>
+                {cancelMut.isPending ? "..." : (en ? "Yes, cancel" : "Oui, annuler")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Existing shared receipt + print overlay, rendered from finalize data. */}
       {receiptEvent && (
