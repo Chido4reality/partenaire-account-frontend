@@ -25,6 +25,7 @@ import NavDrawer, { DRAWER_WIDTH } from "../layout/NavDrawer";
 import { tapHaptic } from "../../utils/haptics";
 import CameraScanner from "./CameraScanner";
 import OnboardingGuide from "./OnboardingGuide";
+import { explainAnomaly, severityCue } from "../../utils/anomalyExplain";
 import { hasSeenOnboarding } from "../../utils/onboarding";
 import toast from "react-hot-toast";
 
@@ -344,6 +345,7 @@ function RestrictedLock({ lang, hasPending, onRequest }) {
 
 export default function Layout() {
   const { user, org, logout, impersonating } = useAuthStore();
+  const fmt = useCurrency(); // MP-ANOMALY-EXPLAIN: currency for the enriched bell alerts
   // MP-ONBOARDING-FIRST-RUN: show the first-run quick guide ONCE per user per
   // device (owner AND staff). Skipped for impersonation sessions. The per-user
   // set lives in Capacitor Preferences so each staffer on a shared shop phone
@@ -859,6 +861,11 @@ export default function Layout() {
       const focusUrl = focusUrlFor(n);
       // Accountant Log alerts get a distinct "review" treatment in the bell.
       const isReview = (n.type || "").startsWith("staff_oversight");
+      // MP-ANOMALY-EXPLAIN: for staff-oversight alerts carrying the source audit
+      // payload, render the SAME plain-language What + severity cue as the
+      // Accountant Log (tapping deep-links there for the full Why / What-to-do).
+      const ex = (isReview && n.audit) ? explainAnomaly(n.audit, lang === "en", fmt) : null;
+      const cue = ex ? severityCue(ex.severity, lang === "en") : null;
       return (
       <div key={n.id} onClick={() => {
             if (!n.is_read) markReadMutation.mutate(n.id);
@@ -866,10 +873,20 @@ export default function Layout() {
           }}
         style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", borderLeft: isReview ? "3px solid #ef4444" : "3px solid transparent", cursor: focusUrl ? "pointer" : "default", background: n.is_read ? (isReview ? "rgba(239,68,68,0.04)" : "transparent") : (isReview ? "rgba(239,68,68,0.1)" : "rgba(251,197,3,0.05)") }}>
         <div style={{ display: "flex", gap: 8 }}>
-          <div style={{ width: 6, height: 6, borderRadius: "50%", background: isReview ? "#ef4444" : notifColor(n.type), marginTop: 5, flexShrink: 0 }} />
+          <div style={{ width: 6, height: 6, borderRadius: "50%", background: cue ? cue.dot : (isReview ? "#ef4444" : notifColor(n.type)), marginTop: 5, flexShrink: 0 }} />
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: 12, fontWeight: n.is_read ? 400 : 600, whiteSpace: "normal", wordBreak: "break-word" }}>{lang === "en" ? (n.title_en || n.title) : (n.title || n.title_en)}</div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "normal", wordBreak: "break-word" }}>{lang === "en" ? (n.body_en || n.body) : (n.body || n.body_en)}</div>
+            {ex ? (
+              <>
+                <div style={{ fontSize: 10.5, fontWeight: 700, color: cue.dot, marginBottom: 2 }}>{cue.label}</div>
+                <div style={{ fontSize: 12, fontWeight: n.is_read ? 400 : 600, whiteSpace: "normal", wordBreak: "break-word" }}>{ex.what}</div>
+                <div style={{ fontSize: 10.5, color: "var(--brand-light)", marginTop: 2 }}>{lang === "en" ? "Tap for what to do →" : "Toucher pour quoi faire →"}</div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 12, fontWeight: n.is_read ? 400 : 600, whiteSpace: "normal", wordBreak: "break-word" }}>{lang === "en" ? (n.title_en || n.title) : (n.title || n.title_en)}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "normal", wordBreak: "break-word" }}>{lang === "en" ? (n.body_en || n.body) : (n.body || n.body_en)}</div>
+              </>
+            )}
           </div>
         </div>
       </div>

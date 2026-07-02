@@ -23,6 +23,7 @@ import { useLangStore } from "../store";
 import api from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
 import { openWhatsApp } from "../utils/whatsapp";
+import { opsAnomalyGuidance, opsSeverityCue } from "../utils/anomalyExplain";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ComposedChart, Cell,
@@ -385,31 +386,40 @@ export default function OperationsDashboardPage() {
           const text = (en ? a.message_en : a.message_fr) || a.message;
           const saleNo = a.link && a.link.type === "sale" ? a.link.sale_number : null;
           const tappable = !!saleNo;
+          // MP-ANOMALY-EXPLAIN: jargon-free severity cue + plain WHY / WHAT-TO-DO,
+          // matching the Accountant Log + bell so all three read the same way.
+          const cue = opsSeverityCue(a.severity, en);
+          const guide = opsAnomalyGuidance(a.kind, en);
           return (
             <div key={a.id} style={{
               padding: "10px 12px", marginBottom: 6, borderRadius: 8,
               background: sevBg, border: `1px solid ${sevColor}33`,
-              display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12,
             }}>
-              <div
-                onClick={tappable ? () => openReceipt(saleNo) : undefined}
-                style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0,
-                  cursor: tappable ? "pointer" : "default" }}
-                title={tappable ? (en ? "Open receipt" : "Ouvrir le reçu") : ""}>
-                <span style={{ color: sevColor, fontWeight: 800, fontSize: 11, textTransform: "uppercase", whiteSpace: "nowrap" }}>
-                  {a.severity}
-                </span>
-                <span style={{ fontSize: 13, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis",
-                  textDecoration: tappable ? "underline" : "none" }}>
-                  {text}
-                </span>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                <div
+                  onClick={tappable ? () => openReceipt(saleNo) : undefined}
+                  style={{ minWidth: 0, cursor: tappable ? "pointer" : "default" }}
+                  title={tappable ? (en ? "Open receipt" : "Ouvrir le reçu") : ""}>
+                  <span style={{ color: cue.dot, fontWeight: 800, fontSize: 11, whiteSpace: "nowrap" }}>
+                    {cue.label}
+                  </span>
+                  <div style={{ fontSize: 13, marginTop: 3, textDecoration: tappable ? "underline" : "none" }}>
+                    {text}
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                    {new Date(a.timestamp).toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                  <button onClick={() => dismiss(a.id)} style={smallBtnStyle} title={en ? "Dismiss" : "Masquer"}>✓</button>
+                </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
-                  {new Date(a.timestamp).toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
-                </span>
-                <button onClick={() => dismiss(a.id)} style={smallBtnStyle} title={en ? "Dismiss" : "Masquer"}>✓</button>
-              </div>
+              {(guide.why || guide.do) && (
+                <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${sevColor}22` }}>
+                  {guide.why && <div style={{ fontSize: 11.5, color: "var(--text-secondary)", lineHeight: 1.4 }}><b>{en ? "Why: " : "Pourquoi : "}</b>{guide.why}</div>}
+                  {guide.do && <div style={{ fontSize: 11.5, color: "var(--text-secondary)", lineHeight: 1.4, marginTop: 2 }}><b>{en ? "Do: " : "À faire : "}</b>{guide.do}</div>}
+                </div>
+              )}
             </div>
           );
         })}
