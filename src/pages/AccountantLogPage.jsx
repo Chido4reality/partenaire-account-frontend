@@ -19,6 +19,7 @@ import { hasFeature } from "../utils/planCapabilities";
 import { useCurrency } from "../utils/useCurrency";
 import api from "../utils/api";
 import BelowCostLossDetail from "../components/common/BelowCostLossDetail";
+import { explainAnomaly, severityCue, groupLabel, anomalySeverity } from "../utils/anomalyExplain";
 
 // Role badge colours — mirror SettingsPage ROLES.
 const ROLE_META = {
@@ -732,6 +733,33 @@ function timeLabel(iso, en) {
     + " · " + d.toLocaleDateString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short" });
 }
 
+// MP-ANOMALY-EXPLAIN: collapse repeated same-action rows in the SAME day into one
+// summary item so the feed doesn't drown the owner in identical scary lines.
+// >= GROUP_MIN of the same action on a day → one group (expandable); fewer stay
+// individual. First-seen order is preserved (rows arrive newest-first).
+const GROUP_MIN = 3;
+function buildFeedItems(rows) {
+  const byKey = new Map();
+  const order = [];
+  for (const r of (rows || [])) {
+    const day = String(r.created_at || "").slice(0, 10);
+    const key = `${r.action}|${day}`;
+    if (!byKey.has(key)) { byKey.set(key, { key, action: r.action, day, rows: [] }); order.push(key); }
+    byKey.get(key).rows.push(r);
+  }
+  const items = [];
+  for (const key of order) {
+    const g = byKey.get(key);
+    if (g.rows.length >= GROUP_MIN) {
+      const sum = g.rows.reduce((s, r) => s + Math.abs(Number(r.amount) || 0), 0);
+      items.push({ type: "group", key, action: g.action, rows: g.rows, count: g.rows.length, sum });
+    } else {
+      for (const r of g.rows) items.push({ type: "row", key: r.id, row: r });
+    }
+  }
+  return items;
+}
+
 // ── Phase 4: build the printable EVIDENCE PACK as a self-contained HTML doc,
 // rendered in the app's print overlay (window.print → "Save as PDF") — the app
 // has no PDF library; this mirrors the FACTURE print path. Black-on-white, A4.
@@ -857,6 +885,7 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
   const [pickedDay, setPickedDay] = useState(() => initialDay || new Date().toISOString().slice(0, 10));
   const [tab, setTab] = useState("everything");      // everything | check
   const [detailRow, setDetailRow] = useState(null);  // tapped activity row → detail modal
+  const [openGroups, setOpenGroups] = useState({});  // MP-ANOMALY-EXPLAIN: expanded collapsed groups
 
   // ── Phase 4 evidence export ──
   const [showExport, setShowExport] = useState(false);
@@ -1153,32 +1182,70 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
             </div>
           </div>
         )}
-        {rows.map((r, i) => {
-          const rk = RISK[r.risk_level] || RISK.normal;
-          const amt = r.amount != null && r.amount !== "" ? Number(r.amount) : null;
-          const highlighted = highlightId && r.id === highlightId;
-          return (
-            <div key={r.id} onClick={() => setDetailRow(r)} style={{
-              display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", cursor: "pointer",
-              borderTop: i === 0 ? "none" : "1px solid var(--border)",
-              borderLeft: highlighted ? "3px solid var(--brand)" : "3px solid transparent",
-              background: highlighted ? "rgba(251,197,3,0.12)" : (r.risk_level === "high" ? "rgba(239,68,68,0.05)" : "transparent"),
-            }}>
-              <span style={{ width: 9, height: 9, borderRadius: 9, background: rk.dot, flexShrink: 0 }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: 15 }}>{actionText(r.action, en, r.new_data, fmt)}</div>
-                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-                  {timeLabel(r.created_at, en)}{r.branch_name ? ` · ${r.branch_name}` : ""}
+        {(() => {
+          // MP-ANOMALY-EXPLAIN: each row shows plain What + a jargon-free severity
+          // cue; the tap-detail adds Why + What-to-do. Repeated same-action rows
+          // in a day collapse into one expandable summary (buildFeedItems).
+          const staffName = (staff && staff.full_name) || (en ? "This person" : "Cette personne");
+          const renderRow = (r, isChild) => {
+            const ex = explainAnomaly({ action: r.action, new_data: r.new_data, actor_name: r.actor_name || staffName }, en, fmt);
+            const cue = severityCue(ex.severity, en);
+            const amt = r.amount != null && r.amount !== "" ? Number(r.amount) : null;
+            const highlighted = highlightId && r.id === highlightId;
+            return (
+              <div key={r.id} onClick={() => setDetailRow(r)} style={{
+                display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer",
+                padding: isChild ? "10px 14px 10px 30px" : "12px 14px",
+                borderTop: "1px solid var(--border)",
+                borderLeft: highlighted ? "3px solid var(--brand)" : "3px solid transparent",
+                background: highlighted ? "rgba(251,197,3,0.12)" : (ex.severity === "high" ? "rgba(239,68,68,0.05)" : "transparent"),
+              }}>
+                <span style={{ width: 9, height: 9, borderRadius: 9, background: cue.dot, flexShrink: 0, marginTop: 5 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: cue.dot, marginBottom: 2 }}>{cue.label}</div>
+                  <div style={{ fontWeight: 600, fontSize: 14.5, lineHeight: 1.35 }}>{ex.what}</div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                    {timeLabel(r.created_at, en)}{r.branch_name ? ` · ${r.branch_name}` : ""} · {en ? "tap for what to do" : "toucher pour quoi faire"}
+                  </div>
                 </div>
+                {amt != null && (
+                  <div style={{ fontWeight: 800, fontSize: 15, color: cue.dot, whiteSpace: "nowrap", marginTop: 12 }}>
+                    {fmt(Math.abs(amt))}
+                  </div>
+                )}
               </div>
-              {amt != null && (
-                <div style={{ fontWeight: 800, fontSize: 15, color: rk.fg !== "var(--text-muted)" ? rk.fg : "var(--text-primary)", whiteSpace: "nowrap" }}>
-                  {fmt(Math.abs(amt))}
+            );
+          };
+          return buildFeedItems(rows).map((it) => {
+            if (it.type === "row") return renderRow(it.row, false);
+            // Collapsed group summary — tap to expand into the explained items.
+            const cue = severityCue(anomalySeverity(it.action), en);
+            // Auto-expand a group that holds the deep-linked (tapped-alert) row.
+            const isOpen = !!openGroups[it.key] || (highlightId && it.rows.some((r) => r.id === highlightId));
+            return (
+              <div key={it.key} style={{ borderTop: "1px solid var(--border)" }}>
+                <div onClick={() => setOpenGroups((g) => ({ ...g, [it.key]: !g[it.key] }))} style={{
+                  display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer", padding: "12px 14px",
+                  background: it.action && anomalySeverity(it.action) === "high" ? "rgba(239,68,68,0.07)" : "rgba(245,158,11,0.06)",
+                }}>
+                  <span style={{ width: 9, height: 9, borderRadius: 9, background: cue.dot, flexShrink: 0, marginTop: 5 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: cue.dot, marginBottom: 2 }}>{cue.label}</div>
+                    <div style={{ fontWeight: 700, fontSize: 14.5, lineHeight: 1.35 }}>
+                      {staffName} {groupLabel(it.action, it.count, en)} {en ? "today" : "aujourd'hui"}
+                      {it.sum > 0 ? ` (${en ? "total" : "total"} ${fmt(it.sum)})` : ""}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                      {isOpen ? (en ? "Tap to hide" : "Toucher pour masquer") : (en ? "Tap to see each" : "Toucher pour voir chacune")}
+                    </div>
+                  </div>
+                  <span style={{ color: "var(--text-muted)", fontSize: 16, transform: isOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s", marginTop: 8 }}>›</span>
                 </div>
-              )}
-            </div>
-          );
-        })}
+                {isOpen && it.rows.map((r) => renderRow(r, true))}
+              </div>
+            );
+          });
+        })()}
       </div>
       <div style={{ height: 24 }} />
 
@@ -1186,7 +1253,30 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
       {detailRow && (
         <div className="modal-overlay" onClick={() => setDetailRow(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
-            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>{actionText(detailRow.action, en, detailRow.new_data, fmt)}</div>
+            {(() => {
+              // MP-ANOMALY-EXPLAIN: lead the detail with the plain-language
+              // What / Why / What-to-do (same mapper as the feed + bell).
+              const ex = explainAnomaly({ action: detailRow.action, new_data: detailRow.new_data, actor_name: detailRow.actor_name || ((staff && staff.full_name) || "") }, en, fmt);
+              const cue = severityCue(ex.severity, en);
+              return (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: cue.dot, marginBottom: 6 }}>{cue.label}</div>
+                  <div style={{ fontWeight: 700, fontSize: 15.5, lineHeight: 1.35 }}>{ex.what}</div>
+                  {ex.why && (
+                    <div style={{ marginTop: 10, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px" }}>
+                      <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--text-muted)", marginBottom: 3 }}>{en ? "Why it's flagged" : "Pourquoi c'est signalé"}</div>
+                      <div style={{ fontSize: 13.5, lineHeight: 1.4 }}>{ex.why}</div>
+                    </div>
+                  )}
+                  {ex.do && (
+                    <div style={{ marginTop: 8, background: "rgba(251,197,3,0.08)", border: "1px solid rgba(251,197,3,0.35)", borderRadius: 10, padding: "10px 12px" }}>
+                      <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--brand-light)", marginBottom: 3 }}>{en ? "What to do" : "Quoi faire"}</div>
+                      <div style={{ fontSize: 13.5, lineHeight: 1.4 }}>{ex.do}</div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 14 }}>
               {timeLabel(detailRow.created_at, en)}{detailRow.branch_name ? ` · ${detailRow.branch_name}` : ""}
               {detailRow.amount != null && detailRow.amount !== "" ? ` · ${fmt(Math.abs(Number(detailRow.amount)))}` : ""}
