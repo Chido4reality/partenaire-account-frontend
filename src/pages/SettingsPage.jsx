@@ -167,7 +167,7 @@ export default function SettingsPage() {
   // Shop settings state
   const [shopForm, setShopForm] = useState({
     name: "", slogan: "", email: "", phone: "", address: "", city: "", country: "Cameroun",
-    whatsapp_number: "", receipt_footer: "", receipt_advert_enabled: true, daily_summary_time: "17:30",
+    whatsapp_number: "", receipt_footer: "", receipt_advert_enabled: true, receipt_code_style: "auto", daily_summary_time: "17:30",
     daily_summary_enabled: true, low_stock_alerts_enabled: true,
     drawer_mode: "shared",
     whatsapp_alerts_addon: false
@@ -284,6 +284,7 @@ export default function SettingsPage() {
       whatsapp_number:          d.whatsapp_number || "",
       receipt_footer:           d.receipt_footer || "",
       receipt_advert_enabled:   d.receipt_advert_enabled ?? true,
+      receipt_code_style:       d.receipt_code_style || "auto",
       daily_summary_time:       d.daily_summary_time || "17:30",
       daily_summary_enabled:    d.daily_summary_enabled ?? true,
       low_stock_alerts_enabled: d.low_stock_alerts_enabled ?? true,
@@ -1042,6 +1043,24 @@ export default function SettingsPage() {
                       <span style={{ position: "absolute", width: 18, height: 18, borderRadius: "50%", background: "#fff", top: 3, left: shopForm.receipt_advert_enabled ? 23 : 3, transition: "0.2s" }} />
                     </span>
                   </label>
+                </div>
+              </div>
+
+              {/* MP-RECEIPT-CODE-STYLE (Fix 1): which scannable return-lookup code
+                  prints on receipts. Automatic = by currency (Cameroon→QR,
+                  Nigeria→barcode). */}
+              <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+                <div style={{ padding: "12px 16px", background: "var(--bg-elevated)", borderRadius: 10 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>{lang === "en" ? "Receipt scan code" : "Code à scanner sur le reçu"}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>{lang === "en"
+                    ? "The code printed for scanning a receipt back for a return. Barcode suits 1D laser scanners (common in Nigeria); QR scans best on phone cameras."
+                    : "Le code imprimé pour scanner un reçu lors d'un retour. Le code-barres convient aux scanners laser 1D (courants au Nigeria) ; le QR se scanne mieux à la caméra."}</div>
+                  <select className="input" value={shopForm.receipt_code_style || "auto"} onChange={e => setFF("receipt_code_style", e.target.value)}>
+                    <option value="auto">{lang === "en" ? "Automatic (by country)" : "Automatique (selon le pays)"}</option>
+                    <option value="barcode">{lang === "en" ? "Barcode (CODE128)" : "Code-barres (CODE128)"}</option>
+                    <option value="qr">{lang === "en" ? "QR code" : "Code QR"}</option>
+                    <option value="both">{lang === "en" ? "Both (barcode + QR)" : "Les deux (code-barres + QR)"}</option>
+                  </select>
                 </div>
               </div>
             </div>

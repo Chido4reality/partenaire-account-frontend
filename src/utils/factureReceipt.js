@@ -37,7 +37,7 @@ function factureDate(sd) {
 // org: { logo_url, name, slogan, address, city, country, phone, whatsapp_number,
 //        email, currency, receipt_footer }  (empty fields are skipped)
 // items: [{ name, quantity, unit_price }]   (debt lines: pass quantity 1, unit_price = amount)
-export function buildFactureHtml({ org = {}, lang = "fr", saleNumber = "", saleDate = "", customerName, cashierName, items = [], discountTotal = 0, qrDataUrl = "" }) {
+export function buildFactureHtml({ org = {}, lang = "fr", saleNumber = "", saleDate = "", customerName, cashierName, items = [], discountTotal = 0, qrDataUrl = "", barcodeDataUrl = "", codeStyle = "qr" }) {
   const currency = esc(currencySymbol(org.currency));   // XAF -> FCFA, etc.
   const footer = org.receipt_footer || "";
 
@@ -131,8 +131,9 @@ export function buildFactureHtml({ org = {}, lang = "fr", saleNumber = "", saleD
     ${footer ? `<div class="footer">${esc(footer)}</div>` : ""}
     <div class="arrete">Arrêtée la présente facture à la somme de : ________________________________</div>
     <div class="sign"><div class="sigcell">Signature client</div><div class="sigcell">Signature vendeur</div></div>
-    ${(qrDataUrl && saleNumber) ? `<div class="center" style="margin-top:14px">
-        <img src="${qrDataUrl}" alt="qr" style="width:26mm;height:26mm;image-rendering:pixelated"/>
+    ${(saleNumber && (((codeStyle==='barcode'||codeStyle==='both') && barcodeDataUrl) || ((codeStyle==='qr'||codeStyle==='both') && qrDataUrl))) ? `<div class="center" style="margin-top:14px">
+        ${((codeStyle==='barcode'||codeStyle==='both') && barcodeDataUrl) ? `<div><img src="${barcodeDataUrl}" alt="barcode" style="height:16mm;max-width:80%;object-fit:contain"/></div>` : ""}
+        ${((codeStyle==='qr'||codeStyle==='both') && qrDataUrl) ? `<div style="margin-top:6px"><img src="${qrDataUrl}" alt="qr" style="width:26mm;height:26mm;image-rendering:pixelated"/></div>` : ""}
         <div class="center" style="font-family:monospace;font-weight:bold;font-size:13px;letter-spacing:1px">${esc(saleNumber)}</div>
       </div>` : ""}
     ${advertLines(org).length ? `<div class="center small" style="margin-top:10px">${advertLines(org).map(l => `<div>${esc(l)}</div>`).join("")}</div>` : ""}
@@ -153,7 +154,7 @@ export function buildFactureHtml({ org = {}, lang = "fr", saleNumber = "", saleD
 // window.open()-spawned windows can't be reliably closed on Android WebView
 // (window.close() is a no-op), which left an uncloseable layer over the app.
 // All styles are scoped under .mp-fac so nothing leaks to the host app.
-export function buildFactureInner({ org = {}, lang = "fr", saleNumber = "", saleDate = "", customerName, cashierName, items = [], discountTotal = 0, qrDataUrl = "" }) {
+export function buildFactureInner({ org = {}, lang = "fr", saleNumber = "", saleDate = "", customerName, cashierName, items = [], discountTotal = 0, qrDataUrl = "", barcodeDataUrl = "", codeStyle = "qr" }) {
   const currency = esc(currencySymbol(org.currency));
   const footer = org.receipt_footer || "";
 
@@ -216,8 +217,9 @@ export function buildFactureInner({ org = {}, lang = "fr", saleNumber = "", sale
     ${footer ? `<div class="footer">${esc(footer)}</div>` : ""}
     <div class="arrete">Arrêtée la présente facture à la somme de : ________________________________</div>
     <div class="sign"><div class="sigcell">Signature client</div><div class="sigcell">Signature vendeur</div></div>
-    ${(qrDataUrl && saleNumber) ? `<div class="center" style="margin-top:14px">
-        <img src="${qrDataUrl}" alt="qr" style="width:26mm;height:26mm;image-rendering:pixelated"/>
+    ${(saleNumber && (((codeStyle==='barcode'||codeStyle==='both') && barcodeDataUrl) || ((codeStyle==='qr'||codeStyle==='both') && qrDataUrl))) ? `<div class="center" style="margin-top:14px">
+        ${((codeStyle==='barcode'||codeStyle==='both') && barcodeDataUrl) ? `<div><img src="${barcodeDataUrl}" alt="barcode" style="height:16mm;max-width:80%;object-fit:contain"/></div>` : ""}
+        ${((codeStyle==='qr'||codeStyle==='both') && qrDataUrl) ? `<div style="margin-top:6px"><img src="${qrDataUrl}" alt="qr" style="width:26mm;height:26mm;image-rendering:pixelated"/></div>` : ""}
         <div class="center" style="font-family:monospace;font-weight:bold;font-size:13px;letter-spacing:1px">${esc(saleNumber)}</div>
       </div>` : ""}
     ${advertLines(org).length ? `<div class="center small" style="margin-top:10px">${advertLines(org).map(l => `<div>${esc(l)}</div>`).join("")}</div>` : ""}
@@ -241,7 +243,7 @@ export function buildThermalReceipt({
   customerName, cashierName,
   items = [], discountTotal = 0,
   paidAmount = null, balanceDue = null, paymentMethod = "", paymentStatus = "",
-  qrDataUrl = "", // MP-RECEIPT-RETURN-QR: QR PNG of saleNumber (was CODE128)
+  qrDataUrl = "", barcodeDataUrl = "", codeStyle = "qr", // MP-RECEIPT-CODE-STYLE
 } = {}) {
   const en = lang === "en";
   const W = (Number(widthMm) === 80) ? 80 : 58;
@@ -298,14 +300,18 @@ export function buildThermalReceipt({
 
   const footer = org.receipt_footer || (en ? "Thank you!" : "Merci !");
 
-  // MP-RECEIPT-RETURN-QR: scannable QR of the sale_number at the bottom (one-scan
-  // return lookup) + the number in readable text beneath as a manual fallback.
-  // Square, sized to print crisp on 58/80mm (replaces the CODE128 that failed).
+  // MP-RECEIPT-CODE-STYLE (Fix 1): scannable return-lookup code(s) at the bottom
+  // per the org style — CODE128 barcode (digits-only, scanner re-adds VNT-) and/or
+  // QR (full value) — + the readable full number beneath as a manual fallback.
   const qrMM = W === 80 ? 28 : 22;
-  const barcodeBlock = (qrDataUrl && saleNumber)
+  const bcH = W === 80 ? 15 : 13;
+  const showBar = (codeStyle === "barcode" || codeStyle === "both") && barcodeDataUrl;
+  const showQr = (codeStyle === "qr" || codeStyle === "both") && qrDataUrl;
+  const barcodeBlock = (saleNumber && (showBar || showQr))
     ? `<hr>
        <div class="ctr" style="margin-top:2px">
-         <img src="${qrDataUrl}" alt="qr" style="width:${qrMM}mm;height:${qrMM}mm;image-rendering:pixelated"/>
+         ${showBar ? `<img src="${barcodeDataUrl}" alt="barcode" style="width:96%;height:${bcH}mm;object-fit:contain"/>` : ""}
+         ${showQr ? `<div style="margin-top:${showBar ? 3 : 0}px"><img src="${qrDataUrl}" alt="qr" style="width:${qrMM}mm;height:${qrMM}mm;image-rendering:pixelated"/></div>` : ""}
          <div class="ctr b" style="font-family:'Courier New',monospace;font-size:${fontPx}px;letter-spacing:1px;margin-top:1px">${esc(saleNumber)}</div>
        </div>`
     : "";

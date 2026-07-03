@@ -781,7 +781,12 @@ export default function POSPage() {
     return !!i.product_id && (Number(i.quantity) || 0) > 0;
   };
 
-  const addToCart = (product, qty = 1) => {
+  // MP-FAST-MULTI-ADD (Fix 3): keepSearch=true leaves the product results list
+  // open after a tap so no-barcode shops can keep tapping to add many items
+  // rapidly (each tap = qty 1; adjust in cart later). The list closes when the
+  // user opens the cart (yellow cart bar) or clears/retypes the search. Scan/
+  // barcode adds keep the default (clear) behavior.
+  const addToCart = (product, qty = 1, keepSearch = false) => {
     const tier  = tierForCustomer(customer);
     const price = priceForTier(product, tier);
     // Low stock warning
@@ -815,7 +820,7 @@ export default function POSPage() {
         stock: product.stock?.quantity
       }];
     });
-    setSearch("");
+    if (!keepSearch) setSearch("");
   };
 
   const addDebtToCart = () => {
@@ -2715,7 +2720,7 @@ export default function POSPage() {
                   <motion.div key={p.id}
                     onClick={() => {
                       tapHaptic("light");
-                      addToCart(p);
+                      addToCart(p, 1, true); // keep the results list open for fast multi-add
                       setJustAddedId(p.id);
                       setTimeout(() => setJustAddedId(curr => curr === p.id ? null : curr), 280);
                     }}
@@ -2788,7 +2793,7 @@ export default function POSPage() {
       {mobile && (
         <MobileCartSheet
           open={sheetOpen}
-          onOpenChange={setSheetOpen}
+          onOpenChange={(o) => { setSheetOpen(o); if (o) setSearch(""); /* Fix 3: tapping the yellow cart bar closes the results list */ }}
           itemCount={cart.length}
           heldCount={activeHolds.length}
           total={total}
