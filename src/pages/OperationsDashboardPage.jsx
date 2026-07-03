@@ -406,6 +406,15 @@ export default function OperationsDashboardPage() {
                   <div style={{ fontSize: 13, marginTop: 3, textDecoration: tappable ? "underline" : "none" }}>
                     {text}
                   </div>
+                  {/* MP-OPS-ANOMALY-CASHIER-NAME: who rang the flagged sale (large_sale,
+                      void_after_payment). Backend resolves + trims pa_users.full_name;
+                      show a neutral fallback when unresolved. */}
+                  {a.link && a.link.type === "sale" && (
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 3, textDecoration: "none" }}>
+                      👤 {en ? "Cashier: " : "Caissier : "}
+                      <b>{(a.cashier_name && String(a.cashier_name).trim()) || (en ? "Unknown" : "Inconnu")}</b>
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                   <span style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
