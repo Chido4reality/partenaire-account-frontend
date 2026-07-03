@@ -1,65 +1,43 @@
-// MP-BELOW-COST-CLEAR-WORDING
+// MP-APPROVAL-PLAIN-LANGUAGE
 //
-// The amount on a below_cost_sale approval is the SHORTFALL — the total the
-// line(s) fall BELOW the floor/min price — NOT the sale total. Shown bare as
-// "150 FCFA" next to an item name it reads like a sale value and forces the
-// owner to investigate. This shared block spells it out everywhere the below-
-// cost approval surfaces (owner card, PIN modal, cashier's My Requests):
-//   • the total loss below floor, clearly labelled
-//   • the sale total, shown separately so the two can't be confused
-//   • per-line make-up (qty × per-unit under floor = line loss) from
-//     payload.below_cost, when space allows (compact hides the per-line list)
-//
-// fmt is the useCurrency() formatter from the host page.
+// Plain-language below-cost approval detail for a non-technical boss. Shown
+// everywhere a below_cost_sale approval surfaces (owner inbox card, owner PIN
+// modal, cashier's My Requests) — ONE per-item line each, then a total loss.
+// Includes the requesting cashier's name (trimmed; prod full_name has trailing
+// spaces). English primary / French secondary via `en` (the host page gates by
+// org currency, same as the receipt advert). `fmt` is useCurrency() (adds the
+// FCFA/₦ symbol). `compact` shows just the total. Data comes from
+// payload.below_cost[] (name, unit_price, floor/min_price, shortfall, qty) — no
+// new fields.
 
-// Mirror of the backend line-discount clamp so the sale total matches what the
-// cashier actually collects (below-cost payloads rarely carry line discounts,
-// but stay correct if they do).
-function resolveDisc(type, value, base) {
-  const v = Number(value) || 0;
-  if (!type || v <= 0) return 0;
-  const a = type === "percent" ? Math.round(base * v / 100) : Math.round(v);
-  return Math.max(0, Math.min(a, Math.round(base)));
-}
-
-export default function BelowCostLossDetail({ payload, shortfall, en, fmt, compact = false }) {
+export default function BelowCostLossDetail({ payload, shortfall, en, fmt, cashier, compact = false }) {
   const p = payload || {};
   const belowCost = Array.isArray(p.below_cost) ? p.below_cost : [];
-  const items = Array.isArray(p.items) ? p.items : [];
-  const loss = Number(shortfall != null ? shortfall : p.shortfall) || 0;
+  const who = String(cashier || "").trim() || (en ? "A cashier" : "Un caissier");
 
-  const saleTotal = items.reduce((s, i) => {
-    const gross = (Number(i.quantity) || 0) * (Number(i.unit_price) || 0);
-    return s + (gross - resolveDisc(i.discount_type, i.discount_value, gross));
-  }, 0);
+  const lineLoss = (l) => Number(l.shortfall)
+    || Math.max(0, (Number(l.floor != null ? l.floor : l.min_price) || 0) - (Number(l.unit_price) || 0)) * (Number(l.qty) || 0);
+  const totalLoss = belowCost.length
+    ? belowCost.reduce((s, l) => s + lineLoss(l), 0)
+    : (Number(shortfall != null ? shortfall : p.shortfall) || 0);
 
   return (
-    <div style={{ marginTop: 4 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: "#fca5a5" }}>
-        {en
-          ? `⚠️ Below floor price — total loss: ${fmt(loss)}`
-          : `⚠️ En dessous du prix plancher — perte totale : ${fmt(loss)}`}
+    <div style={{ marginTop: 4, fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+      {!compact && belowCost.map((l, idx) => {
+        const item = String(l.name || "").trim() || (en ? "this item" : "cet article");
+        const unit = Number(l.unit_price) || 0;
+        const floor = Number(l.floor != null ? l.floor : l.min_price) || 0;
+        return (
+          <div key={idx} style={{ marginBottom: 5 }}>
+            {en
+              ? `${who} wants to sell ${item} for ${fmt(unit)} — below the minimum price of ${fmt(floor)}. You lose ${fmt(lineLoss(l))} on this item.`
+              : `${who} veut vendre ${item} à ${fmt(unit)} — en dessous du prix minimum de ${fmt(floor)}. Vous perdez ${fmt(lineLoss(l))} sur cet article.`}
+          </div>
+        );
+      })}
+      <div style={{ fontWeight: 700, color: "#fca5a5" }}>
+        {en ? `Total loss: ${fmt(totalLoss)}` : `Perte totale : ${fmt(totalLoss)}`}
       </div>
-      {saleTotal > 0 && (
-        <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 2 }}>
-          {en ? `Sale total: ${fmt(saleTotal)}` : `Total de la vente : ${fmt(saleTotal)}`}
-        </div>
-      )}
-      {!compact && belowCost.length > 0 && (
-        <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6, lineHeight: 1.5 }}>
-          {belowCost.map((l, idx) => {
-            const qty = Number(l.qty) || 0;
-            const floor = Number(l.floor != null ? l.floor : l.min_price) || 0;
-            const unit = Number(l.unit_price) || 0;
-            const under = Math.max(0, floor - unit); // per-unit shortfall
-            return (
-              <div key={idx}>
-                • {(l.name || "").trim() || (en ? "item" : "article")}: {qty} × {fmt(under)} {en ? "under floor" : "sous le plancher"} = {fmt(Number(l.shortfall) || under * qty)}
-              </div>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }

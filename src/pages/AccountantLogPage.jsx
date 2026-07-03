@@ -19,6 +19,7 @@ import { hasFeature } from "../utils/planCapabilities";
 import { useCurrency } from "../utils/useCurrency";
 import api from "../utils/api";
 import BelowCostLossDetail from "../components/common/BelowCostLossDetail";
+import DiscountApprovalDetail from "../components/common/DiscountApprovalDetail";
 import { explainAnomaly, severityCue, groupLabel, anomalySeverity } from "../utils/anomalyExplain";
 
 // Role badge colours — mirror SettingsPage ROLES.
@@ -311,11 +312,14 @@ export default function AccountantLogPage() {
               <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 2 }}>
                 {/* MP-BELOW-COST-CLEAR-WORDING: a below-cost amount is the shortfall,
                     not the sale total — render it labelled, not as a bare number. */}
-                {[a.action_type !== "below_cost_sale" && a.amount != null ? fmtCur(Math.abs(Number(a.amount))) : null, a.target_ref, a.branch_name].filter(Boolean).join(" · ")}
+                {[!["below_cost_sale", "discount"].includes(a.action_type) && a.amount != null ? fmtCur(Math.abs(Number(a.amount))) : null, a.target_ref, a.branch_name].filter(Boolean).join(" · ")}
                 {" · "}{new Date(a.created_at).toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
               </div>
               {a.action_type === "below_cost_sale" && (
-                <BelowCostLossDetail payload={a.payload} shortfall={a.amount} en={en} fmt={fmtCur} />
+                <BelowCostLossDetail payload={a.payload} shortfall={a.amount} en={en} fmt={fmtCur} cashier={a.requested_by_name} />
+              )}
+              {a.action_type === "discount" && (
+                <DiscountApprovalDetail payload={a.payload} en={en} fmt={fmtCur} cashier={a.requested_by_name} />
               )}
               <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                 <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setRejectNote(""); setRejectFor(a); }}>
@@ -454,9 +458,12 @@ export default function AccountantLogPage() {
             <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 14 }}>
               {(pinFor.requested_by_name || (en ? "A staff member" : "Un employé"))} {en ? "wants to" : "veut"} {APPROVAL_VERB[pinFor.action_type] || pinFor.action_type}
               {/* MP-BELOW-COST-CLEAR-WORDING: the below-cost amount is the shortfall — show it labelled below, not inline as a total. */}
-              {pinFor.action_type !== "below_cost_sale" && pinFor.amount != null ? ` — ${fmtCur(Math.abs(Number(pinFor.amount)))}` : ""}{pinFor.target_ref ? ` — ${pinFor.target_ref}` : ""}.
+              {!["below_cost_sale", "discount"].includes(pinFor.action_type) && pinFor.amount != null ? ` — ${fmtCur(Math.abs(Number(pinFor.amount)))}` : ""}{pinFor.target_ref ? ` — ${pinFor.target_ref}` : ""}.
               {pinFor.action_type === "below_cost_sale" && (
-                <BelowCostLossDetail payload={pinFor.payload} shortfall={pinFor.amount} en={en} fmt={fmtCur} />
+                <BelowCostLossDetail payload={pinFor.payload} shortfall={pinFor.amount} en={en} fmt={fmtCur} cashier={pinFor.requested_by_name} />
+              )}
+              {pinFor.action_type === "discount" && (
+                <DiscountApprovalDetail payload={pinFor.payload} en={en} fmt={fmtCur} cashier={pinFor.requested_by_name} />
               )}
               <br />{en ? "Approving gives the green light — the staff member completes it at the counter." : "Approuver donne le feu vert — l'employé la finalise au comptoir."}
             </div>

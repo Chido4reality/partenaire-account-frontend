@@ -24,6 +24,8 @@ import PayButton from "../components/pos/PayButton";
 import { tapHaptic } from "../utils/haptics";
 import { motion } from "framer-motion";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
+import BelowCostLossDetail from "../components/common/BelowCostLossDetail";
+import DiscountApprovalDetail from "../components/common/DiscountApprovalDetail";
 import RestrictedAction from "../components/common/RestrictedAction";
 import useOwnerApproval from "../hooks/useOwnerApproval";
 
@@ -929,14 +931,18 @@ export default function POSPage() {
     const choice = belowCostChoice;
     setBelowCostChoice(null);
     if (!choice) return;
+    // MP-APPROVAL-PLAIN-LANGUAGE: plain description for the owner-PIN screen.
+    const who = String(user?.full_name || "").trim() || (lang === "en" ? "A cashier" : "Un caissier");
+    const qty = (cart.find(l => l.lineId === choice.lineId)?.quantity) || 1;
+    const loss = Math.max(0, (Number(choice.min_price) || 0) - (Number(choice.attempted_price) || 0)) * qty;
     requestApproval({
       actionType:  "edit_product_price",
       targetTable: "pa_products",
       targetId:    choice.product_id,
       context:     { min_price: choice.min_price, attempted_price: choice.attempted_price, product: choice.name },
       description: lang === "en"
-        ? `Sell "${choice.name}" below minimum (${choice.min_price.toLocaleString()} ${fmt.symbol}) at ${choice.attempted_price.toLocaleString()} ${fmt.symbol}`
-        : `Vendre "${choice.name}" sous le minimum (${choice.min_price.toLocaleString()} ${fmt.symbol}) à ${choice.attempted_price.toLocaleString()} ${fmt.symbol}`,
+        ? `${who} wants to sell "${choice.name}" for ${fmt(choice.attempted_price)} — below the minimum price of ${fmt(choice.min_price)}. You lose ${fmt(loss)} on this item.`
+        : `${who} veut vendre "${choice.name}" à ${fmt(choice.attempted_price)} — en dessous du prix minimum de ${fmt(choice.min_price)}. Vous perdez ${fmt(loss)} sur cet article.`,
     })
       .then(({ token }) => {
         setCart(c => c.map(it => it.lineId === choice.lineId
@@ -1653,9 +1659,14 @@ export default function POSPage() {
       targetTable: "pa_sales",
       targetId:    null,
       context:     { effective_pct: choice?.effective_pct, total_discount: choice?.total_discount },
-      description: lang === "en"
-        ? `Approve a ${choice?.effective_pct}% discount on this sale (${fmt(choice?.total_discount || totalDiscount)})`
-        : `Approuver une remise de ${choice?.effective_pct}% sur cette vente (${fmt(choice?.total_discount || totalDiscount)})`,
+      // MP-APPROVAL-PLAIN-LANGUAGE: plain description for the owner-PIN screen.
+      description: (() => {
+        const who = String(user?.full_name || "").trim() || (lang === "en" ? "A cashier" : "Un caissier");
+        const tot = fmt(choice?.total_discount || totalDiscount);
+        return lang === "en"
+          ? `${who} wants to give a total discount of ${tot} on this sale. Total discount: ${tot}.`
+          : `${who} veut accorder une remise totale de ${tot} sur cette vente. Remise totale : ${tot}.`;
+      })(),
     })
       .then(({ token }) => { discountTokenRef.current = token; saleMutation.mutate(); })
       .catch((e) => {
@@ -2287,10 +2298,12 @@ export default function POSPage() {
             <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 6 }}>
               🔐 {lang === "en" ? "Discount needs approval" : "Remise à approuver"}
             </div>
-            <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 18, lineHeight: 1.5 }}>
-              {lang === "en"
-                ? `A ${discountChoice.effective_pct}% discount (${fmt(discountChoice.total_discount || totalDiscount)}) is over your limit. Choose how to get the owner's approval:`
-                : `Une remise de ${discountChoice.effective_pct}% (${fmt(discountChoice.total_discount || totalDiscount)}) dépasse votre limite. Choisissez comment obtenir l'approbation :`}
+            {/* MP-APPROVAL-PLAIN-LANGUAGE: same per-item + total wording the boss sees. */}
+            <div style={{ marginBottom: 16 }}>
+              <DiscountApprovalDetail payload={{ items: cart, total_discount: (discountChoice.total_discount || totalDiscount) }} en={lang === "en"} fmt={fmt} cashier={user?.full_name} />
+              <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.5 }}>
+                {lang === "en" ? "This is over your limit. Choose how to get the owner's approval:" : "Ceci dépasse votre limite. Choisissez comment obtenir l'approbation :"}
+              </div>
             </div>
             <button onClick={discountViaPin} disabled={sendingToBoss}
               style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid var(--brand)", background: "var(--brand)", color: "#152B52", cursor: "pointer", textAlign: "left", fontWeight: 700, marginBottom: 10 }}>
@@ -2320,10 +2333,14 @@ export default function POSPage() {
             <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 6 }}>
               🔐 {lang === "en" ? "Below-cost price needs approval" : "Prix sous le coût à approuver"}
             </div>
-            <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 18, lineHeight: 1.5 }}>
-              {lang === "en"
-                ? `"${belowCostChoice.name}" at ${fmt(belowCostChoice.attempted_price)} is below the floor of ${fmt(belowCostChoice.min_price)}. Choose how to get the owner's approval:`
-                : `"${belowCostChoice.name}" à ${fmt(belowCostChoice.attempted_price)} est sous le plancher de ${fmt(belowCostChoice.min_price)}. Choisissez comment obtenir l'approbation :`}
+            {/* MP-APPROVAL-PLAIN-LANGUAGE: same per-item + total-loss wording the boss sees. */}
+            <div style={{ marginBottom: 16 }}>
+              <BelowCostLossDetail
+                payload={{ below_cost: [{ name: belowCostChoice.name, unit_price: belowCostChoice.attempted_price, min_price: belowCostChoice.min_price, qty: (cart.find(l => l.lineId === belowCostChoice.lineId)?.quantity) || 1 }] }}
+                en={lang === "en"} fmt={fmt} cashier={user?.full_name} />
+              <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.5 }}>
+                {lang === "en" ? "Choose how to get the owner's approval:" : "Choisissez comment obtenir l'approbation :"}
+              </div>
             </div>
             <button onClick={belowCostViaPin} disabled={sendingToBoss}
               style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid var(--brand)", background: "var(--brand)", color: "#152B52", cursor: "pointer", textAlign: "left", fontWeight: 700, marginBottom: 10 }}>
