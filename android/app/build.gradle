@@ -21,6 +21,11 @@ def mpKeyPass       = (mpKsProps.getProperty('keyPassword') ?: System.getenv('MP
 android {
     namespace "com.partenaire.monpartenaire"
     compileSdk rootProject.ext.compileSdkVersion
+    // MP-16KB-READY: NDK r27+ links native code with 16 KB max-page-size by
+    // default. We compile no native code ourselves (the only .so, libsqlcipher,
+    // is a prebuilt dependency), so r27 does not re-align that lib — but it makes
+    // the toolchain 16 KB-ready and is required to extract native debug symbols.
+    ndkVersion "27.3.13750724"
     defaultConfig {
         applicationId "com.partenaire.monpartenaire"
         minSdkVersion rootProject.ext.minSdkVersion
@@ -30,8 +35,8 @@ android {
         // duplicates). versionName is the human-facing semver visible
         // in About / Play Store. Bump versionCode by +1 every release;
         // bump versionName per semver rules.
-        versionCode 49
-        versionName "2.2.1"
+        versionCode 50
+        versionName "2.2.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -55,9 +60,25 @@ android {
     }
     buildTypes {
         release {
+            // MP-R8-LEFT-OFF: minification/obfuscation stays DISABLED. Enabling R8
+            // would clear the Play "no deobfuscation file" warning (informational,
+            // no user impact) but risks stripping classes the Capacitor bridge and
+            // the Bluetooth ESC/POS printer reach via reflection/JNI — and we can't
+            // verify printing on a device here. Not worth risking the printer.
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.release
+            // MP-NATIVE-DEBUG-SYMBOLS (Fix #2): request native debug symbols in the
+            // AAB so Play can symbolicate native crashes. NOTE: the only native lib
+            // is the prebuilt libsqlcipher.so from @capacitor-community/sqlite, which
+            // the vendor ships FULLY STRIPPED (only .dynsym; no .symtab/.debug_*), so
+            // AGP's extraction produces nothing and the Play "no debug symbols"
+            // warning persists for now — it resolves with the same SQLCipher-lib swap
+            // as the 16 KB fix (Capacitor 7 upgrade). Config kept: correct + it
+            // auto-activates if a symbol-carrying lib is ever used.
+            ndk {
+                debugSymbolLevel 'FULL'
+            }
         }
     }
 }
