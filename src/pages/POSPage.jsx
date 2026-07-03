@@ -3224,8 +3224,7 @@ function HoldTicket({ hold, org, lang, cashierName, onClose }) {
         <div class="line"></div>
         <div class="row est"><span>${HT.est}</span><span>${(Number(hold.estimated_total) || 0).toLocaleString()} ${fmt.symbol}</span></div>
         <div class="line"></div>
-        ${codes.barcode ? `<div class="center"><img src="${codes.barcode}" style="height:44px;image-rendering:pixelated"/></div>` : ""}
-        ${codes.qr ? `<div class="center"><img src="${codes.qr}" style="width:110px;height:110px"/></div>` : ""}
+        ${codes.qr ? `<div class="center"><img src="${codes.qr}" style="width:110px;height:110px;image-rendering:pixelated"/></div>` : ""}
         <div class="center" style="font-size:11px">${hold.hold_ref}</div>
         <div class="line"></div>
         <div class="note">${HT.notReceipt}</div>
@@ -3264,10 +3263,9 @@ function HoldTicket({ hold, org, lang, cashierName, onClose }) {
           <div style={{ borderTop: "1px dashed var(--border)", marginTop: 8, paddingTop: 8, display: "flex", justifyContent: "space-between", fontWeight: 800 }}>
             <span>{HT.est}</span><span style={{ color: "var(--brand-light)" }}>{(Number(hold.estimated_total) || 0).toLocaleString()} F</span>
           </div>
-          {(codes.barcode || codes.qr) && (
+          {codes.qr && (
             <div style={{ borderTop: "1px dashed var(--border)", marginTop: 8, paddingTop: 10, textAlign: "center", background: "#fff", borderRadius: 8, padding: "10px 0" }}>
-              {codes.barcode && <img src={codes.barcode} alt="barcode" style={{ height: 44, maxWidth: "90%" }} />}
-              {codes.qr && <div><img src={codes.qr} alt="qr" style={{ width: 96, height: 96 }} /></div>}
+              <div><img src={codes.qr} alt="qr" style={{ width: 110, height: 110 }} /></div>
               <div style={{ fontSize: 11, color: "#000", fontFamily: "monospace", fontWeight: 700 }}>{hold.hold_ref}</div>
             </div>
           )}

@@ -580,9 +580,9 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
       balanceDue: data.balance_due != null ? Number(data.balance_due) : null,
       paymentMethod: data.payment_method || "",
       paymentStatus: data.payment_status || "",
-      // MP-RECEIPT-RETURN-BARCODE: CODE128 PNG of the sale_number for the thermal
-      // HTML path (the ESC/POS path draws its own native barcode from saleNumber).
-      barcodeDataUrl: codes.barcode || "",
+      // MP-RECEIPT-RETURN-QR: QR PNG of the sale_number for the thermal HTML path
+      // (the ESC/POS path draws its own native QR from saleNumber).
+      qrDataUrl: codes.qr || "",
     };
   };
   const printThermal = (widthMm) => openPrint(buildThermalReceipt(saleReceiptOpts(widthMm)));
@@ -655,7 +655,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
         cashierName: data.cashier_name || null, // MP-SALE-CASHIER-NAME: "Served by"
         items,
         discountTotal: Math.max(0, grossItems - netTotal),
-        barcodeDataUrl: codes.barcode || "", // MP-RECEIPT-RETURN-BARCODE
+        qrDataUrl: codes.qr || "", // MP-RECEIPT-RETURN-QR
       }));
       return;
     }
@@ -848,10 +848,9 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
               <div>{dateStr} · {timeStr}</div>
             </div>
 
-            {reference && (codes.barcode || codes.qr) && (
+            {reference && codes.qr && (
               <div style={{ borderTop: "1px dashed var(--border)", marginTop: 8, paddingTop: 10, textAlign: "center", background: "#fff", borderRadius: 8, padding: "10px 0" }}>
-                {codes.barcode && <img src={codes.barcode} alt="barcode" style={{ height: 44, maxWidth: "90%" }} />}
-                {codes.qr && <div><img src={codes.qr} alt="qr" style={{ width: 96, height: 96 }} /></div>}
+                <div><img src={codes.qr} alt="qr" style={{ width: 110, height: 110 }} /></div>
                 <div style={{ fontSize: 11, color: "#000", fontFamily: "monospace", fontWeight: 700 }}>{reference}</div>
               </div>
             )}

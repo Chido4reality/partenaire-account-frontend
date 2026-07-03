@@ -1205,7 +1205,7 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                   <div style={{ fontSize: 11, fontWeight: 700, color: cue.dot, marginBottom: 2 }}>{cue.label}</div>
                   <div style={{ fontWeight: 600, fontSize: 14.5, lineHeight: 1.35 }}>{ex.what}</div>
                   <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-                    {timeLabel(r.created_at, en)}{r.branch_name ? ` · ${r.branch_name}` : ""} · {en ? "tap for what to do" : "toucher pour quoi faire"}
+                    👤 {ex.staffName} · {timeLabel(r.created_at, en)}{r.branch_name ? ` · ${r.branch_name}` : ""} · {en ? "tap for what to do" : "toucher pour quoi faire"}
                   </div>
                 </div>
                 {amt != null && (
@@ -1262,6 +1262,7 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                 <div style={{ marginBottom: 14 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: cue.dot, marginBottom: 6 }}>{cue.label}</div>
                   <div style={{ fontWeight: 700, fontSize: 15.5, lineHeight: 1.35 }}>{ex.what}</div>
+                  <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 6 }}>👤 {en ? "Staff" : "Personnel"}: <b>{ex.staffName}</b></div>
                   {ex.why && (
                     <div style={{ marginTop: 10, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px" }}>
                       <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--text-muted)", marginBottom: 3 }}>{en ? "Why it's flagged" : "Pourquoi c'est signalé"}</div>

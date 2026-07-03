@@ -98,21 +98,45 @@ export function opsSeverityCue(severity, en) {
   return severityCue(level, en);
 }
 
-// Returns { severity, what, why, do } — why/do are "" for actions without a
-// dedicated script (what still renders a best-effort sentence).
+// Resolve the responsible-staff name for an anomaly, NEVER blank. Order:
+//   1. explicit payload names — voided_by_name / cashier_name,
+//   2. the audit performer — actor_name (audit user_id → pa_users.full_name,
+//      resolved server-side by the pa_staff_activity RPC and the /notifications
+//      enrichment; this is the join-equivalent — for sale_voided_approval the
+//      payload has no name/sale_number, so this is what surfaces a name),
+//   3. a neutral label.
+// All trimmed — some pa_users.full_name values carry trailing whitespace.
+export function resolveStaffName(audit, en) {
+  const d = (audit && audit.new_data) || {};
+  const t = (v) => (v == null ? "" : String(v).trim());
+  return t(d.voided_by_name) || t(d.cashier_name) || t(audit && audit.actor_name)
+    || (en ? "Unknown staff" : "Personnel inconnu");
+}
+
+// Returns { severity, what, why, do, staffName } — why/do are "" for actions
+// without a dedicated script (what still renders a best-effort sentence).
+// staffName is the resolved responsible-staff name (never blank), also embedded
+// in `what` for the void actions.
 export function explainAnomaly(audit, en, money) {
+  const out = explainAnomalyCore(audit, en, money);
+  return { ...out, staffName: resolveStaffName(audit, en) };
+}
+
+function explainAnomalyCore(audit, en, money) {
   const action = audit && audit.action;
   const d = (audit && audit.new_data) || {};
   const has = (v) => v != null && v !== "";
   const m = (v) => (money ? money(Math.abs(Number(v) || 0)) : String(Math.round(Math.abs(Number(v) || 0))));
-  const actor = has(audit && audit.actor_name) ? audit.actor_name : (en ? "A staff member" : "Un employé");
+  const actor = resolveStaffName(audit, en); // responsible staff, never blank, trimmed
   const severity = anomalySeverity(action);
 
   switch (action) {
     case "sale_voided":
     case "sale_voided_approval": {
-      const by = has(d.voided_by_name) ? d.voided_by_name : actor;
-      const num = has(d.sale_number) ? d.sale_number : (en ? "a sale" : "une vente");
+      const by = actor; // resolveStaffName already prefers voided_by_name/cashier_name
+      // sale_voided_approval stores the number under void_sale_number, not sale_number.
+      const num = has(d.sale_number) ? d.sale_number
+        : (has(d.void_sale_number) ? d.void_sale_number : (en ? "a sale" : "une vente"));
       const amt = has(d.original_total_amount) ? m(d.original_total_amount) : "";
       const reason = has(d.reason) ? d.reason : (en ? "not given" : "non indiquée");
       const items = (Array.isArray(d.items_returned) ? d.items_returned : [])

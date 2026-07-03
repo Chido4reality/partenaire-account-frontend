@@ -64,19 +64,22 @@ function newDoc(widthChars) {
       return api;
     },
     rule() { api.line("-".repeat(widthChars)); return api; },
-    // MP-RECEIPT-RETURN-BARCODE: native CODE128 barcode (code set B) with the
-    // human-readable value printed BELOW by the printer (HRI = 2). Height ~12mm.
-    barcode128(value) {
+    // MP-RECEIPT-RETURN-QR: native QR (GS ( k, model 2) of the sale_number for
+    // one-scan return lookup — robust on 58mm thermal where a dense CODE128 of a
+    // 16–17 char VNT-… value failed ("wide error!"). QR has no HRI, so the caller
+    // prints the human-readable value beneath. Module size tuned to stay crisp.
+    qrCode(value) {
       const v = asciiFold(value);
       if (!v) return api;
-      api.raw(GS, 0x68, widthChars >= 48 ? 110 : 96); // GS h  barcode height (dots)
-      api.raw(GS, 0x77, 2);                            // GS w  module width
-      api.raw(GS, 0x48, 2);                            // GS H  HRI text below the bars
+      const mod = widthChars >= 48 ? 8 : 6;            // module size in dots (80mm / 58mm)
       api.align("C");
-      const payload = [0x7b, 0x42];                    // "{B" = CODE128 code set B
-      for (let i = 0; i < v.length; i++) payload.push(v.charCodeAt(i) & 0xff);
-      api.raw(GS, 0x6b, 73, payload.length & 0xff);    // GS k 73 n  (CODE128)
-      for (const b of payload) bytes.push(b & 0xff);
+      api.raw(GS, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00); // fn65: select model 2
+      api.raw(GS, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, mod);        // fn67: module size
+      api.raw(GS, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45, 0x31);       // fn69: error correction M
+      const n = v.length + 3;                                       // pL,pH = data length + 3
+      api.raw(GS, 0x28, 0x6b, n & 0xff, (n >> 8) & 0xff, 0x31, 0x50, 0x30); // fn80: store data
+      for (let i = 0; i < v.length; i++) bytes.push(v.charCodeAt(i) & 0xff);
+      api.raw(GS, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x51, 0x30);       // fn81: print stored symbol
       bytes.push(LF);
       return api;
     },
@@ -166,9 +169,10 @@ export function buildSaleEscposBytes({
   // Footer
   d.align("C").line(org.receipt_footer || (en ? "Thank you!" : "Merci !"));
 
-  // MP-RECEIPT-RETURN-BARCODE: scannable sale_number CODE128 (readable value
-  // printed beneath by the printer) at the bottom, above the advert.
-  if (saleNumber) { d.feed(1).barcode128(saleNumber); }
+  // MP-RECEIPT-RETURN-QR: scannable sale_number QR at the bottom (above the
+  // advert), with the human-readable value printed beneath it as a manual
+  // fallback (QR has no built-in HRI line).
+  if (saleNumber) { d.feed(1).qrCode(saleNumber); d.align("C").line(saleNumber); }
 
   // MP-RECEIPT-ADVERT: text-only "Powered by Mon Partenaire" at the very bottom,
   // language by org country; ASCII-folded for cheap printers. Omitted when off.
