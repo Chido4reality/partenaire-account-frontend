@@ -19,7 +19,7 @@
 //    currency helper; action labels come from the i18n dictionary.
 import { currencySymbol } from "./currency";
 import { t } from "./i18n";
-import { advertLines } from "./receiptExtras";
+import { advertLines, showDownloadQr, downloadQrCaptionLines } from "./receiptExtras";
 
 function esc(s) {
   return String(s == null ? "" : s)
@@ -37,7 +37,7 @@ function factureDate(sd) {
 // org: { logo_url, name, slogan, address, city, country, phone, whatsapp_number,
 //        email, currency, receipt_footer }  (empty fields are skipped)
 // items: [{ name, quantity, unit_price }]   (debt lines: pass quantity 1, unit_price = amount)
-export function buildFactureHtml({ org = {}, lang = "fr", saleNumber = "", saleDate = "", customerName, cashierName, items = [], discountTotal = 0, qrDataUrl = "", barcodeDataUrl = "", codeStyle = "qr" }) {
+export function buildFactureHtml({ org = {}, lang = "fr", saleNumber = "", saleDate = "", customerName, cashierName, items = [], discountTotal = 0, qrDataUrl = "", barcodeDataUrl = "", codeStyle = "qr", downloadQrDataUrl = "" }) {
   const currency = esc(currencySymbol(org.currency));   // XAF -> FCFA, etc.
   const footer = org.receipt_footer || "";
 
@@ -137,6 +137,7 @@ export function buildFactureHtml({ org = {}, lang = "fr", saleNumber = "", saleD
         <div class="center" style="font-family:monospace;font-weight:bold;font-size:13px;letter-spacing:1px">${esc(saleNumber)}</div>
       </div>` : ""}
     ${advertLines(org).length ? `<div class="center small" style="margin-top:10px">${advertLines(org).map(l => `<div>${esc(l)}</div>`).join("")}</div>` : ""}
+    ${(showDownloadQr(org) && downloadQrDataUrl) ? `<div class="center small" style="margin-top:8px">${downloadQrCaptionLines(org).map(l => `<div>${esc(l)}</div>`).join("")}<div><img src="${downloadQrDataUrl}" alt="app download" style="width:20mm;height:20mm;image-rendering:pixelated;margin-top:3px"/></div></div>` : ""}
     </div>
     <script>
       function _shareFacture(){
@@ -154,7 +155,7 @@ export function buildFactureHtml({ org = {}, lang = "fr", saleNumber = "", saleD
 // window.open()-spawned windows can't be reliably closed on Android WebView
 // (window.close() is a no-op), which left an uncloseable layer over the app.
 // All styles are scoped under .mp-fac so nothing leaks to the host app.
-export function buildFactureInner({ org = {}, lang = "fr", saleNumber = "", saleDate = "", customerName, cashierName, items = [], discountTotal = 0, qrDataUrl = "", barcodeDataUrl = "", codeStyle = "qr" }) {
+export function buildFactureInner({ org = {}, lang = "fr", saleNumber = "", saleDate = "", customerName, cashierName, items = [], discountTotal = 0, qrDataUrl = "", barcodeDataUrl = "", codeStyle = "qr", downloadQrDataUrl = "" }) {
   const currency = esc(currencySymbol(org.currency));
   const footer = org.receipt_footer || "";
 
@@ -223,6 +224,7 @@ export function buildFactureInner({ org = {}, lang = "fr", saleNumber = "", sale
         <div class="center" style="font-family:monospace;font-weight:bold;font-size:13px;letter-spacing:1px">${esc(saleNumber)}</div>
       </div>` : ""}
     ${advertLines(org).length ? `<div class="center small" style="margin-top:10px">${advertLines(org).map(l => `<div>${esc(l)}</div>`).join("")}</div>` : ""}
+    ${(showDownloadQr(org) && downloadQrDataUrl) ? `<div class="center small" style="margin-top:8px">${downloadQrCaptionLines(org).map(l => `<div>${esc(l)}</div>`).join("")}<div><img src="${downloadQrDataUrl}" alt="app download" style="width:20mm;height:20mm;image-rendering:pixelated;margin-top:3px"/></div></div>` : ""}
   </div>`;
 }
 
@@ -244,6 +246,7 @@ export function buildThermalReceipt({
   items = [], discountTotal = 0,
   paidAmount = null, balanceDue = null, paymentMethod = "", paymentStatus = "",
   qrDataUrl = "", barcodeDataUrl = "", codeStyle = "qr", // MP-RECEIPT-CODE-STYLE
+  downloadQrDataUrl = "", // MP-RECEIPT-DOWNLOAD-QR: app-download QR in the advert
 } = {}) {
   const en = lang === "en";
   const W = (Number(widthMm) === 80) ? 80 : 58;
@@ -319,9 +322,21 @@ export function buildThermalReceipt({
   // MP-RECEIPT-ADVERT: text-only "Powered by Mon Partenaire" at the very bottom,
   // language by org country; wraps within the roll width. Omitted when toggled off.
   const adverts = advertLines(org);
-  const advertBlock = adverts.length
+  // MP-RECEIPT-DOWNLOAD-QR: small app-download QR + caption, part of the advert
+  // (same toggle), placed below the advert text — well clear of the return-lookup
+  // code above so the two codes don't crowd each other on 58mm.
+  const dlMM = W === 80 ? 20 : 16;
+  const dlCaption = downloadQrCaptionLines(org);
+  const downloadBlock = (showDownloadQr(org) && downloadQrDataUrl)
+    ? `<div class="ctr sm" style="margin-top:6px">
+         ${dlCaption.map(l => `<div>${esc(l)}</div>`).join("")}
+         <div style="margin-top:2px"><img src="${downloadQrDataUrl}" alt="app download" style="width:${dlMM}mm;height:${dlMM}mm;image-rendering:pixelated"/></div>
+       </div>`
+    : "";
+  const advertBlock = (adverts.length || downloadBlock)
     ? `<hr>
-       <div class="ctr sm" style="margin-top:2px">${adverts.map(l => `<div>${esc(l)}</div>`).join("")}</div>`
+       ${adverts.length ? `<div class="ctr sm" style="margin-top:2px">${adverts.map(l => `<div>${esc(l)}</div>`).join("")}</div>` : ""}
+       ${downloadBlock}`
     : "";
 
   return `<style>

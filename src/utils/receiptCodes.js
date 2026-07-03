@@ -23,3 +23,9 @@ export async function genSaleCodes(value) {
   try { qr = await QRCode.toDataURL(String(value || ""), { margin: 1, width: 220, errorCorrectionLevel: "M" }); } catch { /* ignore */ }
   return { barcode, qr, barcodeValue: digits };
 }
+
+// Generic QR data URL (e.g. the app-download link in the advert footer).
+export async function genQr(value, width = 160) {
+  try { return await QRCode.toDataURL(String(value || ""), { margin: 1, width, errorCorrectionLevel: "M" }); }
+  catch { return ""; }
+}

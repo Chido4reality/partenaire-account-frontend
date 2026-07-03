@@ -27,7 +27,7 @@ import CameraScanner from "./CameraScanner";
 import OnboardingGuide from "./OnboardingGuide";
 import { explainAnomaly, severityCue } from "../../utils/anomalyExplain";
 import { normalizeScannedSaleRef } from "../../utils/receiptCodeStyle";
-import { hasSeenOnboarding } from "../../utils/onboarding";
+import { hasSeenOnboardingLocally, reconcileOnboardingSeen } from "../../utils/onboarding";
 import toast from "react-hot-toast";
 
 // Sprint A: each nav item declares the capability section it belongs to.
@@ -347,25 +347,33 @@ function RestrictedLock({ lang, hasPending, onRequest }) {
 export default function Layout() {
   const { user, org, logout, impersonating } = useAuthStore();
   const fmt = useCurrency(); // MP-ANOMALY-EXPLAIN: currency for the enriched bell alerts
-  // MP-ONBOARDING-FIRST-RUN: show the first-run quick guide ONCE per user per
-  // device (owner AND staff). Skipped for impersonation sessions. The per-user
-  // set lives in Capacitor Preferences so each staffer on a shared shop phone
-  // gets it once. Guarded so the async check runs a single time per mount.
+  // MP-ONBOARDING-DB-FLAG: show the first-run quick guide ONCE per user, gated by
+  // the AUTHORITATIVE server flag user.has_seen_onboarding (device Preferences is
+  // only a secondary cache). Guarded: decide ONLY after user.id AND the flag are
+  // loaded (a boolean) — never default to showing on a null/unloaded user; skip
+  // impersonation. onboardCheckedRef makes the decision fire once per mount.
   const [showOnboarding, setShowOnboarding] = useState(false);
   const onboardCheckedRef = useRef(false);
   useEffect(() => {
     if (onboardCheckedRef.current) return;
     if (!user?.id || impersonating) return;
+    if (typeof user.has_seen_onboarding !== "boolean") return; // flag not loaded yet → wait
     onboardCheckedRef.current = true;
+    try { console.info("[onboarding] check", { userId: String(user.id), has_seen_onboarding: user.has_seen_onboarding }); } catch { /* ignore */ }
+    if (user.has_seen_onboarding === true) return;              // DB authoritative → never show
     let cancelled = false;
     (async () => {
       try {
-        const seen = await hasSeenOnboarding(user.id);
-        if (!cancelled && !seen) setShowOnboarding(true);
+        // DB says false → belt-and-suspenders: if this device already showed it
+        // (a prior server write may have failed), stay hidden + reconcile the flag.
+        const seenLocally = await hasSeenOnboardingLocally(user.id);
+        if (cancelled) return;
+        if (seenLocally) { reconcileOnboardingSeen(); return; }
+        setShowOnboarding(true);
       } catch { /* never block the app on the guide */ }
     })();
     return () => { cancelled = true; };
-  }, [user?.id, impersonating]);
+  }, [user?.id, user?.has_seen_onboarding, impersonating]);
   // MP-MOBILE-UI: publish the IME height as --kb-inset + keep the focused
   // field centered, so inputs below the fold in mobile drawers/sheets stay
   // reachable when the keyboard is open.
