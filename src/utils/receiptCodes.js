@@ -1,17 +1,25 @@
+import JsBarcode from "jsbarcode";
 import QRCode from "qrcode";
+import { saleDigits } from "./receiptCodeStyle";
 
-// Shared receipt-code generator. QR ONLY — a QR of the sale_number for one-scan
-// return lookup. The old CODE128 barcode was REMOVED: a dense CODE128 of a 16–17
-// char VNT-… value did not render reliably on 58mm thermal (the ESC/POS path
-// printed "wide error!" + garbage bars), while a QR of the same value scans on
-// the first try and the in-app camera scanner already decodes QR. No CDN (CSP).
+// Shared receipt-code generator → data URLs (no CDN, CSP-safe). Returns BOTH:
+//   barcode → CODE128 of the sale_number's DIGITS ONLY ("VNT-20260703-0027" →
+//             "202607030027"). Full alphanumeric CODE128 is too wide to scan on
+//             58mm thermal (the "wide error!"); 12 digits fit + stay scannable.
+//             format "CODE128" auto-picks Code Set C for the digit run (narrow).
+//   qr      → the FULL sale_number, scans reliably on thermal.
+// The receipt prints the human-readable full number beneath either code, and the
+// scanner re-adds the VNT-/dashes for a digits-only barcode scan.
 // Used by: POS sale receipt, Reports per-sale print, Hold Ticket.
 export async function genSaleCodes(value) {
-  let qr = "";
+  const digits = saleDigits(value);
+  let barcode = "";
   try {
-    qr = await QRCode.toDataURL(String(value || ""), { margin: 1, width: 220, errorCorrectionLevel: "M" });
+    const c = document.createElement("canvas");
+    JsBarcode(c, digits || String(value || ""), { format: "CODE128", width: 2, height: 60, displayValue: false, margin: 0 });
+    barcode = c.toDataURL("image/png");
   } catch { /* ignore */ }
-  // `barcode` kept as "" for back-compat with any caller that still reads it —
-  // the CODE128 path is intentionally gone so it can never render broken bars.
-  return { qr, barcode: "" };
+  let qr = "";
+  try { qr = await QRCode.toDataURL(String(value || ""), { margin: 1, width: 220, errorCorrectionLevel: "M" }); } catch { /* ignore */ }
+  return { barcode, qr, barcodeValue: digits };
 }

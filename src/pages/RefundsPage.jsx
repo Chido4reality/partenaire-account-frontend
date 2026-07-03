@@ -40,6 +40,7 @@ import api from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
 import VoidReturnModal from "../components/common/VoidReturnModal";
 import CameraScanner from "../components/common/CameraScanner";
+import { normalizeScannedSaleRef } from "../utils/receiptCodeStyle";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 import { ShiftRequiredBlocker, useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
 
@@ -178,7 +179,9 @@ export default function RefundsPage() {
   const isCompleteVnt = (v) => /^VNT-\d{8}-\d+$/i.test(String(v || "").trim());
 
   const runNumberSearch = () => {
-    const v = numberInput.trim();
+    // MP-RECEIPT-CODE-STYLE (Fix 1): a 1D wedge scanning a digits-only receipt
+    // barcode types 12+ digits — re-add VNT-/dashes; typed/partial refs pass through.
+    const v = normalizeScannedSaleRef(numberInput.trim());
     if (!v) return;
     setNotFoundRef(null);
     setActiveQuery({ by: detectRefMode(v), value: v });
@@ -198,7 +201,10 @@ export default function RefundsPage() {
   // anything else is rejected with a clear message. Manual entry always works.
   const onScanResult = (code) => {
     setScannerOpen(false);
-    const v = String(code || "").trim();
+    // MP-RECEIPT-CODE-STYLE (Fix 1): a CODE128 barcode encodes digits only
+    // ("202607030027") — re-add the VNT-/dashes so it validates + looks up the
+    // same as a QR (full value) or a manually typed number.
+    const v = normalizeScannedSaleRef(code);
     if (!v) return;
     const up = v.toUpperCase();
     setTab("number");

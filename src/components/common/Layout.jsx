@@ -26,6 +26,7 @@ import { tapHaptic } from "../../utils/haptics";
 import CameraScanner from "./CameraScanner";
 import OnboardingGuide from "./OnboardingGuide";
 import { explainAnomaly, severityCue } from "../../utils/anomalyExplain";
+import { normalizeScannedSaleRef } from "../../utils/receiptCodeStyle";
 import { hasSeenOnboarding } from "../../utils/onboarding";
 import toast from "react-hot-toast";
 
@@ -1083,6 +1084,17 @@ export default function Layout() {
 
     const go = (res) => {
       setOpen(false); setTerm(""); setAutoGoRef(null);
+      // MP-CASHIER-RECEIPT-LOOKUP (Fix 2): a sale result deep-links to Reports →
+      // Sales Detail (/reports?sale=), but /reports is owner/manager-only, so a
+      // cashier hit the route guard and nothing opened. Route sale lookups for
+      // non-Reports roles to Refunds (/refunds?ref=), which every sale-capable
+      // role (incl. cashier) can open and which auto-opens the invoice — same
+      // outcome for cashier AND owner. Not a DB/RLS issue.
+      const canReports = ["owner", "manager"].includes(user && user.role);
+      if (res.type === "sale" && res.ref && !canReports) {
+        navigate("/refunds?ref=" + encodeURIComponent(res.ref));
+        return;
+      }
       if (res.link_to) navigate(res.link_to);
       else toast(lang === "en"
         ? `${res.ref} — ${res.type === "sale" ? "Sale" : "Dozie order"} · ${Number(res.total).toLocaleString()} ${fmt.symbol} · ${res.status}`
@@ -1096,7 +1108,9 @@ export default function Layout() {
     // (mirrors the Enter handler; no routing re-implemented). '+' → '-' for
     // scanners that round-trip the dash.
     const handleScannedRef = (raw) => {
-      let v = String(raw || "").trim();
+      // MP-RECEIPT-CODE-STYLE (Fix 1): a CODE128 receipt barcode is digits-only —
+      // re-add the VNT-/dashes so it resolves like a QR / typed number.
+      let v = normalizeScannedSaleRef(raw);
       if (!v) return;
       if (/^(vnt|ret|qof|hld)/i.test(v)) v = v.replace(/\+/g, "-");
       if (/^hld-/i.test(v)) { setOpen(false); setTerm(""); navigate("/pos?hold=" + encodeURIComponent(v.toUpperCase())); return; }
@@ -1133,6 +1147,11 @@ export default function Layout() {
             // an exact ref match (or the sole result) so the cashier
             // doesn't have to click the dropdown.
             if (e.key !== "Enter") return;
+            // MP-RECEIPT-CODE-STYLE (Fix 1): a 1D wedge scanning a digits-only
+            // receipt barcode types 12+ digits — reconstruct to VNT-… and route
+            // it like a camera scan (fresh search + auto-open). Everything else
+            // (typed refs, partial digits) keeps the existing free-text flow.
+            if (/^\d{12,}$/.test(term.trim())) { handleScannedRef(term.trim()); return; }
             let q = term.trim().toLowerCase();
             if (/^(vnt|ret|qof|hld)/.test(q)) q = q.replace(/\+/g, "-");
             // Hold Sale: HLD-* isn't a completed order so it isn't in

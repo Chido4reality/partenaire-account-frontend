@@ -83,6 +83,25 @@ function newDoc(widthChars) {
       bytes.push(LF);
       return api;
     },
+    // MP-RECEIPT-RETURN-BARCODE (Fix 1): native CODE128 (Code Set B) of the
+    // DIGITS-ONLY sale_number (caller passes "202607030027", not the full VNT-…).
+    // 12 digits at module width 2 ≈ 334 dots — fits 58mm and scans (the full
+    // 17-char value was ~444 dots → the printer's "wide error!"). HRI off; the
+    // caller prints the human-readable full number beneath. Scanner re-adds VNT-.
+    barcode128(digits) {
+      const v = String(digits == null ? "" : digits).replace(/[^0-9A-Za-z\-.$/+% ]/g, "");
+      if (!v) return api;
+      api.raw(GS, 0x68, widthChars >= 48 ? 100 : 80); // GS h  barcode height (dots)
+      api.raw(GS, 0x77, 2);                            // GS w  narrow module width (2 dots)
+      api.raw(GS, 0x48, 0);                            // GS H  HRI off (we print the text ourselves)
+      api.align("C");
+      const payload = [0x7b, 0x42];                    // "{B" = CODE128 code set B
+      for (let i = 0; i < v.length; i++) payload.push(v.charCodeAt(i) & 0xff);
+      api.raw(GS, 0x6b, 73, payload.length & 0xff);    // GS k 73 n  (CODE128, function-B form)
+      for (const b of payload) bytes.push(b & 0xff);
+      bytes.push(LF);
+      return api;
+    },
     cut() { return api.raw(GS, 0x56, 66, 0); }, // GS V 66 0 = feed + partial cut (ignored if no cutter)
   };
   return api;
@@ -119,6 +138,7 @@ export function buildSaleEscposBytes({
   customerName, cashierName,
   items = [], discountTotal = 0,
   paidAmount = null, balanceDue = null, paymentMethod = "",
+  codeStyle = "qr", // MP-RECEIPT-CODE-STYLE: 'barcode' | 'qr' | 'both'
 } = {}) {
   const en = lang === "en";
   const W = Number(widthMm) === 80 ? 48 : 32; // chars per line
@@ -169,10 +189,15 @@ export function buildSaleEscposBytes({
   // Footer
   d.align("C").line(org.receipt_footer || (en ? "Thank you!" : "Merci !"));
 
-  // MP-RECEIPT-RETURN-QR: scannable sale_number QR at the bottom (above the
-  // advert), with the human-readable value printed beneath it as a manual
-  // fallback (QR has no built-in HRI line).
-  if (saleNumber) { d.feed(1).qrCode(saleNumber); d.align("C").line(saleNumber); }
+  // MP-RECEIPT-CODE-STYLE (Fix 1): scannable return-lookup code(s) at the bottom
+  // per the org's style — CODE128 (digits-only, scanner re-adds VNT-), QR (full
+  // value), or both — with the human-readable full number printed beneath.
+  if (saleNumber) {
+    d.feed(1);
+    if (codeStyle === "barcode" || codeStyle === "both") d.barcode128(String(saleNumber).replace(/\D/g, ""));
+    if (codeStyle === "qr" || codeStyle === "both") d.qrCode(saleNumber);
+    d.align("C").line(saleNumber);
+  }
 
   // MP-RECEIPT-ADVERT: text-only "Powered by Mon Partenaire" at the very bottom,
   // language by org country; ASCII-folded for cheap printers. Omitted when off.

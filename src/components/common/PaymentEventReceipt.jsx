@@ -26,6 +26,7 @@
 
 import { Component, useEffect, useState } from "react";
 import { genSaleCodes } from "../../utils/receiptCodes";
+import { resolveCodeStyle } from "../../utils/receiptCodeStyle";
 import { buildMonospaceReceipt, wrapMonospaceFence } from "../../utils/receiptText";
 import { buildFactureInner, buildThermalReceipt } from "../../utils/factureReceipt";
 import { advertLines } from "../../utils/receiptExtras";
@@ -580,9 +581,11 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
       balanceDue: data.balance_due != null ? Number(data.balance_due) : null,
       paymentMethod: data.payment_method || "",
       paymentStatus: data.payment_status || "",
-      // MP-RECEIPT-RETURN-QR: QR PNG of the sale_number for the thermal HTML path
-      // (the ESC/POS path draws its own native QR from saleNumber).
+      // MP-RECEIPT-CODE-STYLE: per-org barcode/qr/both. HTML path uses the PNG
+      // data URLs; the ESC/POS path draws native from saleNumber + codeStyle.
       qrDataUrl: codes.qr || "",
+      barcodeDataUrl: codes.barcode || "",
+      codeStyle: resolveCodeStyle(org),
     };
   };
   const printThermal = (widthMm) => openPrint(buildThermalReceipt(saleReceiptOpts(widthMm)));
@@ -655,7 +658,9 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
         cashierName: data.cashier_name || null, // MP-SALE-CASHIER-NAME: "Served by"
         items,
         discountTotal: Math.max(0, grossItems - netTotal),
-        qrDataUrl: codes.qr || "", // MP-RECEIPT-RETURN-QR
+        qrDataUrl: codes.qr || "", // MP-RECEIPT-CODE-STYLE
+        barcodeDataUrl: codes.barcode || "",
+        codeStyle: resolveCodeStyle(org),
       }));
       return;
     }
@@ -848,12 +853,19 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
               <div>{dateStr} · {timeStr}</div>
             </div>
 
-            {reference && codes.qr && (
-              <div style={{ borderTop: "1px dashed var(--border)", marginTop: 8, paddingTop: 10, textAlign: "center", background: "#fff", borderRadius: 8, padding: "10px 0" }}>
-                <div><img src={codes.qr} alt="qr" style={{ width: 110, height: 110 }} /></div>
-                <div style={{ fontSize: 11, color: "#000", fontFamily: "monospace", fontWeight: 700 }}>{reference}</div>
-              </div>
-            )}
+            {reference && (codes.qr || codes.barcode) && (() => {
+              const st = resolveCodeStyle(org);
+              const showBar = (st === "barcode" || st === "both") && codes.barcode;
+              const showQr = (st === "qr" || st === "both") && codes.qr;
+              if (!showBar && !showQr) return null;
+              return (
+                <div style={{ borderTop: "1px dashed var(--border)", marginTop: 8, paddingTop: 10, textAlign: "center", background: "#fff", borderRadius: 8, padding: "10px 0" }}>
+                  {showBar && <div><img src={codes.barcode} alt="barcode" style={{ height: 46, maxWidth: "92%" }} /></div>}
+                  {showQr && <div style={{ marginTop: showBar ? 6 : 0 }}><img src={codes.qr} alt="qr" style={{ width: 110, height: 110 }} /></div>}
+                  <div style={{ fontSize: 11, color: "#000", fontFamily: "monospace", fontWeight: 700 }}>{reference}</div>
+                </div>
+              );
+            })()}
             {/* MP-RECEIPT-ADVERT: bottom advert, language by org country, org toggle. */}
             {advertLines(org).length > 0 && (
               <div style={{ marginTop: 8, textAlign: "center", fontSize: 11, color: "#000", lineHeight: 1.4 }}>
