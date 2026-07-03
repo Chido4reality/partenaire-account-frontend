@@ -25,11 +25,11 @@
 // sale/debt_collection/void, return_ref for refund.
 
 import { Component, useEffect, useState } from "react";
-import { genSaleCodes } from "../../utils/receiptCodes";
+import { genSaleCodes, genQr } from "../../utils/receiptCodes";
 import { resolveCodeStyle } from "../../utils/receiptCodeStyle";
 import { buildMonospaceReceipt, wrapMonospaceFence } from "../../utils/receiptText";
 import { buildFactureInner, buildThermalReceipt } from "../../utils/factureReceipt";
-import { advertLines } from "../../utils/receiptExtras";
+import { advertLines, PLAY_STORE_URL, showDownloadQr, downloadQrCaptionLines } from "../../utils/receiptExtras";
 import { currencySymbol } from "../../utils/currency";
 import toast from "react-hot-toast";
 // MP-BT-THERMAL: direct Bluetooth (Classic SPP) ESC/POS printing.
@@ -426,6 +426,14 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
     return () => { cancelled = true; };
   }, [reference]);
 
+  // MP-RECEIPT-DOWNLOAD-QR: constant app-download QR for the advert footer.
+  const [downloadQr, setDownloadQr] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    genQr(PLAY_STORE_URL, 140).then(u => { if (!cancelled) setDownloadQr(u); });
+    return () => { cancelled = true; };
+  }, []);
+
   // MP-RECEIPT-PRINT-CLOSE-FIX: the facture/receipt is printed via an IN-APP
   // overlay (printHtml != null) instead of window.open(). A window.open()-spawned
   // window can't be reliably closed on Android System WebView (window.close() is
@@ -586,6 +594,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
       qrDataUrl: codes.qr || "",
       barcodeDataUrl: codes.barcode || "",
       codeStyle: resolveCodeStyle(org),
+      downloadQrDataUrl: downloadQr || "",
     };
   };
   const printThermal = (widthMm) => openPrint(buildThermalReceipt(saleReceiptOpts(widthMm)));
@@ -661,6 +670,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
         qrDataUrl: codes.qr || "", // MP-RECEIPT-CODE-STYLE
         barcodeDataUrl: codes.barcode || "",
         codeStyle: resolveCodeStyle(org),
+        downloadQrDataUrl: downloadQr || "",
       }));
       return;
     }
@@ -870,6 +880,13 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
             {advertLines(org).length > 0 && (
               <div style={{ marginTop: 8, textAlign: "center", fontSize: 11, color: "#000", lineHeight: 1.4 }}>
                 {advertLines(org).map((l, i) => <div key={i}>{l}</div>)}
+              </div>
+            )}
+            {/* MP-RECEIPT-DOWNLOAD-QR: app-download QR in the advert footer (same toggle). */}
+            {showDownloadQr(org) && downloadQr && (
+              <div style={{ marginTop: 6, textAlign: "center", fontSize: 10.5, color: "#000", lineHeight: 1.35 }}>
+                {downloadQrCaptionLines(org).map((l, i) => <div key={i}>{l}</div>)}
+                <div><img src={downloadQr} alt="app download" style={{ width: 72, height: 72, marginTop: 2 }} /></div>
               </div>
             )}
           </div>

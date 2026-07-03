@@ -349,7 +349,9 @@ export default function App() {
         const res = await api.get("/auth/me");
         const fresh = res?.data?.user;
         if (!cancelled && fresh?.full_name) {
-          patchUser({ full_name: fresh.full_name, name: fresh.full_name, role: fresh.role });
+          // MP-ONBOARDING-DB-FLAG: refresh the authoritative onboarding flag too,
+          // so a cached session (or one whose login predated the flag) gets it.
+          patchUser({ full_name: fresh.full_name, name: fresh.full_name, role: fresh.role, has_seen_onboarding: !!fresh.has_seen_onboarding });
         }
       } catch (_) { /* offline / transient — keep the cached name */ }
     })();

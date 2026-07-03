@@ -11,7 +11,7 @@
 // typography on the paper slip. (The HTML/window.print thermal path keeps
 // accents.)
 
-import { advertLines } from "./receiptExtras";
+import { advertLines, showDownloadQr, downloadQrCaptionLines, PLAY_STORE_URL } from "./receiptExtras";
 
 const ESC = 0x1b, GS = 0x1d, LF = 0x0a;
 
@@ -68,10 +68,10 @@ function newDoc(widthChars) {
     // one-scan return lookup — robust on 58mm thermal where a dense CODE128 of a
     // 16–17 char VNT-… value failed ("wide error!"). QR has no HRI, so the caller
     // prints the human-readable value beneath. Module size tuned to stay crisp.
-    qrCode(value) {
+    qrCode(value, modOverride) {
       const v = asciiFold(value);
       if (!v) return api;
-      const mod = widthChars >= 48 ? 8 : 6;            // module size in dots (80mm / 58mm)
+      const mod = modOverride || (widthChars >= 48 ? 8 : 6); // module size in dots (80mm / 58mm)
       api.align("C");
       api.raw(GS, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00); // fn65: select model 2
       api.raw(GS, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, mod);        // fn67: module size
@@ -206,6 +206,14 @@ export function buildSaleEscposBytes({
     d.rule();
     d.align("C");
     for (const l of adverts) d.wrapped(l);
+  }
+
+  // MP-RECEIPT-DOWNLOAD-QR: small app-download QR + caption in the advert footer
+  // (same toggle as the advert), well below the return-lookup code above.
+  if (showDownloadQr(org)) {
+    d.align("C");
+    for (const l of downloadQrCaptionLines(org)) d.wrapped(l);
+    d.qrCode(PLAY_STORE_URL, widthChars >= 48 ? 5 : 4); // smaller module → compact QR for the longer URL
   }
 
   d.feed(3).cut();
