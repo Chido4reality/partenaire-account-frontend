@@ -11,6 +11,7 @@ import { useCurrency } from "../utils/useCurrency";
 import api from "../utils/api";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 import BelowCostLossDetail from "../components/common/BelowCostLossDetail";
+import DiscountApprovalDetail from "../components/common/DiscountApprovalDetail";
 
 const VERB = {
   void:            { en: "cancel a sale",        fr: "annuler une vente" },
@@ -143,10 +144,13 @@ export default function MyRequestsPage() {
               </div>
               <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 3 }}>
                 {/* MP-BELOW-COST-CLEAR-WORDING: below-cost amount is the shortfall (shown labelled below), not the sale total. */}
-                {[r.action_type !== "below_cost_sale" && r.amount != null ? fmt(Math.abs(Number(r.amount))) : null, r.target_ref, r.branch_name].filter(Boolean).join(" · ") || "—"}
+                {[!["below_cost_sale", "discount"].includes(r.action_type) && r.amount != null ? fmt(Math.abs(Number(r.amount))) : null, r.target_ref, r.branch_name].filter(Boolean).join(" · ") || "—"}
               </div>
               {r.action_type === "below_cost_sale" && (
-                <BelowCostLossDetail payload={r.payload} shortfall={r.amount} en={en} fmt={fmt} />
+                <BelowCostLossDetail payload={r.payload} shortfall={r.amount} en={en} fmt={fmt} cashier={r.requested_by_name} />
+              )}
+              {r.action_type === "discount" && (
+                <DiscountApprovalDetail payload={r.payload} en={en} fmt={fmt} cashier={r.requested_by_name} />
               )}
               {r.status === "rejected" && r.decision_note && (
                 <div style={{ fontSize: 12.5, color: "#fca5a5", marginTop: 4 }}>{en ? "Reason:" : "Raison :"} {r.decision_note}</div>
