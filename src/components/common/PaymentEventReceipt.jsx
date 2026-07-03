@@ -58,11 +58,16 @@ class _ReceiptErrorBoundary extends Component {
           <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 6, color: "#fbbf24" }}>
             {en ? "Receipt couldn't render" : "Reçu non affiché"}
           </div>
-          <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 18, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 12, lineHeight: 1.5 }}>
             {en
-              ? "The operation completed successfully — only the receipt display failed. You can find the record in customer history or the audit log."
-              : "L'opération a réussi — seul l'affichage du reçu a échoué. Vous pouvez retrouver l'enregistrement dans l'historique client ou le journal d'audit."}
+              ? "The sale completed successfully — only the receipt display failed."
+              : "La vente a réussi — seul l'affichage du reçu a échoué."}
           </div>
+          {this.props.saleRef && (
+            <div style={{ fontSize: 15, fontWeight: 800, fontFamily: "monospace", color: "var(--text-primary)", marginBottom: 16, letterSpacing: 0.5 }}>
+              {en ? "Receipt №" : "Reçu №"} {this.props.saleRef}
+            </div>
+          )}
           <button onClick={this.props.onClose}
             style={{ padding: "10px 24px", borderRadius: 10, background: "var(--brand)", border: "none", color: "#152B52", fontWeight: 700, cursor: "pointer", fontSize: 14 }}>
             {en ? "Close" : "Fermer"}
@@ -1014,8 +1019,9 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
 // a render-time crash shows the fallback notice instead of an
 // unmounted blank screen. Props pass through transparently.
 export default function PaymentEventReceipt(props) {
+  const saleRef = props?.data?.sale_number || props?.data?.reference || props?.reference || "";
   return (
-    <_ReceiptErrorBoundary lang={props.lang} onClose={props.onClose}>
+    <_ReceiptErrorBoundary lang={props.lang} onClose={props.onClose} saleRef={saleRef}>
       <PaymentEventReceiptInner {...props} />
     </_ReceiptErrorBoundary>
   );

@@ -194,8 +194,12 @@ export function buildSaleEscposBytes({
   // value), or both — with the human-readable full number printed beneath.
   if (saleNumber) {
     d.feed(1);
-    if (codeStyle === "barcode" || codeStyle === "both") d.barcode128(String(saleNumber).replace(/\D/g, ""));
-    if (codeStyle === "qr" || codeStyle === "both") d.qrCode(saleNumber);
+    // RESILIENCE: a code-render error must NEVER abort the receipt — the
+    // human-readable number still prints so the sale can be looked up manually.
+    try {
+      if (codeStyle === "barcode" || codeStyle === "both") d.barcode128(String(saleNumber).replace(/\D/g, ""));
+      if (codeStyle === "qr" || codeStyle === "both") d.qrCode(saleNumber);
+    } catch (_) { /* code failed → keep the readable number below */ }
     d.align("C").line(saleNumber);
   }
 
@@ -210,11 +214,13 @@ export function buildSaleEscposBytes({
 
   // MP-RECEIPT-DOWNLOAD-QR: small app-download QR + caption in the advert footer
   // (same toggle as the advert), well below the return-lookup code above.
-  if (showDownloadQr(org)) {
-    d.align("C");
-    for (const l of downloadQrCaptionLines(org)) d.wrapped(l);
-    d.qrCode(PLAY_STORE_URL, widthChars >= 48 ? 5 : 4); // smaller module → compact QR for the longer URL
-  }
+  try {
+    if (showDownloadQr(org)) {
+      d.align("C");
+      for (const l of downloadQrCaptionLines(org)) d.wrapped(l);
+      d.qrCode(PLAY_STORE_URL, W >= 48 ? 5 : 4); // smaller module → compact QR for the longer URL
+    }
+  } catch (_) { /* download-QR is optional advert extra — never break the receipt */ }
 
   d.feed(3).cut();
 
