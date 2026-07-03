@@ -5,7 +5,6 @@ import { useLangStore, useAuthStore, useSettingsStore } from "../store";
 import api, { formatDate } from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
 import VoidReturnModal from "../components/common/VoidReturnModal";
-import { genSaleCodes } from "../utils/receiptCodes";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 import { buildLedgerTextV2 as buildLedgerTextUtil, buildWeeklyText as buildWeeklyTextUtil,
   refundKindLabel, shortRetRef } from "../utils/reportText";
