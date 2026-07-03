@@ -14,9 +14,11 @@ import { useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
-import { useLangStore } from "../store";
+import { useLangStore, useAuthStore } from "../store";
 import api, { formatDate } from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
+import { openWhatsApp } from "../utils/whatsapp";
+import { isFrenchEnglishOrg } from "../utils/receiptExtras";
 
 // Manual (offline) fallback methods → admin approval, ONLY for paying the owner
 // directly offline. MP-SUB-NO-PHANTOM-PENDING: Mobile Money / Orange are NOT
@@ -34,6 +36,7 @@ export default function RequestActivationPage() {
   const { lang } = useLangStore();
   const en = lang === "en";
   const fmt = useCurrency();
+  const { org } = useAuthStore();
   const qc = useQueryClient();
   const [searchParams] = useSearchParams();
   const deepLinkPlan = searchParams.get("plan"); // e.g. ?plan=pro_plus
@@ -99,13 +102,31 @@ export default function RequestActivationPage() {
     onError: (e) => toast.error(e?.response?.data?.message || (en ? "Payment error" : "Erreur de paiement")),
   });
 
+  // MP-ACTIVATION-WHATSAPP: pre-filled WhatsApp to the admin so the org just taps
+  // send. Language by ORG CURRENCY (XAF → French, NGN → English), the SAME gate as
+  // the receipt advert (isFrenchEnglishOrg). Real values pulled from the org +
+  // selected plan already on this screen — nothing hardcoded but the admin number.
+  const ADMIN_WA = "237621840952"; // +237 621 840 952
+  const buildActivationWaMessage = () => {
+    const shop = (org && org.name) || "";
+    const mpId = myPlanData?.data?.user_id_number || "";            // MP-000xxx (as shown in-app)
+    const planName = (selected && selected.name) || "";
+    const price = fmt(unitPrice);                                    // "40 500 FCFA" / "40 500 ₦"
+    return isFrenchEnglishOrg(org)
+      ? `Bonjour, je veux payer mon abonnement Mon Partenaire.\nBoutique : ${shop}\nID : ${mpId}\nFormule : ${planName} (${price}/mois)\nJe ne peux pas payer en ligne — merci d'activer mon compte.`
+      : `Hello, I want to pay for my Mon Partenaire subscription.\nShop: ${shop}\nID: ${mpId}\nPlan: ${planName} (${price}/month)\nI can't pay online — please activate my account.`;
+  };
+
   // FALLBACK — manual offline payment → admin approval (audit trail).
   const manualMutation = useMutation({
     mutationFn: () => api.post("/subscriptions/request-upgrade", {
       plan_id: selected.id, payment_method: method, months, notes: notes || null,
     }),
     onSuccess: () => {
+      // KEEP: DB record saved + toast + my-plan invalidation → "Upgrade pending".
       toast.success(en ? "✓ Request sent! Pending admin approval." : "✓ Demande envoyée ! En attente d'approbation.");
+      // ADD: open a pre-filled WhatsApp to the admin (in addition — not instead).
+      try { openWhatsApp(null, ADMIN_WA, buildActivationWaMessage()); } catch (_) { /* never block the save */ }
       qc.invalidateQueries({ queryKey: ["my-plan"] });
     },
     onError: (e) => toast.error(e?.response?.data?.message || (en ? "Could not submit request" : "Échec de l'envoi")),
