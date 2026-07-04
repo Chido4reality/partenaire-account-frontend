@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import api from "../../utils/api";
 import { useCurrency } from "../../utils/useCurrency";
+import { momoLabel } from "../../utils/paymentLabels";
 import OwnerPIN from "./OwnerPIN";
 import { useSettingsStore, useAuthStore } from "../../store";
 import useOwnerApproval from "../../hooks/useOwnerApproval";
@@ -436,8 +437,8 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
             </div>
             <div style={{ color: "var(--text-secondary)" }}>
               {lang === "en"
-                ? "Refund will be processed as cash from the till. The owner needs to refund the customer on the original channel (Mobile Money / card) separately."
-                : "Le remboursement sera traité en espèces depuis la caisse. Le propriétaire devra rembourser le client sur le canal d'origine (Mobile Money / carte) séparément."}
+                ? `Refund will be processed as cash from the till. The owner needs to refund the customer on the original channel (${momoLabel(fmt.currency, true)} / card) separately.`
+                : `Le remboursement sera traité en espèces depuis la caisse. Le propriétaire devra rembourser le client sur le canal d'origine (${momoLabel(fmt.currency, false)} / carte) séparément.`}
             </div>
           </div>
         )}
@@ -656,7 +657,7 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
                 <label className="label">{lang === "en" ? "Refund method" : "Mode remboursement"}</label>
                 <select className="input" value={refundMethod} onChange={e => setRefundMethod(e.target.value)}>
                   <option value="cash">{lang === "en" ? "Cash" : "Espèces"}</option>
-                  <option value="mobile_money">Mobile Money</option>
+                  <option value="mobile_money">{momoLabel(fmt.currency, lang === "en")}</option>
                   <option value="bank">{lang === "en" ? "Bank transfer" : "Virement"}</option>
                 </select>
               </div>

@@ -18,6 +18,7 @@
 
 import { useAuthStore } from "../store";
 import { currencySymbol } from "./currency";
+import { momoLabelShort } from "./paymentLabels";
 
 const fmt = (x, en) => Number(x || 0).toLocaleString(en ? "en-US" : "fr-FR");
 
@@ -147,13 +148,13 @@ export function buildLedgerTextV2(ledger, lang) {
   L.push(`*1. ${en ? "DAY FLOW" : "MOUVEMENT DU JOUR"}*`);
   L.push(`${en ? "Sales today" : "Ventes du jour"}: ${n(sales.total)} ${sym}`);
   L.push(`  • ${en ? "Paid cash" : "Payé espèces"}: ${n(sales.paid_cash)} ${sym}`);
-  L.push(`  • ${en ? "Paid MoMo" : "Payé MoMo"}: ${n(sales.paid_momo)} ${sym}`);
+  L.push(`  • ${en ? "Paid " : "Payé "}${momoLabelShort(currency, en)}: ${n(sales.paid_momo)} ${sym}`);
   L.push(`  • ${en ? "Paid bank" : "Payé banque"}: ${n(sales.paid_bank)} ${sym}`);
   L.push(`  • ${en ? "On credit" : "À crédit"}: ${n(sales.on_credit)} ${sym}`);
   L.push("");
   L.push(`${en ? "Debt collected" : "Dette encaissée"}: ${n(dcol.total)} ${sym}`);
   L.push(`  • ${en ? "Cash" : "Espèces"}: ${n(dcol.cash)} ${sym}`);
-  L.push(`  • MoMo: ${n(dcol.momo)} ${sym}`);
+  L.push(`  • ${momoLabelShort(currency, en)}: ${n(dcol.momo)} ${sym}`);
   L.push(`  • ${en ? "Bank" : "Banque"}: ${n(dcol.bank)} ${sym}`);
   L.push("");
   L.push(`${en ? "Refunds & voids (cash out)" : "Remboursements & annulations (sortie)"}: ${n(df.refunds_voids_cash_out)} ${sym}`);

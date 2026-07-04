@@ -45,6 +45,7 @@ import { useAuthStore, useLangStore, useSettingsStore } from "../../store";
 import api from "../../utils/api";
 import { useCurrency } from "../../utils/useCurrency";
 import { buildLedgerTextV2 as buildLedgerText, buildWeeklyText } from "../../utils/reportText";
+import { momoLabel } from "../../utils/paymentLabels";
 
 // ── ModalShell — same overlay pattern as the rest of the app ─────
 // zIndex 3500: must clear Vaul's mobile bottom-sheet portal (z:1701)
@@ -605,7 +606,7 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
           <>
             <div style={{ height: 1, background: "var(--border)", margin: "10px 0 6px" }} />
             <CategoryRow
-              label={fr ? "Mobile money reçu (hors caisse)" : "Mobile money received (not in cash drawer)"}
+              label={`${momoLabel(fmt.currency, !fr)} ${fr ? "reçu (hors caisse)" : "received (not in cash drawer)"}`}
               total={cat.mobile_money_received.total} count={cat.mobile_money_received.count} sign="">
               {cat.mobile_money_received.transactions.map(tx => (
                 <div key={tx.payment_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>

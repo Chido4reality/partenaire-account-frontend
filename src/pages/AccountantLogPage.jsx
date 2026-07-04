@@ -21,6 +21,7 @@ import api from "../utils/api";
 import BelowCostLossDetail from "../components/common/BelowCostLossDetail";
 import DiscountApprovalDetail from "../components/common/DiscountApprovalDetail";
 import { explainAnomaly, severityCue, groupLabel, anomalySeverity } from "../utils/anomalyExplain";
+import { momoLabel, momoLabelShort } from "../utils/paymentLabels";
 
 // Role badge colours — mirror SettingsPage ROLES.
 const ROLE_META = {
@@ -1130,8 +1131,8 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
           </div>
           <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginBottom: 12 }}>
             {en
-              ? "Total sales = Cash (valid) + MoMo (valid) + Credit given. Voided receipts sit OUTSIDE — never inside cash."
-              : "Ventes totales = Espèces (valides) + MoMo (valides) + Crédit accordé. Les reçus annulés sont EN DEHORS — jamais dans les espèces."}
+              ? `Total sales = Cash (valid) + ${momoLabelShort(fmt.currency, en)} (valid) + Credit given. Voided receipts sit OUTSIDE — never inside cash.`
+              : `Ventes totales = Espèces (valides) + ${momoLabelShort(fmt.currency, en)} (valides) + Crédit accordé. Les reçus annulés sont EN DEHORS — jamais dans les espèces.`}
           </div>
           {(() => {
             const Row = ({ label, val, note, color, strong, indent }) => (
@@ -1152,8 +1153,8 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                   note={en ? "goods sold (excludes voided & debt lines)" : "marchandises vendues (hors annulés & lignes de dette)"} />
                 <Row indent label={en ? "= Cash (valid)" : "= Espèces (valides)"} val={bridge.cash_valid != null ? bridge.cash_valid : bridge.cash_collected}
                   note={en ? "cash received for valid sales; excludes cancelled receipts" : "espèces reçues pour ventes valides; hors reçus annulés"} />
-                <Row indent label={en ? "+ MoMo (valid)" : "+ MoMo (valides)"} val={bridge.momo_collected}
-                  note={en ? "mobile money received" : "mobile money reçu"} />
+                <Row indent label={`+ ${momoLabelShort(fmt.currency, en)} ${en ? "(valid)" : "(valides)"}`} val={bridge.momo_collected}
+                  note={en ? `${momoLabel(fmt.currency, en)} received` : `${momoLabel(fmt.currency, en)} reçu`} />
                 <Row indent label={en ? "+ Credit given" : "+ Crédit accordé"} val={bridge.credit_given}
                   note={en ? "left unpaid on valid sales today" : "resté impayé sur ventes valides"} />
                 {Number(bridge.debt_collected) > 0 && (

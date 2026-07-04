@@ -24,6 +24,7 @@ import api from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
 import { openWhatsApp } from "../utils/whatsapp";
 import { opsAnomalyGuidance, opsSeverityCue } from "../utils/anomalyExplain";
+import { momoLabel, momoLabelShort } from "../utils/paymentLabels";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ComposedChart, Cell,
@@ -243,8 +244,8 @@ export default function OperationsDashboardPage() {
       <Card
         title={en ? "2. Cashier scoreboard" : "2. Performance par caissier"}
         sub={en
-          ? "Bridge: Total sales = Cash (valid) + MoMo (valid) + Credit given. Voided receipts (paid then cancelled) sit OUTSIDE — never inside cash. Flag = variance 2+ shifts, refunds > 5%, > 3 voids, or a void after payment."
-          : "Pont : Ventes totales = Espèces (valides) + MoMo (valides) + Crédit accordé. Les reçus annulés (payés puis annulés) sont EN DEHORS — jamais dans les espèces. Drapeau = écart 2+ postes, remb. > 5%, > 3 annul., ou annulation après paiement."}
+          ? `Bridge: Total sales = Cash (valid) + ${momoLabelShort(fmt.currency, en)} (valid) + Credit given. Voided receipts (paid then cancelled) sit OUTSIDE — never inside cash. Flag = variance 2+ shifts, refunds > 5%, > 3 voids, or a void after payment.`
+          : `Pont : Ventes totales = Espèces (valides) + ${momoLabelShort(fmt.currency, en)} (valides) + Crédit accordé. Les reçus annulés (payés puis annulés) sont EN DEHORS — jamais dans les espèces. Drapeau = écart 2+ postes, remb. > 5%, > 3 annul., ou annulation après paiement.`}
       >
         {overview.isLoading && <div style={loadingStyle}>{en ? "Loading…" : "Chargement…"}</div>}
         {overview.data && (
@@ -256,11 +257,11 @@ export default function OperationsDashboardPage() {
                   <th style={thStyle}>{en ? "Shifts" : "Postes"}</th>
                   <th style={thStyleRight}>{en ? "Total sales" : "Ventes totales"}</th>
                   <th style={thStyleRight}>{en ? "Cash (valid)" : "Espèces (valides)"}</th>
-                  <th style={thStyleRight}>{en ? "MoMo" : "MoMo"}</th>
+                  <th style={thStyleRight}>{momoLabelShort(fmt.currency, en)}</th>
                   <th style={thStyleRight}>{en ? "Credit given" : "Crédit accordé"}</th>
                   <th style={thStyleRight}>{en ? "Debt collected" : "Dette encaissée"}</th>
                   <th style={thStyleRight}>{en ? "Debt (Cash)" : "Dette (Espèces)"}</th>
-                  <th style={thStyleRight}>{en ? "Debt (MoMo)" : "Dette (MoMo)"}</th>
+                  <th style={thStyleRight}>{(en ? "Debt (" : "Dette (") + momoLabelShort(fmt.currency, en) + ")"}</th>
                   <th style={thStyleRight}>{en ? "Total income" : "Revenu total"}</th>
                   <th style={thStyleRight}>{en ? "Voided ⚠" : "Annulés ⚠"}</th>
                   <th style={thStyleRight}>{en ? "Refunds" : "Remb."}</th>
@@ -314,7 +315,7 @@ export default function OperationsDashboardPage() {
                           <>
                             <div style={{ fontWeight: 800, color: "#34d399" }}>{fmt(income)}</div>
                             <div style={{ fontSize: 10, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
-                              {en ? "Cash" : "Esp."} {fmt(cashIn)} · MoMo {fmt(momoIn)}
+                              {en ? "Cash" : "Esp."} {fmt(cashIn)} · {momoLabelShort(fmt.currency, en)} {fmt(momoIn)}
                             </div>
                           </>
                         );
@@ -470,7 +471,7 @@ export default function OperationsDashboardPage() {
                       <td style={{ ...tdStyle, fontFamily: "monospace", textDecoration: v.sale_number ? "underline" : "none" }}>{v.sale_number || "—"}</td>
                       <td style={tdStyle}>{v.cashier_name || "—"}</td>
                       <td style={{ ...tdStyleRight, color: "#f87171", fontWeight: 700 }}>{fmt(v.amount)}</td>
-                      <td style={tdStyle}>{v.method === "mobile_money" ? "MoMo" : v.method === "cash" ? (en ? "Cash" : "Espèces") : (v.method || "—")}</td>
+                      <td style={tdStyle}>{v.method === "mobile_money" ? momoLabelShort(fmt.currency, en) : v.method === "cash" ? (en ? "Cash" : "Espèces") : (v.method || "—")}</td>
                       <td style={{ ...tdStyle, fontSize: 11, color: "var(--text-muted)" }}>
                         {v.paid_at ? new Date(v.paid_at).toLocaleTimeString(en ? "en-GB" : "fr-FR", { hour: "2-digit", minute: "2-digit" }) : "—"}
                         {v.voided_at ? " → " + new Date(v.voided_at).toLocaleTimeString(en ? "en-GB" : "fr-FR", { hour: "2-digit", minute: "2-digit" }) : ""}
@@ -487,23 +488,23 @@ export default function OperationsDashboardPage() {
 
       {/* ── MoMo received (mobile money, valid receipts) ────── */}
       <Card
-        title={en ? "Mobile money received" : "Mobile money reçu"}
+        title={`${momoLabel(fmt.currency, en)} ${en ? "received" : "reçu"}`}
         sub={en
-          ? "Mobile-money payments on valid receipts — who, which receipt, when, how much. Tap to open the receipt."
-          : "Paiements mobile money sur reçus valides — qui, quel reçu, quand, combien. Touchez pour ouvrir le reçu."}
+          ? `${momoLabel(fmt.currency, en)} payments on valid receipts — who, which receipt, when, how much. Tap to open the receipt.`
+          : `Paiements ${momoLabel(fmt.currency, en)} sur reçus valides — qui, quel reçu, quand, combien. Touchez pour ouvrir le reçu.`}
       >
         {overview.isLoading && <div style={loadingStyle}>{en ? "Loading…" : "Chargement…"}</div>}
         {overview.data && (() => {
           const mm = overview.data.momo_received || { items: [], total: 0 };
           if (!mm.items.length) return (
             <div style={{ padding: 12, fontSize: 13, color: "var(--text-muted)", textAlign: "center" }}>
-              {en ? "No mobile-money payments in this range." : "Aucun paiement mobile money dans cette plage."}
+              {en ? `No ${momoLabel(fmt.currency, en).toLowerCase()} payments in this range.` : `Aucun paiement ${momoLabel(fmt.currency, en)} dans cette plage.`}
             </div>
           );
           return (
             <div style={{ overflowX: "auto" }}>
               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: "#10b981" }}>
-                {en ? "Total MoMo: " : "Total MoMo : "}{fmt(mm.total)}
+                {(en ? "Total " : "Total ") + momoLabelShort(fmt.currency, en) + (en ? ": " : " : ")}{fmt(mm.total)}
               </div>
               <table style={tableStyle}>
                 <thead><tr>

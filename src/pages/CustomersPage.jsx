@@ -6,6 +6,7 @@ import { isPendingApproval, keepWorkingToast } from "../utils/approval";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import api, { formatDate } from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
+import { momoLabel } from "../utils/paymentLabels";
 import { useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 import useOwnerApproval from "../hooks/useOwnerApproval";
@@ -1152,7 +1153,7 @@ export default function CustomersPage() {
                                color: collectForm.payment_method === m.key ? "var(--brand-light)" : "var(--text-secondary)",
                                cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
                       <div style={{ fontSize: 14 }}>{m.icon}</div>
-                      <div style={{ marginTop: 2 }}>{lang === "en" ? m.en : m.fr}</div>
+                      <div style={{ marginTop: 2 }}>{m.key === "mobile_money" ? momoLabel(fmt.currency, lang === "en") : (lang === "en" ? m.en : m.fr)}</div>
                     </button>
                   ))}
                 </div>

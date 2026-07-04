@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import { useAuthStore, useLangStore } from "../store";
 import api, { formatDate } from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
+import { momoLabel } from "../utils/paymentLabels";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 
 export default function CreditsPage() {
@@ -425,7 +426,7 @@ export default function CreditsPage() {
             <div className="form-group">
               <label className="label">{lang === "en" ? "Payment method" : "Mode de paiement"}</label>
               <select className="input" value={payForm.payment_method} onChange={e => setP("payment_method", e.target.value)}>
-                {PAY_METHODS.map(m => <option key={m.value} value={m.value}>{lang === "en" ? m.en : m.fr}</option>)}
+                {PAY_METHODS.map(m => <option key={m.value} value={m.value}>{m.value === "mobile_money" ? momoLabel(fmt.currency, lang === "en") : (lang === "en" ? m.en : m.fr)}</option>)}
               </select>
             </div>
             <div className="form-group">
