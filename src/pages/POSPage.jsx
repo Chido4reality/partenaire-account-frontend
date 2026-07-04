@@ -1854,6 +1854,16 @@ export default function POSPage() {
       const srcItems = (approved && Array.isArray(da.payload?.items) && da.payload.items.length)
         ? da.payload.items
         : (h?.items || []);
+      // MP-HOLD-RESUME-CUSTOMER: restore the held customer for EVERY hold (was only
+      // done for approved holds — a normal hold's own customer_id was ignored, so it
+      // reverted to walk-in). Prefer the approval payload's customer, else the held
+      // cart's own customer_id. null = genuine walk-in.
+      const heldCustomerId = (approved && da?.payload?.customer_id) || h?.customer_id || null;
+      let resumedCustomer = null;
+      if (heldCustomerId) {
+        try { resumedCustomer = await api.get(`/customers/${heldCustomerId}`).then(r => r.data?.data); } catch { /* ignore */ }
+      }
+      const resumedTier = resumedCustomer ? tierForCustomer(resumedCustomer) : "walk_in";
       const hydrated = await Promise.all(srcItems.map(async it => {
         let p = null;
         try { p = await api.get(`/products/${it.product_id}`).then(r => r.data?.data); } catch { /* ignore */ }
@@ -1864,14 +1874,27 @@ export default function POSPage() {
           name: it.name || p?.name || "—",
           unit: p?.unit, barcode: p?.barcode,
           quantity: Number(it.qty != null ? it.qty : it.quantity) || 1,
-          unit_price: Number(it.unit_price) || Number(p?.sell_price) || 0,
+          // MP-HOLD-RESUME-PRESERVE-PRICE: the HELD unit_price is authoritative —
+          // never fall back to the product's current walk-in price. Keep a held
+          // price of 0 (giveaway) intact; only derive from line_total/qty or the
+          // product price when the held record genuinely lacks a unit_price.
+          unit_price: it.unit_price != null
+            ? Number(it.unit_price)
+            : (it.line_total != null && Number(it.qty || it.quantity)
+                ? Number(it.line_total) / Number(it.qty || it.quantity)
+                : Number(p?.sell_price) || 0),
           original_price: Number(p?.sell_price) || 0,
-          price_tier: "walk_in", // resume clears the customer; re-prices if one is re-attached
+          price_tier: resumedTier,
           sell_price: Number(p?.sell_price) || 0,
           wholesale_price: Number(p?.wholesale_price) || 0,
           min_price: p?.min_price || 0,
           cost_price: p?.cost_price,
           stock: cs != null ? Number(cs) : null,
+          // MP-HOLD-RESUME-PRESERVE-PRICE: pin the held price so the customer-change
+          // re-pricing effect (which moves lines to the tier/walk-in price) leaves
+          // resumed lines alone — the held record is the source of truth. Editing a
+          // line later clears this flag as usual. (below_cost_approved also skips it.)
+          price_overridden: true,
           // line discount restored only on an approved discount-hold.
           discount_type:  approved && it.discount_type ? it.discount_type : "",
           discount_value: approved && it.discount_value != null ? String(it.discount_value) : "",
@@ -1897,10 +1920,7 @@ export default function POSPage() {
       discountApprovalIdRef.current  = (approved && !isBelowCost) ? da.id : null;
       belowCostApprovalIdRef.current = (approved &&  isBelowCost) ? da.id : null;
       discountTokenRef.current = null;
-      let resumedCustomer = null;
-      if (approved && da.payload?.customer_id) {
-        try { resumedCustomer = await api.get(`/customers/${da.payload.customer_id}`).then(r => r.data?.data); } catch { /* ignore */ }
-      }
+      // Customer already resolved above (held-cart customer_id or approval payload).
       setCustomer(resumedCustomer || null);
       setShowResume(false);
       const short = hydrated.filter(i => typeof i.stock === "number" && i.quantity > i.stock);
