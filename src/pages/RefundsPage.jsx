@@ -39,6 +39,7 @@ import { useLangStore, useAuthStore } from "../store";
 import api from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
 import VoidReturnModal from "../components/common/VoidReturnModal";
+import ClearButton from "../components/common/ClearButton";
 import CameraScanner from "../components/common/CameraScanner";
 import { normalizeScannedSaleRef } from "../utils/receiptCodeStyle";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
@@ -370,15 +371,18 @@ export default function RefundsPage() {
       <div style={{ marginBottom: 18 }}>
         {tab === "number" && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <input
-              className="input"
-              placeholder="VNT-20260522-0007 / DOZ-…"
-              value={numberInput}
-              onChange={e => setNumberInput(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") runNumberSearch(); }}
-              autoFocus
-              style={{ flex: 1, minWidth: 240, fontFamily: "monospace" }}
-            />
+            <div style={{ position: "relative", flex: 1, minWidth: 240, display: "flex" }}>
+              <input
+                className="input"
+                placeholder="VNT-20260522-0007 / DOZ-…"
+                value={numberInput}
+                onChange={e => setNumberInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") runNumberSearch(); }}
+                autoFocus
+                style={{ flex: 1, minWidth: 0, fontFamily: "monospace", paddingRight: 34 }}
+              />
+              <ClearButton value={numberInput} onClear={() => setNumberInput("")} right={8} title={fr ? "Effacer" : "Clear"} />
+            </div>
             {/* MP-GLOBAL-SEARCH-CAMERA-SCAN: phone-camera scan on the inline field
                 (feeds the same onScanResult the separate Scan tab uses). */}
             <button className="btn btn-secondary" onClick={() => setScannerOpen(true)}
@@ -393,16 +397,19 @@ export default function RefundsPage() {
 
         {tab === "amount" && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <input
-              className="input"
-              type="number" min="0" step="1"
-              placeholder={fr ? "Ex : 1500" : "e.g. 1500"}
-              value={amountInput}
-              onChange={e => setAmountInput(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") runAmountSearch(); }}
-              autoFocus
-              style={{ flex: 1, minWidth: 200, textAlign: "center", fontWeight: 700, fontSize: 16 }}
-            />
+            <div style={{ position: "relative", flex: 1, minWidth: 200, display: "flex" }}>
+              <input
+                className="input"
+                type="number" min="0" step="1"
+                placeholder={fr ? "Ex : 1500" : "e.g. 1500"}
+                value={amountInput}
+                onChange={e => setAmountInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") runAmountSearch(); }}
+                autoFocus
+                style={{ flex: 1, minWidth: 0, textAlign: "center", fontWeight: 700, fontSize: 16, paddingRight: 34 }}
+              />
+              <ClearButton value={amountInput} onClear={() => setAmountInput("")} right={8} title={fr ? "Effacer" : "Clear"} />
+            </div>
             <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{fmt.symbol}</span>
             <button className="btn btn-primary" onClick={runAmountSearch} disabled={!amountInput.trim()}>
               💰 {fr ? "Chercher" : "Search"}
