@@ -2,14 +2,13 @@ import { useState, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
-import { useLangStore, useSettingsStore, useAuthStore } from "../store";
+import { useLangStore, useAuthStore } from "../store";
 import api from "../utils/api";
 import BarcodeInput from "../components/common/BarcodeInput";
 import CameraScanner from "../components/common/CameraScanner";
 
 export default function StockCountPage() {
   const { lang } = useLangStore();
-  const { selectedLocation } = useSettingsStore();
   const { user } = useAuthStore();
   const qc = useQueryClient();
 
@@ -18,6 +17,11 @@ export default function StockCountPage() {
   const canCount = isOwner || role === "manager" || role === "warehouse";
 
   const [search, setSearch] = useState("");
+  // MP-STOCKCOUNT-LOCATION: scope the count to ONE shop at a time. Default = "All
+  // locations" (""), never auto-picked / never remembered. Single location →
+  // search + System qty + the saved adjustment are all that location's pa_stock;
+  // "All locations" → System qty is the SUM across locations and Save is guarded.
+  const [countLocationId, setCountLocationId] = useState("");
   const [countList, setCountList] = useState([]); // [{product_id, name, unit, location_id, location_name, system_qty, actual_qty}]
   const [submitted, setSubmitted] = useState(false);
   const [results, setResults] = useState([]);
@@ -31,13 +35,11 @@ export default function StockCountPage() {
     </div>
   );
 
-  // Load stock for selected location
+  // Load ALL org stock once; the on-screen location selector scopes/aggregates it
+  // client-side (so switching shops is instant and never touches the global picker).
   const { data: stockData, isLoading } = useOfflineCachedQuery({
-    queryKey: ["stock-count", selectedLocation?.id],
-    queryFn: () => {
-      const params = selectedLocation ? `?location_id=${selectedLocation.id}` : "";
-      return api.get(`/stock${params}`).then(r => r.data);
-    }
+    queryKey: ["stock-count-all"],
+    queryFn: () => api.get(`/stock`).then(r => r.data)
   });
 
   const { data: locData } = useOfflineCachedQuery({
@@ -48,18 +50,43 @@ export default function StockCountPage() {
   const stock = stockData?.data || [];
   const locations = locData?.data || [];
 
-  // Filter stock by search
+  const singleLoc = !!countLocationId;
+  const selectedLocName = locations.find(l => l.id === countLocationId)?.name || "";
+
+  // Scope to the chosen location (one pa_stock row per product), or — for "All
+  // locations" — aggregate per product so System qty is the SUM across locations
+  // (this mode is view/count-only; Save is disabled because a summed discrepancy
+  // can't be attributed to a single location).
+  const displayRows = singleLoc
+    ? stock.filter(s => s.location_id === countLocationId)
+    : Object.values(stock.reduce((acc, s) => {
+        const pid = s.product_id;
+        if (!acc[pid]) acc[pid] = { id: pid, product_id: pid, pa_products: s.pa_products, quantity: 0, aggregated: true };
+        acc[pid].quantity += Number(s.quantity) || 0;
+        return acc;
+      }, {}));
+
+  // Filter by search (slot search only applies to a single location)
   const filtered = search
-    ? stock.filter(s =>
+    ? displayRows.filter(s =>
         s.pa_products?.name?.toLowerCase().includes(search.toLowerCase()) ||
         s.pa_products?.barcode?.includes(search) ||
-        s.slot_code?.toLowerCase().includes(search.toLowerCase())
+        (s.slot_code || "").toLowerCase().includes(search.toLowerCase())
       )
-    : stock;
+    : displayRows;
 
-  // Add product to count list
+  // Switching the audited location starts a fresh count (never mix shops).
+  const changeCountLocation = (id) => {
+    setCountLocationId(id);
+    setCountList([]); setSearch(""); setSubmitted(false); setResults([]);
+  };
+
+  // Add product to count list. In single-location mode the line is bound to that
+  // location's pa_stock row (location_id = the audited shop); in "All locations"
+  // mode there is no single location (location_id = null → cannot be saved).
   const addToCount = (stockItem) => {
-    const exists = countList.find(c => c.product_id === stockItem.product_id && c.location_id === stockItem.location_id);
+    const locId = singleLoc ? stockItem.location_id : null;
+    const exists = countList.find(c => c.product_id === stockItem.product_id && c.location_id === locId);
     if (exists) {
       toast(lang === "en" ? "Already in count list" : "Déjà dans la liste", { duration: 1500 });
       return;
@@ -68,11 +95,14 @@ export default function StockCountPage() {
       product_id: stockItem.product_id,
       name: stockItem.pa_products?.name || "?",
       unit: stockItem.pa_products?.unit || "pce",
-      location_id: stockItem.location_id,
-      location_name: stockItem.pa_locations?.name || "?",
-      slot_code: stockItem.slot_code || null,
-      system_qty: stockItem.quantity,
-      actual_qty: stockItem.quantity // pre-fill with system qty
+      location_id: locId,
+      location_name: singleLoc
+        ? (stockItem.pa_locations?.name || selectedLocName || "?")
+        : (lang === "en" ? "All locations (sum)" : "Toutes les boutiques (somme)"),
+      slot_code: singleLoc ? (stockItem.slot_code || null) : null,
+      system_qty: stockItem.quantity,      // location qty (single) or summed (all)
+      actual_qty: stockItem.quantity,      // pre-fill with system qty
+      aggregated: !singleLoc,
     }]);
     setSearch("");
     searchRef.current?.focus();
@@ -88,23 +118,28 @@ export default function StockCountPage() {
   };
 
   const submitMutation = useMutation({
-    mutationFn: () => api.post("/stock/count", {
-      counts: countList.map(c => ({
-        product_id: c.product_id,
-        location_id: c.location_id,
-        actual_quantity: +c.actual_qty,
-        notes: `Stock count by ${user?.full_name}`
-      }))
-    }),
+    mutationFn: () => {
+      // Guard: only a single-location count can be saved as an adjustment — the
+      // "All locations" sum can't be attributed to one location's pa_stock row.
+      if (!singleLoc) throw new Error(lang === "en" ? "Select a location to save corrections" : "Choisissez une boutique pour enregistrer");
+      return api.post("/stock/count", {
+        counts: countList.map(c => ({
+          product_id: c.product_id,
+          location_id: c.location_id,   // = the audited shop → adjusts ONLY that pa_stock row
+          actual_quantity: +c.actual_qty,
+          notes: `Stock count by ${user?.full_name} @ ${selectedLocName}`
+        }))
+      });
+    },
     onSuccess: (data) => {
       setResults(data?.data?.data || []);
       setSubmitted(true);
       setCountList([]);
       qc.invalidateQueries(["stock"]);
-      qc.invalidateQueries(["stock-count"]);
+      qc.invalidateQueries(["stock-count-all"]);
       toast.success(lang === "en" ? "✓ Stock count saved!" : "✓ Inventaire sauvegardé!");
     },
-    onError: (err) => toast.error(err.response?.data?.message || "Error")
+    onError: (err) => toast.error(err.response?.data?.message || err.message || "Error")
   });
 
   const differences = countList.filter(c => +c.actual_qty !== +c.system_qty);
@@ -119,10 +154,30 @@ export default function StockCountPage() {
             {lang === "en" ? "Scan or search products, enter actual count, save differences." : "Scannez ou cherchez les produits, entrez le compte réel, sauvegardez les différences."}
           </div>
         </div>
-        {countList.length > 0 && !submitted && (
+        {countList.length > 0 && !submitted && singleLoc && (
           <button className="btn btn-primary" onClick={() => submitMutation.mutate()} disabled={submitMutation.isPending}>
             {submitMutation.isPending ? "..." : `✓ ${lang === "en" ? "Save Count" : "Sauvegarder"} (${totalItems})`}
           </button>
+        )}
+      </div>
+
+      {/* MP-STOCKCOUNT-LOCATION: audit one shop at a time. Default "All locations". */}
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, marginBottom: 16 }}>
+        <label style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)" }}>
+          🏪 {lang === "en" ? "Location to audit" : "Boutique à auditer"}
+        </label>
+        <select className="input" value={countLocationId}
+          onChange={e => changeCountLocation(e.target.value)}
+          style={{ maxWidth: 280 }}>
+          <option value="">{lang === "en" ? "All locations (view only)" : "Toutes les boutiques (lecture seule)"}</option>
+          {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+        </select>
+        {!singleLoc && (
+          <span style={{ fontSize: 11.5, color: "#fbbf24" }}>
+            {lang === "en"
+              ? "System = sum across shops · pick a shop to save corrections"
+              : "Système = somme des boutiques · choisissez une boutique pour enregistrer"}
+          </span>
         )}
       </div>
 
@@ -211,7 +266,8 @@ export default function StockCountPage() {
               </div>
             ) : (
               filtered.map(s => {
-                const alreadyAdded = countList.find(c => c.product_id === s.product_id && c.location_id === s.location_id);
+                const locId = singleLoc ? s.location_id : null;
+                const alreadyAdded = countList.find(c => c.product_id === s.product_id && c.location_id === locId);
                 return (
                   <div key={s.id}
                     onClick={() => !alreadyAdded && addToCount(s)}
@@ -221,8 +277,8 @@ export default function StockCountPage() {
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 600, fontSize: 13 }}>{s.pa_products?.name}</div>
                       <div style={{ fontSize: 11, color: "var(--text-muted)", display: "flex", gap: 8 }}>
-                        <span>{s.pa_locations?.name}</span>
-                        {s.slot_code && <span style={{ color: "#fbbf24" }}>📍 {s.slot_code}</span>}
+                        <span>{singleLoc ? (s.pa_locations?.name || selectedLocName) : (lang === "en" ? "All shops (sum)" : "Toutes (somme)")}</span>
+                        {singleLoc && s.slot_code && <span style={{ color: "#fbbf24" }}>📍 {s.slot_code}</span>}
                       </div>
                     </div>
                     <div style={{ textAlign: "right" }}>
@@ -305,10 +361,25 @@ export default function StockCountPage() {
                 </div>
               )}
 
+              {/* Single-location → save adjusts that shop only. All locations →
+                  view/count-only: Save is disabled (no ambiguous cross-shop write). */}
               <button className="btn btn-primary" style={{ height: 46, fontWeight: 700 }}
-                onClick={() => submitMutation.mutate()} disabled={submitMutation.isPending || countList.length === 0}>
-                {submitMutation.isPending ? "⏳ Saving..." : `✓ ${lang === "en" ? "Save Count" : "Sauvegarder le comptage"} (${totalItems} items)`}
+                onClick={() => submitMutation.mutate()}
+                disabled={submitMutation.isPending || countList.length === 0 || !singleLoc}
+                title={!singleLoc ? (lang === "en" ? "Select a location to save corrections" : "Choisissez une boutique pour enregistrer") : ""}>
+                {submitMutation.isPending
+                  ? "⏳ Saving..."
+                  : singleLoc
+                    ? `✓ ${lang === "en" ? "Save Count" : "Sauvegarder le comptage"} (${totalItems} items) — ${selectedLocName}`
+                    : `🔒 ${lang === "en" ? "Save disabled for “All locations”" : "Enregistrement désactivé pour « Toutes »"}`}
               </button>
+              {!singleLoc && (
+                <div style={{ fontSize: 11.5, color: "var(--text-muted)", textAlign: "center", marginTop: -2 }}>
+                  {lang === "en"
+                    ? "Select a location above to save corrections to that shop's stock."
+                    : "Sélectionnez une boutique ci-dessus pour enregistrer les corrections de son stock."}
+                </div>
+              )}
             </div>
           )}
         </div>
