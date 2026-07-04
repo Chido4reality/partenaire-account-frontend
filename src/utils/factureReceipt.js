@@ -263,7 +263,9 @@ export function buildThermalReceipt({
   const methodLabel = (m) => {
     const k = String(m || "").toLowerCase();
     if (k === "cash")          return en ? "Cash" : "Espèces";
-    if (k === "mobile_money")  return "Mobile Money";
+    // MP-PAYMENT-METHOD-LABEL: same stored 'mobile_money' bucket, labelled by
+    // country — NG/NGN shows "Bank Transfer", CM/XAF shows "Mobile Money".
+    if (k === "mobile_money")  return String(org.currency || "").toUpperCase() === "NGN" ? "Bank Transfer" : "Mobile Money";
     if (k === "bank" || k === "bank_transfer") return en ? "Bank" : "Virement";
     return m || (en ? "Cash" : "Espèces");
   };

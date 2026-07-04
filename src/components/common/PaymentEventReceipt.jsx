@@ -31,6 +31,7 @@ import { buildMonospaceReceipt, wrapMonospaceFence } from "../../utils/receiptTe
 import { buildFactureInner, buildThermalReceipt } from "../../utils/factureReceipt";
 import { advertLines, PLAY_STORE_URL, showDownloadQr, downloadQrCaptionLines } from "../../utils/receiptExtras";
 import { currencySymbol } from "../../utils/currency";
+import { momoLabel } from "../../utils/paymentLabels";
 import toast from "react-hot-toast";
 // MP-BT-THERMAL: direct Bluetooth (Classic SPP) ESC/POS printing.
 import { isBtPrintSupported, getSavedPrinter, saveSavedPrinter, listPairedPrinters, printSaleViaBluetooth } from "../../utils/btPrint";
@@ -146,6 +147,15 @@ function buildBodyLines(eventType, data, lang, org) {
   const en = lang === "en";
   const sym = currencySymbol(org?.currency);
   const lines = [];
+  // MP-PAYMENT-METHOD-LABEL: 'mobile_money' shows as the country's label
+  // (NG "Bank Transfer", CM/XAF "Mobile Money"); other methods unchanged.
+  const methodLbl = (m) => {
+    const k = String(m || "").toLowerCase();
+    if (k === "mobile_money") return momoLabel(org?.currency, en);
+    if (k === "cash") return en ? "Cash" : "Espèces";
+    if (k === "bank" || k === "bank_transfer") return en ? "Bank" : "Virement";
+    return m;
+  };
   // Customer name lookup: new backend payloads expose `customer_name`
   // at the top level; POSPage's existing lastSale shape nests it
   // under `data.customer.name`. Support both.
@@ -193,7 +203,7 @@ function buildBodyLines(eventType, data, lang, org) {
     if (customerLine) lines.push(customerLine);
     lines.push("─────────────────────");
     lines.push(`${en ? "Amount paid" : "Montant payé"}: ${fmtAmt(data.amount)} ${sym}`);
-    if (data.payment_method) lines.push(`${en ? "Method" : "Mode"}: ${data.payment_method}`);
+    if (data.payment_method) lines.push(`${en ? "Method" : "Mode"}: ${methodLbl(data.payment_method)}`);
     if (applied.length || ghost) {
       lines.push("─────────────────────");
       lines.push(en ? "Applied to:" : "Imputé sur :");
@@ -233,7 +243,7 @@ function buildBodyLines(eventType, data, lang, org) {
     }
     lines.push("─────────────────────");
     lines.push(`${en ? "Amount paid" : "Montant payé"}: ${fmtAmt(data.amount)} ${sym}`);
-    if (data.payment_method) lines.push(`${en ? "Method" : "Mode"}: ${data.payment_method}`);
+    if (data.payment_method) lines.push(`${en ? "Method" : "Mode"}: ${methodLbl(data.payment_method)}`);
     lines.push("─────────────────────");
     if (data.sale_total != null) {
       lines.push(`${en ? "Invoice total" : "Total facture"}: ${fmtAmt(data.sale_total)} ${sym}`);
@@ -286,14 +296,14 @@ function buildBodyLines(eventType, data, lang, org) {
     if (isExchange && diff > 0) {
       // Customer paid the difference — show the amount collected.
       lines.push(`*${en ? "Collected" : "Différence encaissée"}: ${fmtAmt(diff)} ${sym}*`);
-      lines.push(`${en ? "Method" : "Mode"}: ${data.settlement_method || "cash"}`);
+      lines.push(`${en ? "Method" : "Mode"}: ${methodLbl(data.settlement_method || "cash")}`);
     } else if (isExchange && diff === 0) {
       lines.push(`*${en ? "Even exchange — no payment" : "Échange égal — aucun paiement"}*`);
     } else {
       // Pure refund OR cheaper-replacement exchange (refund/credit the diff).
       lines.push(`*${en ? "Refund total" : "Total remboursé"}: ${fmtAmt(data.refund_amount)} ${sym}*`);
       if (data.refund_method && data.refund_method !== "none") {
-        lines.push(`${en ? "Method" : "Mode"}: ${data.refund_method}`);
+        lines.push(`${en ? "Method" : "Mode"}: ${methodLbl(data.refund_method)}`);
       }
       const credit = Number(data.credit_portion || 0);
       const cash = Number(data.cash_portion || 0);
@@ -358,7 +368,7 @@ function buildBodyLines(eventType, data, lang, org) {
     if (cashRefund > 0) {
       lines.push(`💵 *${en ? "Cash refund" : "Remboursement espèces"}: ${fmtAmt(cashRefund)} ${sym}*`);
       if (data.cash_refund_method && data.cash_refund_method !== "cash") {
-        lines.push(`   ${en ? "Method" : "Mode"}: ${data.cash_refund_method}`);
+        lines.push(`   ${en ? "Method" : "Mode"}: ${methodLbl(data.cash_refund_method)}`);
       }
       if (data.cash_refund_ref) {
         lines.push(`   ${en ? "Refund ref" : "Réf. remb."}: ${data.cash_refund_ref}`);

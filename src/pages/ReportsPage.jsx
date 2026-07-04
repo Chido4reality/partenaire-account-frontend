@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import { useLangStore, useAuthStore, useSettingsStore } from "../store";
 import api, { formatDate } from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
+import { momoLabelShort } from "../utils/paymentLabels";
 import VoidReturnModal from "../components/common/VoidReturnModal";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 import { buildLedgerTextV2 as buildLedgerTextUtil, buildWeeklyText as buildWeeklyTextUtil,
@@ -1145,13 +1146,13 @@ export default function ReportsPage() {
                       onToggle={toggleBlock("day_flow")}>
                       <BlockRow label={lang === "en" ? "Sales today" : "Ventes du jour"} value={fmt(bl.day_flow.sales.total)} bold />
                       <BlockRow indent label={lang === "en" ? "Paid cash" : "Payé espèces"} value={fmt(bl.day_flow.sales.paid_cash)} />
-                      <BlockRow indent label={lang === "en" ? "Paid MoMo" : "Payé MoMo"} value={fmt(bl.day_flow.sales.paid_momo)} />
+                      <BlockRow indent label={`${lang === "en" ? "Paid " : "Payé "}${momoLabelShort(fmt.currency, lang === "en")}`} value={fmt(bl.day_flow.sales.paid_momo)} />
                       <BlockRow indent label={lang === "en" ? "Paid bank" : "Payé banque"} value={fmt(bl.day_flow.sales.paid_bank)} />
                       <BlockRow indent label={lang === "en" ? "On credit" : "À crédit"} value={fmt(bl.day_flow.sales.on_credit)} color="#fbbf24" />
                       <div style={{ height: 8 }} />
                       <BlockRow label={lang === "en" ? "Debt collected" : "Dette encaissée"} value={fmt(bl.day_flow.debt_collected.total)} bold />
                       <BlockRow indent label={lang === "en" ? "Cash" : "Espèces"} value={fmt(bl.day_flow.debt_collected.cash)} />
-                      <BlockRow indent label="MoMo" value={fmt(bl.day_flow.debt_collected.momo)} />
+                      <BlockRow indent label={momoLabelShort(fmt.currency, lang === "en")} value={fmt(bl.day_flow.debt_collected.momo)} />
                       <BlockRow indent label={lang === "en" ? "Bank" : "Banque"} value={fmt(bl.day_flow.debt_collected.bank)} />
                       <div style={{ height: 8 }} />
                       <BlockRow label={lang === "en" ? "Refunds & voids (cash out)" : "Remboursements & annulations (sortie)"}

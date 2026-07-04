@@ -26,6 +26,7 @@ import { motion } from "framer-motion";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 import BelowCostLossDetail from "../components/common/BelowCostLossDetail";
 import DiscountApprovalDetail from "../components/common/DiscountApprovalDetail";
+import { momoLabel } from "../utils/paymentLabels";
 import RestrictedAction from "../components/common/RestrictedAction";
 import useOwnerApproval from "../hooks/useOwnerApproval";
 
@@ -2232,7 +2233,7 @@ export default function POSPage() {
                     {PAY_METHODS.map(m => (
                       <button key={m.key} onClick={() => setPayMethod(m.key)} style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: `1.5px solid ${payMethod === m.key ? "var(--brand)" : "var(--border)"}`, background: payMethod === m.key ? "rgba(251,197,3,0.12)" : "transparent", color: payMethod === m.key ? "var(--brand-light)" : "var(--text-secondary)", cursor: "pointer", fontSize: 10, fontWeight: 700, transition: "all 0.15s" }}>
                         <div>{m.icon}</div>
-                        <div style={{ marginTop: 1 }}>{lang === "en" ? m.en : m.fr}</div>
+                        <div style={{ marginTop: 1 }}>{m.key === "mobile_money" ? momoLabel(orgSettings.currency, lang === "en") : (lang === "en" ? m.en : m.fr)}</div>
                       </button>
                     ))}
                   </div>

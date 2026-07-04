@@ -107,10 +107,12 @@ function newDoc(widthChars) {
   return api;
 }
 
-function methodLabel(m, en) {
+function methodLabel(m, en, currency) {
   const k = String(m || "").toLowerCase();
   if (k === "cash") return en ? "Cash" : "Especes";
-  if (k === "mobile_money") return "Mobile Money";
+  // MP-PAYMENT-METHOD-LABEL: same stored 'mobile_money' bucket, labelled by
+  // country — NG/NGN shows "Bank Transfer", CM/XAF shows "Mobile Money".
+  if (k === "mobile_money") return String(currency || "").toUpperCase() === "NGN" ? "Bank Transfer" : "Mobile Money";
   if (k === "bank" || k === "bank_transfer") return en ? "Bank" : "Virement";
   return m || (en ? "Cash" : "Especes");
 }
@@ -184,7 +186,7 @@ export function buildSaleEscposBytes({
   if (paid != null) d.cols(en ? "Paid" : "Paye", `${money(paid)} ${sym}`);
   if (balance != null && balance > 0) d.bold(true).cols(en ? "Balance due" : "Reste a payer", `${money(balance)} ${sym}`).bold(false);
   if (change > 0) d.cols(en ? "Change" : "Monnaie", `${money(change)} ${sym}`);
-  if (paymentMethod) d.cols(en ? "Method" : "Mode", methodLabel(paymentMethod, en));
+  if (paymentMethod) d.cols(en ? "Method" : "Mode", methodLabel(paymentMethod, en, org.currency));
   d.rule();
   // Footer
   d.align("C").line(org.receipt_footer || (en ? "Thank you!" : "Merci !"));
