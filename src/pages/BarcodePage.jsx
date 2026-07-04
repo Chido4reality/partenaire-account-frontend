@@ -4,6 +4,7 @@ import { useLangStore, useAuthStore } from "../store";
 import api from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
 import CameraScanner from "../components/common/CameraScanner";
+import ClearButton from "../components/common/ClearButton";
 
 export default function BarcodePage() {
   const { lang } = useLangStore();
@@ -143,9 +144,12 @@ export default function BarcodePage() {
         {/* LEFT: Product list */}
         <div>
           <div style={{ marginBottom: 12, display: "flex", gap: 8, alignItems: "center" }}>
-            <input className="input" value={search} onChange={e => setSearch(e.target.value)}
-              placeholder={lang === "en" ? "Search product by name or barcode..." : "Chercher par nom ou code-barres..."}
-              style={{ flex: 1, paddingLeft: 12 }} />
+            <div style={{ position: "relative", flex: 1, display: "flex" }}>
+              <input className="input" value={search} onChange={e => setSearch(e.target.value)}
+                placeholder={lang === "en" ? "Search product by name or barcode..." : "Chercher par nom ou code-barres..."}
+                style={{ flex: 1, paddingLeft: 12, paddingRight: 34 }} />
+              <ClearButton value={search} onClear={() => setSearch("")} right={8} title={lang === "en" ? "Clear" : "Effacer"} />
+            </div>
             <button onClick={() => setShowCamera(true)}
               style={{ flexShrink: 0, height: 42, width: 42, borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elevated)", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" }}
               title={lang === "en" ? "Scan with camera" : "Scanner avec la caméra"}>

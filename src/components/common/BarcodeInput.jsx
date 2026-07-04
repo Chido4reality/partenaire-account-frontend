@@ -1,5 +1,6 @@
 import { useState } from "react";
 import CameraScanner from "./CameraScanner";
+import ClearButton from "./ClearButton";
 
 // Detect if device is mobile/tablet
 const isMobile = () => /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
@@ -24,17 +25,23 @@ export default function BarcodeInput({ value, onChange, onScan, placeholder, lan
         />
       )}
       <div style={{ display: "flex", gap: 8, ...(style || {}) }}>
-        <input
-          ref={inputRef}
-          className="input"
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          placeholder={placeholder || (mobile
-            ? (lang === "en" ? "Tap camera button to scan..." : "Appuyez sur camera pour scanner...")
-            : (lang === "en" ? "Scan barcode or type..." : "Scanner ou saisir..."))}
-          style={{ flex: 1 }}
-          {...inputProps}
-        />
+        {/* MP-SEARCH-CLEAR-BUTTON: input wrapped so the × sits at the input's
+            right edge — clear of the camera button (a flex sibling). */}
+        <div style={{ position: "relative", flex: 1, minWidth: 0, display: "flex" }}>
+          <input
+            ref={inputRef}
+            className="input"
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            placeholder={placeholder || (mobile
+              ? (lang === "en" ? "Tap camera button to scan..." : "Appuyez sur camera pour scanner...")
+              : (lang === "en" ? "Scan barcode or type..." : "Scanner ou saisir..."))}
+            style={{ flex: 1, paddingRight: 34 }}
+            {...inputProps}
+          />
+          <ClearButton value={value} onClear={() => onChange("")} inputRef={inputRef} right={8}
+            title={lang === "en" ? "Clear" : "Effacer"} />
+        </div>
         {/* Only show camera button on mobile */}
         {mobile && (
           <button

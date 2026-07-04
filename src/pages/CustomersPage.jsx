@@ -8,6 +8,7 @@ import api, { formatDate } from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
 import { momoLabel } from "../utils/paymentLabels";
 import { useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
+import ClearButton from "../components/common/ClearButton";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 import useOwnerApproval from "../hooks/useOwnerApproval";
 import RestrictedAction from "../components/common/RestrictedAction";
@@ -647,9 +648,12 @@ export default function CustomersPage() {
 
         {/* Filters */}
         <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-          <input className="input" placeholder={lang === "en" ? "Search by name or phone..." : "Chercher par nom ou telephone..."}
-            value={search} onChange={e => setSearch(e.target.value)}
-            style={{ flex: 1, minWidth: 200 }} />
+          <div style={{ position: "relative", flex: 1, minWidth: 200, display: "flex" }}>
+            <input className="input" placeholder={lang === "en" ? "Search by name or phone..." : "Chercher par nom ou telephone..."}
+              value={search} onChange={e => setSearch(e.target.value)}
+              style={{ flex: 1, minWidth: 0, paddingRight: 34 }} />
+            <ClearButton value={search} onClear={() => setSearch("")} right={8} title={lang === "en" ? "Clear" : "Effacer"} />
+          </div>
           <select className="input" value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={{ width: 140 }}>
             <option value="">{lang === "en" ? "All types" : "Tous types"}</option>
             {TYPES.map(t => <option key={t.value} value={t.value}>{lang === "en" ? t.en : t.fr}</option>)}

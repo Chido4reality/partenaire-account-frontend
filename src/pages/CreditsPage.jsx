@@ -6,6 +6,7 @@ import { useAuthStore, useLangStore } from "../store";
 import api, { formatDate } from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
 import { momoLabel } from "../utils/paymentLabels";
+import ClearButton from "../components/common/ClearButton";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 
 export default function CreditsPage() {
@@ -230,8 +231,9 @@ export default function CreditsPage() {
         {/* Search */}
         <div style={{ position: "relative", marginBottom: 16, maxWidth: 360 }}>
           <input className="input" placeholder={lang === "en" ? "Search customer..." : "Chercher client..."}
-            value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 34 }} />
+            value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 34, paddingRight: 34 }} />
           <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)", fontSize: 13 }}>🔍</span>
+          <ClearButton value={search} onClear={() => setSearch("")} right={10} title={lang === "en" ? "Clear" : "Effacer"} />
         </div>
 
         {/* Customer list */}

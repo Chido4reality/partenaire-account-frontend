@@ -27,6 +27,7 @@ import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 import BelowCostLossDetail from "../components/common/BelowCostLossDetail";
 import DiscountApprovalDetail from "../components/common/DiscountApprovalDetail";
 import { momoLabel } from "../utils/paymentLabels";
+import ClearButton from "../components/common/ClearButton";
 import RestrictedAction from "../components/common/RestrictedAction";
 import useOwnerApproval from "../hooks/useOwnerApproval";
 
@@ -2585,12 +2586,17 @@ export default function POSPage() {
               </div>
             ) : (
               <>
-                <input ref={custRef} className="input"
-                  placeholder={lang === "en" ? "Type name or phone..." : "Nom ou téléphone..."}
-                  value={custSearch}
-                  onChange={e => { setCustSearch(e.target.value); setShowCustDrop(true); }}
-                  onFocus={() => setShowCustDrop(true)}
-                  onBlur={() => setTimeout(() => setShowCustDrop(false), 200)} />
+                <div style={{ position: "relative" }}>
+                  <input ref={custRef} className="input"
+                    placeholder={lang === "en" ? "Type name or phone..." : "Nom ou téléphone..."}
+                    value={custSearch}
+                    onChange={e => { setCustSearch(e.target.value); setShowCustDrop(true); }}
+                    onFocus={() => setShowCustDrop(true)}
+                    onBlur={() => setTimeout(() => setShowCustDrop(false), 200)}
+                    style={{ paddingRight: 34 }} />
+                  <ClearButton value={custSearch} onClear={() => setCustSearch("")} inputRef={custRef} right={10}
+                    title={lang === "en" ? "Clear" : "Effacer"} />
+                </div>
                 {showCustDrop && filteredCustomers.length > 0 && (
                   <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50, background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", overflowY: "auto", maxHeight: "min(60vh, 420px)", marginTop: 4, boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}>
                     {filteredCustomers.map(c => (
@@ -2703,8 +2709,10 @@ export default function POSPage() {
               <div style={{ position: "relative" }}>
                 <input ref={searchRef} className="input"
                   placeholder={lang === "en" ? "Search by name, code, barcode..." : "Nom, code, code-barres..."}
-                  value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 38 }} />
+                  value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 38, paddingRight: 34 }} />
                 <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)", fontSize: 14, pointerEvents: "none" }}>🔍</span>
+                <ClearButton value={search} onClear={() => setSearch("")} inputRef={searchRef} right={10}
+                  title={lang === "en" ? "Clear" : "Effacer"} />
               </div>
             )}
 
@@ -2712,8 +2720,10 @@ export default function POSPage() {
               <div style={{ position: "relative", marginTop: 6 }}>
                 <input ref={searchRef} className="input"
                   placeholder={lang === "en" ? "Or type to search..." : "Ou tapez pour chercher..."}
-                  value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 38, fontSize: 12 }} />
+                  value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 38, paddingRight: 34, fontSize: 12 }} />
                 <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)", fontSize: 13, pointerEvents: "none" }}>✏️</span>
+                <ClearButton value={search} onClear={() => setSearch("")} inputRef={searchRef} right={10}
+                  title={lang === "en" ? "Clear" : "Effacer"} />
               </div>
             )}
           </div>

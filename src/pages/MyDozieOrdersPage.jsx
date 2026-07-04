@@ -9,6 +9,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
+import ClearButton from "../components/common/ClearButton";
 import { useLangStore } from "../store";
 import api from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
@@ -181,8 +182,11 @@ export default function MyDozieOrdersPage() {
       )}
 
       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-        <input className="input" style={{ flex: 1, minWidth: 160 }} placeholder={en ? "Search order ref (QOF-…)" : "Rechercher réf (QOF-…)"}
-          value={search} onChange={e => setSearch(e.target.value)} />
+        <div style={{ position: "relative", flex: 1, minWidth: 160, display: "flex" }}>
+          <input className="input" style={{ flex: 1, minWidth: 0, paddingRight: 34 }} placeholder={en ? "Search order ref (QOF-…)" : "Rechercher réf (QOF-…)"}
+            value={search} onChange={e => setSearch(e.target.value)} />
+          <ClearButton value={search} onClear={() => setSearch("")} right={8} title={en ? "Clear" : "Effacer"} />
+        </div>
         <select className="input" style={{ width: 160 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
           <option value="">{en ? "All statuses" : "Tous statuts"}</option>
           {["pending", "confirmed", "ready", "shipped", "delivered", "rejected"].map(s =>

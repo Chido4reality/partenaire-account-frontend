@@ -25,6 +25,7 @@ import NavDrawer, { DRAWER_WIDTH } from "../layout/NavDrawer";
 import { tapHaptic } from "../../utils/haptics";
 import CameraScanner from "./CameraScanner";
 import OnboardingGuide from "./OnboardingGuide";
+import ClearButton from "./ClearButton";
 import { explainAnomaly, severityCue } from "../../utils/anomalyExplain";
 import { normalizeScannedSaleRef } from "../../utils/receiptCodeStyle";
 import { hasSeenOnboardingLocally, reconcileOnboardingSeen } from "../../utils/onboarding";
@@ -1139,6 +1140,9 @@ export default function Layout() {
     return (
       <div style={{ position: "relative", width: "100%" }}>
         <div style={{ display: "flex", gap: 6, alignItems: "stretch" }}>
+        {/* MP-SEARCH-CLEAR-BUTTON: wrap the input so the × sits at its right
+            edge — clear of the camera button (a flex sibling). */}
+        <div style={{ position: "relative", flex: 1, minWidth: 0, display: "flex" }}>
         <input id={inputId} value={term}
           onChange={e => {
             // Some Code128 scanners round-trip '-' as '+'. Only for
@@ -1175,7 +1179,10 @@ export default function Layout() {
             else if (results.length === 1) go(results[0]);
           }}
           placeholder={lang === "en" ? "🔎 Find / scan (VNT / QOF / HLD / digits)" : "🔎 Chercher / scanner (VNT / QOF / HLD / chiffres)"}
-          style={{ flex: 1, minWidth: 0, padding: "6px 10px", borderRadius: 8, background: "rgba(255,255,255,0.06)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: 11 }} />
+          style={{ flex: 1, minWidth: 0, padding: "6px 32px 6px 10px", borderRadius: 8, background: "rgba(255,255,255,0.06)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: 11 }} />
+          <ClearButton value={term} onClear={() => setTerm("")} right={6}
+            title={lang === "en" ? "Clear" : "Effacer"} />
+        </div>
           {/* MP-GLOBAL-SEARCH-CAMERA-SCAN: open the phone camera to scan a receipt/order barcode. */}
           <button type="button" onClick={() => setScanOpen(true)}
             aria-label={lang === "en" ? "Scan with camera" : "Scanner avec la caméra"}

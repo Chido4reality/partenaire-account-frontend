@@ -2,6 +2,7 @@
 import BarcodeInput from "../components/common/BarcodeInput";
 import CameraScanner from "../components/common/CameraScanner";
 import ProductSearchBox from "../components/common/ProductSearchBox";
+import ClearButton from "../components/common/ClearButton";
 import React, { useState, useEffect, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
@@ -1113,11 +1114,11 @@ export default function InventoryPage() {
             <input ref={searchRef} className="input"
               placeholder={lang === "en" ? "Search all locations by name, barcode or slot..." : "Chercher partout par nom, code-barres ou emplacement..."}
               value={search} onChange={e => setSearch(e.target.value)}
-              style={{ paddingLeft: 36 }} />
+              style={{ paddingLeft: 36, paddingRight: 34 }} />
             <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", fontSize: 14, color: scanning ? "#10b981" : "var(--text-muted)" }}>
               {scanning ? "✓" : "🔍"}
             </span>
-            {search && <button onClick={() => setSearch("")} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>✕</button>}
+            <ClearButton value={search} onClear={() => setSearch("")} inputRef={searchRef} right={10} title={lang === "en" ? "Clear" : "Effacer"} />
           </div>
           <button onClick={() => setShowCamera(true)}
             style={{ flexShrink: 0, height: 42, width: 42, borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elevated)", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" }}

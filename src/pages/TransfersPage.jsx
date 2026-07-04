@@ -1,4 +1,5 @@
 import BarcodeInput from "../components/common/BarcodeInput";
+import ClearButton from "../components/common/ClearButton";
 import ProductSearchBox from "../components/common/ProductSearchBox";
 import { useState, useEffect, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -405,8 +406,11 @@ export default function TransfersPage() {
                 {pickerOpen && (
                   <div style={{ marginTop: 8, border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden", background: "var(--bg-card)" }}>
                     <div style={{ padding: 10, borderBottom: "1px solid var(--border)" }}>
-                      <input className="input" value={pickerSearch} onChange={e => setPickerSearch(e.target.value)}
-                        placeholder={lang === "en" ? "Filter list..." : "Filtrer la liste..."} />
+                      <div style={{ position: "relative" }}>
+                        <input className="input" value={pickerSearch} onChange={e => setPickerSearch(e.target.value)}
+                          placeholder={lang === "en" ? "Filter list..." : "Filtrer la liste..."} style={{ paddingRight: 34 }} />
+                        <ClearButton value={pickerSearch} onClear={() => setPickerSearch("")} right={10} title={lang === "en" ? "Clear" : "Effacer"} />
+                      </div>
                     </div>
                     <div style={{ maxHeight: 320, overflowY: "auto" }}>
                       {sourceLoading && sourceProducts.length === 0 ? (

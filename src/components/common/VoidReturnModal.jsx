@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import api from "../../utils/api";
 import { useCurrency } from "../../utils/useCurrency";
 import { momoLabel } from "../../utils/paymentLabels";
+import ClearButton from "./ClearButton";
 import OwnerPIN from "./OwnerPIN";
 import { useSettingsStore, useAuthStore } from "../../store";
 import useOwnerApproval from "../../hooks/useOwnerApproval";
@@ -704,7 +705,8 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
             <div style={{ position: "relative", marginBottom: 8 }}>
               <input className="input" value={exchSearch} onChange={e => setExchSearch(e.target.value)}
                 placeholder={lang === "en" ? "Search product to add…" : "Chercher produit à ajouter…"}
-                style={{ fontSize: 13 }} />
+                style={{ fontSize: 13, paddingRight: 34 }} />
+              <ClearButton value={exchSearch} onClear={() => setExchSearch("")} right={8} title={lang === "en" ? "Clear" : "Effacer"} />
               {filteredProducts.length > 0 && (
                 <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, zIndex: 50, maxHeight: 180, overflowY: "auto", boxShadow: "0 4px 16px rgba(0,0,0,0.3)" }}>
                   {filteredProducts.slice(0, 8).map(p => (
