@@ -577,9 +577,10 @@ export default function InventoryPage() {
   // newSkuAuto = the Add SKU field still holds an UNMODIFIED generated value
   // (so the server may bump+retry on collision; user edits flip it false).
   const [newSkuAuto, setNewSkuAuto] = useState(true);
-  const fetchNextSku = async (categoryId) => {
+  // MP-SKU: plain per-org number — no longer tied to the category.
+  const fetchNextSku = async () => {
     try {
-      const d = await api.get(`/products/next-sku${categoryId ? `?category_id=${categoryId}` : ""}`).then(r => r.data?.data);
+      const d = await api.get(`/products/next-sku`).then(r => r.data?.data);
       return d?.sku || null;
     } catch { return null; }
   };
@@ -588,7 +589,7 @@ export default function InventoryPage() {
     if (!showAddProduct) return;
     if ((newProduct.sku || "").trim()) return;
     (async () => {
-      const s = await fetchNextSku(newProduct.category_id);
+      const s = await fetchNextSku();
       if (s) { setNewProduct(p => ((p.sku || "").trim() ? p : { ...p, sku: s })); setNewSkuAuto(true); }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1297,6 +1298,7 @@ export default function InventoryPage() {
               <thead>
                 <tr>
                   <th>{lang === "en" ? "Product" : "Produit"}</th>
+                  <th>SKU</th>
                   <th>{lang === "en" ? "Location" : "Emplacement"}</th>
                   <th>{lang === "en" ? "Slot" : "Emplacement"}</th>
                   <th style={{ textAlign: "right" }}>{lang === "en" ? "Quantity" : "Quantité"}</th>
@@ -1330,6 +1332,7 @@ export default function InventoryPage() {
                         <div style={{ fontWeight: 500 }}>{p?.name}</div>
                         {p?.barcode && <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>{p.barcode}</div>}
                       </td>
+                      <td style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text-muted)", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis" }}>{p?.sku || "—"}</td>
                       <td><span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: s.pa_locations?.type === "warehouse" ? "rgba(251,197,3,0.15)" : "rgba(16,185,129,0.15)", color: s.pa_locations?.type === "warehouse" ? "var(--brand-light)" : "#34d399" }}>{s.pa_locations?.name}</span></td>
                       <td>
                         {s.slot_code ? (
@@ -1484,6 +1487,7 @@ export default function InventoryPage() {
               <thead>
                 <tr>
                   <th>Product</th>
+                  <th>SKU</th>
                   <th>Barcode</th>
                   <th>Unit</th>
                   {canSeePrices && <th style={{ textAlign: "right" }}>Cost</th>}
@@ -1505,6 +1509,7 @@ export default function InventoryPage() {
                         {p.is_active === false && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: "#ef4444", background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 6, padding: "1px 6px" }}>{lang === "en" ? "ARCHIVED" : "ARCHIVÉ"}</span>}
                       </div>
                     </td>
+                    <td style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text-muted)", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis" }}>{p.sku || "—"}</td>
                     <td style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text-muted)" }}>{p.barcode || "—"}</td>
                     <td style={{ color: "var(--text-muted)" }}>{unitLabel(p.unit)}</td>
                     {canSeePrices && <td style={{ textAlign: "right", color: "var(--text-muted)", fontSize: 12 }}>{fmt(p.cost_price)}</td>}
@@ -1581,18 +1586,12 @@ export default function InventoryPage() {
               </div>
             </div>
 
-            {/* MP-SKU-AUTOGEN: optional category (drives the SKU prefix) + auto SKU. */}
+            {/* MP-SKU: category is a product attribute only — it no longer drives the SKU. */}
             {categories.length > 0 && (
               <div className="form-group">
                 <label className="label">{lang === "en" ? "Category (optional)" : "Catégorie (optionnel)"}</label>
                 <select className="input" value={newProduct.category_id || ""}
-                  onChange={async e => {
-                    const cid = e.target.value;
-                    setNewProduct(p => ({ ...p, category_id: cid }));
-                    // Re-suggest the SKU for the new category, but only if the user
-                    // hasn't typed their own code (never overwrite a custom SKU).
-                    if (newSkuAuto) { const s = await fetchNextSku(cid); if (s) setNewProduct(p => ({ ...p, sku: s })); }
-                  }}>
+                  onChange={e => setNewProduct(p => ({ ...p, category_id: e.target.value }))}>
                   <option value="">{lang === "en" ? "— none —" : "— aucune —"}</option>
                   {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
@@ -1606,7 +1605,7 @@ export default function InventoryPage() {
                   onChange={e => { setNewProduct(p => ({ ...p, sku: e.target.value })); setNewSkuAuto(false); }}
                   placeholder={lang === "en" ? "auto — editable / clearable" : "auto — modifiable / effaçable"} />
                 <button type="button" title={lang === "en" ? "Generate" : "Générer"}
-                  onClick={async () => { const s = await fetchNextSku(newProduct.category_id); if (s) { setNewProduct(p => ({ ...p, sku: s })); setNewSkuAuto(true); } }}
+                  onClick={async () => { const s = await fetchNextSku(); if (s) { setNewProduct(p => ({ ...p, sku: s })); setNewSkuAuto(true); } }}
                   style={{ flexShrink: 0, height: 42, padding: "0 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elevated)", cursor: "pointer", fontSize: 13, fontWeight: 700, color: "var(--brand-light)" }}>
                   🔄 {lang === "en" ? "Generate" : "Générer"}
                 </button>
@@ -1777,7 +1776,15 @@ export default function InventoryPage() {
                 ? `🗄 ${lang === "en" ? "Archived" : "Archivé"}: ${editProduct.name}`
                 : `✏️ ${lang === "en" ? "Edit Product" : "Modifier le produit"}`}
             </div>
-            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 20 }}>{editProduct.name}</div>
+            {/* MP-SKU: show the SKU prominently in the product header (back-office id). */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{editProduct.name}</span>
+              {(editProduct.sku || "").trim() && (
+                <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "monospace", color: "var(--brand-light)", background: "rgba(251,197,3,0.12)", border: "1px solid var(--border)", borderRadius: 6, padding: "2px 8px" }}>
+                  SKU {editProduct.sku}
+                </span>
+              )}
+            </div>
 
             <div className="form-group">
               <label className="label">Name *</label>
@@ -1815,7 +1822,7 @@ export default function InventoryPage() {
                   onChange={e => setEditProduct(p => ({ ...p, sku: e.target.value }))}
                   placeholder={lang === "en" ? "e.g. WRD-BRN-01 (optional)" : "ex. WRD-BRN-01 (optionnel)"} />
                 <button type="button" title={lang === "en" ? "Generate" : "Générer"}
-                  onClick={async () => { const s = await fetchNextSku(editProduct.category_id); if (s) setEditProduct(p => ({ ...p, sku: s })); }}
+                  onClick={async () => { const s = await fetchNextSku(); if (s) setEditProduct(p => ({ ...p, sku: s })); }}
                   style={{ flexShrink: 0, height: 42, padding: "0 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elevated)", cursor: "pointer", fontSize: 13, fontWeight: 700, color: "var(--brand-light)" }}>
                   🔄 {lang === "en" ? "Generate" : "Générer"}
                 </button>
