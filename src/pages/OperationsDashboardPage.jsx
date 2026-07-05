@@ -216,6 +216,16 @@ export default function OperationsDashboardPage() {
         <label style={{ fontSize: 11, color: "var(--text-muted)" }}>{en ? "To" : "Au"}</label>
         <input type="date" value={to} onChange={e => setTo(e.target.value)}
           style={dateInputStyle} />
+        {/* MP: "Today · <date>" chip lives on the filter toolbar row, right-aligned;
+            wraps to its own line on narrow screens (flexWrap on the row). Unconditional,
+            display-only — no effect on the range controls. */}
+        <div style={{
+          marginLeft: "auto", display: "inline-block", fontSize: 13, fontWeight: 800,
+          color: "var(--brand-light)", background: "rgba(251,197,3,0.10)",
+          border: "1px solid var(--border)", borderRadius: 8, padding: "4px 10px",
+        }}>
+          📅 {en ? "Today" : "Aujourd'hui"} · {new Date().toLocaleDateString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" })}
+        </div>
       </div>
 
       {/* ── SECTION 1: Multi-day overview ──────────────────── */}
@@ -225,17 +235,6 @@ export default function OperationsDashboardPage() {
           ? "Per-day cash flow components, with previous-day deltas on the latest day."
           : "Composantes du flux par jour, avec écarts vs jour précédent."}
       >
-        {/* MP: label the "today" figures with the actual date — UNCONDITIONAL (shows
-            even on an all-0 / <2-day range where `deltas` is null) and high-contrast
-            so it's unmistakably visible under the section header. */}
-        <div style={{
-          display: "inline-block", fontSize: 13, fontWeight: 800, color: "var(--brand-light)",
-          background: "rgba(251,197,3,0.10)", border: "1px solid var(--border)",
-          borderRadius: 8, padding: "4px 10px", marginBottom: 12,
-        }}>
-          📅 {en ? "Today" : "Aujourd'hui"} · {new Date().toLocaleDateString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" })}
-        </div>
-
         {overview.isLoading && <div style={loadingStyle}>{en ? "Loading…" : "Chargement…"}</div>}
         {overview.isError && <div style={errorStyle}>{en ? "Failed to load overview." : "Échec du chargement."}</div>}
         {overview.data && (
