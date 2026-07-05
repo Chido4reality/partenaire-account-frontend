@@ -19,6 +19,8 @@ import useOwnerApproval from "../hooks/useOwnerApproval";
 import RestrictedAction from "../components/common/RestrictedAction";
 import DoziePublishModal from "../components/common/DoziePublishModal";
 import { getCapabilities, isAtCap } from "../utils/planCapabilities";
+import MultipartBuilder, { partsToPayload, emptyPart } from "../components/common/MultipartBuilder";
+import MultipartAvailability from "../components/common/MultipartAvailability";
 import { useLiteMode } from "../hooks/useLiteMode";
 import { parseProductImport, buildProductTemplateXlsx } from "../utils/productImport";
 
@@ -73,7 +75,7 @@ function fuzzyMatch(str, pattern) {
 const UNITS = ["pce", "kg", "litre", "metre", "boite", "set", "paire", "carton", "sac", "fût"];
 
 const EMPTY_PRODUCT = {
-  name: "", barcode: "", unit: "pce",
+  name: "", barcode: "", unit: "pce", is_multipart: false,
   cost_price: "", sell_price: "", wholesale_price: "", min_price: "",
   description: "", initial_location_id: "", initial_quantity: "", initial_slot: ""
 };
@@ -176,6 +178,7 @@ export default function InventoryPage() {
   const [dozieSaving, setDozieSaving] = useState(false);
   const [editPhotoUploading, setEditPhotoUploading] = useState(false);
   const [newProduct, setNewProduct] = useState(EMPTY_PRODUCT);
+  const [newParts, setNewParts] = useState([]); // MP-MULTIPART: kit parts builder
   // MP-PRODUCT-DEDUP: existing product found by barcode/name when adding, so the
   // Add modal can offer to open/edit it instead of creating a duplicate.
   const [dupeProduct, setDupeProduct] = useState(null);
@@ -543,6 +546,8 @@ export default function InventoryPage() {
   const planCaps = getCapabilities(effectivePlan);
   const productsCount = products.length || 0;
   const atInventoryCap = isAtCap(effectivePlan, "inventory_cap", productsCount);
+  // MP-MULTIPART: kit creation is a Pro / Pro Plus feature (trial resolves to pro).
+  const canMultipart = ["pro", "pro_plus"].includes(effectivePlan);
   const guardAdd = (continueAction) => {
     if (atInventoryCap) {
       setPaywall({ feature: "inventory_cap", mpId: myPlan?.user_id_number });
@@ -562,6 +567,8 @@ export default function InventoryPage() {
         wholesale_price: +newProduct.wholesale_price || 0,
         min_price: +newProduct.min_price || 0,
         description: newProduct.description || null,
+        // MP-MULTIPART: a kit is sold as one line; its parts build the BOM.
+        ...(newProduct.is_multipart ? { is_multipart: true, parts: partsToPayload(newParts) } : {}),
       });
       const product = res.data.data;
       // Sprint C: if the user attached a photo, upload it now that we
@@ -574,7 +581,8 @@ export default function InventoryPage() {
           toast.error(lang === "en" ? "Product saved but photo upload failed" : "Produit créé mais l'envoi de la photo a échoué");
         }
       }
-      if (newProduct.initial_location_id && newProduct.initial_quantity) {
+      // MP-MULTIPART: a kit parent holds no stock of its own — skip initial stock.
+      if (!newProduct.is_multipart && newProduct.initial_location_id && newProduct.initial_quantity) {
         await api.post("/stock/arrivals", {
           location_id: newProduct.initial_location_id,
           items: [{ product_id: product.id, quantity: +newProduct.initial_quantity, slot_code: newProduct.initial_slot || null, cost_price: +newProduct.cost_price || 0 }]
@@ -598,6 +606,7 @@ export default function InventoryPage() {
       toast.success(lang === "en" ? "✓ Product added!" : "✓ Produit ajouté!");
       setShowAddProduct(false);
       setNewProduct(EMPTY_PRODUCT);
+      setNewParts([]);
       const snap = data?._offlineSnapshot;
       if (snap?.offlineQueued) {
         seedAfterOfflineProductCreate({
@@ -938,7 +947,28 @@ export default function InventoryPage() {
   const addReceiveItem = () => setReceiveForm(f => ({ ...f, items: [...f.items, { product_id: "", product_name: "", quantity: "", slot_code: "", cost_price: "", sell_price: "", wholesale_price: "", min_price: "", currentPrices: null }] }));
   const removeReceiveItem = (idx) => setReceiveForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) }));
 
-  const selectReceiveProduct = (idx, product) => {
+  const selectReceiveProduct = async (idx, product) => {
+    // MP-MULTIPART: receiving a kit EXPANDS into its parts (one qty row per part).
+    // Complete sets usually arrive, so type once per part (editable). The parent
+    // kit holds no stock — only its parts are received.
+    if (product.is_multipart) {
+      try {
+        const d = await api.get(`/products/${product.id}`).then(r => r.data?.data);
+        const bom = d?.bom || [];
+        if (bom.length) {
+          const rows = bom.map(part => ({
+            product_id: part.part_product_id,
+            product_name: `${product.name} · ${part.name}`,
+            quantity: "", slot_code: "", cost_price: "", sell_price: "", wholesale_price: "", min_price: "",
+            currentPrices: null, _kit_part: true,
+          }));
+          setReceiveForm(f => ({ ...f, items: f.items.flatMap((it, i) => i === idx ? rows : [it]) }));
+          toast(lang === "en" ? `Kit expanded into ${bom.length} parts — enter qty received per part`
+                              : `Kit éclaté en ${bom.length} pièces — saisissez la qté reçue par pièce`, { duration: 3000 });
+          return;
+        }
+      } catch { /* fall through to a normal single-row select */ }
+    }
     setReceiveForm(f => ({
       ...f,
       items: f.items.map((it, i) => i === idx ? {
@@ -1497,6 +1527,21 @@ export default function InventoryPage() {
 
             <PricingSection data={newProduct} onChange={(k, v) => setNewProduct(p => ({ ...p, [k]: v }))} lang={lang} />
 
+            {/* MP-MULTIPART: kit toggle + parts builder (Pro / Pro Plus). */}
+            {canMultipart && (
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
+                  <input type="checkbox" checked={!!newProduct.is_multipart}
+                    onChange={e => { const v = e.target.checked; setNewProduct(p => ({ ...p, is_multipart: v })); if (v && newParts.length === 0) setNewParts([emptyPart(), emptyPart()]); }} />
+                  🧩 {lang === "en" ? "Multi-part product (kit)" : "Produit multi-pièces (kit)"}
+                </label>
+                {newProduct.is_multipart && (
+                  <MultipartBuilder parts={newParts} setParts={setNewParts} products={products} lang={lang} />
+                )}
+              </div>
+            )}
+
+            {!newProduct.is_multipart && (
             <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 14 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 12 }}>
                 📦 {lang === "en" ? "Initial Stock (optional)" : "Stock initial (optionnel)"}
@@ -1519,6 +1564,7 @@ export default function InventoryPage() {
                 </div>
               </div>
             </div>
+            )}
 
             {dupeProduct && (
               <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 10, padding: "12px 14px", marginBottom: 12 }}>
