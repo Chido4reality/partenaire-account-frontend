@@ -1890,6 +1890,12 @@ export default function POSPage() {
       // distinguish a below_cost_sale from a discount so we set the right ref +
       // skip discount-only handling.
       const isBelowCost = !!da && da.action_type === "below_cost_sale";
+      // MP-BELOW-COST-REJECT-REVERT: a below-cost hold whose approval reached a
+      // TERMINAL non-approved state (rejected/expired/cancelled) must NOT resume at
+      // the under-min price — that leaves Confirm Pay blocked with no way forward.
+      // Revert those lines to the legit tier price so the cart is immediately
+      // sellable. (A still-pending hold keeps its "awaiting approval" behaviour.)
+      const belowCostRejected = isBelowCost && !approved && !!da && da.status !== "pending";
       // current_stock lives on the held-cart items; index it by product so we keep
       // the low-stock warning even when rebuilding from the approval payload.
       const stockByProduct = {};
@@ -1921,11 +1927,15 @@ export default function POSPage() {
           // never fall back to the product's current walk-in price. Keep a held
           // price of 0 (giveaway) intact; only derive from line_total/qty or the
           // product price when the held record genuinely lacks a unit_price.
-          unit_price: it.unit_price != null
-            ? Number(it.unit_price)
-            : (it.line_total != null && Number(it.qty || it.quantity)
-                ? Number(it.line_total) / Number(it.qty || it.quantity)
-                : Number(p?.sell_price) || 0),
+          unit_price: belowCostRejected
+            // Rejected below-cost line → snap back to the customer's tier price
+            // (walk-in sell / wholesale / vip), never the rejected under-min value.
+            ? (priceForTier(p || {}, resumedTier) || Number(p?.sell_price) || 0)
+            : (it.unit_price != null
+                ? Number(it.unit_price)
+                : (it.line_total != null && Number(it.qty || it.quantity)
+                    ? Number(it.line_total) / Number(it.qty || it.quantity)
+                    : Number(p?.sell_price) || 0)),
           original_price: Number(p?.sell_price) || 0,
           price_tier: resumedTier,
           sell_price: Number(p?.sell_price) || 0,
@@ -1937,7 +1947,9 @@ export default function POSPage() {
           // re-pricing effect (which moves lines to the tier/walk-in price) leaves
           // resumed lines alone — the held record is the source of truth. Editing a
           // line later clears this flag as usual. (below_cost_approved also skips it.)
-          price_overridden: true,
+          // A REJECTED below-cost line is NOT pinned — it's back at the legit tier
+          // price and must behave like a normal, freely-editable/sellable line.
+          price_overridden: belowCostRejected ? false : true,
           // line discount restored only on an approved discount-hold.
           discount_type:  approved && it.discount_type ? it.discount_type : "",
           discount_value: approved && it.discount_value != null ? String(it.discount_value) : "",
@@ -1978,6 +1990,18 @@ export default function POSPage() {
             ? (lang === "en" ? `Resumed ${h.hold_ref} — ${what.en} was not approved; resuming without it` : `Reprise ${h.hold_ref} — ${what.fr} non approuvé; reprise sans`)
             : (lang === "en" ? `Resumed ${h.hold_ref}` : `Reprise ${h.hold_ref}`);
       toast.success(resumeMsg, { duration: da ? 6000 : 3000 });
+      // MP-BELOW-COST-REJECT-REVERT: tell the cashier the under-min price was undone
+      // and the cart is sellable again — no dead-end.
+      if (belowCostRejected) {
+        const rl = hydrated.filter(isSubmittableLine);
+        const detail = rl.length === 1
+          ? fmt(rl[0].unit_price)
+          : (lang === "en" ? "their normal prices" : "leurs prix normaux");
+        toast(lang === "en"
+          ? `Price change rejected — reverted to ${detail}. Sell at the normal price or re-request a new one.`
+          : `Changement de prix refusé — rétabli à ${detail}. Vendez au prix normal ou refaites une demande.`,
+          { icon: "↩️", duration: 7000, style: { background: "#451a03", color: "#fbbf24", border: "1px solid #92400e" } });
+      }
       if (short.length) {
         toast(lang === "en"
           ? `⚠️ Low stock: ${short.map(i => `${i.name} (${i.stock} left, ${i.quantity} held)`).join("; ")}. Adjust before completing.`
