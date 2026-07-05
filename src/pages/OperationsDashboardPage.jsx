@@ -148,6 +148,28 @@ export default function OperationsDashboardPage() {
     staleTime: 60000,
   });
 
+  // ── MP-SCOREBOARD-DEBT-TAPTHROUGH: which customers a cashier's debt total came
+  // from. Tapping a Debt figure fetches the itemised debt-collection payments for
+  // that cashier over the SAME range (optionally filtered to cash/momo).
+  const [debtDetail, setDebtDetail] = useState(null); // { cashier_name, label, loading, items, total, error }
+  const openDebtDetail = async (c, method) => {
+    const label = method === "cash" ? (en ? "Debt (Cash)" : "Dette (Espèces)")
+      : method === "momo" ? `${en ? "Debt (" : "Dette ("}${momoLabelShort(fmt.currency, en)})`
+      : (en ? "Debt collected" : "Dette encaissée");
+    setDebtDetail({ cashier_name: c.cashier_name, label, loading: true, items: [], total: 0 });
+    try {
+      const q = `?from=${from}&to=${to}&cashier_id=${encodeURIComponent(c.cashier_id)}${method ? `&method=${method}` : ""}`;
+      const d = await api.get(`/dashboard/debt-collections${q}`).then(r => r.data?.data || { items: [], total: 0 });
+      setDebtDetail(prev => prev ? { ...prev, loading: false, items: d.items || [], total: d.total || 0 } : null);
+    } catch {
+      setDebtDetail(prev => prev ? { ...prev, loading: false, items: [], total: 0, error: true } : null);
+    }
+  };
+  const methodDisplay = (bucket, raw) =>
+    bucket === "cash" ? (en ? "Cash" : "Espèces")
+    : bucket === "momo" ? momoLabel(fmt.currency, en)
+    : (raw || "—");
+
   // ── Chart data ───────────────────────────────────────────────
   const chartData = useMemo(() => {
     const rows = overview.data?.per_day || [];
@@ -288,20 +310,24 @@ export default function OperationsDashboardPage() {
                     {/* MP-SCOREBOARD-DEBT-COLLECTED: debt collected this period (all
                         methods, payment date, non-voided) — distinct from Cash (valid),
                         which is sales cash. Makes a debt-collecting day visible. */}
+                    {/* MP-SCOREBOARD-DEBT-TAPTHROUGH: tap a debt figure → which customers paid. */}
                     <td style={tdStyleRight}>
                       {Number(c.debt_collected) > 0
-                        ? <span style={{ color: "#3b82f6", fontWeight: 700 }}>{fmt(c.debt_collected)}</span>
+                        ? <span onClick={() => openDebtDetail(c, "")} title={en ? "See which customers paid" : "Voir quels clients ont payé"}
+                            style={{ color: "#3b82f6", fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}>{fmt(c.debt_collected)}</span>
                         : <span style={{ color: "var(--text-muted)" }}>—</span>}
                     </td>
-                    {/* MP-SCOREBOARD-INCOME: debt split by method */}
+                    {/* MP-SCOREBOARD-INCOME: debt split by method (tappable) */}
                     <td style={tdStyleRight}>
                       {Number(c.debt_collected_cash) > 0
-                        ? fmt(c.debt_collected_cash)
+                        ? <span onClick={() => openDebtDetail(c, "cash")} title={en ? "See which customers paid" : "Voir quels clients ont payé"}
+                            style={{ cursor: "pointer", textDecoration: "underline" }}>{fmt(c.debt_collected_cash)}</span>
                         : <span style={{ color: "var(--text-muted)" }}>—</span>}
                     </td>
                     <td style={tdStyleRight}>
                       {Number(c.debt_collected_momo) > 0
-                        ? fmt(c.debt_collected_momo)
+                        ? <span onClick={() => openDebtDetail(c, "momo")} title={en ? "See which customers paid" : "Voir quels clients ont payé"}
+                            style={{ cursor: "pointer", textDecoration: "underline" }}>{fmt(c.debt_collected_momo)}</span>
                         : <span style={{ color: "var(--text-muted)" }}>—</span>}
                     </td>
                     {/* Total income = all money RECEIVED (sales cash+MoMo + debt cash+MoMo),
@@ -682,6 +708,53 @@ export default function OperationsDashboardPage() {
           {en ? "→ Single-day Daily Report" : "→ Rapport quotidien (un jour)"}
         </Link>
       </div>
+
+      {/* MP-SCOREBOARD-DEBT-TAPTHROUGH: which customers a cashier's debt total came from. */}
+      {debtDetail && (
+        <div onClick={() => setDebtDetail(null)}
+          style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, width: "100%", maxWidth: 460, maxHeight: "80vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,0.6)" }}>
+            <div style={{ padding: "16px 18px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: 15 }}>{debtDetail.label}</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                  {debtDetail.cashier_name} · {from}{from !== to ? ` → ${to}` : ""}
+                </div>
+              </div>
+              <button onClick={() => setDebtDetail(null)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 18 }}>✕</button>
+            </div>
+            <div style={{ padding: "8px 18px 16px" }}>
+              {debtDetail.loading ? (
+                <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)" }}>{en ? "Loading…" : "Chargement…"}</div>
+              ) : debtDetail.error ? (
+                <div style={{ padding: 20, textAlign: "center", color: "#f87171" }}>{en ? "Could not load" : "Échec du chargement"}</div>
+              ) : debtDetail.items.length === 0 ? (
+                <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)" }}>{en ? "No debt-collection payments." : "Aucun paiement de dette."}</div>
+              ) : (
+                <>
+                  {debtDetail.items.map((it, i) => (
+                    <div key={it.payment_id || i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "9px 0", borderBottom: "1px solid var(--border)" }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{it.customer_name || (en ? "(unknown customer)" : "(client inconnu)")}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                          {methodDisplay(it.method_bucket, it.payment_method)} · {new Date(it.paid_at).toLocaleDateString(en ? "en-GB" : "fr-FR", { day: "numeric", month: "short" })}
+                          {it.sale_number ? ` · ${it.sale_number}` : ""}
+                        </div>
+                      </div>
+                      <div style={{ fontWeight: 800, whiteSpace: "nowrap" }}>{fmt(it.amount)}</div>
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 10, fontWeight: 800 }}>
+                    <span>{en ? "Total" : "Total"}</span>
+                    <span>{fmt(debtDetail.total)}</span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
