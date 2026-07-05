@@ -421,7 +421,8 @@ export default function POSPage() {
       const cacheKey = "pos-products-v2-" + (selectedLocation?.id || "all");
       console.log('[query] fired', ["pos-products", selectedLocation?.id], { online: navigator.onLine });
       try {
-        const result = await api.get("/products?location_id=" + (selectedLocation?.id || ""), { timeout: 45000 }).then(r => r.data);
+        // MP-MULTIPART: hide hidden parts (is_component) from the sales picker.
+        const result = await api.get("/products?exclude_components=true&location_id=" + (selectedLocation?.id || ""), { timeout: 45000 }).then(r => r.data);
         cacheData(cacheKey, result);
         return result;
       } catch {
@@ -1609,6 +1610,15 @@ export default function POSPage() {
           locationName: d.location_name || selectedLocation?.name || "",
           products: (d.products || []).map(p => p.name).filter(Boolean),
           message: d.message
+        });
+        return;
+      }
+      // MP-MULTIPART: a kit's PARTS are short at the sale location — name them.
+      if (d?.code === "MULTIPART_PART_SHORT") {
+        setBlockModal({
+          locationName: d.location_name || selectedLocation?.name || "",
+          products: [...new Set((d.items || []).flatMap(i => i.short_parts || []))],
+          message: d.message,
         });
         return;
       }
