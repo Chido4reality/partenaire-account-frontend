@@ -681,7 +681,8 @@ export default function POSPage() {
   const clientFiltered = (allProducts?.data || []).filter(p =>
     fuzzyMatch(p.name, search) ||
     fuzzyMatch(p.name_en, search) ||
-    (p.barcode && p.barcode.includes(search))
+    (p.barcode && p.barcode.includes(search)) ||
+    (p.sku && p.sku.toLowerCase().includes(search.toLowerCase()))
   );
   const filteredProducts = search.length >= 1
     ? (serverHits !== null ? serverHits : clientFiltered).slice(0, 50)

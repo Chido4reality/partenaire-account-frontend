@@ -17,7 +17,7 @@ import { unitValue } from "./units";
 
 // Canonical header order shown in the template.
 export const TEMPLATE_HEADERS = [
-  "name", "barcode", "unit", "cost_price", "walk_in_price",
+  "name", "barcode", "sku", "unit", "cost_price", "walk_in_price",
   "wholesale_price", "min_price", "qty", "location", "slot_zone",
 ];
 
@@ -26,6 +26,7 @@ export const TEMPLATE_HEADERS = [
 const HEADER_ALIASES = {
   name: "name", product: "name", product_name: "name",
   barcode: "barcode", bar_code: "barcode", code: "barcode",
+  sku: "sku", sku_code: "sku", reference: "sku", ref: "sku", article_code: "sku",
   unit: "unit",
   cost_price: "cost_price", cost: "cost_price", cost_prix: "cost_price", prix_achat: "cost_price",
   walk_in_price: "sell_price", walkin_price: "sell_price", "walk-in_price": "sell_price",
@@ -134,6 +135,7 @@ export async function parseProductImport(file, locations) {
       _rowNum: rowNum,
       name,
       barcode: bc.value || "",
+      sku: String(rec.sku == null ? "" : rec.sku).trim(),   // optional; ignored if blank
       unit,
       cost_price: cost == null || Number.isNaN(cost) ? "" : cost,
       sell_price: sell == null || Number.isNaN(sell) ? "" : sell,
@@ -155,8 +157,8 @@ export async function parseProductImport(file, locations) {
 export async function buildProductTemplateXlsx(locations, en) {
   const XLSX = await loadXLSX();
   const locName = (locations && locations[0] && locations[0].name) || (en ? "Your Shop" : "Votre Boutique");
-  const ex1 = ["Tube", "6001234567890", "pcs", 2500, 4000, 3500, 2500, 100, locName, "A-01 Rayon 2"];
-  const ex2 = ["Huile palme", "6009988776655", "litre", 1800, 3000, 2500, 1800, 50, locName, ""];
+  const ex1 = ["Tube", "6001234567890", "TUB-01", "pcs", 2500, 4000, 3500, 2500, 100, locName, "A-01 Rayon 2"];
+  const ex2 = ["Huile palme", "6009988776655", "", "litre", 1800, 3000, 2500, 1800, 50, locName, ""];
   const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, ex1, ex2]);
 
   // Force the barcode column (B) to TEXT for a buffer of rows so long digit
@@ -182,6 +184,7 @@ export async function buildProductTemplateXlsx(locations, en) {
     [""],
     ["name            product name"],
     ["barcode         scan code (digits). KEEP THIS COLUMN AS TEXT."],
+    ["sku             optional back-office code (leave blank if unused)."],
     ["unit            pcs, litre, kg, carton..."],
     ["cost_price      what you pay for it"],
     ["walk_in_price   normal selling price (what a walk-in customer pays)"],
@@ -205,6 +208,7 @@ export async function buildProductTemplateXlsx(locations, en) {
     [""],
     ["name            nom du produit"],
     ["barcode         code de scan (chiffres). GARDEZ CETTE COLONNE EN TEXTE."],
+    ["sku             code interne optionnel (laisser vide si inutilisé)."],
     ["unit            pcs, litre, kg, carton..."],
     ["cost_price      votre prix d'achat"],
     ["walk_in_price   prix de vente normal (ce que paie un client de passage)"],
