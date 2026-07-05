@@ -184,6 +184,25 @@ export default function OperationsDashboardPage() {
     }));
   }, [overview.data]);
 
+  // MP-OPS-RANGE-CARDS: the overview cards now reflect the SELECTED range (like the
+  // charts), not just the last day. Sum each component over per_day (already range-
+  // filtered by from/to). Delta pills stay only for a single-day range (a
+  // day-over-day % on a multi-day total would be misleading → hidden).
+  const rangeTotals = useMemo(() => {
+    const rows = overview.data?.per_day || [];
+    const sum = (k) => rows.reduce((a, r) => a + (Number(r[k]) || 0), 0);
+    return {
+      cash_sales:     sum("cash_sales"),
+      debt_collected: sum("debt_collected"),
+      refunds_voids:  sum("refunds_voids"),
+      expenses:       sum("expenses"),
+      net_cash_flow:  sum("net_cash_flow"),
+    };
+  }, [overview.data]);
+  const todayIso = toIso(new Date());
+  const isTodayRange = from === todayIso && to === todayIso;
+  const isSingleDay = from === to;
+
   const visibleAnomalies = (anomalies.data?.anomalies || [])
     .filter(a => !dismissed.has(a.id));
   const dismissedCount = (anomalies.data?.anomalies || []).length - visibleAnomalies.length;
@@ -205,10 +224,12 @@ export default function OperationsDashboardPage() {
 
       {/* ── Range picker ───────────────────────────────────── */}
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 18 }}>
+        <button onClick={() => { const t = toIso(new Date()); setFrom(t); setTo(t); }}
+          style={chipStyle(from === toIso(new Date()) && to === toIso(new Date()))}>{en ? "Today" : "Aujourd'hui"}</button>
         <button onClick={() => { setFrom(daysAgo(6));  setTo(toIso(new Date())); }}
-          style={chipStyle(from === daysAgo(6))}>{en ? "Last 7 days" : "7 derniers jours"}</button>
+          style={chipStyle(from === daysAgo(6) && to === toIso(new Date()))}>{en ? "Last 7 days" : "7 derniers jours"}</button>
         <button onClick={() => { setFrom(daysAgo(29)); setTo(toIso(new Date())); }}
-          style={chipStyle(from === daysAgo(29))}>{en ? "Last 30 days" : "30 derniers jours"}</button>
+          style={chipStyle(from === daysAgo(29) && to === toIso(new Date()))}>{en ? "Last 30 days" : "30 derniers jours"}</button>
         <div style={{ width: 1, height: 22, background: "var(--border)", margin: "0 4px" }} />
         <label style={{ fontSize: 11, color: "var(--text-muted)" }}>{en ? "From" : "Du"}</label>
         <input type="date" value={from} onChange={e => setFrom(e.target.value)}
@@ -232,22 +253,23 @@ export default function OperationsDashboardPage() {
       <Card
         title={en ? "1. Multi-day overview" : "1. Vue multi-jours"}
         sub={en
-          ? "Per-day cash flow components, with previous-day deltas on the latest day."
-          : "Composantes du flux par jour, avec écarts vs jour précédent."}
+          ? "Cash-flow components — totals for the selected range."
+          : "Composantes du flux — totaux pour la période sélectionnée."}
       >
         {overview.isLoading && <div style={loadingStyle}>{en ? "Loading…" : "Chargement…"}</div>}
         {overview.isError && <div style={errorStyle}>{en ? "Failed to load overview." : "Échec du chargement."}</div>}
         {overview.data && (
           <>
-            {overview.data.deltas && (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 14 }}>
-                <MetricBlock label={en ? "Sales received (today)" : "Ventes encaissées (jour)"} value={overview.data.deltas.cash_sales.current}     delta={overview.data.deltas.cash_sales.pct} />
-                <MetricBlock label={en ? "Debt collected"       : "Dette encaissée"}        value={overview.data.deltas.debt_collected.current} delta={overview.data.deltas.debt_collected.pct} />
-                <MetricBlock label={en ? "Refunds & voids"      : "Remb. & annulations"}     value={overview.data.deltas.refunds_voids.current}  delta={overview.data.deltas.refunds_voids.pct} />
-                <MetricBlock label={en ? "Expenses"             : "Dépenses"}                value={overview.data.deltas.expenses.current}       delta={overview.data.deltas.expenses.pct} />
-                <MetricBlock label={en ? "Net cash flow"        : "Flux net espèces"}        value={overview.data.deltas.net_cash_flow.current}  delta={overview.data.deltas.net_cash_flow.pct} />
-              </div>
-            )}
+            {/* MP-OPS-RANGE-CARDS: figures = TOTALS over the selected range (matches
+                the charts). "(today)" suffix only when the range is today; deltas only
+                for a single-day range (else a day-over-day % on a total misleads). */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 14 }}>
+              <MetricBlock label={isTodayRange ? (en ? "Sales received (today)" : "Ventes encaissées (jour)") : (en ? "Sales received" : "Ventes encaissées")} value={rangeTotals.cash_sales}     delta={isSingleDay ? overview.data.deltas?.cash_sales?.pct     : null} />
+              <MetricBlock label={en ? "Debt collected"  : "Dette encaissée"}    value={rangeTotals.debt_collected} delta={isSingleDay ? overview.data.deltas?.debt_collected?.pct : null} />
+              <MetricBlock label={en ? "Refunds & voids" : "Remb. & annulations"} value={rangeTotals.refunds_voids}  delta={isSingleDay ? overview.data.deltas?.refunds_voids?.pct  : null} />
+              <MetricBlock label={en ? "Expenses"        : "Dépenses"}            value={rangeTotals.expenses}       delta={isSingleDay ? overview.data.deltas?.expenses?.pct      : null} />
+              <MetricBlock label={en ? "Net cash flow"   : "Flux net espèces"}    value={rangeTotals.net_cash_flow}  delta={isSingleDay ? overview.data.deltas?.net_cash_flow?.pct  : null} />
+            </div>
             <div style={{ width: "100%", height: 320 }}>
               <ResponsiveContainer>
                 <ComposedChart data={chartData} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
