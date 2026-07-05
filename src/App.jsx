@@ -27,6 +27,7 @@ import ShiftsPage from "./pages/ShiftsPage";
 import StockCountPage from "./pages/StockCountPage";
 import BarcodePage from "./pages/BarcodePage";
 import OperationsDashboardPage from "./pages/OperationsDashboardPage"; // MP-OWNER-OPERATIONS-DASHBOARD-V1
+import StockCheckPage from "./pages/StockCheckPage"; // MP-STOCK-CHECK
 import PendingSyncPage from "./pages/PendingSyncPage"; // MP-PENDING-SYNC-SCREEN
 import AssistantPage from "./pages/AssistantPage"; // Pro Plus Feature 1 — AI Assistant chat UI
 import AttendancePage from "./pages/AttendancePage"; // Staff Maintenance Phase 3 — shared-device PIN attendance
@@ -104,6 +105,7 @@ const ROUTE_ACCESS = {
   // MP-OWNER-OPERATIONS-DASHBOARD-V1: owner statement view (multi-day
   // signals, anomalies, debt aging). Owner + manager only.
   "/operations":   ["owner", "manager"],
+  "/stock-check":  ["owner", "manager", "warehouse"],
   // MP-REFUNDS-STAFF-ACCESS: refunds/exchanges are operational —
   // every role that can sell must also be able to process a return.
   // Backend mirror in returns.js: /return + /exchange open to
@@ -502,6 +504,7 @@ export default function App() {
                 RoleGuard path matches Layout.NAV; PlanGuard reuses the
                 reports section gate since the data class is the same. */}
             <Route path="operations"   element={<RoleGuard path="/operations"><PlanGuard path="/reports"><OperationsDashboardPage /></PlanGuard></RoleGuard>} />
+            <Route path="stock-check"  element={<RoleGuard path="/stock-check"><StockCheckPage /></RoleGuard>} />
             {/* MP-REFUNDS-STAFF-ACCESS: no PlanGuard — refunds are
                 operational and must work on every plan tier. */}
             <Route path="refunds"      element={<RoleGuard path="/refunds"><RefundsPage /></RoleGuard>} />

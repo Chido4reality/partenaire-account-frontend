@@ -73,6 +73,10 @@ const NAV = [
   { to: "/customers",    en: "Customers",  fr: "Clients",         icon: "👥", roles: ["owner","manager","cashier"],            section: "customers" },
   { to: "/credits",      en: "Credits",    fr: "Crédits",         icon: "💳", roles: ["owner","manager"],                       section: "credits" },
   { to: "/transfers",    en: "Transfers",  fr: "Transferts",      icon: "🔄", roles: ["owner","manager","warehouse"],          section: "transfers" },
+  // MP-STOCK-CHECK — re-count movement-flagged products. section:"stock_check" is
+  // only granted by pro/pro_plus (sections:'*'); lite/expired-trial floors omit it,
+  // so it's Pro/Pro Plus-only (active trial resolves to 'pro'). Server also 403s.
+  { to: "/stock-check",  en: "Stock Check", fr: "Vérification de stock", icon: "🔍", roles: ["owner","manager","warehouse"], section: "stock_check", badge: "stock_check" },
   // MP-CASHIER-ROLE-GATING: cashier records petty-cash expenses
   // (boss errands, drawer outflows, personal). Backend filters
   // GET /expenditures by recorded_by=req.user.id for cashier role
@@ -738,6 +742,19 @@ export default function Layout() {
   });
   const myRequestsApproved = (myReqResp?.data || []).filter(r => r.status === "approved").length;
 
+  // MP-STOCK-CHECK — pending re-count badge, live poll. Only fetched when the nav
+  // item is visible (pro/pro_plus section), so it never 403s for other plans.
+  const { data: stockCheckSummary } = useQuery({
+    queryKey: ["stock-check-summary"],
+    queryFn: () => api.get("/stock-checks/summary").then(r => r.data),
+    refetchInterval: 15000,
+    enabled: hasSection(effectivePlan, "stock_check") &&
+      (role === "owner" || role === "manager" || role === "warehouse"),
+    retry: 1,
+    onError: () => {}
+  });
+  const stockCheckPending = stockCheckSummary?.data?.pending || 0;
+
   // MP-DOZIE-SELLER-MIGRATION Phase 2 — "Online Dozie" attention badge. Polls the
   // resolved seller's needs-attention count (pending orders now; messages/disputes
   // later) on the same 30s cadence as the online-cart badge. Owner/manager only
@@ -777,6 +794,7 @@ export default function Layout() {
     : item.badge === "dozie_messages" ? (dozieNotif_.message || 0)
     : item.badge === "dozie_disputes" ? (dozieAttn_.disputes || 0)
     : item.badge === "dozie_attention" ? (dozieNotif_.total || 0)
+    : item.badge === "stock_check"    ? stockCheckPending
     : 0;
 
   // STOCK-UX-PASS Part A — cross-account location leak fix.

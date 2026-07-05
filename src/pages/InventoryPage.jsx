@@ -871,13 +871,14 @@ export default function InventoryPage() {
         supplier_name: receiveForm.supplier_name || null,
         invoice_ref: receiveForm.invoice_ref || null,
         notes: receiveForm.notes || null,
+        flag_recount: !!receiveForm.flag_recount, // MP-STOCK-CHECK: boss re-count flag
         items: validItems.map(i => ({ product_id: i.product_id, quantity: +i.quantity, slot_code: i.slot_code || null, cost_price: +i.cost_price || 0 }))
       });
     },
     onSuccess: () => {
       toast.success(lang === "en" ? "✓ Stock received & prices updated!" : "✓ Stock reçu et prix mis à jour!");
       setShowReceive(false);
-      setReceiveForm({ location_id: "", supplier_name: "", invoice_ref: "", notes: "", items: [{ product_id: "", product_name: "", quantity: "", cost_price: "", sell_price: "", wholesale_price: "", min_price: "", currentPrices: null }] });
+      setReceiveForm({ location_id: "", supplier_name: "", invoice_ref: "", notes: "", flag_recount: false, items: [{ product_id: "", product_name: "", quantity: "", cost_price: "", sell_price: "", wholesale_price: "", min_price: "", currentPrices: null }] });
       invalidateAll();
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
@@ -1717,6 +1718,15 @@ export default function InventoryPage() {
                 <input className="input" value={receiveForm.invoice_ref} onChange={e => setReceiveForm(f => ({ ...f, invoice_ref: e.target.value }))} placeholder="Optional" />
               </div>
             </div>
+
+            {/* MP-STOCK-CHECK: boss can flag this whole receive for a physical re-count. */}
+            {canMultipart && (
+              <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", cursor: "pointer", fontSize: 13 }}>
+                <input type="checkbox" checked={!!receiveForm.flag_recount}
+                  onChange={e => setReceiveForm(f => ({ ...f, flag_recount: e.target.checked }))} />
+                <span>🔍 {lang === "en" ? "Flag for re-count (Stock Check)" : "Signaler pour recomptage (Vérification de stock)"}</span>
+              </label>
+            )}
 
             <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>
               {lang === "en" ? "Items received" : "Articles reçus"}
