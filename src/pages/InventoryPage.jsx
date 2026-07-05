@@ -75,7 +75,7 @@ function fuzzyMatch(str, pattern) {
 const UNITS = ["pce", "kg", "litre", "metre", "boite", "set", "paire", "carton", "sac", "fût"];
 
 const EMPTY_PRODUCT = {
-  name: "", barcode: "", unit: "pce", is_multipart: false,
+  name: "", barcode: "", sku: "", unit: "pce", is_multipart: false,
   cost_price: "", sell_price: "", wholesale_price: "", min_price: "",
   description: "", initial_location_id: "", initial_quantity: "", initial_slot: ""
 };
@@ -356,7 +356,7 @@ export default function InventoryPage() {
 
   // Backend handles search globally, just use data as-is
   const filtered = stock;
-  const filteredProducts = search ? products.filter(p => fuzzyMatch(p.name, search) || (p.barcode && p.barcode.includes(search))) : products;
+  const filteredProducts = search ? products.filter(p => fuzzyMatch(p.name, search) || (p.barcode && p.barcode.includes(search)) || (p.sku && p.sku.toLowerCase().includes(search.toLowerCase()))) : products;
 
   const totalStockValue = isOwner ? stock.reduce((sum, s) => sum + (+s.quantity * +(s.pa_products?.cost_price || 0)), 0) : 0;
 
@@ -561,6 +561,7 @@ export default function InventoryPage() {
       const res = await api.post("/products", {
         name: newProduct.name,
         barcode: newProduct.barcode || null,
+        sku: (newProduct.sku || "").trim() || null,   // optional back-office identifier
         unit: newProduct.unit,
         cost_price: +newProduct.cost_price || 0,
         sell_price: +newProduct.sell_price,
@@ -691,6 +692,7 @@ export default function InventoryPage() {
       const body = {
         name: editProduct.name,
         barcode: editProduct.barcode || null,
+        sku: (editProduct.sku || "").trim() || null,   // optional back-office identifier
         unit: editProduct.unit,
         cost_price: +editProduct.cost_price || 0,
         sell_price: +editProduct.sell_price,
@@ -883,7 +885,7 @@ export default function InventoryPage() {
         }
         try {
           const res = await api.post("/products", {
-            name: row.name, barcode: row.barcode || null, unit: row.unit || "pce",
+            name: row.name, barcode: row.barcode || null, sku: (row.sku || "").trim() || null, unit: row.unit || "pce",
             cost_price: +row.cost_price || 0, sell_price: +row.sell_price,
             wholesale_price: +row.wholesale_price || 0, min_price: +row.min_price || 0,
           });
@@ -1493,6 +1495,13 @@ export default function InventoryPage() {
               </div>
             </div>
 
+            {/* MP-SKU: optional back-office identifier (furniture etc.). Blank is fine. */}
+            <div className="form-group">
+              <label className="label">SKU {lang === "en" ? "(optional)" : "(optionnel)"}</label>
+              <input className="input" value={newProduct.sku || ""} onChange={e => setNewProduct(p => ({ ...p, sku: e.target.value }))}
+                placeholder={lang === "en" ? "e.g. WRD-BRN-01 (optional)" : "ex. WRD-BRN-01 (optionnel)"} />
+            </div>
+
             {showCameraAdd && (
               <CameraScanner
                 lang={lang}
@@ -1674,6 +1683,13 @@ export default function InventoryPage() {
                   {UNITS.map(u => <option key={u} value={u}>{unitLabel(u)}</option>)}
                 </select>
               </div>
+            </div>
+
+            {/* MP-SKU: optional back-office identifier. */}
+            <div className="form-group">
+              <label className="label">SKU {lang === "en" ? "(optional)" : "(optionnel)"}</label>
+              <input className="input" value={editProduct.sku || ""} onChange={e => setEditProduct(p => ({ ...p, sku: e.target.value }))}
+                placeholder={lang === "en" ? "e.g. WRD-BRN-01 (optional)" : "ex. WRD-BRN-01 (optionnel)"} />
             </div>
 
             <PricingSection data={editProduct} onChange={(k, v) => setEditProduct(p => ({ ...p, [k]: v }))} lang={lang} />
