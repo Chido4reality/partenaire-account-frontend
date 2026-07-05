@@ -41,7 +41,12 @@ const SECTIONS = [
   // pending-sync fixes above. They inherit the existing owner/manager gate from
   // Layout's NAV; adding them here also lets their attention badges render on
   // mobile (the nav nodes now exist).
-  { en: "INVENTORY",  fr: "INVENTAIRE",        routes: ["/inventory", "/stock-count", "/barcodes", "/transfers", "/dozie-listings", "/dozie-orders", "/dozie-messages", "/dozie-disputes"] },
+  // MP-STOCK-CHECK-DRAWER-FIX: /stock-check was added to Layout's NAV (so the desktop
+  // sidebar, which maps visibleNav flat, showed it) but never to this mobile SECTIONS
+  // map, so the drawer dropped it on phones — same omission pattern as the Dozie /
+  // pending-sync / Accountant Log fixes. It inherits Layout's owner/manager/warehouse
+  // + pro/pro_plus gate; listing it here just lets the mobile drawer surface it.
+  { en: "INVENTORY",  fr: "INVENTAIRE",        routes: ["/inventory", "/stock-count", "/barcodes", "/transfers", "/stock-check", "/dozie-listings", "/dozie-orders", "/dozie-messages", "/dozie-disputes"] },
   { en: "PEOPLE & MONEY", fr: "PERSONNES & ARGENT", routes: ["/customers", "/credits", "/expenditures", "/attendance", "/assets"] },
   { en: "REPORTING",  fr: "RAPPORTS",          routes: ["/reports", "/operations"] },
   // Accountant Log Phase 1: owner-only oversight surface. Lives next to Settings
