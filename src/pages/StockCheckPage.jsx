@@ -15,6 +15,19 @@ function fmtDate(iso, en) {
   return new Date(iso).toLocaleDateString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
+// MP-STOCK-CHECK: normalize ANY list/search response to an array before .map().
+// Accepts a raw axios response, our {success,data:[…]} envelope body, a bare array,
+// or a {results:[…]} shape — anything else → []. A truthy non-array object (e.g. the
+// envelope) would slip past `x || []` and throw ".map is not a function"; this can't.
+function toArray(x) {
+  if (Array.isArray(x)) return x;
+  if (Array.isArray(x?.data)) return x.data;                 // envelope body: { data: [...] }
+  if (Array.isArray(x?.data?.data)) return x.data.data;      // axios response: resp.data = { data: [...] }
+  if (Array.isArray(x?.data?.results)) return x.data.results;
+  if (Array.isArray(x?.results)) return x.results;
+  return [];
+}
+
 export default function StockCheckPage() {
   const lang = useLangStore(s => s.lang);
   const en = lang === "en";
@@ -27,7 +40,7 @@ export default function StockCheckPage() {
 
   const list = useQuery({
     queryKey: ["stock-checks", tab],
-    queryFn: () => api.get(`/stock-checks?status=${tab}`).then(r => r.data?.data || []),
+    queryFn: () => api.get(`/stock-checks?status=${tab}`).then(r => toArray(r)),
     refetchInterval: 15000,
   });
 
@@ -48,7 +61,7 @@ export default function StockCheckPage() {
     onError: (e) => toast.error(e?.response?.data?.message || (en ? "Failed" : "Échec")),
   });
 
-  const rows = list.data || [];
+  const rows = Array.isArray(list.data) ? list.data : [];
 
   return (
     <div style={{ padding: 16, maxWidth: 1000, margin: "0 auto" }}>
@@ -186,13 +199,17 @@ function AddToRecount({ en, onClose, onAdded }) {
 
   const search = useQuery({
     queryKey: ["stock-check-product-search", q],
-    queryFn: () => api.get(`/products?search=${encodeURIComponent(q)}`).then(r => (r.data?.data || []).filter(p => !p.is_multipart)),
+    // Same fuzzy path POS/Inventory use (search_products_fuzzy). toArray() guarantees
+    // an array regardless of the envelope shape, then drop kit parents (no stock row).
+    queryFn: () => api.get(`/products?search=${encodeURIComponent(q)}`).then(r => toArray(r).filter(p => !p.is_multipart)),
     enabled: q.trim().length >= 1 && !picked,
   });
   const locs = useQuery({
     queryKey: ["locations"],
-    queryFn: () => api.get("/locations").then(r => r.data?.data || []),
+    queryFn: () => api.get("/locations").then(r => toArray(r)),
   });
+  const results = Array.isArray(search.data) ? search.data : [];
+  const locList = Array.isArray(locs.data) ? locs.data : [];
 
   const add = async () => {
     if (!picked || !locId) return;
@@ -217,7 +234,7 @@ function AddToRecount({ en, onClose, onAdded }) {
               value={q} onChange={e => setQ(e.target.value)} />
             <div style={{ maxHeight: 260, overflowY: "auto", marginTop: 8 }}>
               {search.isLoading && <div style={{ color: "var(--text-muted)", fontSize: 12, padding: 8 }}>{en ? "Searching…" : "Recherche…"}</div>}
-              {(search.data || []).map(p => (
+              {results.map(p => (
                 <div key={p.id} onClick={() => setPicked({ id: p.id, name: en ? (p.name_en || p.name) : p.name })}
                   style={{ padding: "9px 10px", borderRadius: 8, cursor: "pointer", borderBottom: "1px solid var(--border)" }}
                   onMouseDown={e => e.preventDefault()}>
@@ -225,7 +242,7 @@ function AddToRecount({ en, onClose, onAdded }) {
                   <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>{[p.sku, p.barcode].filter(Boolean).join(" · ") || "—"}</div>
                 </div>
               ))}
-              {q.trim().length >= 1 && !search.isLoading && (search.data || []).length === 0 &&
+              {q.trim().length >= 1 && !search.isLoading && results.length === 0 &&
                 <div style={{ color: "var(--text-muted)", fontSize: 12, padding: 8 }}>{en ? "No match." : "Aucun résultat."}</div>}
             </div>
           </>
@@ -238,7 +255,7 @@ function AddToRecount({ en, onClose, onAdded }) {
             <label style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>{en ? "Location to re-count" : "Emplacement à recompter"}</label>
             <select className="input" value={locId} onChange={e => setLocId(e.target.value)} style={{ marginTop: 6 }}>
               <option value="">{en ? "— pick a location —" : "— choisir un emplacement —"}</option>
-              {(locs.data || []).map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              {locList.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
             <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 6 }}>
               {en ? "Expected count = the product's current stock at that location." : "Comptage attendu = le stock actuel du produit à cet emplacement."}
