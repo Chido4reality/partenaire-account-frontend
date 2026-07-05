@@ -225,16 +225,16 @@ export default function OperationsDashboardPage() {
           ? "Per-day cash flow components, with previous-day deltas on the latest day."
           : "Composantes du flux par jour, avec écarts vs jour précédent."}
       >
+        {/* MP: label the "today" figures with the actual date — UNCONDITIONAL so it
+            shows even on an all-0 / <2-day range where `deltas` is null. */}
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text-secondary)", marginBottom: 8 }}>
+          {en ? "Today" : "Aujourd'hui"} · {new Date().toLocaleDateString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" })}
+        </div>
         {overview.isLoading && <div style={loadingStyle}>{en ? "Loading…" : "Chargement…"}</div>}
         {overview.isError && <div style={errorStyle}>{en ? "Failed to load overview." : "Échec du chargement."}</div>}
         {overview.data && (
           <>
             {overview.data.deltas && (
-              <>
-              {/* MP: label the "today" figures with the actual date for a quick eye-check. */}
-              <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text-secondary)", marginBottom: 8 }}>
-                {en ? "Today" : "Aujourd'hui"} · {new Date().toLocaleDateString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" })}
-              </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 14 }}>
                 <MetricBlock label={en ? "Sales received (today)" : "Ventes encaissées (jour)"} value={overview.data.deltas.cash_sales.current}     delta={overview.data.deltas.cash_sales.pct} />
                 <MetricBlock label={en ? "Debt collected"       : "Dette encaissée"}        value={overview.data.deltas.debt_collected.current} delta={overview.data.deltas.debt_collected.pct} />
@@ -242,7 +242,6 @@ export default function OperationsDashboardPage() {
                 <MetricBlock label={en ? "Expenses"             : "Dépenses"}                value={overview.data.deltas.expenses.current}       delta={overview.data.deltas.expenses.pct} />
                 <MetricBlock label={en ? "Net cash flow"        : "Flux net espèces"}        value={overview.data.deltas.net_cash_flow.current}  delta={overview.data.deltas.net_cash_flow.pct} />
               </div>
-              </>
             )}
             <div style={{ width: "100%", height: 320 }}>
               <ResponsiveContainer>
