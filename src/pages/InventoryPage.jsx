@@ -550,13 +550,9 @@ export default function InventoryPage() {
   // MP-MULTIPART: kit creation is a Pro / Pro Plus feature (trial resolves to pro).
   const canMultipart = ["pro", "pro_plus"].includes(effectivePlan);
 
-  // MP-SKU-AUTOGEN: org categories drive the auto-SKU prefix (FURN-0001 …).
-  const { data: catData } = useOfflineCachedQuery({
-    queryKey: ["product-categories"],
-    queryFn: () => api.get("/products/categories").then(r => r.data),
-    staleTime: 300000,
-  });
-  const categories = catData?.data || [];
+  // MP-SKU: the Category selector was removed from Add/Edit (seeded categories are
+  // auto-parts-specific). The category_id column + existing categorized products
+  // are untouched; new products just save with a null category.
 
   // MP-MULTIPART-VISIBILITY: kit parents hold NO pa_stock row (parts hold the
   // stock), so the stock-derived tabs never listed them. Fetch each parent's
@@ -577,23 +573,24 @@ export default function InventoryPage() {
   // newSkuAuto = the Add SKU field still holds an UNMODIFIED generated value
   // (so the server may bump+retry on collision; user edits flip it false).
   const [newSkuAuto, setNewSkuAuto] = useState(true);
-  // MP-SKU: plain per-org number — no longer tied to the category.
-  const fetchNextSku = async () => {
+  // MP-SKU: prefix from the product NAME (first 3 letters, else "prd") + number.
+  const fetchNextSku = async (name) => {
     try {
-      const d = await api.get(`/products/next-sku`).then(r => r.data?.data);
+      const d = await api.get(`/products/next-sku?name=${encodeURIComponent(name || "")}`).then(r => r.data?.data);
       return d?.sku || null;
     } catch { return null; }
   };
-  // Auto-fill the SKU when the Add-Product modal opens (only if still blank).
+  // Auto-fill / re-derive the SKU from the product NAME while it's still an
+  // untouched auto value (newSkuAuto). Debounced so typing the name doesn't spam.
   useEffect(() => {
-    if (!showAddProduct) return;
-    if ((newProduct.sku || "").trim()) return;
-    (async () => {
-      const s = await fetchNextSku();
-      if (s) { setNewProduct(p => ((p.sku || "").trim() ? p : { ...p, sku: s })); setNewSkuAuto(true); }
-    })();
+    if (!showAddProduct || !newSkuAuto) return;
+    const t = setTimeout(async () => {
+      const s = await fetchNextSku(newProduct.name);
+      if (s) setNewProduct(p => (newSkuAuto ? { ...p, sku: s } : p));
+    }, 350);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showAddProduct]);
+  }, [showAddProduct, newProduct.name]);
   const guardAdd = (continueAction) => {
     if (atInventoryCap) {
       setPaywall({ feature: "inventory_cap", mpId: myPlan?.user_id_number });
@@ -1586,17 +1583,6 @@ export default function InventoryPage() {
               </div>
             </div>
 
-            {/* MP-SKU: category is a product attribute only — it no longer drives the SKU. */}
-            {categories.length > 0 && (
-              <div className="form-group">
-                <label className="label">{lang === "en" ? "Category (optional)" : "Catégorie (optionnel)"}</label>
-                <select className="input" value={newProduct.category_id || ""}
-                  onChange={e => setNewProduct(p => ({ ...p, category_id: e.target.value }))}>
-                  <option value="">{lang === "en" ? "— none —" : "— aucune —"}</option>
-                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-            )}
             {/* MP-SKU: optional back-office identifier — auto-filled, editable, clearable. */}
             <div className="form-group">
               <label className="label">SKU {lang === "en" ? "(optional)" : "(optionnel)"}</label>
@@ -1605,7 +1591,7 @@ export default function InventoryPage() {
                   onChange={e => { setNewProduct(p => ({ ...p, sku: e.target.value })); setNewSkuAuto(false); }}
                   placeholder={lang === "en" ? "auto — editable / clearable" : "auto — modifiable / effaçable"} />
                 <button type="button" title={lang === "en" ? "Generate" : "Générer"}
-                  onClick={async () => { const s = await fetchNextSku(); if (s) { setNewProduct(p => ({ ...p, sku: s })); setNewSkuAuto(true); } }}
+                  onClick={async () => { const s = await fetchNextSku(newProduct.name); if (s) { setNewProduct(p => ({ ...p, sku: s })); setNewSkuAuto(true); } }}
                   style={{ flexShrink: 0, height: 42, padding: "0 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elevated)", cursor: "pointer", fontSize: 13, fontWeight: 700, color: "var(--brand-light)" }}>
                   🔄 {lang === "en" ? "Generate" : "Générer"}
                 </button>
@@ -1803,17 +1789,6 @@ export default function InventoryPage() {
               </div>
             </div>
 
-            {/* MP-SKU-AUTOGEN: optional category (drives Generate) — never auto-overwrites the SKU on edit. */}
-            {categories.length > 0 && (
-              <div className="form-group">
-                <label className="label">{lang === "en" ? "Category (optional)" : "Catégorie (optionnel)"}</label>
-                <select className="input" value={editProduct.category_id || ""}
-                  onChange={e => setEditProduct(p => ({ ...p, category_id: e.target.value }))}>
-                  <option value="">{lang === "en" ? "— none —" : "— aucune —"}</option>
-                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-            )}
             {/* MP-SKU: keep the current SKU; Generate only on request (no auto-overwrite). */}
             <div className="form-group">
               <label className="label">SKU {lang === "en" ? "(optional)" : "(optionnel)"}</label>
@@ -1822,7 +1797,7 @@ export default function InventoryPage() {
                   onChange={e => setEditProduct(p => ({ ...p, sku: e.target.value }))}
                   placeholder={lang === "en" ? "e.g. WRD-BRN-01 (optional)" : "ex. WRD-BRN-01 (optionnel)"} />
                 <button type="button" title={lang === "en" ? "Generate" : "Générer"}
-                  onClick={async () => { const s = await fetchNextSku(); if (s) setEditProduct(p => ({ ...p, sku: s })); }}
+                  onClick={async () => { const s = await fetchNextSku(editProduct.name); if (s) setEditProduct(p => ({ ...p, sku: s })); }}
                   style={{ flexShrink: 0, height: 42, padding: "0 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elevated)", cursor: "pointer", fontSize: 13, fontWeight: 700, color: "var(--brand-light)" }}>
                   🔄 {lang === "en" ? "Generate" : "Générer"}
                 </button>
