@@ -101,7 +101,7 @@ export default function MultipartBuilder({ parts, setParts, products = [], locat
           {/* RECIPE — how many of this part make ONE finished product (≠ stock). */}
           <div style={{ marginTop: 8 }}>
             <label style={{ fontSize: 11.5, fontWeight: 600, color: "var(--text-secondary)" }}>
-              {en ? "Qty per unit (recipe)" : "Quantité par unité (recette)"}
+              {en ? "Qty per set to complete a set" : "Quantité par ensemble pour compléter un ensemble"}
             </label>
             <div style={{ fontSize: 10.5, color: "var(--text-muted)", marginBottom: 3 }}>
               {en ? "How many of this part make ONE finished product"
