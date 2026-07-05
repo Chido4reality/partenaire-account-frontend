@@ -365,6 +365,7 @@ export default function InventoryPage() {
     qc.invalidateQueries(["stock-all"]);
     qc.invalidateQueries(["products-all"]);
     qc.invalidateQueries(["stock-alerts"]);
+    qc.invalidateQueries(["mp-availability-inv"]); // MP-MULTIPART: refresh kit availability
     qc.invalidateQueries(["dozie-migrate-candidates"]); // FU.4 — banner re-evaluates after Apply
   };
 
@@ -651,6 +652,12 @@ export default function InventoryPage() {
     },
     onSuccess: (data) => {
       toast.success(lang === "en" ? "✓ Product added!" : "✓ Produit ajouté!");
+      // MP-MULTIPART-OPENING-STOCK: kit created but opening stock couldn't be written.
+      if (data?.warning === "kit_opening_stock_failed") {
+        toast.error(data.message || (lang === "en"
+          ? "Product created, but some parts' opening stock wasn't saved — add it via Receive Goods."
+          : "Produit créé, mais le stock d'ouverture de certaines pièces n'a pas été enregistré — ajoutez-le via Réception."), { duration: 7000 });
+      }
       setShowAddProduct(false);
       setNewProduct(EMPTY_PRODUCT);
       setNewParts([]);
@@ -1649,7 +1656,7 @@ export default function InventoryPage() {
                   🧩 {lang === "en" ? "Multi-part product (kit)" : "Produit multi-pièces (kit)"}
                 </label>
                 {newProduct.is_multipart && (
-                  <MultipartBuilder parts={newParts} setParts={setNewParts} products={products} lang={lang} />
+                  <MultipartBuilder parts={newParts} setParts={setNewParts} products={products} locations={locations} lang={lang} />
                 )}
               </div>
             )}

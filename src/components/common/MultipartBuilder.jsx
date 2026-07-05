@@ -8,19 +8,27 @@ import { unitLabel } from "../../utils/units";
 const rid = () => `p_${Math.random().toString(36).slice(2, 9)}`;
 
 export function emptyPart() {
-  return { _k: rid(), mode: "new", name: "", unit: "pce", cost_price: "", part_product_id: "", part_label: "", quantity_per_unit: 1 };
+  return { _k: rid(), mode: "new", name: "", unit: "pce", cost_price: "", part_product_id: "", part_label: "",
+    quantity_per_unit: 1, opening_qty: "", opening_location_id: "" };
 }
 
-// Convert builder rows → the API `parts` payload (drops incomplete rows).
+// Convert builder rows → the API `parts` payload (drops incomplete rows). Carries
+// quantity_per_unit (recipe) + opening_qty/opening_location_id (stock bought).
 export function partsToPayload(parts) {
   return (parts || [])
     .filter(p => (p.mode === "new" && String(p.name || "").trim()) || (p.mode === "existing" && p.part_product_id))
-    .map((p, i) => p.mode === "existing"
-      ? { part_product_id: p.part_product_id, quantity_per_unit: Number(p.quantity_per_unit) || 1, sort_order: i + 1 }
-      : { new_part: { name: String(p.name).trim(), unit: p.unit || "pce", cost_price: Number(p.cost_price) || 0 }, quantity_per_unit: Number(p.quantity_per_unit) || 1, sort_order: i + 1 });
+    .map((p, i) => {
+      const opening = {
+        opening_qty: Number(p.opening_qty) || 0,
+        opening_location_id: p.opening_location_id || null,
+      };
+      return p.mode === "existing"
+        ? { part_product_id: p.part_product_id, quantity_per_unit: Number(p.quantity_per_unit) || 1, sort_order: i + 1, ...opening }
+        : { new_part: { name: String(p.name).trim(), unit: p.unit || "pce", cost_price: Number(p.cost_price) || 0 }, quantity_per_unit: Number(p.quantity_per_unit) || 1, sort_order: i + 1, ...opening };
+    });
 }
 
-export default function MultipartBuilder({ parts, setParts, products = [], lang }) {
+export default function MultipartBuilder({ parts, setParts, products = [], locations = [], lang }) {
   const en = lang === "en";
   const add = () => setParts([...(parts || []), emptyPart()]);
   const upd = (k, patch) => setParts(parts.map(p => p._k === k ? { ...p, ...patch } : p));
@@ -90,11 +98,41 @@ export default function MultipartBuilder({ parts, setParts, products = [], lang 
             </div>
           )}
 
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
-            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{en ? "Qty per set" : "Qté par lot"}</span>
-            <input style={{ ...inputStyle, width: 90 }} type="number" min="0.01" step="0.01"
+          {/* RECIPE — how many of this part make ONE finished product (≠ stock). */}
+          <div style={{ marginTop: 8 }}>
+            <label style={{ fontSize: 11.5, fontWeight: 600, color: "var(--text-secondary)" }}>
+              {en ? "Qty per unit (recipe)" : "Quantité par unité (recette)"}
+            </label>
+            <div style={{ fontSize: 10.5, color: "var(--text-muted)", marginBottom: 3 }}>
+              {en ? "How many of this part make ONE finished product"
+                  : "Combien de cette pièce pour fabriquer UN produit fini"}
+            </div>
+            <input style={{ ...inputStyle, width: 110 }} type="number" min="0.01" step="0.01"
               value={p.quantity_per_unit}
               onChange={e => upd(p._k, { quantity_per_unit: e.target.value })} />
+          </div>
+
+          {/* OPENING STOCK — what you actually BOUGHT of this part, per location. */}
+          <div style={{ marginTop: 8, background: "var(--bg-elevated)", borderRadius: 8, padding: 8 }}>
+            <label style={{ fontSize: 11.5, fontWeight: 600, color: "var(--text-secondary)" }}>
+              {en ? "Opening stock — separate from the recipe" : "Stock d'ouverture — différent de la recette"}
+            </label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 6, marginTop: 4 }}>
+              <input style={inputStyle} type="number" min="0" step="1"
+                placeholder={en ? "Qty in stock (bought)" : "Quantité en stock (achetée)"}
+                value={p.opening_qty}
+                onChange={e => upd(p._k, { opening_qty: e.target.value })} />
+              <select style={inputStyle} value={p.opening_location_id || ""}
+                onChange={e => upd(p._k, { opening_location_id: e.target.value })}>
+                <option value="">{en ? "Location (for stock)" : "Emplacement (pour le stock)"}</option>
+                {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+            </div>
+            {Number(p.opening_qty) > 0 && !p.opening_location_id && (
+              <div style={{ fontSize: 10.5, color: "#fbbf24", marginTop: 3 }}>
+                {en ? "Pick a location for this opening stock." : "Choisissez un emplacement pour ce stock."}
+              </div>
+            )}
           </div>
         </div>
       ))}
