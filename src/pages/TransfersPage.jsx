@@ -28,6 +28,11 @@ export default function TransfersPage() {
   const [pickerOpen, setPickerOpen]     = useState(false);
   const [pickerSearch, setPickerSearch] = useState("");
   const [pickerSel, setPickerSel]       = useState({}); // { [product_id]: qty }
+  const [flagRecount, setFlagRecount]   = useState(false); // MP-STOCK-CHECK
+  const { data: planData } = useOfflineCachedQuery({
+    queryKey: ["my-plan"], queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data), staleTime: 60000,
+  });
+  const canStockCheck = ["pro", "pro_plus"].includes(planData?.data?.effective_plan || "");
 
   const scanRef   = useRef(null);
 
@@ -159,11 +164,12 @@ export default function TransfersPage() {
       from_location: fromLoc || null,
       to_location: toLoc || null,
       notes: notes || null,
+      flag_recount: !!flagRecount, // MP-STOCK-CHECK: boss re-count flag (destination)
       items: scannedItems.map(i => ({ product_id: i.product_id, quantity: Math.max(1, Number(i.quantity) || 1) }))
     }),
     onSuccess: () => {
       toast.success(lang === "en" ? "Transfer created!" : "Transfert cree!");
-      setMode("list"); setStep(1); setFromLoc(""); setToLoc(""); setNotes(""); setScannedItems([]);
+      setMode("list"); setStep(1); setFromLoc(""); setToLoc(""); setNotes(""); setScannedItems([]); setFlagRecount(false);
       setPickerSel({}); setPickerSearch(""); setPickerOpen(false);
       qc.invalidateQueries(["transfers"]);
     },
@@ -332,6 +338,14 @@ export default function TransfersPage() {
               <input className="input" value={notes} onChange={e => setNotes(e.target.value)}
                 placeholder={lang === "en" ? "Reason for transfer..." : "Raison du transfert..."} />
             </div>
+
+            {/* MP-STOCK-CHECK: boss flags this transfer's destination lines for a re-count. */}
+            {canStockCheck && toLoc && (
+              <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", cursor: "pointer", fontSize: 13 }}>
+                <input type="checkbox" checked={flagRecount} onChange={e => setFlagRecount(e.target.checked)} />
+                <span>🔍 {lang === "en" ? "Flag for re-count at destination (Stock Check)" : "Signaler pour recomptage à destination (Vérification de stock)"}</span>
+              </label>
+            )}
 
             <button className="btn btn-primary btn-block btn-lg"
               disabled={!fromLoc && !toLoc}
