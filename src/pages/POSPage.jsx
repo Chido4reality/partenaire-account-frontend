@@ -377,6 +377,14 @@ export default function POSPage() {
     try {
       const res = await api.get("/products/barcode/" + code + "?location_id=" + (selectedLocation?.id || ""));
       const product = res.data.data;
+      // MP-MULTIPART: a hidden kit part must never be sold on its own (would sell at 0).
+      if (product && product.is_component) {
+        setLastScan({ name: product.name, success: false });
+        toast.error(lang === "en"
+          ? `"${product.name}" is a kit part — sell the finished product instead.`
+          : `« ${product.name} » est une pièce de kit — vendez le produit fini.`, { position: "top-center", duration: 3000 });
+        return;
+      }
       addToCart(product);
       setLastScan({ name: product.name, success: true });
       toast.success(`✓ ${product.name}`, { duration: 1500, position: "top-center" });
@@ -682,8 +690,9 @@ export default function POSPage() {
     let cancelled = false;
     const t = setTimeout(async () => {
       try {
-        const r = await api.get(`/products?search=${encodeURIComponent(q)}&location_id=${selectedLocation?.id || ""}`, { timeout: 20000 }).then(x => x.data);
-        if (!cancelled && r && Array.isArray(r.data)) setServerHits(r.data);
+        // MP-MULTIPART: the sales picker must exclude hidden kit parts (is_component).
+        const r = await api.get(`/products?search=${encodeURIComponent(q)}&exclude_components=true&location_id=${selectedLocation?.id || ""}`, { timeout: 20000 }).then(x => x.data);
+        if (!cancelled && r && Array.isArray(r.data)) setServerHits(r.data.filter(p => !p.is_component));
       } catch { if (!cancelled) setServerHits(null); }
     }, 220);
     return () => { cancelled = true; clearTimeout(t); };
@@ -691,10 +700,14 @@ export default function POSPage() {
   }, [search, selectedLocation?.id]);
 
   const clientFiltered = (allProducts?.data || []).filter(p =>
-    fuzzyMatch(p.name, search) ||
-    fuzzyMatch(p.name_en, search) ||
-    (p.barcode && p.barcode.includes(search)) ||
-    (p.sku && p.sku.toLowerCase().includes(search.toLowerCase()))
+    // MP-MULTIPART: never surface hidden kit parts in the sales picker (defensive —
+    // allProducts is already fetched with exclude_components=true).
+    !p.is_component && (
+      fuzzyMatch(p.name, search) ||
+      fuzzyMatch(p.name_en, search) ||
+      (p.barcode && p.barcode.includes(search)) ||
+      (p.sku && p.sku.toLowerCase().includes(search.toLowerCase()))
+    )
   );
   const filteredProducts = search.length >= 1
     ? (serverHits !== null ? serverHits : clientFiltered).slice(0, 50)
