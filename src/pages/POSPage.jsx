@@ -29,6 +29,7 @@ import DiscountApprovalDetail from "../components/common/DiscountApprovalDetail"
 import { momoLabel } from "../utils/paymentLabels";
 import ClearButton from "../components/common/ClearButton";
 import { unitLabel } from "../utils/units";
+import MultipartAvailability from "../components/common/MultipartAvailability";
 import RestrictedAction from "../components/common/RestrictedAction";
 import useOwnerApproval from "../hooks/useOwnerApproval";
 
@@ -434,6 +435,17 @@ export default function POSPage() {
     enabled: true,
     staleTime: 60000
   });
+
+  // MP-MULTIPART-VISIBILITY: kit parents hold no pa_stock, so overlay their
+  // COMPUTED complete-sets availability at the selected location on their picker row.
+  const { data: mpAvailData } = useQuery({
+    queryKey: ["pos-mp-availability", selectedLocation?.id],
+    networkMode: "always",
+    queryFn: () => api.get("/products/multipart-availability?location_id=" + (selectedLocation?.id || "")).then(r => r.data),
+    enabled: !!selectedLocation?.id,
+    staleTime: 30000,
+  });
+  const parentAvail = mpAvailData?.data || {}; // { [parentId]: availableSets }
 
   const { data: allCustomers } = useQuery({
     queryKey: ["pos-customers"],
@@ -2769,6 +2781,10 @@ export default function POSPage() {
                 // validate-for-pos path keeps a real number even for
                 // online-cart prefilled products).
                 const stockQ = p.stock?.quantity;
+                // MP-MULTIPART: kit parents show COMPUTED complete-sets availability,
+                // not their own (absent) stock row.
+                const isKit = p.is_multipart || Object.prototype.hasOwnProperty.call(parentAvail, p.id);
+                const kitAvail = isKit ? (Number(parentAvail[p.id]) || 0) : null;
                 const stockColor =
                   stockQ === undefined || stockQ === null ? "var(--text-muted)" :
                   stockQ === 0  ? "#f87171" :
@@ -2791,7 +2807,9 @@ export default function POSPage() {
                       <div style={{ fontSize: mobile ? 14 : 13, fontWeight: 600, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
                       <div style={{ fontSize: 11, color: "var(--text-muted)", display: "flex", gap: 8, alignItems: "center" }}>
                         {p.barcode && <span style={{ fontFamily: "monospace" }}>{p.barcode}</span>}
-                        {stockQ !== undefined && stockQ !== null && (
+                        {isKit ? (
+                          <MultipartAvailability productId={p.id} available={kitAvail} locationId={selectedLocation?.id} lang={lang} />
+                        ) : stockQ !== undefined && stockQ !== null && (
                           <span style={{ color: stockColor, fontWeight: 600 }}>
                             ● {stockQ} {unitLabel(p.unit)} {lang === "en" ? "in stock" : "en stock"}
                           </span>

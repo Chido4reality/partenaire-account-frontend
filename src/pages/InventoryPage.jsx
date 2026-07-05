@@ -556,6 +556,23 @@ export default function InventoryPage() {
     staleTime: 300000,
   });
   const categories = catData?.data || [];
+
+  // MP-MULTIPART-VISIBILITY: kit parents hold NO pa_stock row (parts hold the
+  // stock), so the stock-derived tabs never listed them. Fetch each parent's
+  // COMPUTED availability (MIN over parts of floor(part_stock/qty_per_unit)) and
+  // surface parents in a dedicated Kits panel at the top of the list.
+  const { data: mpAvailData } = useOfflineCachedQuery({
+    queryKey: ["mp-availability-inv"],
+    queryFn: () => api.get("/products/multipart-availability").then(r => r.data),
+    staleTime: 30000,
+  });
+  const mpAvail = mpAvailData?.data || {}; // { [parentId]: { total, by_location } }
+  const kitParents = (products || [])
+    .filter(p => p.is_multipart && p.is_active !== false)
+    .filter(p => !search
+      || fuzzyMatch(p.name, search)
+      || (p.barcode && p.barcode.includes(search))
+      || (p.sku && p.sku.toLowerCase().includes(search.toLowerCase())));
   // newSkuAuto = the Add SKU field still holds an UNMODIFIED generated value
   // (so the server may bump+retry on collision; user edits flip it false).
   const [newSkuAuto, setNewSkuAuto] = useState(true);
@@ -1231,6 +1248,29 @@ export default function InventoryPage() {
       )}
 
       {/* ── STOCK TAB ── */}
+      {/* MP-MULTIPART-VISIBILITY: kit parents (no stock row of their own) shown by
+          COMPUTED complete-sets availability. Tap the number → per-part breakdown. */}
+      {(tab === "stock" || tab === "products") && kitParents.length > 0 && (
+        <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, padding: 14, marginBottom: 14 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>
+            🧩 {lang === "en" ? "Kits (assembled from parts)" : "Kits (assemblés depuis les pièces)"}
+          </div>
+          {kitParents.map((p, idx) => (
+            <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "9px 0", borderTop: idx === 0 ? "none" : "1px solid var(--border)" }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", display: "flex", gap: 8, alignItems: "center" }}>
+                  {canSeePrices && <span style={{ color: "var(--brand-light)" }}>{fmt(p.sell_price)}</span>}
+                  {p.sku && <span style={{ fontFamily: "monospace" }}>{p.sku}</span>}
+                  {isOwner && <button onClick={() => { setEditProduct({ ...p }); setShowEditProduct(true); }} style={{ background: "none", border: "none", color: "var(--brand-light)", cursor: "pointer", fontSize: 12 }}>✏️</button>}
+                </div>
+              </div>
+              <MultipartAvailability productId={p.id} available={mpAvail[p.id]?.total ?? 0} lang={lang} />
+            </div>
+          ))}
+        </div>
+      )}
+
       {tab === "stock" && (
         // MP-MOBILE-UI-PHASE-1-5: mirror the Overview tab's h-scroll
         // pattern (overflow:auto + table minWidth) so the 11-column
