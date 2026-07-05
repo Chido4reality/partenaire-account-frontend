@@ -849,7 +849,8 @@ export default function POSPage() {
         wholesale_price: Number(product.wholesale_price) || 0,
         min_price: product.min_price || 0,
         cost_price: product.cost_price,
-        stock: product.stock?.quantity
+        stock: product.stock?.quantity,
+        is_multipart: !!product.is_multipart,   // MP-MULTIPART: kit → no own stock
       }];
     });
     if (!keepSearch) setSearch("");
@@ -1791,7 +1792,12 @@ export default function POSPage() {
     const real = cart.filter(i =>
       i.product_id && i.product_id !== "__DEBT__" &&
       i.product_id !== "__DEBT_PAYMENT__" && i.type !== "debt_payment");
-    const notStocked = real.filter(i => i.stock === null || i.stock === undefined);
+    // MP-MULTIPART: a kit parent holds NO stock of its own — its parts do. Skip it
+    // in the "not stocked here" / oversell client checks (they'd see stock=null/0 and
+    // wrongly block). The backend validates part availability at the sale location and
+    // blocks with the SHORT PART name(s) (MULTIPART_PART_SHORT) when a part is absent.
+    const isKitLine = (i) => i.is_multipart || Object.prototype.hasOwnProperty.call(parentAvail, i.product_id);
+    const notStocked = real.filter(i => !isKitLine(i) && (i.stock === null || i.stock === undefined));
     if (notStocked.length) {
       setBlockModal({
         locationName: selectedLocation?.name || "",
@@ -1801,7 +1807,7 @@ export default function POSPage() {
       return;
     }
     const oversold = real
-      .filter(i => typeof i.stock === "number" && i.quantity > i.stock)
+      .filter(i => !isKitLine(i) && typeof i.stock === "number" && i.quantity > i.stock)
       .map(i => ({ name: i.name, available: i.stock, selling: i.quantity }));
     if (oversold.length) { setOversellModal({ items: oversold }); return; }
     runCheckout();
