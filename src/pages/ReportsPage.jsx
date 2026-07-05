@@ -5,6 +5,7 @@ import { useLangStore, useAuthStore, useSettingsStore } from "../store";
 import api, { formatDate } from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
 import { momoLabelShort } from "../utils/paymentLabels";
+import { unitLabel } from "../utils/units";
 import VoidReturnModal from "../components/common/VoidReturnModal";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 import { buildLedgerTextV2 as buildLedgerTextUtil, buildWeeklyText as buildWeeklyTextUtil,
@@ -24,7 +25,7 @@ const isDebtItem  = (i) => i?.line_type === "debt_payment" || (i && i.product_id
 const itemLabel   = (i, lang) => isDebtItem(i)
   ? (lang === "en" ? "💰 Debt Repayment" : "💰 Remboursement dette")
   : (i?.pa_products?.name || "?");
-const itemUnit    = (i) => isDebtItem(i) ? "—" : (i?.pa_products?.unit || "pce");
+const itemUnit    = (i) => isDebtItem(i) ? "—" : unitLabel(i?.pa_products?.unit || "pce");
 const itemAmount  = (i) => (Number(i?.quantity) || 0) * (Number(i?.unit_price) || 0);
 
 export default function ReportsPage() {
@@ -740,7 +741,7 @@ export default function ReportsPage() {
                 todaySales.forEach(sale => {
                   (sale.pa_sale_items || []).filter(i => !isDebtItem(i)).forEach(item => {
                     const name = item.pa_products?.name || "?";
-                    const unit = item.pa_products?.unit || "pce";
+                    const unit = unitLabel(item.pa_products?.unit || "pce");
                     if (!itemMap[name]) itemMap[name] = { name, unit, qty: 0, total: 0 };
                     itemMap[name].qty += item.quantity;
                     itemMap[name].total += item.quantity * item.unit_price;
@@ -781,7 +782,7 @@ export default function ReportsPage() {
                 todaySales.forEach(sale => {
                   (sale.pa_sale_items || []).filter(i => !isDebtItem(i)).forEach(item => {
                     const name = item.pa_products?.name || "?";
-                    const unit = item.pa_products?.unit || "pce";
+                    const unit = unitLabel(item.pa_products?.unit || "pce");
                     if (!itemMap[name]) itemMap[name] = { name, unit, qty: 0, total: 0 };
                     itemMap[name].qty += item.quantity;
                     itemMap[name].total += item.quantity * item.unit_price;
@@ -829,7 +830,7 @@ export default function ReportsPage() {
               if (sale.payment_status === "partial") totalPartialDue += parseFloat(sale.balance_due || 0);
               (sale.pa_sale_items || []).filter(i => !isDebtItem(i)).forEach(item => {
                 const name = item.pa_products?.name || "?";
-                const unit = item.pa_products?.unit || "pce";
+                const unit = unitLabel(item.pa_products?.unit || "pce");
                 if (!itemMap[name]) itemMap[name] = { name, unit, qty: 0, total: 0 };
                 itemMap[name].qty += item.quantity;
                 itemMap[name].total += item.quantity * item.unit_price;

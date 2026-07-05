@@ -13,6 +13,7 @@
 //  • Per-row validation so good rows import and bad rows are listed.
 //
 // SheetJS is dynamically imported so it is code-split out of the main bundle.
+import { unitValue } from "./units";
 
 // Canonical header order shown in the template.
 export const TEMPLATE_HEADERS = [
@@ -102,7 +103,8 @@ export async function parseProductImport(file, locations) {
 
     const errors = [];
     const name = String(rec.name == null ? "" : rec.name).trim();
-    const unit = String(rec.unit == null ? "" : rec.unit).trim() || "pce";
+    // Store the canonical 'pce' (a typed/imported 'pcs' normalises back to it).
+    const unit = unitValue(String(rec.unit == null ? "" : rec.unit).trim() || "pce");
     const bc = coerceBarcode(rec.barcode);
     if (bc.error) errors.push({ en: barcodeErrMsg(true), fr: barcodeErrMsg(false) });
 
@@ -153,7 +155,7 @@ export async function parseProductImport(file, locations) {
 export async function buildProductTemplateXlsx(locations, en) {
   const XLSX = await loadXLSX();
   const locName = (locations && locations[0] && locations[0].name) || (en ? "Your Shop" : "Votre Boutique");
-  const ex1 = ["Tube", "6001234567890", "pce", 2500, 4000, 3500, 2500, 100, locName, "A-01 Rayon 2"];
+  const ex1 = ["Tube", "6001234567890", "pcs", 2500, 4000, 3500, 2500, 100, locName, "A-01 Rayon 2"];
   const ex2 = ["Huile palme", "6009988776655", "litre", 1800, 3000, 2500, 1800, 50, locName, ""];
   const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, ex1, ex2]);
 
@@ -180,7 +182,7 @@ export async function buildProductTemplateXlsx(locations, en) {
     [""],
     ["name            product name"],
     ["barcode         scan code (digits). KEEP THIS COLUMN AS TEXT."],
-    ["unit            pce, litre, kg, carton..."],
+    ["unit            pcs, litre, kg, carton..."],
     ["cost_price      what you pay for it"],
     ["walk_in_price   normal selling price (what a walk-in customer pays)"],
     ["wholesale_price price for wholesale buyers (optional)"],
@@ -203,7 +205,7 @@ export async function buildProductTemplateXlsx(locations, en) {
     [""],
     ["name            nom du produit"],
     ["barcode         code de scan (chiffres). GARDEZ CETTE COLONNE EN TEXTE."],
-    ["unit            pce, litre, kg, carton..."],
+    ["unit            pcs, litre, kg, carton..."],
     ["cost_price      votre prix d'achat"],
     ["walk_in_price   prix de vente normal (ce que paie un client de passage)"],
     ["wholesale_price prix pour les grossistes (facultatif)"],

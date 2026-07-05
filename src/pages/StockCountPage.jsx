@@ -6,6 +6,7 @@ import { useLangStore, useAuthStore } from "../store";
 import api from "../utils/api";
 import BarcodeInput from "../components/common/BarcodeInput";
 import CameraScanner from "../components/common/CameraScanner";
+import { unitLabel } from "../utils/units";
 
 export default function StockCountPage() {
   const { lang } = useLangStore();
@@ -282,7 +283,7 @@ export default function StockCountPage() {
                       </div>
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      <div style={{ fontWeight: 700, fontSize: 14 }}>{s.quantity} {s.pa_products?.unit}</div>
+                      <div style={{ fontWeight: 700, fontSize: 14 }}>{s.quantity} {unitLabel(s.pa_products?.unit)}</div>
                       {alreadyAdded && <div style={{ fontSize: 10, color: "#34d399" }}>✓ Added</div>}
                     </div>
                   </div>
@@ -328,7 +329,7 @@ export default function StockCountPage() {
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, alignItems: "center" }}>
                       <div>
                         <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 3 }}>System</div>
-                        <div style={{ fontWeight: 600, color: "var(--text-muted)" }}>{item.system_qty} {item.unit}</div>
+                        <div style={{ fontWeight: 600, color: "var(--text-muted)" }}>{item.system_qty} {unitLabel(item.unit)}</div>
                       </div>
                       <div>
                         <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 3 }}>Counted *</div>
@@ -339,7 +340,7 @@ export default function StockCountPage() {
                       <div style={{ textAlign: "center" }}>
                         <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 3 }}>Diff</div>
                         <div style={{ fontWeight: 700, fontSize: 15, color: diff === 0 ? "#34d399" : diff > 0 ? "var(--brand-light)" : "#f87171" }}>
-                          {diff > 0 ? "+" : ""}{diff} {item.unit}
+                          {diff > 0 ? "+" : ""}{diff} {unitLabel(item.unit)}
                         </div>
                       </div>
                     </div>

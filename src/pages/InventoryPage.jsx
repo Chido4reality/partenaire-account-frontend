@@ -3,6 +3,7 @@ import BarcodeInput from "../components/common/BarcodeInput";
 import CameraScanner from "../components/common/CameraScanner";
 import ProductSearchBox from "../components/common/ProductSearchBox";
 import ClearButton from "../components/common/ClearButton";
+import { unitLabel } from "../utils/units";
 import React, { useState, useEffect, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
@@ -1219,7 +1220,7 @@ export default function InventoryPage() {
                           </span>
                         ) : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>}
                       </td>
-                      <td style={{ textAlign: "right", fontWeight: 600, color: isLow ? "#f87171" : "var(--text-primary)" }}>{s.quantity} {p?.unit}</td>
+                      <td style={{ textAlign: "right", fontWeight: 600, color: isLow ? "#f87171" : "var(--text-primary)" }}>{s.quantity} {unitLabel(p?.unit)}</td>
                       <td style={{ textAlign: "right", color: "var(--text-muted)" }}>{s.min_quantity}</td>
                       {canSeePrices && <td style={{ textAlign: "right", color: "var(--text-muted)", fontSize: 12 }}>{fmt(p?.cost_price)}</td>}
                       {canSeePrices && <td style={{ textAlign: "right", fontWeight: 600, color: "var(--brand-light)" }}>{fmt(p?.sell_price)}</td>}
@@ -1320,7 +1321,7 @@ export default function InventoryPage() {
                           <span>{p.name}</span>
                         </div>
                       </td>
-                      <td style={{ color: "var(--text-muted)", fontSize: 12 }}>{p.unit}</td>
+                      <td style={{ color: "var(--text-muted)", fontSize: 12 }}>{unitLabel(p.unit)}</td>
                       {locations.map(l => <td key={l.id} style={{ textAlign: "right" }}>{p.locs[l.id] != null ? p.locs[l.id] : <span style={{ color: "var(--text-muted)" }}>—</span>}</td>)}
                       <td style={{ textAlign: "right", fontWeight: 700, color: "var(--brand-light)" }}>{p.total}</td>
                       {isOwner && <td style={{ textAlign: "right", fontSize: 12, color: "#fbbf24" }}>{fmt(value)}</td>}
@@ -1387,7 +1388,7 @@ export default function InventoryPage() {
                       </div>
                     </td>
                     <td style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text-muted)" }}>{p.barcode || "—"}</td>
-                    <td style={{ color: "var(--text-muted)" }}>{p.unit}</td>
+                    <td style={{ color: "var(--text-muted)" }}>{unitLabel(p.unit)}</td>
                     {canSeePrices && <td style={{ textAlign: "right", color: "var(--text-muted)", fontSize: 12 }}>{fmt(p.cost_price)}</td>}
                     {canSeePrices && <td style={{ textAlign: "right", fontWeight: 600, color: "var(--brand-light)" }}>{fmt(p.sell_price)}</td>}
                     {canSeePrices && <td style={{ textAlign: "right", color: "#fbbf24" }}>{p.wholesale_price > 0 ? fmt(p.wholesale_price) : <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>}</td>}
@@ -1418,9 +1419,9 @@ export default function InventoryPage() {
                   <tr key={i}>
                     <td style={{ fontWeight: 500 }}>{a.name}</td>
                     <td style={{ color: "var(--text-secondary)" }}>{a.location_name}</td>
-                    <td style={{ textAlign: "right", color: "#f87171", fontWeight: 600 }}>{a.quantity} {a.unit}</td>
+                    <td style={{ textAlign: "right", color: "#f87171", fontWeight: 600 }}>{a.quantity} {unitLabel(a.unit)}</td>
                     <td style={{ textAlign: "right", color: "var(--text-muted)" }}>{a.min_quantity}</td>
-                    <td style={{ textAlign: "right", color: "#fbbf24" }}>{a.shortage} {a.unit}</td>
+                    <td style={{ textAlign: "right", color: "#fbbf24" }}>{a.shortage} {unitLabel(a.unit)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1457,7 +1458,7 @@ export default function InventoryPage() {
               <div className="form-group">
                 <label className="label">Unit</label>
                 <select className="input" value={newProduct.unit} onChange={e => setNewProduct(p => ({ ...p, unit: e.target.value }))}>
-                  {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                  {UNITS.map(u => <option key={u} value={u}>{unitLabel(u)}</option>)}
                 </select>
               </div>
             </div>
@@ -1624,7 +1625,7 @@ export default function InventoryPage() {
               <div className="form-group">
                 <label className="label">Unit</label>
                 <select className="input" value={editProduct.unit} onChange={e => setEditProduct(p => ({ ...p, unit: e.target.value }))}>
-                  {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                  {UNITS.map(u => <option key={u} value={u}>{unitLabel(u)}</option>)}
                 </select>
               </div>
             </div>
@@ -1782,7 +1783,7 @@ export default function InventoryPage() {
               <div className="form-group">
                 <label className="label">Unit</label>
                 <select className="input" value={rapidItem.unit} onChange={e => setRapidItem(p => ({ ...p, unit: e.target.value }))}>
-                  {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                  {UNITS.map(u => <option key={u} value={u}>{unitLabel(u)}</option>)}
                 </select>
               </div>
             </div>
@@ -1908,7 +1909,7 @@ export default function InventoryPage() {
                           <td title={row.ok ? "" : (en ? row.errors.map(e => e.en).join(" ") : row.errors.map(e => e.fr).join(" "))}>{row.ok ? "✅" : "⚠️"}</td>
                           <td style={{ fontWeight: 500 }}>{row.name || "—"}</td>
                           <td style={{ fontFamily: "monospace" }}>{row.barcode || "—"}</td>
-                          <td>{row.unit || "pce"}</td>
+                          <td>{unitLabel(row.unit || "pce")}</td>
                           <td>{row.cost_price || "—"}</td>
                           <td style={{ color: row.sell_price ? "var(--brand-light)" : "#f87171", fontWeight: 600 }}>{row.sell_price || "—"}</td>
                           <td>{row.wholesale_price || "—"}</td>
@@ -2460,7 +2461,7 @@ function AdjustModal({ product, role, requestApproval, lang, onClose, onSuccess 
         <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20 }}>{product.pa_products?.name} — {product.pa_locations?.name}</div>
         <div style={{ background: "var(--bg-elevated)", borderRadius: 10, padding: "12px 16px", marginBottom: 16, display: "flex", justifyContent: "space-between" }}>
           <span style={{ color: "var(--text-muted)", fontSize: 13 }}>Current</span>
-          <strong>{product.quantity} {product.pa_products?.unit}</strong>
+          <strong>{product.quantity} {unitLabel(product.pa_products?.unit)}</strong>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div className="form-group">

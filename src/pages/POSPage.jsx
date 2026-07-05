@@ -28,6 +28,7 @@ import BelowCostLossDetail from "../components/common/BelowCostLossDetail";
 import DiscountApprovalDetail from "../components/common/DiscountApprovalDetail";
 import { momoLabel } from "../utils/paymentLabels";
 import ClearButton from "../components/common/ClearButton";
+import { unitLabel } from "../utils/units";
 import RestrictedAction from "../components/common/RestrictedAction";
 import useOwnerApproval from "../hooks/useOwnerApproval";
 
@@ -797,7 +798,7 @@ export default function POSPage() {
     const stockQty = product.stock?.quantity;
     const minQty = product.stock?.min_quantity || 5;
     if (stockQty !== undefined && stockQty <= minQty) {
-      toast(`⚠️ ${lang === "en" ? "Low stock:" : "Stock bas:"} ${product.name} — ${stockQty} ${product.unit} ${lang === "en" ? "remaining" : "restant(s)"}`, {
+      toast(`⚠️ ${lang === "en" ? "Low stock:" : "Stock bas:"} ${product.name} — ${stockQty} ${unitLabel(product.unit)} ${lang === "en" ? "remaining" : "restant(s)"}`, {
         duration: 3000,
         style: { background: "#451a03", color: "#fbbf24", border: "1px solid #92400e" }
       });
@@ -2781,7 +2782,7 @@ export default function POSPage() {
                         {p.barcode && <span style={{ fontFamily: "monospace" }}>{p.barcode}</span>}
                         {stockQ !== undefined && stockQ !== null && (
                           <span style={{ color: stockColor, fontWeight: 600 }}>
-                            ● {stockQ} {p.unit} {lang === "en" ? "in stock" : "en stock"}
+                            ● {stockQ} {unitLabel(p.unit)} {lang === "en" ? "in stock" : "en stock"}
                           </span>
                         )}
                       </div>
@@ -2801,7 +2802,7 @@ export default function POSPage() {
                           + {lang === "en" ? "Add" : "Ajouter"}
                         </span>
                       ) : (
-                        <div style={{ fontSize: 10, color: "var(--text-muted)" }}>/{p.unit}</div>
+                        <div style={{ fontSize: 10, color: "var(--text-muted)" }}>/{unitLabel(p.unit)}</div>
                       )}
                     </div>
                   </motion.div>
