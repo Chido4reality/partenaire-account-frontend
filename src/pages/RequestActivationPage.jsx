@@ -41,12 +41,12 @@ export default function RequestActivationPage() {
   const [searchParams] = useSearchParams();
   const deepLinkPlan = searchParams.get("plan"); // e.g. ?plan=pro_plus
 
-  // MP-NG-DURATION: the multi-month duration selector is a NIGERIA (NGN) feature.
-  // Cameroun (XAF) stays monthly exactly as before — the selector is hidden and
-  // months is pinned to 1, so every price/total below renders ×1 = the old value.
+  // MP-NG-DURATION: the 1/3/6/12 duration dropdown is shown for BOTH countries,
+  // exactly as before. The ONLY behavioural change is the DEFAULT: Nigeria (NGN)
+  // defaults to 6 months; Cameroun (XAF) keeps its original monthly (1) default.
   const isNGN = fmt.currency === "NGN";
   const [selectedId, setSelectedId] = useState(null);
-  const [months, setMonths] = useState(isNGN ? 6 : 1); // NG defaults to 6 months
+  const [months, setMonths] = useState(isNGN ? 6 : 1); // NG → 6, CM → 1 (as before)
   const [showManual, setShowManual] = useState(false);
   // Period label for the chosen duration (1 → "/month", N → "/ N months").
   const periodLabel = (m) => m === 1 ? (en ? "/month" : "/mois") : (en ? `/ ${m} months` : `/ ${m} mois`);
@@ -222,18 +222,15 @@ export default function RequestActivationPage() {
         })}
       </div>
 
-      {/* Duration — MP-NG-DURATION: Nigeria (NGN) only. Cameroun (XAF) stays monthly
-          with no selector, exactly as before. */}
-      {isNGN && (
-        <>
-          <div className="label">{en ? "Duration" : "Durée"}</div>
-          <select className="input" value={months} onChange={e => setMonths(+e.target.value)} style={{ marginBottom: 16 }}>
-            {DURATIONS.map(m => (
-              <option key={m} value={m}>{m} {en ? (m === 1 ? "month" : "months") : "mois"} — {fmt(unitPrice * m)}</option>
-            ))}
-          </select>
-        </>
-      )}
+      {/* Duration — shown for BOTH NGN and XAF (1/3/6/12), exactly as before.
+          MP-NG-DURATION: the ONLY change is the default — NG defaults to 6 months,
+          CM keeps its monthly (1) default. */}
+      <div className="label">{en ? "Duration" : "Durée"}</div>
+      <select className="input" value={months} onChange={e => setMonths(+e.target.value)} style={{ marginBottom: 16 }}>
+        {DURATIONS.map(m => (
+          <option key={m} value={m}>{m} {en ? (m === 1 ? "month" : "months") : "mois"} — {fmt(unitPrice * m)}</option>
+        ))}
+      </select>
 
       {/* Total — MP-SUBSCRIPTION-DISCOUNT: struck-through original + −X% badge + savings.
           MP-NG-DURATION: period spelled out when a multi-month duration is chosen. */}
