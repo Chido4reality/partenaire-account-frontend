@@ -97,6 +97,39 @@ export const PLAN_CAPABILITIES = {
     filters_export: true
   },
 
+  // MPDozie Lite tiers (thin POS app: com.partenaire.mpdozielite). Bespoke set
+  // matching the Lite APP scope ONLY: Sales, Refund, Inventory, Expenses,
+  // Customers, Settings. Only 'customers' + 'cashflow' are section-gated for
+  // those screens; NO reports/transfers/credits/online_cart/dashboard/Dozie.
+  // location_cap is the differentiator (1 vs 2); staff_cap null = multiple
+  // cashiers. Mirror of backend lib/planCapabilities.js — keep in sync.
+  mpdozie_lite: {
+    label: 'MPDozie Lite',
+    label_fr: 'MPDozie Lite',
+    sections: ['sales', 'inventory', 'customers', 'cashflow', 'settings'],
+    inventory_cap: null,
+    staff_cap: null,
+    location_cap: 1,
+    csv_exports: false,
+    receipt_branding: false,
+    dozie_access: false,
+    dozie_city_cap: 0,
+    price_fcfa_month: 5000
+  },
+  mpdozie_lite_2: {
+    label: 'MPDozie Lite (2 locations)',
+    label_fr: 'MPDozie Lite (2 sites)',
+    sections: ['sales', 'inventory', 'customers', 'cashflow', 'settings'],
+    inventory_cap: null,
+    staff_cap: null,
+    location_cap: 2,
+    csv_exports: false,
+    receipt_branding: false,
+    dozie_access: false,
+    dozie_city_cap: 0,
+    price_fcfa_month: 6000
+  },
+
   // Legacy aliases — DO NOT REFERENCE FROM NEW CODE.
   silver:  { legacy: true, alias_of: 'trial' },
   gold:    { legacy: true, alias_of: 'lite' },
