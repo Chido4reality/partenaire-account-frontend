@@ -41,9 +41,15 @@ export default function RequestActivationPage() {
   const [searchParams] = useSearchParams();
   const deepLinkPlan = searchParams.get("plan"); // e.g. ?plan=pro_plus
 
+  // MP-NG-DURATION: the multi-month duration selector is a NIGERIA (NGN) feature.
+  // Cameroun (XAF) stays monthly exactly as before — the selector is hidden and
+  // months is pinned to 1, so every price/total below renders ×1 = the old value.
+  const isNGN = fmt.currency === "NGN";
   const [selectedId, setSelectedId] = useState(null);
-  const [months, setMonths] = useState(1);
+  const [months, setMonths] = useState(isNGN ? 6 : 1); // NG defaults to 6 months
   const [showManual, setShowManual] = useState(false);
+  // Period label for the chosen duration (1 → "/month", N → "/ N months").
+  const periodLabel = (m) => m === 1 ? (en ? "/month" : "/mois") : (en ? `/ ${m} months` : `/ ${m} mois`);
   const [method, setMethod] = useState("cash");
   const [notes, setNotes] = useState("");
 
@@ -112,9 +118,14 @@ export default function RequestActivationPage() {
     const mpId = myPlanData?.data?.user_id_number || "";            // MP-000xxx (as shown in-app)
     const planName = (selected && selected.name) || "";
     const price = fmt(unitPrice);                                    // "40 500 FCFA" / "40 500 ₦"
+    // MP-NG-DURATION: NG buys in a chosen duration — state months + total so the
+    // admin activates for the right period. XAF stays monthly (months=1).
+    const planLineEn = months > 1
+      ? `${planName} — ${months} months = ${fmt(total)}`
+      : `${planName} (${price}/month)`;
     return isFrenchEnglishOrg(org)
       ? `Bonjour, je veux payer mon abonnement Mon Partenaire.\nBoutique : ${shop}\nID : ${mpId}\nFormule : ${planName} (${price}/mois)\nJe ne peux pas payer en ligne — merci d'activer mon compte.`
-      : `Hello, I want to pay for my Mon Partenaire subscription.\nShop: ${shop}\nID: ${mpId}\nPlan: ${planName} (${price}/month)\nI can't pay online — please activate my account.`;
+      : `Hello, I want to pay for my Mon Partenaire subscription.\nShop: ${shop}\nID: ${mpId}\nPlan: ${planLineEn}\nI can't pay online — please activate my account.`;
   };
 
   // FALLBACK — manual offline payment → admin approval (audit trail).
@@ -192,15 +203,16 @@ export default function RequestActivationPage() {
                   </div>
                 </div>
                 <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
-                  {/* MP-SUBSCRIPTION-DISCOUNT: struck-through original when an admin rule applies. */}
+                  {/* MP-SUBSCRIPTION-DISCOUNT: struck-through original when an admin rule applies.
+                      MP-NG-DURATION: prices reflect the chosen duration (×months). XAF months=1. */}
                   {p.discount && p.original_price != null && p.original_price > price && (
-                    <div style={{ fontSize: 12, color: "var(--text-muted)", textDecoration: "line-through" }}>{fmt(p.original_price)}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", textDecoration: "line-through" }}>{fmt(p.original_price * months)}</div>
                   )}
-                  <div style={{ fontWeight: 800, fontSize: 18, color: p.discount ? "#34d399" : "var(--brand-light)" }}>{fmt(price)}</div>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{en ? "/month" : "/mois"}</div>
+                  <div style={{ fontWeight: 800, fontSize: 18, color: p.discount ? "#34d399" : "var(--brand-light)" }}>{fmt(price * months)}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{periodLabel(months)}</div>
                   {p.discount && (
                     <div style={{ fontSize: 10, fontWeight: 700, color: "#34d399", marginTop: 2 }}>
-                      {p.discount.discount_type === "percent" ? `−${p.discount.discount_value}%` : `−${fmt(p.discount.amount_off)}`}
+                      {p.discount.discount_type === "percent" ? `−${p.discount.discount_value}%` : `−${fmt(p.discount.amount_off * months)}`}
                     </div>
                   )}
                 </div>
@@ -210,18 +222,26 @@ export default function RequestActivationPage() {
         })}
       </div>
 
-      {/* Duration */}
-      <div className="label">{en ? "Duration" : "Durée"}</div>
-      <select className="input" value={months} onChange={e => setMonths(+e.target.value)} style={{ marginBottom: 16 }}>
-        {DURATIONS.map(m => (
-          <option key={m} value={m}>{m} {en ? (m === 1 ? "month" : "months") : "mois"} — {fmt(unitPrice * m)}</option>
-        ))}
-      </select>
+      {/* Duration — MP-NG-DURATION: Nigeria (NGN) only. Cameroun (XAF) stays monthly
+          with no selector, exactly as before. */}
+      {isNGN && (
+        <>
+          <div className="label">{en ? "Duration" : "Durée"}</div>
+          <select className="input" value={months} onChange={e => setMonths(+e.target.value)} style={{ marginBottom: 16 }}>
+            {DURATIONS.map(m => (
+              <option key={m} value={m}>{m} {en ? (m === 1 ? "month" : "months") : "mois"} — {fmt(unitPrice * m)}</option>
+            ))}
+          </select>
+        </>
+      )}
 
-      {/* Total — MP-SUBSCRIPTION-DISCOUNT: struck-through original + −X% badge + savings. */}
+      {/* Total — MP-SUBSCRIPTION-DISCOUNT: struck-through original + −X% badge + savings.
+          MP-NG-DURATION: period spelled out when a multi-month duration is chosen. */}
       <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 14, marginBottom: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ color: "var(--text-secondary)", fontSize: 13 }}>{en ? "Total" : "Total"}</span>
+          <span style={{ color: "var(--text-secondary)", fontSize: 13 }}>
+            {en ? "Total" : "Total"}{months > 1 ? ` · ${months} ${en ? "months" : "mois"}` : ""}
+          </span>
           <span style={{ textAlign: "right" }}>
             {selDiscount && totalOriginal > total && (
               <span style={{ fontSize: 13, color: "var(--text-muted)", textDecoration: "line-through", marginRight: 8 }}>{fmt(totalOriginal)}</span>
