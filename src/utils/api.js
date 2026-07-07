@@ -167,6 +167,16 @@ api.interceptors.request.use(config => {
   // warm-up /health ping at launch to prime the container, which
   // covers the dominant "open app, start working" flow.
   if (isOfflineEligible(config.method, config.url)) config.timeout = 45000;
+  // MP-PEAK-MTN-RESILIENCE: the old blanket 6s timeout aborted requests that were
+  // slow-but-alive on a congested peak-hour MTN route (Camtel, faster, completed) —
+  // surfacing as "network error" and, for login, locking users out. Give auth + all
+  // reads a much longer ceiling so a marginal connection can finish; only genuinely
+  // dead links still time out. Writes keep their 45s offline-queue ceiling above.
+  else {
+    const _p = (config.url || "").replace(BASE_URL, "").split("?")[0];
+    if (/^\/auth\//.test(_p)) config.timeout = 30000;                 // login / me / refresh
+    else if ((config.method || "get").toLowerCase() === "get") config.timeout = 20000; // reads
+  }
   return config;
 });
 
@@ -283,11 +293,39 @@ api.interceptors.response.use(res => {
   } catch { /* noop */ }
   return res;
 }, async err => {
+  const cfg = err.config || {};
+
+  // MP-PEAK-MTN-RESILIENCE: transient network/timeout retry with backoff for SAFE,
+  // idempotent requests (GET + login), BEFORE surfacing an error. On a congested
+  // peak MTN route the first attempt often aborts; a couple of backed-off retries
+  // let it land instead of bouncing the user to a "network error" (and, for login,
+  // locking them out). Only no-response / timeout / transport errors retry — a real
+  // HTTP status (401 wrong-PIN, 400 validation, 5xx) is NOT retried here. Offline-
+  // eligible writes are handled by the queue below, never here.
+  {
+    const _path = (cfg.url || "").replace(BASE_URL, "").split("?")[0];
+    const method = (cfg.method || "get").toLowerCase();
+    const isNetworkish = !err.response || err.code === "ECONNABORTED" || err.code === "ERR_NETWORK";
+    // Retry ONLY auth + core-load requests (login, session, the data the app needs to
+    // function). Deliberately NOT every GET — the silent badge polls fail-and-repoll
+    // on their own timer, so retrying them would amplify load at exactly the wrong time.
+    const CRITICAL = /^\/auth\/(login|me|refresh)\b|^\/(locations|products|customers|categories)\b/;
+    const isSafe = (method === "get" || method === "post") && CRITICAL.test(_path);
+    if (isNetworkish && isSafe && !isOfflineEligible(cfg.method, cfg.url)) {
+      cfg._retry = (cfg._retry || 0);
+      if (cfg._retry < 3) {
+        cfg._retry += 1;
+        const delay = [700, 1600, 3000][cfg._retry - 1] || 3000; // backoff
+        await new Promise(r => setTimeout(r, delay));
+        return api(cfg);
+      }
+    }
+  }
+
   // MP-CAPACITOR Slice 3: 5xx on an offline-eligible write → enqueue
   // for replay so a transient backend hiccup doesn't lose the cashier's
   // action. Network errors (no response) also enqueue. 4xx still bubbles
   // — those are validation errors the user needs to see now.
-  const cfg = err.config || {};
   if (isOfflineEligible(cfg.method, cfg.url)) {
     const isNetworkErr = !err.response;
     const is5xx = err.response && err.response.status >= 500;
@@ -345,7 +383,12 @@ api.interceptors.response.use(res => {
   ]);
   if (err.response?.status === 401 && !APPROVAL_ERRORS.has(err.response?.data?.error)) {
     useAuthStore.getState().logout();
-    window.location.href = "/login";
+    // MP-PEAK-MTN-RESILIENCE: don't HARD-redirect (window.location) when the user is
+    // already on /login — a background 401 mid-typing would wipe the phone/password
+    // they're entering AND force a full bundle re-download over the bad link. Only
+    // navigate away when they're on an authed page; the SPA route guard will render
+    // /login once the store is cleared.
+    if (window.location.pathname !== "/login") window.location.href = "/login";
   }
   // Sprint A: any 403 with { error: 'upgrade_required' } pops the universal
   // PaywallModal. Layout listens for this event so individual pages don't
