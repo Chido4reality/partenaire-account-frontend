@@ -6,6 +6,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useLangStore, useAuthStore } from "../store";
+import DateRangeFilter, { inRange, wideRange } from "../components/common/DateRangeFilter";
 import api, { formatDate } from "../utils/api";
 import RestrictedAction from "../components/common/RestrictedAction";
 
@@ -143,11 +144,14 @@ export default function TransfersPage() {
   // The ONLY way to remove a line (the explicit × button).
   const removeItem = (idx) => setScannedItems(p => p.filter((_, i) => i !== idx));
 
+  // A1: fetch a deep window (500) so the date filter can find PAST transfers, not
+  // just the last page. Client-side date filtering is applied below (rows carry created_at).
   const { data: transferData, isLoading } = useOfflineCachedQuery({
     queryKey: ["transfers", statusFilter],
-    queryFn: () => api.get(`/transfers?${statusFilter ? "status=" + statusFilter : ""}&limit=30`).then(r => r.data),
+    queryFn: () => api.get(`/transfers?${statusFilter ? "status=" + statusFilter : ""}&limit=500`).then(r => r.data),
     refetchInterval: 30000
   });
+  const [range, setRange] = useState(wideRange()); // A1 date filter (≈1yr default → nothing hidden)
 
   const { data: locData } = useOfflineCachedQuery({
     queryKey: ["locations"],
@@ -290,7 +294,8 @@ export default function TransfersPage() {
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
 
-  const transfers = transferData?.data || [];
+  // A1: client-side date filter across ALL tabs (rows carry created_at).
+  const transfers = (transferData?.data || []).filter(tr => inRange(tr.created_at, range.from, range.to));
   const locations = locData?.data || [];
 
   const statusColor = (s) => {
@@ -708,7 +713,7 @@ export default function TransfersPage() {
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
         {[
           { value: "", en: "All", fr: "Tous" },
           { value: "pending", en: "Pending", fr: "En attente" },
@@ -721,6 +726,9 @@ export default function TransfersPage() {
           </button>
         ))}
       </div>
+
+      {/* A1 date filter — applies across the All/Pending/Completed/Cancelled tabs */}
+      <DateRangeFilter from={range.from} to={range.to} onChange={setRange} style={{ marginBottom: 20 }} />
 
       {isLoading ? (
         <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>Loading...</div>

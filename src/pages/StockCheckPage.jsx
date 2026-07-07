@@ -17,6 +17,19 @@ import { useLangStore, useAuthStore } from "../store";
 import { useCurrency } from "../utils/useCurrency";
 import toast from "react-hot-toast";
 import { unitLabel } from "../utils/units";
+import DateRangeFilter, { inRange, wideRange } from "../components/common/DateRangeFilter";
+
+// MP-STOCK-CHECK-RESOLVE (Part B): reason → does it correct stock? (mirrors backend)
+const RESOLVE_REASONS = [
+  { key: "miscount",       corrects: true,  en: "Miscount — goods were there",     fr: "Erreur de comptage — présents" },
+  { key: "recovered",      corrects: true,  en: "Recovered / found",               fr: "Retrouvé" },
+  { key: "damaged",        corrects: true,  en: "Damaged / written off",           fr: "Endommagé / radié" },
+  { key: "confirmed_loss", corrects: false, en: "Confirmed loss (theft/lost)",     fr: "Perte confirmée (vol/perdu)" },
+];
+const reasonLabel = (key, en) => {
+  const r = RESOLVE_REASONS.find(x => x.key === key);
+  return r ? (en ? r.en : r.fr) : key;
+};
 
 function fmtDate(iso, en) {
   if (!iso) return "—";
@@ -50,10 +63,13 @@ export default function StockCheckPage() {
   const fmt = useCurrency();
   const qc = useQueryClient();
   const isOwner = useAuthStore(s => s.user?.role) === "owner";
-  const [tab, setTab] = useState("pending");           // pending | mismatch
-  const [resolveFor, setResolveFor] = useState(null);  // the row being resolved
+  const [tab, setTab] = useState("pending");           // pending | mismatch | resolved
+  const [resolveFor, setResolveFor] = useState(null);  // pending row being counted (Done/Mismatch)
+  const [varResolveFor, setVarResolveFor] = useState(null); // MISMATCH row being resolved-with-reason (owner)
   const [deleteFor, setDeleteFor] = useState(null);    // the pending row being deleted (owner)
   const [showWatch, setShowWatch] = useState(false);
+  const [range, setRange] = useState(wideRange());     // A2 date filter (≈1yr default → nothing hidden)
+  const [damagedOnly, setDamagedOnly] = useState(false); // Resolved tab: shop's damage record
 
   const list = useQuery({
     queryKey: ["stock-checks", tab],
@@ -98,7 +114,32 @@ export default function StockCheckPage() {
     onError: (e) => toast.error(e?.response?.data?.message || (en ? "Failed" : "Échec")),
   });
 
-  const rows = Array.isArray(list.data) ? list.data : [];
+  // Part B: owner resolves a MISMATCH with a reason + corrected qty → status='resolved',
+  // and (miscount/recovered/damaged) corrects pa_stock. confirmed_loss leaves stock.
+  const varResolveMut = useMutation({
+    mutationFn: ({ id, reason, resolved_qty }) =>
+      api.post(`/stock-checks/${id}/resolve`, { reason, resolved_qty }).then(r => r.data),
+    onSuccess: (res) => {
+      toast.success(res.corrected
+        ? (en ? `Resolved — stock corrected to ${res.resolved_qty}` : `Résolu — stock corrigé à ${res.resolved_qty}`)
+        : (en ? "Resolved — stock unchanged (loss recorded)" : "Résolu — stock inchangé (perte enregistrée)"));
+      setVarResolveFor(null);
+      invalidateAll();
+    },
+    onError: (e) => toast.error(e?.response?.data?.message || (en ? "Failed" : "Échec")),
+  });
+
+  const allRows = Array.isArray(list.data) ? list.data : [];
+  // A2 date filter — by the timestamp that matters per tab (pending→created_at,
+  // mismatch→verified_at, resolved→resolved_at), with created_at as a safe fallback.
+  const rows = allRows.filter(r => {
+    const ts = tab === "resolved" ? (r.resolved_at || r.created_at)
+      : tab === "mismatch" ? (r.verified_at || r.created_at)
+      : r.created_at;
+    if (!inRange(ts, range.from, range.to)) return false;
+    if (tab === "resolved" && damagedOnly && r.resolution_reason !== "damaged") return false;
+    return true;
+  });
   const watchList = Array.isArray(watches.data) ? watches.data : [];
 
   return (
@@ -126,21 +167,41 @@ export default function StockCheckPage() {
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 8, margin: "14px 0" }}>
-        {["pending", "mismatch"].map(t => (
+        {["pending", "mismatch", "resolved"].map(t => (
           <button key={t} onClick={() => setTab(t)}
             style={{ padding: "7px 14px", borderRadius: 999, border: "1px solid var(--border)", cursor: "pointer", fontWeight: 700, fontSize: 13,
               background: tab === t ? "var(--brand-light)" : "transparent", color: tab === t ? "#1a1a2e" : "var(--text-secondary)" }}>
-            {t === "pending" ? (en ? "To count" : "À compter") : (en ? "Mismatches" : "Écarts")}
+            {t === "pending" ? (en ? "To count" : "À compter")
+              : t === "mismatch" ? (en ? "Mismatches" : "Écarts")
+              : (en ? "Resolved" : "Résolus")}
           </button>
         ))}
       </div>
+
+      {/* A2 date filter — applies to all three tabs */}
+      <DateRangeFilter from={range.from} to={range.to} onChange={setRange} style={{ marginBottom: 12 }} />
+
+      {/* Resolved tab → "Damaged" filter = the shop's damage record (no separate table) */}
+      {tab === "resolved" && (
+        <div style={{ marginBottom: 12 }}>
+          <button onClick={() => setDamagedOnly(v => !v)}
+            style={{ padding: "6px 12px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer",
+              border: `1px solid ${damagedOnly ? "#fbbf24" : "var(--border)"}`,
+              background: damagedOnly ? "rgba(251,191,36,0.15)" : "transparent",
+              color: damagedOnly ? "#fbbf24" : "var(--text-secondary)" }}>
+            🔨 {en ? "Damaged only" : "Endommagés uniquement"}
+          </button>
+        </div>
+      )}
 
       {list.isLoading && <div style={{ color: "var(--text-muted)", padding: 16 }}>{en ? "Loading…" : "Chargement…"}</div>}
       {!list.isLoading && rows.length === 0 && (
         <div style={{ color: "var(--text-muted)", padding: 24, textAlign: "center", background: "var(--bg-card)", borderRadius: 12, border: "1px solid var(--border)" }}>
           {tab === "pending"
             ? (en ? "Nothing to re-count right now." : "Rien à recompter pour le moment.")
-            : (en ? "No mismatches — all counted items matched." : "Aucun écart — tout correspond.")}
+            : tab === "mismatch"
+            ? (en ? "No mismatches in this range." : "Aucun écart sur cette période.")
+            : (en ? "No resolved items in this range." : "Aucun élément résolu sur cette période.")}
         </div>
       )}
 
@@ -149,9 +210,12 @@ export default function StockCheckPage() {
           const p = r.pa_products || {};
           const loc = r.pa_locations || {};
           const isMismatch = r.status === "mismatch";
-          const delta = isMismatch ? (Number(r.qty_counted) - Number(r.qty_expected)) : null;
+          const isResolved = r.status === "resolved";
+          const showCounted = isMismatch || isResolved;
+          const delta = showCounted ? (Number(r.qty_counted) - Number(r.qty_expected)) : null;
+          const barColor = isResolved ? "#34d399" : isMismatch ? "#f87171" : "var(--brand-light)";
           return (
-            <div key={r.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderLeft: `3px solid ${isMismatch ? "#f87171" : "var(--brand-light)"}`, borderRadius: 12, padding: 14 }}>
+            <div key={r.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderLeft: `3px solid ${barColor}`, borderRadius: 12, padding: 14 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 700, fontSize: 15 }}>
@@ -168,15 +232,26 @@ export default function StockCheckPage() {
                   <div style={{ fontSize: 12.5, marginTop: 6, display: "flex", gap: 14, flexWrap: "wrap" }}>
                     <span style={{ color: "var(--text-muted)" }}>{en ? "Before" : "Avant"}: <b style={{ color: "var(--text-primary)" }}>{Number(r.qty_before)}</b></span>
                     <span style={{ color: "var(--text-muted)" }}>{en ? "Expected" : "Attendu"}: <b style={{ color: "var(--text-primary)" }}>{Number(r.qty_expected)} {unitLabel(p.unit)}</b></span>
-                    {isMismatch && <>
-                      <span style={{ color: "var(--text-muted)" }}>{en ? "Counted" : "Compté"}: <b style={{ color: "#f87171" }}>{Number(r.qty_counted)}</b></span>
-                      <span style={{ color: "#f87171", fontWeight: 700 }}>{delta > 0 ? "+" : ""}{delta}</span>
+                    {showCounted && <>
+                      <span style={{ color: "var(--text-muted)" }}>{en ? "Counted" : "Compté"}: <b style={{ color: isResolved ? "var(--text-primary)" : "#f87171" }}>{Number(r.qty_counted)}</b></span>
+                      <span style={{ color: isResolved ? "var(--text-muted)" : "#f87171", fontWeight: 700 }}>{delta > 0 ? "+" : ""}{delta}</span>
                     </>}
                   </div>
                   {r.moved_by_name && (
                     <div style={{ fontSize: 12, color: isMismatch ? "#fca5a5" : "var(--text-muted)", marginTop: 4 }}>
                       👤 {en ? "Moved by" : "Déplacé par"}: <b>{r.moved_by_name}</b>
-                      {isMismatch && r.verified_by_name && <span> · {en ? "counted by" : "compté par"} {r.verified_by_name}</span>}
+                      {showCounted && r.verified_by_name && <span> · {en ? "counted by" : "compté par"} {r.verified_by_name}</span>}
+                    </div>
+                  )}
+                  {/* Part C: resolution audit line (what / why / who / when) */}
+                  {isResolved && (
+                    <div style={{ fontSize: 12, marginTop: 6, color: "#34d399", background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.2)", borderRadius: 8, padding: "6px 10px" }}>
+                      ✅ {reasonLabel(r.resolution_reason, en)}
+                      {r.resolved_qty != null && <span style={{ color: "var(--text-secondary)" }}> · {en ? "corrected to" : "corrigé à"} <b>{Number(r.resolved_qty)}</b></span>}
+                      {r.resolution_reason === "confirmed_loss" && <span style={{ color: "var(--text-muted)" }}> · {en ? "stock unchanged" : "stock inchangé"}</span>}
+                      <div style={{ color: "var(--text-muted)", marginTop: 2 }}>
+                        {r.resolved_by_name ? `${en ? "by" : "par"} ${r.resolved_by_name} · ` : ""}{fmtDate(r.resolved_at, en)}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -191,6 +266,14 @@ export default function StockCheckPage() {
                         🗑 {en ? "Delete" : "Supprimer"}
                       </button>
                     )}
+                  </div>
+                )}
+                {/* Part B: owner resolves a mismatch (reason + corrected qty → stock fix). */}
+                {isMismatch && isOwner && (
+                  <div style={{ alignSelf: "center" }}>
+                    <button onClick={() => setVarResolveFor(r)} className="btn btn-primary" style={{ fontWeight: 700, whiteSpace: "nowrap" }}>
+                      🛠 {en ? "Resolve" : "Résoudre"}
+                    </button>
                   </div>
                 )}
               </div>
@@ -208,6 +291,12 @@ export default function StockCheckPage() {
       {deleteFor && (
         <ConfirmDeleteModal row={deleteFor} en={en} busy={deleteMut.isPending}
           onCancel={() => setDeleteFor(null)} onConfirm={() => deleteMut.mutate(deleteFor.id)} />
+      )}
+
+      {varResolveFor && (
+        <ResolveVarianceModal row={varResolveFor} en={en} busy={varResolveMut.isPending}
+          onCancel={() => setVarResolveFor(null)}
+          onResolve={(reason, resolved_qty) => varResolveMut.mutate({ id: varResolveFor.id, reason, resolved_qty })} />
       )}
 
       {showWatch && <WatchProductModal en={en} onClose={() => setShowWatch(false)}
@@ -348,6 +437,63 @@ function ConfirmDeleteModal({ row, en, onCancel, onConfirm, busy }) {
           <button className="btn" style={{ flex: 1.6, background: "#7f1d1d", color: "#fecaca", fontWeight: 700 }} disabled={busy} onClick={onConfirm}>
             {busy ? "…" : (en ? "🗑 Delete flag" : "🗑 Supprimer")}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Part B: owner resolves a MISMATCH — pick a reason, enter the corrected true
+// quantity, Update. miscount/recovered/damaged correct stock; confirmed_loss doesn't.
+function ResolveVarianceModal({ row, en, busy, onCancel, onResolve }) {
+  const p = row.pa_products || {};
+  const expected = Number(row.qty_expected) || 0;
+  const counted = Number(row.qty_counted) || 0;
+  const [reason, setReason] = useState("miscount");
+  // Pre-fill the corrected qty with what was physically counted (the boss's best number).
+  const [qty, setQty] = useState(String(counted));
+  const chosen = RESOLVE_REASONS.find(r => r.key === reason);
+  const corrects = !!(chosen && chosen.corrects);
+  const n = Number(qty);
+  const valid = Number.isFinite(n) && n >= 0 && qty !== "";
+  const submit = () => {
+    if (corrects && !valid) { toast.error(en ? "Enter a valid quantity" : "Entrez une quantité valide"); return; }
+    // confirmed_loss ignores the qty for stock, but we still send it for the record.
+    onResolve(reason, corrects ? n : (valid ? n : counted));
+  };
+  return (
+    <div className="modal-overlay" onClick={() => !busy && onCancel()}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+        <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>{en ? "Resolve variance" : "Résoudre l'écart"}</div>
+        <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 12 }}>
+          {en ? (p.name_en || p.name) : p.name} · {(row.pa_locations || {}).name}
+        </div>
+        <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginBottom: 12 }}>
+          {en ? "Expected" : "Attendu"}: <b>{expected}</b> · {en ? "counted" : "compté"}: <b>{counted}</b> ({counted - expected > 0 ? "+" : ""}{counted - expected})
+        </div>
+
+        <label style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>{en ? "Reason / outcome" : "Raison / résultat"}</label>
+        <select className="input" value={reason} onChange={e => setReason(e.target.value)} style={{ marginTop: 6, marginBottom: 12 }}>
+          {RESOLVE_REASONS.map(r => <option key={r.key} value={r.key}>{en ? r.en : r.fr}</option>)}
+        </select>
+
+        <label style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>
+          {en ? "Corrected true quantity" : "Quantité réelle corrigée"}
+        </label>
+        <input className="input" type="number" min="0" value={qty} onChange={e => setQty(e.target.value)}
+          placeholder={en ? "True quantity now" : "Quantité réelle actuelle"} style={{ marginTop: 6 }}
+          disabled={!corrects} />
+        <div style={{ fontSize: 11.5, color: corrects ? "var(--text-muted)" : "#fbbf24", marginTop: 6, lineHeight: 1.5 }}>
+          {corrects
+            ? (en ? `Stock at this location will be set to this number (${chosen.key === "damaged" ? "damaged units removed" : "corrected"}).`
+                  : `Le stock à cet emplacement sera fixé à ce nombre (${chosen.key === "damaged" ? "unités endommagées retirées" : "corrigé"}).`)
+            : (en ? "Confirmed loss: stock is left as-is — the gap is recorded as a real loss."
+                  : "Perte confirmée : le stock reste inchangé — l'écart est enregistré comme perte réelle.")}
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+          <button className="btn btn-secondary" style={{ flex: 1 }} disabled={busy} onClick={onCancel}>{en ? "Cancel" : "Annuler"}</button>
+          <button className="btn btn-primary" style={{ flex: 2 }} disabled={busy} onClick={submit}>{busy ? "…" : (en ? "Update" : "Mettre à jour")}</button>
         </div>
       </div>
     </div>
