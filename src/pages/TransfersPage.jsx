@@ -43,6 +43,9 @@ export default function TransfersPage() {
   // ON  → sender Dispatches (pending→in_transit), a receiver Confirms at the
   //       destination (in_transit→completed). OFF → today's instant "Mark done".
   const confirmFlow = !!settingsData?.data?.transfer_receipt_confirmation_enabled;
+  // Part 3: when a second person is NOT required, the dispatcher may self-confirm.
+  const requireSecond = settingsData?.data?.transfer_require_second_person !== false;
+  const [adjustFor, setAdjustFor] = useState(null); // the incoming transfer being adjusted
   const { data: incomingData } = useOfflineCachedQuery({
     queryKey: ["transfers-incoming"],
     queryFn: () => api.get("/transfers/incoming").then(r => r.data),
@@ -213,11 +216,17 @@ export default function TransfersPage() {
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
   // Receiver confirms (one-tap, all correct): in_transit→completed (trigger credits DEST).
+  // ONE-TAP (no lines) → dest gets sent qty. ADJUST ({lines:[{item_id,received_quantity}]})
+  // → dest gets received; any received≠sent becomes a Stock Check variance for the owner.
   const confirmMutation = useMutation({
-    mutationFn: (id) => api.post(`/transfers/${id}/confirm-receipt`, {}),
-    onSuccess: () => {
-      toast.success(lang === "en" ? "Receipt confirmed — stock added" : "Réception confirmée — stock ajouté");
-      qc.invalidateQueries(["transfers"]); qc.invalidateQueries(["transfers-incoming"]); qc.invalidateQueries(["stock"]);
+    mutationFn: ({ id, lines }) => api.post(`/transfers/${id}/confirm-receipt`, lines ? { lines } : {}),
+    onSuccess: (res) => {
+      const v = res?.data?.variance_lines || 0;
+      toast.success(v > 0
+        ? (lang === "en" ? `Confirmed — ${v} variance(s) sent to Stock Check` : `Confirmé — ${v} écart(s) envoyé(s) à la Vérification`)
+        : (lang === "en" ? "Receipt confirmed — stock added" : "Réception confirmée — stock ajouté"));
+      setAdjustFor(null);
+      qc.invalidateQueries(["transfers"]); qc.invalidateQueries(["transfers-incoming"]); qc.invalidateQueries(["stock"]); qc.invalidateQueries(["stock-check-summary"]);
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
@@ -651,15 +660,20 @@ export default function TransfersPage() {
                         {tr.pa_transfer_items?.length ? " · " + tr.pa_transfer_items.length + " item(s)" : ""}
                       </div>
                     </div>
-                    {mine ? (
+                    {(mine && requireSecond) ? (
                       <span style={{ fontSize: 11, color: "var(--text-muted)", alignSelf: "center", maxWidth: 190, textAlign: "right" }}>
                         {lang === "en" ? "You dispatched this — someone at the destination must confirm." : "Vous l'avez envoyé — quelqu'un à destination doit confirmer."}
                       </span>
                     ) : (
-                      <button className="btn btn-success btn-sm" disabled={confirmMutation.isPending}
-                        onClick={() => { if (window.confirm(lang === "en" ? "Confirm all items arrived correctly? This adds the stock at the destination." : "Confirmer que tout est bien arrivé ? Cela ajoute le stock à destination.")) confirmMutation.mutate(tr.id); }}>
-                        ✓ {lang === "en" ? "Confirm receipt" : "Confirmer réception"}
-                      </button>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end", flexShrink: 0 }}>
+                        <button className="btn btn-secondary btn-sm" onClick={() => setAdjustFor(tr)}>
+                          {lang === "en" ? "Adjust" : "Ajuster"}
+                        </button>
+                        <button className="btn btn-success btn-sm" disabled={confirmMutation.isPending}
+                          onClick={() => { if (window.confirm(lang === "en" ? "Confirm all items arrived correctly? This adds the stock at the destination." : "Confirmer que tout est bien arrivé ? Cela ajoute le stock à destination.")) confirmMutation.mutate({ id: tr.id }); }}>
+                          ✓ {lang === "en" ? "Confirm all correct" : "Tout est correct"}
+                        </button>
+                      </div>
                     )}
                   </div>
                   {tr.pa_transfer_items?.length > 0 && (
@@ -712,8 +726,10 @@ export default function TransfersPage() {
             const toName   = locations.find(l => l.id === tr.to_location)?.name || "External";
             return (
               <div key={tr.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 14, padding: "16px 20px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <div>
+                {/* flexWrap + gap so the action group (flexShrink:0) wraps BELOW the
+                    info block on narrow cards instead of overflowing the card edge. */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
+                  <div style={{ minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
                       <span style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text-secondary)" }}>{tr.transfer_number}</span>
                       <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: sc.bg, color: sc.color }}>{tr.status}</span>
@@ -766,6 +782,60 @@ export default function TransfersPage() {
           })}
         </div>
       )}
+
+      {adjustFor && (
+        <AdjustReceiptModal
+          transfer={adjustFor} lang={lang} busy={confirmMutation.isPending}
+          onCancel={() => setAdjustFor(null)}
+          onSubmit={(lines) => confirmMutation.mutate({ id: adjustFor.id, lines })} />
+      )}
+    </div>
+  );
+}
+
+// MP-TRANSFER-RECEIVE-CONFIRM (Phase 2): per-line "what actually arrived". Inputs
+// pre-fill to the sent qty; only lines that differ create a variance server-side
+// (the stock credited at the destination is exactly what's entered here).
+function AdjustReceiptModal({ transfer, lang, busy, onCancel, onSubmit }) {
+  const en = lang === "en";
+  const items = transfer.pa_transfer_items || [];
+  const [recv, setRecv] = useState(() => Object.fromEntries(items.map(it => [it.id, String(it.quantity)])));
+  const setOne = (id, v) => setRecv(p => ({ ...p, [id]: v }));
+  const anyDiff = items.some(it => Math.max(0, Number(recv[it.id]) || 0) !== Number(it.quantity));
+  const submit = () => onSubmit(items.map(it => ({ item_id: it.id, received_quantity: Math.max(0, Number(recv[it.id]) || 0) })));
+  return (
+    <div className="modal-overlay" onClick={() => !busy && onCancel()}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+        <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>{en ? "What actually arrived?" : "Ce qui est réellement arrivé ?"}</div>
+        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
+          {en ? "Enter the received quantity per line. Any difference is flagged for the owner as a stock variance — the stock added is exactly what you enter here."
+              : "Entrez la quantité reçue par ligne. Tout écart est signalé au patron — le stock ajouté est exactement ce que vous saisissez ici."}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 340, overflowY: "auto" }}>
+          {items.map(it => {
+            const sent = Number(it.quantity);
+            const diff = Math.max(0, Number(recv[it.id]) || 0) - sent;
+            return (
+              <div key={it.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "8px 10px", background: "var(--bg-elevated)", borderRadius: 8 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13.5 }}>{it.pa_products?.name || "—"}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    {en ? "Sent" : "Envoyé"}: {sent}{diff !== 0 ? ` · ${en ? "diff" : "écart"} ${diff > 0 ? "+" : ""}${diff}` : ""}
+                  </div>
+                </div>
+                <input type="number" min="0" value={recv[it.id]} onChange={e => setOne(it.id, e.target.value)}
+                  style={{ width: 80, textAlign: "right", padding: "6px 8px", borderRadius: 8, border: `1px solid ${diff !== 0 ? "#fbbf24" : "var(--border)"}`, background: "var(--bg-card)", color: "var(--text-primary)" }} />
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+          <button className="btn btn-secondary" style={{ flex: 1 }} disabled={busy} onClick={onCancel}>{en ? "Cancel" : "Annuler"}</button>
+          <button className="btn btn-primary" style={{ flex: 2 }} disabled={busy} onClick={submit}>
+            {busy ? "…" : anyDiff ? (en ? "Confirm with variance" : "Confirmer avec écart") : (en ? "Confirm receipt" : "Confirmer")}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

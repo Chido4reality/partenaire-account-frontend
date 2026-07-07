@@ -38,8 +38,9 @@ function toArray(x) {
 
 // How a check landed on the list — badge shown on each row.
 function flaggedLabel(flaggedBy, en) {
-  if (flaggedBy === "boss")  return en ? "🔍 boss-flagged" : "🔍 signalé par le patron";
-  if (flaggedBy === "watch") return en ? "👁 watched"       : "👁 surveillé";
+  if (flaggedBy === "boss")     return en ? "🔍 boss-flagged"     : "🔍 signalé par le patron";
+  if (flaggedBy === "watch")    return en ? "👁 watched"          : "👁 surveillé";
+  if (flaggedBy === "transfer") return en ? "🔁 transfer variance" : "🔁 écart de transfert";
   return en ? "🎲 auto-check" : "🎲 auto-vérif";
 }
 
