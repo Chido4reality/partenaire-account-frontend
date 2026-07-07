@@ -61,6 +61,9 @@ const OFFLINE_ELIGIBLE = [
   // pa_offline_dedup seam (backend syncDedupe.dedupeByEndpointLocalId).
   { rx: /^\/customers\/[^/]+\/collect-debt\/?$/,    method: "POST" },
   { rx: /^\/stock\/count\/?$/,                      method: "POST" },
+  // MP-STOCK-CHECK-RESOLVE (Part B): owner resolve-with-reason rides the same dedup
+  // seam (pa_offline_dedup) + the .eq('status','mismatch') claim guard → idempotent.
+  { rx: /^\/stock-checks\/[^/]+\/resolve\/?$/,      method: "POST" },
   // MP-PHASE-4.5: offline inventory writes via the same dedup seam +
   // peek pattern (PATCH handlers' approval-token gate is short-
   // circuited by peekDedup on replay so a single original token

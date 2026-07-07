@@ -18,6 +18,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
+import DateRangeFilter from "../components/common/DateRangeFilter";
 import { Link, useNavigate } from "react-router-dom";
 import { useLangStore } from "../store";
 import api from "../utils/api";
@@ -222,32 +223,9 @@ export default function OperationsDashboardPage() {
         </div>
       </div>
 
-      {/* ── Range picker ───────────────────────────────────── */}
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 18 }}>
-        <button onClick={() => { const t = toIso(new Date()); setFrom(t); setTo(t); }}
-          style={chipStyle(from === toIso(new Date()) && to === toIso(new Date()))}>{en ? "Today" : "Aujourd'hui"}</button>
-        <button onClick={() => { setFrom(daysAgo(6));  setTo(toIso(new Date())); }}
-          style={chipStyle(from === daysAgo(6) && to === toIso(new Date()))}>{en ? "Last 7 days" : "7 derniers jours"}</button>
-        <button onClick={() => { setFrom(daysAgo(29)); setTo(toIso(new Date())); }}
-          style={chipStyle(from === daysAgo(29) && to === toIso(new Date()))}>{en ? "Last 30 days" : "30 derniers jours"}</button>
-        <div style={{ width: 1, height: 22, background: "var(--border)", margin: "0 4px" }} />
-        <label style={{ fontSize: 11, color: "var(--text-muted)" }}>{en ? "From" : "Du"}</label>
-        <input type="date" value={from} onChange={e => setFrom(e.target.value)}
-          style={dateInputStyle} />
-        <label style={{ fontSize: 11, color: "var(--text-muted)" }}>{en ? "To" : "Au"}</label>
-        <input type="date" value={to} onChange={e => setTo(e.target.value)}
-          style={dateInputStyle} />
-        {/* MP: "Today · <date>" chip lives on the filter toolbar row, right-aligned;
-            wraps to its own line on narrow screens (flexWrap on the row). Unconditional,
-            display-only — no effect on the range controls. */}
-        <div style={{
-          marginLeft: "auto", display: "inline-block", fontSize: 13, fontWeight: 800,
-          color: "var(--brand-light)", background: "rgba(251,197,3,0.10)",
-          border: "1px solid var(--border)", borderRadius: 8, padding: "4px 10px",
-        }}>
-          📅 {en ? "Today" : "Aujourd'hui"} · {new Date().toLocaleDateString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" })}
-        </div>
-      </div>
+      {/* ── Range picker (shared <DateRangeFilter>) ───────────── */}
+      <DateRangeFilter from={from} to={to} onChange={({ from, to }) => { setFrom(from); setTo(to); }}
+        showTodayChip style={{ marginBottom: 18 }} />
 
       {/* ── SECTION 1: Multi-day overview ──────────────────── */}
       <Card
