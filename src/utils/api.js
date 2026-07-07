@@ -48,6 +48,11 @@ const OFFLINE_ELIGIBLE = [
   // 6s-hung. Backend already dedupes by local_id (transfers.js + syncDedupe),
   // so the queue is replay-safe end-to-end.
   { rx: /^\/transfers\/?$/,                         method: "POST" },
+  // MP-TRANSFER-RECEIVE-CONFIRM (Phase 1): dispatch + one-tap confirm ride the same
+  // queue. Backend dedupes via dedupeByEndpointLocalId (pa_offline_dedup) + the
+  // .eq('status', …) transition guard, so replay is idempotent end-to-end.
+  { rx: /^\/transfers\/[^/]+\/dispatch\/?$/,        method: "POST" },
+  { rx: /^\/transfers\/[^/]+\/confirm-receipt\/?$/, method: "POST" },
   { rx: /^\/stock\/arrivals\/?$/,                  method: "POST" },
   // MP-PHASE-3-OFFLINE-SHIFT: shift open/close ride the same queue.
   { rx: /^\/shifts\/open\/?$/,                      method: "POST" },

@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
-import { useLangStore } from "../store";
+import { useLangStore, useAuthStore } from "../store";
 import api, { formatDate } from "../utils/api";
 import RestrictedAction from "../components/common/RestrictedAction";
 
@@ -33,6 +33,22 @@ export default function TransfersPage() {
     queryKey: ["my-plan"], queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data), staleTime: 60000,
   });
   const canStockCheck = ["pro", "pro_plus"].includes(planData?.data?.effective_plan || "");
+
+  // MP-TRANSFER-RECEIVE-CONFIRM (Phase 1) — who am I + is the two-sided flow on?
+  const user = useAuthStore(s => s.user);
+  const myId = user?.id;
+  const { data: settingsData } = useOfflineCachedQuery({
+    queryKey: ["org-settings"], queryFn: () => api.get("/settings").then(r => r.data), staleTime: 60000,
+  });
+  // ON  → sender Dispatches (pending→in_transit), a receiver Confirms at the
+  //       destination (in_transit→completed). OFF → today's instant "Mark done".
+  const confirmFlow = !!settingsData?.data?.transfer_receipt_confirmation_enabled;
+  const { data: incomingData } = useOfflineCachedQuery({
+    queryKey: ["transfers-incoming"],
+    queryFn: () => api.get("/transfers/incoming").then(r => r.data),
+    enabled: confirmFlow, refetchInterval: 30000,
+  });
+  const incoming = incomingData?.data || [];
 
   const scanRef   = useRef(null);
 
@@ -182,6 +198,26 @@ export default function TransfersPage() {
       toast.success(lang === "en" ? "Transfer completed!" : "Transfert termine!");
       qc.invalidateQueries(["transfers"]);
       qc.invalidateQueries(["stock"]);
+    },
+    onError: (err) => toast.error(err.response?.data?.message || "Error")
+  });
+
+  // MP-TRANSFER-RECEIVE-CONFIRM (Phase 1) — sender ships: pending→in_transit
+  // (trigger deducts SOURCE now; the transfer is then locked from edits).
+  const dispatchMutation = useMutation({
+    mutationFn: (id) => api.post(`/transfers/${id}/dispatch`, {}),
+    onSuccess: () => {
+      toast.success(lang === "en" ? "Dispatched — awaiting confirmation" : "Envoyé — en attente de confirmation");
+      qc.invalidateQueries(["transfers"]); qc.invalidateQueries(["transfers-incoming"]); qc.invalidateQueries(["stock"]);
+    },
+    onError: (err) => toast.error(err.response?.data?.message || "Error")
+  });
+  // Receiver confirms (one-tap, all correct): in_transit→completed (trigger credits DEST).
+  const confirmMutation = useMutation({
+    mutationFn: (id) => api.post(`/transfers/${id}/confirm-receipt`, {}),
+    onSuccess: () => {
+      toast.success(lang === "en" ? "Receipt confirmed — stock added" : "Réception confirmée — stock ajouté");
+      qc.invalidateQueries(["transfers"]); qc.invalidateQueries(["transfers-incoming"]); qc.invalidateQueries(["stock"]);
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
@@ -588,6 +624,60 @@ export default function TransfersPage() {
         </RestrictedAction>
       </div>
 
+      {/* MP-TRANSFER-RECEIVE-CONFIRM (Phase 1) — destination "Incoming transfers"
+          inbox: in_transit deliveries arriving at my location, awaiting confirmation.
+          A staffer can't confirm their own dispatch (server enforces + button hidden). */}
+      {confirmFlow && incoming.length > 0 && (
+        <div style={{ marginBottom: 20, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 14, padding: "14px 18px" }}>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 10 }}>
+            📥 {lang === "en" ? "Incoming transfers" : "Transferts entrants"}
+            <span style={{ fontWeight: 400, fontSize: 12, color: "var(--text-muted)", marginLeft: 8 }}>
+              {lang === "en" ? "confirm what actually arrived" : "confirmez ce qui est réellement arrivé"}
+            </span>
+          </div>
+          <div style={{ display: "grid", gap: 10 }}>
+            {incoming.map(tr => {
+              const fromName = locations.find(l => l.id === tr.from_location)?.name || "External";
+              const toName   = locations.find(l => l.id === tr.to_location)?.name || "External";
+              const mine = tr.dispatched_by && tr.dispatched_by === myId;
+              return (
+                <div key={tr.id} style={{ border: "1px solid var(--border)", borderLeft: "3px solid #fbbf24", borderRadius: 12, padding: "12px 14px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+                    <div>
+                      <div style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text-secondary)" }}>{tr.transfer_number}</div>
+                      <div style={{ fontSize: 14, fontWeight: 500, margin: "3px 0" }}>{fromName} <span style={{ color: "var(--text-muted)" }}>></span> {toName}</div>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                        {tr.dispatched_by_name ? (lang === "en" ? `Sent by ${tr.dispatched_by_name}` : `Envoyé par ${tr.dispatched_by_name}`) : ""}
+                        {tr.pa_transfer_items?.length ? " · " + tr.pa_transfer_items.length + " item(s)" : ""}
+                      </div>
+                    </div>
+                    {mine ? (
+                      <span style={{ fontSize: 11, color: "var(--text-muted)", alignSelf: "center", maxWidth: 190, textAlign: "right" }}>
+                        {lang === "en" ? "You dispatched this — someone at the destination must confirm." : "Vous l'avez envoyé — quelqu'un à destination doit confirmer."}
+                      </span>
+                    ) : (
+                      <button className="btn btn-success btn-sm" disabled={confirmMutation.isPending}
+                        onClick={() => { if (window.confirm(lang === "en" ? "Confirm all items arrived correctly? This adds the stock at the destination." : "Confirmer que tout est bien arrivé ? Cela ajoute le stock à destination.")) confirmMutation.mutate(tr.id); }}>
+                        ✓ {lang === "en" ? "Confirm receipt" : "Confirmer réception"}
+                      </button>
+                    )}
+                  </div>
+                  {tr.pa_transfer_items?.length > 0 && (
+                    <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {tr.pa_transfer_items.map((item, i) => (
+                        <span key={i} style={{ fontSize: 12, padding: "3px 10px", borderRadius: 10, background: "var(--bg-elevated)", color: "var(--text-secondary)" }}>
+                          {item.pa_products?.name} x{item.quantity}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
         {[
           { value: "", en: "All", fr: "Tous" },
@@ -648,10 +738,17 @@ export default function TransfersPage() {
                         style={{ background: "transparent", border: "1px solid #f87171", color: "#f87171" }}>
                         {lang === "en" ? "Cancel" : "Annuler"}
                       </button>
-                      <button className="btn btn-success btn-sm" disabled={completeMutation.isPending}
-                        onClick={() => completeMutation.mutate(tr.id)}>
-                        {lang === "en" ? "Mark done" : "Marquer termine"}
-                      </button>
+                      {confirmFlow ? (
+                        <button className="btn btn-success btn-sm" disabled={dispatchMutation.isPending}
+                          onClick={() => dispatchMutation.mutate(tr.id)}>
+                          {lang === "en" ? "Dispatch" : "Envoyer"}
+                        </button>
+                      ) : (
+                        <button className="btn btn-success btn-sm" disabled={completeMutation.isPending}
+                          onClick={() => completeMutation.mutate(tr.id)}>
+                          {lang === "en" ? "Mark done" : "Marquer termine"}
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
