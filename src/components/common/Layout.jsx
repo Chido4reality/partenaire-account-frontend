@@ -261,7 +261,7 @@ function BroadcastBanner() {
   const { data } = useQuery({
     queryKey: ["mp-broadcasts-active"],
     queryFn: () => api.get("/broadcasts/active").then(r => r.data),
-    refetchInterval: 10000,
+    refetchInterval: 120000, // MP-PEAK-MTN-RESILIENCE: admin broadcasts (was 10s)
     refetchOnWindowFocus: true,
     enabled: isAuth,
     retry: 1,
@@ -595,7 +595,7 @@ export default function Layout() {
   const { data: notifData } = useQuery({
     queryKey: ["notifications"],
     queryFn: () => api.get("/notifications").then(r => r.data),
-    refetchInterval: 30000,
+    refetchInterval: 90000, // MP-PEAK-MTN-RESILIENCE (was 30s)
     enabled: !lite, // MP-LITE-MODE-PHASE-1: notifications dropdown hidden in Lite
   });
 
@@ -710,10 +710,11 @@ export default function Layout() {
   const { data: ocPending } = useQuery({
     queryKey: ["online-cart-pending-count"],
     queryFn: () => api.get("/online-cart/pending-count").then(r => r.data),
-    // FIX 3: 7s live poll for the sidebar count badges. React Query auto-clears
-    // the timer on unmount and (refetchIntervalInBackground defaults to false)
-    // pauses polling while the tab is backgrounded.
-    refetchInterval: 7000,
+    // MP-PEAK-MTN-RESILIENCE: sidebar count badges polled at 60s (was 7s). React
+    // Query auto-clears the timer on unmount and (refetchIntervalInBackground
+    // defaults to false) pauses while backgrounded. 7s×several badges was a large
+    // slice of peak backend load for zero UX benefit on a count badge.
+    refetchInterval: 60000,
     // MP-LITE-MODE-PHASE-1: Online Cart nav entry is hidden in Lite,
     // so the badge poll has nothing to drive. Skip the request.
     enabled: !lite && hasSection(effectivePlan, "online_cart"),
@@ -728,7 +729,7 @@ export default function Layout() {
   const { data: apprPending } = useQuery({
     queryKey: ["accountant-approvals-pending-count"],
     queryFn: () => api.get("/staff/approvals?status=pending").then(r => r.data),
-    refetchInterval: 7000,
+    refetchInterval: 60000, // MP-PEAK-MTN-RESILIENCE (was 7s)
     enabled: role === "owner" && hasFeature(effectivePlan, "accountant_log"),
     retry: 1,
     onError: () => {}
@@ -740,7 +741,7 @@ export default function Layout() {
   const { data: myReqResp } = useQuery({
     queryKey: ["my-requests-approved-count"],
     queryFn: () => api.get("/staff/my-requests").then(r => r.data),
-    refetchInterval: 7000,
+    refetchInterval: 60000, // MP-PEAK-MTN-RESILIENCE (was 7s)
     enabled: role !== "owner",
     retry: 1,
     onError: () => {}
@@ -752,7 +753,7 @@ export default function Layout() {
   const { data: stockCheckSummary } = useQuery({
     queryKey: ["stock-check-summary"],
     queryFn: () => api.get("/stock-checks/summary").then(r => r.data),
-    refetchInterval: 15000,
+    refetchInterval: 60000, // MP-PEAK-MTN-RESILIENCE (was 15s)
     enabled: hasSection(effectivePlan, "stock_check") &&
       (role === "owner" || role === "manager" || role === "warehouse"),
     retry: 1,
@@ -767,7 +768,7 @@ export default function Layout() {
   const { data: dozieAttn } = useQuery({
     queryKey: ["dozie-seller-attention"],
     queryFn: () => api.get("/dozie/seller/attention").then(r => r.data),
-    refetchInterval: 30000,
+    refetchInterval: 90000, // MP-PEAK-MTN-RESILIENCE (was 30s)
     enabled: role === "owner" || role === "manager",
     retry: 1,
     onError: () => {}
@@ -781,7 +782,7 @@ export default function Layout() {
   const { data: dozieNotif } = useQuery({
     queryKey: ["dozie-seller-notif-counts"],
     queryFn: () => api.get("/dozie/seller/notif-counts").then(r => r.data),
-    refetchInterval: 30000,
+    refetchInterval: 90000, // MP-PEAK-MTN-RESILIENCE (was 30s)
     enabled: role === "owner" || role === "manager",
     retry: 1,
     onError: () => {}
