@@ -33,6 +33,21 @@ export default function TransfersPage() {
     queryKey: ["my-plan"], queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data), staleTime: 60000,
   });
   const canStockCheck = ["pro", "pro_plus"].includes(planData?.data?.effective_plan || "");
+  // MP-TRANSFER-WAYBILL: A4 delivery note, Pro/Pro Plus, available once dispatched.
+  const canWaybill = ["pro", "pro_plus"].includes(planData?.data?.effective_plan || "");
+  const [waybillBusy, setWaybillBusy] = useState(null);
+  const handleWaybill = async (tr) => {
+    setWaybillBusy(tr.id);
+    try {
+      const org = settingsData?.data || {};
+      const fromName = locations.find(l => l.id === tr.from_location)?.name || (lang === "en" ? "External" : "Externe");
+      const toName   = locations.find(l => l.id === tr.to_location)?.name || (lang === "en" ? "External" : "Externe");
+      const { openWaybill } = await import("../utils/waybill"); // code-split: loads jsPDF only now
+      await openWaybill({ org, lang, transfer: tr, fromName, toName });
+    } catch (e) {
+      toast.error(e?.message || (lang === "en" ? "Could not generate waybill" : "Impossible de générer le bon"));
+    } finally { setWaybillBusy(null); }
+  };
 
   // MP-TRANSFER-RECEIVE-CONFIRM (Phase 1) — who am I + is the two-sided flow on?
   const user = useAuthStore(s => s.user);
@@ -766,6 +781,16 @@ export default function TransfersPage() {
                         </button>
                       )}
                     </div>
+                  )}
+                  {/* MP-TRANSFER-WAYBILL: A4 delivery note for a DISPATCHED transfer
+                      (dispatched_at set → two-sided Pro/Pro Plus flow). Reprintable
+                      anytime; shares to WhatsApp / prints on Android via the OS sheet. */}
+                  {tr.status !== "pending" && tr.dispatched_at && canWaybill && (
+                    <button className="btn btn-secondary btn-sm" style={{ flexShrink: 0 }}
+                      disabled={waybillBusy === tr.id}
+                      onClick={() => handleWaybill(tr)}>
+                      {waybillBusy === tr.id ? "…" : `📄 ${lang === "en" ? "Waybill" : "Bon de livraison"}`}
+                    </button>
                   )}
                 </div>
                 {tr.pa_transfer_items?.length > 0 && (
