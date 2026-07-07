@@ -171,7 +171,8 @@ export default function SettingsPage() {
     daily_summary_enabled: true, low_stock_alerts_enabled: true,
     drawer_mode: "shared",
     whatsapp_alerts_addon: false,
-    transfer_receipt_confirmation_enabled: false
+    transfer_receipt_confirmation_enabled: false,
+    transfer_require_second_person: true
   });
   // MP-WHATSAPP-ALERTS: per-month add-on fee (read-only, from mp_pricing_config
   // via GET /settings) + the org currency, for the billing toggle label.
@@ -292,6 +293,7 @@ export default function SettingsPage() {
       drawer_mode:              d.drawer_mode || "shared",
       whatsapp_alerts_addon:    d.whatsapp_alerts_addon === true,
       transfer_receipt_confirmation_enabled: d.transfer_receipt_confirmation_enabled === true,
+      transfer_require_second_person: d.transfer_require_second_person !== false,
     });
     setWaAlertsFee(Number(d.whatsapp_alerts_fee) || 0);
     setWaAlertsCur(d.currency || "XAF");
@@ -1123,6 +1125,28 @@ export default function SettingsPage() {
                   <input type="checkbox" checked={shopForm.transfer_receipt_confirmation_enabled} onChange={e => setFF("transfer_receipt_confirmation_enabled", e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
                   <span style={{ position: "absolute", inset: 0, borderRadius: 12, background: shopForm.transfer_receipt_confirmation_enabled ? "var(--brand)" : "var(--border)", transition: "0.2s" }}>
                     <span style={{ position: "absolute", width: 18, height: 18, borderRadius: "50%", background: "#fff", top: 3, left: shopForm.transfer_receipt_confirmation_enabled ? 23 : 3, transition: "0.2s" }} />
+                  </span>
+                </label>
+              </div>
+            )}
+
+            {/* MP-TRANSFER-RECEIVE-CONFIRM (Phase 2, Part 3): require a DIFFERENT person
+                to confirm. Only relevant when confirmation is on; one-person shops turn
+                it off to sign both ends themselves. Nested under the confirmation toggle. */}
+            {["pro", "pro_plus"].includes(effectivePlan) && shopForm.transfer_receipt_confirmation_enabled && (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--bg-elevated)", borderRadius: 10, marginLeft: 16, borderLeft: "2px solid var(--border)" }}>
+                <div style={{ maxWidth: 300 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{lang === "en" ? "Require a different person to confirm" : "Exiger une autre personne pour confirmer"}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    {lang === "en"
+                      ? "Turn off for one-person shops (sign both ends yourself)."
+                      : "Désactivez pour les boutiques à une personne (signez les deux étapes vous-même)."}
+                  </div>
+                </div>
+                <label style={{ position: "relative", width: 44, height: 24, cursor: "pointer", flexShrink: 0 }}>
+                  <input type="checkbox" checked={shopForm.transfer_require_second_person} onChange={e => setFF("transfer_require_second_person", e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+                  <span style={{ position: "absolute", inset: 0, borderRadius: 12, background: shopForm.transfer_require_second_person ? "var(--brand)" : "var(--border)", transition: "0.2s" }}>
+                    <span style={{ position: "absolute", width: 18, height: 18, borderRadius: "50%", background: "#fff", top: 3, left: shopForm.transfer_require_second_person ? 23 : 3, transition: "0.2s" }} />
                   </span>
                 </label>
               </div>
