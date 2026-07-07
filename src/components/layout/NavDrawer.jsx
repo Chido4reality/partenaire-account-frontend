@@ -46,7 +46,7 @@ const SECTIONS = [
   // map, so the drawer dropped it on phones — same omission pattern as the Dozie /
   // pending-sync / Accountant Log fixes. It inherits Layout's owner/manager/warehouse
   // + pro/pro_plus gate; listing it here just lets the mobile drawer surface it.
-  { en: "INVENTORY",  fr: "INVENTAIRE",        routes: ["/inventory", "/stock-count", "/barcodes", "/transfers", "/stock-check", "/dozie-listings", "/dozie-orders", "/dozie-messages", "/dozie-disputes"] },
+  { en: "INVENTORY",  fr: "INVENTAIRE",        routes: ["/inventory", "/stock-count", "/barcodes", "/transfers", "/stock-check", "/restock", "/dozie-listings", "/dozie-orders", "/dozie-messages", "/dozie-disputes"] },
   { en: "PEOPLE & MONEY", fr: "PERSONNES & ARGENT", routes: ["/customers", "/credits", "/expenditures", "/attendance", "/assets"] },
   { en: "REPORTING",  fr: "RAPPORTS",          routes: ["/reports", "/operations"] },
   // Accountant Log Phase 1: owner-only oversight surface. Lives next to Settings
