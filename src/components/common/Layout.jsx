@@ -77,6 +77,11 @@ const NAV = [
   // only granted by pro/pro_plus (sections:'*'); lite/expired-trial floors omit it,
   // so it's Pro/Pro Plus-only (active trial resolves to 'pro'). Server also 403s.
   { to: "/stock-check",  en: "Stock Check", fr: "Vérification de stock", icon: "🔍", roles: ["owner","manager","warehouse"], section: "stock_check", badge: "stock_check" },
+  // MP-RESTOCK — order more stock from a supplier (boss tool). section:"restock" is
+  // only granted by pro/pro_plus (sections:'*'); lite/trial floors omit it → Pro/Pro
+  // Plus-only. owner + manager (cashiers excluded). Server also gates (requirePro +
+  // requireRole). NOTE: also registered in NavDrawer.jsx SECTIONS (mobile) + App.jsx.
+  { to: "/restock",      en: "Restock", fr: "Réapprovisionner", icon: "🛒", roles: ["owner","manager"], section: "restock" },
   // MP-CASHIER-ROLE-GATING: cashier records petty-cash expenses
   // (boss errands, drawer outflows, personal). Backend filters
   // GET /expenditures by recorded_by=req.user.id for cashier role
