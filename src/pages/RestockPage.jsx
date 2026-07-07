@@ -67,6 +67,12 @@ export default function RestockPage() {
     onSuccess: () => { toast.success(en ? "Re-added to restock" : "Réajouté"); invalidate(); },
     onError: (e) => toast.error(e?.response?.data?.message || (en ? "Failed" : "Échec")),
   });
+  // Mark an open order received → its products stop hiding from To Buy.
+  const receiveMut = useMutation({
+    mutationFn: (id) => api.post(`/restock/orders/${id}/receive`).then(r => r.data),
+    onSuccess: () => { toast.success(en ? "Marked received" : "Marqué reçu"); invalidate(); },
+    onError: (e) => toast.error(e?.response?.data?.message || (en ? "Failed" : "Échec")),
+  });
 
   const buyRows = Array.isArray(toBuy.data) ? toBuy.data : [];
   // Per-line UI state (default: checked, qty = suggested). Derived so new server rows adopt defaults.
@@ -166,6 +172,8 @@ export default function RestockPage() {
           <DateRangeFilter from={range.from} to={range.to} onChange={setRange} style={{ marginBottom: 12 }} />
           {orders.isLoading && <div style={{ color: "var(--text-muted)", padding: 16 }}>{en ? "Loading…" : "Chargement…"}</div>}
           <OrderedList orders={(orders.data || []).filter(o => inRange(o.sent_at, range.from, range.to))} en={en}
+            receiving={receiveMut.isPending}
+            onReceive={(id) => receiveMut.mutate(id)}
             onEdit={(o) => setSendFor({
               items: (o.pa_restock_order_items || []).map(it => ({ product_id: it.product_id, name: it.product_name, quantity: Number(it.quantity) })),
               supplier: { name: o.supplier_name || "", phone: o.supplier_phone || "" },
@@ -241,8 +249,9 @@ function ToBuyRow({ en, name, unit, current, level, checked, qty, onCheck, onQty
   );
 }
 
-// Ordered list — one card per past order, most recent first, with its lines + Edit/re-send.
-function OrderedList({ orders, en, onEdit }) {
+// Ordered list — one card per past order, most recent first, with its lines +
+// Open/Received badge, Edit/re-send, and (open only) Mark-received.
+function OrderedList({ orders, en, onEdit, onReceive, receiving }) {
   if (!orders.length) return (
     <div style={{ color: "var(--text-muted)", padding: 24, textAlign: "center", background: "var(--bg-card)", borderRadius: 12, border: "1px solid var(--border)" }}>
       {en ? "No orders in this range." : "Aucune commande sur cette période."}
@@ -252,21 +261,34 @@ function OrderedList({ orders, en, onEdit }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       {orders.map(o => {
         const items = o.pa_restock_order_items || [];
+        const received = o.status === "received";
         return (
-          <div key={o.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 14 }}>
+          <div key={o.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderLeft: `3px solid ${received ? "#34d399" : "#fbbf24"}`, borderRadius: 12, padding: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: 14 }}>
-                  {o.supplier_name || (en ? "Supplier" : "Fournisseur")}
-                  {o.supplier_phone && <span style={{ fontSize: 12, color: "var(--text-muted)", marginLeft: 8, fontFamily: "monospace" }}>{o.supplier_phone}</span>}
+                <div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <span>{o.supplier_name || (en ? "Supplier" : "Fournisseur")}</span>
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
+                    background: received ? "rgba(52,211,153,0.15)" : "rgba(251,191,36,0.15)", color: received ? "#34d399" : "#fbbf24" }}>
+                    {received ? (en ? "Received" : "Reçu") : (en ? "Open" : "Ouvert")}
+                  </span>
+                  {o.supplier_phone && <span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "monospace" }}>{o.supplier_phone}</span>}
                 </div>
                 <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 2 }}>
                   {fmtDate(o.sent_at, en)} · {items.length} {en ? "item(s)" : "article(s)"}{o.sent_by_name ? ` · ${en ? "by" : "par"} ${o.sent_by_name}` : ""}
+                  {received && o.received_at ? ` · ${en ? "received" : "reçu"} ${fmtDate(o.received_at, en)}${o.received_by_name ? ` (${o.received_by_name})` : ""}` : ""}
                 </div>
               </div>
-              <button className="btn btn-secondary btn-sm" onClick={() => onEdit(o)} style={{ whiteSpace: "nowrap", alignSelf: "flex-start" }}>
-                ✏️ {en ? "Edit & re-send" : "Modifier & renvoyer"}
-              </button>
+              <div style={{ display: "flex", gap: 6, alignSelf: "flex-start", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                {!received && (
+                  <button className="btn btn-success btn-sm" disabled={receiving} onClick={() => onReceive(o.id)} style={{ whiteSpace: "nowrap" }}>
+                    ✓ {en ? "Mark received" : "Marquer reçu"}
+                  </button>
+                )}
+                <button className="btn btn-secondary btn-sm" onClick={() => onEdit(o)} style={{ whiteSpace: "nowrap" }}>
+                  ✏️ {en ? "Edit & re-send" : "Modifier & renvoyer"}
+                </button>
+              </div>
             </div>
             <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 6 }}>
               {items.map(it => (
