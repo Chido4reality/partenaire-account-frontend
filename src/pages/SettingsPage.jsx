@@ -170,7 +170,8 @@ export default function SettingsPage() {
     whatsapp_number: "", receipt_footer: "", receipt_advert_enabled: true, receipt_code_style: "auto", daily_summary_time: "17:30",
     daily_summary_enabled: true, low_stock_alerts_enabled: true,
     drawer_mode: "shared",
-    whatsapp_alerts_addon: false
+    whatsapp_alerts_addon: false,
+    transfer_receipt_confirmation_enabled: false
   });
   // MP-WHATSAPP-ALERTS: per-month add-on fee (read-only, from mp_pricing_config
   // via GET /settings) + the org currency, for the billing toggle label.
@@ -290,6 +291,7 @@ export default function SettingsPage() {
       low_stock_alerts_enabled: d.low_stock_alerts_enabled ?? true,
       drawer_mode:              d.drawer_mode || "shared",
       whatsapp_alerts_addon:    d.whatsapp_alerts_addon === true,
+      transfer_receipt_confirmation_enabled: d.transfer_receipt_confirmation_enabled === true,
     });
     setWaAlertsFee(Number(d.whatsapp_alerts_fee) || 0);
     setWaAlertsCur(d.currency || "XAF");
@@ -1102,6 +1104,29 @@ export default function SettingsPage() {
                 </span>
               </label>
             </div>
+
+            {/* MP-TRANSFER-RECEIVE-CONFIRM (Phase 1): Pro/Pro Plus opt-in. ON → a
+                transfer must be Dispatched by the sender then Confirmed at the
+                destination before stock lands (stops warehouse-vs-shop disputes).
+                OFF → today's instant one-tap complete. Only shown on Pro/Pro Plus. */}
+            {["pro", "pro_plus"].includes(effectivePlan) && (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--bg-elevated)", borderRadius: 10 }}>
+                <div style={{ maxWidth: 300 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{lang === "en" ? "Transfer receive-confirmation" : "Confirmation de réception des transferts"}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    {lang === "en"
+                      ? "The destination must confirm what arrived before stock is added. Sender dispatches, receiver confirms."
+                      : "La destination doit confirmer ce qui est arrivé avant l'ajout du stock. L'expéditeur envoie, le récepteur confirme."}
+                  </div>
+                </div>
+                <label style={{ position: "relative", width: 44, height: 24, cursor: "pointer", flexShrink: 0 }}>
+                  <input type="checkbox" checked={shopForm.transfer_receipt_confirmation_enabled} onChange={e => setFF("transfer_receipt_confirmation_enabled", e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+                  <span style={{ position: "absolute", inset: 0, borderRadius: 12, background: shopForm.transfer_receipt_confirmation_enabled ? "var(--brand)" : "var(--border)", transition: "0.2s" }}>
+                    <span style={{ position: "absolute", width: 18, height: 18, borderRadius: "50%", background: "#fff", top: 3, left: shopForm.transfer_receipt_confirmation_enabled ? 23 : 3, transition: "0.2s" }} />
+                  </span>
+                </label>
+              </div>
+            )}
 
             {/* MP-WHATSAPP-ALERTS: paid add-on (owner billing toggle). Turning it
                 on adds the monthly fee to the NEXT subscription bill (plan
