@@ -52,6 +52,7 @@ export default function TransfersPage() {
   // MP-TRANSFER-RECEIVE-CONFIRM (Phase 1) — who am I + is the two-sided flow on?
   const user = useAuthStore(s => s.user);
   const myId = user?.id;
+  const isOwner = user?.role === "owner"; // owner is ALWAYS exempt from cannot_confirm_own_dispatch
   const { data: settingsData } = useOfflineCachedQuery({
     queryKey: ["org-settings"], queryFn: () => api.get("/settings").then(r => r.data), staleTime: 60000,
   });
@@ -675,7 +676,7 @@ export default function TransfersPage() {
                         {tr.pa_transfer_items?.length ? " · " + tr.pa_transfer_items.length + " item(s)" : ""}
                       </div>
                     </div>
-                    {(mine && requireSecond) ? (
+                    {(mine && requireSecond && !isOwner) ? (
                       <span style={{ fontSize: 11, color: "var(--text-muted)", alignSelf: "center", maxWidth: 190, textAlign: "right" }}>
                         {lang === "en" ? "You dispatched this — someone at the destination must confirm." : "Vous l'avez envoyé — quelqu'un à destination doit confirmer."}
                       </span>
