@@ -172,7 +172,8 @@ export default function SettingsPage() {
     drawer_mode: "shared",
     whatsapp_alerts_addon: false,
     transfer_receipt_confirmation_enabled: false,
-    transfer_require_second_person: true
+    transfer_require_second_person: true,
+    cashier_undo_requires_approval: true
   });
   // MP-WHATSAPP-ALERTS: per-month add-on fee (read-only, from mp_pricing_config
   // via GET /settings) + the org currency, for the billing toggle label.
@@ -294,6 +295,7 @@ export default function SettingsPage() {
       whatsapp_alerts_addon:    d.whatsapp_alerts_addon === true,
       transfer_receipt_confirmation_enabled: d.transfer_receipt_confirmation_enabled === true,
       transfer_require_second_person: d.transfer_require_second_person !== false,
+      cashier_undo_requires_approval: d.cashier_undo_requires_approval !== false,
     });
     setWaAlertsFee(Number(d.whatsapp_alerts_fee) || 0);
     setWaAlertsCur(d.currency || "XAF");
@@ -1147,6 +1149,29 @@ export default function SettingsPage() {
                   <input type="checkbox" checked={shopForm.transfer_require_second_person} onChange={e => setFF("transfer_require_second_person", e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
                   <span style={{ position: "absolute", inset: 0, borderRadius: 12, background: shopForm.transfer_require_second_person ? "var(--brand)" : "var(--border)", transition: "0.2s" }}>
                     <span style={{ position: "absolute", width: 18, height: 18, borderRadius: "50%", background: "#fff", top: 3, left: shopForm.transfer_require_second_person ? 23 : 3, transition: "0.2s" }} />
+                  </span>
+                </label>
+              </div>
+            )}
+
+            {/* MP-UNDO-TO-CART: let cashiers undo their OWN recent sale (30-min/same-shift
+                window) WITHOUT owner/manager approval. OFF by default (approval required).
+                Toggle is the INVERSE of the stored cashier_undo_requires_approval flag.
+                Owner-only tab; Pro/Pro Plus (undo is a Pro feature). */}
+            {["pro", "pro_plus"].includes(effectivePlan) && (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--bg-elevated)", borderRadius: 10 }}>
+                <div style={{ maxWidth: 300 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{lang === "en" ? "Let cashiers undo their own recent sale without approval" : "Laisser les caissiers annuler leur vente récente sans approbation"}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    {lang === "en"
+                      ? "Only their own sale, within 30 min, same shift. Still fully recorded. Off = owner/manager approval required."
+                      : "Uniquement leur propre vente, sous 30 min, même poste. Toujours enregistré. Désactivé = approbation requise."}
+                  </div>
+                </div>
+                <label style={{ position: "relative", width: 44, height: 24, cursor: "pointer", flexShrink: 0 }}>
+                  <input type="checkbox" checked={!shopForm.cashier_undo_requires_approval} onChange={e => setFF("cashier_undo_requires_approval", !e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+                  <span style={{ position: "absolute", inset: 0, borderRadius: 12, background: !shopForm.cashier_undo_requires_approval ? "var(--brand)" : "var(--border)", transition: "0.2s" }}>
+                    <span style={{ position: "absolute", width: 18, height: 18, borderRadius: "50%", background: "#fff", top: 3, left: !shopForm.cashier_undo_requires_approval ? 23 : 3, transition: "0.2s" }} />
                   </span>
                 </label>
               </div>

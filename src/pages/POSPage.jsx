@@ -227,6 +227,13 @@ export default function POSPage() {
   // changes would otherwise re-fire the effect mid-flight.
   const dozieValidateRanRef = useRef(false);
 
+  // MP-UNDO-TO-CART: ?restore_from=<voidedSaleId> reloads the just-undone sale's
+  // items into the cart. restoreFromIdRef is sent as replaces_sale_id on the new
+  // sale (audit link); restoreBanner shows "Editing voided VNT-X".
+  const restoreRanRef = useRef(false);
+  const restoreFromIdRef = useRef(null);
+  const [restoreBanner, setRestoreBanner] = useState(null);
+
   // MP-MOBILE-UI-PHASE-2A: auto-collapse the mobile cart sheet whenever
   // ANY root-level overlay opens. Vaul renders at z:1701 — the receipt /
   // hold / resume / block / oversell / validate modals are all at
@@ -677,6 +684,61 @@ export default function POSPage() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedLocation?.id]);
+
+  // MP-UNDO-TO-CART: ?restore_from=<voidedSaleId> → reload that (now voided) sale's
+  // items into the cart to re-checkout. Clones the from_online hydration: fetch the
+  // sale + items, hydrate fresh product data via /products/:id (keeps the ORIGINAL
+  // unit_price charged), setCart + setCustomer, remember the id for replaces_sale_id.
+  useEffect(() => {
+    if (restoreRanRef.current) return;
+    const restoreFrom = new URLSearchParams(window.location.search).get("restore_from");
+    if (!restoreFrom) return;
+    restoreRanRef.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        const sale = await api.get(`/sales/${restoreFrom}`).then(r => r.data?.data);
+        if (cancelled || !sale) return;
+        const lines = Array.isArray(sale.pa_sale_items) ? sale.pa_sale_items : [];
+        const hydrated = await Promise.all(lines.map(async li => {
+          if (!li.product_id) return null; // skip debt/adjustment lines
+          try {
+            const p = await api.get(`/products/${li.product_id}`).then(r => r.data?.data);
+            if (!p) return null;
+            return {
+              lineId: genLineId(),
+              product_id: li.product_id,
+              name: p.name || li.pa_products?.name || "—",
+              unit: p.unit, barcode: p.barcode,
+              quantity: Number(li.quantity) || 1,
+              unit_price: Number(li.unit_price) || Number(p.sell_price) || 0, // keep what was charged
+              original_price: Number(p.sell_price) || 0,
+              sell_price: Number(p.sell_price) || 0,
+              wholesale_price: Number(p.wholesale_price) || 0,
+              min_price: p.min_price || 0,
+              cost_price: p.cost_price,
+              stock: Number(p.stock?.quantity ?? p.stock ?? 0),
+            };
+          } catch { return null; }
+        }));
+        if (cancelled) return;
+        const items = hydrated.filter(Boolean);
+        if (!items.length) { toast.error(lang === "en" ? "Nothing to reload" : "Rien à recharger"); return; }
+        setCart(items);
+        if (sale.customer_id) setCustomer({ id: sale.customer_id, name: sale.pa_customers?.name, phone: sale.pa_customers?.phone });
+        restoreFromIdRef.current = restoreFrom;
+        setRestoreBanner(sale.sale_number || restoreFrom.slice(0, 8));
+        toast.success(lang === "en" ? "Sale reloaded — adjust and re-checkout" : "Vente rechargée — ajustez et refaites");
+      } catch (e) {
+        toast.error(e?.response?.data?.message || (lang === "en" ? "Could not reload sale" : "Échec du rechargement"));
+      } finally {
+        const clean = window.location.pathname + window.location.hash;
+        window.history.replaceState({}, document.title, clean);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const locations = locData?.data || [];
 
@@ -1397,6 +1459,8 @@ export default function POSPage() {
         // MP-BELOW-COST-HYBRID-APPROVAL: async-approved below-cost sale (resumed
         // held sale). Server re-verifies the cart signature + single-uses it.
         below_cost_approval_id: belowCostApprovalIdRef.current || undefined,
+        // MP-UNDO-TO-CART: link this re-checkout to the voided sale it replaces.
+        replaces_sale_id: restoreFromIdRef.current || undefined,
       };
 
       // MP-OFFLINE-WARNING-FALSE-POSITIVE: the SW used to intercept
@@ -1413,6 +1477,8 @@ export default function POSPage() {
       const resetCart = () => {
         setCart([]); setCustomer(null); setPayMode("paid"); setPayModeChosen(false);
         setPaidAmt(""); setDueDate(""); setNotes(""); setShowPayment(false);
+        restoreFromIdRef.current = null; setRestoreBanner(null); // MP-UNDO-TO-CART: clear link
+
         // MP-DISCOUNT: clear sale-level discount + any minted approval token + a
         // consumed async approval id.
         setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason(""); discountTokenRef.current = null; discountApprovalIdRef.current = null; belowCostApprovalIdRef.current = null;
@@ -2097,6 +2163,18 @@ export default function POSPage() {
                 {lang === "en"
                   ? `Prefilled from Dozie order ${onlineCtx.ref} — sale links back on checkout`
                   : `Pré-rempli depuis Dozie ${onlineCtx.ref} — la vente sera liée`}
+              </span>
+            </div>
+          )}
+
+          {/* MP-UNDO-TO-CART: editing a voided sale — a NEW receipt is issued on checkout. */}
+          {restoreBanner && (
+            <div style={{ padding: "8px 14px", background: "rgba(52,211,153,0.12)", borderBottom: "1px solid rgba(52,211,153,0.3)", display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 14 }}>↩</span>
+              <span style={{ fontSize: 11, color: "#34d399", fontWeight: 600, flex: 1, minWidth: 0 }}>
+                {lang === "en"
+                  ? `Editing voided ${restoreBanner} → a new receipt will be issued on checkout`
+                  : `Modification de la vente annulée ${restoreBanner} → un nouveau reçu sera émis`}
               </span>
             </div>
           )}
