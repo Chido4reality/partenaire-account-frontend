@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import api from "../../utils/api";
@@ -217,6 +218,32 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
           : "Cette vente a déjà un retour/remboursement — annulation désactivée. Utilisez Retour + Remboursement pour le reste.")
       : "";
 
+  // ── MP-UNDO-TO-CART: "↩ Undo / edit sale" = void this sale AND reload its items
+  // into the POS cart to re-checkout (e.g. picked full-pay instead of partial).
+  // Pro/Pro Plus only; owner/manager any same-day; cashier own-sale within 30 min
+  // (the server re-checks all of this + blocks refunded/unsynced sales).
+  const navigate = useNavigate();
+  const { data: undoPlanData } = useQuery({
+    queryKey: ["my-plan"], queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data), staleTime: 60000,
+  });
+  const undoIsPro = ["pro", "pro_plus"].includes(undoPlanData?.data?.effective_plan || "");
+  const _today = new Date().toISOString().split("T")[0];
+  const undoWindowOk = effectiveRole === "cashier"
+    ? (sale?.cashier_id === user?.id && !!sale?.created_at && (Date.now() - new Date(sale.created_at).getTime()) / 60000 <= 30)
+    : (sale?.sale_date === _today); // owner/manager: same-day
+  const canUndo = undoIsPro && canProcess && !voidOptionDisabled
+    && ["owner", "manager", "cashier"].includes(effectiveRole) && undoWindowOk;
+  const undoRef = useRef(false);
+  const handleUndoClick = () => {
+    if (!canProcess) { toast.error(blockMsg); return; }
+    if (!voidReasonValid) {
+      toast.error(lang === "en" ? "Reason required." : "Raison obligatoire.");
+      return;
+    }
+    undoRef.current = true;
+    handleSubmit();
+  };
+
   // MP-VOID-OPTION-RESTORE: gate the destructive void behind a two-step
   // confirm. First click arms (banner + relabel); second click submits.
   const handleVoidClick = () => {
@@ -295,7 +322,7 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
             }
           }
         }
-        res = await api.post(`/returns/void/${sale.id}`, { reason }, { headers });
+        res = await api.post(`/returns/void/${sale.id}`, { reason, undo_to_cart: undoRef.current }, { headers });
       } else {
         // Unified return/replace contract (Sprint L). Exchange =
         // refund + replacement_items; backend computes price_difference.
@@ -356,9 +383,27 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
       // no receipt. Brief toast + return to normal workflow immediately; it lives
       // in My Requests until the owner approves and the staffer finalizes there.
       if (isPendingApproval(res?.data)) {
-        toast(keepWorkingToast(lang === "en"), { icon: "⏳", duration: 4000 });
+        // MP-UNDO-TO-CART: an undo routed for async approval can't auto-restore the
+        // cart now (the void executes later, on approval). Tell the seller.
+        toast(undoRef.current
+          ? (lang === "en" ? "Sent for approval — re-ring the sale once it's approved." : "Envoyé pour approbation — refaites la vente une fois approuvée.")
+          : keepWorkingToast(lang === "en"), { icon: "⏳", duration: 4500 });
+        undoRef.current = false;
         setLoading(false);
         onClose();
+        return;
+      }
+
+      // MP-UNDO-TO-CART: void succeeded AND this was an undo → skip the void receipt
+      // and go straight to POS with the sale's items reloaded (?restore_from).
+      if (undoRef.current) {
+        undoRef.current = false;
+        toast.success(lang === "en" ? "↩ Sale undone — cart reloaded to re-checkout" : "↩ Vente annulée — panier rechargé");
+        qc.invalidateQueries(["reports-sales-detail"]);
+        qc.invalidateQueries(["stock"]);
+        qc.invalidateQueries(["pos-customers"]);
+        onClose();
+        navigate(`/pos?restore_from=${sale.id}`);
         return;
       }
 
@@ -386,7 +431,7 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
       const msg = err.response?.data?.message || "Error";
       if (msg.includes("PIN")) setPinError(msg);
       else toast.error(msg);
-    } finally { setLoading(false); }
+    } finally { setLoading(false); undoRef.current = false; }
   };
 
   return (
@@ -600,6 +645,23 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
               onConfirm={handleVoidClick}
               confirmLabelOverride={voidConfirm ? (lang === "en" ? "✓ Yes, cancel the sale" : "✓ Oui, annuler la vente") : undefined}
               lang={lang} />
+
+            {/* MP-UNDO-TO-CART: undo = void + reload items to the POS cart to re-checkout
+                (e.g. wrong payment split). Pro/Pro Plus + role/window gated; server re-checks. */}
+            {canUndo && (
+              <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+                <button onClick={handleUndoClick} disabled={loading || !voidReasonValid || !canProcess}
+                  style={{ width: "100%", padding: "11px 14px", borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: (loading || !voidReasonValid) ? "not-allowed" : "pointer",
+                    border: "1px solid var(--brand)", background: "rgba(251,197,3,0.10)", color: "var(--brand-light)", opacity: (loading || !voidReasonValid) ? 0.6 : 1 }}>
+                  ↩ {lang === "en" ? "Undo & edit sale (reload to cart)" : "Annuler & modifier (recharger au panier)"}
+                </button>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6, lineHeight: 1.5 }}>
+                  {lang === "en"
+                    ? "Voids this receipt and reloads its items into the cart so you can re-checkout (a new receipt is issued)."
+                    : "Annule ce reçu et recharge ses articles dans le panier pour refaire la vente (un nouveau reçu est émis)."}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
