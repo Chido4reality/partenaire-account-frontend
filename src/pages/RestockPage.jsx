@@ -49,6 +49,7 @@ export default function RestockPage() {
   const [manual, setManual] = useState([]);        // [{ product_id, name, unit, qty, checked }]
   const [showAdd, setShowAdd] = useState(false);
   const [sendFor, setSendFor] = useState(null);    // { items, supplier } → SendModal
+  const [receiveFor, setReceiveFor] = useState(null); // order → ReceiveModal (count-confirmed receive)
   const [range, setRange] = useState(wideRange());
 
   const invalidate = () => {
@@ -69,12 +70,6 @@ export default function RestockPage() {
   const readdMut = useMutation({
     mutationFn: (id) => api.delete(`/restock/ignores/${id}`).then(r => r.data),
     onSuccess: () => { toast.success(en ? "Re-added to restock" : "Réajouté"); invalidate(); },
-    onError: (e) => toast.error(e?.response?.data?.message || (en ? "Failed" : "Échec")),
-  });
-  // Mark an open order received → its products stop hiding from To Buy.
-  const receiveMut = useMutation({
-    mutationFn: (id) => api.post(`/restock/orders/${id}/receive`).then(r => r.data),
-    onSuccess: () => { toast.success(en ? "Marked received" : "Marqué reçu"); invalidate(); },
     onError: (e) => toast.error(e?.response?.data?.message || (en ? "Failed" : "Échec")),
   });
 
@@ -176,8 +171,7 @@ export default function RestockPage() {
           <DateRangeFilter from={range.from} to={range.to} onChange={setRange} style={{ marginBottom: 12 }} />
           {orders.isLoading && <div style={{ color: "var(--text-muted)", padding: 16 }}>{en ? "Loading…" : "Chargement…"}</div>}
           <OrderedList orders={(orders.data || []).filter(o => inRange(o.sent_at, range.from, range.to))} en={en}
-            receiving={receiveMut.isPending}
-            onReceive={(id) => receiveMut.mutate(id)}
+            onReceive={(o) => setReceiveFor(o)}
             onEdit={(o) => setSendFor({
               items: (o.pa_restock_order_items || []).map(it => ({ product_id: it.product_id, name: it.product_name, quantity: Number(it.quantity) })),
               supplier: { name: o.supplier_name || "", phone: o.supplier_phone || "" },
@@ -218,6 +212,11 @@ export default function RestockPage() {
           onClose={() => setSendFor(null)}
           onSent={() => { setSendFor(null); setLines({}); setManual([]); invalidate(); setTab("ordered"); }} />
       )}
+      {receiveFor && (
+        <ReceiveModal en={en} order={receiveFor}
+          onClose={() => setReceiveFor(null)}
+          onDone={() => { setReceiveFor(null); invalidate(); }} />
+      )}
     </div>
   );
 }
@@ -255,7 +254,7 @@ function ToBuyRow({ en, name, unit, current, level, checked, qty, onCheck, onQty
 
 // Ordered list — one card per past order, most recent first, with its lines +
 // Open/Received badge, Edit/re-send, and (open only) Mark-received.
-function OrderedList({ orders, en, onEdit, onReceive, receiving }) {
+function OrderedList({ orders, en, onEdit, onReceive }) {
   if (!orders.length) return (
     <div style={{ color: "var(--text-muted)", padding: 24, textAlign: "center", background: "var(--bg-card)", borderRadius: 12, border: "1px solid var(--border)" }}>
       {en ? "No orders in this range." : "Aucune commande sur cette période."}
@@ -266,15 +265,18 @@ function OrderedList({ orders, en, onEdit, onReceive, receiving }) {
       {orders.map(o => {
         const items = o.pa_restock_order_items || [];
         const received = o.status === "received";
+        const partial  = o.status === "partially_received";
+        const barColor = received ? "#34d399" : partial ? "#60a5fa" : "#fbbf24";
+        const badgeBg  = received ? "rgba(52,211,153,0.15)" : partial ? "rgba(96,165,250,0.15)" : "rgba(251,191,36,0.15)";
+        const badgeTxt = received ? (en ? "Received" : "Reçu") : partial ? (en ? "Partial" : "Partiel") : (en ? "Open" : "Ouvert");
         return (
-          <div key={o.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderLeft: `3px solid ${received ? "#34d399" : "#fbbf24"}`, borderRadius: 12, padding: 14 }}>
+          <div key={o.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderLeft: `3px solid ${barColor}`, borderRadius: 12, padding: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <span>{o.supplier_name || (en ? "Supplier" : "Fournisseur")}</span>
-                  <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
-                    background: received ? "rgba(52,211,153,0.15)" : "rgba(251,191,36,0.15)", color: received ? "#34d399" : "#fbbf24" }}>
-                    {received ? (en ? "Received" : "Reçu") : (en ? "Open" : "Ouvert")}
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: badgeBg, color: barColor }}>
+                    {badgeTxt}
                   </span>
                   {o.supplier_phone && <span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "monospace" }}>{o.supplier_phone}</span>}
                 </div>
@@ -285,8 +287,8 @@ function OrderedList({ orders, en, onEdit, onReceive, receiving }) {
               </div>
               <div style={{ display: "flex", gap: 6, alignSelf: "flex-start", flexWrap: "wrap", justifyContent: "flex-end" }}>
                 {!received && (
-                  <button className="btn btn-success btn-sm" disabled={receiving} onClick={() => onReceive(o.id)} style={{ whiteSpace: "nowrap" }}>
-                    ✓ {en ? "Mark received" : "Marquer reçu"}
+                  <button className="btn btn-success btn-sm" onClick={() => onReceive(o)} style={{ whiteSpace: "nowrap" }}>
+                    📥 {partial ? (en ? "Finish receiving" : "Terminer la réception") : (en ? "Receive" : "Réceptionner")}
                   </button>
                 )}
                 <button className="btn btn-secondary btn-sm" onClick={() => onEdit(o)} style={{ whiteSpace: "nowrap" }}>
@@ -295,15 +297,188 @@ function OrderedList({ orders, en, onEdit, onReceive, receiving }) {
               </div>
             </div>
             <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {items.map(it => (
-                <span key={it.id} style={{ fontSize: 12, padding: "3px 10px", borderRadius: 10, background: "var(--bg-elevated)", color: "var(--text-secondary)" }}>
-                  {it.product_name} × {Number(it.quantity)}
-                </span>
-              ))}
+              {items.map(it => {
+                const rq = it.received_quantity;
+                const done = rq !== null && rq !== undefined;
+                const short = done && Number(rq) < Number(it.quantity);
+                return (
+                  <span key={it.id} style={{ fontSize: 12, padding: "3px 10px", borderRadius: 10, background: "var(--bg-elevated)", color: "var(--text-secondary)" }}>
+                    {it.product_name} × {Number(it.quantity)}
+                    {done && <span style={{ marginLeft: 6, fontWeight: 700, color: short ? "#fbbf24" : "#34d399" }}>
+                      {short ? `⚠ ${en ? "got" : "reçu"} ${Number(rq)}` : `✓ ${Number(rq)}`}
+                    </span>}
+                  </span>
+                );
+              })}
             </div>
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ── MP-RESTOCK-COUNT-RECEIVE — count-confirmed receive-into-inventory modal ─────
+// Step 1: Refill (count in) OR Just-mark-received (no stock). Step 2: pick ONE
+// destination + count each line. Step 3/4: per short line, a required disposition —
+// move the shortfall to a 2nd location OR mark it not-delivered. ANTI-PHANTOM: stock
+// only ever += the COUNTED number, and submit is blocked until every short line has an
+// explicit disposition (no silent completion). Online-only (writes stock).
+function ReceiveModal({ en, order, onClose, onDone }) {
+  const items = order.pa_restock_order_items || [];
+  const [step, setStep] = useState("choice");   // choice | refill
+  const [dest, setDest] = useState("");
+  const [rows, setRows] = useState(() => {
+    const m = {};
+    for (const it of items) {
+      const done = it.received_quantity !== null && it.received_quantity !== undefined;
+      m[it.id] = { counted: String(done ? it.received_quantity : (Number(it.quantity) || 0)), vAction: "", vLoc: "", vQty: "" };
+    }
+    return m;
+  });
+  const setRow = (id, patch) => setRows(p => ({ ...p, [id]: { ...p[id], ...patch } }));
+
+  const locs = useQuery({ queryKey: ["locations"], queryFn: () => api.get("/locations").then(r => toArray(r)) });
+  const locList = Array.isArray(locs.data) ? locs.data : [];
+
+  const pending   = items.filter(it => it.received_quantity === null || it.received_quantity === undefined);
+  const doneItems = items.filter(it => it.received_quantity !== null && it.received_quantity !== undefined);
+
+  const mut = useMutation({
+    mutationFn: (body) => api.post(`/restock/orders/${order.id}/receive`, body).then(r => r.data),
+    onSuccess: (res) => {
+      const st = res?.data?.status;
+      toast.success(st === "received"
+        ? (en ? "Received into inventory" : "Reçu en stock")
+        : (en ? "Saved — order partially received" : "Enregistré — commande partiellement reçue"));
+      onDone();
+    },
+    onError: (e) => toast.error(e?.response?.data?.message || (en ? "Failed — check your connection" : "Échec — vérifiez votre connexion")),
+  });
+
+  const submitRefill = () => {
+    const lines = pending.map(it => {
+      const r = rows[it.id] || {};
+      const ordered = Number(it.quantity) || 0;
+      const counted = Math.max(0, Number(r.counted) || 0);
+      const short = counted < ordered;
+      const variance = (short && r.vAction === "move")
+        ? { action: "move", location_id: r.vLoc, quantity: Math.min(ordered - counted, Number(r.vQty) || (ordered - counted)) }
+        : { action: "ignore" };
+      return { item_id: it.id, product_id: it.product_id, counted, variance };
+    });
+    mut.mutate({ mode: "refill", location_id: dest, lines });
+  };
+
+  // No silent completion: every short line needs an explicit disposition before submit.
+  const canSubmit = !!dest && pending.length > 0 && !mut.isPending && pending.every(it => {
+    const r = rows[it.id] || {};
+    const ordered = Number(it.quantity) || 0;
+    const counted = Math.max(0, Number(r.counted) || 0);
+    if (counted >= ordered) return true;
+    if (r.vAction === "ignore") return true;
+    if (r.vAction === "move") return !!r.vLoc;
+    return false;
+  });
+
+  return (
+    <div className="modal-overlay" onClick={() => !mut.isPending && onClose()}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 520, maxHeight: "90vh", overflowY: "auto" }}>
+        {step === "choice" && (<>
+          <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 6 }}>{en ? "Add these goods to your inventory?" : "Ajouter ces marchandises à votre stock ?"}</div>
+          <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginBottom: 16 }}>
+            {en ? "Refill counts each line into a location and increases stock. Or just mark the order received without touching stock."
+                : "Réapprovisionner compte chaque ligne dans un emplacement et augmente le stock. Ou marquez simplement la commande reçue sans toucher au stock."}
+          </div>
+          <button className="btn btn-primary btn-block" style={{ marginBottom: 10 }} onClick={() => setStep("refill")}>
+            📦 {en ? "Refill inventory (count in)" : "Réapprovisionner (compter)"}
+          </button>
+          <button className="btn btn-secondary btn-block" disabled={mut.isPending} onClick={() => mut.mutate({ mode: "status_only" })}>
+            {en ? "Just mark received (no stock)" : "Marquer reçu seulement (sans stock)"}
+          </button>
+          <button className="btn btn-secondary btn-block" style={{ marginTop: 10, opacity: 0.7 }} disabled={mut.isPending} onClick={onClose}>{en ? "Cancel" : "Annuler"}</button>
+        </>)}
+
+        {step === "refill" && (<>
+          <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 8 }}>{en ? "Count in the delivery" : "Compter la livraison"}</div>
+          <div className="form-group">
+            <label className="label">{en ? "Delivery location" : "Emplacement de livraison"}</label>
+            <select className="input" value={dest} onChange={e => setDest(e.target.value)}>
+              <option value="">{en ? "Choose a location…" : "Choisir un emplacement…"}</option>
+              {locList.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          </div>
+
+          {doneItems.length > 0 && (
+            <div style={{ fontSize: 11.5, color: "var(--text-muted)", margin: "6px 0" }}>
+              {en ? "Already received: " : "Déjà reçu : "}{doneItems.map(it => `${it.product_name} (${Number(it.received_quantity)})`).join(", ")}
+            </div>
+          )}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 6 }}>
+            {pending.map(it => {
+              const r = rows[it.id] || {};
+              const ordered = Number(it.quantity) || 0;
+              const counted = Math.max(0, Number(r.counted) || 0);
+              const short = counted < ordered;
+              const shortfall = Math.max(0, ordered - counted);
+              return (
+                <div key={it.id} style={{ background: "var(--bg-elevated)", borderRadius: 10, padding: "10px 12px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13.5 }}>{it.product_name}</div>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{en ? "Ordered" : "Commandé"}: {ordered}</div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{en ? "Counted" : "Compté"}</span>
+                      <input className="input" type="number" min="0" value={r.counted} style={{ width: 84, textAlign: "center" }}
+                        onFocus={e => e.target.select()} onChange={e => setRow(it.id, { counted: e.target.value })} />
+                    </div>
+                  </div>
+                  {short && (
+                    <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 8, background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.3)" }}>
+                      <div style={{ fontSize: 12, color: "#fbbf24", fontWeight: 600, marginBottom: 6 }}>
+                        {en ? `Counted ${counted} of ${ordered}. The missing ${shortfall}:` : `Compté ${counted} sur ${ordered}. Les ${shortfall} manquants :`}
+                      </div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <button className="btn btn-sm" style={{ border: `1.5px solid ${r.vAction === "move" ? "var(--brand)" : "var(--border)"}`, background: r.vAction === "move" ? "rgba(251,197,3,0.12)" : "transparent" }}
+                          onClick={() => setRow(it.id, { vAction: "move", vQty: String(shortfall) })}>
+                          {en ? "Went to another location" : "Allé ailleurs"}
+                        </button>
+                        <button className="btn btn-sm" style={{ border: `1.5px solid ${r.vAction === "ignore" ? "#f87171" : "var(--border)"}`, background: r.vAction === "ignore" ? "rgba(248,113,113,0.12)" : "transparent" }}
+                          onClick={() => setRow(it.id, { vAction: "ignore" })}>
+                          {en ? "Not delivered" : "Non livré"}
+                        </button>
+                      </div>
+                      {r.vAction === "move" && (
+                        <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                          <select className="input" value={r.vLoc} onChange={e => setRow(it.id, { vLoc: e.target.value })} style={{ flex: 1 }}>
+                            <option value="">{en ? "Which location?" : "Quel emplacement ?"}</option>
+                            {locList.filter(l => l.id !== dest).map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                          </select>
+                          <input className="input" type="number" min="1" max={shortfall} value={r.vQty} style={{ width: 84, textAlign: "center" }}
+                            onChange={e => setRow(it.id, { vQty: e.target.value })} />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ fontSize: 11, color: "var(--text-muted)", margin: "12px 0 8px" }}>
+            {en ? "Stock increases only by what you count. The order closes as received once every line is confirmed."
+                : "Le stock n'augmente que de ce que vous comptez. La commande se ferme comme reçue une fois chaque ligne confirmée."}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn btn-secondary" style={{ flex: 1 }} disabled={mut.isPending} onClick={() => setStep("choice")}>{en ? "Back" : "Retour"}</button>
+            <button className="btn btn-primary" style={{ flex: 2 }} disabled={!canSubmit} onClick={submitRefill}>
+              {mut.isPending ? "…" : (en ? "Confirm & add to stock" : "Confirmer & ajouter au stock")}
+            </button>
+          </div>
+        </>)}
+      </div>
     </div>
   );
 }
