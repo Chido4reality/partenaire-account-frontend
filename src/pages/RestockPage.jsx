@@ -10,6 +10,7 @@ import { useLangStore, useAuthStore } from "../store";
 import toast from "react-hot-toast";
 import { unitLabel } from "../utils/units";
 import { openWhatsApp } from "../utils/whatsapp";
+import { PLAY_STORE_URL } from "../utils/receiptExtras"; // reuse the SAME app-download link the receipt footer uses
 import DateRangeFilter, { inRange, wideRange } from "../components/common/DateRangeFilter";
 
 function toArray(x) {
@@ -40,6 +41,9 @@ export default function RestockPage() {
   const en = lang === "en";
   const qc = useQueryClient();
   const org = useAuthStore(s => s.org);
+  // Org promo-footer toggle (default ON) — appends one branding line to the WhatsApp order.
+  const { data: settingsData } = useQuery({ queryKey: ["org-settings"], queryFn: () => api.get("/settings").then(r => r.data), staleTime: 60000 });
+  const promoFooterEnabled = settingsData?.data?.promo_footer_enabled !== false;
   const [tab, setTab] = useState("tobuy");         // tobuy | ordered | ignored
   const [lines, setLines] = useState({});          // product_id -> { checked, qty }
   const [manual, setManual] = useState([]);        // [{ product_id, name, unit, qty, checked }]
@@ -210,7 +214,7 @@ export default function RestockPage() {
 
       {showAdd && <AddProductModal en={en} onClose={() => setShowAdd(false)} onPick={addManual} />}
       {sendFor && (
-        <SendModal en={en} orgName={org?.name || ""} items={sendFor.items} supplier={sendFor.supplier}
+        <SendModal en={en} orgName={org?.name || ""} promoFooter={promoFooterEnabled} items={sendFor.items} supplier={sendFor.supplier}
           onClose={() => setSendFor(null)}
           onSent={() => { setSendFor(null); setLines({}); setManual([]); invalidate(); setTab("ordered"); }} />
       )}
@@ -339,7 +343,7 @@ function AddProductModal({ en, onClose, onPick }) {
 
 // Send modal — editable lines (qty / add / remove) + supplier phone (required) + name
 // + recent picks; sends to WhatsApp AND records the order (re-send posts a NEW dated order).
-function SendModal({ en, orgName, items, supplier, onClose, onSent }) {
+function SendModal({ en, orgName, promoFooter, items, supplier, onClose, onSent }) {
   const [rows, setRows] = useState(() => items.map(i => ({ product_id: i.product_id || null, name: i.name, quantity: Number(i.quantity) || 1 })));
   const [name, setName] = useState(supplier?.name || "");
   const [phone, setPhone] = useState(supplier?.phone || "");
@@ -361,8 +365,16 @@ function SendModal({ en, orgName, items, supplier, onClose, onSent }) {
   const message = useMemo(() => {
     const header = `🧾 ${en ? "Order" : "Commande"}${orgName ? " — " + orgName : ""}`;
     const body = validRows.map(i => `• ${i.name} × ${Number(i.quantity)}`).join("\n");
-    return `${header}\n${body}${note.trim() ? `\n\n${note.trim()}` : ""}`;
-  }, [validRows, orgName, note, en]);
+    // MP-RESTOCK-PROMO-FOOTER: ONE branding line at the very bottom (after a blank line,
+    // so it never clutters the order). Only when the org's promo_footer_enabled is on.
+    // Reuses the SAME app-download URL as the receipt download-QR footer.
+    const promo = promoFooter
+      ? "\n\n" + (en
+          ? `Sent with Mon Partenaire Dozie 📲 — the app I use to run my shop. Get it: ${PLAY_STORE_URL}`
+          : `Envoyé via Mon Partenaire Dozie 📲 — l'appli que j'utilise pour gérer ma boutique. Téléchargez : ${PLAY_STORE_URL}`)
+      : "";
+    return `${header}\n${body}${note.trim() ? `\n\n${note.trim()}` : ""}${promo}`;
+  }, [validRows, orgName, note, en, promoFooter]);
 
   const send = async () => {
     if (!validRows.length) { toast.error(en ? "Add at least one item" : "Ajoutez au moins un article"); return; }
