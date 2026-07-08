@@ -358,6 +358,12 @@ async function attempt(row) {
       method:  row.method || 'POST',
       headers: {
         'Content-Type':  'application/json',
+        // MP-OFFLINE-COLLECT-NEVER-DROP: mark this as a SYNCED replay + carry the
+        // original collection time (row.created_at = when the cashier collected while
+        // offline) so the debt-collection endpoint can attribute the drawer shift that
+        // was open THEN, and never drop the cash if none resolves now.
+        'X-Offline-Replay': '1',
+        ...(row.created_at ? { 'X-Collected-At': row.created_at } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body:   JSON.stringify(payload),
@@ -379,6 +385,14 @@ async function attempt(row) {
       `UPDATE pending_sync SET status = ?, server_id = ?, last_error = ? WHERE id = ?`,
       ['sent', serverId, null, row.id]
     );
+    // MP-OFFLINE-COLLECT-NEVER-DROP: a synced debt collection that needed shift
+    // FALLBACK (attributed to the shift open at collection time / current) or that had
+    // NO shift ('needs_review' → recorded with a null shift, cash preserved) must be
+    // surfaced — never a silent success. Consumers (Layout) toast on this event.
+    const attr = body?.shift_attribution;
+    if (attr && attr !== 'live' && !body?.dedup_replay) { // don't re-surface an idempotent replay
+      emitSyncEvent({ type: 'shift_fallback', endpoint: row.endpoint, localId: row.local_id, attribution: attr });
+    }
     emitSyncEvent({ type: 'sent', endpoint: row.endpoint, localId: row.local_id });
     notify();
     return;
