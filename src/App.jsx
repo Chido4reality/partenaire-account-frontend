@@ -252,7 +252,7 @@ async function consumeImpersonateToken() {
   const legacyToken   = params.get("impersonate_token");
   if (!exchangeToken && !legacyToken) return false;
 
-  const apiBase = import.meta.env.VITE_API_URL || "https://partenaire-account-api.onrender.com/api";
+  const apiBase = import.meta.env.VITE_API_URL || "https://api.partenairedozie.com/api";
 
   // Strip ASAP so a refresh doesn't re-trigger and the URL bar doesn't
   // display the token; also avoids accidental copy-paste leakage.

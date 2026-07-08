@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 
-const HEALTH_URL = "https://partenaire-account-api.onrender.com/api/health";
+// MP-CUSTOM-API-DOMAIN: point the connectivity probe at the SAME host the app calls
+// (custom domain), so a future Frankfurt DNS flip on api.partenairedozie.com moves the
+// health check with it. Falls back to the configured API base, then the custom domain.
+const HEALTH_URL = ((import.meta.env.VITE_API_URL || "https://api.partenairedozie.com/api").replace(/\/+$/, "")) + "/health";
 
 export function useNetworkStatus() {
   const [isOnline, setIsOnline] = useState(true);
