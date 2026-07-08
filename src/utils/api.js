@@ -1,4 +1,5 @@
 import axios from "axios";
+import toast from "react-hot-toast";
 import { useAuthStore, useLangStore } from "../store";
 import { enqueue, configureSync, startWorker, genLocalId } from "./pendingSync";
 import { getNetworkStatus, recordWriteFailure, recordWriteSuccess } from "./network";
@@ -281,6 +282,8 @@ api.defaults.adapter = async function offlineAwareAdapter(config) {
 function safeJson(s) { try { return JSON.parse(s); } catch { return {}; } }
 
 api.interceptors.response.use(res => {
+  // MP-PEAK-MTN-RESILIENCE: a request landed → clear any "retrying…" reassurance toast.
+  try { toast.dismiss("mp-net-retry"); } catch { /* noop */ }
   // MP-DEGRADED-ROUTING: a successful 2xx on an offline-eligible write
   // path is a vote of confidence that the network is healthy. Decrement
   // _writeAttemptFailures (clamps at 0 in network.js) so the degraded
@@ -315,10 +318,19 @@ api.interceptors.response.use(res => {
       cfg._retry = (cfg._retry || 0);
       if (cfg._retry < 3) {
         cfg._retry += 1;
+        // MP-PEAK-MTN-RESILIENCE: visible reassurance so an MTN user on a congested
+        // route doesn't give up thinking the app is broken while we back off + retry.
+        // One toast (fixed id) that updates across retries; dismissed on success below.
+        try {
+          const en = useLangStore.getState().lang === "en";
+          toast.loading(en ? "Connection slow — retrying…" : "Connexion lente — nouvelle tentative…",
+            { id: "mp-net-retry", duration: 10000 });
+        } catch { /* toast is best-effort */ }
         const delay = [700, 1600, 3000][cfg._retry - 1] || 3000; // backoff
         await new Promise(r => setTimeout(r, delay));
         return api(cfg);
       }
+      try { toast.dismiss("mp-net-retry"); } catch { /* noop */ } // retries exhausted → caller's error shows
     }
   }
 
