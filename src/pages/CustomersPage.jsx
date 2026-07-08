@@ -425,6 +425,17 @@ export default function CustomersPage() {
       setReceiptEvent({ eventType: "debt_collection", data: receiptData });
     },
     onError: (err) => {
+      // MP-COLLECT-DEBT-SHIFT-CLARITY: the generic "open your shift" message confused
+      // bosses who DID have a shift open — at another branch. Name the branch the
+      // collection is targeting (selectedLocation) so it's obvious the drawer must be
+      // open THERE (or that they need to switch to the branch where their shift is open).
+      if (err.response?.data?.code === "NO_OPEN_SHIFT") {
+        const loc = selectedLocation?.name || (lang === "en" ? "this branch" : "cette succursale");
+        setCollectError(lang === "en"
+          ? `No open shift at ${loc}. Open a shift there, or switch to the branch where your shift is open, then collect again.`
+          : `Aucune caisse ouverte à ${loc}. Ouvrez une caisse là-bas, ou passez à la succursale où votre caisse est ouverte, puis réencaissez.`);
+        return;
+      }
       setCollectError(err.response?.data?.message || "Error");
     }
   });
