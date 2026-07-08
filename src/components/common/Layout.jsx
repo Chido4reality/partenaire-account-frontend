@@ -451,6 +451,24 @@ export default function Layout() {
   // window so the POS can ring sales. Without this invalidation the
   // seed kept serving even after the real shift row landed.
   useEffect(() => onSyncEvent((e) => {
+    // MP-OFFLINE-COLLECT-NEVER-DROP: surface a synced debt collection that needed a
+    // shift fallback — never a silent success. 'needs_review' = recorded with no shift
+    // (cash preserved, flagged); 'historical'/'current' = correctly re-attributed.
+    if (e.type === 'shift_fallback') {
+      const en = useLangStore.getState().lang === 'en';
+      if (e.attribution === 'needs_review') {
+        toast(en
+          ? 'A synced debt collection had no open shift — recorded and flagged for review. The cash is safe.'
+          : "Un encaissement synchronisé sans caisse ouverte — enregistré et signalé pour vérification. L'argent est sauf.",
+          { icon: '🛟', duration: 8000 });
+      } else {
+        toast(en
+          ? 'A synced debt collection was matched to the shift open when you collected it.'
+          : "Un encaissement synchronisé a été rattaché à la caisse ouverte au moment de l'encaissement.",
+          { icon: '✓', duration: 6000 });
+      }
+      return;
+    }
     if (e.type !== 'sent') return;
     // [Wave 4.0 debug instrumentation — Peter pastes these traces.]
     console.log('[sync] handler fired', { type: e.type, endpoint: e.endpoint });
