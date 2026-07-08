@@ -1337,6 +1337,19 @@ export default function POSPage() {
 
   const saleMutation = useMutation({
     mutationFn: async () => {
+      // MP-PHANTOM-PAID-FIX (Path A/B): a CUSTOMER sale MUST carry an explicit
+      // Paid/Partial/Credit choice. Enforced HERE — not only on the Confirm button's
+      // disabled attr — so the approval-resubmit and hold-resume paths (which call
+      // this mutation directly, bypassing the button) can't slip through with the
+      // "paid" default and silently book full pay, wiping the receivable. Debt-only
+      // carts have their own flow and are exempt.
+      if (customer && !isDebtOnlyCart && !payModeChosen) {
+        toast.error(lang === "en"
+          ? "Choose how the customer paid — Paid / Partial / Credit — before completing."
+          : "Choisissez le mode de paiement — Payé / Partiel / Crédit — avant de valider.", { duration: 5000 });
+        setShowPayment(true);
+        const gerr = new Error("PAYMODE_REQUIRED"); gerr.payModeGuard = true; throw gerr;
+      }
       // MP-CART-INVOICE-PRODUCT-BUG: the legacy invoice-settle path
       // (POST /sales/:id/payment per invoice) is ONLY correct when
       // the cart is a pure invoice-settle action — a single __DEBT__
@@ -1445,6 +1458,9 @@ export default function POSPage() {
                         }),
         payment_method: payMethod,
         paid_amount:    paid,
+        // MP-PHANTOM-PAID-FIX: send the cashier's explicit payment intent so the
+        // backend can reject the contradiction (pay_mode='partial' but full amount).
+        pay_mode:       isDebtOnlyCart ? "debt" : payMode,
         due_date:       dueDate || null,
         notes:          notes || null,
         // MP-DISCOUNT: sale-level discount + owner-PIN token (set on resubmit
@@ -1659,7 +1675,18 @@ export default function POSPage() {
       saleMutation.reset();
     },
     onError: (err) => {
+      // MP-PHANTOM-PAID-FIX: the client-side pay-mode guard already toasted; abort quietly.
+      if (err.payModeGuard) return;
       const d = err.response?.data;
+      // MP-PHANTOM-PAID-FIX: backend rejected a customer full-pay with no/contradictory
+      // pay_mode (the resubmit hole). Steer the cashier to pick the real mode.
+      if (d?.code === "PAY_MODE_REQUIRED" || d?.code === "PAY_MODE_CONTRADICTION") {
+        toast.error(d.message || (lang === "en"
+          ? "Confirm how the customer paid (Paid / Partial / Credit)."
+          : "Confirmez le mode de paiement (Payé / Partiel / Crédit)."), { duration: 6000 });
+        setShowPayment(true);
+        return;
+      }
       // ── MP-DISCOUNT control responses ────────────────────────────────────
       if (d?.code === "DISCOUNT_BLOCKED") {
         discountTokenRef.current = null;
@@ -2418,6 +2445,15 @@ export default function POSPage() {
                       </div>
                     )}
                   </div>
+                  {/* MP-PHANTOM-PAID-FIX: make the remainder-becomes-debt explicit BEFORE
+                      Confirm, incl. for debt-carrying customers (whose "Balance due" line
+                      above is otherwise hidden by !hasDebt). */}
+                  {customer && balance > 0 && (payMode === "partial" || payMode === "credit") && (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", marginBottom: 10, borderRadius: 10, background: "rgba(248,113,113,0.12)", border: "1px solid rgba(248,113,113,0.40)", fontSize: 12.5, fontWeight: 700, color: "#f87171" }}>
+                      <span>→ {lang === "en" ? `Added to ${customer.name || "customer"}'s debt` : `Ajouté à la dette de ${customer.name || "ce client"}`}</span>
+                      <span>{formatMoney(balance, orgSettings.currency)}</span>
+                    </div>
+                  )}
                   {(payMode === "credit" || payMode === "partial") && !customer && (
                     <div style={{ padding: "8px 12px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, fontSize: 12, color: "#f87171", marginBottom: 8 }}>
                       ⚠️ {lang === "en" ? "A registered customer is required for credit or partial sales." : "Un client enregistré est requis pour les ventes à crédit ou partielles."}
