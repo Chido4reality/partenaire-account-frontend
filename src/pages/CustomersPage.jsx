@@ -61,6 +61,9 @@ export default function CustomersPage() {
   const [search, setSearch]         = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [debtOnly, setDebtOnly]     = useState(false);
+  // BUG B: hard per-branch scope — sent to GET /customers so it composes with search.
+  // "" = all branches. Declared here (used by the list query below).
+  const [branchFilter, setBranchFilter] = useState("");   // C2 — "" = all branches
   const [showAdd, setShowAdd]       = useState(false);
   const [selected, setSelected]     = useState(null);
   const [confirmDel, setConfirmDel] = useState(null); // MP-CUSTOMER-DELETE: customer pending delete
@@ -80,8 +83,9 @@ export default function CustomersPage() {
   const [collectError, setCollectError]       = useState(null);
 
   const { data, isLoading } = useOfflineCachedQuery({
-    queryKey: ["customers", search, typeFilter, debtOnly],
-    queryFn: () => api.get(`/customers?search=${search}&type=${typeFilter}&has_debt=${debtOnly}&limit=50`).then(r => r.data),
+    queryKey: ["customers", search, typeFilter, debtOnly, branchFilter],
+    queryFn: () => api.get(`/customers?search=${search}&type=${typeFilter}&has_debt=${debtOnly}` +
+      `${branchFilter ? `&location_id=${branchFilter}` : ""}&limit=50`).then(r => r.data),
     refetchInterval: 30000
   });
 
@@ -530,7 +534,7 @@ export default function CustomersPage() {
   const branchDebtRows = branchDebtResp?.data || [];
   const branchRecvRows = (branchRecvResp?.data || []).filter(r => r.location_id);
 
-  const [branchFilter, setBranchFilter]     = useState("");   // C2 — "" = all branches
+  // branchFilter is declared at the top (used by the customers list query).
   const [showTopDebtors, setShowTopDebtors] = useState(false);
 
   // Roll the per-(customer,branch) rows up by customer.
@@ -564,9 +568,10 @@ export default function CustomersPage() {
   const branchOf = (cid, locId) => (branchByCustomer[cid]?.branches || []).find(b => b.location_id === locId);
 
   // C2 — when a branch is picked, restrict the (loaded) list to customers active there.
-  const displayedCustomers = (branchCore && branchFilter)
-    ? customers.filter(c => !!branchOf(c.id, branchFilter))
-    : customers;
+  // BUG B: the server now hard-scopes the list by branchFilter (location presence),
+  // so we render exactly what it returns — no redundant client re-filter (the old
+  // activity/debt-based branchOf filter could wrongly drop server-included customers).
+  const displayedCustomers = customers;
 
   // A5 — top debtors per branch (owing rows grouped by branch, top 5 by owed).
   const topDebtorsByBranch = useMemo(() => {

@@ -129,6 +129,7 @@ export function buildLedgerTextV2(ledger, lang) {
   const df = b.day_flow      || {};
   const sh = b.shifts        || [];
   const ou = b.outstanding   || {};
+  const dr = b.drawer        || {};   // TASK 3 drawer reconciliation
   const sales = df.sales          || {};
   const dcol  = df.debt_collected || {};
   const locName  = ledger.location ? ledger.location.name : (en ? "all locations" : "tous les sites");
@@ -157,7 +158,11 @@ export function buildLedgerTextV2(ledger, lang) {
   L.push(`  • ${momoLabelShort(currency, en)}: ${n(dcol.momo)} ${sym}`);
   L.push(`  • ${en ? "Bank" : "Banque"}: ${n(dcol.bank)} ${sym}`);
   L.push("");
-  L.push(`${en ? "Refunds & voids (cash out)" : "Remboursements & annulations (sortie)"}: ${n(df.refunds_voids_cash_out)} ${sym}`);
+  // MP-VOID-PHYSICS: both void legs explicit — cash-in on voided sales (+) and the
+  // refunds/voids paid out (−). Never silently netted; amounts from real rows.
+  if (Number(dr.cash_received_on_voided_sales) > 0)
+    L.push(`${en ? "Cash received on voided sales" : "Espèces reçues sur ventes annulées"}: +${n(dr.cash_received_on_voided_sales)} ${sym}`);
+  L.push(`${en ? "Refunds & voids paid out" : "Remboursements & annulations décaissés"}: -${n(df.refunds_voids_cash_out)} ${sym}`);
   // MP-EXCHANGE-VISIBILITY: swaps as their own line with net effect.
   const ex = df.exchanges || {};
   if (ex.count) {
@@ -208,6 +213,24 @@ export function buildLedgerTextV2(ledger, lang) {
     });
   }
   L.push("");
+
+  // ── DRAWER — Expected drawer / variance / unattributed cash (TASK 3) ─────────
+  if (b.drawer) {
+    L.push(`*${en ? "DRAWER" : "CAISSE"}*`);
+    L.push(`${en ? "Expected drawer" : "Caisse attendue"}: ${n(dr.expected_drawer)} ${sym}`);
+    if (dr.drawer_variance != null) {
+      const v = Number(dr.drawer_variance) || 0;
+      // Sign shown here; the in-app renderer colours it red when non-zero.
+      const line = `${en ? "Drawer variance" : "Écart de caisse"}: ${v > 0 ? "+" : v < 0 ? "-" : ""}${n(Math.abs(v))} ${sym}`;
+      L.push(v !== 0 ? `${line} ⚠` : line);
+    }
+    // Unattributed cash hidden when 0 (approved).
+    if (Number(dr.unattributed_cash) > 0)
+      L.push(`${en ? "Unattributed cash (no shift)" : "Espèces hors caisse (sans quart)"}: ${n(dr.unattributed_cash)} ${sym}`);
+    if (dr.reconciliation_warning)
+      L.push(`⚠ ${en ? "Reconciliation" : "Rapprochement"}: ${dr.reconciliation_warning}`);
+    L.push("");
+  }
 
   // ── BLOCK 3 — OUTSTANDING ───────────────────────────────────
   L.push(`*3. ${en ? "OUTSTANDING" : "EN SUSPENS"}*`);
