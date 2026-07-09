@@ -62,6 +62,7 @@ export default function ReportsPage() {
   const [blockExpanded, setBlockExpanded] = useState({
     day_flow:    true,
     shifts:      false,
+    drawer:      false,   // TASK 3 drawer reconciliation
     outstanding: false,
   });
   const toggleBlock = (key) => (next) =>
@@ -1156,7 +1157,13 @@ export default function ReportsPage() {
                       <BlockRow indent label={momoLabelShort(fmt.currency, lang === "en")} value={fmt(bl.day_flow.debt_collected.momo)} />
                       <BlockRow indent label={lang === "en" ? "Bank" : "Banque"} value={fmt(bl.day_flow.debt_collected.bank)} />
                       <div style={{ height: 8 }} />
-                      <BlockRow label={lang === "en" ? "Refunds & voids (cash out)" : "Remboursements & annulations (sortie)"}
+                      {/* MP-VOID-PHYSICS: both legs explicit — cash-in on voided sales (+) then the cash-out (−). */}
+                      {bl.drawer && Number(bl.drawer.cash_received_on_voided_sales) > 0 && (
+                        <BlockRow label={lang === "en" ? "Cash received on voided sales" : "Espèces reçues sur ventes annulées"}
+                                  value={fmt(bl.drawer.cash_received_on_voided_sales)}
+                                  color="#34d399" sign="+" />
+                      )}
+                      <BlockRow label={lang === "en" ? "Refunds & voids paid out" : "Remboursements & annulations décaissés"}
                                 value={fmt(bl.day_flow.refunds_voids_cash_out)}
                                 color={bl.day_flow.refunds_voids_cash_out > 0 ? "#f87171" : undefined}
                                 sign={bl.day_flow.refunds_voids_cash_out > 0 ? "-" : ""} />
@@ -1229,6 +1236,45 @@ export default function ReportsPage() {
                         );
                       })}
                     </CollapsibleBlock>
+
+                    {/* ── DRAWER — Expected drawer / variance / unattributed (TASK 3) ── */}
+                    {bl.drawer && (
+                      <CollapsibleBlock
+                        title={`💵 ${lang === "en" ? "DRAWER" : "CAISSE"}`}
+                        subtotalValue={bl.drawer.expected_drawer}
+                        expanded={blockExpanded.drawer}
+                        onToggle={toggleBlock("drawer")}>
+                        <BlockRow label={lang === "en" ? "Expected drawer" : "Caisse attendue"} value={fmt(bl.drawer.expected_drawer)} bold />
+                        {bl.drawer.drawer_variance != null && bl.drawer.drawer_variance !== 0 && (
+                          // Non-zero variance stands out: red, signed, ⚠.
+                          <BlockRow
+                            label={lang === "en" ? "Drawer variance" : "Écart de caisse"}
+                            value={`⚠ ${bl.drawer.drawer_variance > 0 ? "+" : "−"}${fmt(Math.abs(bl.drawer.drawer_variance))}`}
+                            color="#f87171" bold />
+                        )}
+                        {bl.drawer.drawer_variance === 0 && (
+                          <BlockRow label={lang === "en" ? "Drawer variance" : "Écart de caisse"} value={fmt(0)} color="#34d399" />
+                        )}
+                        {bl.drawer.drawer_variance == null && (
+                          <BlockRow label={lang === "en" ? "Drawer variance" : "Écart de caisse"}
+                            value={lang === "en" ? "— (shift not counted)" : "— (caisse non comptée)"} color="var(--text-muted)" />
+                        )}
+                        {Number(bl.drawer.unattributed_cash) > 0 && (
+                          <BlockRow label={lang === "en" ? "Unattributed cash (no shift)" : "Espèces hors caisse (sans quart)"}
+                            value={fmt(bl.drawer.unattributed_cash)} color="#fbbf24" />
+                        )}
+                        {bl.drawer.reconciliation_warning && (
+                          <div style={{ color: "#f87171", fontSize: 12, padding: "4px 0", fontWeight: 600 }}>
+                            ⚠ {lang === "en" ? "Reconciliation mismatch — figures may be off." : "Écart de rapprochement — chiffres possiblement erronés."}
+                          </div>
+                        )}
+                        <div style={{ color: "var(--text-muted)", fontSize: 11, padding: "4px 0" }}>
+                          {lang === "en"
+                            ? "Expected = opening float + cash sales + cash on voided sales + cash debt collected − refunds/voids paid out − expenses."
+                            : "Attendu = fond de caisse + ventes espèces + espèces sur ventes annulées + dette encaissée (espèces) − remboursements/annulations décaissés − dépenses."}
+                        </div>
+                      </CollapsibleBlock>
+                    )}
 
                     {/* ── BLOCK 3 — OUTSTANDING (default collapsed) ── */}
                     <CollapsibleBlock
