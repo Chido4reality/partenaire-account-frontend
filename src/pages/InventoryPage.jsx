@@ -239,7 +239,11 @@ export default function InventoryPage() {
       // the placeholder "Search all locations…" and lets the cashier
       // find a product without first guessing where it lives.
       const params = new URLSearchParams();
-      if (locStockFilter && !search) params.append("location_id", locStockFilter);
+      // MP-STOCK-FILTER-COMPOSE (BUG B/C): search and location filter AND-compose —
+      // always send location_id when set, regardless of search (the /stock backend
+      // applies both). Previously location_id was dropped while searching, so a search
+      // silently spanned all locations and the dropdown was disabled.
+      if (locStockFilter) params.append("location_id", locStockFilter);
       if (search) params.append("search", search);
       return api.get("/stock?" + params.toString()).then(r => r.data);
     },
@@ -1223,17 +1227,14 @@ export default function InventoryPage() {
           {/* MP-STOCK-LOCATION-FILTER: in-tab Location dropdown for the
               Stock Levels table only. Hidden on Products (it doesn't
               affect that view) and on single-location orgs (no real
-              choice). Disabled during search since the query falls
-              through to all-locations regardless. */}
+              choice). MP-STOCK-FILTER-COMPOSE: NOT disabled during search —
+              location + search AND-compose (both sent to /stock). */}
           {tab === "stock" && locations.length > 1 && (
             <select
               className="input"
               value={locStockFilter}
               onChange={(e) => setLocFilterByUser(e.target.value)}
-              disabled={!!search}
-              title={search
-                ? (lang === "en" ? "Search spans all locations" : "La recherche couvre tous les emplacements")
-                : (lang === "en" ? "Filter Stock Levels by location" : "Filtrer par emplacement")}
+              title={lang === "en" ? "Filter Stock Levels by location" : "Filtrer par emplacement"}
               style={{ flexShrink: 0, height: 42, minWidth: 180, fontWeight: 600 }}
             >
               <option value="">📍 {lang === "en" ? "All locations" : "Tous les emplacements"}</option>
