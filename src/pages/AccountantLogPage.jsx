@@ -18,6 +18,7 @@ import { useLangStore } from "../store";
 import { hasFeature } from "../utils/planCapabilities";
 import { useCurrency } from "../utils/useCurrency";
 import api from "../utils/api";
+import { formatLastSeen, isRecentlyActive } from "../utils/lastSeen";
 import BelowCostLossDetail from "../components/common/BelowCostLossDetail";
 import DiscountApprovalDetail from "../components/common/DiscountApprovalDetail";
 import { explainAnomaly, severityCue, groupLabel, anomalySeverity } from "../utils/anomalyExplain";
@@ -36,20 +37,8 @@ const roleColor = (r) => ROLE_META[r]?.color || "#94a3b8";
 // PIN/credential rule: letters + numbers only, no special characters.
 const ALNUM = /[^a-zA-Z0-9]/g;
 
-// Compact "last activity" — relative for recent, date for older. null → never.
-function lastActivityLabel(iso, en) {
-  if (!iso) return en ? "Never" : "Jamais";
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "—";
-  const mins = Math.floor((Date.now() - then) / 60000);
-  if (mins < 1) return en ? "Just now" : "À l'instant";
-  if (mins < 60) return en ? `${mins} min ago` : `il y a ${mins} min`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return en ? `${hrs}h ago` : `il y a ${hrs}h`;
-  const days = Math.floor(hrs / 24);
-  if (days < 7) return en ? `${days}d ago` : `il y a ${days}j`;
-  return new Date(iso).toLocaleDateString(en ? "en-GB" : "fr-FR");
-}
+// MP-LAST-SEEN: relative "last seen" now lives in utils/lastSeen.js (shared with
+// Settings → Staff) so the two screens can never format presence differently.
 
 export default function AccountantLogPage() {
   const { lang } = useLangStore();
@@ -74,7 +63,19 @@ export default function AccountantLogPage() {
     queryFn: () => api.get("/staff/watched").then(r => r.data),
     enabled: entitled,
   });
-  const staff = watchedResp?.data || [];
+  // MP-LAST-SEEN: surface who's active — sort currently-active staff to the top
+  // (online first, then active accounts, then by most-recent last_seen), so the
+  // boss sees at a glance who's on the app right now.
+  const staff = useMemo(() => {
+    const rows = watchedResp?.data || [];
+    const onlineOf = (s) => (s.online != null ? s.online : isRecentlyActive(s.last_seen_at));
+    const seenMs = (s) => (s.last_seen_at ? new Date(s.last_seen_at).getTime() : 0);
+    return [...rows].sort((a, b) =>
+      (onlineOf(b) - onlineOf(a)) ||
+      ((b.is_active ? 1 : 0) - (a.is_active ? 1 : 0)) ||
+      (seenMs(b) - seenMs(a)) ||
+      String(a.full_name || "").localeCompare(String(b.full_name || "")));
+  }, [watchedResp]);
 
   // ── Phase 3 alert on/off preference (org-level, default ON) ──
   const { data: alertResp } = useQuery({
@@ -361,6 +362,16 @@ export default function AccountantLogPage() {
             }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                {/* MP-LAST-SEEN presence dot — green = active in the last ~10 min
+                    (heartbeat throttled to 5 min: presence, not live). Grey for
+                    inactive/deactivated accounts (a till, not a person). */}
+                {(() => {
+                  const online = s.is_active && (s.online != null ? s.online : isRecentlyActive(s.last_seen_at));
+                  return <span title={online ? (en ? "Active now" : "Actif maintenant") : ""}
+                    style={{ width: 9, height: 9, borderRadius: "50%", flexShrink: 0,
+                      background: online ? "#34d399" : "#94a3b8",
+                      boxShadow: online ? "0 0 0 3px rgba(52,211,153,0.18)" : "none" }} />;
+                })()}
                 <span style={{ fontWeight: 600, fontSize: 15 }}>{s.full_name}</span>
                 <span style={{ fontSize: 11, padding: "1px 8px", borderRadius: 8, background: roleColor(s.role) + "20", color: roleColor(s.role), fontWeight: 600 }}>
                   {roleLabel(s.role, en)}
@@ -372,7 +383,14 @@ export default function AccountantLogPage() {
                 )}
               </div>
               <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3 }}>
-                {(s.branch_name || (en ? "All branches" : "Toutes les boutiques"))} · {en ? "Last seen" : "Vu"} {lastActivityLabel(s.last_activity, en)}
+                {(s.branch_name || (en ? "All branches" : "Toutes les boutiques"))} ·{" "}
+                {/* Deactivated/shared accounts (a till, not a person) never show a
+                    stale "last seen" line beside an active cashier. */}
+                {!s.is_active
+                  ? (en ? "Inactive account" : "Compte inactif")
+                  : (s.last_seen_at
+                      ? `${en ? "Active" : "Actif"} ${formatLastSeen(s.last_seen_at, en)}`
+                      : (en ? "Never active" : "Jamais actif"))}
               </div>
             </div>
             {/* MP-OWNER-MANAGER-IN-PERSON-VIEWS: owners appear in the roster so

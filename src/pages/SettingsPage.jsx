@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import { useAuthStore, useLangStore, useSettingsStore } from "../store";
 import api from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
+import { formatLastSeen, isRecentlyActive } from "../utils/lastSeen";
 import PaywallModal from "../components/common/PaywallModal";
 import { hasFeature, getCapabilities } from "../utils/planCapabilities";
 import { useLiteMode } from "../hooks/useLiteMode";
@@ -781,6 +782,17 @@ export default function SettingsPage() {
                         {s.assigned_location_name && (
                           <div style={{ fontSize: 11, color: "var(--brand-light)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             📍 {s.assigned_location_name}
+                          </div>
+                        )}
+                        {/* MP-LAST-SEEN: presence — only present when the API returned it
+                            (owner/manager callers only). Green dot = active in the last
+                            ~10 min (heartbeat throttled to 5 min: presence, not live). */}
+                        {s.online !== undefined && (
+                          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, display: "flex", alignItems: "center", gap: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            <span style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, background: (s.online != null ? s.online : isRecentlyActive(s.last_seen_at)) ? "#34d399" : "#94a3b8" }} />
+                            {s.last_seen_at
+                              ? `${lang === "en" ? "Active" : "Actif"} ${formatLastSeen(s.last_seen_at, lang === "en")}`
+                              : (lang === "en" ? "Never active" : "Jamais actif")}
                           </div>
                         )}
                       </div>
