@@ -268,6 +268,10 @@ export default function ReportsPage() {
   const totalDebt = debts.reduce((s, c) => s + (+c.total_debt || 0), 0);
 
   const exportCSV = () => {
+    if (!daily.length) {
+      toast(lang === "en" ? "No report data in this range" : "Aucune donnée dans cette période");
+      return;
+    }
     const headers = ["Date","Sales","Cash Collected","Credit Sales","Cost","Gross Profit","Margin%","Expenses","Net Profit","Transactions"];
     const rows = daily.map(d => [d.sale_date, d.gross_sales, d.cash_collected, d.credit_sales, d.total_cost, d.gross_profit, d.profit_margin_pct, d.total_expenditure, d.net_profit, d.sale_count]);
     const csv = [headers, ...rows].map(r => r.join(",")).join("\n");
@@ -278,6 +282,12 @@ export default function ReportsPage() {
   };
 
   const exportSalesCSV = () => {
+    // Empty-result honesty: don't hand the user a header-only file for a range
+    // with no sales — tell them plainly instead.
+    if (!salesDetail.length) {
+      toast(lang === "en" ? "No sales in this range" : "Aucune vente dans cette période");
+      return;
+    }
     const rows = [["Sale#", "Date", "Customer", "Product / Line Type", "Qty", "Unit Price", "Line Total", "Payment Status"]];
     salesDetail.forEach(sale => {
       (sale.pa_sale_items || []).forEach(item => {

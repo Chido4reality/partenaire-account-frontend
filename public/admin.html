@@ -2962,23 +2962,38 @@
       }
     }
 
-    function downloadBusinessCsv(biz, type) {
+    function downloadBusinessCsv(biz, type, dates) {
       const token = localStorage.getItem(TOKEN_KEY);
       if (!token) { showToast('Not signed in', 'danger'); return; }
       // Browsers cannot attach Authorization headers via window.open / <a>
       // download, but our backend reads the token from the Authorization
       // header only. Use fetch + Blob URL workaround.
       showToast('Preparing ' + type + ' CSV…', 'info');
-      fetch(API_BASE + '/admin/businesses/' + encodeURIComponent(biz.id) + '/export?type=' + encodeURIComponent(type), {
+      // Optional date range (sales only) — the backend applies inclusive
+      // whole-local-day bounds in the shop's timezone.
+      let qs = '?type=' + encodeURIComponent(type);
+      if (dates && dates.from) qs += '&from=' + encodeURIComponent(dates.from);
+      if (dates && dates.to)   qs += '&to='   + encodeURIComponent(dates.to);
+      fetch(API_BASE + '/admin/businesses/' + encodeURIComponent(biz.id) + '/export' + qs, {
         headers: { 'Authorization': 'Bearer ' + token }
       }).then(r => {
         if (r.status === 401) { localStorage.removeItem(TOKEN_KEY); showLogin(); throw new Error('401'); }
         if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.blob();
-      }).then(blob => {
-        const url = URL.createObjectURL(blob);
+        return r.text();
+      }).then(text => {
+        // Empty-result honesty: a header-only CSV means no rows in this range.
+        // Tell the user instead of silently downloading an "empty" file.
+        const lines = String(text || '').split('\n').filter(l => l.trim().length);
+        if (lines.length <= 1) {
+          showToast('No ' + type + ' rows to export' + (dates && (dates.from || dates.to) ? ' for this range' : ''), 'info');
+          return;
+        }
+        const url = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
         const a = document.createElement('a');
-        a.href = url; a.download = (biz.mp_id || biz.id) + '-' + type + '-' + new Date().toISOString().slice(0,10) + '.csv';
+        const datePart = (dates && (dates.from || dates.to))
+          ? ((dates.from || dates.to) + (dates.to && dates.to !== dates.from ? '_' + dates.to : ''))
+          : new Date().toISOString().slice(0, 10);
+        a.href = url; a.download = (biz.mp_id || biz.id) + '-' + type + '-' + datePart + '.csv';
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
       }).catch(e => showToast('Download failed: ' + e.message, 'danger'));
