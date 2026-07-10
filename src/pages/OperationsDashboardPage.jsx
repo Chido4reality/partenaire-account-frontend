@@ -77,6 +77,24 @@ function Card({ title, sub, children, action }) {
   );
 }
 
+// For voids, an INCREASE is bad — invert the colour (up = red, down = green).
+function VoidDeltaPill({ pct }) {
+  if (pct == null || !Number.isFinite(pct)) {
+    return <span style={{ fontSize: 11, color: "var(--text-muted)" }}>—</span>;
+  }
+  const up = pct >= 0;
+  return (
+    <span style={{
+      fontSize: 11, fontWeight: 700,
+      color: up ? "#f87171" : "#34d399",
+      background: up ? "rgba(248,113,113,0.12)" : "rgba(52,211,153,0.12)",
+      padding: "2px 6px", borderRadius: 999,
+    }}>
+      {up ? "▲" : "▼"} {Math.abs(Math.round(pct))}%
+    </span>
+  );
+}
+
 function DeltaPill({ pct }) {
   if (pct == null || !Number.isFinite(pct)) {
     return <span style={{ fontSize: 11, color: "var(--text-muted)" }}>—</span>;
@@ -147,6 +165,14 @@ export default function OperationsDashboardPage() {
     queryKey: ["dash-inventory-health"],
     queryFn:  () => api.get(`/dashboard/inventory-health`).then(r => r.data?.data || null),
     staleTime: 60000,
+  });
+  // MP-VOIDS-PANEL: void activity for the selected range (who voided, how often,
+  // for how much) — an oversight signal, owner/manager/accountant only (the
+  // dashboard router blocks cashiers).
+  const voids = useOfflineCachedQuery({
+    queryKey: ["dash-voids", from, to],
+    queryFn:  () => api.get(`/dashboard/voids?from=${from}&to=${to}`).then(r => r.data?.data || null),
+    staleTime: 30000,
   });
 
   // ── MP-SCOREBOARD-DEBT-TAPTHROUGH: which customers a cashier's debt total came
@@ -469,6 +495,110 @@ export default function OperationsDashboardPage() {
             </div>
           );
         })}
+      </Card>
+
+      {/* ── Voids — oversight (who voided, how often, for how much) ── */}
+      <Card
+        title={en ? "Voids — who & how much" : "Annulations — qui & combien"}
+        sub={en
+          ? "Who cancelled sales, how often, and for how much, over the selected range. The classic risk is ring-sale → take the cash → void. Tap a void to open the sale."
+          : "Qui a annulé des ventes, combien de fois et pour quel montant, sur la période. Le risque classique : encaisser puis annuler. Touchez une annulation pour ouvrir la vente."}
+      >
+        {voids.isLoading && <div style={loadingStyle}>{en ? "Loading…" : "Chargement…"}</div>}
+        {voids.isError && <div style={errorStyle}>{en ? "Failed to load voids." : "Échec du chargement."}</div>}
+        {voids.data && (() => {
+          const t = voids.data.totals || {};
+          const staff = voids.data.by_staff || [];
+          const recent = voids.data.recent || [];
+          const tile = { background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px" };
+          const tileLabel = { fontSize: 11, color: "var(--text-muted)", marginBottom: 4 };
+          const tileValue = { fontWeight: 800, fontSize: 17 };
+          if (!t.count) return (
+            <div style={{ padding: 12, fontSize: 13, color: "var(--text-muted)", textAlign: "center" }}>
+              {en ? "No voided sales in this range. ✓" : "Aucune vente annulée dans cette plage. ✓"}
+            </div>
+          );
+          return (
+            <>
+              {/* Headline: count + voided value (+ delta vs previous window) + cash taken */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 10 }}>
+                <div style={tile}>
+                  <div style={tileLabel}>{en ? "Voided sales" : "Ventes annulées"}</div>
+                  <div style={tileValue}>{t.count}</div>
+                  <div style={{ marginTop: 4 }}><VoidDeltaPill pct={t.count_pct} /></div>
+                </div>
+                <div style={tile}>
+                  <div style={tileLabel}>{en ? "Voided value" : "Valeur annulée"}</div>
+                  <div style={{ ...tileValue, color: "#f87171" }}>{fmt(t.value)}</div>
+                  <div style={{ marginTop: 4 }}><VoidDeltaPill pct={t.value_pct} /></div>
+                </div>
+                <div style={tile}>
+                  <div style={tileLabel}>{en ? "Cash taken on voids" : "Espèces sur annulations"}</div>
+                  <div style={tileValue}>{fmt(t.cash_in)}</div>
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
+                    {en ? "actually paid, then voided" : "réellement payé, puis annulé"}
+                  </div>
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 14 }}>
+                {en
+                  ? `vs previous period: ${t.prev_count} voids · ${fmt(t.prev_value)}`
+                  : `vs période précédente : ${t.prev_count} annulations · ${fmt(t.prev_value)}`}
+              </div>
+
+              {/* By staff — the oversight signal (who voided), value desc */}
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{en ? "By staff (who voided)" : "Par employé (qui a annulé)"}</div>
+              <div style={{ overflowX: "auto", marginBottom: 18 }}>
+                <table style={tableStyle}>
+                  <thead><tr>
+                    <th style={thStyle}>{en ? "Staff" : "Employé"}</th>
+                    <th style={thStyleRight}>{en ? "Voids" : "Annulations"}</th>
+                    <th style={thStyleRight}>{en ? "Value" : "Valeur"}</th>
+                    <th style={thStyleRight}>{en ? "Cash" : "Espèces"}</th>
+                  </tr></thead>
+                  <tbody>
+                    {staff.map((s, i) => (
+                      <tr key={i} style={{ borderTop: "1px solid var(--border)" }}>
+                        <td style={{ ...tdStyle, fontWeight: 600 }}>{s.name || "—"}</td>
+                        <td style={tdStyleRight}>{s.count}</td>
+                        <td style={{ ...tdStyleRight, color: "#f87171", fontWeight: 700 }}>{fmt(s.value)}</td>
+                        <td style={tdStyleRight}>{fmt(s.cash_in)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Recent voids — tap to open the sale (reuses /refunds?ref= lookup) */}
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{en ? "Recent voids" : "Annulations récentes"}</div>
+              <div style={{ overflowX: "auto" }}>
+                <table style={tableStyle}>
+                  <thead><tr>
+                    <th style={thStyle}>{en ? "Receipt" : "Reçu"}</th>
+                    <th style={thStyleRight}>{en ? "Amount" : "Montant"}</th>
+                    <th style={thStyle}>{en ? "Voided by" : "Annulé par"}</th>
+                    <th style={thStyle}>{en ? "When" : "Quand"}</th>
+                    <th style={thStyle}>{en ? "Reason" : "Raison"}</th>
+                  </tr></thead>
+                  <tbody>
+                    {recent.map((v, i) => (
+                      <tr key={i} style={{ borderTop: "1px solid var(--border)", cursor: v.sale_number ? "pointer" : "default" }}
+                        onClick={v.sale_number ? () => openReceipt(v.sale_number) : undefined}>
+                        <td style={{ ...tdStyle, fontFamily: "monospace", textDecoration: v.sale_number ? "underline" : "none" }}>{v.sale_number || "—"}</td>
+                        <td style={{ ...tdStyleRight, color: "#f87171", fontWeight: 700 }}>{fmt(v.amount)}</td>
+                        <td style={tdStyle}>{v.voided_by_name || "—"}</td>
+                        <td style={{ ...tdStyle, fontSize: 11, color: "var(--text-muted)" }}>
+                          {v.voided_at ? new Date(v.voided_at).toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"}
+                        </td>
+                        <td style={{ ...tdStyle, fontSize: 12 }}>{v.void_reason || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          );
+        })()}
       </Card>
 
       {/* ── Voided receipts (paid then cancelled) ──────────── */}
