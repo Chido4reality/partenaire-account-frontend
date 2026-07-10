@@ -893,6 +893,7 @@
         <a class="sb-link" data-route="businesses"><span class="sb-link-icon">🏪</span><span class="sb-link-label">Businesses</span></a>
         <a class="sb-link" data-route="subscriptions"><span class="sb-link-icon">💳</span><span class="sb-link-label">Subscriptions</span></a>
         <a class="sb-link" data-route="subscription-discounts" id="sb-link-subdiscounts"><span class="sb-link-icon">🏷️</span><span class="sb-link-label">Plan discounts</span></a>
+        <a class="sb-link" data-route="promo-codes" id="sb-link-promocodes"><span class="sb-link-icon">🎟️</span><span class="sb-link-label">Promo codes</span></a>
         <!-- MP-SUB-CONSOLIDATION (v2): "Sub. requests" tab retired. It read the
              orphaned pa_subscription_requests table (always empty), while the
              app's upgrade requests go to pa_subscription_payments shown in the
@@ -1487,6 +1488,92 @@
         </div>
       </section>
 
+      <!-- PROMO CODES (MP-PROMO) — influencer affiliate codes + payout -->
+      <section class="route" id="route-promo-codes">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Promo codes</div>
+            <div class="page-sub">Influencer affiliate codes. A shop that redeems a code gets a first-period discount; the influencer earns commission on <strong>approved</strong> subscription payments only — never on signups. Reserved (house) codes earn nothing.</div>
+          </div>
+          <button class="btn btn-primary" id="pc-new-btn">+ New code</button>
+        </div>
+        <div id="pc-no-permission" class="placeholder" hidden>
+          <div class="placeholder-icon">🔒</div>
+          <div class="placeholder-title">Read-only</div>
+          <div class="placeholder-text">Staff admins can view codes but cannot create, edit or pay out.</div>
+        </div>
+        <div id="pc-body">
+          <div class="card" id="pc-form-card" hidden style="margin-bottom:16px;padding:14px">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+              <div class="field"><label>Code (letters + numbers)</label>
+                <input type="text" id="pc-code" placeholder="TOLU20" maxlength="20" style="text-transform:uppercase" /></div>
+              <div class="field"><label>Influencer name</label>
+                <input type="text" id="pc-name" placeholder="Tolu Adeyemi" /></div>
+              <div class="field"><label>Influencer phone</label>
+                <input type="text" id="pc-phone" placeholder="+234…" /></div>
+              <div class="field"><label>Influencer handle</label>
+                <input type="text" id="pc-handle" placeholder="@tolu" /></div>
+              <div class="field"><label>Discount type</label>
+                <select id="pc-disc-type"><option value="percent">Percent (%)</option><option value="amount">Fixed amount</option></select></div>
+              <div class="field"><label>Discount value</label>
+                <input type="number" id="pc-disc-value" placeholder="20" /></div>
+              <div class="field"><label>Commission %</label>
+                <input type="number" id="pc-commission" placeholder="10" min="0" max="100" /></div>
+              <div class="field"><label>Starts (optional)</label><input type="date" id="pc-starts" /></div>
+              <div class="field"><label>Expires (optional)</label><input type="date" id="pc-expires" /></div>
+              <div class="field"><label>Active</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="pc-active" checked /> Enabled</label></div>
+              <div class="field"><label>Reserved (house code)</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="pc-reserved" /> Earns no commission</label></div>
+              <div class="field" style="grid-column:1/-1"><label>Notes</label>
+                <input type="text" id="pc-notes" placeholder="Internal note (optional)" /></div>
+            </div>
+            <div style="margin-top:12px;display:flex;gap:8px">
+              <button class="btn btn-primary" id="pc-save-btn">Save code</button>
+              <button class="btn" id="pc-cancel-btn">Cancel</button>
+            </div>
+          </div>
+          <div class="card" style="padding:0;overflow:hidden">
+            <table class="data-table" id="pc-table">
+              <thead><tr>
+                <th>Code</th><th>Influencer</th><th>Discount</th><th class="ta-right">Comm %</th>
+                <th class="ta-right">Signups</th><th class="ta-right">Paid subs</th>
+                <th class="ta-right">Owed</th><th class="ta-right">Paid</th><th>Status</th><th class="ta-right">Actions</th>
+              </tr></thead>
+              <tbody id="pc-tbody"><tr><td colspan="10" class="muted ta-center" style="padding:20px">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Payout drawer (per code) -->
+        <div id="pc-payout" hidden style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;justify-content:flex-end">
+          <div style="width:min(680px,100%);height:100%;overflow:auto;background:var(--bg-card,#161b22);border-left:1px solid var(--border);padding:20px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <div class="page-title" id="pc-payout-title">Payout</div>
+              <button class="btn" id="pc-payout-close">✕</button>
+            </div>
+            <div class="page-sub" id="pc-payout-sub" style="margin-bottom:14px"></div>
+            <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">
+              <div class="field"><label>From</label><input type="date" id="pc-pf-from" /></div>
+              <div class="field"><label>To</label><input type="date" id="pc-pf-to" /></div>
+              <button class="btn btn-secondary" id="pc-pf-apply">Apply</button>
+              <button class="btn" id="pc-pf-clear">All time</button>
+            </div>
+            <div id="pc-payout-metrics" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px"></div>
+            <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px" id="pc-markpaid-row">
+              <div class="field" style="flex:1"><label>Payment reference (MoMo / transfer)</label><input type="text" id="pc-paid-ref" placeholder="e.g. MoMo TX 8842…" /></div>
+              <button class="btn btn-primary" id="pc-markpaid-btn">Mark owed as paid</button>
+            </div>
+            <div class="card" style="padding:0;overflow:hidden">
+              <table class="data-table">
+                <thead><tr><th>Date</th><th>Shop</th><th class="ta-right">Base</th><th class="ta-right">Commission</th><th>Status</th></tr></thead>
+                <tbody id="pc-commissions"><tr><td colspan="5" class="muted ta-center" style="padding:16px">—</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- ADMIN TEAM (Phase D-D) -->
       <section class="route" id="route-admin-team">
         <div class="page-head">
@@ -2055,7 +2142,7 @@
     const VALID_ROUTES = new Set([
       'dashboard', 'live', 'businesses', 'subscriptions', 'subscription-requests', 'mp-finance',
       'marketplace-users', 'verifications', 'dozie-subscriptions', 'orders', 'disputes', 'marketplace-finance',
-      'sell-restrictions', 'subscription-discounts',
+      'sell-restrictions', 'subscription-discounts', 'promo-codes',
       'broadcasts', 'admin-team', 'audit-log', 'admin-activity', 'cart-reconcile', 'settings'
     ]);
 
@@ -2085,6 +2172,7 @@
       if (route === 'businesses')         loadBusinesses();
       if (route === 'subscriptions')      loadSubscriptions();
       if (route === 'subscription-discounts') loadSubDiscounts();
+      if (route === 'promo-codes')        loadPromoCodes();
       if (route === 'subscription-requests') loadSubscriptionRequests();
       if (route === 'mp-finance')         loadFinance();
       if (route === 'marketplace-users')  loadDzUsers();
@@ -5149,6 +5237,216 @@
       } catch (e) {
         tb.innerHTML = '<tr><td colspan="6" class="muted ta-center" style="padding:20px;color:#f87171">' + escapeHtml(e.message) + '</td></tr>';
       }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  PROMO CODES (MP-PROMO) — influencer affiliate CRUD + payout view.
+    //  Read = any admin; create/edit/delete/pay = master_admin | admin.
+    // ════════════════════════════════════════════════════════════════
+    let _pcCodes = [];
+    let _pcEditId = null;
+    let _pcBound = false;
+    let _pcPayoutId = null;
+    let _pcCanWrite = false;
+
+    function pcMoney(n) { return Math.round(Number(n) || 0).toLocaleString('en-US').replace(/,/g, ' '); }
+    function pcDisc(d) { return d.discount_type === 'percent' ? (d.discount_value + '%') : (pcMoney(d.discount_value) + ' off'); }
+
+    function pcBind() {
+      if (_pcBound) return; _pcBound = true;
+      const nb = $('pc-new-btn'); if (nb) nb.addEventListener('click', () => pcOpenForm(null));
+      const cb = $('pc-cancel-btn'); if (cb) cb.addEventListener('click', () => { $('pc-form-card').hidden = true; _pcEditId = null; });
+      const sb = $('pc-save-btn'); if (sb) sb.addEventListener('click', pcSave);
+      const tb = $('pc-tbody');
+      if (tb) tb.addEventListener('click', (e) => {
+        const b = e.target && e.target.closest ? e.target.closest('button[data-pc-action]') : null;
+        if (!b) return;
+        const id = b.getAttribute('data-pc-id');
+        const act = b.getAttribute('data-pc-action');
+        if (act === 'edit')    { const r = _pcCodes.find(x => x.id === id); if (r) pcOpenForm(r); }
+        if (act === 'active')  pcToggle(id, 'is_active', b.getAttribute('data-pc-val') === 'true');
+        if (act === 'reserved')pcToggle(id, 'is_reserved', b.getAttribute('data-pc-val') === 'true');
+        if (act === 'payout')  pcOpenPayout(id);
+        if (act === 'delete')  pcDelete(id);
+      });
+      const pcClose = $('pc-payout-close'); if (pcClose) pcClose.addEventListener('click', () => { $('pc-payout').hidden = true; _pcPayoutId = null; });
+      const pfa = $('pc-pf-apply'); if (pfa) pfa.addEventListener('click', pcLoadPayout);
+      const pfc = $('pc-pf-clear'); if (pfc) pfc.addEventListener('click', () => { $('pc-pf-from').value = ''; $('pc-pf-to').value = ''; pcLoadPayout(); });
+      const mp = $('pc-markpaid-btn'); if (mp) mp.addEventListener('click', pcMarkPaid);
+    }
+
+    function pcOpenForm(code) {
+      _pcEditId = code ? code.id : null;
+      $('pc-code').value      = code ? code.code : '';
+      $('pc-code').disabled   = !!code; // code is the identity — don't rename casually
+      $('pc-name').value      = code ? (code.influencer_name || '') : '';
+      $('pc-phone').value     = code ? (code.influencer_phone || '') : '';
+      $('pc-handle').value    = code ? (code.influencer_handle || '') : '';
+      $('pc-disc-type').value = code ? code.discount_type : 'percent';
+      $('pc-disc-value').value= code ? code.discount_value : '';
+      $('pc-commission').value= code ? code.commission_percent : '';
+      $('pc-starts').value    = code && code.starts_at  ? String(code.starts_at).slice(0, 10)  : '';
+      $('pc-expires').value   = code && code.expires_at ? String(code.expires_at).slice(0, 10) : '';
+      $('pc-active').checked   = code ? !!code.is_active : true;
+      $('pc-reserved').checked = code ? !!code.is_reserved : false;
+      $('pc-notes').value     = code ? (code.notes || '') : '';
+      $('pc-form-card').hidden = false;
+    }
+
+    async function pcSave() {
+      const body = {
+        code:              $('pc-code').value.trim().toUpperCase(),
+        influencer_name:   $('pc-name').value.trim(),
+        influencer_phone:  $('pc-phone').value.trim() || null,
+        influencer_handle: $('pc-handle').value.trim() || null,
+        discount_type:     $('pc-disc-type').value,
+        discount_value:    Number($('pc-disc-value').value),
+        commission_percent:Number($('pc-commission').value),
+        starts_at:         $('pc-starts').value || null,
+        expires_at:        $('pc-expires').value || null,
+        is_active:         $('pc-active').checked,
+        is_reserved:       $('pc-reserved').checked,
+        notes:             $('pc-notes').value.trim() || null,
+      };
+      if (!/^[A-Za-z0-9]{3,20}$/.test(body.code)) { showToast('Code must be 3–20 letters and numbers only', 'danger'); return; }
+      if (!body.influencer_name) { showToast('Influencer name is required', 'danger'); return; }
+      if (!(body.discount_value > 0)) { showToast('Discount value must be greater than 0', 'danger'); return; }
+      if (!(body.commission_percent >= 0 && body.commission_percent <= 100)) { showToast('Commission % must be 0–100', 'danger'); return; }
+      try {
+        if (_pcEditId) await apiAdmin('PATCH', '/admin/promo-codes/' + _pcEditId, body);
+        else           await apiAdmin('POST',  '/admin/promo-codes', body);
+        showToast('Promo code saved', 'success');
+        $('pc-form-card').hidden = true; _pcEditId = null;
+        loadPromoCodes();
+      } catch (e) { showToast(e.message, 'danger'); }
+    }
+
+    async function pcToggle(id, field, val) {
+      try { const b = {}; b[field] = val; await apiAdmin('PATCH', '/admin/promo-codes/' + id, b); loadPromoCodes(); }
+      catch (e) { showToast(e.message, 'danger'); }
+    }
+
+    async function pcDelete(id) {
+      if (!confirm('Delete this code? Only unused codes can be deleted — a redeemed code should be deactivated instead.')) return;
+      try { await apiAdmin('DELETE', '/admin/promo-codes/' + id); showToast('Deleted', 'success'); loadPromoCodes(); }
+      catch (e) { showToast(e.message, 'danger'); }
+    }
+
+    async function loadPromoCodes() {
+      pcBind();
+      const role = ((currentAdmin && currentAdmin.role) || '').toLowerCase();
+      _pcCanWrite = role !== 'staff';
+      const nb = $('pc-new-btn'); if (nb) nb.style.display = _pcCanWrite ? '' : 'none';
+      const tb = $('pc-tbody');
+      tb.innerHTML = '<tr><td colspan="10" class="muted ta-center" style="padding:20px">Loading…</td></tr>';
+      try {
+        const r = await apiAdmin('GET', '/admin/promo-codes');
+        _pcCodes = (r && r.data) || [];
+        if (!_pcCodes.length) { tb.innerHTML = '<tr><td colspan="10" class="muted ta-center" style="padding:20px">No promo codes yet.' + (_pcCanWrite ? ' Click “+ New code”.' : '') + '</td></tr>'; return; }
+        tb.innerHTML = _pcCodes.map(function (c) {
+          const st = c.stats || { signups: 0, paid_subscriptions: 0, commission_owed: 0, commission_paid: 0 };
+          const statusPills = (c.is_active
+            ? '<span class="badge" style="background:rgba(16,185,129,0.15);color:#34d399">Active</span>'
+            : '<span class="badge" style="background:rgba(148,163,184,0.15);color:#94a3b8">Off</span>')
+            + (c.is_reserved ? ' <span class="badge" style="background:rgba(251,197,3,0.15);color:#fbc503">Reserved</span>' : '');
+          const handle = c.influencer_handle ? ('<div class="muted" style="font-size:11px">' + escapeHtml(c.influencer_handle) + '</div>') : '';
+          const writeBtns = _pcCanWrite
+            ? '<button class="btn btn-sm" data-pc-action="edit" data-pc-id="' + escapeHtml(c.id) + '">Edit</button> '
+              + '<button class="btn btn-sm" data-pc-action="active" data-pc-id="' + escapeHtml(c.id) + '" data-pc-val="' + (!c.is_active) + '">' + (c.is_active ? 'Deactivate' : 'Activate') + '</button> '
+              + '<button class="btn btn-sm" style="color:#f87171" data-pc-action="delete" data-pc-id="' + escapeHtml(c.id) + '">Delete</button>'
+            : '';
+          return '<tr>'
+            + '<td><strong>' + escapeHtml(c.code) + '</strong></td>'
+            + '<td>' + escapeHtml(c.influencer_name || '—') + handle + '</td>'
+            + '<td>' + pcDisc(c) + '</td>'
+            + '<td class="ta-right">' + (Number(c.commission_percent) || 0) + '%</td>'
+            + '<td class="ta-right">' + (st.signups || 0) + '</td>'
+            + '<td class="ta-right">' + (st.paid_subscriptions || 0) + '</td>'
+            + '<td class="ta-right">' + pcMoney(st.commission_owed) + '</td>'
+            + '<td class="ta-right">' + pcMoney(st.commission_paid) + '</td>'
+            + '<td>' + statusPills + '</td>'
+            + '<td class="ta-right"><button class="btn btn-sm" data-pc-action="payout" data-pc-id="' + escapeHtml(c.id) + '">Payout</button> ' + writeBtns + '</td>'
+            + '</tr>';
+        }).join('');
+      } catch (e) {
+        tb.innerHTML = '<tr><td colspan="10" class="muted ta-center" style="padding:20px;color:#f87171">' + escapeHtml(e.message) + '</td></tr>';
+      }
+    }
+
+    function pcOpenPayout(id) {
+      _pcPayoutId = id;
+      const c = _pcCodes.find(x => x.id === id);
+      $('pc-payout-title').textContent = 'Payout — ' + (c ? c.code : '');
+      $('pc-payout-sub').innerHTML = c
+        ? escapeHtml(c.influencer_name || '') + (c.influencer_phone ? ' · ' + escapeHtml(c.influencer_phone) : '')
+          + (c.is_reserved ? ' <span class="badge" style="background:rgba(251,197,3,0.15);color:#fbc503">Reserved — earns no commission</span>' : '')
+        : '';
+      $('pc-pf-from').value = ''; $('pc-pf-to').value = ''; $('pc-paid-ref').value = '';
+      $('pc-markpaid-row').style.display = _pcCanWrite ? '' : 'none';
+      $('pc-payout').hidden = false;
+      pcLoadPayout();
+    }
+
+    async function pcLoadPayout() {
+      if (!_pcPayoutId) return;
+      const q = new URLSearchParams();
+      if ($('pc-pf-from').value) q.set('date_from', $('pc-pf-from').value);
+      if ($('pc-pf-to').value)   q.set('date_to',   $('pc-pf-to').value);
+      const qs = q.toString() ? ('?' + q.toString()) : '';
+      const m = $('pc-payout-metrics'); m.innerHTML = '<div class="muted">Loading…</div>';
+      const cb = $('pc-commissions'); cb.innerHTML = '<tr><td colspan="5" class="muted ta-center" style="padding:16px">Loading…</td></tr>';
+      try {
+        const [rep, coms] = await Promise.all([
+          apiAdmin('GET', '/admin/promo-codes/' + _pcPayoutId + '/report' + qs),
+          apiAdmin('GET', '/admin/promo-codes/' + _pcPayoutId + '/commissions' + qs),
+        ]);
+        const s = (rep.data && rep.data.stats) || {};
+        const tile = (label, val, hint) => '<div class="card" style="padding:10px 12px">'
+          + '<div class="muted" style="font-size:11px">' + label + '</div>'
+          + '<div style="font-weight:800;font-size:18px">' + val + '</div>'
+          + (hint ? '<div class="muted" style="font-size:10px">' + hint + '</div>' : '') + '</div>';
+        m.innerHTML =
+            tile('Signups', (s.signups || 0), 'redemptions — not payable')
+          + tile('Paid subs', (s.paid_subscriptions || 0), 'approved payments')
+          + tile('Gross revenue', pcMoney(s.gross_revenue), 'attributed')
+          + tile('Commission owed', pcMoney(s.commission_owed))
+          + tile('Commission paid', pcMoney(s.commission_paid));
+        const rows = (coms.data || []);
+        if (!rows.length) { cb.innerHTML = '<tr><td colspan="5" class="muted ta-center" style="padding:16px">No commissions in this range.</td></tr>'; return; }
+        cb.innerHTML = rows.map(function (r) {
+          const org = r.pa_organisations || {};
+          const shop = escapeHtml(org.name || org.user_id_number || (r.org_id ? String(r.org_id).slice(0, 8) : '—'));
+          const stPill = r.status === 'paid'
+            ? '<span class="badge" style="background:rgba(16,185,129,0.15);color:#34d399">Paid</span>'
+            : r.status === 'void'
+              ? '<span class="badge" style="background:rgba(148,163,184,0.15);color:#94a3b8">Void</span>'
+              : '<span class="badge" style="background:rgba(251,197,3,0.15);color:#fbc503">Owed</span>';
+          return '<tr>'
+            + '<td>' + String(r.created_at || '').slice(0, 10) + '</td>'
+            + '<td>' + shop + '</td>'
+            + '<td class="ta-right">' + pcMoney(r.base_amount) + ' ' + escapeHtml(r.currency || '') + '</td>'
+            + '<td class="ta-right">' + pcMoney(r.commission_amount) + ' ' + escapeHtml(r.currency || '') + '</td>'
+            + '<td>' + stPill + '</td></tr>';
+        }).join('');
+      } catch (e) {
+        m.innerHTML = '<div style="color:#f87171">' + escapeHtml(e.message) + '</div>';
+        cb.innerHTML = '';
+      }
+    }
+
+    async function pcMarkPaid() {
+      if (!_pcPayoutId) return;
+      const ref = $('pc-paid-ref').value.trim();
+      const from = $('pc-pf-from').value, to = $('pc-pf-to').value;
+      const scope = (from || to) ? ('for ' + (from || 'start') + ' → ' + (to || 'now')) : 'for ALL time';
+      if (!confirm('Mark all OWED commissions ' + scope + ' as paid?' + (ref ? ('\nReference: ' + ref) : '\n(no reference entered)'))) return;
+      try {
+        const r = await apiAdmin('POST', '/admin/promo-codes/' + _pcPayoutId + '/mark-paid', { date_from: from || null, date_to: to || null, paid_reference: ref || null });
+        const d = (r && r.data) || {};
+        showToast('Marked ' + (d.marked || 0) + ' commission(s) paid (' + pcMoney(d.total) + ')', 'success');
+        pcLoadPayout();
+        loadPromoCodes();
+      } catch (e) { showToast(e.message, 'danger'); }
     }
 
     // ════════════════════════════════════════════════════════════════
