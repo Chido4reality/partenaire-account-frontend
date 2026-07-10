@@ -152,6 +152,9 @@ export default function POSPage() {
   // holds the line being approved while the two-option modal is open.
   const belowCostApprovalIdRef = useRef(null);
   const [belowCostChoice, setBelowCostChoice] = useState(null);
+  // MP-CREDIT-PERMISSION: a boss-approved credit_sale id rides the next /sales
+  // POST (server re-verifies + single-uses it), same mechanic as below-cost.
+  const creditApprovalIdRef = useRef(null);
   const [sendingToBoss, setSendingToBoss] = useState(false);
   const [showCamera, setShowCamera]       = useState(false);
   const [scanMode, setScanMode]           = useState(isMobile() ? "camera" : "usb");
@@ -1475,6 +1478,8 @@ export default function POSPage() {
         // MP-BELOW-COST-HYBRID-APPROVAL: async-approved below-cost sale (resumed
         // held sale). Server re-verifies the cart signature + single-uses it.
         below_cost_approval_id: belowCostApprovalIdRef.current || undefined,
+        // MP-CREDIT-PERMISSION: boss-approved credit sale, re-verified server-side.
+        credit_approval_id: creditApprovalIdRef.current || undefined,
         // MP-UNDO-TO-CART: link this re-checkout to the voided sale it replaces.
         replaces_sale_id: restoreFromIdRef.current || undefined,
       };
@@ -1497,7 +1502,7 @@ export default function POSPage() {
 
         // MP-DISCOUNT: clear sale-level discount + any minted approval token + a
         // consumed async approval id.
-        setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason(""); discountTokenRef.current = null; discountApprovalIdRef.current = null; belowCostApprovalIdRef.current = null;
+        setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason(""); discountTokenRef.current = null; discountApprovalIdRef.current = null; belowCostApprovalIdRef.current = null; creditApprovalIdRef.current = null;
         setDebtInvoices([]); setSelectedDebtIds(new Set()); setDebtPayAmt("");
         setDebtBanner(null);
         setOnlineCtx(null);
@@ -1721,6 +1726,38 @@ export default function POSPage() {
           ? "The cart changed since approval — the below-cost approval is void. Request a new one."
           : "Le panier a changé depuis l'approbation — approbation annulée. Refaites une demande.",
           { duration: 6000 });
+        return;
+      }
+      // ── MP-CREDIT-PERMISSION control responses ───────────────────────────
+      if (d?.code === "credit_not_allowed") {
+        creditApprovalIdRef.current = null;
+        toast.error(lang === "en"
+          ? "You are not allowed to sell on credit. Ask the boss."
+          : "Vous n'êtes pas autorisé à vendre à crédit. Demandez au patron.",
+          { duration: 6000 });
+        return;
+      }
+      if (d?.code === "credit_approval_required") {
+        // Needs the boss. Send the request to the boss's phone (the SAME async
+        // pa_action_approvals flow below-cost uses); once approved, the cashier
+        // taps Complete again and the sale rides with credit_approval_id. (This
+        // handler isn't async — use promise chaining.)
+        creditApprovalIdRef.current = null;
+        api.post("/sales/credit-approval-request", {
+          items: cart, customer_id: customer?.id || null, customer_name: customer?.name || null,
+          paid_amount: paid, location_id: selectedLocation?.id,
+        }).then(r => {
+          const ar = r.data;
+          if (ar?.id) creditApprovalIdRef.current = ar.id;
+          toast(lang === "en"
+            ? "Credit sale sent to the boss for approval. Once approved, tap Complete again."
+            : "Vente à crédit envoyée au patron pour approbation. Une fois approuvée, appuyez de nouveau sur Terminer.",
+            { duration: 8000, icon: "📩" });
+        }).catch(e2 => {
+          toast.error(e2?.response?.data?.message || (lang === "en"
+            ? "Could not send the approval request." : "Impossible d'envoyer la demande d'approbation."),
+            { duration: 6000 });
+        });
         return;
       }
       if (d?.code === "NOT_STOCKED_AT_LOCATION") {
