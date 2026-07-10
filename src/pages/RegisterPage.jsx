@@ -27,7 +27,7 @@ const CATS = [
 export default function RegisterPage() {
   // MP-NIGERIA: `country` drives currency (NGN/XAF), city default, and phone format.
   // Defaults to Cameroun so an unchanged CM signup is byte-identical to before.
-  const [form, setForm] = useState({ org_name: "", full_name: "", phone: "", password: "", category: "moto_parts", country: "Cameroun", city: "" });
+  const [form, setForm] = useState({ org_name: "", full_name: "", phone: "", password: "", category: "moto_parts", country: "Cameroun", city: "", promo_code: "" });
   const [loading, setLoading] = useState(false);
   const [cities, setCities] = useState([]);
   useEffect(() => {
@@ -57,6 +57,13 @@ export default function RegisterPage() {
       const res = await api.post("/auth/register", form);
       login(res.data.user, res.data.org, res.data.token);
       toast.success(lang === "en" ? "Account created!" : "Compte créé!");
+      // MP-PROMO: confirm a valid signup code was captured; a bad code never
+      // blocks signup, so just nudge them to add it at checkout instead.
+      if (res.data?.promo?.applied) {
+        toast.success(lang === "en" ? `🎟️ Promo code ${res.data.promo.code} applied` : `🎟️ Code promo ${res.data.promo.code} appliqué`);
+      } else if (form.promo_code && form.promo_code.trim()) {
+        toast(lang === "en" ? "Promo code not applied — you can add it at checkout." : "Code promo non appliqué — ajoutez-le au paiement.");
+      }
       navigate("/");
     } catch (err) {
       const data = err.response?.data;
@@ -141,6 +148,21 @@ export default function RegisterPage() {
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="form-group">
+              <label className="label">
+                {lang === "en" ? "Promo code (optional)" : "Code promo (optionnel)"}
+              </label>
+              <input className="input" type="text" value={form.promo_code}
+                onChange={e => set("promo_code", e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+                maxLength={20} placeholder={lang === "en" ? "e.g. TOLU20" : "ex : TOLU20"}
+                style={{ textTransform: "uppercase" }} />
+              <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 4, lineHeight: 1.4 }}>
+                {lang === "en"
+                  ? "From an influencer? Enter their code to get a discount on your subscription."
+                  : "Reçu d'un influenceur ? Entrez son code pour une réduction sur votre abonnement."}
+              </div>
             </div>
 
             <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={loading}>

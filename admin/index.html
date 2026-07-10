@@ -1519,6 +1519,10 @@
                 <input type="number" id="pc-disc-value" placeholder="20" /></div>
               <div class="field"><label>Commission %</label>
                 <input type="number" id="pc-commission" placeholder="10" min="0" max="100" /></div>
+              <div class="field"><label>Commission mode</label>
+                <select id="pc-mode"><option value="one_time">One-time (first payment only)</option><option value="recurring">Recurring (every renewal)</option><option value="window">Window (N months)</option></select></div>
+              <div class="field" id="pc-months-field" hidden><label>Window (months)</label>
+                <input type="number" id="pc-months" placeholder="3" min="1" step="1" /></div>
               <div class="field"><label>Starts (optional)</label><input type="date" id="pc-starts" /></div>
               <div class="field"><label>Expires (optional)</label><input type="date" id="pc-expires" /></div>
               <div class="field"><label>Active</label>
@@ -5251,12 +5255,23 @@
 
     function pcMoney(n) { return Math.round(Number(n) || 0).toLocaleString('en-US').replace(/,/g, ' '); }
     function pcDisc(d) { return d.discount_type === 'percent' ? (d.discount_value + '%') : (pcMoney(d.discount_value) + ' off'); }
+    function pcModeLabel(c) {
+      const m = c.commission_mode || 'one_time';
+      if (m === 'recurring') return 'recurring';
+      if (m === 'window') return (c.commission_months || '?') + '-mo window';
+      return 'one-time';
+    }
+    function pcSyncMode() {
+      const isWin = $('pc-mode') && $('pc-mode').value === 'window';
+      if ($('pc-months-field')) $('pc-months-field').hidden = !isWin;
+    }
 
     function pcBind() {
       if (_pcBound) return; _pcBound = true;
       const nb = $('pc-new-btn'); if (nb) nb.addEventListener('click', () => pcOpenForm(null));
       const cb = $('pc-cancel-btn'); if (cb) cb.addEventListener('click', () => { $('pc-form-card').hidden = true; _pcEditId = null; });
       const sb = $('pc-save-btn'); if (sb) sb.addEventListener('click', pcSave);
+      const md = $('pc-mode'); if (md) md.addEventListener('change', pcSyncMode);
       const tb = $('pc-tbody');
       if (tb) tb.addEventListener('click', (e) => {
         const b = e.target && e.target.closest ? e.target.closest('button[data-pc-action]') : null;
@@ -5285,6 +5300,9 @@
       $('pc-disc-type').value = code ? code.discount_type : 'percent';
       $('pc-disc-value').value= code ? code.discount_value : '';
       $('pc-commission').value= code ? code.commission_percent : '';
+      $('pc-mode').value      = code ? (code.commission_mode || 'one_time') : 'one_time';
+      $('pc-months').value    = code && code.commission_months ? code.commission_months : '';
+      pcSyncMode();
       $('pc-starts').value    = code && code.starts_at  ? String(code.starts_at).slice(0, 10)  : '';
       $('pc-expires').value   = code && code.expires_at ? String(code.expires_at).slice(0, 10) : '';
       $('pc-active').checked   = code ? !!code.is_active : true;
@@ -5302,6 +5320,8 @@
         discount_type:     $('pc-disc-type').value,
         discount_value:    Number($('pc-disc-value').value),
         commission_percent:Number($('pc-commission').value),
+        commission_mode:   $('pc-mode').value,
+        commission_months: $('pc-mode').value === 'window' ? Number($('pc-months').value) : null,
         starts_at:         $('pc-starts').value || null,
         expires_at:        $('pc-expires').value || null,
         is_active:         $('pc-active').checked,
@@ -5312,6 +5332,7 @@
       if (!body.influencer_name) { showToast('Influencer name is required', 'danger'); return; }
       if (!(body.discount_value > 0)) { showToast('Discount value must be greater than 0', 'danger'); return; }
       if (!(body.commission_percent >= 0 && body.commission_percent <= 100)) { showToast('Commission % must be 0–100', 'danger'); return; }
+      if (body.commission_mode === 'window' && !(body.commission_months > 0)) { showToast('Window months must be greater than 0', 'danger'); return; }
       try {
         if (_pcEditId) await apiAdmin('PATCH', '/admin/promo-codes/' + _pcEditId, body);
         else           await apiAdmin('POST',  '/admin/promo-codes', body);
@@ -5359,7 +5380,7 @@
             + '<td><strong>' + escapeHtml(c.code) + '</strong></td>'
             + '<td>' + escapeHtml(c.influencer_name || '—') + handle + '</td>'
             + '<td>' + pcDisc(c) + '</td>'
-            + '<td class="ta-right">' + (Number(c.commission_percent) || 0) + '%</td>'
+            + '<td class="ta-right">' + (Number(c.commission_percent) || 0) + '%<div class="muted" style="font-size:11px">' + pcModeLabel(c) + '</div></td>'
             + '<td class="ta-right">' + (st.signups || 0) + '</td>'
             + '<td class="ta-right">' + (st.paid_subscriptions || 0) + '</td>'
             + '<td class="ta-right">' + pcMoney(st.commission_owed) + '</td>'
@@ -5379,6 +5400,7 @@
       $('pc-payout-title').textContent = 'Payout — ' + (c ? c.code : '');
       $('pc-payout-sub').innerHTML = c
         ? escapeHtml(c.influencer_name || '') + (c.influencer_phone ? ' · ' + escapeHtml(c.influencer_phone) : '')
+          + ' · <span class="badge" style="background:rgba(148,163,184,0.15);color:#94a3b8">' + escapeHtml(pcModeLabel(c)) + '</span>'
           + (c.is_reserved ? ' <span class="badge" style="background:rgba(251,197,3,0.15);color:#fbc503">Reserved — earns no commission</span>' : '')
         : '';
       $('pc-pf-from').value = ''; $('pc-pf-to').value = ''; $('pc-paid-ref').value = '';
