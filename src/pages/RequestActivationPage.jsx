@@ -280,20 +280,61 @@ export default function RequestActivationPage() {
         )}
       </div>
 
-      {/* MP-PROMO — influencer promo code (first-period discount). Applied code
-          shows as a green chip; the discount is reflected in the totals above. */}
+      {/* MP-PROMO — influencer promo code (first-period discount). The chip is
+          HONEST: it only claims "applied" when the selected plan's price
+          actually reflects the promo (discount.source==='promo'). If another
+          (admin) discount already wins, or the promo is on file but no longer
+          reduces the price (first subscription already used), it says so plainly
+          instead of promising a discount that never lands. */}
       <div style={{ marginBottom: 14 }}>
-        {appliedCode ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.3)" }}>
-            <span style={{ fontSize: 16 }}>🎟️</span>
-            <div style={{ fontSize: 13, color: "#34d399", fontWeight: 600 }}>
-              {en ? `Promo code ${appliedCode.code} applied` : `Code promo ${appliedCode.code} appliqué`}
-              <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>
-                {en ? "The discount above applies to your first payment." : "La réduction ci-dessus s'applique à votre premier paiement."}
+        {appliedCode ? (() => {
+          const promoActive = selDiscount && selDiscount.source === "promo";
+          const otherDiscount = selDiscount && selDiscount.source !== "promo";
+          const code = appliedCode.code;
+          if (promoActive) {
+            const save = fmt((selDiscount.amount_off || 0) * months);
+            return (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.3)" }}>
+                <span style={{ fontSize: 16 }}>🎟️</span>
+                <div style={{ fontSize: 13, color: "#34d399", fontWeight: 600 }}>
+                  {en ? `Promo code ${code} applied — you save ${save}` : `Code promo ${code} appliqué — vous économisez ${save}`}
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>
+                    {en ? "This discount is reflected in the total above." : "Cette réduction est incluse dans le total ci-dessus."}
+                  </div>
+                </div>
+              </div>
+            );
+          }
+          if (otherDiscount) {
+            return (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.3)" }}>
+                <span style={{ fontSize: 16 }}>🎟️</span>
+                <div style={{ fontSize: 13, color: "#34d399", fontWeight: 600 }}>
+                  {en ? "A discount is already applied to this plan." : "Une réduction est déjà appliquée à ce forfait."}
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>
+                    {en ? `Your promo code ${code} is saved to your account.` : `Votre code promo ${code} est enregistré sur votre compte.`}
+                  </div>
+                </div>
+              </div>
+            );
+          }
+          // On file but not reducing this price (first subscription already used, or code window passed).
+          const alreadyUsed = appliedCode.eligible_now === false && appliedCode.reason === "already_subscribed";
+          return (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, background: "rgba(148,163,184,0.12)", border: "1px solid rgba(148,163,184,0.3)" }}>
+              <span style={{ fontSize: 16 }}>🎟️</span>
+              <div style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600 }}>
+                {en ? `Promo code ${code} is on your account` : `Code promo ${code} enregistré`}
+                <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>
+                  {alreadyUsed
+                    ? (en ? "It applies to a first subscription only — your shop has already subscribed, so it won't reduce this payment."
+                          : "Il ne s'applique qu'à un premier abonnement — votre boutique s'est déjà abonnée, il ne réduira donc pas ce paiement.")
+                    : (en ? "It applies to your first paid subscription." : "Il s'applique à votre premier abonnement payant.")}
+                </div>
               </div>
             </div>
-          </div>
-        ) : showPromo ? (
+          );
+        })() : showPromo ? (
           <div style={{ display: "flex", gap: 8 }}>
             <input className="input" value={promoInput}
               onChange={e => setPromoInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
