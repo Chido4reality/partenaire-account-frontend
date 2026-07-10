@@ -901,6 +901,7 @@ const PERM_ACTIONS = [
   { key: "debt_adjust_policy",  en: "Change / forgive debt", fr: "Modifier / annuler une dette" },
   { key: "delete_policy",       en: "Delete a customer",    fr: "Supprimer un client" },
   { key: "discount_policy",     en: "Give a discount",      fr: "Faire une remise" },
+  { key: "credit_policy",       en: "Sell on credit",       fr: "Vendre à crédit" },
   { key: "expense_policy",      en: "Record an expense",    fr: "Enregistrer une dépense" },
 ];
 
@@ -969,6 +970,7 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
         max_discount_pct: perms.max_discount_pct === "" ? null : perms.max_discount_pct,
         max_expense_amount: perms.max_expense_amount === "" ? null : perms.max_expense_amount,
         approve_above_amount: perms.approve_above_amount === "" ? null : perms.approve_above_amount,
+        max_credit_amount: perms.max_credit_amount === "" ? null : perms.max_credit_amount,
       };
       PERM_ACTIONS.forEach((a) => {
         const v = perms[a.key];
@@ -1402,6 +1404,16 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                           <input type="number" min="0" max="100" className="input" style={{ width: 110 }}
                             value={perms.max_discount_pct ?? ""} placeholder={en ? "no limit" : "sans limite"}
                             onChange={(e) => setCap("max_discount_pct", e.target.value)} />
+                        </div>
+                      )}
+                      {/* MP-CREDIT-PERMISSION: per-sale credit ceiling (blank = no limit).
+                          A credit above it needs the boss even when the policy is Allowed. */}
+                      {a.key === "credit_policy" && !blocked && (
+                        <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 12.5, color: "var(--text-muted)", flex: 1 }}>{en ? "Max credit amount" : "Crédit max"} ({fmt.symbol})</span>
+                          <input type="number" min="0" className="input" style={{ width: 130 }}
+                            value={perms.max_credit_amount ?? ""} placeholder={en ? "no limit" : "sans limite"}
+                            onChange={(e) => setCap("max_credit_amount", e.target.value)} />
                         </div>
                       )}
                       {a.key === "expense_policy" && !blocked && (
