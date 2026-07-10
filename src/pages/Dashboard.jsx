@@ -103,6 +103,25 @@ export default function Dashboard() {
     enabled: isOwner || isManager
   });
 
+  // MP-VOIDS-TILE: void activity for the SAME scope the tiles use — today,
+  // filtered by locFilter (default all). Reuses the SAME endpoint as the
+  // /operations "Voids — who & how much" panel (one aggregation, so the tile
+  // and the panel can never diverge). Owner/manager only; a cashier never
+  // renders the owner/manager grid AND the endpoint 403s them.
+  const todayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD, local calendar day
+  const { data: voidsToday } = useOfflineCachedQuery({
+    queryKey: ['dash-voids-today', locFilter, todayStr],
+    queryFn: () => {
+      const params = new URLSearchParams({ from: todayStr, to: todayStr });
+      if (locFilter) params.set('location_id', locFilter);
+      return api.get(`/dashboard/voids?${params.toString()}`).then(r => r.data?.data || null);
+    },
+    enabled: isOwner || isManager,
+    refetchInterval: 60000,
+  });
+  const voidCount = voidsToday?.totals?.count || 0;
+  const voidValue = voidsToday?.totals?.value || 0;
+
   // MP-DOZIE-INVENTORY-PUBLISH-UI: zero-listings nudge for owners.
   // Surfaces a banner when the org has 0 Dozie publications, linking
   // straight to /inventory. Owner/manager only — cashier doesn't
@@ -305,6 +324,18 @@ export default function Dashboard() {
                 value={isLoading ? '...' : fmt(s.net_cash || 0)}
                 color={s.net_cash >= 0 ? '#10b981' : '#ef4444'} />
             )}
+            {/* MP-VOIDS-TILE: void oversight (owner+manager). Visible ZERO is the
+                reassuring signal — never hidden. Red + ⚠ when non-zero (matches
+                the red-variance treatment). Tap → full Voids panel on /operations. */}
+            <StatCard
+              icon={voidCount > 0 ? '⚠️' : '✓'}
+              label={lang === 'en' ? 'Voids' : 'Annulations'}
+              value={fmt(voidValue)}
+              sub={`${voidCount} ${lang === 'en'
+                ? (voidCount === 1 ? 'voided sale' : 'voided sales')
+                : (voidCount === 1 ? 'vente annulée' : 'ventes annulées')}`}
+              color={voidCount > 0 ? '#ef4444' : 'var(--text-muted)'}
+              onClick={() => navigate('/operations')} />
           </div>
 
           {/* MP-MOBILE-UI-PHASE-1-5: stack columns on mobile so the
