@@ -68,6 +68,28 @@ export default function RequestActivationPage() {
   const pending = !!myPlanData?.data?.has_pending_request;
   const pendingPlanId = myPlanData?.data?.pending_plan_id || null;
 
+  // MP-PROMO: the org's applied influencer code (first-period discount). The
+  // discount itself flows through GET /subscriptions/plans (best of admin rule
+  // vs promo), so applying a code just invalidates ["plans"] and the price
+  // updates. One code per shop, forever.
+  const { data: promoMine } = useQuery({
+    queryKey: ["promo-mine"],
+    queryFn: () => api.get("/promo/mine").then(r => r.data),
+  });
+  const appliedCode = promoMine?.data || null;
+  const [promoInput, setPromoInput] = useState("");
+  const [showPromo, setShowPromo] = useState(false);
+  const redeemMutation = useMutation({
+    mutationFn: () => api.post("/promo/redeem", { code: promoInput.trim() }),
+    onSuccess: () => {
+      toast.success(en ? "✓ Promo code applied!" : "✓ Code promo appliqué !");
+      setPromoInput(""); setShowPromo(false);
+      qc.invalidateQueries({ queryKey: ["promo-mine"] });
+      qc.invalidateQueries({ queryKey: ["plans"] });
+    },
+    onError: (e) => toast.error(e?.response?.data?.message || (en ? "That code can't be used." : "Ce code ne peut pas être utilisé.")),
+  });
+
   // Only purchasable paid tiers (Lite / Pro / Pro Plus). Pro Plus appears
   // automatically once it's active in pa_plans — no hardcoded list.
   const plans = useMemo(() => (plansData?.data || [])
@@ -255,6 +277,38 @@ export default function RequestActivationPage() {
           <div style={{ fontSize: 11, color: "#34d399", marginTop: 6, textAlign: "right" }}>
             {en ? `You save ${fmt(totalOriginal - total)}` : `Vous économisez ${fmt(totalOriginal - total)}`}
           </div>
+        )}
+      </div>
+
+      {/* MP-PROMO — influencer promo code (first-period discount). Applied code
+          shows as a green chip; the discount is reflected in the totals above. */}
+      <div style={{ marginBottom: 14 }}>
+        {appliedCode ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.3)" }}>
+            <span style={{ fontSize: 16 }}>🎟️</span>
+            <div style={{ fontSize: 13, color: "#34d399", fontWeight: 600 }}>
+              {en ? `Promo code ${appliedCode.code} applied` : `Code promo ${appliedCode.code} appliqué`}
+              <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>
+                {en ? "The discount above applies to your first payment." : "La réduction ci-dessus s'applique à votre premier paiement."}
+              </div>
+            </div>
+          </div>
+        ) : showPromo ? (
+          <div style={{ display: "flex", gap: 8 }}>
+            <input className="input" value={promoInput}
+              onChange={e => setPromoInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+              placeholder={en ? "Enter promo code" : "Entrez le code promo"} maxLength={20}
+              style={{ flex: 1, textTransform: "uppercase" }} />
+            <button className="btn btn-secondary" disabled={!promoInput.trim() || redeemMutation.isPending}
+              onClick={() => redeemMutation.mutate()}>
+              {redeemMutation.isPending ? "…" : (en ? "Apply" : "Appliquer")}
+            </button>
+          </div>
+        ) : (
+          <button onClick={() => setShowPromo(true)}
+            style={{ background: "none", border: "none", color: "var(--brand-light)", fontSize: 13, textDecoration: "underline", cursor: "pointer", padding: 0 }}>
+            {en ? "🎟️ Have a promo code?" : "🎟️ Vous avez un code promo ?"}
+          </button>
         )}
       </div>
 
