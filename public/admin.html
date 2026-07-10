@@ -894,6 +894,7 @@
         <a class="sb-link" data-route="subscriptions"><span class="sb-link-icon">💳</span><span class="sb-link-label">Subscriptions</span></a>
         <a class="sb-link" data-route="subscription-discounts" id="sb-link-subdiscounts"><span class="sb-link-icon">🏷️</span><span class="sb-link-label">Plan discounts</span></a>
         <a class="sb-link" data-route="promo-codes" id="sb-link-promocodes"><span class="sb-link-icon">🎟️</span><span class="sb-link-label">Promo codes</span></a>
+        <a class="sb-link" data-route="loyalty-grants" id="sb-link-loyalty"><span class="sb-link-icon">🎁</span><span class="sb-link-label">Loyalty grants</span></a>
         <!-- MP-SUB-CONSOLIDATION (v2): "Sub. requests" tab retired. It read the
              orphaned pa_subscription_requests table (always empty), while the
              app's upgrade requests go to pa_subscription_payments shown in the
@@ -1578,6 +1579,59 @@
         </div>
       </section>
 
+      <!-- LOYALTY GRANTS (MP-LOYALTY) — per-shop reward discounts -->
+      <section class="route" id="route-loyalty-grants">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Loyalty grants</div>
+            <div class="page-sub">Per-shop reward discounts on a shop's next subscription charge (e.g. "20% off Paul's renewal, beta customer #1"). Earns nobody commission and is separate from promo codes. At most one active grant per shop; best-of vs any admin/promo discount (never stacked).</div>
+          </div>
+          <button class="btn btn-primary" id="lg-new-btn">+ New grant</button>
+        </div>
+        <div id="lg-no-permission" class="placeholder" hidden>
+          <div class="placeholder-icon">🔒</div>
+          <div class="placeholder-title">Read-only</div>
+          <div class="placeholder-text">Staff admins can view grants but cannot create or void.</div>
+        </div>
+        <div id="lg-body">
+          <div class="card" id="lg-form-card" hidden style="margin-bottom:16px;padding:14px">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+              <div class="field"><label>Shop (MP business ID)</label>
+                <input type="text" id="lg-uid" placeholder="MP-000123" /></div>
+              <div class="field"><label>Discount type</label>
+                <select id="lg-type"><option value="percent">Percent (%)</option><option value="amount">Fixed amount</option></select></div>
+              <div class="field"><label>Discount value</label>
+                <input type="number" id="lg-value" placeholder="20" /></div>
+              <div class="field" id="lg-currency-field" hidden><label>Currency (must match the shop)</label>
+                <select id="lg-currency"><option value="NGN">NGN</option><option value="XAF">XAF</option></select></div>
+              <div class="field"><label>Starts (optional)</label><input type="date" id="lg-starts" /></div>
+              <div class="field"><label>Expires (optional)</label><input type="date" id="lg-expires" /></div>
+              <div class="field" style="grid-column:1/-1"><label>Reason (required)</label>
+                <input type="text" id="lg-reason" placeholder="Beta customer #1 — thank-you" /></div>
+            </div>
+            <div style="margin-top:12px;display:flex;gap:8px">
+              <button class="btn btn-primary" id="lg-save-btn">Create grant</button>
+              <button class="btn" id="lg-cancel-btn">Cancel</button>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px">
+            <div class="field"><label>Filter by shop (MP ID)</label><input type="text" id="lg-filter-uid" placeholder="MP-000123" /></div>
+            <div class="field"><label>Status</label>
+              <select id="lg-filter-status"><option value="all">All</option><option value="active">Active</option><option value="used">Used</option><option value="void">Void</option></select></div>
+            <button class="btn btn-secondary" id="lg-filter-apply">Apply</button>
+            <button class="btn" id="lg-filter-clear">Clear</button>
+          </div>
+          <div class="card" style="padding:0;overflow:hidden">
+            <table class="data-table" id="lg-table">
+              <thead><tr>
+                <th>Shop</th><th>Discount</th><th>Reason</th><th>Window</th><th>Status</th><th>Consumed by</th><th>Created by</th><th class="ta-right">Actions</th>
+              </tr></thead>
+              <tbody id="lg-tbody"><tr><td colspan="8" class="muted ta-center" style="padding:20px">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
       <!-- ADMIN TEAM (Phase D-D) -->
       <section class="route" id="route-admin-team">
         <div class="page-head">
@@ -2146,7 +2200,7 @@
     const VALID_ROUTES = new Set([
       'dashboard', 'live', 'businesses', 'subscriptions', 'subscription-requests', 'mp-finance',
       'marketplace-users', 'verifications', 'dozie-subscriptions', 'orders', 'disputes', 'marketplace-finance',
-      'sell-restrictions', 'subscription-discounts', 'promo-codes',
+      'sell-restrictions', 'subscription-discounts', 'promo-codes', 'loyalty-grants',
       'broadcasts', 'admin-team', 'audit-log', 'admin-activity', 'cart-reconcile', 'settings'
     ]);
 
@@ -2177,6 +2231,7 @@
       if (route === 'subscriptions')      loadSubscriptions();
       if (route === 'subscription-discounts') loadSubDiscounts();
       if (route === 'promo-codes')        loadPromoCodes();
+      if (route === 'loyalty-grants')     loadLoyaltyGrants();
       if (route === 'subscription-requests') loadSubscriptionRequests();
       if (route === 'mp-finance')         loadFinance();
       if (route === 'marketplace-users')  loadDzUsers();
@@ -5481,6 +5536,119 @@
         pcLoadPayout();
         loadPromoCodes();
       } catch (e) { showToast(e.message, 'danger'); }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  LOYALTY GRANTS (MP-LOYALTY) — per-shop reward CRUD + void.
+    //  Read = any admin; create/void = master_admin | admin.
+    // ════════════════════════════════════════════════════════════════
+    let _lgRows = [];
+    let _lgBound = false;
+    let _lgCanWrite = false;
+
+    function lgMoney(n) { return Math.round(Number(n) || 0).toLocaleString('en-US').replace(/,/g, ' '); }
+    function lgDisc(g) { return g.discount_type === 'percent' ? (g.discount_value + '%') : (lgMoney(g.discount_value) + ' ' + (g.currency || '')); }
+    function lgSyncType() {
+      const isAmt = $('lg-type') && $('lg-type').value === 'amount';
+      if ($('lg-currency-field')) $('lg-currency-field').hidden = !isAmt;
+    }
+
+    function lgBind() {
+      if (_lgBound) return; _lgBound = true;
+      const nb = $('lg-new-btn'); if (nb) nb.addEventListener('click', lgOpenForm);
+      const cb = $('lg-cancel-btn'); if (cb) cb.addEventListener('click', () => { $('lg-form-card').hidden = true; });
+      const sb = $('lg-save-btn'); if (sb) sb.addEventListener('click', lgSave);
+      const ty = $('lg-type'); if (ty) ty.addEventListener('change', lgSyncType);
+      const fa = $('lg-filter-apply'); if (fa) fa.addEventListener('click', loadLoyaltyGrants);
+      const fc = $('lg-filter-clear'); if (fc) fc.addEventListener('click', () => { $('lg-filter-uid').value = ''; $('lg-filter-status').value = 'all'; loadLoyaltyGrants(); });
+      const tb = $('lg-tbody');
+      if (tb) tb.addEventListener('click', (e) => {
+        const b = e.target && e.target.closest ? e.target.closest('button[data-lg-action]') : null;
+        if (!b) return;
+        if (b.getAttribute('data-lg-action') === 'void') lgVoid(b.getAttribute('data-lg-id'));
+      });
+    }
+
+    function lgOpenForm() {
+      $('lg-uid').value = ''; $('lg-type').value = 'percent'; $('lg-value').value = '';
+      $('lg-currency').value = 'NGN'; $('lg-starts').value = ''; $('lg-expires').value = ''; $('lg-reason').value = '';
+      lgSyncType();
+      $('lg-form-card').hidden = false;
+    }
+
+    async function lgSave() {
+      const type = $('lg-type').value;
+      const body = {
+        user_id_number: $('lg-uid').value.trim(),
+        discount_type: type,
+        discount_value: Number($('lg-value').value),
+        currency: type === 'amount' ? $('lg-currency').value : null,
+        reason: $('lg-reason').value.trim(),
+        starts_at: $('lg-starts').value || null,
+        expires_at: $('lg-expires').value || null,
+      };
+      if (!body.user_id_number) { showToast('Enter the shop’s MP business ID', 'danger'); return; }
+      if (!(body.discount_value > 0)) { showToast('Discount value must be greater than 0', 'danger'); return; }
+      if (type === 'percent' && body.discount_value > 100) { showToast('Percent grant cannot exceed 100', 'danger'); return; }
+      if (!body.reason) { showToast('A reason is required', 'danger'); return; }
+      try {
+        await apiAdmin('POST', '/admin/loyalty-grants', body);
+        showToast('Loyalty grant created', 'success');
+        $('lg-form-card').hidden = true;
+        loadLoyaltyGrants();
+      } catch (e) { showToast(e.message, 'danger'); }
+    }
+
+    async function lgVoid(id) {
+      if (!confirm('Void this grant? The shop will no longer get this reward. (Never deleted — kept in history.)')) return;
+      try { await apiAdmin('POST', '/admin/loyalty-grants/' + id + '/void'); showToast('Grant voided', 'success'); loadLoyaltyGrants(); }
+      catch (e) { showToast(e.message, 'danger'); }
+    }
+
+    async function loadLoyaltyGrants() {
+      lgBind();
+      const role = ((currentAdmin && currentAdmin.role) || '').toLowerCase();
+      _lgCanWrite = role !== 'staff';
+      const nb = $('lg-new-btn'); if (nb) nb.style.display = _lgCanWrite ? '' : 'none';
+      const tb = $('lg-tbody');
+      tb.innerHTML = '<tr><td colspan="8" class="muted ta-center" style="padding:20px">Loading…</td></tr>';
+      try {
+        const q = new URLSearchParams();
+        if ($('lg-filter-uid').value.trim()) q.set('user_id_number', $('lg-filter-uid').value.trim());
+        if ($('lg-filter-status').value && $('lg-filter-status').value !== 'all') q.set('status', $('lg-filter-status').value);
+        const r = await apiAdmin('GET', '/admin/loyalty-grants' + (q.toString() ? '?' + q.toString() : ''));
+        _lgRows = (r && r.data) || [];
+        if (!_lgRows.length) { tb.innerHTML = '<tr><td colspan="8" class="muted ta-center" style="padding:20px">No grants' + (_lgCanWrite ? ' yet. Click “+ New grant”.' : '.') + '</td></tr>'; return; }
+        tb.innerHTML = _lgRows.map(function (g) {
+          const org = g.org || {};
+          const shop = escapeHtml(org.name || '—') + (org.user_id_number ? ' <span class="muted" style="font-size:11px">' + escapeHtml(org.user_id_number) + '</span>' : '');
+          const win = (g.starts_at ? String(g.starts_at).slice(0, 10) : '—') + ' → ' + (g.expires_at ? String(g.expires_at).slice(0, 10) : '∞');
+          const statusPill = g.status === 'active'
+            ? '<span class="badge" style="background:rgba(16,185,129,0.15);color:#34d399">Active</span>'
+            : g.status === 'used'
+              ? '<span class="badge" style="background:rgba(59,130,246,0.15);color:#60a5fa">Used</span>'
+              : '<span class="badge" style="background:rgba(148,163,184,0.15);color:#94a3b8">Void</span>';
+          const cp = g.consumed_payment;
+          const consumed = g.status === 'used' && cp
+            ? escapeHtml(lgMoney(cp.amount)) + ' · ' + (g.consumed_at ? String(g.consumed_at).slice(0, 10) : '')
+            : '—';
+          const voidBtn = (_lgCanWrite && g.status === 'active')
+            ? '<button class="btn btn-sm" style="color:#f87171" data-lg-action="void" data-lg-id="' + escapeHtml(g.id) + '">Void</button>'
+            : '';
+          return '<tr>'
+            + '<td>' + shop + '</td>'
+            + '<td>' + lgDisc(g) + '</td>'
+            + '<td>' + escapeHtml(g.reason || '') + '</td>'
+            + '<td style="font-size:12px">' + win + '</td>'
+            + '<td>' + statusPill + '</td>'
+            + '<td style="font-size:12px">' + consumed + '</td>'
+            + '<td style="font-size:12px">' + escapeHtml(g.created_by_name || '') + '</td>'
+            + '<td class="ta-right">' + voidBtn + '</td>'
+            + '</tr>';
+        }).join('');
+      } catch (e) {
+        tb.innerHTML = '<tr><td colspan="8" class="muted ta-center" style="padding:20px;color:#f87171">' + escapeHtml(e.message) + '</td></tr>';
+      }
     }
 
     // ════════════════════════════════════════════════════════════════

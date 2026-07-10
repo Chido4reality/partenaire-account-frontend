@@ -280,6 +280,20 @@ export default function RequestActivationPage() {
         )}
       </div>
 
+      {/* MP-LOYALTY — per-shop loyalty grant. Honest, same discipline as promo:
+          only shown when the grant is actually what's discounting this plan. */}
+      {selDiscount && selDiscount.source === "loyalty" && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, marginBottom: 14, background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.3)" }}>
+          <span style={{ fontSize: 16 }}>🎁</span>
+          <div style={{ fontSize: 13, color: "#34d399", fontWeight: 600 }}>
+            {en ? `Loyalty reward applied — you save ${fmt((selDiscount.amount_off || 0) * months)}` : `Récompense fidélité appliquée — vous économisez ${fmt((selDiscount.amount_off || 0) * months)}`}
+            <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>
+              {en ? "A thank-you discount on this subscription." : "Une réduction de remerciement sur cet abonnement."}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MP-PROMO — influencer promo code (first-period discount). The chip is
           HONEST: it only claims "applied" when the selected plan's price
           actually reflects the promo (discount.source==='promo'). If another
