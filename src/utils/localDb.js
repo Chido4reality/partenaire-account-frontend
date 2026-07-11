@@ -1,11 +1,21 @@
 // MP-CAPACITOR-AND-OFFLINE-FIRST-ARCHITECTURE Slice 3
 //
-// SQLite wrapper. On native (Capacitor), lazy-imports
-// @capacitor-community/sqlite and persists into a real on-device DB.
-// On web (npm run dev), falls back to an in-memory shim so the queue
-// + interceptor code paths can be developed and tested in a browser
-// without needing a physical device — the shim's data doesn't survive
-// a page reload, which is the correct dev-mode trade-off.
+// Durable storage for the offline write queue (pending_sync).
+//
+// MP-16KB-DROP-SQLITE (2026-07-11): @capacitor-community/sqlite shipped a
+// prebuilt libsqlcipher.so aligned to 4 KB, which Google Play now rejects
+// ("does not support 16 KB memory page sizes"). That plugin was the app's ONLY
+// native .so and its ONLY real use was this queue — always opened in
+// 'no-encryption' mode, and pending_sync was already mirrored to IndexedDB
+// (Dexie) as the web impl AND the native-failover path. So we DROP the native
+// SQLite plugin entirely and run the same in-memory shim + IndexedDB
+// persistence on every platform (native Capacitor WebView + web). No native
+// library ⇒ 16 KB-compliant by construction, no Capacitor upgrade, no printer
+// risk. The mirror_* tables below are inert (never read by any code — the POS
+// offline catalog is cached elsewhere); their CREATE statements are no-ops in
+// the shim and kept only to document the historical schema.
+//
+// Public API (unchanged — pendingSync.js is untouched):
 //
 // API:
 //   openDb()                      — idempotent; first call initializes schema.
@@ -118,96 +128,7 @@ CREATE TABLE IF NOT EXISTS sync_meta (
 );
 `;
 
-// ── Capability + lazy import ────────────────────────────────────
-
-let _impl = null; // 'native' | 'web' | null (uninitialised)
-let _db = null;   // native: SQLiteDBConnection; web: in-memory shim instance
-
-// MP-OFFLINE-SHIFT-FIX: native SQLite is the ONLY hard-failure path for an
-// offline-eligible write — if openNative() or a statement throws, enqueue()
-// throws, and the offline-eligible adapter surfaces the caller's
-// "Network error. Retry." (this is why opening a shift offline failed on
-// devices/accounts where the SQLite connection was in a bad state, while it
-// worked on the primary/dev device whose connection was healthy — it was never
-// role-based). When the native layer throws, flip this flag and transparently
-// fail the durable queue over to the IndexedDB-backed web impl for the rest of
-// the session, so the write still queues + drains. Additive: only the catch
-// paths below set it, so a healthy device behaves exactly as before.
-let _nativeFailed = false;
-
-async function detectImpl() {
-  if (_nativeFailed) return 'web';
-  if (_impl) return _impl;
-  try {
-    const cap = await import('@capacitor/core');
-    if (cap.Capacitor?.isNativePlatform?.()) {
-      _impl = 'native';
-      return _impl;
-    }
-  } catch { /* @capacitor/core missing; treat as web */ }
-  _impl = 'web';
-  return _impl;
-}
-
-// ── Native (SQLite) implementation ──────────────────────────────
-
-async function openNative() {
-  if (_db) return _db;
-  const { CapacitorSQLite, SQLiteConnection } = await import('@capacitor-community/sqlite');
-  const sqlite = new SQLiteConnection(CapacitorSQLite);
-  const DB_NAME = 'mp_local';
-  // MP-OFFLINE-SHIFT-FIX: a hard relogin (nukeClientState → window.location
-  // .replace) or app relaunch can leave the native plugin holding the
-  // 'mp_local' connection while the JS handle is gone. The original
-  // isConnection→create/retrieve dance throws "Connection already exists"
-  // (on create over a live conn) or "database already open" (on open) in
-  // that state — which is exactly the enqueue() throw that surfaced as the
-  // offline "Network error" for non-primary accounts. Harden every step:
-  // guard isConnection, fall back create→retrieve, and tolerate already-open.
-  let isConn = false;
-  try { isConn = (await sqlite.isConnection(DB_NAME, false)).result; } catch { isConn = false; }
-  try {
-    _db = isConn
-      ? await sqlite.retrieveConnection(DB_NAME, false)
-      : await sqlite.createConnection(DB_NAME, false, 'no-encryption', 1, false);
-  } catch (e) {
-    // create raced a still-live connection (or retrieve found none) → try the
-    // other path before giving up. If both fail, throw so exec/query fail
-    // the queue over to IndexedDB.
-    _db = await sqlite.retrieveConnection(DB_NAME, false);
-  }
-  // Apply schema. SQLite tolerates the multiple-statement payload
-  // when wrapped in execute(); each CREATE IF NOT EXISTS is a no-op
-  // on subsequent boots.
-  try {
-    await _db.open();
-  } catch (e) {
-    // A connection retrieved while already open throws here; that's fine.
-    if (!/already open/i.test(e?.message || '')) throw e;
-  }
-  await _db.execute(SCHEMA_SQL);
-  return _db;
-}
-
-async function execNative(sql, params = []) {
-  if (!_db) await openNative();
-  const res = await _db.run(sql, params, false);
-  return { changes: res.changes?.changes ?? 0, lastId: res.changes?.lastId };
-}
-
-async function queryNative(sql, params = []) {
-  if (!_db) await openNative();
-  const res = await _db.query(sql, params);
-  return res.values || [];
-}
-
-async function closeNative() {
-  if (!_db) return;
-  try { await _db.close(); } catch { /* ignore */ }
-  _db = null;
-}
-
-// ── Web shim — in-memory + tiny SQL parser ──────────────────────
+// ── In-memory + tiny SQL parser (runs on every platform) ────────
 //
 // The shim covers the SQL patterns this codebase actually uses:
 //   - INSERT INTO t (cols) VALUES (?, ?, ...)
@@ -460,51 +381,21 @@ async function openWeb() {
 // ── Public API ─────────────────────────────────────────────────
 
 export async function openDb() {
-  const impl = await detectImpl();
-  if (impl === 'native') return openNative();
   return openWeb();
 }
 
-// MP-OFFLINE-SHIFT-FIX: if a native SQLite op throws, fail the durable queue
-// over to the IndexedDB-backed web impl for the rest of the session and retry
-// the op there, so enqueue()/the worker keep working and an offline-eligible
-// write (e.g. /shifts/open) never hard-fails the caller. Healthy devices never
-// hit the catch, so this is purely additive.
-async function failoverToWeb(op, e) {
-  console.error(`[localDb] native SQLite ${op} failed → failing over to IndexedDB queue:`, e?.message || e);
-  _nativeFailed = true;
-  try { await closeNative(); } catch { /* ignore */ }
-  _db = null;
-}
-
 export async function exec(sql, params = []) {
-  const impl = await detectImpl();
-  if (impl !== 'native') return execWeb(sql, params);
-  try {
-    return await execNative(sql, params);
-  } catch (e) {
-    await failoverToWeb('exec', e);
-    return execWeb(sql, params);
-  }
+  return execWeb(sql, params);
 }
 
 export async function query(sql, params = []) {
-  const impl = await detectImpl();
-  if (impl !== 'native') return queryWeb(sql, params);
-  try {
-    return await queryNative(sql, params);
-  } catch (e) {
-    await failoverToWeb('query', e);
-    return queryWeb(sql, params);
-  }
+  return queryWeb(sql, params);
 }
 
 export async function close() {
-  const impl = await detectImpl();
-  if (impl === 'native') return closeNative();
   _shimTables.clear();
 }
 
 export async function impl() {
-  return detectImpl();
+  return 'web';
 }
