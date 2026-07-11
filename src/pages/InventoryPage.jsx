@@ -358,8 +358,19 @@ export default function InventoryPage() {
     return map;
   })();
 
-  // Backend handles search globally, just use data as-is
-  const filtered = stock;
+  // MP-PHANTOM-STOCK: hide never-placed zero rows so a product only appears at
+  // locations where it actually lives. A PHANTOM row = qty 0 AND never moved
+  // (no last_moved_at AND no last_movement_type) — a placement that never
+  // happened. A row that HAS moved and is now at 0 (real out-of-stock, incl.
+  // negative/oversold) still shows and still flags "Low". Mirrors the backend
+  // isPhantomStockRow (lib/stockPhantom.js). This only hides rows in THIS list;
+  // placing a product at a NEW location still works via Receive Goods / Transfer
+  // / Add-with-initial-stock (all operate on the product catalog, not this list,
+  // and create the (product, location) row on first real movement).
+  const isPhantomStockRow = (s) =>
+    (Number(s.quantity) || 0) === 0 && !s.last_moved_at && !s.last_movement_type;
+  // Backend handles search globally; drop only phantom placements for display.
+  const filtered = stock.filter(s => !isPhantomStockRow(s));
   const filteredProducts = search ? products.filter(p => fuzzyMatch(p.name, search) || (p.barcode && p.barcode.includes(search)) || (p.sku && p.sku.toLowerCase().includes(search.toLowerCase()))) : products;
 
   const totalStockValue = isOwner ? stock.reduce((sum, s) => sum + (+s.quantity * +(s.pa_products?.cost_price || 0)), 0) : 0;
