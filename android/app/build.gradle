@@ -37,7 +37,7 @@ android {
         // duplicates). versionName is the human-facing semver visible
         // in About / Play Store. Bump versionCode by +1 every release;
         // bump versionName per semver rules.
-        versionCode 60
+        versionCode 61
         versionName "2.2.12"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
