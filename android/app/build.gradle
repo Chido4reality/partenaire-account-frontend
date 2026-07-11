@@ -21,10 +21,12 @@ def mpKeyPass       = (mpKsProps.getProperty('keyPassword') ?: System.getenv('MP
 android {
     namespace "com.partenaire.monpartenaire"
     compileSdk rootProject.ext.compileSdkVersion
-    // MP-16KB-READY: NDK r27+ links native code with 16 KB max-page-size by
-    // default. We compile no native code ourselves (the only .so, libsqlcipher,
-    // is a prebuilt dependency), so r27 does not re-align that lib — but it makes
-    // the toolchain 16 KB-ready and is required to extract native debug symbols.
+    // MP-16KB-DROP-SQLITE: the bundle now ships ZERO native libraries — the only
+    // .so was the prebuilt (4 KB-aligned) libsqlcipher.so from
+    // @capacitor-community/sqlite, which was removed (queue moved to IndexedDB).
+    // With no .so at all, the 16 KB page-size requirement is met by construction.
+    // NDK r27 is retained only so the toolchain stays 16 KB-ready if native code
+    // is ever added again.
     ndkVersion "27.3.13750724"
     defaultConfig {
         applicationId "com.partenaire.monpartenaire"
@@ -69,13 +71,10 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.release
             // MP-NATIVE-DEBUG-SYMBOLS (Fix #2): request native debug symbols in the
-            // AAB so Play can symbolicate native crashes. NOTE: the only native lib
-            // is the prebuilt libsqlcipher.so from @capacitor-community/sqlite, which
-            // the vendor ships FULLY STRIPPED (only .dynsym; no .symtab/.debug_*), so
-            // AGP's extraction produces nothing and the Play "no debug symbols"
-            // warning persists for now — it resolves with the same SQLCipher-lib swap
-            // as the 16 KB fix (Capacitor 7 upgrade). Config kept: correct + it
-            // auto-activates if a symbol-carrying lib is ever used.
+            // AAB so Play can symbolicate native crashes. Since MP-16KB-DROP-SQLITE
+            // the bundle ships NO native libs, so extraction is a no-op and the Play
+            // "no debug symbols" note no longer applies. Config kept: correct + it
+            // auto-activates if a symbol-carrying lib is ever added.
             ndk {
                 debugSymbolLevel 'FULL'
             }
