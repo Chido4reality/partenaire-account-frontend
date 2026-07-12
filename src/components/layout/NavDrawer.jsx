@@ -62,6 +62,7 @@ export default function NavDrawer({
   onlineCartPending,
   approvalsPending,
   myRequestsApproved,
+  stockCheckPending,
   onLogout,
 }) {
   const { lang, setLang } = useLangStore();
@@ -220,6 +221,8 @@ export default function NavDrawer({
                           ? approvalsPending
                           : item.badge === "my_requests" && myRequestsApproved > 0
                           ? myRequestsApproved
+                          : item.badge === "stock_check" && stockCheckPending > 0
+                          ? stockCheckPending
                           : undefined
                       }
                       onTap={handleNav}

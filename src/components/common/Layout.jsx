@@ -1288,6 +1288,7 @@ export default function Layout() {
           onlineCartPending={onlineCartPending}
           approvalsPending={approvalsPending}
           myRequestsApproved={myRequestsApproved}
+          stockCheckPending={stockCheckPending}
           onLogout={handleLogout}
         />
         <motion.div
