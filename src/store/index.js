@@ -96,6 +96,12 @@ const DRAFT_ITEM_FIELDS = [
   // restored draft (navigate-away-and-back) keeps the APPROVED below-cost price
   // instead of reverting to the tier price + forcing re-approval.
   "price_overridden", "price_approval_token", "below_cost_approved",
+  // MP-DAMAGED-GOODS: a damaged line carries these two markers so the /sales
+  // payload can record it as a damaged sale + decrement the right pile row.
+  // They MUST survive draft persistence — Stock Check hands the item off to POS
+  // via the draft cart, and without these on the whitelist the markers would be
+  // silently stripped on the next save/restore and the sale would post as normal.
+  "is_damaged", "damaged_source_id",
 ];
 function slimDraftItems(items) {
   if (!Array.isArray(items)) return [];

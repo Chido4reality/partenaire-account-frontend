@@ -166,11 +166,14 @@ function buildBodyLines(eventType, data, lang, org) {
 
   if (eventType === "sale") {
     const items = data.items || [];
+    // MP-DAMAGED-GOODS: flag damaged lines on the receipt (preview + WhatsApp +
+    // non-facture print all share these lines). Server stamps is_damaged.
+    const dmg = (i) => i.is_damaged ? (en ? " (DAMAGED GOODS)" : " (MARCHANDISE ENDOMMAGÉE)") : "";
     items.forEach(i => {
       if (i.type === "debt_payment") {
         lines.push(`💰 ${i.name} ........ ${fmtAmt(i.unit_price)} F`);
       } else {
-        lines.push(`${i.name} × ${i.quantity} ........ ${fmtAmt(i.quantity * i.unit_price)} F`);
+        lines.push(`${i.name}${dmg(i)} × ${i.quantity} ........ ${fmtAmt(i.quantity * i.unit_price)} F`);
       }
     });
     // MP-DISCOUNT: NET total is data.total_amount; discount = gross − net.
@@ -420,6 +423,13 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
   const reference = referenceFor(eventType, data);
   const { dateStr, timeStr } = nowLocale(lang);
 
+  // MP-DAMAGED-GOODS: append a damaged marker to an item name for the printed
+  // factures (thermal, A4) and history views, so a damaged-goods sale is
+  // unmistakable on paper too. Server stamps is_damaged on the sale line.
+  const dmgName = (i) => (i && i.is_damaged)
+    ? `${i.name} (${en ? "DAMAGED GOODS" : "MARCHANDISE ENDOMMAGÉE"})`
+    : (i ? i.name : "");
+
   // ESC closes — mirrors the inline ReceiptModal's behaviour
   // (MP-RECEIPT-MODAL-MOBILE-FIX) so phones aren't trapped on a
   // tall receipt with no escape.
@@ -583,7 +593,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
       || i.product_id === "__DEBT__" || i.product_id === "__DEBT_PAYMENT__";
     const items = (data.items || []).map((i) => isDebt(i)
       ? { name: i.name, quantity: 1, unit_price: Number(i.unit_price) || 0 }
-      : { name: i.name, quantity: Number(i.quantity) || 0, unit_price: Number(i.unit_price) || 0 });
+      : { name: dmgName(i), quantity: Number(i.quantity) || 0, unit_price: Number(i.unit_price) || 0 });
     const grossItems = items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0);
     const netTotal = Number(data.total_amount != null ? data.total_amount : grossItems) || 0;
     let saleTime = "";
@@ -665,7 +675,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
         || i.product_id === "__DEBT__" || i.product_id === "__DEBT_PAYMENT__";
       const items = (data.items || []).map((i) => isDebt(i)
         ? { name: i.name, quantity: 1, unit_price: Number(i.unit_price) || 0 }
-        : { name: i.name, quantity: Number(i.quantity) || 0, unit_price: Number(i.unit_price) || 0 });
+        : { name: dmgName(i), quantity: Number(i.quantity) || 0, unit_price: Number(i.unit_price) || 0 });
       // MP-RECEIPT-PRINT-CLOSE-FIX: render the facture in an IN-APP overlay
       // (black-on-white + Imprimer/Partager/Fermer bar) instead of a separate
       // window.open() window. The overlay's Fermer is plain React state so it
@@ -729,7 +739,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
         const qty = debt ? 1 : (Number(i.quantity) || 0);
         const pu = Number(i.unit_price) || 0;
         const lt = qty * pu;
-        return `<tr><td class="c">${qty}</td><td>${esc(i.name)}</td><td class="r">${money(pu)}</td><td class="r">${money(lt)}</td></tr>`;
+        return `<tr><td class="c">${qty}</td><td>${esc(debt ? i.name : dmgName(i))}</td><td class="r">${money(pu)}</td><td class="r">${money(lt)}</td></tr>`;
       }).join("");
       const grand = items.reduce((s, i) => {
         const qty = isDebtLine(i) ? 1 : (Number(i.quantity) || 0);

@@ -777,7 +777,11 @@ export default function Layout() {
     retry: 1,
     onError: () => {}
   });
-  const stockCheckPending = stockCheckSummary?.data?.pending || 0;
+  // MP-DAMAGED-GOODS: the stock-check attention badge covers BOTH pending
+  // re-counts AND damaged-goods piles still awaiting action (sell / write-off),
+  // so a boss sees the damaged backlog on the sidebar the same way as pending.
+  const stockCheckPending = (stockCheckSummary?.data?.pending || 0)
+    + (stockCheckSummary?.data?.damaged || 0);
 
   // MP-DOZIE-SELLER-MIGRATION Phase 2 — "Online Dozie" attention badge. Polls the
   // resolved seller's needs-attention count (pending orders now; messages/disputes
