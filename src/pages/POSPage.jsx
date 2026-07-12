@@ -155,6 +155,18 @@ export default function POSPage() {
   // MP-CREDIT-PERMISSION: a boss-approved credit_sale id rides the next /sales
   // POST (server re-verifies + single-uses it), same mechanic as below-cost.
   const creditApprovalIdRef = useRef(null);
+  // MP-OVERSELL-HYBRID-APPROVAL: SERVER-gated oversell (a line would push stock
+  // below what exists AND the cashier's oversell_policy != 'allow'). Mirrors the
+  // discount/below-cost hybrid EXACTLY. oversellTokenRef = the owner-PIN-now
+  // single-use token minted from the OwnerApprovalModal (resubmit reads it without
+  // waiting on a state flush); oversellApprovalIdRef = a boss-approved oversell id
+  // that rides a resumed held sale. oversellApprovalModal holds the server 403
+  // payload ({ approval_id, items, message_fr, message_en }) while the two-option
+  // choice modal is open. NOTE: distinct from `oversellModal` below, which is the
+  // pre-submit CLIENT-side low-stock warn — this is the authoritative server gate.
+  const oversellTokenRef = useRef(null);
+  const oversellApprovalIdRef = useRef(null);
+  const [oversellApprovalModal, setOversellApprovalModal] = useState(null);
   const [sendingToBoss, setSendingToBoss] = useState(false);
   const [showCamera, setShowCamera]       = useState(false);
   const [scanMode, setScanMode]           = useState(isMobile() ? "camera" : "usb");
@@ -1480,6 +1492,12 @@ export default function POSPage() {
         below_cost_approval_id: belowCostApprovalIdRef.current || undefined,
         // MP-CREDIT-PERMISSION: boss-approved credit sale, re-verified server-side.
         credit_approval_id: creditApprovalIdRef.current || undefined,
+        // MP-OVERSELL-HYBRID-APPROVAL: owner-PIN-now single-use token (set on
+        // resubmit after oversell_approval_required) + a boss-approved oversell id
+        // riding a resumed held sale. Server consumes the token / re-verifies the
+        // id. An in-stock sale sends neither → undefined → gate untouched.
+        oversell_approval_token: oversellTokenRef.current || undefined,
+        oversell_approval_id: oversellApprovalIdRef.current || undefined,
         // MP-UNDO-TO-CART: link this re-checkout to the voided sale it replaces.
         replaces_sale_id: restoreFromIdRef.current || undefined,
       };
@@ -1502,7 +1520,7 @@ export default function POSPage() {
 
         // MP-DISCOUNT: clear sale-level discount + any minted approval token + a
         // consumed async approval id.
-        setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason(""); discountTokenRef.current = null; discountApprovalIdRef.current = null; belowCostApprovalIdRef.current = null; creditApprovalIdRef.current = null;
+        setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason(""); discountTokenRef.current = null; discountApprovalIdRef.current = null; belowCostApprovalIdRef.current = null; creditApprovalIdRef.current = null; oversellTokenRef.current = null; oversellApprovalIdRef.current = null;
         setDebtInvoices([]); setSelectedDebtIds(new Set()); setDebtPayAmt("");
         setDebtBanner(null);
         setOnlineCtx(null);
@@ -1728,6 +1746,34 @@ export default function POSPage() {
           { duration: 6000 });
         return;
       }
+      // ── MP-OVERSELL-HYBRID-APPROVAL control responses ────────────────────
+      if (d?.code === "oversell_not_allowed") {
+        // HARD block — the cashier may not oversell and there's no inline owner
+        // approval. Mirror NOT_STOCKED_AT_LOCATION's blocking modal (no retry).
+        oversellTokenRef.current = null; oversellApprovalIdRef.current = null;
+        setBlockModal({
+          locationName: selectedLocation?.name || "",
+          products: (d.items || []).map(it => it.name).filter(Boolean),
+          message: (lang === "en" ? d.message_en : d.message_fr) || d.message || (lang === "en"
+            ? "This product is finished. Ask the boss."
+            : "Ce produit est fini. Demandez au patron."),
+        });
+        return;
+      }
+      if (d?.code === "oversell_approval_required") {
+        // Over available stock + policy=approval → open the HYBRID choice (owner
+        // PIN now, OR send the request to the boss). The approval is ALREADY parked
+        // server-side; its approval_id rides the send-to-boss hold + later resume.
+        // A stale minted token / parked id must not ride along.
+        oversellTokenRef.current = null; oversellApprovalIdRef.current = null;
+        setOversellApprovalModal({
+          approval_id: d.approval_id,
+          items: d.items || [],
+          message_en: d.message_en,
+          message_fr: d.message_fr,
+        });
+        return;
+      }
       // ── MP-CREDIT-PERMISSION control responses ───────────────────────────
       if (d?.code === "credit_not_allowed") {
         creditApprovalIdRef.current = null;
@@ -1806,6 +1852,8 @@ export default function POSPage() {
       }
       // MP-DISCOUNT: drop any stale approval token so it can't be reused.
       discountTokenRef.current = null;
+      // MP-OVERSELL-HYBRID-APPROVAL: same — drop a stale minted oversell token.
+      oversellTokenRef.current = null;
       toast.error(d?.message || "Error");
     }
   });
@@ -1888,6 +1936,82 @@ export default function POSPage() {
       setShowPayment(false); setPayMode("paid"); setPayModeChosen(false); setPaidAmt("");
       setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason("");
       discountTokenRef.current = null; discountApprovalIdRef.current = null;
+      qc.invalidateQueries(["held-carts"]);
+      toast.success(lang === "en"
+        ? `Sent to the boss + held as ${hr?.data?.hold_ref || ""}. Resume it once approved.`
+        : `Envoyé au patron + mis en attente ${hr?.data?.hold_ref || ""}. Reprenez après approbation.`,
+        { duration: 7000 });
+    } catch (e) {
+      toast.error(e?.response?.data?.message || (lang === "en" ? "Could not send the request" : "Échec de l'envoi de la demande"));
+    } finally {
+      setSendingToBoss(false);
+    }
+  };
+
+  // MP-OVERSELL-HYBRID-APPROVAL — option 1: boss is HERE. Mint a single-use owner-PIN
+  // oversell token (action_type 'oversell'), then RESUBMIT the sale with it. Exact
+  // mirror of discountViaPin (server consumes oversell_approval_token).
+  const oversellViaPin = () => {
+    const choice = oversellApprovalModal;
+    setOversellApprovalModal(null);
+    requestApproval({
+      actionType:  "oversell",
+      targetTable: "pa_sales",
+      targetId:    null,
+      context:     { items: choice?.items },
+      // MP-APPROVAL-PLAIN-LANGUAGE: plain description for the owner-PIN screen.
+      description: (() => {
+        const who = String(user?.full_name || "").trim() || (lang === "en" ? "A cashier" : "Un caissier");
+        const names = (choice?.items || []).map(it => it.name).filter(Boolean).join(", ");
+        return lang === "en"
+          ? `${who} wants to sell more than the stock shows${names ? ` (${names})` : ""}. Approve selling beyond the counted stock?`
+          : `${who} veut vendre plus que le stock affiché${names ? ` (${names})` : ""}. Approuver la vente au-delà du stock compté ?`;
+      })(),
+    })
+      .then(({ token }) => { oversellTokenRef.current = token; saleMutation.mutate(); })
+      .catch((e) => {
+        oversellTokenRef.current = null;
+        if (e?.code !== "cancelled") {
+          toast.error(e?.response?.data?.message || (lang === "en" ? "Approval failed" : "Échec de l'approbation"));
+        }
+      });
+  };
+
+  // MP-OVERSELL-HYBRID-APPROVAL — option 2: boss is AWAY. The approval is ALREADY
+  // parked server-side (the 403 carried approval_id), so — unlike discount/below-cost —
+  // there is NO approval-request POST to make. Just HOLD the cart linked to that
+  // approval and clear the screen; the cashier resumes it once the boss approves,
+  // and oversell_approval_id then rides the resumed /sales POST.
+  const sendOversellToBoss = async () => {
+    const approvalId = oversellApprovalModal?.approval_id;
+    if (!approvalId) { setOversellApprovalModal(null); return; }
+    setSendingToBoss(true);
+    try {
+      const lineItems = cart
+        .filter(i => i.product_id && !isDebtish(i))
+        .map(i => ({
+          product_id: i.product_id, name: i.name,
+          quantity: Number(i.quantity) || 1, unit_price: Number(i.unit_price) || 0,
+          discount_type:  (i.discount_type && Number(i.discount_value) > 0) ? i.discount_type : null,
+          discount_value: (i.discount_type && Number(i.discount_value) > 0) ? Number(i.discount_value) : null,
+          discount_reason: (i.discount_type && Number(i.discount_value) > 0) ? (String(i.discount_reason || "").trim() || null) : null,
+        }));
+      // Hold the cart, linked to the already-parked oversell approval (reuses the
+      // shared held-cart approval-link field the discount/below-cost holds use).
+      const hr = await api.post("/held-carts", {
+        location_id: selectedLocation?.id,
+        customer_id: customer?.id || null,
+        label: lang === "en" ? "Over stock — boss approval" : "Au-delà du stock — approbation patron",
+        items: lineItems.map(i => ({ product_id: i.product_id, qty: i.quantity, unit_price: i.unit_price, line_total: i.quantity * i.unit_price })),
+        discount_approval_id: approvalId,
+      }).then(r => r.data);
+      // Clear the screen so the cashier serves other customers.
+      setOversellApprovalModal(null);
+      setCart([]); setCustomer(null); setOnlineCtx(null);
+      setShowPayment(false); setPayMode("paid"); setPayModeChosen(false); setPaidAmt("");
+      setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason("");
+      discountTokenRef.current = null; discountApprovalIdRef.current = null;
+      oversellTokenRef.current = null; oversellApprovalIdRef.current = null;
       qc.invalidateQueries(["held-carts"]);
       toast.success(lang === "en"
         ? `Sent to the boss + held as ${hr?.data?.hold_ref || ""}. Resume it once approved.`
@@ -2560,6 +2684,49 @@ export default function POSPage() {
               </div>
             </button>
             <button onClick={() => setDiscountChoice(null)} disabled={sendingToBoss}
+              style={{ width: "100%", padding: "10px", border: "none", background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 13 }}>
+              {lang === "en" ? "Cancel" : "Annuler"}
+            </button>
+          </div>
+        </div>
+      )}
+      {/* ── MP-OVERSELL-HYBRID-APPROVAL: out-of-stock choice (mirror of discount) ── */}
+      {oversellApprovalModal && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 320, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, maxWidth: 420, width: "100%" }}>
+            <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 6 }}>
+              🔐 {lang === "en" ? "Out-of-stock sale needs approval" : "Vente en rupture à approuver"}
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 13.5, lineHeight: 1.5 }}>
+                {(oversellApprovalModal.items || []).map((it, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                    <span>{it.name}</span>
+                    <span style={{ color: "var(--text-muted)" }}>
+                      {lang === "en" ? `have ${it.available}, selling ${it.need}` : `stock ${it.available}, vente ${it.need}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.5 }}>
+                {lang === "en" ? "This would sell more than is in stock. Choose how to get the owner's approval:" : "Ceci vendrait plus que le stock disponible. Choisissez comment obtenir l'approbation :"}
+              </div>
+            </div>
+            <button onClick={oversellViaPin} disabled={sendingToBoss}
+              style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid var(--brand)", background: "var(--brand)", color: "#152B52", cursor: "pointer", textAlign: "left", fontWeight: 700, marginBottom: 10 }}>
+              🔑 {lang === "en" ? "Enter owner PIN now" : "Saisir le PIN du patron"}
+              <div style={{ fontSize: 11, fontWeight: 400, color: "#152B52", opacity: 0.8, marginTop: 3 }}>
+                {lang === "en" ? "The owner is here — completes the sale immediately." : "Le patron est présent — termine la vente immédiatement."}
+              </div>
+            </button>
+            <button onClick={sendOversellToBoss} disabled={sendingToBoss}
+              style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", cursor: sendingToBoss ? "wait" : "pointer", textAlign: "left", fontWeight: 700, marginBottom: 10 }}>
+              📲 {sendingToBoss ? (lang === "en" ? "Sending…" : "Envoi…") : (lang === "en" ? "Send request to boss" : "Envoyer la demande au patron")}
+              <div style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)", marginTop: 3 }}>
+                {lang === "en" ? "Boss is away — holds this sale; resume it once approved on their phone." : "Le patron est absent — met la vente en attente ; reprenez-la après approbation sur son téléphone."}
+              </div>
+            </button>
+            <button onClick={() => setOversellApprovalModal(null)} disabled={sendingToBoss}
               style={{ width: "100%", padding: "10px", border: "none", background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 13 }}>
               {lang === "en" ? "Cancel" : "Annuler"}
             </button>

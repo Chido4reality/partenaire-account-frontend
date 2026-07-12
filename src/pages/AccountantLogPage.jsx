@@ -192,6 +192,9 @@ export default function AccountantLogPage() {
     expense: en ? "record an expense" : "enregistrer une dépense",
     discount: en ? "apply a discount" : "appliquer une remise",
     below_cost_sale: en ? "sell below the floor price" : "vendre sous le prix plancher",
+    transfer: en ? "transfer goods" : "transférer des marchandises",
+    oversell: en ? "sell when out of stock" : "vendre en rupture de stock",
+    credit_sale: en ? "sell on credit" : "vendre à crédit",
   };
 
   const approveMut = useMutation({
@@ -903,6 +906,8 @@ const PERM_ACTIONS = [
   { key: "discount_policy",     en: "Give a discount",      fr: "Faire une remise" },
   { key: "credit_policy",       en: "Sell on credit",       fr: "Vendre à crédit" },
   { key: "expense_policy",      en: "Record an expense",    fr: "Enregistrer une dépense" },
+  { key: "transfer_policy",     en: "Transfer goods",       fr: "Transférer des marchandises" },
+  { key: "oversell_policy",     en: "Sell when finished (out of stock)", fr: "Vendre quand c'est fini (rupture)" },
 ];
 
 function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
