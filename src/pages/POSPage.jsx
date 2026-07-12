@@ -300,7 +300,12 @@ export default function POSPage() {
     }
     if (Array.isArray(draft.items) && draft.items.length > 0) {
       // Backfill a stable lineId on drafts saved before lineIds existed.
-      setCart(draft.items.map(it => (it && it.lineId) ? it : { ...it, lineId: genLineId() }));
+      // MP-DAMAGED-GOODS: PREPEND the restored items (functional updater) so a
+      // damaged line handed off from Stock Check (appended by the handoff effect
+      // below) survives even if this restore runs AFTER the handoff — e.g. when
+      // auth/location resolve a render late. Restore-then-handoff and
+      // handoff-then-restore both settle to [restored…, damaged].
+      setCart(prev => [...draft.items.map(it => (it && it.lineId) ? it : { ...it, lineId: genLineId() }), ...prev]);
       if (draft.customer)      setCustomer(draft.customer);
       if (draft.payMode)       { setPayMode(draft.payMode); setPayModeChosen(true); }
       if (draft.paidAmt)       setPaidAmt(draft.paidAmt);
@@ -368,6 +373,53 @@ export default function POSPage() {
     window.addEventListener("mp-storage-quota", onQuota);
     return () => window.removeEventListener("mp-storage-quota", onQuota);
   }, [lang]);
+
+  // MP-DAMAGED-GOODS: cross-page hand-off. Stock Check's "Sell" button stashes a
+  // damaged product in sessionStorage then routes to /pos. We consume it exactly
+  // once on mount and APPEND a DAMAGED cart line priced at the current customer
+  // tier (priceForTier), carrying is_damaged + damaged_source_id so checkout
+  // records the sale line as damaged and the server decrements the pile. This
+  // APPENDS while draft-restore PREPENDS, so the two effects compose regardless
+  // of which runs first and the handed-off line is never clobbered.
+  const damagedHandoffRef = useRef(false);
+  useEffect(() => {
+    if (damagedHandoffRef.current) return;
+    damagedHandoffRef.current = true;
+    let payload;
+    try {
+      const raw = sessionStorage.getItem("mp-damaged-handoff");
+      if (!raw) return;
+      sessionStorage.removeItem("mp-damaged-handoff");
+      payload = JSON.parse(raw);
+    } catch { return; }
+    if (!payload || !payload.product_id || !payload.damaged_source_id) return;
+    const qty  = Math.max(1, Number(payload.quantity) || 1);
+    const tier = tierForCustomer(customer);
+    const price = priceForTier(payload, tier);
+    setCart(prev => [...prev, {
+      lineId: genLineId(),
+      product_id: payload.product_id,
+      name: payload.name,
+      unit: payload.unit,
+      barcode: payload.barcode || null,
+      quantity: qty,
+      unit_price: price,
+      original_price: price,
+      price_tier: tier,                                    // recorded on the sale line
+      sell_price: Number(payload.sell_price) || 0,         // ladder fields → tier re-pricing on customer change
+      wholesale_price: Number(payload.wholesale_price) || 0,
+      min_price: Number(payload.min_price) || 0,
+      cost_price: payload.cost_price,
+      stock: undefined,
+      is_multipart: false,
+      // MP-DAMAGED-GOODS markers → /sales payload + server pile decrement.
+      is_damaged: true,
+      damaged_source_id: payload.damaged_source_id,
+    }]);
+    if (isMobile()) setSheetOpen(true);
+    toast.success(lang === "en" ? "Damaged item added to cart" : "Article endommagé ajouté au panier", { duration: 3000 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (scanMode !== "usb") return;
@@ -1464,6 +1516,11 @@ export default function POSPage() {
                           // pa_sale_items by explicit columns, so this extra
                           // field is harmless/ignored server-side.
                           return { product_id: i.product_id, name: i.name, quantity: Number(i.quantity) || 1, unit_price: Number(i.unit_price) || 0, cost_price: i.cost_price, price_tier: i.price_tier || "walk_in", price_approval_token: i.price_approval_token,
+                            // MP-DAMAGED-GOODS: a damaged line records is_damaged
+                            // on pa_sale_items and tells the server which pile row
+                            // to decrement. Normal lines send neither (undefined).
+                            is_damaged:        i.is_damaged ? true : undefined,
+                            damaged_source_id: i.is_damaged ? (i.damaged_source_id || undefined) : undefined,
                             // MP-DISCOUNT: per-line discount (backend resolves the FCFA amount + net_amount).
                             discount_type:   (i.discount_type && Number(i.discount_value) > 0) ? i.discount_type : null,
                             discount_value:  (i.discount_type && Number(i.discount_value) > 0) ? Number(i.discount_value) : null,
@@ -2378,6 +2435,13 @@ export default function POSPage() {
                 {(item.isDebt || item.isDebtPayment) && (
                   <div style={{ fontSize: 10, fontWeight: 700, color: "#f87171", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>
                     {item.isDebtPayment ? "💰" : "🧾"} {lang === "en" ? "Debt Repayment" : "Remboursement dette"} · DEBT
+                  </div>
+                )}
+                {/* MP-DAMAGED-GOODS: clear badge so the cashier sees this line is
+                    a damaged-goods sale (still tier-priced, discount allowed). */}
+                {item.is_damaged && (
+                  <div style={{ fontSize: 10, fontWeight: 800, color: "#fbbf24", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>
+                    🔨 {lang === "en" ? "Damaged" : "Endommagé"}
                   </div>
                 )}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: (item.isDebt || item.isDebtPayment) ? 4 : 7 }}>

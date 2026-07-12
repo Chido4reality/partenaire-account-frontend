@@ -11,6 +11,7 @@
 // plus an owner-only Delete for false flags — staff can never erase a flag on their
 // own movement (anti-fraud).
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "../utils/api";
 import { useLangStore, useAuthStore } from "../store";
@@ -49,6 +50,13 @@ function toArray(x) {
   return [];
 }
 
+// MP-DAMAGED-GOODS: how a pile of damaged units came to exist — shown per row.
+function damageSourceLabel(sourceType, en) {
+  if (sourceType === "transfer_variance") return en ? "🔁 transfer variance" : "🔁 écart de transfert";
+  if (sourceType === "return")            return en ? "↩ returned"         : "↩ retourné";
+  return en ? "🔨 marked damaged" : "🔨 marqué endommagé"; // manual_writeoff (+ any future source)
+}
+
 // How a check landed on the list — badge shown on each row.
 function flaggedLabel(flaggedBy, en) {
   if (flaggedBy === "boss")     return en ? "🔍 boss-flagged"     : "🔍 signalé par le patron";
@@ -62,18 +70,33 @@ export default function StockCheckPage() {
   const en = lang === "en";
   const fmt = useCurrency();
   const qc = useQueryClient();
-  const isOwner = useAuthStore(s => s.user?.role) === "owner";
-  const [tab, setTab] = useState("pending");           // pending | mismatch | resolved
+  const navigate = useNavigate();
+  const role = useAuthStore(s => s.user?.role);
+  const isOwner = role === "owner";
+  // MP-DAMAGED-GOODS: owner/manager may write off sellable stock into a damaged pile.
+  const canWriteoff = role === "owner" || role === "manager";
+  const [tab, setTab] = useState("pending");           // pending | mismatch | resolved | damaged
   const [resolveFor, setResolveFor] = useState(null);  // pending row being counted (Done/Mismatch)
   const [varResolveFor, setVarResolveFor] = useState(null); // MISMATCH row being resolved-with-reason (owner)
   const [deleteFor, setDeleteFor] = useState(null);    // the pending row being deleted (owner)
   const [showWatch, setShowWatch] = useState(false);
+  const [showWriteoff, setShowWriteoff] = useState(false); // MP-DAMAGED-GOODS: mark-damaged modal
+  const [sellFor, setSellFor] = useState(null);        // MP-DAMAGED-GOODS: pile row being sold (qty prompt)
   const [range, setRange] = useState(wideRange());     // A2 date filter (≈1yr default → nothing hidden)
   const [damagedOnly, setDamagedOnly] = useState(false); // Resolved tab: shop's damage record
 
   const list = useQuery({
     queryKey: ["stock-checks", tab],
     queryFn: () => api.get(`/stock-checks?status=${tab}`).then(r => toArray(r)),
+    enabled: tab !== "damaged", // damaged is a separate pile endpoint
+    refetchInterval: 15000,
+  });
+
+  // MP-DAMAGED-GOODS: the damaged-pile list (remaining_qty>0 rows), same date window.
+  const damaged = useQuery({
+    queryKey: ["stock-checks-damaged", range.from, range.to],
+    queryFn: () => api.get(`/stock-checks/damaged?from=${range.from}&to=${range.to}`).then(r => toArray(r)),
+    enabled: tab === "damaged",
     refetchInterval: 15000,
   });
 
@@ -84,7 +107,33 @@ export default function StockCheckPage() {
 
   const invalidateAll = () => {
     qc.invalidateQueries({ queryKey: ["stock-checks"] });
+    qc.invalidateQueries({ queryKey: ["stock-checks-damaged"] });
     qc.invalidateQueries({ queryKey: ["stock-check-summary"] });
+  };
+
+  // MP-DAMAGED-GOODS: hand a damaged pile row off to the POS cart. We stash a
+  // product-like payload + the pile row id in sessionStorage and route to /pos,
+  // where a one-shot mount effect appends it as a DAMAGED line at the current
+  // tier price. qty is clamped to remaining_qty (server also enforces ≤ remaining).
+  const sellDamaged = (row, qty) => {
+    const p = row.pa_products || {};
+    const n = Math.max(1, Math.min(Number(qty) || 1, Number(row.remaining_qty) || 1));
+    try {
+      sessionStorage.setItem("mp-damaged-handoff", JSON.stringify({
+        product_id: row.product_id,
+        name: en ? (p.name_en || p.name) : p.name,
+        unit: p.unit,
+        barcode: p.barcode || null,
+        sell_price: p.sell_price,
+        wholesale_price: p.wholesale_price,
+        min_price: p.min_price,
+        quantity: n,
+        is_damaged: true,
+        damaged_source_id: row.id,
+      }));
+    } catch { /* storage full → POS just won't receive it; non-fatal */ }
+    setSellFor(null);
+    navigate("/pos");
   };
 
   const resolveMut = useMutation({
@@ -141,6 +190,8 @@ export default function StockCheckPage() {
     return true;
   });
   const watchList = Array.isArray(watches.data) ? watches.data : [];
+  // MP-DAMAGED-GOODS: pile rows are already date-scoped + remaining_qty>0 server-side.
+  const damagedRows = Array.isArray(damaged.data) ? damaged.data : [];
 
   return (
     <div style={{ padding: 16, maxWidth: 1000, margin: "0 auto" }}>
@@ -167,13 +218,14 @@ export default function StockCheckPage() {
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 8, margin: "14px 0" }}>
-        {["pending", "mismatch", "resolved"].map(t => (
+        {["pending", "mismatch", "resolved", "damaged"].map(t => (
           <button key={t} onClick={() => setTab(t)}
             style={{ padding: "7px 14px", borderRadius: 999, border: "1px solid var(--border)", cursor: "pointer", fontWeight: 700, fontSize: 13,
               background: tab === t ? "var(--brand-light)" : "transparent", color: tab === t ? "#1a1a2e" : "var(--text-secondary)" }}>
             {t === "pending" ? (en ? "To count" : "À compter")
               : t === "mismatch" ? (en ? "Mismatches" : "Écarts")
-              : (en ? "Resolved" : "Résolus")}
+              : t === "resolved" ? (en ? "Resolved" : "Résolus")
+              : (en ? "Damaged" : "Endommagé")}
           </button>
         ))}
       </div>
@@ -194,6 +246,64 @@ export default function StockCheckPage() {
         </div>
       )}
 
+      {/* MP-DAMAGED-GOODS: owner/manager can write sellable stock off into a pile. */}
+      {tab === "damaged" && canWriteoff && (
+        <div style={{ marginBottom: 12 }}>
+          <button onClick={() => setShowWriteoff(true)} className="btn btn-primary" style={{ fontWeight: 700 }}>
+            🔨 {en ? "Mark as damaged" : "Marquer endommagé"}
+          </button>
+        </div>
+      )}
+
+      {/* ── DAMAGED PILE tab: sell or record damaged goods ─────────────────── */}
+      {tab === "damaged" && (<>
+        {damaged.isLoading && <div style={{ color: "var(--text-muted)", padding: 16 }}>{en ? "Loading…" : "Chargement…"}</div>}
+        {!damaged.isLoading && damagedRows.length === 0 && (
+          <div style={{ color: "var(--text-muted)", padding: 24, textAlign: "center", background: "var(--bg-card)", borderRadius: 12, border: "1px solid var(--border)" }}>
+            {en ? "No damaged goods in this range." : "Aucune marchandise endommagée sur cette période."}
+          </div>
+        )}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {damagedRows.map(r => {
+            const p = r.pa_products || {};
+            const loc = r.pa_locations || {};
+            const remaining = Number(r.remaining_qty) || 0;
+            const original = Number(r.original_qty) || 0;
+            return (
+              <div key={r.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderLeft: "3px solid #fbbf24", borderRadius: 12, padding: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>
+                      {en ? (p.name_en || p.name) : p.name}
+                      {p.sku && <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>{p.sku}</span>}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      <span>📍 {loc.name || "—"}</span>
+                      <span>{damageSourceLabel(r.source_type, en)}</span>
+                      {r.source_ref && <span>#{r.source_ref}</span>}
+                      <span>{fmtDate(r.created_at, en)}</span>
+                    </div>
+                    <div style={{ fontSize: 12.5, marginTop: 6, display: "flex", gap: 14, flexWrap: "wrap" }}>
+                      <span style={{ color: "var(--text-muted)" }}>
+                        {en ? "Remaining" : "Restant"}: <b style={{ color: "#fbbf24" }}>{remaining} {unitLabel(p.unit)}</b>
+                        <span style={{ color: "var(--text-muted)" }}> {en ? "of" : "sur"} {original}</span>
+                      </span>
+                      {(p.sell_price != null) && <span style={{ color: "var(--text-muted)" }}>{en ? "Price" : "Prix"}: <b style={{ color: "var(--text-primary)" }}>{fmt(p.sell_price)}</b></span>}
+                    </div>
+                  </div>
+                  <div style={{ alignSelf: "center" }}>
+                    <button onClick={() => setSellFor(r)} className="btn btn-success" style={{ fontWeight: 700, whiteSpace: "nowrap" }}>
+                      🛒 {en ? "Sell" : "Vendre"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </>)}
+
+      {tab !== "damaged" && (<>
       {list.isLoading && <div style={{ color: "var(--text-muted)", padding: 16 }}>{en ? "Loading…" : "Chargement…"}</div>}
       {!list.isLoading && rows.length === 0 && (
         <div style={{ color: "var(--text-muted)", padding: 24, textAlign: "center", background: "var(--bg-card)", borderRadius: 12, border: "1px solid var(--border)" }}>
@@ -281,6 +391,7 @@ export default function StockCheckPage() {
           );
         })}
       </div>
+      </>)}
 
       {resolveFor && (
         <ResolveModal row={resolveFor} en={en} busy={resolveMut.isPending}
@@ -301,6 +412,19 @@ export default function StockCheckPage() {
 
       {showWatch && <WatchProductModal en={en} onClose={() => setShowWatch(false)}
         onAdded={() => { setShowWatch(false); qc.invalidateQueries({ queryKey: ["stock-check-watches"] }); }} />}
+
+      {/* MP-DAMAGED-GOODS: qty prompt then hand off to POS as a damaged line. */}
+      {sellFor && (
+        <SellDamagedModal row={sellFor} en={en} fmt={fmt}
+          onCancel={() => setSellFor(null)}
+          onSell={(qty) => sellDamaged(sellFor, qty)} />
+      )}
+
+      {/* MP-DAMAGED-GOODS: owner/manager write-off (product + location + qty + note). */}
+      {showWriteoff && (
+        <MarkDamagedModal en={en} onClose={() => setShowWriteoff(false)}
+          onDone={() => { setShowWriteoff(false); invalidateAll(); }} />
+      )}
     </div>
   );
 }
@@ -581,6 +705,145 @@ function WatchProductModal({ en, onClose, onAdded }) {
           <button className="btn btn-secondary" style={{ flex: 1 }} disabled={busy} onClick={onClose}>{en ? "Cancel" : "Annuler"}</button>
           <button className="btn btn-primary" style={{ flex: 2 }} disabled={busy || !picked || !locId} onClick={add}>
             {busy ? "…" : (en ? "➕ Watch this product" : "➕ Surveiller")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// MP-DAMAGED-GOODS: qty prompt before selling a damaged pile row. Defaults to the
+// full remaining_qty and caps at it (the server also enforces ≤ remaining_qty).
+function SellDamagedModal({ row, en, fmt, onCancel, onSell }) {
+  const p = row.pa_products || {};
+  const remaining = Number(row.remaining_qty) || 0;
+  const [qty, setQty] = useState(String(remaining || 1));
+  const n = Number(qty);
+  const valid = Number.isFinite(n) && n >= 1 && n <= remaining && qty !== "";
+  const submit = () => {
+    if (!valid) { toast.error(en ? `Enter 1–${remaining}` : `Entrez 1–${remaining}`); return; }
+    onSell(n);
+  };
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 380 }}>
+        <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>{en ? "Sell damaged item" : "Vendre l'article endommagé"}</div>
+        <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 14 }}>
+          {en ? (p.name_en || p.name) : p.name} · {(row.pa_locations || {}).name}
+        </div>
+        <label style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>
+          {en ? "Quantity to sell" : "Quantité à vendre"}
+        </label>
+        <input className="input" type="number" min="1" max={remaining} autoFocus value={qty}
+          onChange={e => setQty(e.target.value)} onKeyDown={e => e.key === "Enter" && submit()} style={{ marginTop: 6 }} />
+        <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 6 }}>
+          {en ? `${remaining} ${unitLabel(p.unit)} remaining.` : `${remaining} ${unitLabel(p.unit)} restant(s).`}
+          {p.sell_price != null && <span> {en ? "Sold at the normal tier price" : "Vendu au prix normal du palier"} ({fmt(p.sell_price)}); {en ? "a discount may be applied at the till." : "une remise peut être appliquée en caisse."}</span>}
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+          <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onCancel}>{en ? "Cancel" : "Annuler"}</button>
+          <button className="btn btn-success" style={{ flex: 2, fontWeight: 700 }} disabled={!valid} onClick={submit}>
+            🛒 {en ? "Add to sale" : "Ajouter à la vente"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// MP-DAMAGED-GOODS: owner/manager write-off — pick a product + location, enter the
+// damaged quantity + optional note → POST /stock-checks/damaged/writeoff. This
+// decrements sellable stock and creates a pile row. Mirrors WatchProductModal's
+// fuzzy product/location pickers.
+function MarkDamagedModal({ en, onClose, onDone }) {
+  const [q, setQ] = useState("");
+  const [picked, setPicked] = useState(null);   // { id, name }
+  const [locId, setLocId] = useState("");
+  const [qty, setQty] = useState("1");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const search = useQuery({
+    queryKey: ["stock-check-product-search", q],
+    queryFn: () => api.get(`/products?search=${encodeURIComponent(q)}`).then(r => toArray(r).filter(p => !p.is_multipart)),
+    enabled: q.trim().length >= 1 && !picked,
+  });
+  const locs = useQuery({
+    queryKey: ["locations"],
+    queryFn: () => api.get("/locations").then(r => toArray(r)),
+  });
+  const results = Array.isArray(search.data) ? search.data : [];
+  const locList = Array.isArray(locs.data) ? locs.data : [];
+  const n = Number(qty);
+  const valid = !!picked && !!locId && Number.isFinite(n) && n >= 1 && qty !== "";
+
+  const submit = async () => {
+    if (!valid) return;
+    setBusy(true);
+    try {
+      await api.post("/stock-checks/damaged/writeoff", { product_id: picked.id, location_id: locId, quantity: n, note: note.trim() || null });
+      toast.success(en ? "Recorded as damaged" : "Enregistré comme endommagé");
+      onDone();
+    } catch (e) {
+      const code = e?.response?.data?.error || e?.response?.data?.code;
+      if (code === "insufficient_stock" || e?.response?.status === 400) {
+        toast.error(en ? "Not enough stock on hand at this location." : "Stock insuffisant à cet emplacement.");
+      } else {
+        toast.error(e?.response?.data?.message || (en ? "Failed" : "Échec"));
+      }
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={() => !busy && onClose()}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+        <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>🔨 {en ? "Mark as damaged" : "Marquer endommagé"}</div>
+        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
+          {en
+            ? "Removes the damaged units from sellable stock and adds them to the damaged pile (still sellable at a discount)."
+            : "Retire les unités endommagées du stock vendable et les ajoute à la pile des articles endommagés (toujours vendables avec remise)."}
+        </div>
+
+        {!picked ? (
+          <>
+            <input className="input" autoFocus placeholder={en ? "Search product (name / SKU)…" : "Chercher un produit (nom / SKU)…"}
+              value={q} onChange={e => setQ(e.target.value)} />
+            <div style={{ maxHeight: 240, overflowY: "auto", marginTop: 8 }}>
+              {search.isLoading && <div style={{ color: "var(--text-muted)", fontSize: 12, padding: 8 }}>{en ? "Searching…" : "Recherche…"}</div>}
+              {results.map(p => (
+                <div key={p.id} onClick={() => setPicked({ id: p.id, name: en ? (p.name_en || p.name) : p.name })}
+                  style={{ padding: "9px 10px", borderRadius: 8, cursor: "pointer", borderBottom: "1px solid var(--border)" }}
+                  onMouseDown={e => e.preventDefault()}>
+                  <div style={{ fontWeight: 600, fontSize: 13.5 }}>{en ? (p.name_en || p.name) : p.name}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>{[p.sku, p.barcode].filter(Boolean).join(" · ") || "—"}</div>
+                </div>
+              ))}
+              {q.trim().length >= 1 && !search.isLoading && results.length === 0 &&
+                <div style={{ color: "var(--text-muted)", fontSize: 12, padding: 8 }}>{en ? "No match." : "Aucun résultat."}</div>}
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ padding: "10px 12px", background: "var(--bg-elevated)", borderRadius: 8, marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontWeight: 700 }}>{picked.name}</span>
+              <button onClick={() => setPicked(null)} style={{ background: "none", border: "none", color: "var(--brand-light)", cursor: "pointer", fontSize: 12 }}>{en ? "change" : "changer"}</button>
+            </div>
+            <label style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>{en ? "Location" : "Emplacement"}</label>
+            <select className="input" value={locId} onChange={e => setLocId(e.target.value)} style={{ marginTop: 6, marginBottom: 12 }}>
+              <option value="">{en ? "— pick a location —" : "— choisir un emplacement —"}</option>
+              {locList.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+            <label style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>{en ? "Damaged quantity" : "Quantité endommagée"}</label>
+            <input className="input" type="number" min="1" value={qty} onChange={e => setQty(e.target.value)} style={{ marginTop: 6, marginBottom: 12 }} />
+            <label style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>{en ? "Note (optional)" : "Note (facultatif)"}</label>
+            <input className="input" value={note} onChange={e => setNote(e.target.value)} placeholder={en ? "e.g. water damage" : "ex. dégât des eaux"} style={{ marginTop: 6 }} />
+          </>
+        )}
+
+        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+          <button className="btn btn-secondary" style={{ flex: 1 }} disabled={busy} onClick={onClose}>{en ? "Cancel" : "Annuler"}</button>
+          <button className="btn btn-primary" style={{ flex: 2 }} disabled={busy || !valid} onClick={submit}>
+            {busy ? "…" : (en ? "🔨 Record damage" : "🔨 Enregistrer")}
           </button>
         </div>
       </div>
