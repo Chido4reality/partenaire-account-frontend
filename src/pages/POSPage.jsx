@@ -2107,7 +2107,13 @@ export default function POSPage() {
     // in the "not stocked here" / oversell client checks (they'd see stock=null/0 and
     // wrongly block). The backend validates part availability at the sale location and
     // blocks with the SHORT PART name(s) (MULTIPART_PART_SHORT) when a part is absent.
-    const isKitLine = (i) => i.is_multipart || Object.prototype.hasOwnProperty.call(parentAvail, i.product_id);
+    // MP-DAMAGED-GOODS-SELL-LOCATION-FIX: a damaged line's stock comes from the pile
+    // row (pa_damaged_stock, at ITS OWN location via damaged_source_id), not from the
+    // till's sellable stock — the handoff deliberately leaves `stock` undefined for
+    // these lines, which wrongly tripped the "not stocked at this location" block.
+    // The backend consumes purely by damaged_source_id (location-agnostic), so skip
+    // both client-side stock checks for it exactly like a kit line.
+    const isKitLine = (i) => i.is_multipart || Object.prototype.hasOwnProperty.call(parentAvail, i.product_id) || i.is_damaged;
     const notStocked = real.filter(i => !isKitLine(i) && (i.stock === null || i.stock === undefined));
     if (notStocked.length) {
       setBlockModal({
