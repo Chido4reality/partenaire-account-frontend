@@ -100,7 +100,7 @@ const ROUTE_ACCESS = {
   "/dozie-disputes": ["owner", "manager"],   // MP-DOZIE-SELLER-MIGRATION Phase 5
   "/customers":    ["owner", "manager", "cashier"],
   "/credits":      ["owner", "manager"],
-  "/transfers":    ["owner", "manager", "warehouse"],
+  "/transfers":    ["owner", "manager", "warehouse", "cashier"],
   "/expenditures": ["owner", "manager", "cashier"],
   "/reports":      ["owner", "manager"],
   // MP-OWNER-OPERATIONS-DASHBOARD-V1: owner statement view (multi-day
