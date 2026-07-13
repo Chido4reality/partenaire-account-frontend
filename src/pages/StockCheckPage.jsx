@@ -10,7 +10,7 @@
 // is replaced by "➕ Watch a product" (owner-only). Resolution is Done / Mismatch,
 // plus an owner-only Delete for false flags — staff can never erase a flag on their
 // own movement (anti-fraud).
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "../utils/api";
@@ -640,12 +640,17 @@ function WatchProductModal({ en, onClose, onAdded }) {
     queryFn: () => api.get(`/products?search=${encodeURIComponent(q)}`).then(r => toArray(r).filter(p => !p.is_multipart)),
     enabled: q.trim().length >= 1 && !picked,
   });
+  // MP-LOCATIONS-CACHE-FIX: queryKey ["locations"] is shared app-wide (POS,
+  // Transfers, Inventory, …) and MUST use the same queryFn shape as everyone
+  // else — react-query dedupes by key, so a mismatched queryFn here never even
+  // runs once another component's query has already populated the cache,
+  // silently handing this component the other shape instead.
   const locs = useQuery({
     queryKey: ["locations"],
-    queryFn: () => api.get("/locations").then(r => toArray(r)),
+    queryFn: () => api.get("/locations").then(r => r.data),
   });
   const results = Array.isArray(search.data) ? search.data : [];
-  const locList = Array.isArray(locs.data) ? locs.data : [];
+  const locList = Array.isArray(locs.data?.data) ? locs.data.data : [];
 
   const add = async () => {
     if (!picked || !locId) return;
@@ -768,12 +773,24 @@ function MarkDamagedModal({ en, onClose, onDone }) {
     queryFn: () => api.get(`/products?search=${encodeURIComponent(q)}`).then(r => toArray(r).filter(p => !p.is_multipart)),
     enabled: q.trim().length >= 1 && !picked,
   });
+  // MP-LOCATIONS-CACHE-FIX: queryKey ["locations"] is shared app-wide (POS,
+  // Transfers, Inventory, …) and MUST use the same queryFn shape as everyone
+  // else — react-query dedupes by key, so a mismatched queryFn here never even
+  // runs once another component's query has already populated the cache,
+  // silently handing this component the other shape instead. That's why this
+  // dropdown shipped empty in vc65 despite the org having active locations.
   const locs = useQuery({
     queryKey: ["locations"],
-    queryFn: () => api.get("/locations").then(r => toArray(r)),
+    queryFn: () => api.get("/locations").then(r => r.data),
   });
   const results = Array.isArray(search.data) ? search.data : [];
-  const locList = Array.isArray(locs.data) ? locs.data : [];
+  const locList = Array.isArray(locs.data?.data) ? locs.data.data : [];
+
+  // Sensible default: with only one location there's nothing to choose.
+  useEffect(() => {
+    if (!locId && locList.length === 1) setLocId(locList[0].id);
+  }, [locList, locId]);
+
   const n = Number(qty);
   const valid = !!picked && !!locId && Number.isFinite(n) && n >= 1 && qty !== "";
 
