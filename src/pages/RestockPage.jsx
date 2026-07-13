@@ -338,8 +338,11 @@ function ReceiveModal({ en, order, onClose, onDone }) {
   });
   const setRow = (id, patch) => setRows(p => ({ ...p, [id]: { ...p[id], ...patch } }));
 
-  const locs = useQuery({ queryKey: ["locations"], queryFn: () => api.get("/locations").then(r => toArray(r)) });
-  const locList = Array.isArray(locs.data) ? locs.data : [];
+  // MP-LOCATIONS-CACHE-FIX: queryKey ["locations"] is shared app-wide — must
+  // match the queryFn shape every other consumer uses (see StockCheckPage.jsx),
+  // or a stale cached envelope from another page leaves this list empty.
+  const locs = useQuery({ queryKey: ["locations"], queryFn: () => api.get("/locations").then(r => r.data) });
+  const locList = Array.isArray(locs.data?.data) ? locs.data.data : [];
 
   const pending   = items.filter(it => it.received_quantity === null || it.received_quantity === undefined);
   const doneItems = items.filter(it => it.received_quantity !== null && it.received_quantity !== undefined);
