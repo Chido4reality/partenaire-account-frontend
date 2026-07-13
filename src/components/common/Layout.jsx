@@ -72,7 +72,10 @@ const NAV = [
   // sales. Backend collect-debt route already cashier-eligible.
   { to: "/customers",    en: "Customers",  fr: "Clients",         icon: "👥", roles: ["owner","manager","cashier"],            section: "customers" },
   { to: "/credits",      en: "Credits",    fr: "Crédits",         icon: "💳", roles: ["owner","manager"],                       section: "credits" },
-  { to: "/transfers",    en: "Transfers",  fr: "Transferts",      icon: "🔄", roles: ["owner","manager","warehouse"],          section: "transfers" },
+  // MP-CASHIER-TRANSFERS-NAV: cashiers can receive/dispatch on the backend
+  // (vc63 transfer_policy) but had no way to reach the screen — the nav item
+  // was role-gated to owner/manager/warehouse only.
+  { to: "/transfers",    en: "Transfers",  fr: "Transferts",      icon: "🔄", roles: ["owner","manager","warehouse","cashier"], section: "transfers" },
   // MP-STOCK-CHECK — re-count movement-flagged products. section:"stock_check" is
   // only granted by pro/pro_plus (sections:'*'); lite/expired-trial floors omit it,
   // so it's Pro/Pro Plus-only (active trial resolves to 'pro'). Server also 403s.
