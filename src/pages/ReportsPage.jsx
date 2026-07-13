@@ -27,6 +27,11 @@ const itemLabel   = (i, lang) => isDebtItem(i)
   : (i?.pa_products?.name || "?");
 const itemUnit    = (i) => isDebtItem(i) ? "—" : unitLabel(i?.pa_products?.unit || "pce");
 const itemAmount  = (i) => (Number(i?.quantity) || 0) * (Number(i?.unit_price) || 0);
+// MP-DAMAGED-GOODS-REPORT-VISIBILITY: /reports/sales-detail now selects
+// is_damaged on each line — surface it here too (WhatsApp text + the inline
+// report row), matching PaymentEventReceipt's own "(DAMAGED GOODS)" wording.
+const isDamagedItem = (i) => i?.is_damaged === true;
+const dmgSuffix     = (i, lang) => isDamagedItem(i) ? (lang === "en" ? " (DAMAGED GOODS)" : " (MARCHANDISE ENDOMMAGÉE)") : "";
 
 export default function ReportsPage() {
   const { lang } = useLangStore();
@@ -623,7 +628,7 @@ export default function ReportsPage() {
                                   items.forEach(i => {
                                     msg += isDebtItem(i)
                                       ? `${itemLabel(i, lang)} ... ${itemAmount(i).toLocaleString()} F\n`
-                                      : `${itemLabel(i, lang)} × ${i.quantity} ... ${itemAmount(i).toLocaleString()} F\n`;
+                                      : `${itemLabel(i, lang)}${dmgSuffix(i, lang)} × ${i.quantity} ... ${itemAmount(i).toLocaleString()} F\n`;
                                   });
                                   msg += `─────────────────────\n*Total: ${total.toLocaleString()} ${fmt.symbol}*`;
                                   if (sale.payment_status === "credit") msg += `\n🔴 CRÉDIT: ${total.toLocaleString()} F DÛ`;
@@ -639,9 +644,13 @@ export default function ReportsPage() {
                                   // Bluetooth ESC/POS), the SAME path the completed-sale receipt
                                   // uses. Debt-payment lines map to qty 1 (amount as P.U.) and are
                                   // tagged type:'debt_payment' so the receipt renders them correctly.
+                                  // MP-DAMAGED-GOODS-REPORT-VISIBILITY: carry is_damaged through so
+                                  // PaymentEventReceipt's own "(DAMAGED GOODS)" badge logic fires —
+                                  // dropping it here silently produced a receipt indistinguishable
+                                  // from a normal sale.
                                   const items = (sale.pa_sale_items || []).map(i => isDebtItem(i)
                                     ? { name: itemLabel(i, lang), quantity: 1, unit_price: itemAmount(i), type: "debt_payment" }
-                                    : { name: itemLabel(i, lang), quantity: Number(i.quantity) || 0, unit_price: Number(i.unit_price) || 0 });
+                                    : { name: itemLabel(i, lang), quantity: Number(i.quantity) || 0, unit_price: Number(i.unit_price) || 0, is_damaged: i.is_damaged === true });
                                   setReceiptSale({
                                     sale_number:    sale.sale_number || "",
                                     sale_date:      sale.sale_date || "",
@@ -668,7 +677,16 @@ export default function ReportsPage() {
                                 {items.map((item, idx) => (
                                   <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 20px", borderBottom: idx < items.length - 1 ? "1px solid var(--border)" : "none" }}>
                                     <div style={{ flex: 1 }}>
-                                      <div style={{ fontWeight: 600, fontSize: 13 }}>{itemLabel(item, lang)}</div>
+                                      <div style={{ fontWeight: 600, fontSize: 13 }}>
+                                        {itemLabel(item, lang)}
+                                        {/* MP-DAMAGED-GOODS-REPORT-VISIBILITY: this line's stock came
+                                            from the damaged pile, not sellable stock — flag it here too. */}
+                                        {isDamagedItem(item) && (
+                                          <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 800, color: "#fbbf24", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                            🔨 {lang === "en" ? "Damaged" : "Endommagé"}
+                                          </span>
+                                        )}
+                                      </div>
                                       <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                                         {isDebtItem(item)
                                           ? (lang === "en" ? "applied to customer debt" : "appliqué à la dette client")
