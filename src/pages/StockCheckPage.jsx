@@ -258,7 +258,15 @@ export default function StockCheckPage() {
       {/* ── DAMAGED PILE tab: sell or record damaged goods ─────────────────── */}
       {tab === "damaged" && (<>
         {damaged.isLoading && <div style={{ color: "var(--text-muted)", padding: 16 }}>{en ? "Loading…" : "Chargement…"}</div>}
-        {!damaged.isLoading && damagedRows.length === 0 && (
+        {/* MP-DAMAGED-GOODS-ERROR-VISIBILITY: a fetch error was indistinguishable
+            from a genuinely empty pile — both rendered "No damaged goods", so a
+            transient failure silently hid rows that actually exist. */}
+        {damaged.isError && (
+          <div style={{ color: "#f87171", padding: 24, textAlign: "center", background: "var(--bg-card)", borderRadius: 12, border: "1px solid #f87171" }}>
+            {en ? "Couldn't load the damaged pile. Pull to retry." : "Impossible de charger la pile endommagée. Tirez pour réessayer."}
+          </div>
+        )}
+        {!damaged.isLoading && !damaged.isError && damagedRows.length === 0 && (
           <div style={{ color: "var(--text-muted)", padding: 24, textAlign: "center", background: "var(--bg-card)", borderRadius: 12, border: "1px solid var(--border)" }}>
             {en ? "No damaged goods in this range." : "Aucune marchandise endommagée sur cette période."}
           </div>
