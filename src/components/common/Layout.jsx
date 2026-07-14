@@ -744,11 +744,22 @@ export default function Layout() {
   });
   const onlineCartPending = ocPending?.count || 0;
 
-  // FIX 2/3: Accountant Log sidebar badge — number of PENDING approvals, live
-  // 7s poll. Only fetched for an owner on a pro_plus (accountant_log) org —
-  // exactly the gate on the nav item — so it never fires for other roles/plans.
+  // FIX 2/3: Accountant Log sidebar badge — number of PENDING approvals
+  // (covers EVERY action_type — credit_sale, void, oversell, transfer,
+  // discount, below_cost_sale, …, the endpoint doesn't filter by type),
+  // live 7s poll. Only fetched for an owner on a pro_plus (accountant_log)
+  // org — exactly the gate on the nav item — so it never fires for other
+  // roles/plans.
+  // MP-SIDEBAR-NOTIF-STALE-FIX: this MUST use the same queryKey
+  // AccountantLogPage.jsx's approve/reject/cancel mutations invalidate
+  // ("staff-approvals-pending") — it previously used a different key
+  // ("accountant-approvals-pending-count") that nothing ever invalidated,
+  // so the badge only ever updated on its own 60s poll and looked "stuck"
+  // for up to a minute after every resolution (worse if the boss navigated
+  // away before the next tick). Same key → the page's own invalidation now
+  // refreshes the sidebar badge immediately too.
   const { data: apprPending } = useQuery({
-    queryKey: ["accountant-approvals-pending-count"],
+    queryKey: ["staff-approvals-pending"],
     queryFn: () => api.get("/staff/approvals?status=pending").then(r => r.data),
     refetchInterval: 60000, // MP-PEAK-MTN-RESILIENCE (was 7s)
     enabled: role === "owner" && hasFeature(effectivePlan, "accountant_log"),

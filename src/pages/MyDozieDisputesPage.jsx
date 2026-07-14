@@ -55,14 +55,27 @@ export default function MyDozieDisputesPage() {
 
   // Locked decision: the seller APPROVES the buyer's refund directly (full order),
   // or CONTESTS (with a reason) so an admin arbitrates.
+  // MP-SIDEBAR-NOTIF-STALE-FIX: approve/contest RESOLVE a dispute (it leaves the
+  // open queue), so the sidebar's dozie_disputes badge (fed by "dozie-seller-
+  // attention") must be invalidated here too — it never was, so the count only
+  // dropped once the badge's own 90s poll happened to catch up.
   const approveMut = useMutation({
     mutationFn: ({ id }) => api.post(`/dozie/seller/disputes/${id}/approve`),
-    onSuccess: () => { toast.success(en ? "Refund approved" : "Remboursement approuvé"); qc.invalidateQueries(["dozie-seller-disputes"]); },
+    onSuccess: () => {
+      toast.success(en ? "Refund approved" : "Remboursement approuvé");
+      qc.invalidateQueries(["dozie-seller-disputes"]);
+      qc.invalidateQueries(["dozie-seller-attention"]);
+    },
     onError: (e) => toast.error(e?.response?.data?.message || (en ? "Error" : "Erreur")),
   });
   const contestMut = useMutation({
     mutationFn: ({ id, reply }) => api.post(`/dozie/seller/disputes/${id}/contest`, { reply }),
-    onSuccess: (_d, v) => { toast.success(en ? "Contested — admin will review" : "Contesté — l'admin examinera"); setDrafts(d => ({ ...d, [v.id]: undefined })); qc.invalidateQueries(["dozie-seller-disputes"]); },
+    onSuccess: (_d, v) => {
+      toast.success(en ? "Contested — admin will review" : "Contesté — l'admin examinera");
+      setDrafts(d => ({ ...d, [v.id]: undefined }));
+      qc.invalidateQueries(["dozie-seller-disputes"]);
+      qc.invalidateQueries(["dozie-seller-attention"]);
+    },
     onError: (e) => toast.error(e?.response?.data?.message || (en ? "Error" : "Erreur")),
   });
   const busy = approveMut.isPending || contestMut.isPending || replyMut.isPending;

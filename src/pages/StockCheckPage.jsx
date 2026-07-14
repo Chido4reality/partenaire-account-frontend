@@ -82,6 +82,7 @@ export default function StockCheckPage() {
   const [showWatch, setShowWatch] = useState(false);
   const [showWriteoff, setShowWriteoff] = useState(false); // MP-DAMAGED-GOODS: mark-damaged modal
   const [sellFor, setSellFor] = useState(null);        // MP-DAMAGED-GOODS: pile row being sold (qty prompt)
+  const [scrapFor, setScrapFor] = useState(null);       // MP-DAMAGED-GOODS-SCRAP-OUT: pile row being scrapped (owner-only, qty prompt)
   const [range, setRange] = useState(wideRange());     // A2 date filter (≈1yr default → nothing hidden)
   const [damagedOnly, setDamagedOnly] = useState(false); // Resolved tab: shop's damage record
 
@@ -93,9 +94,12 @@ export default function StockCheckPage() {
   });
 
   // MP-DAMAGED-GOODS: the damaged-pile list (remaining_qty>0 rows), same date window.
+  // MP-DAMAGED-GOODS-SCRAP-OUT: the response also carries scrap_loss (a separate
+  // LOSS figure over the same window) — keep the envelope (r.data) instead of
+  // unwrapping to a bare array with toArray() so both are readable.
   const damaged = useQuery({
     queryKey: ["stock-checks-damaged", range.from, range.to],
-    queryFn: () => api.get(`/stock-checks/damaged?from=${range.from}&to=${range.to}`).then(r => toArray(r)),
+    queryFn: () => api.get(`/stock-checks/damaged?from=${range.from}&to=${range.to}`).then(r => r.data),
     enabled: tab === "damaged",
     refetchInterval: 15000,
   });
@@ -135,6 +139,23 @@ export default function StockCheckPage() {
     setSellFor(null);
     navigate("/pos");
   };
+
+  // MP-DAMAGED-GOODS-SCRAP-OUT: owner-only second pile exit — a total loss, not a
+  // sale. No POS hand-off; posts straight to the scrap endpoint.
+  const scrapMut = useMutation({
+    mutationFn: ({ id, quantity, note }) => api.post(`/stock-checks/damaged/${id}/scrap`, { quantity, note }).then(r => r.data),
+    onSuccess: () => {
+      toast.success(en ? "Scrapped — recorded as a loss" : "Mis au rebut — enregistré comme perte");
+      setScrapFor(null);
+      invalidateAll();
+    },
+    onError: (e) => {
+      const code = e?.response?.data?.code;
+      toast.error(code === "insufficient_stock"
+        ? (en ? "Not enough left in the pile." : "Stock insuffisant dans la pile.")
+        : (e?.response?.data?.message || (en ? "Failed" : "Échec")));
+    },
+  });
 
   const resolveMut = useMutation({
     mutationFn: ({ id, counted_qty, resolution }) =>
@@ -191,7 +212,8 @@ export default function StockCheckPage() {
   });
   const watchList = Array.isArray(watches.data) ? watches.data : [];
   // MP-DAMAGED-GOODS: pile rows are already date-scoped + remaining_qty>0 server-side.
-  const damagedRows = Array.isArray(damaged.data) ? damaged.data : [];
+  const damagedRows = Array.isArray(damaged.data?.data) ? damaged.data.data : [];
+  const scrapLoss = damaged.data?.scrap_loss || { quantity: 0, estimated_cost: 0 };
 
   return (
     <div style={{ padding: 16, maxWidth: 1000, margin: "0 auto" }}>
@@ -255,6 +277,20 @@ export default function StockCheckPage() {
         </div>
       )}
 
+      {/* MP-DAMAGED-GOODS-SCRAP-OUT: a LOSS figure, kept visibly separate from
+          Sell's revenue — same date window as the list below. Owner-only (a
+          money-loss figure), same gate as the Scrap out action itself. */}
+      {tab === "damaged" && isOwner && !damaged.isLoading && !damaged.isError && (scrapLoss.quantity > 0) && (
+        <div style={{ marginBottom: 12, padding: "10px 14px", background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: 10, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+          <span style={{ fontSize: 12.5, color: "#f87171", fontWeight: 700 }}>
+            🗑️ {en ? "Scrapped loss (this range)" : "Perte au rebut (cette période)"}
+          </span>
+          <span style={{ fontSize: 13, fontWeight: 800, color: "#f87171" }}>
+            {scrapLoss.quantity} {en ? "units" : "unités"} · ~{fmt(scrapLoss.estimated_cost)}
+          </span>
+        </div>
+      )}
+
       {/* ── DAMAGED PILE tab: sell or record damaged goods ─────────────────── */}
       {tab === "damaged" && (<>
         {damaged.isLoading && <div style={{ color: "var(--text-muted)", padding: 16 }}>{en ? "Loading…" : "Chargement…"}</div>}
@@ -299,10 +335,16 @@ export default function StockCheckPage() {
                       {(p.sell_price != null) && <span style={{ color: "var(--text-muted)" }}>{en ? "Price" : "Prix"}: <b style={{ color: "var(--text-primary)" }}>{fmt(p.sell_price)}</b></span>}
                     </div>
                   </div>
-                  <div style={{ alignSelf: "center" }}>
+                  <div style={{ alignSelf: "center", display: "flex", gap: 6 }}>
                     <button onClick={() => setSellFor(r)} className="btn btn-success" style={{ fontWeight: 700, whiteSpace: "nowrap" }}>
                       🛒 {en ? "Sell" : "Vendre"}
                     </button>
+                    {/* MP-DAMAGED-GOODS-SCRAP-OUT: owner-only — beyond selling, a total loss. */}
+                    {isOwner && (
+                      <button onClick={() => setScrapFor(r)} className="btn btn-secondary" style={{ fontWeight: 700, whiteSpace: "nowrap", color: "#f87171", borderColor: "#f87171" }}>
+                        🗑️ {en ? "Scrap out" : "Mettre au rebut"}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -426,6 +468,14 @@ export default function StockCheckPage() {
         <SellDamagedModal row={sellFor} en={en} fmt={fmt}
           onCancel={() => setSellFor(null)}
           onSell={(qty) => sellDamaged(sellFor, qty)} />
+      )}
+
+      {/* MP-DAMAGED-GOODS-SCRAP-OUT: owner-only qty prompt, straight to the scrap endpoint. */}
+      {scrapFor && (
+        <ScrapDamagedModal row={scrapFor} en={en}
+          busy={scrapMut.isPending}
+          onCancel={() => setScrapFor(null)}
+          onScrap={(qty, note) => scrapMut.mutate({ id: scrapFor.id, quantity: qty, note })} />
       )}
 
       {/* MP-DAMAGED-GOODS: owner/manager write-off (product + location + qty + note). */}
@@ -757,6 +807,54 @@ function SellDamagedModal({ row, en, fmt, onCancel, onSell }) {
           <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onCancel}>{en ? "Cancel" : "Annuler"}</button>
           <button className="btn btn-success" style={{ flex: 2, fontWeight: 700 }} disabled={!valid} onClick={submit}>
             🛒 {en ? "Add to sale" : "Ajouter à la vente"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// MP-DAMAGED-GOODS-SCRAP-OUT: owner-only — beyond selling, a total loss (thrown
+// away). Straight POST to /stock-checks/damaged/:id/scrap, no POS hand-off. A
+// second, distinct pile exit from Sell: this books NO revenue, just a loss.
+function ScrapDamagedModal({ row, en, busy, onCancel, onScrap }) {
+  const p = row.pa_products || {};
+  const remaining = Number(row.remaining_qty) || 0;
+  const [qty, setQty] = useState(String(remaining || 1));
+  const [note, setNote] = useState("");
+  const n = Number(qty);
+  const valid = Number.isFinite(n) && n >= 1 && n <= remaining && qty !== "";
+  const submit = () => {
+    if (!valid) { toast.error(en ? `Enter 1–${remaining}` : `Entrez 1–${remaining}`); return; }
+    onScrap(n, note.trim() || null);
+  };
+  return (
+    <div className="modal-overlay" onClick={() => !busy && onCancel()}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 380 }}>
+        <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>🗑️ {en ? "Scrap out" : "Mettre au rebut"}</div>
+        <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 10 }}>
+          {en ? (p.name_en || p.name) : p.name} · {(row.pa_locations || {}).name}
+        </div>
+        <div style={{ fontSize: 12, color: "#f87171", background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: 8, padding: "8px 10px", marginBottom: 12 }}>
+          {en
+            ? "For total losses — beyond selling. This removes stock from the damaged pile as a LOSS, with no sale and no revenue. Cannot be undone."
+            : "Pour les pertes totales — au-delà de la vente. Ceci retire le stock de la pile endommagée comme une PERTE, sans vente ni revenu. Ne peut pas être annulé."}
+        </div>
+        <label style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>
+          {en ? "Quantity to scrap" : "Quantité à mettre au rebut"}
+        </label>
+        <input className="input" type="number" min="1" max={remaining} autoFocus value={qty}
+          onChange={e => setQty(e.target.value)} style={{ marginTop: 6, marginBottom: 12 }} />
+        <label style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>{en ? "Note (optional)" : "Note (facultatif)"}</label>
+        <input className="input" value={note} onChange={e => setNote(e.target.value)}
+          placeholder={en ? "e.g. beyond repair" : "ex. irréparable"} style={{ marginTop: 6 }} />
+        <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 6 }}>
+          {en ? `${remaining} ${unitLabel(p.unit)} remaining.` : `${remaining} ${unitLabel(p.unit)} restant(s).`}
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+          <button className="btn btn-secondary" style={{ flex: 1 }} disabled={busy} onClick={onCancel}>{en ? "Cancel" : "Annuler"}</button>
+          <button className="btn" style={{ flex: 2, fontWeight: 700, background: "#ef4444", color: "#fff", border: "none" }} disabled={!valid || busy} onClick={submit}>
+            {busy ? "…" : (en ? "🗑️ Confirm scrap" : "🗑️ Confirmer le rebut")}
           </button>
         </div>
       </div>
