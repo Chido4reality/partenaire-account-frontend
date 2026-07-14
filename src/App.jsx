@@ -397,6 +397,29 @@ export default function App() {
       } catch (_) { /* @capacitor/network not bundled on web; ignore */ }
     })();
 
+    // MP-DOZIE-MOBILE-NOTIF-FIX: sidebar badges (Dozie new-order/message/dispute
+    // counts, approvals, stock check, damaged pile, …) rely on React Query's
+    // refetchOnWindowFocus — which listens for the browser's `visibilitychange`/
+    // `focus` DOM events. Those fire reliably in a real browser tab (why "the
+    // web" always looked live), but are UNRELIABLE inside a Capacitor Android
+    // WebView: backgrounding/foregrounding the whole app is an OS-level lifecycle
+    // event, not a page-visibility one, so the DOM events this app was relying on
+    // often never fire — a phone reopened after a new order arrived kept showing
+    // the stale pre-order badge until the next scheduled poll (60-90s later, or
+    // never if Android had throttled the backgrounded WebView's timers). Native
+    // only — the web/PWA already gets this via refetchOnWindowFocus.
+    let _appStateHandle;
+    (async () => {
+      try {
+        const { Capacitor } = await import("@capacitor/core");
+        if (!Capacitor.isNativePlatform()) return;
+        const { App: CapApp } = await import("@capacitor/app");
+        _appStateHandle = await CapApp.addListener("appStateChange", ({ isActive }) => {
+          if (isActive) qc.invalidateQueries();
+        });
+      } catch (_) { /* @capacitor/app not bundled on web; ignore */ }
+    })();
+
     // Fire the impersonation consumer eagerly. It only does anything when
     // ?impersonate_token= is present in the URL, otherwise it's a quick
     // URLSearchParams check.
@@ -470,6 +493,7 @@ export default function App() {
       window.removeEventListener("online",  handleOnline);
       window.removeEventListener("offline", handleOffline);
       try { _netHandle?.remove?.(); } catch (_) { /* ignore */ }
+      try { _appStateHandle?.remove?.(); } catch (_) { /* ignore */ }
     };
   }, []);
 

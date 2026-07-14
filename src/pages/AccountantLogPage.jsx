@@ -897,6 +897,11 @@ function buildEvidenceHtml({ data, en, fmt }) {
 
 // Phase 5a — the actions an owner can Allow/Block per staff member. Keys map to
 // pa_staff_permissions policy columns. Plain, low-literacy wording.
+// MP-OVERSELL-SAFE-DEFAULT-UI-FIX: oversell_policy is the ONE policy that is
+// SAFE-DEFAULT-BLOCK on the server (sales.js: no pa_staff_permissions row →
+// block) — every other policy here defaults to allow. `defaultPolicy` lets the
+// UI (display AND save) reflect each key's real server-side default instead of
+// assuming "allow" for all of them.
 const PERM_ACTIONS = [
   { key: "void_policy",         en: "Cancel a sale",        fr: "Annuler une vente" },
   { key: "refund_policy",       en: "Give a refund",        fr: "Faire un remboursement" },
@@ -907,8 +912,14 @@ const PERM_ACTIONS = [
   { key: "credit_policy",       en: "Sell on credit",       fr: "Vendre à crédit" },
   { key: "expense_policy",      en: "Record an expense",    fr: "Enregistrer une dépense" },
   { key: "transfer_policy",     en: "Transfer goods",       fr: "Transférer des marchandises" },
-  { key: "oversell_policy",     en: "Sell when finished (out of stock)", fr: "Vendre quand c'est fini (rupture)" },
+  { key: "oversell_policy",     en: "Sell when finished (out of stock)", fr: "Vendre quand c'est fini (rupture)",
+    defaultPolicy: "block",
+    note: {
+      en: "Unlike every other permission above, this one defaults to BLOCKED until you set it — selling out-of-stock goods is refused unless explicitly allowed or set to need your approval.",
+      fr: "Contrairement aux autres permissions ci-dessus, celle-ci est BLOQUÉE par défaut tant que vous ne la réglez pas — vendre en rupture de stock est refusé sauf si vous l'autorisez explicitement ou exigez votre approbation.",
+    } },
 ];
+const permDefault = (a) => a.defaultPolicy || "allow";
 
 function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
   const fmt = useCurrency();
@@ -979,7 +990,12 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
       };
       PERM_ACTIONS.forEach((a) => {
         const v = perms[a.key];
-        body[a.key] = ["allow", "approve", "block"].includes(v) ? v : "allow";
+        // MP-OVERSELL-SAFE-DEFAULT-UI-FIX: an untouched key must save as ITS OWN
+        // default, not always "allow" — this previously wrote oversell_policy:
+        // "allow" for a staffer whose oversell setting was never touched, the
+        // instant an owner saved ANY other permission for them, silently
+        // reversing the server's safe-default-block.
+        body[a.key] = ["allow", "approve", "block"].includes(v) ? v : permDefault(a);
       });
       await api.put(`/staff/permissions/${staff.id}`, body);
       toast.success(en ? "Permissions saved" : "Permissions enregistrées");
@@ -1377,15 +1393,18 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
             </div>
             <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginBottom: 14, background: "var(--bg-elevated)", borderRadius: 8, padding: "8px 10px" }}>
               {en
-                ? "By default everyone is allowed everything. Block only what you want to restrict."
-                : "Par défaut, tout le monde a le droit de tout faire. Bloquez seulement ce que vous voulez limiter."}
+                ? "By default everyone is allowed everything — EXCEPT \"Sell when finished\" below, which is blocked by default. Change only what you want different."
+                : "Par défaut, tout le monde a le droit de tout faire — SAUF « Vendre quand c'est fini » ci-dessous, bloqué par défaut. Ne changez que ce que vous voulez différent."}
             </div>
             {!perms ? (
               <div style={{ padding: 18, color: "var(--text-muted)" }}>{en ? "Loading…" : "Chargement…"}</div>
             ) : (
               <>
                 {PERM_ACTIONS.map((a) => {
-                  const pol = perms[a.key] || "allow";
+                  // MP-OVERSELL-SAFE-DEFAULT-UI-FIX: was `perms[a.key] || "allow"` for
+                  // EVERY key — an untouched oversell_policy displayed "Allowed" as the
+                  // active segment while the server actually enforces "block" for it.
+                  const pol = perms[a.key] || permDefault(a);
                   const seg = (val, label, bg, fg) => (
                     <button key={val} onClick={() => setPolicy(a.key, val)}
                       style={{ flex: 1, padding: "7px 4px", fontSize: 12.5, fontWeight: 700, border: "none", cursor: "pointer",
@@ -1402,6 +1421,22 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                         {seg("approve", en ? "Needs approval" : "Approbation", "rgba(245,158,11,0.9)", "#3a2400")}
                         {seg("block", en ? "Blocked" : "Bloqué", "rgba(239,68,68,0.9)", "#fff")}
                       </div>
+                      {/* MP-OVERSELL-SAFE-DEFAULT-UI-FIX: explain what each state means for
+                          THIS action specifically — "sell when finished" is abstract without it. */}
+                      {a.note && (
+                        <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
+                          {en ? a.note.en : a.note.fr}
+                          <br />
+                          {pol === "block"
+                            ? (en ? "→ Currently: refused outright — the sale is blocked and they're told to ask you."
+                                  : "→ Actuellement : refusé directement — la vente est bloquée et on leur dit de vous demander.")
+                            : pol === "approve"
+                            ? (en ? "→ Currently: allowed only with your PIN (in person) or after you approve a request sent to your phone."
+                                  : "→ Actuellement : autorisé seulement avec votre PIN (en personne) ou après votre approbation d'une demande envoyée sur votre téléphone.")
+                            : (en ? "→ Currently: sold freely, even past zero stock — no approval asked."
+                                  : "→ Actuellement : vendu librement, même sous stock zéro — aucune approbation demandée.")}
+                        </div>
+                      )}
                       {/* Caps tied to discount / expense */}
                       {a.key === "discount_policy" && !blocked && (
                         <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
