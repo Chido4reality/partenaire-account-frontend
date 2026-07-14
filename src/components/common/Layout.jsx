@@ -791,11 +791,14 @@ export default function Layout() {
     retry: 1,
     onError: () => {}
   });
-  // MP-DAMAGED-GOODS: the stock-check attention badge covers BOTH pending
-  // re-counts AND damaged-goods piles still awaiting action (sell / write-off),
-  // so a boss sees the damaged backlog on the sidebar the same way as pending.
+  // MP-DAMAGED-GOODS / MP-STALE-PRODUCT-SCAN: the stock-check attention badge
+  // covers pending re-counts, damaged-goods piles awaiting action, AND stale
+  // (not-moving) products — one summarized number on the sidebar; the Stock
+  // Check page's own tabs (To count / Damaged / Not moving) break it down so
+  // nothing is hidden, just not spelled out three times in the nav.
   const stockCheckPending = (stockCheckSummary?.data?.pending || 0)
-    + (stockCheckSummary?.data?.damaged || 0);
+    + (stockCheckSummary?.data?.damaged || 0)
+    + (stockCheckSummary?.data?.stale || 0);
 
   // MP-DOZIE-SELLER-MIGRATION Phase 2 — "Online Dozie" attention badge. Polls the
   // resolved seller's needs-attention count (pending orders now; messages/disputes

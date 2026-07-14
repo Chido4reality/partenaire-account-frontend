@@ -20,6 +20,10 @@ import toast from "react-hot-toast";
 import { unitLabel } from "../utils/units";
 import DateRangeFilter, { inRange, wideRange } from "../components/common/DateRangeFilter";
 
+// MP-STALE-PRODUCT-SCAN: mirrors backend lib/stockChecks.js's STALE_THRESHOLD_DAYS
+// (fixed, not per-org configurable — Peter, 2026-07-14). Display-only.
+const STALE_DAYS = 60;
+
 // MP-STOCK-CHECK-RESOLVE (Part B): reason → does it correct stock? (mirrors backend)
 const RESOLVE_REASONS = [
   { key: "miscount",       corrects: true,  en: "Miscount — goods were there",     fr: "Erreur de comptage — présents" },
@@ -62,6 +66,7 @@ function flaggedLabel(flaggedBy, en) {
   if (flaggedBy === "boss")     return en ? "🔍 boss-flagged"     : "🔍 signalé par le patron";
   if (flaggedBy === "watch")    return en ? "👁 watched"          : "👁 surveillé";
   if (flaggedBy === "transfer") return en ? "🔁 transfer variance" : "🔁 écart de transfert";
+  if (flaggedBy === "stale")    return en ? "📦 not moving" : "📦 sans mouvement";
   return en ? "🎲 auto-check" : "🎲 auto-vérif";
 }
 
@@ -89,7 +94,7 @@ export default function StockCheckPage() {
   const list = useQuery({
     queryKey: ["stock-checks", tab],
     queryFn: () => api.get(`/stock-checks?status=${tab}`).then(r => toArray(r)),
-    enabled: tab !== "damaged", // damaged is a separate pile endpoint
+    enabled: tab === "pending" || tab === "mismatch" || tab === "resolved", // damaged + stale are separate endpoints
     refetchInterval: 15000,
   });
 
@@ -104,6 +109,16 @@ export default function StockCheckPage() {
     refetchInterval: 15000,
   });
 
+  // MP-STALE-PRODUCT-SCAN: the "not moving" ranked list — a snapshot, not
+  // date-windowed (no range params). Separate endpoint/tab from Pending on
+  // purpose (see the backend route's own comment).
+  const stale = useQuery({
+    queryKey: ["stock-checks-stale"],
+    queryFn: () => api.get("/stock-checks/stale").then(r => toArray(r)),
+    enabled: tab === "stale",
+    refetchInterval: 60000,
+  });
+
   const watches = useQuery({
     queryKey: ["stock-check-watches"],
     queryFn: () => api.get("/stock-checks/watches").then(r => toArray(r)),
@@ -112,6 +127,7 @@ export default function StockCheckPage() {
   const invalidateAll = () => {
     qc.invalidateQueries({ queryKey: ["stock-checks"] });
     qc.invalidateQueries({ queryKey: ["stock-checks-damaged"] });
+    qc.invalidateQueries({ queryKey: ["stock-checks-stale"] });
     qc.invalidateQueries({ queryKey: ["stock-check-summary"] });
   };
 
@@ -214,6 +230,7 @@ export default function StockCheckPage() {
   // MP-DAMAGED-GOODS: pile rows are already date-scoped + remaining_qty>0 server-side.
   const damagedRows = Array.isArray(damaged.data?.data) ? damaged.data.data : [];
   const scrapLoss = damaged.data?.scrap_loss || { quantity: 0, estimated_cost: 0 };
+  const staleRows = Array.isArray(stale.data) ? stale.data : [];
 
   return (
     <div style={{ padding: 16, maxWidth: 1000, margin: "0 auto" }}>
@@ -240,20 +257,22 @@ export default function StockCheckPage() {
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 8, margin: "14px 0" }}>
-        {["pending", "mismatch", "resolved", "damaged"].map(t => (
+        {["pending", "mismatch", "resolved", "damaged", "stale"].map(t => (
           <button key={t} onClick={() => setTab(t)}
             style={{ padding: "7px 14px", borderRadius: 999, border: "1px solid var(--border)", cursor: "pointer", fontWeight: 700, fontSize: 13,
               background: tab === t ? "var(--brand-light)" : "transparent", color: tab === t ? "#1a1a2e" : "var(--text-secondary)" }}>
             {t === "pending" ? (en ? "To count" : "À compter")
               : t === "mismatch" ? (en ? "Mismatches" : "Écarts")
               : t === "resolved" ? (en ? "Resolved" : "Résolus")
-              : (en ? "Damaged" : "Endommagé")}
+              : t === "damaged" ? (en ? "Damaged" : "Endommagé")
+              : (en ? "Not moving" : "Sans mouvement")}
           </button>
         ))}
       </div>
 
-      {/* A2 date filter — applies to all three tabs */}
-      <DateRangeFilter from={range.from} to={range.to} onChange={setRange} style={{ marginBottom: 12 }} />
+      {/* A2 date filter — applies to every tab except Not moving (a ranked
+          snapshot, not a date-windowed list). */}
+      {tab !== "stale" && <DateRangeFilter from={range.from} to={range.to} onChange={setRange} style={{ marginBottom: 12 }} />}
 
       {/* Resolved tab → "Damaged" filter = the shop's damage record (no separate table) */}
       {tab === "resolved" && (
@@ -353,7 +372,7 @@ export default function StockCheckPage() {
         </div>
       </>)}
 
-      {tab !== "damaged" && (<>
+      {(tab === "pending" || tab === "mismatch" || tab === "resolved") && (<>
       {list.isLoading && <div style={{ color: "var(--text-muted)", padding: 16 }}>{en ? "Loading…" : "Chargement…"}</div>}
       {!list.isLoading && rows.length === 0 && (
         <div style={{ color: "var(--text-muted)", padding: 24, textAlign: "center", background: "var(--bg-card)", borderRadius: 12, border: "1px solid var(--border)" }}>
@@ -441,6 +460,63 @@ export default function StockCheckPage() {
           );
         })}
       </div>
+      </>)}
+
+      {/* MP-STALE-PRODUCT-SCAN: "Not moving" — the inactivity mirror of Watch.
+          Ranked by tied-up value (server-sorted); the boss triages worst-first
+          rather than being nagged item-by-item. */}
+      {tab === "stale" && (<>
+        {stale.isLoading && <div style={{ color: "var(--text-muted)", padding: 16 }}>{en ? "Loading…" : "Chargement…"}</div>}
+        {stale.isError && (
+          <div style={{ color: "#f87171", padding: 24, textAlign: "center", background: "var(--bg-card)", borderRadius: 12, border: "1px solid #f87171" }}>
+            {en ? "Couldn't load the stale-product list. Pull to retry." : "Impossible de charger la liste des produits sans mouvement. Tirez pour réessayer."}
+          </div>
+        )}
+        {!stale.isLoading && !stale.isError && staleRows.length === 0 && (
+          <div style={{ color: "var(--text-muted)", padding: 24, textAlign: "center", background: "var(--bg-card)", borderRadius: 12, border: "1px solid var(--border)" }}>
+            {en ? `Nothing flagged — everything has sold or moved in the last ${STALE_DAYS} days.` : `Rien à signaler — tout s'est vendu ou a bougé dans les ${STALE_DAYS} derniers jours.`}
+          </div>
+        )}
+        <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginBottom: 10 }}>
+          {en ? `No sale and no receive/transfer in ${STALE_DAYS} days. Ranked by value tied up (highest first).`
+              : `Aucune vente ni réception/transfert depuis ${STALE_DAYS} jours. Classé par valeur immobilisée (la plus élevée d'abord).`}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {staleRows.map(r => {
+            const p = r.pa_products || {};
+            const loc = r.pa_locations || {};
+            const qty = Number(r.qty_before) || 0;
+            const value = qty * (Number(p.cost_price) || 0);
+            const days = Math.floor((Date.now() - new Date(r.created_at).getTime()) / 86400000);
+            return (
+              <div key={r.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderLeft: "3px solid #94a3b8", borderRadius: 12, padding: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>
+                      {en ? (p.name_en || p.name) : p.name}
+                      {p.sku && <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>{p.sku}</span>}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      <span>📍 {loc.name || "—"}</span>
+                      <span>{en ? `flagged ${days}d ago` : `signalé il y a ${days}j`}</span>
+                    </div>
+                    <div style={{ fontSize: 12.5, marginTop: 6, display: "flex", gap: 14, flexWrap: "wrap" }}>
+                      <span style={{ color: "var(--text-muted)" }}>
+                        {en ? "On hand" : "En stock"}: <b style={{ color: "var(--text-primary)" }}>{qty} {unitLabel(p.unit)}</b>
+                      </span>
+                      {value > 0 && <span style={{ color: "var(--text-muted)" }}>{en ? "Tied up" : "Immobilisé"}: <b style={{ color: "#f87171" }}>{fmt(value)}</b></span>}
+                    </div>
+                  </div>
+                  <div style={{ alignSelf: "center" }}>
+                    <button onClick={() => setResolveFor(r)} className="btn btn-primary" style={{ fontWeight: 700, whiteSpace: "nowrap" }}>
+                      🔍 {en ? "Count it" : "Compter"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </>)}
 
       {resolveFor && (
