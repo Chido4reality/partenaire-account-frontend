@@ -136,37 +136,18 @@ export default function POSPage() {
   const [saleDiscType, setSaleDiscType]     = useState("");   // "" | "amount" | "percent"
   const [saleDiscValue, setSaleDiscValue]   = useState("");
   const [saleDiscReason, setSaleDiscReason] = useState("");
-  // Owner-PIN token minted when the backend returns DISCOUNT_APPROVAL_REQUIRED;
-  // a ref so the immediate resubmit reads it without waiting on a state flush.
-  const discountTokenRef = useRef(null);
-  // MP-DISCOUNT-HYBRID-APPROVAL: when a resumed held sale carries a boss-approved
-  // discount, its approval id rides the next /sales POST (server re-verifies the
-  // cart signature + single-uses it).
-  const discountApprovalIdRef = useRef(null);
-  // The hybrid over-cap choice modal payload ({ effective_pct, total_discount });
-  // null = closed. Offers "Enter owner PIN" (sync) OR "Send request to boss" (async).
-  const [discountChoice, setDiscountChoice] = useState(null);
-  // MP-BELOW-COST-HYBRID-APPROVAL: same hybrid as discounts but for a line priced
-  // below its floor. belowCostApprovalIdRef rides the next /sales POST when a
-  // resumed held sale carries a boss-approved below_cost_sale; belowCostChoice
-  // holds the line being approved while the two-option modal is open.
-  const belowCostApprovalIdRef = useRef(null);
-  const [belowCostChoice, setBelowCostChoice] = useState(null);
-  // MP-CREDIT-PERMISSION: a boss-approved credit_sale id rides the next /sales
-  // POST (server re-verifies + single-uses it), same mechanic as below-cost.
-  const creditApprovalIdRef = useRef(null);
-  // MP-OVERSELL-HYBRID-APPROVAL: SERVER-gated oversell (a line would push stock
-  // below what exists AND the cashier's oversell_policy != 'allow'). Mirrors the
-  // discount/below-cost hybrid EXACTLY. oversellTokenRef = the owner-PIN-now
-  // single-use token minted from the OwnerApprovalModal (resubmit reads it without
-  // waiting on a state flush); oversellApprovalIdRef = a boss-approved oversell id
-  // that rides a resumed held sale. oversellApprovalModal holds the server 403
-  // payload ({ approval_id, items, message_fr, message_en }) while the two-option
-  // choice modal is open. NOTE: distinct from `oversellModal` below, which is the
-  // pre-submit CLIENT-side low-stock warn — this is the authoritative server gate.
-  const oversellTokenRef = useRef(null);
-  const oversellApprovalIdRef = useRef(null);
-  const [oversellApprovalModal, setOversellApprovalModal] = useState(null);
+  // MP-APPROVAL-BUNDLE: the entire below-cost/discount/credit/oversell hybrid
+  // is now ONE bundled request. bundledApprovalIdRef = a boss-approved
+  // bundled_sale id riding a resumed held sale (server re-verifies the cart+pay
+  // signature + single-uses it). bundledApprovalTokenRef = an owner-PIN-now
+  // single-use token minted from the OwnerApprovalModal (resubmit reads it
+  // without waiting on a state flush). approvalBundle holds the server 403
+  // payload ({ actions:[...] }) while the ONE choice modal (PIN-now / send to
+  // boss / cancel) is open — the cashier sees every needed approval at once,
+  // never a cascading series of separate prompts.
+  const bundledApprovalIdRef = useRef(null);
+  const bundledApprovalTokenRef = useRef(null);
+  const [approvalBundle, setApprovalBundle] = useState(null);
   const [sendingToBoss, setSendingToBoss] = useState(false);
   const [showCamera, setShowCamera]       = useState(false);
   const [scanMode, setScanMode]           = useState(isMobile() ? "camera" : "usb");
@@ -311,11 +292,10 @@ export default function POSPage() {
       if (draft.paidAmt)       setPaidAmt(draft.paidAmt);
       if (draft.dueDate)       setDueDate(draft.dueDate);
       if (draft.notes)         setNotes(draft.notes);
-      // MP-BELOW-COST-PERSIST: restore the cart-level boss-approval links so the
-      // resumed below-cost/discount cart still finalizes with its approval
-      // without a re-approval after navigating away and back.
-      belowCostApprovalIdRef.current = draft.belowCostApprovalId || null;
-      discountApprovalIdRef.current  = draft.discountApprovalId || null;
+      // MP-BELOW-COST-PERSIST / MP-APPROVAL-BUNDLE: restore the cart-level
+      // boss-approval link so a resumed bundled-approval cart still finalizes
+      // with its approval without a re-approval after navigating away and back.
+      bundledApprovalIdRef.current = draft.bundledApprovalId || null;
       if (isMobile())          setSheetOpen(true);
       cartScopeRef.current = { userId, locId };
       toast.success(lang === "en"
@@ -353,10 +333,10 @@ export default function POSPage() {
     }
     saveDraft({ userId, locationId: locId,
       items: cart, customer, payMode, paidAmt, dueDate, notes,
-      // MP-BELOW-COST-PERSIST: keep the boss-approval links with the draft so a
-      // remount still sends them at checkout (refs are wiped on unmount).
-      belowCostApprovalId: belowCostApprovalIdRef.current,
-      discountApprovalId: discountApprovalIdRef.current });
+      // MP-BELOW-COST-PERSIST / MP-APPROVAL-BUNDLE: keep the boss-approval link
+      // with the draft so a remount still sends it at checkout (refs are wiped
+      // on unmount).
+      bundledApprovalId: bundledApprovalIdRef.current });
   }, [cart, customer, payMode, paidAmt, dueDate, notes,
       userId, locId, saveDraft, clearDraft]);
   // MP-STORAGE-QUOTA-CRASH-FIX: safeStorage fires this (at most once/session)
@@ -1055,29 +1035,24 @@ export default function POSPage() {
   }));
   const onPriceInput = (lineId, raw) => updatePrice(lineId, raw);
 
-  // MIN-PRICE FLOOR: on blur, a below-min price needs the boss's approval.
-  // MP-BELOW-COST-HYBRID-APPROVAL: instead of immediately popping the PIN, open
-  // the SAME two-option prompt as an over-cap discount — (A) Enter owner PIN now
-  // (the existing OwnerApprovalModal path, unchanged), or (B) Send the request to
-  // the boss (park + hold). Owners set any price freely. Cancel reverts.
-  const onPriceBlur = async (lineId) => {
+  // MP-APPROVAL-BUNDLE (Peter, 2026-07-15): below-cost is no longer checked or
+  // interrupted HERE — the cashier sets ANY price freely while building the
+  // cart, no popup mid-build. Everything needing approval (below-cost, discount,
+  // credit, oversell — any combination) is discovered ONCE, together, only when
+  // Confirm Payment is pressed (see saleMutation.onError's single `approval_
+  // required` handler). This is the fix for the exact bugs Paul hit: a below-
+  // cost popup firing per-line while the cart was still being built, then a
+  // SECOND separate popup for credit moments later, each bound to its own
+  // snapshot of the cart — any shift between them voided the earlier approval.
+  const onPriceBlur = (lineId) => {
     const item = cart.find(it => it.lineId === lineId);
     if (!item) return;
     const p = parseFloat(item.unit_price);
-    const minPrice = item.min_price || 0;
     const revertTo = item.original_price || item.min_price || 0;
     if (isNaN(p) || p < 0) {
       setCart(c => c.map(it => it.lineId === lineId ? { ...it, unit_price: revertTo } : it));
       return;
     }
-    if (!isOwner && minPrice > 0 && p < minPrice) {
-      // Keep the typed price on the line while the modal is open; the modal's
-      // choice either commits it (PIN now / send-to-boss) or reverts (cancel).
-      setCart(c => c.map(it => it.lineId === lineId ? { ...it, unit_price: p } : it));
-      setBelowCostChoice({ lineId, product_id: item.product_id, name: item.name, attempted_price: p, min_price: minPrice, revertTo });
-      return;
-    }
-    // Valid price (>= min, or owner): commit and drop any stale override.
     setCart(c => c.map(it => it.lineId === lineId
       ? { ...it, unit_price: p, price_overridden: false, price_approval_token: undefined }
       : it));
@@ -1087,74 +1062,97 @@ export default function POSPage() {
   // synchronous owner-PIN path (OwnerApprovalModal → action_type
   // 'edit_product_price' token stamped on the line → rides to checkout). Unchanged
   // behaviour, just triggered from the hybrid choice modal now.
-  const belowCostViaPin = () => {
-    const choice = belowCostChoice;
-    setBelowCostChoice(null);
-    if (!choice) return;
-    // MP-APPROVAL-PLAIN-LANGUAGE: plain description for the owner-PIN screen.
+  // MP-APPROVAL-BUNDLE: the cart lines this bundle's approval-request call needs
+  // — mirrors the OLD per-gate senders' item shape exactly (product lines only;
+  // debt/credit exposure is derived server-side from pay_mode/paid_amount, not
+  // from itemizing debt lines here).
+  const bundleLineItems = () => cart
+    .filter(i => i.product_id && !isDebtish(i))
+    .map(i => ({
+      product_id: i.product_id, name: i.name,
+      quantity: Number(i.quantity) || 1, unit_price: Number(i.unit_price) || 0,
+      discount_type:  (i.discount_type && Number(i.discount_value) > 0) ? i.discount_type : null,
+      discount_value: (i.discount_type && Number(i.discount_value) > 0) ? Number(i.discount_value) : null,
+      discount_reason: (i.discount_type && Number(i.discount_value) > 0) ? (String(i.discount_reason || "").trim() || null) : null,
+      is_damaged: i.is_damaged ? true : undefined,
+      damaged_source_id: i.is_damaged ? (i.damaged_source_id || undefined) : undefined,
+    }));
+
+  // MP-APPROVAL-BUNDLE — option 1: boss is HERE. Mint ONE single-use owner-PIN
+  // bundled_sale token covering every gate the cart tripped, then RESUBMIT the
+  // sale with it. Nothing about the cashier's cart/prices/payment reverts —
+  // the sale completes with the exact values already entered.
+  const approvalBundleViaPin = () => {
+    const bundle = approvalBundle;
+    setApprovalBundle(null);
+    if (!bundle) return;
     const who = String(user?.full_name || "").trim() || (lang === "en" ? "A cashier" : "Un caissier");
-    const qty = (cart.find(l => l.lineId === choice.lineId)?.quantity) || 1;
-    const loss = Math.max(0, (Number(choice.min_price) || 0) - (Number(choice.attempted_price) || 0)) * qty;
+    const parts = (bundle.actions || []).map(a => {
+      if (a.type === "below_cost") return lang === "en"
+        ? `sell "${a.name}" for ${fmt(a.attempted_price)} (below the ${fmt(a.min_price)} floor)`
+        : `vendre "${a.name}" à ${fmt(a.attempted_price)} (sous le plancher de ${fmt(a.min_price)})`;
+      if (a.type === "discount") return lang === "en"
+        ? `give a total discount of ${fmt(a.total_discount)}` : `accorder une remise totale de ${fmt(a.total_discount)}`;
+      if (a.type === "credit") return lang === "en"
+        ? `sell ${fmt(a.balance_due)} on credit` : `vendre ${fmt(a.balance_due)} à crédit`;
+      if (a.type === "oversell") return lang === "en"
+        ? `sell more than the stock shows (${(a.items || []).map(it => it.name).filter(Boolean).join(", ")})`
+        : `vendre plus que le stock affiché (${(a.items || []).map(it => it.name).filter(Boolean).join(", ")})`;
+      return "";
+    }).filter(Boolean);
     requestApproval({
-      actionType:  "edit_product_price",
-      targetTable: "pa_products",
-      targetId:    choice.product_id,
-      context:     { min_price: choice.min_price, attempted_price: choice.attempted_price, product: choice.name },
+      actionType:  "bundled_sale",
+      targetTable: "pa_sales",
+      targetId:    null,
+      context:     { actions: bundle.actions },
       description: lang === "en"
-        ? `${who} wants to sell "${choice.name}" for ${fmt(choice.attempted_price)} — below the minimum price of ${fmt(choice.min_price)}. You lose ${fmt(loss)} on this item.`
-        : `${who} veut vendre "${choice.name}" à ${fmt(choice.attempted_price)} — en dessous du prix minimum de ${fmt(choice.min_price)}. Vous perdez ${fmt(loss)} sur cet article.`,
+        ? `${who} wants to: ${parts.join("; ")}.`
+        : `${who} veut : ${parts.join("; ")}.`,
     })
-      .then(({ token }) => {
-        setCart(c => c.map(it => it.lineId === choice.lineId
-          ? { ...it, unit_price: choice.attempted_price, price_overridden: true, price_approval_token: token }
-          : it));
-      })
+      .then(({ token }) => { bundledApprovalTokenRef.current = token; saleMutation.mutate(); })
       .catch((e) => {
+        bundledApprovalTokenRef.current = null;
         if (e?.code !== "cancelled") {
           toast.error(e?.response?.data?.message || (lang === "en" ? "Approval failed" : "Échec de l'approbation"));
         }
-        setCart(c => c.map(it => it.lineId === choice.lineId ? { ...it, unit_price: choice.revertTo } : it));
       });
   };
 
-  // MP-BELOW-COST-HYBRID-APPROVAL — option 2: boss is AWAY. Park the below-cost
-  // sale as a pending approval (notifies the owner), HOLD the cart, and clear the
-  // screen — exactly like sendDiscountToBoss. The cashier later resumes the held
-  // sale (price pre-approved) and completes it.
-  const sendBelowCostToBoss = async () => {
+  // MP-APPROVAL-BUNDLE — option 2: boss is AWAY. Park ONE bundled approval
+  // (server recomputes every gate + the cart+pay signature), HOLD the cart
+  // linked to it, and clear the screen. The cashier later resumes the held
+  // sale (everything pre-approved, nothing re-prompted) and completes it — OR
+  // the boss completes it directly from My Requests; whichever happens first
+  // cancels the other (single source of truth, closes the double-sale bug).
+  const sendApprovalBundleToBoss = async () => {
     setSendingToBoss(true);
     try {
-      const lineItems = cart
-        .filter(i => i.product_id && !isDebtish(i))
-        .map(i => ({
-          product_id: i.product_id, name: i.name,
-          quantity: Number(i.quantity) || 1, unit_price: Number(i.unit_price) || 0,
-          discount_type:  (i.discount_type && Number(i.discount_value) > 0) ? i.discount_type : null,
-          discount_value: (i.discount_type && Number(i.discount_value) > 0) ? Number(i.discount_value) : null,
-          discount_reason: (i.discount_type && Number(i.discount_value) > 0) ? (String(i.discount_reason || "").trim() || null) : null,
-        }));
-      // 1) park the approval (server recomputes the below-cost lines + signature)
-      const ar = await api.post("/sales/below-cost-approval-request", {
+      const lineItems = bundleLineItems();
+      const ar = await api.post("/sales/bundled-approval-request", {
         location_id: selectedLocation?.id,
         customer_id: customer?.id || null,
         customer_name: customer?.name || null,
         items: lineItems,
+        pay_mode: isDebtOnlyCart ? "debt" : payMode,
+        paid_amount: paid,
+        discount_type:   (saleDiscType && Number(saleDiscValue) > 0) ? saleDiscType : null,
+        discount_value:  (saleDiscType && Number(saleDiscValue) > 0) ? Number(saleDiscValue) : null,
+        discount_reason: (saleDiscType && Number(saleDiscValue) > 0) ? (saleDiscReason.trim() || null) : null,
+        notes: notes || null,
       }).then(r => r.data);
       const approvalId = ar?.approval_id;
-      // 2) hold the cart, linked to that approval (reuses the held-cart approval link)
       const hr = await api.post("/held-carts", {
         location_id: selectedLocation?.id,
         customer_id: customer?.id || null,
-        label: lang === "en" ? "Below cost — boss approval" : "Sous le prix — approbation patron",
+        label: lang === "en" ? "Sale — boss approval" : "Vente — approbation patron",
         items: lineItems.map(i => ({ product_id: i.product_id, qty: i.quantity, unit_price: i.unit_price, line_total: i.quantity * i.unit_price })),
         discount_approval_id: approvalId,
       }).then(r => r.data);
-      // 3) clear the screen so the cashier serves other customers
-      setBelowCostChoice(null);
+      setApprovalBundle(null);
       setCart([]); setCustomer(null); setOnlineCtx(null);
       setShowPayment(false); setPayMode("paid"); setPayModeChosen(false); setPaidAmt("");
       setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason("");
-      discountTokenRef.current = null; discountApprovalIdRef.current = null; belowCostApprovalIdRef.current = null;
+      bundledApprovalIdRef.current = null; bundledApprovalTokenRef.current = null;
       qc.invalidateQueries(["held-carts"]);
       toast.success(lang === "en"
         ? `Sent to the boss + held as ${hr?.data?.hold_ref || ""}. Resume it once approved.`
@@ -1167,12 +1165,9 @@ export default function POSPage() {
     }
   };
 
-  // Cancel the below-cost choice → revert the line to its last valid price.
-  const cancelBelowCostChoice = () => {
-    const choice = belowCostChoice;
-    setBelowCostChoice(null);
-    if (choice) setCart(c => c.map(it => it.lineId === choice.lineId ? { ...it, unit_price: choice.revertTo } : it));
-  };
+  // Cancel the bundle choice → close the modal. Nothing to revert: prices/
+  // discount/payment were never provisionally changed while the modal was open.
+  const cancelApprovalBundle = () => setApprovalBundle(null);
 
   // MP-DISCOUNT: patch a cart line's discount fields (type/value/reason) +
   // a toggle to open/clear the line discount control.
@@ -1540,21 +1535,14 @@ export default function POSPage() {
         discount_type:   (saleDiscType && Number(saleDiscValue) > 0) ? saleDiscType : null,
         discount_value:  (saleDiscType && Number(saleDiscValue) > 0) ? Number(saleDiscValue) : null,
         discount_reason: (saleDiscType && Number(saleDiscValue) > 0) ? (saleDiscReason.trim() || null) : null,
-        discount_approval_token: discountTokenRef.current || undefined,
-        // MP-DISCOUNT-HYBRID-APPROVAL: async-approved discount (resumed held sale).
-        // Server re-verifies the cart signature + single-uses it.
-        discount_approval_id: discountApprovalIdRef.current || undefined,
-        // MP-BELOW-COST-HYBRID-APPROVAL: async-approved below-cost sale (resumed
-        // held sale). Server re-verifies the cart signature + single-uses it.
-        below_cost_approval_id: belowCostApprovalIdRef.current || undefined,
-        // MP-CREDIT-PERMISSION: boss-approved credit sale, re-verified server-side.
-        credit_approval_id: creditApprovalIdRef.current || undefined,
-        // MP-OVERSELL-HYBRID-APPROVAL: owner-PIN-now single-use token (set on
-        // resubmit after oversell_approval_required) + a boss-approved oversell id
-        // riding a resumed held sale. Server consumes the token / re-verifies the
-        // id. An in-stock sale sends neither → undefined → gate untouched.
-        oversell_approval_token: oversellTokenRef.current || undefined,
-        oversell_approval_id: oversellApprovalIdRef.current || undefined,
+        // MP-APPROVAL-BUNDLE: ONE bundled approval covers below-cost/discount/
+        // credit/oversell together — either an owner-PIN-now single-use token
+        // (resubmit after approval_required) or a boss-approved id riding a
+        // resumed held sale. Server re-verifies the cart+pay signature and
+        // single-uses whichever is present. A sale that tripped no gate sends
+        // neither → undefined → every gate untouched.
+        bundled_approval_token: bundledApprovalTokenRef.current || undefined,
+        bundled_approval_id: bundledApprovalIdRef.current || undefined,
         // MP-UNDO-TO-CART: link this re-checkout to the voided sale it replaces.
         replaces_sale_id: restoreFromIdRef.current || undefined,
       };
@@ -1575,9 +1563,9 @@ export default function POSPage() {
         setPaidAmt(""); setDueDate(""); setNotes(""); setShowPayment(false);
         restoreFromIdRef.current = null; setRestoreBanner(null); // MP-UNDO-TO-CART: clear link
 
-        // MP-DISCOUNT: clear sale-level discount + any minted approval token + a
-        // consumed async approval id.
-        setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason(""); discountTokenRef.current = null; discountApprovalIdRef.current = null; belowCostApprovalIdRef.current = null; creditApprovalIdRef.current = null; oversellTokenRef.current = null; oversellApprovalIdRef.current = null;
+        // MP-DISCOUNT: clear sale-level discount + any minted bundled-approval
+        // token/id (owner-PIN-now token or a consumed async boss-approval id).
+        setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason(""); bundledApprovalTokenRef.current = null; bundledApprovalIdRef.current = null;
         setDebtInvoices([]); setSelectedDebtIds(new Set()); setDebtPayAmt("");
         setDebtBanner(null);
         setOnlineCtx(null);
@@ -1767,47 +1755,16 @@ export default function POSPage() {
         setShowPayment(true);
         return;
       }
-      // ── MP-DISCOUNT control responses ────────────────────────────────────
+      // ── MP-APPROVAL-BUNDLE (Peter, 2026-07-15) ────────────────────────────
+      // Hard blocks (no approval possible — hasn't changed) stay immediate:
       if (d?.code === "DISCOUNT_BLOCKED") {
-        discountTokenRef.current = null;
         toast.error(lang === "en"
           ? "You are not allowed to apply discounts. Ask the owner."
           : "Vous n'êtes pas autorisé à faire des remises. Demandez au propriétaire.",
           { duration: 5000 });
         return;
       }
-      if (d?.code === "DISCOUNT_APPROVAL_REQUIRED") {
-        // MP-DISCOUNT-HYBRID-APPROVAL: over the cashier's cap → open the HYBRID
-        // choice (Enter owner PIN now, OR send the request to the boss's phone).
-        // A stale parked approval id must not ride along.
-        discountApprovalIdRef.current = null;
-        setDiscountChoice({ effective_pct: d.effective_pct, total_discount: d.total_discount });
-        return;
-      }
-      if (d?.code === "DISCOUNT_APPROVAL_VOID") {
-        // The boss-approved discount no longer matches this cart (items or the
-        // discount changed since approval). Drop it; a fresh request is needed.
-        discountApprovalIdRef.current = null;
-        toast.error(lang === "en"
-          ? "The cart or discount changed since approval — the approval is void. Request a new one."
-          : "Le panier ou la remise a changé depuis l'approbation — approbation annulée. Refaites une demande.",
-          { duration: 6000 });
-        return;
-      }
-      if (d?.code === "BELOW_COST_APPROVAL_VOID") {
-        // The boss-approved below-cost sale no longer matches this cart. Drop it.
-        belowCostApprovalIdRef.current = null;
-        toast.error(lang === "en"
-          ? "The cart changed since approval — the below-cost approval is void. Request a new one."
-          : "Le panier a changé depuis l'approbation — approbation annulée. Refaites une demande.",
-          { duration: 6000 });
-        return;
-      }
-      // ── MP-OVERSELL-HYBRID-APPROVAL control responses ────────────────────
       if (d?.code === "oversell_not_allowed") {
-        // HARD block — the cashier may not oversell and there's no inline owner
-        // approval. Mirror NOT_STOCKED_AT_LOCATION's blocking modal (no retry).
-        oversellTokenRef.current = null; oversellApprovalIdRef.current = null;
         setBlockModal({
           locationName: selectedLocation?.name || "",
           products: (d.items || []).map(it => it.name).filter(Boolean),
@@ -1817,50 +1774,29 @@ export default function POSPage() {
         });
         return;
       }
-      if (d?.code === "oversell_approval_required") {
-        // Over available stock + policy=approval → open the HYBRID choice (owner
-        // PIN now, OR send the request to the boss). The approval is ALREADY parked
-        // server-side; its approval_id rides the send-to-boss hold + later resume.
-        // A stale minted token / parked id must not ride along.
-        oversellTokenRef.current = null; oversellApprovalIdRef.current = null;
-        setOversellApprovalModal({
-          approval_id: d.approval_id,
-          items: d.items || [],
-          message_en: d.message_en,
-          message_fr: d.message_fr,
-        });
-        return;
-      }
-      // ── MP-CREDIT-PERMISSION control responses ───────────────────────────
       if (d?.code === "credit_not_allowed") {
-        creditApprovalIdRef.current = null;
         toast.error(lang === "en"
           ? "You are not allowed to sell on credit. Ask the boss."
           : "Vous n'êtes pas autorisé à vendre à crédit. Demandez au patron.",
           { duration: 6000 });
         return;
       }
-      if (d?.code === "credit_approval_required") {
-        // Needs the boss. Send the request to the boss's phone (the SAME async
-        // pa_action_approvals flow below-cost uses); once approved, the cashier
-        // taps Complete again and the sale rides with credit_approval_id. (This
-        // handler isn't async — use promise chaining.)
-        creditApprovalIdRef.current = null;
-        api.post("/sales/credit-approval-request", {
-          items: cart, customer_id: customer?.id || null, customer_name: customer?.name || null,
-          paid_amount: paid, location_id: selectedLocation?.id,
-        }).then(r => {
-          const ar = r.data;
-          if (ar?.id) creditApprovalIdRef.current = ar.id;
-          toast(lang === "en"
-            ? "Credit sale sent to the boss for approval. Once approved, tap Complete again."
-            : "Vente à crédit envoyée au patron pour approbation. Une fois approuvée, appuyez de nouveau sur Terminer.",
-            { duration: 8000, icon: "📩" });
-        }).catch(e2 => {
-          toast.error(e2?.response?.data?.message || (lang === "en"
-            ? "Could not send the approval request." : "Impossible d'envoyer la demande d'approbation."),
-            { duration: 6000 });
-        });
+      if (d?.code === "unknown_product") {
+        toast.error(d.message_en && lang === "en" ? d.message_en : (d.message_fr || d.message || "Error"), { duration: 6000 });
+        return;
+      }
+      // Everything that CAN be approved — below-cost, discount, credit, oversell,
+      // any combination — now comes back as ONE response listing every action
+      // needed. ONE popup, right here, at Confirm Payment. This replaces four
+      // separate per-blocker-type popups (DISCOUNT_APPROVAL_REQUIRED, credit_
+      // approval_required, oversell_approval_required, and the old per-line
+      // below-cost interrupt at onPriceBlur) whose separately-signed approvals
+      // could void each other on a second round-trip — the exact cascading trap
+      // Kusi hit (below-cost approved → credit needed → "price changed, needs
+      // another approval", no popup, dead sale).
+      if (d?.code === "approval_required") {
+        bundledApprovalIdRef.current = null; bundledApprovalTokenRef.current = null;
+        setApprovalBundle({ actions: d.actions || [] });
         return;
       }
       if (d?.code === "NOT_STOCKED_AT_LOCATION") {
@@ -1907,10 +1843,8 @@ export default function POSPage() {
           { duration: 5000 });
         return;
       }
-      // MP-DISCOUNT: drop any stale approval token so it can't be reused.
-      discountTokenRef.current = null;
-      // MP-OVERSELL-HYBRID-APPROVAL: same — drop a stale minted oversell token.
-      oversellTokenRef.current = null;
+      // MP-APPROVAL-BUNDLE: drop any stale minted approval token so it can't be reused.
+      bundledApprovalTokenRef.current = null;
       toast.error(d?.message || "Error");
     }
   });
@@ -1922,164 +1856,6 @@ export default function POSPage() {
   // inventory check: __DEBT__ (invoice settle) and, per MP-POS-DEBT-
   // LINE-LOCATION-FIX, __DEBT_PAYMENT__ / type:'debt_payment' (manual
   // debt). Debt is org-level, never location-stocked.
-
-  // MP-DISCOUNT-HYBRID-APPROVAL — option 1: boss is HERE. Existing synchronous
-  // owner-PIN path (OwnerApprovalModal → action_type 'discount' token → resubmit).
-  // Unchanged behaviour, just triggered from the hybrid choice modal now.
-  const discountViaPin = () => {
-    const choice = discountChoice;
-    setDiscountChoice(null);
-    requestApproval({
-      actionType:  "discount",
-      targetTable: "pa_sales",
-      targetId:    null,
-      context:     { effective_pct: choice?.effective_pct, total_discount: choice?.total_discount },
-      // MP-APPROVAL-PLAIN-LANGUAGE: plain description for the owner-PIN screen.
-      description: (() => {
-        const who = String(user?.full_name || "").trim() || (lang === "en" ? "A cashier" : "Un caissier");
-        const tot = fmt(choice?.total_discount || totalDiscount);
-        return lang === "en"
-          ? `${who} wants to give a total discount of ${tot} on this sale. Total discount: ${tot}.`
-          : `${who} veut accorder une remise totale de ${tot} sur cette vente. Remise totale : ${tot}.`;
-      })(),
-    })
-      .then(({ token }) => { discountTokenRef.current = token; saleMutation.mutate(); })
-      .catch((e) => {
-        discountTokenRef.current = null;
-        if (e?.code !== "cancelled") {
-          toast.error(e?.response?.data?.message || (lang === "en" ? "Approval failed" : "Échec de l'approbation"));
-        }
-      });
-  };
-
-  // MP-DISCOUNT-HYBRID-APPROVAL — option 2: boss is AWAY. Park the discount as a
-  // pending approval (notifies the owner), HOLD the cart so the cashier serves
-  // others, and clear the screen. The boss approves on their own device; the
-  // cashier later resumes the held sale (discount pre-approved) and completes it.
-  const sendDiscountToBoss = async () => {
-    setSendingToBoss(true);
-    try {
-      const lineItems = cart
-        .filter(i => i.product_id && !isDebtish(i))
-        .map(i => ({
-          product_id: i.product_id, name: i.name,
-          quantity: Number(i.quantity) || 1, unit_price: Number(i.unit_price) || 0,
-          discount_type:  (i.discount_type && Number(i.discount_value) > 0) ? i.discount_type : null,
-          discount_value: (i.discount_type && Number(i.discount_value) > 0) ? Number(i.discount_value) : null,
-          discount_reason: (i.discount_type && Number(i.discount_value) > 0) ? (String(i.discount_reason || "").trim() || null) : null,
-        }));
-      // 1) park the approval (server recomputes decision + signature)
-      const ar = await api.post("/sales/discount-approval-request", {
-        location_id: selectedLocation?.id,
-        customer_id: customer?.id || null,
-        customer_name: customer?.name || null,
-        items: lineItems,
-        discount_type:  (saleDiscType && Number(saleDiscValue) > 0) ? saleDiscType : null,
-        discount_value: (saleDiscType && Number(saleDiscValue) > 0) ? Number(saleDiscValue) : null,
-        discount_reason: (saleDiscType && Number(saleDiscValue) > 0) ? (saleDiscReason.trim() || null) : null,
-      }).then(r => r.data);
-      const approvalId = ar?.approval_id;
-      // 2) hold the cart, linked to that approval
-      const hr = await api.post("/held-carts", {
-        location_id: selectedLocation?.id,
-        customer_id: customer?.id || null,
-        label: lang === "en" ? "Discount — boss approval" : "Remise — approbation patron",
-        items: lineItems.map(i => ({ product_id: i.product_id, qty: i.quantity, unit_price: i.unit_price, line_total: i.quantity * i.unit_price })),
-        discount_approval_id: approvalId,
-      }).then(r => r.data);
-      // 3) clear the screen so the cashier serves other customers
-      setDiscountChoice(null);
-      setCart([]); setCustomer(null); setOnlineCtx(null);
-      setShowPayment(false); setPayMode("paid"); setPayModeChosen(false); setPaidAmt("");
-      setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason("");
-      discountTokenRef.current = null; discountApprovalIdRef.current = null;
-      qc.invalidateQueries(["held-carts"]);
-      toast.success(lang === "en"
-        ? `Sent to the boss + held as ${hr?.data?.hold_ref || ""}. Resume it once approved.`
-        : `Envoyé au patron + mis en attente ${hr?.data?.hold_ref || ""}. Reprenez après approbation.`,
-        { duration: 7000 });
-    } catch (e) {
-      toast.error(e?.response?.data?.message || (lang === "en" ? "Could not send the request" : "Échec de l'envoi de la demande"));
-    } finally {
-      setSendingToBoss(false);
-    }
-  };
-
-  // MP-OVERSELL-HYBRID-APPROVAL — option 1: boss is HERE. Mint a single-use owner-PIN
-  // oversell token (action_type 'oversell'), then RESUBMIT the sale with it. Exact
-  // mirror of discountViaPin (server consumes oversell_approval_token).
-  const oversellViaPin = () => {
-    const choice = oversellApprovalModal;
-    setOversellApprovalModal(null);
-    requestApproval({
-      actionType:  "oversell",
-      targetTable: "pa_sales",
-      targetId:    null,
-      context:     { items: choice?.items },
-      // MP-APPROVAL-PLAIN-LANGUAGE: plain description for the owner-PIN screen.
-      description: (() => {
-        const who = String(user?.full_name || "").trim() || (lang === "en" ? "A cashier" : "Un caissier");
-        const names = (choice?.items || []).map(it => it.name).filter(Boolean).join(", ");
-        return lang === "en"
-          ? `${who} wants to sell more than the stock shows${names ? ` (${names})` : ""}. Approve selling beyond the counted stock?`
-          : `${who} veut vendre plus que le stock affiché${names ? ` (${names})` : ""}. Approuver la vente au-delà du stock compté ?`;
-      })(),
-    })
-      .then(({ token }) => { oversellTokenRef.current = token; saleMutation.mutate(); })
-      .catch((e) => {
-        oversellTokenRef.current = null;
-        if (e?.code !== "cancelled") {
-          toast.error(e?.response?.data?.message || (lang === "en" ? "Approval failed" : "Échec de l'approbation"));
-        }
-      });
-  };
-
-  // MP-OVERSELL-HYBRID-APPROVAL — option 2: boss is AWAY. The approval is ALREADY
-  // parked server-side (the 403 carried approval_id), so — unlike discount/below-cost —
-  // there is NO approval-request POST to make. Just HOLD the cart linked to that
-  // approval and clear the screen; the cashier resumes it once the boss approves,
-  // and oversell_approval_id then rides the resumed /sales POST.
-  const sendOversellToBoss = async () => {
-    const approvalId = oversellApprovalModal?.approval_id;
-    if (!approvalId) { setOversellApprovalModal(null); return; }
-    setSendingToBoss(true);
-    try {
-      const lineItems = cart
-        .filter(i => i.product_id && !isDebtish(i))
-        .map(i => ({
-          product_id: i.product_id, name: i.name,
-          quantity: Number(i.quantity) || 1, unit_price: Number(i.unit_price) || 0,
-          discount_type:  (i.discount_type && Number(i.discount_value) > 0) ? i.discount_type : null,
-          discount_value: (i.discount_type && Number(i.discount_value) > 0) ? Number(i.discount_value) : null,
-          discount_reason: (i.discount_type && Number(i.discount_value) > 0) ? (String(i.discount_reason || "").trim() || null) : null,
-        }));
-      // Hold the cart, linked to the already-parked oversell approval (reuses the
-      // shared held-cart approval-link field the discount/below-cost holds use).
-      const hr = await api.post("/held-carts", {
-        location_id: selectedLocation?.id,
-        customer_id: customer?.id || null,
-        label: lang === "en" ? "Over stock — boss approval" : "Au-delà du stock — approbation patron",
-        items: lineItems.map(i => ({ product_id: i.product_id, qty: i.quantity, unit_price: i.unit_price, line_total: i.quantity * i.unit_price })),
-        discount_approval_id: approvalId,
-      }).then(r => r.data);
-      // Clear the screen so the cashier serves other customers.
-      setOversellApprovalModal(null);
-      setCart([]); setCustomer(null); setOnlineCtx(null);
-      setShowPayment(false); setPayMode("paid"); setPayModeChosen(false); setPaidAmt("");
-      setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason("");
-      discountTokenRef.current = null; discountApprovalIdRef.current = null;
-      oversellTokenRef.current = null; oversellApprovalIdRef.current = null;
-      qc.invalidateQueries(["held-carts"]);
-      toast.success(lang === "en"
-        ? `Sent to the boss + held as ${hr?.data?.hold_ref || ""}. Resume it once approved.`
-        : `Envoyé au patron + mis en attente ${hr?.data?.hold_ref || ""}. Reprenez après approbation.`,
-        { duration: 7000 });
-    } catch (e) {
-      toast.error(e?.response?.data?.message || (lang === "en" ? "Could not send the request" : "Échec de l'envoi de la demande"));
-    } finally {
-      setSendingToBoss(false);
-    }
-  };
 
   const runCheckout = () => {
     // MP-DISCOUNT: a reason is REQUIRED whenever a discount is entered (matches
@@ -2197,34 +1973,33 @@ export default function POSPage() {
     try {
       const res = await api.post(`/held-carts/${id}/resume`).then(r => r.data);
       const h = res?.data;
-      // MP-DISCOUNT-HYBRID-APPROVAL: a hold linked to a discount approval rebuilds
-      // WITH the boss-approved discount only when the approval is 'approved'. While
-      // pending, or if rejected/expired, it resumes WITHOUT the discount. The
-      // approval payload carries the discounted line items + sale-level discount.
+      // MP-APPROVAL-BUNDLE: a hold linked to a bundled approval rebuilds WITH the
+      // exact boss-approved cart (items/discount/pay_mode/paid_amount — the whole
+      // sale is signature-bound) only when the approval is 'approved'. While
+      // pending, or if rejected/expired, it resumes at the plain held values with
+      // NO approval id attached — Confirm Payment will re-trigger the SAME unified
+      // approval prompt if still needed, never silently skip it. Any hold left over
+      // from BEFORE this redesign (legacy discount/below_cost_sale action_type) is
+      // treated the same as a plain hold here — its approval id is no longer a
+      // field the backend reads, so it resumes at its held price/discount but
+      // needs a fresh (now single, bundled) approval to complete.
       const da = h?.discount_approval || null;
-      const approved = !!da && da.status === "approved";
-      // MP-BELOW-COST-HYBRID-APPROVAL: the held cart's approval link is shared —
-      // distinguish a below_cost_sale from a discount so we set the right ref +
-      // skip discount-only handling.
-      const isBelowCost = !!da && da.action_type === "below_cost_sale";
-      // MP-BELOW-COST-REJECT-REVERT: a below-cost hold whose approval reached a
-      // TERMINAL non-approved state (rejected/expired/cancelled) must NOT resume at
-      // the under-min price — that leaves Confirm Pay blocked with no way forward.
-      // Revert those lines to the legit tier price so the cart is immediately
-      // sellable. (A still-pending hold keeps its "awaiting approval" behaviour.)
-      const belowCostRejected = isBelowCost && !approved && !!da && da.status !== "pending";
+      const isBundle = !!da && da.action_type === "bundled_sale";
+      const approved = isBundle && da.status === "approved";
+      const bundleRejected = isBundle && !approved && da.status !== "pending";
       // current_stock lives on the held-cart items; index it by product so we keep
       // the low-stock warning even when rebuilding from the approval payload.
       const stockByProduct = {};
       (h?.items || []).forEach(it => { if (it.product_id) stockByProduct[it.product_id] = it.current_stock; });
-      const srcItems = (approved && Array.isArray(da.payload?.items) && da.payload.items.length)
-        ? da.payload.items
+      const sr = approved ? da.payload?.sale_request : null;
+      const srcItems = (sr && Array.isArray(sr.items) && sr.items.length)
+        ? sr.items.filter(it => it.product_id)
         : (h?.items || []);
-      // MP-HOLD-RESUME-CUSTOMER: restore the held customer for EVERY hold (was only
-      // done for approved holds — a normal hold's own customer_id was ignored, so it
-      // reverted to walk-in). Prefer the approval payload's customer, else the held
-      // cart's own customer_id. null = genuine walk-in.
-      const heldCustomerId = (approved && da?.payload?.customer_id) || h?.customer_id || null;
+      // MP-HOLD-RESUME-CUSTOMER: restore the held customer for EVERY hold (a
+      // normal hold's own customer_id was previously ignored, reverting to
+      // walk-in). Prefer the approved bundle's customer, else the held cart's own
+      // customer_id. null = genuine walk-in.
+      const heldCustomerId = (sr && sr.customer_id) || h?.customer_id || null;
       let resumedCustomer = null;
       if (heldCustomerId) {
         try { resumedCustomer = await api.get(`/customers/${heldCustomerId}`).then(r => r.data?.data); } catch { /* ignore */ }
@@ -2244,9 +2019,9 @@ export default function POSPage() {
           // never fall back to the product's current walk-in price. Keep a held
           // price of 0 (giveaway) intact; only derive from line_total/qty or the
           // product price when the held record genuinely lacks a unit_price.
-          unit_price: belowCostRejected
-            // Rejected below-cost line → snap back to the customer's tier price
-            // (walk-in sell / wholesale / vip), never the rejected under-min value.
+          unit_price: bundleRejected
+            // Rejected bundle → snap the line back to the customer's tier price
+            // (walk-in / wholesale / vip), never the rejected under-min value.
             ? (priceForTier(p || {}, resumedTier) || Number(p?.sell_price) || 0)
             : (it.unit_price != null
                 ? Number(it.unit_price)
@@ -2263,60 +2038,65 @@ export default function POSPage() {
           // MP-HOLD-RESUME-PRESERVE-PRICE: pin the held price so the customer-change
           // re-pricing effect (which moves lines to the tier/walk-in price) leaves
           // resumed lines alone — the held record is the source of truth. Editing a
-          // line later clears this flag as usual. (below_cost_approved also skips it.)
-          // A REJECTED below-cost line is NOT pinned — it's back at the legit tier
-          // price and must behave like a normal, freely-editable/sellable line.
-          price_overridden: belowCostRejected ? false : true,
-          // line discount restored only on an approved discount-hold.
-          discount_type:  approved && it.discount_type ? it.discount_type : "",
-          discount_value: approved && it.discount_value != null ? String(it.discount_value) : "",
-          discount_reason: approved && it.discount_reason ? it.discount_reason : "",
-          // MP-BELOW-COST-PERSIST: mark every line of a boss-approved below-cost
-          // cart so re-attaching the customer / restoring the draft keeps the
-          // approved price (the whole cart is signature-bound to these prices).
-          below_cost_approved: (approved && isBelowCost) ? true : undefined,
+          // line later clears this flag as usual. A REJECTED bundle line is NOT
+          // pinned — it's back at the legit tier price and freely editable/sellable.
+          price_overridden: bundleRejected ? false : true,
+          // line discount + damaged-line linkage restored only from an approved
+          // bundle's signature-bound sale_request (a plain hold's raw items never
+          // carry these fields).
+          discount_type:  sr && it.discount_type ? it.discount_type : "",
+          discount_value: sr && it.discount_value != null ? String(it.discount_value) : "",
+          discount_reason: sr && it.discount_reason ? it.discount_reason : "",
+          is_damaged: sr && it.is_damaged ? true : (it.is_damaged || undefined),
+          damaged_source_id: sr && it.is_damaged ? (it.damaged_source_id || undefined) : undefined,
+          // MP-BELOW-COST-PERSIST: mark every line of a boss-approved bundle so
+          // re-attaching the customer / restoring the draft keeps the approved
+          // price (the whole cart is signature-bound to these values).
+          below_cost_approved: approved ? true : undefined,
         };
       }));
       setCart(hydrated.filter(isSubmittableLine));
 
-      // Sale-level discount + customer + approval id (approved holds only).
-      // A below_cost_sale carries no sale-level discount.
-      const sd = (approved && !isBelowCost) ? (da.payload?.sale_discount || null) : null;
-      if (sd && sd.discount_type && Number(sd.discount_value) > 0) {
-        setSaleDiscType(sd.discount_type); setSaleDiscValue(String(sd.discount_value)); setSaleDiscReason(sd.discount_reason || "");
+      // Sale-level discount + pay-mode/paid-amount + notes — all sourced from the
+      // approved bundle's signature-bound sale_request, nowhere else.
+      if (sr && sr.discount_type && Number(sr.discount_value) > 0) {
+        setSaleDiscType(sr.discount_type); setSaleDiscValue(String(sr.discount_value)); setSaleDiscReason(sr.discount_reason || "");
       } else {
         setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason("");
       }
-      // Route the resumed approval to the right ref so finalize sends the correct
-      // field (discount_approval_id vs below_cost_approval_id).
-      discountApprovalIdRef.current  = (approved && !isBelowCost) ? da.id : null;
-      belowCostApprovalIdRef.current = (approved &&  isBelowCost) ? da.id : null;
-      discountTokenRef.current = null;
+      if (sr && (sr.pay_mode === "paid" || sr.pay_mode === "partial" || sr.pay_mode === "credit")) {
+        setPayMode(sr.pay_mode); setPayModeChosen(true);
+        if (sr.paid_amount != null) setPaidAmt(String(sr.paid_amount));
+      }
+      if (sr && sr.notes) setNotes(sr.notes);
+      // MP-APPROVAL-BUNDLE: ONE ref carries the approved bundle id so Confirm
+      // Payment sends it straight through with no re-prompt. Unapproved/legacy
+      // holds resume with it unset — Confirm Payment re-triggers the (now
+      // unified) approval prompt if the cart still needs one.
+      bundledApprovalIdRef.current = approved ? da.id : null;
+      bundledApprovalTokenRef.current = null;
       // Customer already resolved above (held-cart customer_id or approval payload).
       setCustomer(resumedCustomer || null);
       setShowResume(false);
       const short = hydrated.filter(i => typeof i.stock === "number" && i.quantity > i.stock);
-      const what = isBelowCost
-        ? { en: "below-cost price", fr: "prix sous le coût", enApplied: "below-cost price approved", frApplied: "prix sous le coût approuvé" }
-        : { en: "discount", fr: "remise", enApplied: "discount applied", frApplied: "remise appliquée" };
       const resumeMsg = approved
-        ? (lang === "en" ? `Resumed ${h.hold_ref} — boss-approved ${what.enApplied}` : `Reprise ${h.hold_ref} — ${what.frApplied} (patron)`)
+        ? (lang === "en" ? `Resumed ${h.hold_ref} — boss-approved, ready to complete` : `Reprise ${h.hold_ref} — approuvé par le patron, prêt à finaliser`)
         : (da && da.status === "pending")
-          ? (lang === "en" ? `Resumed ${h.hold_ref} — still awaiting boss approval; ${what.en} NOT applied yet` : `Reprise ${h.hold_ref} — approbation en attente; ${what.fr} NON appliqué`)
+          ? (lang === "en" ? `Resumed ${h.hold_ref} — still awaiting boss approval` : `Reprise ${h.hold_ref} — approbation en attente`)
           : da
-            ? (lang === "en" ? `Resumed ${h.hold_ref} — ${what.en} was not approved; resuming without it` : `Reprise ${h.hold_ref} — ${what.fr} non approuvé; reprise sans`)
+            ? (lang === "en" ? `Resumed ${h.hold_ref} — the request was not approved; resuming without it` : `Reprise ${h.hold_ref} — demande non approuvée; reprise sans`)
             : (lang === "en" ? `Resumed ${h.hold_ref}` : `Reprise ${h.hold_ref}`);
       toast.success(resumeMsg, { duration: da ? 6000 : 3000 });
       // MP-BELOW-COST-REJECT-REVERT: tell the cashier the under-min price was undone
       // and the cart is sellable again — no dead-end.
-      if (belowCostRejected) {
+      if (bundleRejected) {
         const rl = hydrated.filter(isSubmittableLine);
         const detail = rl.length === 1
           ? fmt(rl[0].unit_price)
           : (lang === "en" ? "their normal prices" : "leurs prix normaux");
         toast(lang === "en"
-          ? `Price change rejected — reverted to ${detail}. Sell at the normal price or re-request a new one.`
-          : `Changement de prix refusé — rétabli à ${detail}. Vendez au prix normal ou refaites une demande.`,
+          ? `Request rejected — prices reverted to ${detail}. Sell at the normal price or re-request a new one.`
+          : `Demande refusée — prix rétablis à ${detail}. Vendez au prix normal ou refaites une demande.`,
           { icon: "↩️", duration: 7000, style: { background: "#451a03", color: "#fbbf24", border: "1px solid #92400e" } });
       }
       if (short.length) {
@@ -2725,115 +2505,62 @@ export default function POSPage() {
   return (
     <>
       {approvalModal}
-      {/* ── MP-DISCOUNT-HYBRID-APPROVAL: over-cap choice ─────── */}
-      {discountChoice && (
+      {/* ── MP-APPROVAL-BUNDLE: ONE popup lists every gate this cart tripped
+          (below-cost / discount / credit / oversell, any combination) — the
+          cashier builds the WHOLE order with no interruptions, sees everything
+          at once here, and the owner accepts/denies ONCE. No cascading. ── */}
+      {approvalBundle && (
         <div style={{ position: "fixed", inset: 0, zIndex: 320, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-          <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, maxWidth: 420, width: "100%" }}>
+          <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, maxWidth: 440, width: "100%", maxHeight: "88vh", overflowY: "auto" }}>
             <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 6 }}>
-              🔐 {lang === "en" ? "Discount needs approval" : "Remise à approuver"}
-            </div>
-            {/* MP-APPROVAL-PLAIN-LANGUAGE: same per-item + total wording the boss sees. */}
-            <div style={{ marginBottom: 16 }}>
-              <DiscountApprovalDetail payload={{ items: cart, total_discount: (discountChoice.total_discount || totalDiscount) }} en={lang === "en"} fmt={fmt} cashier={user?.full_name} />
-              <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.5 }}>
-                {lang === "en" ? "This is over your limit. Choose how to get the owner's approval:" : "Ceci dépasse votre limite. Choisissez comment obtenir l'approbation :"}
-              </div>
-            </div>
-            <button onClick={discountViaPin} disabled={sendingToBoss}
-              style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid var(--brand)", background: "var(--brand)", color: "#152B52", cursor: "pointer", textAlign: "left", fontWeight: 700, marginBottom: 10 }}>
-              🔑 {lang === "en" ? "Enter owner PIN now" : "Saisir le PIN du patron"}
-              <div style={{ fontSize: 11, fontWeight: 400, color: "#152B52", opacity: 0.8, marginTop: 3 }}>
-                {lang === "en" ? "The owner is here — applies the discount immediately." : "Le patron est présent — applique la remise immédiatement."}
-              </div>
-            </button>
-            <button onClick={sendDiscountToBoss} disabled={sendingToBoss}
-              style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", cursor: sendingToBoss ? "wait" : "pointer", textAlign: "left", fontWeight: 700, marginBottom: 10 }}>
-              📲 {sendingToBoss ? (lang === "en" ? "Sending…" : "Envoi…") : (lang === "en" ? "Send request to boss" : "Envoyer la demande au patron")}
-              <div style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)", marginTop: 3 }}>
-                {lang === "en" ? "Boss is away — holds this sale; resume it once approved on their phone." : "Le patron est absent — met la vente en attente ; reprenez-la après approbation sur son téléphone."}
-              </div>
-            </button>
-            <button onClick={() => setDiscountChoice(null)} disabled={sendingToBoss}
-              style={{ width: "100%", padding: "10px", border: "none", background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 13 }}>
-              {lang === "en" ? "Cancel" : "Annuler"}
-            </button>
-          </div>
-        </div>
-      )}
-      {/* ── MP-OVERSELL-HYBRID-APPROVAL: out-of-stock choice (mirror of discount) ── */}
-      {oversellApprovalModal && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 320, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-          <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, maxWidth: 420, width: "100%" }}>
-            <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 6 }}>
-              🔐 {lang === "en" ? "Out-of-stock sale needs approval" : "Vente en rupture à approuver"}
+              🔐 {lang === "en" ? "This sale needs the owner's approval" : "Cette vente nécessite l'approbation du patron"}
             </div>
             <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 13.5, lineHeight: 1.5 }}>
-                {(oversellApprovalModal.items || []).map((it, i) => (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                    <span>{it.name}</span>
-                    <span style={{ color: "var(--text-muted)" }}>
-                      {lang === "en" ? `have ${it.available}, selling ${it.need}` : `stock ${it.available}, vente ${it.need}`}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.5 }}>
-                {lang === "en" ? "This would sell more than is in stock. Choose how to get the owner's approval:" : "Ceci vendrait plus que le stock disponible. Choisissez comment obtenir l'approbation :"}
-              </div>
-            </div>
-            <button onClick={oversellViaPin} disabled={sendingToBoss}
-              style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid var(--brand)", background: "var(--brand)", color: "#152B52", cursor: "pointer", textAlign: "left", fontWeight: 700, marginBottom: 10 }}>
-              🔑 {lang === "en" ? "Enter owner PIN now" : "Saisir le PIN du patron"}
-              <div style={{ fontSize: 11, fontWeight: 400, color: "#152B52", opacity: 0.8, marginTop: 3 }}>
-                {lang === "en" ? "The owner is here — completes the sale immediately." : "Le patron est présent — termine la vente immédiatement."}
-              </div>
-            </button>
-            <button onClick={sendOversellToBoss} disabled={sendingToBoss}
-              style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", cursor: sendingToBoss ? "wait" : "pointer", textAlign: "left", fontWeight: 700, marginBottom: 10 }}>
-              📲 {sendingToBoss ? (lang === "en" ? "Sending…" : "Envoi…") : (lang === "en" ? "Send request to boss" : "Envoyer la demande au patron")}
-              <div style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)", marginTop: 3 }}>
-                {lang === "en" ? "Boss is away — holds this sale; resume it once approved on their phone." : "Le patron est absent — met la vente en attente ; reprenez-la après approbation sur son téléphone."}
-              </div>
-            </button>
-            <button onClick={() => setOversellApprovalModal(null)} disabled={sendingToBoss}
-              style={{ width: "100%", padding: "10px", border: "none", background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 13 }}>
-              {lang === "en" ? "Cancel" : "Annuler"}
-            </button>
-          </div>
-        </div>
-      )}
-      {/* ── MP-BELOW-COST-HYBRID-APPROVAL: below-cost choice (mirror of discount) ── */}
-      {belowCostChoice && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 320, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-          <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, maxWidth: 420, width: "100%" }}>
-            <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 6 }}>
-              🔐 {lang === "en" ? "Below-cost price needs approval" : "Prix sous le coût à approuver"}
-            </div>
-            {/* MP-APPROVAL-PLAIN-LANGUAGE: same per-item + total-loss wording the boss sees. */}
-            <div style={{ marginBottom: 16 }}>
-              <BelowCostLossDetail
-                payload={{ below_cost: [{ name: belowCostChoice.name, unit_price: belowCostChoice.attempted_price, min_price: belowCostChoice.min_price, qty: (cart.find(l => l.lineId === belowCostChoice.lineId)?.quantity) || 1 }] }}
-                en={lang === "en"} fmt={fmt} cashier={user?.full_name} />
+              {approvalBundle.actions.some(a => a.type === "below_cost") && (
+                <BelowCostLossDetail
+                  payload={{ below_cost: approvalBundle.actions.filter(a => a.type === "below_cost")
+                    .map(a => ({ name: a.name, unit_price: a.attempted_price, min_price: a.min_price, qty: a.quantity })) }}
+                  en={lang === "en"} fmt={fmt} cashier={user?.full_name} />
+              )}
+              {approvalBundle.actions.filter(a => a.type === "discount").map((a, i) => (
+                <DiscountApprovalDetail key={`d${i}`} payload={{ items: cart, total_discount: a.total_discount }} en={lang === "en"} fmt={fmt} cashier={user?.full_name} />
+              ))}
+              {approvalBundle.actions.filter(a => a.type === "credit").map((a, i) => (
+                <div key={`c${i}`} style={{ fontSize: 13.5, lineHeight: 1.5, marginTop: 6 }}>
+                  {lang === "en" ? `Credit sale: ${fmt(a.balance_due)} on the customer's account.` : `Vente à crédit : ${fmt(a.balance_due)} sur le compte du client.`}
+                </div>
+              ))}
+              {approvalBundle.actions.filter(a => a.type === "oversell").map((a, i) => (
+                <div key={`o${i}`} style={{ fontSize: 13.5, lineHeight: 1.5, marginTop: 6 }}>
+                  {(a.items || []).map((it, j) => (
+                    <div key={j} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                      <span>{it.name}</span>
+                      <span style={{ color: "var(--text-muted)" }}>
+                        {lang === "en" ? `have ${it.available}, selling ${it.need}` : `stock ${it.available}, vente ${it.need}`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ))}
               <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.5 }}>
                 {lang === "en" ? "Choose how to get the owner's approval:" : "Choisissez comment obtenir l'approbation :"}
               </div>
             </div>
-            <button onClick={belowCostViaPin} disabled={sendingToBoss}
+            <button onClick={approvalBundleViaPin} disabled={sendingToBoss}
               style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid var(--brand)", background: "var(--brand)", color: "#152B52", cursor: "pointer", textAlign: "left", fontWeight: 700, marginBottom: 10 }}>
               🔑 {lang === "en" ? "Enter owner PIN now" : "Saisir le PIN du patron"}
               <div style={{ fontSize: 11, fontWeight: 400, color: "#152B52", opacity: 0.8, marginTop: 3 }}>
-                {lang === "en" ? "The owner is here — applies the price immediately." : "Le patron est présent — applique le prix immédiatement."}
+                {lang === "en" ? "The owner is here — completes the sale immediately, exactly as entered." : "Le patron est présent — termine la vente immédiatement, telle que saisie."}
               </div>
             </button>
-            <button onClick={sendBelowCostToBoss} disabled={sendingToBoss}
+            <button onClick={sendApprovalBundleToBoss} disabled={sendingToBoss}
               style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", cursor: sendingToBoss ? "wait" : "pointer", textAlign: "left", fontWeight: 700, marginBottom: 10 }}>
               📲 {sendingToBoss ? (lang === "en" ? "Sending…" : "Envoi…") : (lang === "en" ? "Send request to boss" : "Envoyer la demande au patron")}
               <div style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)", marginTop: 3 }}>
                 {lang === "en" ? "Boss is away — holds this sale; resume it once approved on their phone." : "Le patron est absent — met la vente en attente ; reprenez-la après approbation sur son téléphone."}
               </div>
             </button>
-            <button onClick={cancelBelowCostChoice} disabled={sendingToBoss}
+            <button onClick={cancelApprovalBundle} disabled={sendingToBoss}
               style={{ width: "100%", padding: "10px", border: "none", background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 13 }}>
               {lang === "en" ? "Cancel" : "Annuler"}
             </button>
