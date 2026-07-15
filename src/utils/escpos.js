@@ -141,6 +141,7 @@ export function buildSaleEscposBytes({
   items = [], discountTotal = 0,
   paidAmount = null, balanceDue = null, paymentMethod = "",
   codeStyle = "qr", // MP-RECEIPT-CODE-STYLE: 'barcode' | 'qr' | 'both'
+  soldDateNote = "", soldDateNoteByName = "", // MP-SOLD-DATE-NOTE
 } = {}) {
   const en = lang === "en";
   const W = Number(widthMm) === 80 ? 48 : 32; // chars per line
@@ -190,6 +191,16 @@ export function buildSaleEscposBytes({
   d.rule();
   // Footer
   d.align("C").line(org.receipt_footer || (en ? "Thank you!" : "Merci !"));
+
+  // MP-SOLD-DATE-NOTE: a NOTE only — this receipt's real date is the one
+  // printed above (ddmmyyyy(saleDate)); this line never replaces it.
+  if (soldDateNote) {
+    const [y, m, dd] = String(soldDateNote).slice(0, 10).split("-");
+    const noteDate = (y && m && dd) ? `${dd}/${m}/${y}` : String(soldDateNote);
+    d.align("L");
+    d.wrapped((en ? "NOTE - Sold Date: " : "NOTE - Date de vente : ") + noteDate
+      + (soldDateNoteByName ? ` (${en ? "recorded by" : "saisi par"} ${soldDateNoteByName})` : ""));
+  }
 
   // MP-RECEIPT-CODE-STYLE (Fix 1): scannable return-lookup code(s) at the bottom
   // per the org's style — CODE128 (digits-only, scanner re-adds VNT-), QR (full

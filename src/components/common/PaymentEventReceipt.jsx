@@ -131,6 +131,16 @@ function referenceFor(eventType, data) {
 
 // ── HELPERS ─────────────────────────────────────────────────────
 
+// MP-SOLD-DATE-NOTE: fixed DD/MM/YYYY for the note line specifically — a
+// deliberate, single format independent of whatever each surface's PRIMARY
+// date already uses (this file's own footer, the print builders' hyphenated
+// DD-MM-YYYY, WhatsApp's month-name format all differ from each other).
+function fmtSoldDateNote(isoDate) {
+  if (!isoDate) return "";
+  const [y, m, d] = String(isoDate).slice(0, 10).split("-");
+  return (y && m && d) ? `${d}/${m}/${y}` : String(isoDate);
+}
+
 function nowLocale(lang) {
   const loc = lang === "en" ? "en-US" : "fr-FR";
   const d = new Date();
@@ -620,6 +630,10 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
       barcodeDataUrl: codes.barcode || "",
       codeStyle: resolveCodeStyle(org),
       downloadQrDataUrl: downloadQr || "",
+      // MP-SOLD-DATE-NOTE: purely a note line, undefined when no manual sold
+      // date was recorded — the real saleDate above is untouched either way.
+      soldDateNote: data.sold_date_note || null,
+      soldDateNoteByName: data.sold_date_note_by_name || null,
     };
   };
   const printThermal = (widthMm) => openPrint(buildThermalReceipt(saleReceiptOpts(widthMm)));
@@ -696,6 +710,8 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
         barcodeDataUrl: codes.barcode || "",
         codeStyle: resolveCodeStyle(org),
         downloadQrDataUrl: downloadQr || "",
+        soldDateNote: data.sold_date_note || null, // MP-SOLD-DATE-NOTE
+        soldDateNoteByName: data.sold_date_note_by_name || null,
       }));
       return;
     }
@@ -887,6 +903,17 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
               {data.location_name && <div>{en ? "Location" : "Emplacement"}: <strong>{data.location_name}</strong></div>}
               <div>{dateStr} · {timeStr}</div>
             </div>
+
+            {/* MP-SOLD-DATE-NOTE: a NOTE only — the date/time above is the real
+                receipt date, unchanged. Shown only when a manual sold date was
+                recorded on this sale. */}
+            {eventType === "sale" && data.sold_date_note && (
+              <div style={{ marginTop: 6, padding: "6px 8px", borderRadius: 6, background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.4)", fontSize: 11, color: "#fbbf24" }}>
+                {en
+                  ? `NOTE — Sold Date: ${fmtSoldDateNote(data.sold_date_note)}${data.sold_date_note_by_name ? ` (recorded by ${data.sold_date_note_by_name})` : ""}`
+                  : `NOTE — Date de vente : ${fmtSoldDateNote(data.sold_date_note)}${data.sold_date_note_by_name ? ` (saisi par ${data.sold_date_note_by_name})` : ""}`}
+              </div>
+            )}
 
             {reference && (codes.qr || codes.barcode) && (() => {
               const st = resolveCodeStyle(org);

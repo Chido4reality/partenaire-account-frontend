@@ -663,6 +663,11 @@ export default function ReportsPage() {
                                     customer_name:  sale.pa_customers?.name || null,
                                     customer_phone: sale.pa_customers?.phone || null,
                                     cashier_name:   sale.cashier_name || null, // MP-SALE-CASHIER-NAME
+                                    // MP-SOLD-DATE-NOTE: without these, a reprint from history would
+                                    // silently drop the note even though the backend returns it —
+                                    // this object is an explicit field allowlist, not a spread.
+                                    sold_date_note:         sale.sold_date_note || null,
+                                    sold_date_note_by_name: sale.sold_date_note_by_name || null,
                                     items,
                                   });
                                 }} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-primary)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11 }}>

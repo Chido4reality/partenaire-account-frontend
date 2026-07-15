@@ -117,6 +117,18 @@ export default function POSPage() {
   // MIN-PRICE FLOOR: reuse the existing boss/owner PIN approval flow for
   // below-min manual price edits. {approvalModal} is rendered near the page root.
   const { requestApproval, modal: approvalModal } = useOwnerApproval();
+  // MP-SOLD-DATE-NOTE: gate the cart's optional "Sold date" input on the
+  // cashier's OWN sold_date_policy — 'block' (the server default) hides it
+  // entirely; the server enforces this independently regardless of what the
+  // UI shows (see sales.js), this is just so a blocked staffer never sees a
+  // control they can't use. Owner never calls this (always exempt server-
+  // side) but the query is harmless for them too.
+  const { data: myPerms } = useQuery({
+    queryKey: ["my-permissions"],
+    queryFn: () => api.get("/staff/my-permissions").then(r => r.data?.data),
+    staleTime: 5 * 60 * 1000,
+  });
+  const soldDateAllowed = user?.role === "owner" || (myPerms && myPerms.sold_date_policy !== "block");
   const [custSearch, setCustSearch]       = useState("");
   const [showCustDrop, setShowCustDrop]   = useState(false);
   const [payMode, setPayMode]             = useState("paid");
@@ -136,6 +148,11 @@ export default function POSPage() {
   const [saleDiscType, setSaleDiscType]     = useState("");   // "" | "amount" | "percent"
   const [saleDiscValue, setSaleDiscValue]   = useState("");
   const [saleDiscReason, setSaleDiscReason] = useState("");
+  // MP-SOLD-DATE-NOTE: optional "actually sold on" note (YYYY-MM-DD), gated
+  // by sold_date_policy — allow/approve/block, owner-exempt. NEVER used for
+  // sale_date/created_at or any calculation; purely a receipt note.
+  const [soldDate, setSoldDate]             = useState("");
+  const [showSoldDate, setShowSoldDate]     = useState(false);
   // MP-APPROVAL-BUNDLE: the entire below-cost/discount/credit/oversell hybrid
   // is now ONE bundled request. bundledApprovalIdRef = a boss-approved
   // bundled_sale id riding a resumed held sale (server re-verifies the cart+pay
@@ -1098,6 +1115,8 @@ export default function POSPage() {
       if (a.type === "oversell") return lang === "en"
         ? `sell more than the stock shows (${(a.items || []).map(it => it.name).filter(Boolean).join(", ")})`
         : `vendre plus que le stock affiché (${(a.items || []).map(it => it.name).filter(Boolean).join(", ")})`;
+      if (a.type === "sold_date") return lang === "en"
+        ? `record this sale as actually sold on ${a.sold_date}` : `enregistrer cette vente comme ayant eu lieu le ${a.sold_date}`;
       return "";
     }).filter(Boolean);
     requestApproval({
@@ -1139,6 +1158,7 @@ export default function POSPage() {
         discount_value:  (saleDiscType && Number(saleDiscValue) > 0) ? Number(saleDiscValue) : null,
         discount_reason: (saleDiscType && Number(saleDiscValue) > 0) ? (saleDiscReason.trim() || null) : null,
         notes: notes || null,
+        sold_date: soldDate || null,
       }).then(r => r.data);
       const approvalId = ar?.approval_id;
       const hr = await api.post("/held-carts", {
@@ -1152,6 +1172,7 @@ export default function POSPage() {
       setCart([]); setCustomer(null); setOnlineCtx(null);
       setShowPayment(false); setPayMode("paid"); setPayModeChosen(false); setPaidAmt("");
       setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason("");
+      setSoldDate(""); setShowSoldDate(false);
       bundledApprovalIdRef.current = null; bundledApprovalTokenRef.current = null;
       qc.invalidateQueries(["held-carts"]);
       toast.success(lang === "en"
@@ -1543,6 +1564,10 @@ export default function POSPage() {
         // neither → undefined → every gate untouched.
         bundled_approval_token: bundledApprovalTokenRef.current || undefined,
         bundled_approval_id: bundledApprovalIdRef.current || undefined,
+        // MP-SOLD-DATE-NOTE: optional note only (see cart input above) — never
+        // undefined-vs-empty ambiguity matters here since the backend treats
+        // anything that isn't a clean YYYY-MM-DD as "no note".
+        sold_date: soldDate || undefined,
         // MP-UNDO-TO-CART: link this re-checkout to the voided sale it replaces.
         replaces_sale_id: restoreFromIdRef.current || undefined,
       };
@@ -1566,6 +1591,7 @@ export default function POSPage() {
         // MP-DISCOUNT: clear sale-level discount + any minted bundled-approval
         // token/id (owner-PIN-now token or a consumed async boss-approval id).
         setSaleDiscType(""); setSaleDiscValue(""); setSaleDiscReason(""); bundledApprovalTokenRef.current = null; bundledApprovalIdRef.current = null;
+        setSoldDate(""); setShowSoldDate(false); // MP-SOLD-DATE-NOTE
         setDebtInvoices([]); setSelectedDebtIds(new Set()); setDebtPayAmt("");
         setDebtBanner(null);
         setOnlineCtx(null);
@@ -2069,6 +2095,10 @@ export default function POSPage() {
         if (sr.paid_amount != null) setPaidAmt(String(sr.paid_amount));
       }
       if (sr && sr.notes) setNotes(sr.notes);
+      // MP-SOLD-DATE-NOTE: restore the exact approved sold_date (or clear it —
+      // a resumed-but-unapproved/rejected hold must not carry a stale one).
+      if (sr && sr.sold_date) { setSoldDate(sr.sold_date); setShowSoldDate(true); }
+      else { setSoldDate(""); setShowSoldDate(false); }
       // MP-APPROVAL-BUNDLE: ONE ref carries the approved bundle id so Confirm
       // Payment sends it straight through with no re-prompt. Unapproved/legacy
       // holds resume with it unset — Confirm Payment re-triggers the (now
@@ -2302,6 +2332,31 @@ export default function POSPage() {
                 <button onClick={() => setSaleDiscType("percent")}
                   style={{ marginBottom: 8, background: "none", border: "none", color: "var(--brand-light)", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: 0 }}>
                   − {lang === "en" ? "Add sale discount" : "Ajouter une remise globale"}
+                </button>
+              )
+            )}
+
+            {/* MP-SOLD-DATE-NOTE: optional note only — never affects the receipt's
+                real date or any total. Hidden entirely for a blocked staffer
+                (server enforces this independently either way). */}
+            {soldDateAllowed && cart.length > 0 && (
+              showSoldDate || soldDate ? (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center", marginBottom: 8 }}>
+                  <span style={{ fontSize: 11, color: "var(--text-secondary)", fontWeight: 600 }}>
+                    {lang === "en" ? "Sold date" : "Date de vente"}
+                  </span>
+                  <input type="date" value={soldDate} max={new Date().toISOString().slice(0, 10)} onChange={e => setSoldDate(e.target.value)}
+                    style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "3px 6px", fontSize: 12 }} />
+                  <span style={{ fontSize: 10.5, color: "var(--text-muted)" }}>
+                    {lang === "en" ? "note only — doesn't change the receipt date" : "note seulement — ne change pas la date du reçu"}
+                  </span>
+                  <button onClick={() => { setSoldDate(""); setShowSoldDate(false); }}
+                    style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13 }}>✕</button>
+                </div>
+              ) : (
+                <button onClick={() => setShowSoldDate(true)}
+                  style={{ marginBottom: 8, background: "none", border: "none", color: "var(--brand-light)", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: 0 }}>
+                  − {lang === "en" ? "This was actually sold earlier (add a note)" : "Cette vente a eu lieu plus tôt (ajouter une note)"}
                 </button>
               )
             )}
@@ -2540,6 +2595,11 @@ export default function POSPage() {
                       </span>
                     </div>
                   ))}
+                </div>
+              ))}
+              {approvalBundle.actions.filter(a => a.type === "sold_date").map((a, i) => (
+                <div key={`sd${i}`} style={{ fontSize: 13.5, lineHeight: 1.5, marginTop: 6 }}>
+                  {lang === "en" ? `Sold-date note: this sale will show as actually sold on ${a.sold_date}.` : `Note de date de vente : cette vente indiquera avoir eu lieu le ${a.sold_date}.`}
                 </div>
               ))}
               <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.5 }}>

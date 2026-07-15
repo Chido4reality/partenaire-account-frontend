@@ -95,6 +95,10 @@ const NAV = [
   // to the existing Dashboard at "/". Owner + manager only; reuses
   // the reports plan-section gate since the data class is the same.
   { to: "/operations",   en: "Operations", fr: "Opérations",      icon: "📈", roles: ["owner","manager"],                       section: "reports" },
+  // MP-FILTERS — every role; a cashier's/warehouse's own results are
+  // restricted server-side (filterScope.js), not by hiding this nav item.
+  // section:"reports" mirrors the backend's requirePlanSection("reports") gate.
+  { to: "/filters",      en: "Filters",    fr: "Filtres",         icon: "🔎", roles: ["owner","manager","accountant","warehouse","cashier"], section: "reports" },
   // Pro Plus Feature 1 — AI Assistant. Owner-only. section:"settings" so it's
   // visible to owners on EVERY plan (all plans include settings); the
   // feature flag below drives entitled (→ /assistant) vs locked (→ upsell).
