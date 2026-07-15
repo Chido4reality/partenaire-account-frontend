@@ -32,6 +32,13 @@ const itemAmount  = (i) => (Number(i?.quantity) || 0) * (Number(i?.unit_price) |
 // report row), matching PaymentEventReceipt's own "(DAMAGED GOODS)" wording.
 const isDamagedItem = (i) => i?.is_damaged === true;
 const dmgSuffix     = (i, lang) => isDamagedItem(i) ? (lang === "en" ? " (DAMAGED GOODS)" : " (MARCHANDISE ENDOMMAGÉE)") : "";
+// MP-SOLD-DATE-NOTE-VISIBILITY: fixed DD/MM/YYYY for the note specifically —
+// same convention as every other sold-date-note render path this session.
+const fmtSoldDateBadge = (isoDate) => {
+  if (!isoDate) return "";
+  const [y, m, d] = String(isoDate).slice(0, 10).split("-");
+  return (y && m && d) ? `${d}/${m}/${y}` : String(isoDate);
+};
 
 export default function ReportsPage() {
   const { lang } = useLangStore();
@@ -584,6 +591,19 @@ export default function ReportsPage() {
                                       ↩ {lang === "en" ? "Return" : "Retour"} ({(sale.returns || []).length})
                                     </span>
                                   )}
+                                  {/* MP-SOLD-DATE-NOTE-VISIBILITY (Peter, 2026-07-15): v1's note
+                                      existed but "does not appear anywhere" in this report — the
+                                      badge below is the fix. Title carries the full attributed
+                                      note text so a hover/long-press answers Peter's "open a
+                                      receipt after two weeks" test without expanding the row. */}
+                                  {sale.sold_date_note && (
+                                    <span title={lang === "en"
+                                        ? `NOTE — Sold Date: ${fmtSoldDateBadge(sale.sold_date_note)}${sale.sold_date_note_by_name ? ` (recorded by ${sale.sold_date_note_by_name})` : ""}`
+                                        : `NOTE — Date de vente : ${fmtSoldDateBadge(sale.sold_date_note)}${sale.sold_date_note_by_name ? ` (saisi par ${sale.sold_date_note_by_name})` : ""}`}
+                                      style={{ fontSize: 11, padding: "1px 8px", borderRadius: 10, background: "rgba(251,197,3,0.15)", color: "var(--brand-light)", fontWeight: 700 }}>
+                                      📝 {lang === "en" ? "Sold-date note" : "Note de date de vente"}
+                                    </span>
+                                  )}
                                 </div>
                                 <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
                                   {sale.pa_customers?.name || (lang === "en" ? "Walk-in customer" : "Client de passage")}
@@ -633,6 +653,15 @@ export default function ReportsPage() {
                                   msg += `─────────────────────\n*Total: ${total.toLocaleString()} ${fmt.symbol}*`;
                                   if (sale.payment_status === "credit") msg += `\n🔴 CRÉDIT: ${total.toLocaleString()} F DÛ`;
                                   else if (sale.payment_status === "partial") msg += `\n🟡 PARTIEL — Reste: ${sale.balance_due?.toLocaleString()} F`;
+                                  // MP-SOLD-DATE-NOTE-VISIBILITY: this is a SEPARATE WhatsApp text
+                                  // builder from receiptText.js's buildMonospaceReceipt (POS's own
+                                  // WhatsApp share) — the note has to be added here independently
+                                  // or this specific surface stays blind to it.
+                                  if (sale.sold_date_note) {
+                                    msg += lang === "en"
+                                      ? `\nNOTE — Sold Date: ${fmtSoldDateBadge(sale.sold_date_note)}${sale.sold_date_note_by_name ? ` (recorded by ${sale.sold_date_note_by_name})` : ""}`
+                                      : `\nNOTE — Date de vente : ${fmtSoldDateBadge(sale.sold_date_note)}${sale.sold_date_note_by_name ? ` (saisi par ${sale.sold_date_note_by_name})` : ""}`;
+                                  }
                                   const phone = sale.pa_customers?.phone ? "237" + sale.pa_customers.phone.toString().replace(/^0/,"").replace(/\s/g,"") : "";
                                   window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
                                 }} style={{ background: "#25D366", border: "none", color: "#fff", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
