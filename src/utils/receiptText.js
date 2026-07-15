@@ -165,7 +165,12 @@ function bodySale(L, data, lang) {
     if (i.type === "debt_payment") {
       L.push(itemLine(`💰 ${i.name || "Debt"}`, "", i.unit_price));
     } else {
-      L.push(itemLine(i.name, i.quantity, (Number(i.quantity) || 0) * (Number(i.unit_price) || 0)));
+      // MP-DAMAGED-GOODS: every other receipt surface (on-screen, A4/thermal
+      // print, Bluetooth ESC/POS — all via factureReceipt.js's dmgName / this
+      // file's own dmg()) labels a damaged-clearance line; this WhatsApp
+      // monospace body was the one surface missing it.
+      const nm = i.is_damaged ? `${i.name} (${en ? "DMG" : "ABÎMÉ"})` : i.name;
+      L.push(itemLine(nm, i.quantity, (Number(i.quantity) || 0) * (Number(i.unit_price) || 0)));
     }
   });
   const total = items.reduce((s, i) =>
