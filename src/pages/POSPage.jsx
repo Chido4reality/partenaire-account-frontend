@@ -2012,7 +2012,31 @@ export default function POSPage() {
       const da = h?.discount_approval || null;
       const isBundle = !!da && da.action_type === "bundled_sale";
       const approved = isBundle && da.status === "approved";
-      const bundleRejected = isBundle && !approved && da.status !== "pending";
+      // MP-HELD-CART-RESUME-RACE (2026-07-16, live-reproduced double-sale risk):
+      // 'executed' means the order was ALREADY SOLD (via My Requests or another
+      // device) — this is DISTINCT from 'rejected'/'expired'/'cancelled' and
+      // must NEVER be classified the same way. Reverting prices to tier (what
+      // bundleRejected does below) for an EXECUTED approval is actively
+      // dangerous: it removes the very gate (below-cost/discount/credit/
+      // oversell) a resubmission would otherwise need to clear, so Confirm
+      // Payment could sail through ungated and create a genuine second sale
+      // for goods already recorded sold. The backend's resume endpoint now
+      // intercepts this BEFORE ever returning success (heldCarts.js), so this
+      // branch is defense-in-depth against a narrower remaining timing race,
+      // not the primary fix.
+      const alreadyExecuted = isBundle && da.status === "executed";
+      if (alreadyExecuted) {
+        setCart([]); setCustomer(null); setShowResume(false);
+        bundledApprovalIdRef.current = null; bundledApprovalTokenRef.current = null;
+        const soldNum = da.payload && da.payload.completed_sale_number;
+        toast.error(lang === "en"
+          ? `This sale was already completed elsewhere${soldNum ? ` (${soldNum})` : ""} — nothing to resume.`
+          : `Cette vente a déjà été finalisée ailleurs${soldNum ? ` (${soldNum})` : ""} — rien à reprendre.`,
+          { duration: 8000 });
+        qc.invalidateQueries(["held-carts"]);
+        return;
+      }
+      const bundleRejected = isBundle && !approved && !alreadyExecuted && da.status !== "pending";
       // current_stock lives on the held-cart items; index it by product so we keep
       // the low-stock warning even when rebuilding from the approval payload.
       const stockByProduct = {};
@@ -2138,9 +2162,20 @@ export default function POSPage() {
       qc.invalidateQueries(["held-carts"]);
     } catch (err) {
       const code = err?.response?.data?.code;
-      toast.error(code
-        ? (lang === "en" ? `Hold already ${code}` : `Attente déjà ${code}`)
-        : (err?.response?.data?.message || (lang === "en" ? "Could not resume" : "Échec de la reprise")));
+      if (code === "already_executed") {
+        // MP-HELD-CART-RESUME-RACE (2026-07-16): backend caught the approval
+        // already executed BEFORE flipping this hold to 'resumed' — tell the
+        // cashier plainly, never "rejected."
+        const soldNum = err?.response?.data?.completed_sale_number;
+        toast.error(lang === "en"
+          ? `This sale was already completed elsewhere${soldNum ? ` (${soldNum})` : ""} — nothing to resume.`
+          : `Cette vente a déjà été finalisée ailleurs${soldNum ? ` (${soldNum})` : ""} — rien à reprendre.`,
+          { duration: 8000 });
+      } else {
+        toast.error(code
+          ? (lang === "en" ? `Hold already ${code}` : `Attente déjà ${code}`)
+          : (err?.response?.data?.message || (lang === "en" ? "Could not resume" : "Échec de la reprise")));
+      }
       qc.invalidateQueries(["held-carts"]);
     }
   };
