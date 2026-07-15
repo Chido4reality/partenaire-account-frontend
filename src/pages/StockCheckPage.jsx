@@ -10,7 +10,7 @@
 // is replaced by "➕ Watch a product" (owner-only). Resolution is Done / Mismatch,
 // plus an owner-only Delete for false flags — staff can never erase a flag on their
 // own movement (anti-fraud).
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "../utils/api";
@@ -19,6 +19,7 @@ import { useCurrency } from "../utils/useCurrency";
 import toast from "react-hot-toast";
 import { unitLabel } from "../utils/units";
 import DateRangeFilter, { inRange, wideRange } from "../components/common/DateRangeFilter";
+import { genLocalId } from "../utils/pendingSync";
 
 // MP-STALE-PRODUCT-SCAN: mirrors backend lib/stockChecks.js's STALE_THRESHOLD_DAYS
 // (fixed, not per-org configurable — Peter, 2026-07-14). Display-only.
@@ -147,6 +148,11 @@ export default function StockCheckPage() {
         sell_price: p.sell_price,
         wholesale_price: p.wholesale_price,
         min_price: p.min_price,
+        // MP-DAMAGED-COST-NULL (audit finding P1.7, 2026-07-15): cost_price was
+        // missing here, so the POS cart line built from this hand-off (below)
+        // never had a cost to carry into pa_sale_items — every damaged-
+        // clearance sale silently recorded cost_price NULL.
+        cost_price: p.cost_price,
         quantity: n,
         is_damaged: true,
         damaged_source_id: row.id,
@@ -159,7 +165,11 @@ export default function StockCheckPage() {
   // MP-DAMAGED-GOODS-SCRAP-OUT: owner-only second pile exit — a total loss, not a
   // sale. No POS hand-off; posts straight to the scrap endpoint.
   const scrapMut = useMutation({
-    mutationFn: ({ id, quantity, note }) => api.post(`/stock-checks/damaged/${id}/scrap`, { quantity, note }).then(r => r.data),
+    // MP-DAMAGED-OFFLINE-DEDUP (audit finding P1.5, 2026-07-15): local_id is
+    // stamped once when the modal opens (see setScrapFor below) and reused
+    // across every retry of THAT scrap attempt, so a network-timeout retry
+    // can't double-consume the pile / double-log the loss.
+    mutationFn: ({ id, quantity, note, local_id }) => api.post(`/stock-checks/damaged/${id}/scrap`, { quantity, note, local_id }).then(r => r.data),
     onSuccess: () => {
       toast.success(en ? "Scrapped — recorded as a loss" : "Mis au rebut — enregistré comme perte");
       setScrapFor(null);
@@ -360,7 +370,7 @@ export default function StockCheckPage() {
                     </button>
                     {/* MP-DAMAGED-GOODS-SCRAP-OUT: owner-only — beyond selling, a total loss. */}
                     {isOwner && (
-                      <button onClick={() => setScrapFor(r)} className="btn btn-secondary" style={{ fontWeight: 700, whiteSpace: "nowrap", color: "#f87171", borderColor: "#f87171" }}>
+                      <button onClick={() => setScrapFor({ ...r, _local_id: genLocalId() })} className="btn btn-secondary" style={{ fontWeight: 700, whiteSpace: "nowrap", color: "#f87171", borderColor: "#f87171" }}>
                         🗑️ {en ? "Scrap out" : "Mettre au rebut"}
                       </button>
                     )}
@@ -551,7 +561,7 @@ export default function StockCheckPage() {
         <ScrapDamagedModal row={scrapFor} en={en}
           busy={scrapMut.isPending}
           onCancel={() => setScrapFor(null)}
-          onScrap={(qty, note) => scrapMut.mutate({ id: scrapFor.id, quantity: qty, note })} />
+          onScrap={(qty, note) => scrapMut.mutate({ id: scrapFor.id, quantity: qty, note, local_id: scrapFor._local_id })} />
       )}
 
       {/* MP-DAMAGED-GOODS: owner/manager write-off (product + location + qty + note). */}
@@ -949,6 +959,11 @@ function MarkDamagedModal({ en, onClose, onDone }) {
   const [qty, setQty] = useState("1");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  // MP-DAMAGED-OFFLINE-DEDUP (audit finding P1.5, 2026-07-15): one local_id for
+  // this modal's whole lifetime — every retry of the SAME write-off attempt (a
+  // network-timeout retry, not a fresh "Mark as damaged" open) reuses it, so
+  // the backend's dedup can't be defeated by generating a new id per retry.
+  const localIdRef = useRef(genLocalId());
 
   const search = useQuery({
     queryKey: ["stock-check-product-search", q],
@@ -980,7 +995,7 @@ function MarkDamagedModal({ en, onClose, onDone }) {
     if (!valid) return;
     setBusy(true);
     try {
-      await api.post("/stock-checks/damaged/writeoff", { product_id: picked.id, location_id: locId, quantity: n, note: note.trim() || null });
+      await api.post("/stock-checks/damaged/writeoff", { product_id: picked.id, location_id: locId, quantity: n, note: note.trim() || null, local_id: localIdRef.current });
       toast.success(en ? "Recorded as damaged" : "Enregistré comme endommagé");
       onDone();
     } catch (e) {
