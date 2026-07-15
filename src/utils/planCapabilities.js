@@ -91,7 +91,10 @@ export const PLAN_CAPABILITIES = {
     asset_ledger: true,
     // Owner-only Accountant Log oversight surface (watch non-owner staff).
     // Mirror of backend lib/planCapabilities.js.
-    accountant_log: true
+    accountant_log: true,
+    // CSV/PDF export of the Filters screen's current result set. Distinct
+    // from csv_exports (also true on Pro, different feature).
+    filters_export: true
   },
 
   // MPDozie Lite tiers (thin POS app: com.partenaire.mpdozielite). Bespoke set

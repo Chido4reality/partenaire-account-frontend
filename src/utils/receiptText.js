@@ -351,6 +351,18 @@ export function buildMonospaceReceipt(eventType, data, lang, org) {
     default:                bodySale(L, data, lang);           break;
   }
 
+  // MP-SOLD-DATE-NOTE: a NOTE only — "Issued" above is the receipt's real
+  // date/time, unchanged. Sale-only; shown when a manual sold date was set.
+  if (eventType === "sale" && data.sold_date_note) {
+    const [y, m, dd] = String(data.sold_date_note).slice(0, 10).split("-");
+    const noteDate = (y && m && dd) ? `${dd}/${m}/${y}` : String(data.sold_date_note);
+    L.push(repeat("─", WIDTH));
+    L.push(en ? `NOTE — Sold Date: ${noteDate}` : `NOTE — Date de vente : ${noteDate}`);
+    if (data.sold_date_note_by_name) {
+      L.push(en ? `  (recorded by ${data.sold_date_note_by_name})` : `  (saisi par ${data.sold_date_note_by_name})`);
+    }
+  }
+
   pushBarcodeStrip(L, ref);
   pushFooter(L, org, lang);
   return L.join("\n");

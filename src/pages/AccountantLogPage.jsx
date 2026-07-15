@@ -918,6 +918,16 @@ const PERM_ACTIONS = [
       en: "Unlike every other permission above, this one defaults to BLOCKED until you set it — selling out-of-stock goods is refused unless explicitly allowed or set to need your approval.",
       fr: "Contrairement aux autres permissions ci-dessus, celle-ci est BLOQUÉE par défaut tant que vous ne la réglez pas — vendre en rupture de stock est refusé sauf si vous l'autorisez explicitement ou exigez votre approbation.",
     } },
+  // MP-SOLD-DATE-NOTE: same SAFE-DEFAULT-BLOCK shape as oversell_policy —
+  // nobody can back-note a sold date until the owner explicitly opts them in.
+  // The owner himself is exempt from this gate everywhere it's enforced
+  // (sales.js) but still shows up in his own Activity feed when he uses it.
+  { key: "sold_date_policy",    en: "Record a sold date (back-dated note)", fr: "Enregistrer une date de vente (note antidatée)",
+    defaultPolicy: "block",
+    note: {
+      en: "BLOCKED by default. A note only — it never changes the receipt's real date or any report/total — but lets a staffer label a sale \"actually sold on [date]\" when they register it late. Allow only staff you trust to use this honestly.",
+      fr: "BLOQUÉ par défaut. Une simple note — elle ne change jamais la date réelle du reçu ni aucun rapport/total — mais permet à un employé d'indiquer qu'une vente a \"eu lieu le [date]\" quand il l'enregistre en retard. N'autorisez que le personnel de confiance.",
+    } },
 ];
 const permDefault = (a) => a.defaultPolicy || "allow";
 

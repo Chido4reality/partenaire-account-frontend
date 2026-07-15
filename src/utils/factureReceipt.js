@@ -33,11 +33,25 @@ function factureDate(sd) {
   const d = new Date(); const p = (n) => String(n).padStart(2, "0");
   return `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()}`;
 }
+// MP-SOLD-DATE-NOTE: fixed DD/MM/YYYY for the note line — deliberately
+// distinct from factureDate()'s DD-MM-YYYY (the receipt's REAL date), so the
+// two are never visually confusable on the printout.
+function fmtSoldDateNote(isoDate) {
+  if (!isoDate) return "";
+  const [y, m, d] = String(isoDate).slice(0, 10).split("-");
+  return (y && m && d) ? `${d}/${m}/${y}` : String(isoDate);
+}
+function soldDateNoteLine(lang, soldDateNote, soldDateNoteByName) {
+  if (!soldDateNote) return "";
+  const by = soldDateNoteByName ? ` (${lang === "en" ? "recorded by" : "saisi par"} ${esc(soldDateNoteByName)})` : "";
+  const label = lang === "en" ? "NOTE — Sold Date" : "NOTE — Date de vente";
+  return `${label}: ${fmtSoldDateNote(soldDateNote)}${by}`;
+}
 
 // org: { logo_url, name, slogan, address, city, country, phone, whatsapp_number,
 //        email, currency, receipt_footer }  (empty fields are skipped)
 // items: [{ name, quantity, unit_price }]   (debt lines: pass quantity 1, unit_price = amount)
-export function buildFactureHtml({ org = {}, lang = "fr", saleNumber = "", saleDate = "", customerName, cashierName, items = [], discountTotal = 0, qrDataUrl = "", barcodeDataUrl = "", codeStyle = "qr", downloadQrDataUrl = "" }) {
+export function buildFactureHtml({ org = {}, lang = "fr", saleNumber = "", saleDate = "", customerName, cashierName, items = [], discountTotal = 0, qrDataUrl = "", barcodeDataUrl = "", codeStyle = "qr", downloadQrDataUrl = "", soldDateNote = "", soldDateNoteByName = "" }) {
   const currency = esc(currencySymbol(org.currency));   // XAF -> FCFA, etc.
   const footer = org.receipt_footer || "";
 
@@ -129,6 +143,7 @@ export function buildFactureHtml({ org = {}, lang = "fr", saleNumber = "", saleD
          <div class="total">TOTAL: ${money(grand - Number(discountTotal))} ${currency}</div>`
       : `<div class="total">TOTAL: ${money(grand)} ${currency}</div>`}
     ${footer ? `<div class="footer">${esc(footer)}</div>` : ""}
+    ${soldDateNote ? `<div class="small" style="margin-top:8px;padding:5px 7px;border:1px solid #000">${soldDateNoteLine(lang, soldDateNote, soldDateNoteByName)}</div>` : ""}
     <div class="arrete">Arrêtée la présente facture à la somme de : ________________________________</div>
     <div class="sign"><div class="sigcell">Signature client</div><div class="sigcell">Signature vendeur</div></div>
     ${(saleNumber && (((codeStyle==='barcode'||codeStyle==='both') && barcodeDataUrl) || ((codeStyle==='qr'||codeStyle==='both') && qrDataUrl))) ? `<div class="center" style="margin-top:14px">
@@ -155,7 +170,7 @@ export function buildFactureHtml({ org = {}, lang = "fr", saleNumber = "", saleD
 // window.open()-spawned windows can't be reliably closed on Android WebView
 // (window.close() is a no-op), which left an uncloseable layer over the app.
 // All styles are scoped under .mp-fac so nothing leaks to the host app.
-export function buildFactureInner({ org = {}, lang = "fr", saleNumber = "", saleDate = "", customerName, cashierName, items = [], discountTotal = 0, qrDataUrl = "", barcodeDataUrl = "", codeStyle = "qr", downloadQrDataUrl = "" }) {
+export function buildFactureInner({ org = {}, lang = "fr", saleNumber = "", saleDate = "", customerName, cashierName, items = [], discountTotal = 0, qrDataUrl = "", barcodeDataUrl = "", codeStyle = "qr", downloadQrDataUrl = "", soldDateNote = "", soldDateNoteByName = "" }) {
   const currency = esc(currencySymbol(org.currency));
   const footer = org.receipt_footer || "";
 
@@ -216,6 +231,7 @@ export function buildFactureInner({ org = {}, lang = "fr", saleNumber = "", sale
          <div class="total">TOTAL: ${money(grand - Number(discountTotal))} ${currency}</div>`
       : `<div class="total">TOTAL: ${money(grand)} ${currency}</div>`}
     ${footer ? `<div class="footer">${esc(footer)}</div>` : ""}
+    ${soldDateNote ? `<div class="small" style="margin-top:8px;padding:5px 7px;border:1px solid #000">${soldDateNoteLine(lang, soldDateNote, soldDateNoteByName)}</div>` : ""}
     <div class="arrete">Arrêtée la présente facture à la somme de : ________________________________</div>
     <div class="sign"><div class="sigcell">Signature client</div><div class="sigcell">Signature vendeur</div></div>
     ${(saleNumber && (((codeStyle==='barcode'||codeStyle==='both') && barcodeDataUrl) || ((codeStyle==='qr'||codeStyle==='both') && qrDataUrl))) ? `<div class="center" style="margin-top:14px">
@@ -247,6 +263,7 @@ export function buildThermalReceipt({
   paidAmount = null, balanceDue = null, paymentMethod = "", paymentStatus = "",
   qrDataUrl = "", barcodeDataUrl = "", codeStyle = "qr", // MP-RECEIPT-CODE-STYLE
   downloadQrDataUrl = "", // MP-RECEIPT-DOWNLOAD-QR: app-download QR in the advert
+  soldDateNote = "", soldDateNoteByName = "", // MP-SOLD-DATE-NOTE
 } = {}) {
   const en = lang === "en";
   const W = (Number(widthMm) === 80) ? 80 : 58;
@@ -365,6 +382,7 @@ export function buildThermalReceipt({
     ${totals.join("")}
     <hr>
     <div class="ctr sm">${esc(footer)}</div>
+    ${soldDateNote ? `<div class="sm" style="margin-top:4px;padding:3px;border:1px dashed #000">${soldDateNoteLine(en ? "en" : "fr", soldDateNote, soldDateNoteByName)}</div>` : ""}
     ${barcodeBlock}
     ${advertBlock}
   </div>`;
