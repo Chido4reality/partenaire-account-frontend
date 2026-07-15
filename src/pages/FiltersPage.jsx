@@ -366,7 +366,14 @@ export default function FiltersPage() {
           {mainQuery.isLoading ? (
             <div style={{ ...card, textAlign: "center", padding: 30, color: "var(--text-muted)" }}>{en ? "Loading…" : "Chargement…"}</div>
           ) : mainQuery.isError ? (
-            <div style={{ ...card, textAlign: "center", padding: 30, color: "#f87171" }}>{en ? "Could not load — try again." : "Échec du chargement — réessayez."}</div>
+            // MP-FILTER-PERMISSION: filter_policy='block' 403s with code
+            // filter_blocked — a clear "ask the boss" message, not a generic
+            // "try again" that reads like a network hiccup.
+            <div style={{ ...card, textAlign: "center", padding: 30, color: "#f87171" }}>
+              {mainQuery.error?.response?.data?.code === "filter_blocked"
+                ? (en ? "You are not allowed to use Filters. Ask the boss." : "Vous n'êtes pas autorisé à utiliser les Filtres. Demandez au patron.")
+                : (en ? "Could not load — try again." : "Échec du chargement — réessayez.")}
+            </div>
           ) : mode === "empty" ? (
             <div style={{ ...card, textAlign: "center", padding: 30, color: "var(--text-muted)" }}>{mainQuery.data.message}</div>
           ) : mode === "rollup" ? (
