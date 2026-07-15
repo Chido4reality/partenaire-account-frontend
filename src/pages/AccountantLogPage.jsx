@@ -997,6 +997,11 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
         max_expense_amount: perms.max_expense_amount === "" ? null : perms.max_expense_amount,
         approve_above_amount: perms.approve_above_amount === "" ? null : perms.approve_above_amount,
         max_credit_amount: perms.max_credit_amount === "" ? null : perms.max_credit_amount,
+        // MP-FILTER-PERMISSION: a SEPARATE axis from PERM_ACTIONS below —
+        // 'block'|'self'|'all', or null/"" to explicitly clear back to the
+        // role default. Not defaulted to anything here — an untouched control
+        // must save exactly what the server already has (null stays null).
+        filter_policy: perms.filter_policy === "" ? null : (perms.filter_policy ?? null),
       };
       PERM_ACTIONS.forEach((a) => {
         const v = perms[a.key];
@@ -1477,6 +1482,42 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                     </div>
                   );
                 })}
+                {/* MP-FILTER-PERMISSION (Peter, "boss control"): a SEPARATE axis from
+                    every policy above — visibility SCOPE, not allow/approve/block.
+                    null = role default (cashier→own only, manager/accountant/owner→
+                    all staff) so nobody's access changes until you set this. */}
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 5 }}>
+                    {en ? "See other staff's activity (Filters)" : "Voir l'activité des autres (Filtres)"}
+                  </div>
+                  <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>
+                    {[
+                      { val: "block", en: "Blocked", fr: "Bloqué", bg: "rgba(239,68,68,0.9)", fg: "#fff" },
+                      { val: "self",  en: "Own only", fr: "Soi seulement", bg: "rgba(245,158,11,0.9)", fg: "#3a2400" },
+                      { val: "all",   en: "All staff", fr: "Tout le personnel", bg: "rgba(16,185,129,0.9)", fg: "#06281d" },
+                    ].map((o) => (
+                      <button key={o.val} onClick={() => setPolicy("filter_policy", perms.filter_policy === o.val ? "" : o.val)}
+                        style={{ flex: 1, padding: "7px 4px", fontSize: 12.5, fontWeight: 700, border: "none", cursor: "pointer",
+                          background: perms.filter_policy === o.val ? o.bg : "var(--bg-elevated)", color: perms.filter_policy === o.val ? o.fg : "var(--text-muted)" }}>
+                        {en ? o.en : o.fr}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
+                    {!perms.filter_policy
+                      ? (en ? `→ Role default (not set): ${staff.role === "cashier" ? "own activity only" : staff.role === "warehouse" ? "own activity, except full Inventory access" : "all staff"}.`
+                            : `→ Défaut du rôle (non défini) : ${staff.role === "cashier" ? "activité propre uniquement" : staff.role === "warehouse" ? "activité propre, sauf accès complet à l'Inventaire" : "tout le personnel"}.`)
+                      : perms.filter_policy === "block"
+                      ? (en ? "→ Currently: cannot open Filters at all." : "→ Actuellement : ne peut pas ouvrir les Filtres.")
+                      : perms.filter_policy === "self"
+                      ? (en ? "→ Currently: sees only their own activity in Filters, regardless of role." : "→ Actuellement : voit uniquement sa propre activité dans les Filtres, quel que soit le rôle.")
+                      : (en ? "→ Currently: sees ALL staff's activity in Filters." : "→ Actuellement : voit l'activité de TOUT le personnel dans les Filtres.")}
+                    {" "}
+                    <button onClick={() => setPolicy("filter_policy", "")} style={{ background: "none", border: "none", color: "var(--brand-light)", cursor: "pointer", textDecoration: "underline", fontSize: 11, padding: 0 }}>
+                      {en ? "reset to role default" : "réinitialiser au défaut du rôle"}
+                    </button>
+                  </div>
+                </div>
                 {/* Approve-above threshold — even 'Allowed' actions ask for approval over this. */}
                 <div style={{ marginTop: 4, marginBottom: 8, padding: "9px 11px", background: "var(--bg-elevated)", borderRadius: 8 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 5 }}>
