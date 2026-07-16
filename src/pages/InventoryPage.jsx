@@ -868,7 +868,14 @@ export default function InventoryPage() {
       const validItems = receiveForm.items.filter(i => i.product_id && i.quantity);
       if (!validItems.length) throw new Error("No valid items");
 
-      // Update prices for each product first
+      // Update prices for each product first. canReceiveGoods includes
+      // warehouse, but PATCH /products/:id is owner/manager/accountant only
+      // (warehouse has no product-edit access anywhere else in the app either)
+      // — a 403 here must not block the stock add that follows, which IS a
+      // warehouse-allowed action. Any OTHER failure (network, 500) still
+      // aborts the whole submission as before; only permission-denied is
+      // treated as "skip this item's price, keep going."
+      const priceSkipped = [];
       for (const item of validItems) {
         const priceUpdate = {};
         if (item.cost_price) priceUpdate.cost_price = +item.cost_price;
@@ -876,12 +883,17 @@ export default function InventoryPage() {
         if (item.wholesale_price) priceUpdate.wholesale_price = +item.wholesale_price;
         if (item.min_price) priceUpdate.min_price = +item.min_price;
         if (Object.keys(priceUpdate).length > 0) {
-          await api.patch(`/products/${item.product_id}`, priceUpdate);
+          try {
+            await api.patch(`/products/${item.product_id}`, priceUpdate);
+          } catch (err) {
+            if (err.response?.status === 403) { priceSkipped.push(item.product_name || item.product_id); continue; }
+            throw err;
+          }
         }
       }
 
       // Then add stock
-      return api.post("/stock/arrivals", {
+      const res = await api.post("/stock/arrivals", {
         location_id: receiveForm.location_id,
         supplier_name: receiveForm.supplier_name || null,
         invoice_ref: receiveForm.invoice_ref || null,
@@ -889,9 +901,19 @@ export default function InventoryPage() {
         flag_recount: !!receiveForm.flag_recount, // MP-STOCK-CHECK: boss re-count flag
         items: validItems.map(i => ({ product_id: i.product_id, quantity: +i.quantity, slot_code: i.slot_code || null, cost_price: +i.cost_price || 0 }))
       });
+      return { ...res, _priceSkipped: priceSkipped };
     },
-    onSuccess: () => {
-      toast.success(lang === "en" ? "✓ Stock received & prices updated!" : "✓ Stock reçu et prix mis à jour!");
+    onSuccess: (res) => {
+      const skipped = res?._priceSkipped || [];
+      if (skipped.length) {
+        toast.success(lang === "en" ? "✓ Stock received" : "✓ Stock reçu");
+        toast(lang === "en"
+          ? `Price changes need manager/owner — not applied for: ${skipped.join(", ")}`
+          : `Les changements de prix nécessitent gérant/propriétaire — non appliqués pour : ${skipped.join(", ")}`,
+          { duration: 6000 });
+      } else {
+        toast.success(lang === "en" ? "✓ Stock received & prices updated!" : "✓ Stock reçu et prix mis à jour!");
+      }
       setShowReceive(false);
       setReceiveForm({ location_id: "", supplier_name: "", invoice_ref: "", notes: "", flag_recount: false, items: [{ product_id: "", product_name: "", quantity: "", cost_price: "", sell_price: "", wholesale_price: "", min_price: "", currentPrices: null }] });
       invalidateAll();

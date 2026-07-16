@@ -332,7 +332,7 @@ function ReceiveModal({ en, order, onClose, onDone }) {
     const m = {};
     for (const it of items) {
       const done = it.received_quantity !== null && it.received_quantity !== undefined;
-      m[it.id] = { counted: String(done ? it.received_quantity : (Number(it.quantity) || 0)), vAction: "", vLoc: "", vQty: "" };
+      m[it.id] = { counted: String(done ? it.received_quantity : (Number(it.quantity) || 0)), vAction: "", vLoc: "", vQty: "", slot: "" };
     }
     return m;
   });
@@ -368,7 +368,7 @@ function ReceiveModal({ en, order, onClose, onDone }) {
       const variance = (short && r.vAction === "move")
         ? { action: "move", location_id: r.vLoc, quantity: Math.min(ordered - counted, Number(r.vQty) || (ordered - counted)) }
         : { action: "ignore" };
-      return { item_id: it.id, product_id: it.product_id, counted, variance };
+      return { item_id: it.id, product_id: it.product_id, counted, variance, slot_code: (r.slot || "").trim() || null };
     });
     mut.mutate({ mode: "refill", location_id: dest, lines });
   };
@@ -438,6 +438,13 @@ function ReceiveModal({ en, order, onClose, onDone }) {
                         onFocus={e => e.target.select()} onChange={e => setRow(it.id, { counted: e.target.value })} />
                     </div>
                   </div>
+                  {counted > 0 && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>📍 {en ? "Slot/Zone (opt.)" : "Emplacement (opt.)"}</span>
+                      <input className="input" value={r.slot} style={{ flex: 1 }} placeholder="A-01, Shelf 2..."
+                        onChange={e => setRow(it.id, { slot: e.target.value })} />
+                    </div>
+                  )}
                   {short && (
                     <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 8, background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.3)" }}>
                       <div style={{ fontSize: 12, color: "#fbbf24", fontWeight: 600, marginBottom: 6 }}>
