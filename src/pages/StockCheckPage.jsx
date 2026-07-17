@@ -92,11 +92,22 @@ export default function StockCheckPage() {
   const [range, setRange] = useState(wideRange());     // A2 date filter (≈1yr default → nothing hidden)
   const [damagedOnly, setDamagedOnly] = useState(false); // Resolved tab: shop's damage record
 
+  // MP-STOCK-CHECK-LIVE-VS-EXPECTED (Peter, 2026-07-17 — Paul was about to leave
+  // over this): "Expected" freezes at movement time and silently drifts from
+  // reality with every sale/transfer since — reading as a bug when it isn't
+  // (chat verified the underlying stock is sound; only a handful of pre-Jul-11
+  // rows are missing a LEDGER entry, never missing actual stock). Fix is to show
+  // BOTH numbers, explicitly labelled, and keep "now" live: 5s poll instead of
+  // 15s, and ONLY while this screen is actually open — refetchIntervalInBackground
+  // is false (react-query's own default, set explicitly here so it's not an
+  // accident of defaults), so it pauses the instant the tab/app loses focus, and
+  // stops entirely the moment this component unmounts (navigating away).
   const list = useQuery({
     queryKey: ["stock-checks", tab],
     queryFn: () => api.get(`/stock-checks?status=${tab}`).then(r => toArray(r)),
     enabled: tab === "pending" || tab === "mismatch" || tab === "resolved", // damaged + stale are separate endpoints
-    refetchInterval: 15000,
+    refetchInterval: 5000,
+    refetchIntervalInBackground: false,
   });
 
   // MP-DAMAGED-GOODS: the damaged-pile list (remaining_qty>0 rows), same date window.
@@ -113,11 +124,15 @@ export default function StockCheckPage() {
   // MP-STALE-PRODUCT-SCAN: the "not moving" ranked list — a snapshot, not
   // date-windowed (no range params). Separate endpoint/tab from Pending on
   // purpose (see the backend route's own comment).
+  // MP-STOCK-CHECK-LIVE-VS-EXPECTED: "On hand" here is qty_before (a snapshot
+  // from when it was flagged, same trust gap as Pending/Mismatch) — same 5s
+  // live-while-open treatment, not just the label fix.
   const stale = useQuery({
     queryKey: ["stock-checks-stale"],
     queryFn: () => api.get("/stock-checks/stale").then(r => toArray(r)),
     enabled: tab === "stale",
-    refetchInterval: 60000,
+    refetchInterval: 5000,
+    refetchIntervalInBackground: false,
   });
 
   const watches = useQuery({
@@ -420,12 +435,30 @@ export default function StockCheckPage() {
                   </div>
                   <div style={{ fontSize: 12.5, marginTop: 6, display: "flex", gap: 14, flexWrap: "wrap" }}>
                     <span style={{ color: "var(--text-muted)" }}>{en ? "Before" : "Avant"}: <b style={{ color: "var(--text-primary)" }}>{Number(r.qty_before)}</b></span>
-                    <span style={{ color: "var(--text-muted)" }}>{en ? "Expected" : "Attendu"}: <b style={{ color: "var(--text-primary)" }}>{Number(r.qty_expected)} {unitLabel(p.unit)}</b></span>
+                    <span style={{ color: "var(--text-muted)" }}>{en ? "Expected at movement time" : "Attendu au moment du mouvement"}: <b style={{ color: "var(--text-primary)" }}>{Number(r.qty_expected)} {unitLabel(p.unit)}</b></span>
+                    {/* MP-STOCK-CHECK-LIVE-VS-EXPECTED: qty_now is live pa_stock, polled
+                        every 5s while this screen is open — see attachLiveStock (backend)
+                        and the list query above for how this stays fresh without hammering
+                        the API. null only for the 'resolved' tab (enrichment skipped there). */}
+                    {r.qty_now != null && (
+                      <span style={{ color: "var(--text-muted)" }}>{en ? "In stock now" : "En stock actuellement"}: <b style={{ color: "#60a5fa" }}>{r.qty_now} {unitLabel(p.unit)}</b></span>
+                    )}
                     {showCounted && <>
                       <span style={{ color: "var(--text-muted)" }}>{en ? "Counted" : "Compté"}: <b style={{ color: isResolved ? "var(--text-primary)" : "#f87171" }}>{Number(r.qty_counted)}</b></span>
                       <span style={{ color: isResolved ? "var(--text-muted)" : "#f87171", fontWeight: 700 }}>{delta > 0 ? "+" : ""}{delta}</span>
                     </>}
                   </div>
+                  {/* Explain the gap instead of leaving it to guess — this exact
+                      confusion ("Stock Check and Inventory don't agree") is what put
+                      Paul's trust at risk. Sales/transfers since the flag are the normal,
+                      expected reason; it's only worth a physical re-count either way. */}
+                  {r.status === "pending" && r.qty_now != null && r.qty_now !== Number(r.qty_expected) && (
+                    <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 4, fontStyle: "italic" }}>
+                      {en
+                        ? `Differs from a sale or transfer since this was flagged — that's expected. Count what's on the shelf now.`
+                        : `Diffère à cause d'une vente ou d'un transfert depuis ce signalement — c'est normal. Comptez ce qui est sur l'étagère maintenant.`}
+                    </div>
+                  )}
                   {r.moved_by_name && (
                     <div style={{ fontSize: 12, color: isMismatch ? "#fca5a5" : "var(--text-muted)", marginTop: 4 }}>
                       👤 {en ? "Moved by" : "Déplacé par"}: <b>{r.moved_by_name}</b>
@@ -496,7 +529,11 @@ export default function StockCheckPage() {
             const p = r.pa_products || {};
             const loc = r.pa_locations || {};
             const qty = Number(r.qty_before) || 0;
-            const value = qty * (Number(p.cost_price) || 0);
+            // MP-STOCK-CHECK-LIVE-VS-EXPECTED: "tied up" money should reflect what's
+            // ACTUALLY on the shelf now, not the flag-time snapshot — falls back to
+            // qty_before only if live stock is unavailable (no pa_stock row yet).
+            const liveQty = r.qty_now != null ? r.qty_now : qty;
+            const value = liveQty * (Number(p.cost_price) || 0);
             const days = Math.floor((Date.now() - new Date(r.created_at).getTime()) / 86400000);
             return (
               <div key={r.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderLeft: "3px solid #94a3b8", borderRadius: 12, padding: 14 }}>
@@ -512,8 +549,13 @@ export default function StockCheckPage() {
                     </div>
                     <div style={{ fontSize: 12.5, marginTop: 6, display: "flex", gap: 14, flexWrap: "wrap" }}>
                       <span style={{ color: "var(--text-muted)" }}>
-                        {en ? "On hand" : "En stock"}: <b style={{ color: "var(--text-primary)" }}>{qty} {unitLabel(p.unit)}</b>
+                        {en ? "On hand when flagged" : "En stock au signalement"}: <b style={{ color: "var(--text-primary)" }}>{qty} {unitLabel(p.unit)}</b>
                       </span>
+                      {r.qty_now != null && (
+                        <span style={{ color: "var(--text-muted)" }}>
+                          {en ? "In stock now" : "En stock actuellement"}: <b style={{ color: "#60a5fa" }}>{r.qty_now} {unitLabel(p.unit)}</b>
+                        </span>
+                      )}
                       {value > 0 && <span style={{ color: "var(--text-muted)" }}>{en ? "Tied up" : "Immobilisé"}: <b style={{ color: "#f87171" }}>{fmt(value)}</b></span>}
                     </div>
                   </div>
@@ -653,7 +695,12 @@ function ResolveModal({ row, en, onCancel, onResolve, busy }) {
             <input className="input" type="number" min="0" autoFocus value={value} onChange={e => setValue(e.target.value)}
               onKeyDown={e => e.key === "Enter" && goDone()} placeholder={en ? "Counted quantity" : "Quantité comptée"} style={{ marginTop: 6 }} />
             <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 6 }}>
-              {en ? `System expects ${expected}.` : `Le système attend ${expected}.`}
+              {en ? `Expected at movement time: ${expected}.` : `Attendu au moment du mouvement : ${expected}.`}
+              {/* MP-STOCK-CHECK-LIVE-VS-EXPECTED: same live figure as the list row,
+                  right where staff are about to type in a physical count. */}
+              {row.qty_now != null && row.qty_now !== expected && (
+                <span> {en ? `In stock now: ${row.qty_now} (sales/transfers since this was flagged).` : `En stock actuellement : ${row.qty_now} (ventes/transferts depuis ce signalement).`}</span>
+              )}
               {valid && !matches && <span style={{ color: "#fbbf24" }}> {en ? `Off by ${n - expected > 0 ? "+" : ""}${n - expected}.` : `Écart de ${n - expected > 0 ? "+" : ""}${n - expected}.`}</span>}
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
