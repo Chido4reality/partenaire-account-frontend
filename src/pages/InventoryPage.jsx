@@ -193,6 +193,10 @@ export default function InventoryPage() {
   const [rapidItem, setRapidItem] = useState(EMPTY_PRODUCT);
   const [rapidCount, setRapidCount] = useState(0);
   const rapidNameRef = useRef(null);
+  // MP-RAPID-ENTRY-PARITY: SKU auto-tracking + kit parts builder, mirroring
+  // newSkuAuto/newParts on the Add New Product form exactly.
+  const [rapidSkuAuto, setRapidSkuAuto] = useState(true);
+  const [rapidParts, setRapidParts] = useState([]);
 
   // Import state
   const [importFile, setImportFile] = useState(null);
@@ -606,6 +610,16 @@ export default function InventoryPage() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showAddProduct, newProduct.name]);
+  // MP-RAPID-ENTRY-PARITY: same auto-fill behavior for Rapid Entry's SKU field.
+  useEffect(() => {
+    if (!showRapidEntry || !rapidSkuAuto) return;
+    const t = setTimeout(async () => {
+      const s = await fetchNextSku(rapidItem.name);
+      if (s) setRapidItem(p => (rapidSkuAuto ? { ...p, sku: s } : p));
+    }, 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showRapidEntry, rapidItem.name]);
   const guardAdd = (continueAction) => {
     if (atInventoryCap) {
       setPaywall({ feature: "inventory_cap", mpId: myPlan?.user_id_number });
@@ -922,15 +936,22 @@ export default function InventoryPage() {
   });
 
   // ── RAPID ENTRY MUTATION ────────────────────────────────────────────────────
+  // MP-RAPID-ENTRY-PARITY: SKU + multi-part kit now mirror addProductMutation
+  // exactly (sku/sku_auto so the server can bump+retry on collision; parts via
+  // partsToPayload; a kit parent holds no stock of its own, so initial stock
+  // is skipped for it, same as Add New Product).
   const rapidMutation = useMutation({
     mutationFn: async () => {
       const res = await api.post("/products", {
         name: rapidItem.name, barcode: rapidItem.barcode || null, unit: rapidItem.unit,
+        sku: (rapidItem.sku || "").trim() || null,
+        sku_auto: rapidSkuAuto,
         cost_price: +rapidItem.cost_price || 0, sell_price: +rapidItem.sell_price,
         wholesale_price: +rapidItem.wholesale_price || 0, min_price: +rapidItem.min_price || 0,
+        ...(rapidItem.is_multipart ? { is_multipart: true, parts: partsToPayload(rapidParts) } : {}),
       });
       const product = res.data.data;
-      if (rapidItem.initial_location_id && rapidItem.initial_quantity) {
+      if (!rapidItem.is_multipart && rapidItem.initial_location_id && rapidItem.initial_quantity) {
         await api.post("/stock/arrivals", {
           location_id: rapidItem.initial_location_id,
           items: [{ product_id: product.id, quantity: +rapidItem.initial_quantity, slot_code: rapidItem.initial_slot || null, cost_price: +rapidItem.cost_price || 0 }]
@@ -953,7 +974,16 @@ export default function InventoryPage() {
     onSuccess: (data) => {
       setRapidCount(c => c + 1);
       toast.success(lang === "en" ? `✓ ${rapidItem.name} added!` : `✓ ${rapidItem.name} ajouté!`, { duration: 1500 });
+      // MP-MULTIPART-OPENING-STOCK: same kit-parts-opening-stock warning as
+      // Add New Product.
+      if (data?.warning === "kit_opening_stock_failed") {
+        toast.error(data.message || (lang === "en"
+          ? "Product created, but some parts' opening stock wasn't saved — add it via Receive Goods."
+          : "Produit créé, mais le stock d'ouverture de certaines pièces n'a pas été enregistré — ajoutez-le via Réception."), { duration: 7000 });
+      }
       setRapidItem(prev => ({ ...EMPTY_PRODUCT, initial_location_id: prev.initial_location_id, unit: prev.unit }));
+      setRapidParts([]);
+      setRapidSkuAuto(true);
       setTimeout(() => rapidNameRef.current?.focus(), 100);
       const snap = data?._offlineSnapshot;
       if (snap?.offlineQueued) {
@@ -968,7 +998,14 @@ export default function InventoryPage() {
         invalidateAll();
       }
     },
-    onError: (err) => toast.error(err.response?.data?.message || "Error")
+    onError: (err) => {
+      // MP-SKU: a user-typed SKU collided within the org — friendly, change it.
+      if (err.response?.data?.code === "SKU_EXISTS") {
+        toast.error(lang === "en" ? "That SKU is already used — pick another." : "Ce SKU est déjà utilisé — choisissez-en un autre.");
+        return;
+      }
+      toast.error(err.response?.data?.message || "Error");
+    }
   });
 
   // ── IMPORT MUTATION ─────────────────────────────────────────────────────────
@@ -2014,8 +2051,40 @@ export default function InventoryPage() {
               />
             )}
 
+            {/* MP-RAPID-ENTRY-PARITY: SKU, same auto-fill/Generate/clearable pattern as Add New Product. */}
+            <div className="form-group">
+              <label className="label">SKU {lang === "en" ? "(optional)" : "(optionnel)"}</label>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input className="input" style={{ flex: 1 }} value={rapidItem.sku || ""}
+                  onChange={e => { setRapidItem(p => ({ ...p, sku: e.target.value })); setRapidSkuAuto(false); }}
+                  placeholder={lang === "en" ? "auto — editable / clearable" : "auto — modifiable / effaçable"} />
+                <button type="button" title={lang === "en" ? "Generate" : "Générer"}
+                  onClick={async () => { const s = await fetchNextSku(rapidItem.name); if (s) { setRapidItem(p => ({ ...p, sku: s })); setRapidSkuAuto(true); } }}
+                  style={{ flexShrink: 0, height: 42, padding: "0 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elevated)", cursor: "pointer", fontSize: 13, fontWeight: 700, color: "var(--brand-light)" }}>
+                  🔄 {lang === "en" ? "Generate" : "Générer"}
+                </button>
+              </div>
+            </div>
+
             <PricingSection data={rapidItem} onChange={(k, v) => setRapidItem(p => ({ ...p, [k]: v }))} lang={lang} />
 
+            {/* MP-RAPID-ENTRY-PARITY: multi-part kit toggle + builder, same as Add
+                New Product — collapsed unless ticked, so the rapid path stays fast
+                by default. */}
+            {canMultipart && (
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
+                  <input type="checkbox" checked={!!rapidItem.is_multipart}
+                    onChange={e => { const v = e.target.checked; setRapidItem(p => ({ ...p, is_multipart: v })); if (v && rapidParts.length === 0) setRapidParts([emptyPart(), emptyPart()]); }} />
+                  🧩 {lang === "en" ? "Multi-part product (kit)" : "Produit multi-pièces (kit)"}
+                </label>
+                {rapidItem.is_multipart && (
+                  <MultipartBuilder parts={rapidParts} setParts={setRapidParts} products={products} locations={locations} lang={lang} />
+                )}
+              </div>
+            )}
+
+            {!rapidItem.is_multipart && (
             <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 14 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 10 }}>📦 Initial Stock</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -2038,9 +2107,10 @@ export default function InventoryPage() {
                 </div>
               </div>
             </div>
+            )}
 
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setShowRapidEntry(false); setRapidCount(0); setRapidItem(EMPTY_PRODUCT); }}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setShowRapidEntry(false); setRapidCount(0); setRapidItem(EMPTY_PRODUCT); setRapidParts([]); setRapidSkuAuto(true); }}>
                 {lang === "en" ? "Done" : "Terminer"}
               </button>
               <button className="btn btn-primary" style={{ flex: 2, fontWeight: 700 }}
