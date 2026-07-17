@@ -413,8 +413,16 @@ export default function TransfersPage() {
               </label>
             )}
 
+            {/* MP-TRANSFER-DESTINATION-REQUIRED (2026-07-17, audit fix): the old
+                `!fromLoc && !toLoc` check only blocked the wizard when BOTH were
+                empty, so fromLoc-set + toLoc-empty sailed through — the exact shape
+                of TRF-20260716-0003 (deducted at source, credited nowhere, since the
+                DB trigger's dest-credit branch silently no-ops on NULL to_location).
+                FROM may legitimately stay empty (external-source receive — nothing
+                is deducted, only the destination gets credited, so there's no loss
+                symmetry with an empty TO). TO must always be picked. */}
             <button className="btn btn-primary btn-block btn-lg"
-              disabled={!fromLoc && !toLoc}
+              disabled={!toLoc}
               onClick={() => setStep(2)}>
               {lang === "en" ? "Next - Scan items" : "Suivant - Scanner les articles"} >
             </button>
