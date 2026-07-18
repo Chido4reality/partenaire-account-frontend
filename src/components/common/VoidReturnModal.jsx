@@ -480,10 +480,23 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
         </div>
         {/* MP-OPS-MONEY-EXPLAINABLE: the receipt's issued time (pa_sales.created_at). */}
         {(sale.created_at || sale.sale_date) && (
-          <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginBottom: 20 }}>
+          <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginBottom: sale.sold_date_note ? 8 : 20 }}>
             {lang === "en" ? "Issued " : "Émis le "}
             {new Date(sale.created_at || sale.sale_date).toLocaleString(lang === "en" ? "en-GB" : "fr-FR",
               { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+          </div>
+        )}
+        {/* MP-SOLD-DATE-NOTE (Peter, 2026-07-18): full provenance on the return ticket —
+            the manual sold date, who recorded it, and the true record stamp, distinct from
+            "Issued" above. Data rides the /sales search `*` select. */}
+        {sale.sold_date_note && (
+          <div style={{ fontSize: 11.5, padding: "6px 8px", borderRadius: 6, marginBottom: 20, background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.4)", color: "#fbbf24", lineHeight: 1.5 }}>
+            {lang === "en" ? "NOTE — Sold Date: " : "NOTE — Date de vente : "}
+            <strong>{(() => { const [y, m, d] = String(sale.sold_date_note).slice(0, 10).split("-"); return (y && m && d) ? `${d}/${m}/${y}` : String(sale.sold_date_note); })()}</strong>
+            {sale.sold_date_note_by_name ? (lang === "en" ? ` · recorded by ${sale.sold_date_note_by_name}` : ` · saisi par ${sale.sold_date_note_by_name}`) : ""}
+            {sale.sold_date_note_at ? (lang === "en"
+              ? ` · recorded ${new Date(sale.sold_date_note_at).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`
+              : ` · enregistré ${new Date(sale.sold_date_note_at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`) : ""}
           </div>
         )}
 

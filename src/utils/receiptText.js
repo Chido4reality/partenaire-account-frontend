@@ -364,7 +364,16 @@ export function buildMonospaceReceipt(eventType, data, lang, org) {
     L.push(repeat("─", WIDTH));
     L.push(en ? `NOTE — Sold Date: ${noteDate}` : `NOTE — Date de vente : ${noteDate}`);
     if (data.sold_date_note_by_name) {
-      L.push(en ? `  (recorded by ${data.sold_date_note_by_name})` : `  (saisi par ${data.sold_date_note_by_name})`);
+      L.push(en ? `  recorded by ${data.sold_date_note_by_name}` : `  saisi par ${data.sold_date_note_by_name}`);
+    }
+    // MP-SOLD-DATE-NOTE (2026-07-18): the true record stamp, distinct from "Issued".
+    if (data.sold_date_note_at) {
+      const dt = new Date(data.sold_date_note_at);
+      if (!isNaN(dt)) {
+        const p = (n) => String(n).padStart(2, "0");
+        const stamp = `${p(dt.getDate())}/${p(dt.getMonth() + 1)}/${dt.getFullYear()} ${p(dt.getHours())}:${p(dt.getMinutes())}`;
+        L.push(en ? `  recorded ${stamp}` : `  enregistré ${stamp}`);
+      }
     }
   }
 

@@ -662,12 +662,16 @@ export default function ReportsPage() {
                                       badge below is the fix. Title carries the full attributed
                                       note text so a hover/long-press answers Peter's "open a
                                       receipt after two weeks" test without expanding the row. */}
+                                  {/* MP-SOLD-DATE-NOTE (Peter, 2026-07-18): show the sold-date VALUE
+                                      on the line (a badge alone failed "even a blind boss can tell").
+                                      Full note (value + who + record stamp) is on the receipt via the
+                                      🖨️ button; the hover title carries it too. */}
                                   {sale.sold_date_note && (
                                     <span title={lang === "en"
-                                        ? `NOTE — Sold Date: ${fmtSoldDateBadge(sale.sold_date_note)}${sale.sold_date_note_by_name ? ` (recorded by ${sale.sold_date_note_by_name})` : ""}`
-                                        : `NOTE — Date de vente : ${fmtSoldDateBadge(sale.sold_date_note)}${sale.sold_date_note_by_name ? ` (saisi par ${sale.sold_date_note_by_name})` : ""}`}
+                                        ? `NOTE — Sold Date: ${fmtSoldDateBadge(sale.sold_date_note)}${sale.sold_date_note_by_name ? ` · recorded by ${sale.sold_date_note_by_name}` : ""}${sale.sold_date_note_at ? ` · recorded ${new Date(sale.sold_date_note_at).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}`
+                                        : `NOTE — Date de vente : ${fmtSoldDateBadge(sale.sold_date_note)}${sale.sold_date_note_by_name ? ` · saisi par ${sale.sold_date_note_by_name}` : ""}${sale.sold_date_note_at ? ` · enregistré ${new Date(sale.sold_date_note_at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}`}
                                       style={{ fontSize: 11, padding: "1px 8px", borderRadius: 10, background: "rgba(251,197,3,0.15)", color: "var(--brand-light)", fontWeight: 700 }}>
-                                      📝 {lang === "en" ? "Sold-date note" : "Note de date de vente"}
+                                      📝 {lang === "en" ? "Sold" : "Vendu"}: {fmtSoldDateBadge(sale.sold_date_note)}
                                     </span>
                                   )}
                                 </div>
@@ -763,6 +767,7 @@ export default function ReportsPage() {
                                     // this object is an explicit field allowlist, not a spread.
                                     sold_date_note:         sale.sold_date_note || null,
                                     sold_date_note_by_name: sale.sold_date_note_by_name || null,
+                                    sold_date_note_at:      sale.sold_date_note_at || null, // record stamp (full note on receipt)
                                     items,
                                   });
                                 }} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-primary)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11 }}>
