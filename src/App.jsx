@@ -36,6 +36,7 @@ import AssetsPage from "./pages/AssetsPage"; // Pro Plus Feature 3 — Asset led
 import AccountantLogPage from "./pages/AccountantLogPage"; // Accountant Log Phase 1 — owner-only staff oversight
 import MyRequestsPage from "./pages/MyRequestsPage"; // staffer-facing approval queue (non-owner)
 import FiltersPage from "./pages/FiltersPage"; // MP-FILTERS — what/who/when clarity screen
+import HelpPage from "./pages/HelpPage"; // MP-HELP v1 — bundled offline in-app guide
 
 // MP-INVALIDATE-AFTER-SALE: refetch stale data when the user returns to
 // the tab/app or reconnects (e.g. after making a sale on another device
@@ -139,6 +140,7 @@ const ROUTE_ACCESS = {
   // restricted to their own data SERVER-SIDE (backend/src/lib/filterScope.js),
   // not by hiding this route.
   "/filters": ["owner", "manager", "accountant", "warehouse", "cashier"],
+  "/help": ["owner", "manager", "accountant", "cashier", "warehouse"], // MP-HELP — everyone
 };
 
 function Guard({ children }) {
@@ -553,6 +555,7 @@ export default function App() {
             <Route path="my-requests" element={<RoleGuard path="/my-requests"><MyRequestsPage /></RoleGuard>} />
             <Route path="filters"     element={<RoleGuard path="/filters"><PlanGuard path="/filters"><FiltersPage /></PlanGuard></RoleGuard>} />
             <Route path="settings"     element={<RoleGuard path="/settings"><PlanGuard path="/settings"><SettingsPage /></PlanGuard></RoleGuard>} />
+            <Route path="help"         element={<RoleGuard path="/help"><HelpPage /></RoleGuard>} />
             {/* MP-RESTRICTED-MODE (B2): reachable even when restricted — no PlanGuard. */}
             <Route path="request-activation" element={<RequestActivationPage />} />
             <Route path="shifts"       element={<RoleGuard path="/shifts"><ShiftsPage /></RoleGuard>} />
