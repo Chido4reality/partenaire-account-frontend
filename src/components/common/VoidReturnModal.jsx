@@ -376,7 +376,32 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
           }
         }
         // Both legacy paths delegate to one server handler.
-        res = await api.post(`/returns/${mode === "exchange" ? "exchange" : "return"}/${sale.id}`, body, { headers });
+        const postReturn = (h) => api.post(`/returns/${mode === "exchange" ? "exchange" : "return"}/${sale.id}`, body, { headers: h });
+        try {
+          res = await postReturn(headers);
+        } catch (err) {
+          // Q1 MP-EXCHANGE-OVERSELL-GATE: the replacement would push stock negative,
+          // so the server asks for an oversell approval PIN (owner enters his OWN;
+          // a cashier gets a boss PIN). A hard 'block' comes back as
+          // code:"oversell_not_allowed" instead and is NOT retried — it just shows.
+          const d = err?.response?.data;
+          const needsOversellPin = err?.response?.status === 403 && d?.error === "token_required"
+            && d?.detail?.expected?.action_type === "exchange_oversell";
+          if (!needsOversellPin) throw err;
+          try {
+            const { token: ovToken } = await requestApproval({
+              actionType: "exchange_oversell", targetTable: "pa_sales", targetId: sale.id,
+              context: { sale_number: sale.sale_number, replacement_count: replacement_items.length },
+              description: lang === "fr"
+                ? `Autoriser un remplacement en rupture de stock — ${sale.sale_number || ""}`
+                : `Approve an out-of-stock replacement — ${sale.sale_number || ""}`,
+            });
+            res = await postReturn({ ...headers, "Approval-Token": ovToken });
+          } catch (e2) {
+            if (e2?.code === "cancelled") { setLoading(false); return; }
+            throw e2;
+          }
+        }
       }
 
       // Non-blocking model: action PARKED for owner approval → nothing executed,
