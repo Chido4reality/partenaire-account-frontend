@@ -53,6 +53,8 @@ const SECTIONS = [
   // in the drawer (it inherits Layout's NAV owner+pro_plus gate; listing it here
   // just lets the mobile drawer surface it — same SECTIONS-omission fix pattern).
   { en: "SETTINGS",   fr: "PARAMÈTRES",        routes: ["/accountant-log", "/settings"] },
+  // MP-HELP v1 — mobile drawer entry (Layout NAV + App.jsx also register /help).
+  { en: "HELP",       fr: "AIDE",              routes: ["/help"] },
 ];
 
 export default function NavDrawer({
