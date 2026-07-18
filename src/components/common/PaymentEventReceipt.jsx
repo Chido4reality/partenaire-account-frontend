@@ -908,10 +908,15 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
                 receipt date, unchanged. Shown only when a manual sold date was
                 recorded on this sale. */}
             {eventType === "sale" && data.sold_date_note && (
-              <div style={{ marginTop: 6, padding: "6px 8px", borderRadius: 6, background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.4)", fontSize: 11, color: "#fbbf24" }}>
-                {en
-                  ? `NOTE — Sold Date: ${fmtSoldDateNote(data.sold_date_note)}${data.sold_date_note_by_name ? ` (recorded by ${data.sold_date_note_by_name})` : ""}`
-                  : `NOTE — Date de vente : ${fmtSoldDateNote(data.sold_date_note)}${data.sold_date_note_by_name ? ` (saisi par ${data.sold_date_note_by_name})` : ""}`}
+              <div style={{ marginTop: 6, padding: "6px 8px", borderRadius: 6, background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.4)", fontSize: 11, color: "#fbbf24", lineHeight: 1.5 }}>
+                {/* MP-SOLD-DATE-NOTE (Peter, 2026-07-18): show the sold date AND the true
+                    record stamp side by side, so the boss sees both dates + who recorded it. */}
+                {en ? "NOTE — Sold Date: " : "NOTE — Date de vente : "}
+                <strong>{fmtSoldDateNote(data.sold_date_note)}</strong>
+                {data.sold_date_note_by_name ? (en ? ` · recorded by ${data.sold_date_note_by_name}` : ` · saisi par ${data.sold_date_note_by_name}`) : ""}
+                {data.sold_date_note_at ? (en
+                  ? ` · recorded ${new Date(data.sold_date_note_at).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`
+                  : ` · enregistré ${new Date(data.sold_date_note_at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`) : ""}
               </div>
             )}
 
