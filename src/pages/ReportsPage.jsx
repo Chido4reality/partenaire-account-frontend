@@ -137,7 +137,9 @@ export default function ReportsPage() {
 
   const { data: salesDetailData, isLoading: salesDetailLoading } = useOfflineCachedQuery({
     queryKey: ["reports-sales-detail", from, to, repLoc],
-    queryFn: () => api.get(`/reports/sales-detail?from=${from}&to=${to}${locQS}`).then(r => r.data),
+    // OPTION A: most-recent-N sample (page 1). Totals come from the RPC and
+    // cover the full range regardless; real paging can be added later if needed.
+    queryFn: () => api.get(`/reports/sales-detail?from=${from}&to=${to}${locQS}&page_size=100`).then(r => r.data),
     enabled: tab === "sales"
   });
 
@@ -145,7 +147,9 @@ export default function ReportsPage() {
 
   const { data: todaySalesData, isLoading: todayLoading } = useOfflineCachedQuery({
     queryKey: ["reports-today-sales", repLoc],
-    queryFn: () => api.get(`/reports/sales-detail?date=${todayStr}${locQS}`).then(r => r.data),
+    // Single day: request a generous page so the day's sales aren't paginated
+    // out from under the daily-summary sums below (a day never exceeds this).
+    queryFn: () => api.get(`/reports/sales-detail?date=${todayStr}${locQS}&page_size=500`).then(r => r.data),
     enabled: tab === "daily_sales",
     refetchInterval: 60000
   });
@@ -259,6 +263,8 @@ export default function ReportsPage() {
   const daily = dailyData?.data || [];
   const debts = debtData?.data || [];
   const salesDetail = salesDetailData?.data || [];
+  const salesTotals = salesDetailData?.totals || null;       // complete range totals (from RPC)
+  const salesPagination = salesDetailData?.pagination || null;
   const topProducts = topProductsData?.data || [];
   const todaySales = todaySalesData?.data || [];
 
@@ -293,15 +299,36 @@ export default function ReportsPage() {
     URL.revokeObjectURL(url);
   };
 
-  const exportSalesCSV = () => {
+  const exportSalesCSV = async () => {
+    // MP-REPORTS-ROW-CAP: the on-screen list is paginated (one page), but the
+    // export must cover the WHOLE range. Loop the paginated endpoint (page_size
+    // 500, safely under PostgREST's 1000 cap) until every sale is pulled.
+    let all = [];
+    try {
+      const size = 500;
+      let page = 1, total = Infinity;
+      while ((page - 1) * size < total) {
+        const resp = await api
+          .get(`/reports/sales-detail?from=${from}&to=${to}${locQS}&page=${page}&page_size=${size}`)
+          .then(r => r.data);
+        const batch = resp?.data || [];
+        all = all.concat(batch);
+        total = resp?.pagination?.total ?? batch.length;
+        if (!batch.length || page > 100) break; // hard safety stop
+        page++;
+      }
+    } catch (e) {
+      toast(lang === "en" ? "Export failed" : "Échec de l'export");
+      return;
+    }
     // Empty-result honesty: don't hand the user a header-only file for a range
     // with no sales — tell them plainly instead.
-    if (!salesDetail.length) {
+    if (!all.length) {
       toast(lang === "en" ? "No sales in this range" : "Aucune vente dans cette période");
       return;
     }
     const rows = [["Sale#", "Date", "Customer", "Product / Line Type", "Qty", "Unit Price", "Line Total", "Payment Status"]];
-    salesDetail.forEach(sale => {
+    all.forEach(sale => {
       (sale.pa_sale_items || []).forEach(item => {
         rows.push([
           sale.sale_number,
@@ -527,6 +554,45 @@ export default function ReportsPage() {
           <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
             {lang === "en" ? "Click any sale to see items sold" : "Cliquez sur une vente pour voir les articles vendus"}
           </div>
+
+          {/* MP-REPORTS-ROW-CAP: range totals come from the server RPC (complete,
+              independent of which page is loaded) — NOT summed from the visible
+              rows, which are now paginated. */}
+          {salesTotals && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 12 }}>
+              <div className="stat-card" style={{ flex: 1, minWidth: 150 }}>
+                <div className="stat-label">{lang === "en" ? "Net sales (whole range)" : "Ventes nettes (période)"}</div>
+                <div className="stat-value" style={{ color: "var(--brand-light)" }}>{fmt(salesTotals.net_sales)}</div>
+              </div>
+              <div className="stat-card" style={{ flex: 1, minWidth: 110 }}>
+                <div className="stat-label">{lang === "en" ? "Sales" : "Ventes"}</div>
+                <div className="stat-value">{salesTotals.sale_count.toLocaleString()}</div>
+              </div>
+              {salesTotals.refunded_total > 0 && (
+                <div className="stat-card" style={{ flex: 1, minWidth: 110 }}>
+                  <div className="stat-label">{lang === "en" ? "Returns" : "Retours"}</div>
+                  <div className="stat-value" style={{ color: "#f87171" }}>-{fmt(salesTotals.refunded_total)}</div>
+                </div>
+              )}
+              {salesTotals.debt_payment_total > 0 && (
+                <div className="stat-card" style={{ flex: 1, minWidth: 140 }}>
+                  <div className="stat-label">{lang === "en" ? "Debt collected" : "Dette encaissée"}</div>
+                  <div className="stat-value">{fmt(salesTotals.debt_payment_total)}</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* OPTION A honesty: when the range holds more sales than the sample
+              shown, say so plainly — the totals band above is complete, only the
+              drill-down list below is a most-recent sample. */}
+          {salesPagination && salesPagination.total > salesPagination.returned && (
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
+              {lang === "en"
+                ? `Showing the ${salesPagination.returned.toLocaleString()} most recent of ${salesPagination.total.toLocaleString()} sales — the totals above cover the full range. Narrow the dates to drill into older sales.`
+                : `Affichage des ${salesPagination.returned.toLocaleString()} ventes les plus récentes sur ${salesPagination.total.toLocaleString()} — les totaux ci-dessus couvrent toute la période. Réduisez les dates pour voir les ventes plus anciennes.`}
+            </div>
+          )}
 
           {salesDetailLoading ? <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>Loading...</div>
           : salesDetail.length === 0 ? <div className="empty-state"><div style={{ fontWeight: 600 }}>{lang === "en" ? "No sales in this period" : "Aucune vente"}</div></div>
