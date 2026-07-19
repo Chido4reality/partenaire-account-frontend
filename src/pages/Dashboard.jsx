@@ -97,9 +97,12 @@ export default function Dashboard() {
     refetchInterval: 30000
   });
 
-  const { data: credits } = useOfflineCachedQuery({
-    queryKey: ['overdue-credits'],
-    queryFn: async () => api.get('/reports/debts').then(r => r.data),
+  // MP-EGRESS (pass 3): the overdue badge count now comes from the server (head
+  // count) instead of pulling the whole /reports/debts list to the client to count
+  // in JS. Server uses the org-local today for the past-due cutoff.
+  const { data: overdue } = useOfflineCachedQuery({
+    queryKey: ['overdue-count'],
+    queryFn: async () => api.get('/dashboard/overdue-count').then(r => r.data),
     enabled: isOwner || isManager
   });
 
@@ -138,7 +141,7 @@ export default function Dashboard() {
   const hasZeroDozieListings = !lite && (isOwner || isManager) && Array.isArray(dozieListings) && dozieListings.length === 0;
 
   const s = summary?.data || {};
-  const overdueCount = credits?.data?.filter(c => c.earliest_due && new Date(c.earliest_due) < new Date())?.length || 0;
+  const overdueCount = overdue?.data?.count || 0;
   const lowStockCount = alerts?.data?.length || 0;
 
   const statusColor = (status) => {
