@@ -290,9 +290,11 @@ function ToBuyRow({ en, name, unit, current, level, daysOfCover, sold7d, byLocat
           ))}
           {transferHint && (
             <div style={{ marginTop: 6, padding: "6px 8px", background: "rgba(59,130,246,0.10)", borderRadius: 8, fontSize: 11.5, color: "var(--text-secondary)" }}>
+              {/* "or buy N" only when there's a real buy need (suggested > 1); a
+                  warehouse-empty/shops-full product reads "→ transfer", not buy. */}
               💡 {en
-                ? `${transferHint.from_location_name} has ${transferHint.available} → transfer, or buy ${suggestedQty}`
-                : `${transferHint.from_location_name} a ${transferHint.available} → transférer, ou acheter ${suggestedQty}`}
+                ? `${transferHint.from_location_name} has ${transferHint.available} → transfer${suggestedQty > 1 ? `, or buy ${suggestedQty}` : ""}`
+                : `${transferHint.from_location_name} a ${transferHint.available} → transférer${suggestedQty > 1 ? `, ou acheter ${suggestedQty}` : ""}`}
             </div>
           )}
         </div>
