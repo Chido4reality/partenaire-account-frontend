@@ -160,6 +160,19 @@ export default function ReportsPage() {
     refetchInterval: 60000
   });
 
+  // MP-DAILY-SALES-BASIS: the Daily-Sales product breakdown + grand total come from a
+  // set-based RPC on the EXACT pa_daily_summary.product_sales basis — Σ net_amount per
+  // product for non-debt lines, damaged INCLUDED, full-range, cap-safe. So the tab's
+  // breakdown + grand total always equal the Reports→Daily headline, on damaged days
+  // too (Top Products excludes damaged by design, so it can't be reused here). Payment
+  // split below stays from the sales list. See /reports/daily-product-sales.
+  const { data: dailyProductsData } = useOfflineCachedQuery({
+    queryKey: ["reports-daily-products", todayStr, repLoc],
+    queryFn: () => api.get(`/reports/daily-product-sales?from=${todayStr}&to=${todayStr}${locQS}`).then(r => r.data),
+    enabled: tab === "daily_sales",
+    refetchInterval: 60000
+  });
+
   const { data: topProductsData, isLoading: topLoading } = useOfflineCachedQuery({
     queryKey: ["reports-top-products", from, to, repLoc],
     queryFn: () => api.get(`/reports/top-products?from=${from}&to=${to}${locQS}`).then(r => r.data),  // MP-LOCATION-SCOPE: respect the screen's location filter
@@ -273,6 +286,15 @@ export default function ReportsPage() {
   const salesPagination = salesDetailData?.pagination || null;
   const topProducts = topProductsData?.data || [];
   const todaySales = todaySalesData?.data || [];
+  // MP-DAILY-SALES-BASIS: net (damaged-INCLUSIVE), full-range per-product breakdown
+  // (+ grand total) for the Daily-Sales tab — shared by the table, WhatsApp, and Print
+  // so they never diverge, and equal to the Reports→Daily headline (product_sales).
+  // damaged carries the per-product damaged-clearance portion so it can be shown folded
+  // into the product's row while Σ rows still equals the grand total.
+  const dailyProducts = (dailyProductsData?.data || [])
+    .map(p => ({ name: p.name || "?", unit: unitLabel(p.unit || "pce"), qty: Number(p.total_qty) || 0, total: Number(p.total_revenue) || 0, damaged: Number(p.damaged_revenue) || 0 }))
+    .sort((a, b) => b.total - a.total);
+  const dailyProductsTotal = dailyProducts.reduce((s, p) => s + p.total, 0);
 
   const totals = daily.reduce((acc, d) => ({
     gross_sales:       acc.gross_sales       + (+d.gross_sales || 0),
@@ -314,7 +336,7 @@ export default function ReportsPage() {
       // top-staff + things-to-check from the read-only endpoint; MONEY stays the
       // EXACT on-screen totals/avgMargin/net_cash_real so the text can't disagree
       // with what the owner is looking at. Shared builder = buildDaySummaryText.
-      const resp = await api.get(`/reports/day-summary?from=${from}&to=${to}`).then(r => r.data).catch(() => null);
+      const resp = await api.get(`/reports/day-summary?from=${from}&to=${to}${locQS}`).then(r => r.data).catch(() => null);  // MP-LOCATION-SCOPE: top_staff + money respect the screen's location
       const ds = (resp && resp.data) || {};
       const dateLabel = from === to ? formatDate(from, lang) : `${formatDate(from, lang)} → ${formatDate(to, lang)}`;
       const netCashReal = daily.reduce((s, d) => s + (Number(d.net_cash_real) || 0), 0);
@@ -950,21 +972,10 @@ export default function ReportsPage() {
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => {
                 if (!todaySales.length) return;
-                // Aggregate by product name. Skip debt-payment rows
-                // (line_type='debt_payment') — they have no SKU to group
-                // by and would all collapse into a meaningless "?" row.
-                const itemMap = {};
-                todaySales.forEach(sale => {
-                  (sale.pa_sale_items || []).filter(i => !isDebtItem(i)).forEach(item => {
-                    const name = item.pa_products?.name || "?";
-                    const unit = unitLabel(item.pa_products?.unit || "pce");
-                    if (!itemMap[name]) itemMap[name] = { name, unit, qty: 0, total: 0 };
-                    itemMap[name].qty += item.quantity;
-                    itemMap[name].total += item.quantity * item.unit_price;
-                  });
-                });
-                const items = Object.values(itemMap);
-                const grandTotal = items.reduce((s, i) => s + i.total, 0);
+                // Breakdown + total from the net full-range RPC (dailyProducts); payment
+                // split from the sales list.
+                const items = dailyProducts;
+                const grandTotal = dailyProductsTotal;
                 const paid = todaySales.filter(s => s.payment_status === "paid").reduce((s, sale) => s + parseFloat(sale.total_amount), 0);
                 const credit = todaySales.filter(s => s.payment_status === "credit").reduce((s, sale) => s + parseFloat(sale.total_amount), 0);
                 const partial = todaySales.filter(s => s.payment_status === "partial").reduce((s, sale) => s + parseFloat(sale.balance_due || 0), 0);
@@ -973,7 +984,7 @@ export default function ReportsPage() {
 `;
                 msg += `─────────────────────
 `;
-                items.forEach(i => { msg += `${i.name} × ${i.qty} ${i.unit} ... ${i.total.toLocaleString()} F
+                items.forEach(i => { msg += `${i.name} × ${i.qty} ${i.unit} ... ${i.total.toLocaleString()} F${i.damaged > 0 ? ` (dont ${i.damaged.toLocaleString()} F abîmé)` : ""}
 `; });
                 msg += `─────────────────────
 `;
@@ -992,20 +1003,9 @@ export default function ReportsPage() {
               </button>
               <button onClick={() => {
                 if (!todaySales.length) return;
-                // Same product-aggregation as the WhatsApp share above —
-                // debt-payment rows skipped (no SKU to group by).
-                const itemMap = {};
-                todaySales.forEach(sale => {
-                  (sale.pa_sale_items || []).filter(i => !isDebtItem(i)).forEach(item => {
-                    const name = item.pa_products?.name || "?";
-                    const unit = unitLabel(item.pa_products?.unit || "pce");
-                    if (!itemMap[name]) itemMap[name] = { name, unit, qty: 0, total: 0 };
-                    itemMap[name].qty += item.quantity;
-                    itemMap[name].total += item.quantity * item.unit_price;
-                  });
-                });
-                const items = Object.values(itemMap);
-                const grandTotal = items.reduce((s, i) => s + i.total, 0);
+                // Breakdown + total from the net full-range RPC (same as the WhatsApp share).
+                const items = dailyProducts;
+                const grandTotal = dailyProductsTotal;
                 const paid = todaySales.filter(s => s.payment_status === "paid").reduce((s, sale) => s + parseFloat(sale.total_amount), 0);
                 const credit = todaySales.filter(s => s.payment_status === "credit").reduce((s, sale) => s + parseFloat(sale.total_amount), 0);
                 const today = new Date().toLocaleDateString("fr-FR");
@@ -1014,7 +1014,7 @@ export default function ReportsPage() {
                   <div class="center bold">VENTES DU JOUR</div>
                   <div class="center">${today}</div>
                   <div class="line"></div>
-                  ${items.map(i => `<div class="row"><span>${i.name} × ${i.qty} ${i.unit}</span><span>${i.total.toLocaleString()} F</span></div>`).join("")}
+                  ${items.map(i => `<div class="row"><span>${i.name} × ${i.qty} ${i.unit}${i.damaged > 0 ? ` (dont ${i.damaged.toLocaleString()} F abîmé)` : ""}</span><span>${i.total.toLocaleString()} F</span></div>`).join("")}
                   <div class="line"></div>
                   <div class="row bold"><span>TOTAL</span><span>${grandTotal.toLocaleString()} ${fmt.symbol}</span></div>
                   <div class="row"><span>✅ Encaissé</span><span>${paid.toLocaleString()} F</span></div>
@@ -1035,25 +1035,17 @@ export default function ReportsPage() {
               <div style={{ fontWeight: 600 }}>{lang === "en" ? "No sales today yet" : "Aucune vente aujourd'hui"}</div>
             </div>
           ) : (() => {
-            // Aggregate products sold today. Debt-payment rows skipped
-            // (no SKU). totalPaid/Credit/PartialDue come from sale-level
-            // fields so they stay correct even on debt-only days.
-            const itemMap = {};
+            // MP-DAILY-SALES-RPC-TOTAL: product breakdown + grand total = net full-range
+            // RPC (dailyProducts/dailyProductsTotal); payment split stays sale-level
+            // (from the sales list) so it's correct even on debt-only days.
             let totalPaid = 0, totalCredit = 0, totalPartialDue = 0;
             todaySales.forEach(sale => {
               if (sale.payment_status === "paid") totalPaid += parseFloat(sale.total_amount);
               if (sale.payment_status === "credit") totalCredit += parseFloat(sale.total_amount);
               if (sale.payment_status === "partial") totalPartialDue += parseFloat(sale.balance_due || 0);
-              (sale.pa_sale_items || []).filter(i => !isDebtItem(i)).forEach(item => {
-                const name = item.pa_products?.name || "?";
-                const unit = unitLabel(item.pa_products?.unit || "pce");
-                if (!itemMap[name]) itemMap[name] = { name, unit, qty: 0, total: 0 };
-                itemMap[name].qty += item.quantity;
-                itemMap[name].total += item.quantity * item.unit_price;
-              });
             });
-            const items = Object.values(itemMap).sort((a, b) => b.total - a.total);
-            const grandTotal = items.reduce((s, i) => s + i.total, 0);
+            const items = dailyProducts;
+            const grandTotal = dailyProductsTotal;
             return (
               <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "auto" }}>
                 <table className="table" style={{ minWidth: 500 }}>
@@ -1067,7 +1059,14 @@ export default function ReportsPage() {
                   <tbody>
                     {items.map((item, i) => (
                       <tr key={i}>
-                        <td style={{ fontWeight: 600 }}>{item.name}</td>
+                        <td style={{ fontWeight: 600 }}>
+                          {item.name}
+                          {item.damaged > 0 && (
+                            <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 600, color: "#fbbf24" }}>
+                              🔧 {lang === "en" ? `incl. ${item.damaged.toLocaleString()} damaged` : `dont ${item.damaged.toLocaleString()} abîmé`}
+                            </span>
+                          )}
+                        </td>
                         <td style={{ textAlign: "right", fontWeight: 600 }}>{item.qty} {item.unit}</td>
                         <td style={{ textAlign: "right", fontWeight: 700, color: "var(--brand-light)" }}>{item.total.toLocaleString()} F</td>
                       </tr>
