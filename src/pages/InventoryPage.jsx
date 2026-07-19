@@ -1,5 +1,6 @@
 // v20260509_0045 - slot + last_moved_by + global_search
 import BarcodeInput from "../components/common/BarcodeInput";
+import HelpButton from "../components/common/HelpButton";
 import CameraScanner from "../components/common/CameraScanner";
 import ProductSearchBox from "../components/common/ProductSearchBox";
 import ClearButton from "../components/common/ClearButton";
@@ -1171,7 +1172,10 @@ export default function InventoryPage() {
       {/* ── HEADER ── */}
       <div className="page-header">
         <div>
-          <h1 className="page-title">{lang === "en" ? "Inventory" : "Inventaire"}</h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h1 className="page-title" style={{ margin: 0 }}>{lang === "en" ? "Inventory" : "Inventaire"}</h1>
+            <HelpButton topic="receive-goods" title="Receive Goods / Réceptionner" />
+          </div>
           <div style={{ display: "flex", gap: 16, marginTop: 4, flexWrap: "wrap", alignItems: "center" }}>
             {alerts.length > 0 && <div style={{ fontSize: 12, color: "#fbbf24" }}>⚠️ {alerts.length} {lang === "en" ? "items below minimum" : "articles sous le minimum"}</div>}
             {isOwner && <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{lang === "en" ? "Stock value:" : "Valeur stock:"} <strong style={{ color: "var(--brand-light)" }}>{fmt(totalStockValue)}</strong></div>}

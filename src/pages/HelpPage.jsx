@@ -2,7 +2,8 @@
 // the user's chosen language (useLangStore, no separate toggle). Contact card
 // routes WhatsApp by the org's country; email + call always available. No AI, no
 // backend for the content (org country rides the cached ["org-settings"] query).
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { useLangStore } from "../store";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import { openWhatsApp } from "../utils/whatsapp";
@@ -59,6 +60,17 @@ export default function HelpPage() {
   const { lang } = useLangStore();
   const en = lang === "en";
   const [openId, setOpenId] = useState(null);
+
+  // MP-HELP per-screen "?": /help#<anchor> opens that topic directly. Anchor is a
+  // topic id (e.g. #transfer) or, as a fallback, a NAV section (opens the first
+  // topic in it). Re-runs when the hash changes so re-clicking the same "?" works.
+  const location = useLocation();
+  useEffect(() => {
+    const anchor = (location.hash || "").replace(/^#/, "").trim();
+    if (!anchor) return;
+    const match = HELP_TOPICS.find(t => t.id === anchor) || HELP_TOPICS.find(t => t.section === anchor);
+    if (match) { setOpenId(match.id); window.scrollTo(0, 0); }
+  }, [location.hash, location.key]);
 
   const { data: orgResp } = useOfflineCachedQuery({
     queryKey: ["org-settings"],
