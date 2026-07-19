@@ -148,6 +148,7 @@ export default function RestockPage() {
                 <ToBuyRow key={r.product_id} en={en}
                   name={en ? (r.name_en || r.name) : r.name} unit={r.unit}
                   current={r.current_qty} level={r.stock_level}
+                  daysOfCover={r.days_of_cover} sold7d={r.sold_7d}
                   checked={st.checked} qty={st.qty}
                   onCheck={v => setLine(r.product_id, { checked: v, qty: st.qty })}
                   onQty={v => setLine(r.product_id, { checked: st.checked, qty: v })}
@@ -222,7 +223,7 @@ export default function RestockPage() {
 }
 
 // One To Buy line — checkbox + name + current/level + editable qty-to-buy + unstock/remove.
-function ToBuyRow({ en, name, unit, current, level, checked, qty, onCheck, onQty, onUnstock, onRemove, manual }) {
+function ToBuyRow({ en, name, unit, current, level, daysOfCover, sold7d, checked, qty, onCheck, onQty, onUnstock, onRemove, manual }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: "10px 12px", flexWrap: "wrap" }}>
       <input type="checkbox" checked={checked} onChange={e => onCheck(e.target.checked)} style={{ width: 18, height: 18, flexShrink: 0 }} />
@@ -231,6 +232,15 @@ function ToBuyRow({ en, name, unit, current, level, checked, qty, onCheck, onQty
         {!manual && (
           <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 2 }}>
             {en ? "In stock" : "En stock"}: <b style={{ color: current <= level ? "#f87171" : "var(--text-primary)" }}>{current}</b> · {en ? "level" : "seuil"}: {level} {unitLabel(unit)}
+            {/* MP-RESTOCK-VELOCITY: how long current stock lasts at the last-7-day
+                selling rate — the basis for this list's ordering (fewest first). */}
+            {daysOfCover != null ? (
+              <span style={{ marginLeft: 6, fontWeight: 600, color: daysOfCover < 3 ? "#f87171" : daysOfCover < 7 ? "#fbbf24" : "var(--text-muted)" }}>
+                · ⏳ {daysOfCover}{en ? "d left" : "j"}{sold7d ? ` (${sold7d}/7${en ? "d" : "j"})` : ""}
+              </span>
+            ) : (
+              <span style={{ marginLeft: 6, color: "var(--text-muted)" }}>· {en ? "not selling lately" : "ne se vend pas"}</span>
+            )}
           </div>
         )}
       </div>
