@@ -1,4 +1,5 @@
 import BarcodeInput from "../components/common/BarcodeInput";
+import HelpButton from "../components/common/HelpButton";
 import ClearButton from "../components/common/ClearButton";
 import ProductSearchBox from "../components/common/ProductSearchBox";
 import { useState, useEffect, useRef } from "react";
@@ -654,7 +655,10 @@ export default function TransfersPage() {
   return (
     <div style={{ padding: 24, maxWidth: 1000, margin: "0 auto" }}>
       <div className="page-header">
-        <h1 className="page-title">{lang === "en" ? "Stock Transfers" : "Transferts de stock"}</h1>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <h1 className="page-title" style={{ margin: 0 }}>{lang === "en" ? "Stock Transfers" : "Transferts de stock"}</h1>
+          <HelpButton topic="transfer" />
+        </div>
         <RestrictedAction>
           <button className="btn btn-primary btn-lg" onClick={() => setMode("new")} style={{ gap: 8 }}>
             + {lang === "en" ? "Transfer Stock" : "Transferer du stock"}

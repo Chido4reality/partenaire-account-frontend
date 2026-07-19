@@ -1,5 +1,6 @@
 // v12 - receipt payment status fix
 import { useState, useEffect, useRef } from "react";
+import HelpButton from "../components/common/HelpButton";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
@@ -2811,7 +2812,10 @@ export default function POSPage() {
 
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
             <div>
-              <div style={{ fontWeight: 800, fontSize: 18, letterSpacing: "-0.3px" }}>{lang === "en" ? "New Sale" : "Nouvelle vente"}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ fontWeight: 800, fontSize: 18, letterSpacing: "-0.3px" }}>{lang === "en" ? "New Sale" : "Nouvelle vente"}</div>
+                <HelpButton topic="sale" />
+              </div>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
                 {cart.length > 0 ? `${cart.length} item${cart.length > 1 ? "s" : ""} in cart` : lang === "en" ? "Search or scan to add items" : "Cherchez ou scannez"}
               </div>

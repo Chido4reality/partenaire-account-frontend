@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import HelpButton from "../components/common/HelpButton";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useLangStore, useAuthStore, useSettingsStore } from "../store";
@@ -402,7 +403,10 @@ export default function ReportsPage() {
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
       <div className="page-header">
-        <h1 className="page-title">{lang === "en" ? "Reports" : "Rapports"}</h1>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <h1 className="page-title" style={{ margin: 0 }}>{lang === "en" ? "Reports" : "Rapports"}</h1>
+          <HelpButton topic="reports" />
+        </div>
         <div style={{ display: "flex", gap: 8 }}>
           {tab === "daily" && <button className="btn btn-secondary" onClick={exportCSV}>📊 {lang === "en" ? "Export CSV" : "Exporter CSV"}</button>}
           {tab === "sales" && <button className="btn btn-secondary" onClick={exportSalesCSV}>📊 {lang === "en" ? "Export CSV" : "Exporter CSV"}</button>}

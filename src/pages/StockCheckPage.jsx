@@ -11,6 +11,7 @@
 // plus an owner-only Delete for false flags — staff can never erase a flag on their
 // own movement (anti-fraud).
 import { useState, useEffect, useRef } from "react";
+import HelpButton from "../components/common/HelpButton";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "../utils/api";
@@ -261,7 +262,10 @@ export default function StockCheckPage() {
     <div style={{ padding: 16, maxWidth: 1000, margin: "0 auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
         <div>
-          <div style={{ fontWeight: 800, fontSize: 22 }}>{en ? "Stock Check" : "Vérification de stock"}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ fontWeight: 800, fontSize: 22 }}>{en ? "Stock Check" : "Vérification de stock"}</div>
+            <HelpButton topic="damaged-goods" />
+          </div>
           <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2, maxWidth: 620 }}>
             {en
               ? "Re-count products flagged at receive/transfer to catch miscounts early. This checks stock at movement time — it complements (doesn't replace) a full count."

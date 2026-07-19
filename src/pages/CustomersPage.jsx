@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import HelpButton from "../components/common/HelpButton";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
@@ -629,7 +630,10 @@ export default function CustomersPage() {
       <div style={{ flex: 1, padding: 24, overflowY: "auto", borderRight: selected ? "1px solid var(--border)" : "none" }}>
         <div className="page-header">
           <div>
-            <h1 className="page-title">{lang === "en" ? "Customers" : "Clients"}</h1>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <h1 className="page-title" style={{ margin: 0 }}>{lang === "en" ? "Customers" : "Clients"}</h1>
+              <HelpButton topic="customers-debt" />
+            </div>
             <div className="page-sub">{customers.length} {lang === "en" ? "customers" : "clients"}</div>
           </div>
           <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
