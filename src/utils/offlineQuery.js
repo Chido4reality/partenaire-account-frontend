@@ -69,9 +69,19 @@ export function useOfflineCachedQuery({ queryKey, queryFn, fallback, ...opts }) 
         // approaches the localStorage budget.
         cacheData(cacheKey, r);
         return r;
-      } catch {
+      } catch (err) {
+        // MP-INVENTORY-SEARCH-FALSE-EMPTY: a cache HIT still serves the cached
+        // payload (online or offline). But on a cache MISS we must NOT silently
+        // return `empty` when we're ONLINE — a transient GET failure on a novel
+        // key (e.g. a brand-new search term) would then render exactly like a
+        // genuine empty result ("No results" for a product that exists). Rethrow
+        // so react-query retries + surfaces isError, letting the consumer show a
+        // load-failure state instead of hiding real data. Offline (or cache hit)
+        // keeps the graceful fallback — that's the offline window the helper is for.
         const c = await getCachedData(cacheKey);
-        return c ?? empty;
+        if (c != null) return c;
+        if (typeof navigator !== "undefined" && navigator.onLine) throw err;
+        return empty;
       }
     },
     ...opts,
