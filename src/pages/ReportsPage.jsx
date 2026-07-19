@@ -158,8 +158,8 @@ export default function ReportsPage() {
   });
 
   const { data: topProductsData, isLoading: topLoading } = useOfflineCachedQuery({
-    queryKey: ["reports-top-products", from, to],
-    queryFn: () => api.get(`/reports/top-products?from=${from}&to=${to}`).then(r => r.data),
+    queryKey: ["reports-top-products", from, to, repLoc],
+    queryFn: () => api.get(`/reports/top-products?from=${from}&to=${to}${locQS}`).then(r => r.data),  // MP-LOCATION-SCOPE: respect the screen's location filter
     enabled: tab === "products"
   });
 
@@ -256,8 +256,8 @@ export default function ReportsPage() {
   };
 
   const { data: returnsData, isLoading: returnsLoading } = useOfflineCachedQuery({
-    queryKey: ["reports-returns", from, to],
-    queryFn: () => api.get(`/returns?from=${from}&to=${to}`).then(r => r.data),
+    queryKey: ["reports-returns", from, to, repLoc],
+    queryFn: () => api.get(`/returns?from=${from}&to=${to}${locQS}`).then(r => r.data),  // MP-LOCATION-SCOPE: respect the screen's location filter
     enabled: tab === "returns"
   });
   const returns = returnsData?.data || [];
@@ -274,13 +274,13 @@ export default function ReportsPage() {
   const totals = daily.reduce((acc, d) => ({
     gross_sales:       acc.gross_sales       + (+d.gross_sales || 0),
     cash_collected:    acc.cash_collected    + (+d.cash_collected || 0),
-    credit_sales:      acc.credit_sales      + (+d.credit_sales || 0),
+    credit_given:      acc.credit_given      + (+d.credit_given || 0),  // MP-CREDIT-CONVERGE: credit GIVEN today (flow), was broken credit_sales
     total_cost:        acc.total_cost        + (+d.total_cost || 0),
     gross_profit:      acc.gross_profit      + (+d.gross_profit || 0),
     total_expenditure: acc.total_expenditure + (+d.total_expenditure || 0),
     net_profit:        acc.net_profit        + (+d.net_profit || 0),
     sale_count:        acc.sale_count        + (+d.sale_count || 0),
-  }), { gross_sales:0, cash_collected:0, credit_sales:0, total_cost:0, gross_profit:0, total_expenditure:0, net_profit:0, sale_count:0 });
+  }), { gross_sales:0, cash_collected:0, credit_given:0, total_cost:0, gross_profit:0, total_expenditure:0, net_profit:0, sale_count:0 });
 
   const avgMargin = daily.length > 0
     ? (daily.reduce((s, d) => s + (+d.profit_margin_pct || 0), 0) / daily.length).toFixed(1)
@@ -321,7 +321,7 @@ export default function ReportsPage() {
         margin_pct: avgMargin,
         top_staff: ds.top_staff || null,
         net_cash: netCashReal,
-        credit: totals.credit_sales,
+        credit: totals.credit_given,   // MP-CREDIT-CONVERGE: "credit given today" flow
         things_to_check: Number(ds.things_to_check) || 0,
         has_daily: daily.length > 0,
       }, { lang, fmt, shopName: orgSettings.name, dateLabel });
@@ -338,8 +338,8 @@ export default function ReportsPage() {
       toast(lang === "en" ? "No report data in this range" : "Aucune donnée dans cette période");
       return;
     }
-    const headers = ["Date","Sales","Cash Collected","Credit Sales","Cost","Gross Profit","Margin%","Expenses","Net Profit","Transactions"];
-    const rows = daily.map(d => [d.sale_date, d.gross_sales, d.cash_collected, d.credit_sales, d.total_cost, d.gross_profit, d.profit_margin_pct, d.total_expenditure, d.net_profit, d.sale_count]);
+    const headers = ["Date","Sales","Cash Collected","Credit Given","Cost","Gross Profit","Margin%","Expenses","Net Profit","Transactions"];
+    const rows = daily.map(d => [d.sale_date, d.gross_sales, d.cash_collected, d.credit_given, d.total_cost, d.gross_profit, d.profit_margin_pct, d.total_expenditure, d.net_profit, d.sale_count]);
     const csv = [headers, ...rows].map(r => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -504,7 +504,7 @@ export default function ReportsPage() {
               { label: lang === "en" ? "Gross profit" : "Bénéfice brut", value: fmt(totals.gross_profit), sub: avgMargin + "% avg", color: "#34d399" },
               { label: lang === "en" ? "Expenses" : "Dépenses", value: fmt(totals.total_expenditure), color: "#f87171" },
               { label: lang === "en" ? "Net profit" : "Bénéfice net", value: fmt(totals.net_profit), color: totals.net_profit >= 0 ? "#34d399" : "#f87171" },
-              { label: lang === "en" ? "Credit sales" : "Ventes crédit", value: fmt(totals.credit_sales), color: "#fbbf24" },
+              { label: lang === "en" ? "Credit given today" : "Crédit accordé (jour)", value: fmt(totals.credit_given), color: "#fbbf24" },
             ].map(card => (
               <div key={card.label} className="stat-card">
                 <div className="stat-label">{card.label}</div>
