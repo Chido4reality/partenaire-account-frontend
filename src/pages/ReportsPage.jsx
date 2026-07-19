@@ -6,6 +6,7 @@ import { useLangStore, useAuthStore, useSettingsStore } from "../store";
 import api, { formatDate } from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
 import { openWhatsApp } from "../utils/whatsapp"; // MP-DAY-SUMMARY (Feature A)
+import { buildDaySummaryText } from "../utils/daySummaryText"; // MP-DAY-SUMMARY shared engine
 import { momoLabelShort } from "../utils/paymentLabels";
 import { unitLabel } from "../utils/units";
 import VoidReturnModal from "../components/common/VoidReturnModal";
@@ -307,24 +308,24 @@ export default function ReportsPage() {
   const buildDaySummary = async () => {
     setSummaryLoading(true);
     try {
+      // top-staff + things-to-check from the read-only endpoint; MONEY stays the
+      // EXACT on-screen totals/avgMargin/net_cash_real so the text can't disagree
+      // with what the owner is looking at. Shared builder = buildDaySummaryText.
       const resp = await api.get(`/reports/day-summary?from=${from}&to=${to}`).then(r => r.data).catch(() => null);
       const ds = (resp && resp.data) || {};
-      const top_staff = ds.top_staff || null;
-      const things = Number(ds.things_to_check) || 0;
-      const en = lang === "en";
       const dateLabel = from === to ? formatDate(from, lang) : `${formatDate(from, lang)} → ${formatDate(to, lang)}`;
       const netCashReal = daily.reduce((s, d) => s + (Number(d.net_cash_real) || 0), 0);
-      const L = [`📊 ${orgSettings.name || "Mon Partenaire"} — ${dateLabel}`];
-      if (totals.sale_count > 0) {
-        L.push(`${en ? "Sales" : "Ventes"}: ${fmt(totals.gross_sales)} (${totals.sale_count})`);
-        L.push(`${en ? "Margin" : "Marge"}: ${avgMargin}%`);
-      }
-      if (top_staff && top_staff.name) L.push(`${en ? "Top staff" : "Meilleur vendeur"}: ${top_staff.name} (${fmt(top_staff.total)})`);
-      if (daily.length > 0) L.push(`${en ? "Net cash" : "Encaisse nette"}: ${fmt(netCashReal)}`);
-      if (totals.credit_sales > 0) L.push(`${en ? "Credit given" : "Crédit accordé"}: ${fmt(totals.credit_sales)}`);
-      if (things > 0) L.push(`⚠️ ${things} ${en ? "to check" : "à vérifier"}`);
-      if (L.length === 1) L.push(en ? "No sales for this day." : "Aucune vente ce jour.");
-      setSummaryModal({ number: resolveWaNumber(orgSettings), text: L.join("\n") });
+      const text = buildDaySummaryText({
+        sales: totals.gross_sales,
+        sale_count: totals.sale_count,
+        margin_pct: avgMargin,
+        top_staff: ds.top_staff || null,
+        net_cash: netCashReal,
+        credit: totals.credit_sales,
+        things_to_check: Number(ds.things_to_check) || 0,
+        has_daily: daily.length > 0,
+      }, { lang, fmt, shopName: orgSettings.name, dateLabel });
+      setSummaryModal({ number: resolveWaNumber(orgSettings), text });
     } catch (e) {
       toast(lang === "en" ? "Couldn't build the summary" : "Impossible de générer le résumé");
     } finally { setSummaryLoading(false); }
@@ -456,7 +457,7 @@ export default function ReportsPage() {
         <div style={{ display: "flex", gap: 8 }}>
           {tab === "daily" && <button className="btn btn-secondary" onClick={exportCSV}>📊 {lang === "en" ? "Export CSV" : "Exporter CSV"}</button>}
           {/* MP-DAY-SUMMARY (Feature A): send the day's summary to WhatsApp. */}
-          {tab === "daily" && <button className="btn btn-secondary" onClick={buildDaySummary} disabled={summaryLoading} style={{ borderColor: "#25D366", color: "#25D366" }}>📲 {summaryLoading ? (lang === "en" ? "…" : "…") : (lang === "en" ? "Send summary" : "Envoyer le résumé")}</button>}
+          {tab === "daily" && isOwner && <button className="btn btn-secondary" onClick={buildDaySummary} disabled={summaryLoading} style={{ borderColor: "#25D366", color: "#25D366" }}>📲 {summaryLoading ? (lang === "en" ? "…" : "…") : (lang === "en" ? "Send summary" : "Envoyer le résumé")}</button>}
           {tab === "sales" && <button className="btn btn-secondary" onClick={exportSalesCSV}>📊 {lang === "en" ? "Export CSV" : "Exporter CSV"}</button>}
         </div>
       </div>
