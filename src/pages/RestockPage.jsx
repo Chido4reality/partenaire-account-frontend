@@ -149,6 +149,8 @@ export default function RestockPage() {
                   name={en ? (r.name_en || r.name) : r.name} unit={r.unit}
                   current={r.current_qty} level={r.stock_level}
                   daysOfCover={r.days_of_cover} sold7d={r.sold_7d}
+                  byLocation={r.by_location} transferHint={r.transfer_hint}
+                  suggestedQty={r.suggested_qty}
                   checked={st.checked} qty={st.qty}
                   onCheck={v => setLine(r.product_id, { checked: v, qty: st.qty })}
                   onQty={v => setLine(r.product_id, { checked: st.checked, qty: v })}
@@ -223,41 +225,78 @@ export default function RestockPage() {
 }
 
 // One To Buy line — checkbox + name + current/level + editable qty-to-buy + unstock/remove.
-function ToBuyRow({ en, name, unit, current, level, daysOfCover, sold7d, checked, qty, onCheck, onQty, onUnstock, onRemove, manual }) {
+// MP-RESTOCK-PER-SHOP (hybrid): the collapsed line stays ONE line per product (scannable);
+// tap 🏬 to expand each shop's qty/min/days + which are short + an ADVISORY transfer hint
+// (text only — expanding/reading it moves no stock).
+function ToBuyRow({ en, name, unit, current, level, daysOfCover, sold7d, byLocation, transferHint, suggestedQty, checked, qty, onCheck, onQty, onUnstock, onRemove, manual }) {
+  const [open, setOpen] = useState(false);
+  const shops = byLocation || [];
+  const multiShop = !manual && shops.length > 1;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: "10px 12px", flexWrap: "wrap" }}>
-      <input type="checkbox" checked={checked} onChange={e => onCheck(e.target.checked)} style={{ width: 18, height: 18, flexShrink: 0 }} />
-      <div style={{ flex: 1, minWidth: 140 }}>
-        <div style={{ fontWeight: 700, fontSize: 14 }}>{name}{manual && <span style={{ fontSize: 10, color: "var(--brand-light)", marginLeft: 6 }}>{en ? "manual" : "manuel"}</span>}</div>
-        {!manual && (
-          <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 2 }}>
-            {en ? "In stock" : "En stock"}: <b style={{ color: current <= level ? "#f87171" : "var(--text-primary)" }}>{current}</b> · {en ? "level" : "seuil"}: {level} {unitLabel(unit)}
-            {/* MP-RESTOCK-VELOCITY: how long current stock lasts at the last-7-day
-                selling rate — the basis for this list's ordering (fewest first). */}
-            {daysOfCover != null ? (
-              <span style={{ marginLeft: 6, fontWeight: 600, color: daysOfCover < 3 ? "#f87171" : daysOfCover < 7 ? "#fbbf24" : "var(--text-muted)" }}>
-                · ⏳ {daysOfCover}{en ? "d left" : "j"}{sold7d ? ` (${sold7d}/7${en ? "d" : "j"})` : ""}
+    <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: "10px 12px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <input type="checkbox" checked={checked} onChange={e => onCheck(e.target.checked)} style={{ width: 18, height: 18, flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 140 }}>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>{name}{manual && <span style={{ fontSize: 10, color: "var(--brand-light)", marginLeft: 6 }}>{en ? "manual" : "manuel"}</span>}</div>
+          {!manual && (
+            <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 2 }}>
+              {en ? "In stock" : "En stock"}: <b style={{ color: current <= level ? "#f87171" : "var(--text-primary)" }}>{current}</b> · {en ? "level" : "seuil"}: {level} {unitLabel(unit)}
+              {/* MP-RESTOCK-VELOCITY: how long current stock lasts at the last-7-day
+                  selling rate — the basis for this list's ordering (fewest first). */}
+              {daysOfCover != null ? (
+                <span style={{ marginLeft: 6, fontWeight: 600, color: daysOfCover < 3 ? "#f87171" : daysOfCover < 7 ? "#fbbf24" : "var(--text-muted)" }}>
+                  · ⏳ {daysOfCover}{en ? "d left" : "j"}{sold7d ? ` (${sold7d}/7${en ? "d" : "j"})` : ""}
+                </span>
+              ) : (
+                <span style={{ marginLeft: 6, color: "var(--text-muted)" }}>· {en ? "not selling lately" : "ne se vend pas"}</span>
+              )}
+              {multiShop && (
+                <button onClick={() => setOpen(o => !o)}
+                  style={{ marginLeft: 6, background: "none", border: "none", color: "var(--brand-light)", cursor: "pointer", fontSize: 11.5, fontWeight: 600, padding: 0 }}>
+                  · 🏬 {shops.length} {en ? "shops" : "boutiques"} {open ? "▾" : "▸"}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{en ? "Buy" : "Acheter"}</span>
+          <input type="number" min="0" value={qty} onChange={e => onQty(e.target.value === "" ? "" : Number(e.target.value))}
+            onFocus={e => e.target.select()} style={{ width: 68, textAlign: "right", padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)" }} />
+          {onUnstock && (
+            <button onClick={onUnstock} title={en ? "Unstock (hide from restock)" : "Ne plus suivre"}
+              style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, cursor: "pointer", color: "var(--text-muted)", fontSize: 12, padding: "5px 8px", whiteSpace: "nowrap" }}>
+              🚫 {en ? "Unstock" : "Ignorer"}
+            </button>
+          )}
+          {onRemove && (
+            <button onClick={onRemove} style={{ background: "none", border: "none", cursor: "pointer", color: "#f87171", fontSize: 16 }}>×</button>
+          )}
+        </div>
+      </div>
+      {/* MP-RESTOCK-PER-SHOP: expand — per-shop qty/min/days, short shops flagged,
+          plus the advisory transfer hint. No action here changes stock. */}
+      {multiShop && open && (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px dashed var(--border)" }}>
+          {shops.map(l => (
+            <div key={l.location_id} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "3px 0", fontSize: 11.5, color: l.short ? "#f87171" : "var(--text-secondary)" }}>
+              <span>{l.short ? "⚠ " : ""}{l.location_name}</span>
+              <span>
+                {l.current_qty}/{l.min_qty}{unitLabel(unit) ? " " + unitLabel(unit) : ""}
+                {l.days_of_cover != null ? ` · ${l.days_of_cover}${en ? "d" : "j"}` : ""}
+                {l.short ? (en ? " — short" : " — bas") : ""}
               </span>
-            ) : (
-              <span style={{ marginLeft: 6, color: "var(--text-muted)" }}>· {en ? "not selling lately" : "ne se vend pas"}</span>
-            )}
-          </div>
-        )}
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{en ? "Buy" : "Acheter"}</span>
-        <input type="number" min="0" value={qty} onChange={e => onQty(e.target.value === "" ? "" : Number(e.target.value))}
-          onFocus={e => e.target.select()} style={{ width: 68, textAlign: "right", padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)" }} />
-        {onUnstock && (
-          <button onClick={onUnstock} title={en ? "Unstock (hide from restock)" : "Ne plus suivre"}
-            style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, cursor: "pointer", color: "var(--text-muted)", fontSize: 12, padding: "5px 8px", whiteSpace: "nowrap" }}>
-            🚫 {en ? "Unstock" : "Ignorer"}
-          </button>
-        )}
-        {onRemove && (
-          <button onClick={onRemove} style={{ background: "none", border: "none", cursor: "pointer", color: "#f87171", fontSize: 16 }}>×</button>
-        )}
-      </div>
+            </div>
+          ))}
+          {transferHint && (
+            <div style={{ marginTop: 6, padding: "6px 8px", background: "rgba(59,130,246,0.10)", borderRadius: 8, fontSize: 11.5, color: "var(--text-secondary)" }}>
+              💡 {en
+                ? `${transferHint.from_location_name} has ${transferHint.available} → transfer, or buy ${suggestedQty}`
+                : `${transferHint.from_location_name} a ${transferHint.available} → transférer, ou acheter ${suggestedQty}`}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
