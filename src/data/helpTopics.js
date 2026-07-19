@@ -292,6 +292,40 @@ Yes. There's a "Voids" panel in Operations and a dashboard tile: how many, what 
     },
   },
   {
+    id: "stock-check", section: "stock_check", icon: "🔍",
+    title: { fr: "Stock Check (vérification de stock)", en: "Stock Check" },
+    body: {
+      fr: `### À quoi sert Stock Check ?
+À attraper les erreurs de comptage au moment où la marchandise bouge. On vérifie le stock à la réception ou au transfert — en complément d'un comptage complet, pas à sa place.
+
+### « Surveiller un produit »
+Le patron marque un produit à surveiller (bouton **« Surveiller un produit »**, en haut à droite). Ensuite, **chaque fois que ce produit est réceptionné ou transféré**, l'application crée automatiquement une tâche de comptage en attente. Quelqu'un doit alors le compter physiquement. Utile pour les produits qui bougent lentement, ou ceux dont on veut être sûr.
+
+### Compter : « attendu » vs « en stock maintenant »
+Quand on compte, l'écran montre **deux nombres, clairement étiquetés** : le stock **« attendu »** (figé au moment où la tâche a été créée) et le stock **« en ce moment »** (en direct). C'est volontaire : entre la création de la tâche et le comptage, une vente a pu changer le stock réel. Les deux nombres sont affichés honnêtement pour qu'on sache exactement ce qu'on compare, puis on saisit la quantité réellement comptée.
+
+### Les onglets
+- **À compter** — les tâches en attente
+- **Écarts (Mismatches)** — les différences constatées (trace permanente, jamais supprimée)
+- **Résolus** — terminés
+- **Endommagés** — la pile des marchandises abîmées (voir « Vendre des marchandises endommagées »)`,
+      en: `### What is Stock Check for?
+To catch miscounts at the moment goods move. It checks stock at receive or transfer time — complementing a full count, not replacing it.
+
+### "Watch a product"
+The boss marks a product to watch (the **"Watch a product"** button, top right). After that, **every time that product is received or transferred**, the app automatically creates a pending count task. Someone must physically count it. Useful for slow-moving products, or anything you want to be sure about.
+
+### Counting: "expected" vs "in stock now"
+When you count, the screen shows **two numbers, clearly labelled**: the **"expected"** stock (frozen when the task was created) and the **"in stock now"** live number. This is deliberate — between the task being created and the count, a sale may have changed the real stock. Both are shown honestly so you know exactly what you're comparing, then you enter the quantity you actually counted.
+
+### The tabs
+- **To count** — pending tasks
+- **Mismatches** — differences found (permanent record, never deleted)
+- **Resolved** — done
+- **Damaged** — the damaged-goods pile (see "Sell damaged goods")`,
+    },
+  },
+  {
     id: "damaged-goods", section: "stock_check", icon: "🛠️",
     title: { fr: "Vendre des marchandises endommagées", en: "Sell damaged goods" },
     body: {
