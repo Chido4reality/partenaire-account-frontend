@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import { useLangStore, useAuthStore, useSettingsStore } from "../store";
 import api, { formatDate } from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
+import { openWhatsApp } from "../utils/whatsapp"; // MP-DAY-SUMMARY (Feature A)
 import { momoLabelShort } from "../utils/paymentLabels";
 import { unitLabel } from "../utils/units";
 import VoidReturnModal from "../components/common/VoidReturnModal";
@@ -284,6 +285,51 @@ export default function ReportsPage() {
     ? (daily.reduce((s, d) => s + (+d.profit_margin_pct || 0), 0) / daily.length).toFixed(1)
     : 0;
 
+  // ── MP-DAY-SUMMARY (Feature A): "Send today's summary" to WhatsApp ──────────
+  // Money lines reuse the EXACT on-screen totals/avgMargin (can't disagree with the
+  // app); top-staff + things-to-check come from the read-only /reports/day-summary.
+  const [summaryModal, setSummaryModal] = useState(null);      // { number, text } | null
+  const [summaryLoading, setSummaryLoading] = useState(false);
+
+  // Default recipient: whatsapp_number (fallback phone's first number if slash-
+  // separated), digits only, PREPEND the org country code if missing (237 CM / 234 NG)
+  // — same country logic as the Help contact card. Boss can edit before sending.
+  const resolveWaNumber = (org) => {
+    let raw = String(org?.whatsapp_number || "").trim();
+    if (!raw) raw = String(org?.phone || "").split(/[/,;]/)[0].trim();
+    let digits = raw.replace(/\D/g, "");
+    if (!digits) return "";
+    const cc = String(org?.country || "").toLowerCase().includes("niger") ? "234" : "237";
+    if (!digits.startsWith(cc)) digits = cc + digits;
+    return digits;
+  };
+
+  const buildDaySummary = async () => {
+    setSummaryLoading(true);
+    try {
+      const resp = await api.get(`/reports/day-summary?from=${from}&to=${to}`).then(r => r.data).catch(() => null);
+      const ds = (resp && resp.data) || {};
+      const top_staff = ds.top_staff || null;
+      const things = Number(ds.things_to_check) || 0;
+      const en = lang === "en";
+      const dateLabel = from === to ? formatDate(from, lang) : `${formatDate(from, lang)} → ${formatDate(to, lang)}`;
+      const netCashReal = daily.reduce((s, d) => s + (Number(d.net_cash_real) || 0), 0);
+      const L = [`📊 ${orgSettings.name || "Mon Partenaire"} — ${dateLabel}`];
+      if (totals.sale_count > 0) {
+        L.push(`${en ? "Sales" : "Ventes"}: ${fmt(totals.gross_sales)} (${totals.sale_count})`);
+        L.push(`${en ? "Margin" : "Marge"}: ${avgMargin}%`);
+      }
+      if (top_staff && top_staff.name) L.push(`${en ? "Top staff" : "Meilleur vendeur"}: ${top_staff.name} (${fmt(top_staff.total)})`);
+      if (daily.length > 0) L.push(`${en ? "Net cash" : "Encaisse nette"}: ${fmt(netCashReal)}`);
+      if (totals.credit_sales > 0) L.push(`${en ? "Credit given" : "Crédit accordé"}: ${fmt(totals.credit_sales)}`);
+      if (things > 0) L.push(`⚠️ ${things} ${en ? "to check" : "à vérifier"}`);
+      if (L.length === 1) L.push(en ? "No sales for this day." : "Aucune vente ce jour.");
+      setSummaryModal({ number: resolveWaNumber(orgSettings), text: L.join("\n") });
+    } catch (e) {
+      toast(lang === "en" ? "Couldn't build the summary" : "Impossible de générer le résumé");
+    } finally { setSummaryLoading(false); }
+  };
+
   const totalDebt = debts.reduce((s, c) => s + (+c.total_debt || 0), 0);
 
   const exportCSV = () => {
@@ -409,6 +455,8 @@ export default function ReportsPage() {
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {tab === "daily" && <button className="btn btn-secondary" onClick={exportCSV}>📊 {lang === "en" ? "Export CSV" : "Exporter CSV"}</button>}
+          {/* MP-DAY-SUMMARY (Feature A): send the day's summary to WhatsApp. */}
+          {tab === "daily" && <button className="btn btn-secondary" onClick={buildDaySummary} disabled={summaryLoading} style={{ borderColor: "#25D366", color: "#25D366" }}>📲 {summaryLoading ? (lang === "en" ? "…" : "…") : (lang === "en" ? "Send summary" : "Envoyer le résumé")}</button>}
           {tab === "sales" && <button className="btn btn-secondary" onClick={exportSalesCSV}>📊 {lang === "en" ? "Export CSV" : "Exporter CSV"}</button>}
         </div>
       </div>
@@ -424,6 +472,27 @@ export default function ReportsPage() {
       </div>
 
       {/* ── DAILY SUMMARY ── */}
+      {/* MP-DAY-SUMMARY (Feature A): editable-recipient + preview before sending. */}
+      {summaryModal && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 320, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 22, maxWidth: 440, width: "100%" }}>
+            <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 10 }}>📲 {lang === "en" ? "Send today's summary" : "Envoyer le résumé du jour"}</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>{lang === "en" ? "WhatsApp number (with country code)" : "Numéro WhatsApp (avec indicatif)"}</div>
+            <input className="input" inputMode="numeric" value={summaryModal.number}
+              onChange={e => setSummaryModal(m => ({ ...m, number: e.target.value.replace(/\D/g, "") }))}
+              placeholder="2376XXXXXXXX" style={{ width: "100%", marginBottom: 12 }} />
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>{lang === "en" ? "Preview" : "Aperçu"}</div>
+            <pre style={{ whiteSpace: "pre-wrap", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: 12, fontSize: 12.5, fontFamily: "inherit", margin: "0 0 14px", maxHeight: 220, overflowY: "auto" }}>{summaryModal.text}</pre>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button className="btn btn-secondary" onClick={() => setSummaryModal(null)}>{lang === "en" ? "Cancel" : "Annuler"}</button>
+              <button className="btn btn-primary" disabled={!summaryModal.number}
+                onClick={(e) => { openWhatsApp(e, summaryModal.number, summaryModal.text); setSummaryModal(null); }}
+                style={{ background: "#25D366", border: "none" }}>💬 {lang === "en" ? "Send" : "Envoyer"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {tab === "daily" && (
         <div>
           <DateFilter />
