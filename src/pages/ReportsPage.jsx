@@ -146,7 +146,10 @@ export default function ReportsPage() {
     enabled: tab === "sales"
   });
 
-  const todayStr = new Date().toISOString().split("T")[0];
+  // MP-TIMEZONE-CONVERGE: org-LOCAL today (WAT/UTC+1 — both markets), the same day
+  // boundary the backend money windows use, so a sale near midnight lands on the same
+  // "today" as Reports rather than the device's UTC date.
+  const todayStr = new Date(Date.now() + 60 * 60000).toISOString().slice(0, 10);
 
   const { data: todaySalesData, isLoading: todayLoading } = useOfflineCachedQuery({
     queryKey: ["reports-today-sales", repLoc],
