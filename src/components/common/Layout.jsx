@@ -84,7 +84,7 @@ const NAV = [
   // only granted by pro/pro_plus (sections:'*'); lite/trial floors omit it → Pro/Pro
   // Plus-only. owner + manager (cashiers excluded). Server also gates (requirePro +
   // requireRole). NOTE: also registered in NavDrawer.jsx SECTIONS (mobile) + App.jsx.
-  { to: "/restock",      en: "Restock", fr: "Réapprovisionner", icon: "🛒", roles: ["owner","manager"], section: "restock" },
+  { to: "/restock",      en: "Restock", fr: "Réapprovisionner", icon: "🛒", roles: ["owner","manager"], section: "restock", badge: "restock" },
   // MP-CASHIER-ROLE-GATING: cashier records petty-cash expenses
   // (boss errands, drawer outflows, personal). Backend filters
   // GET /expenditures by recorded_by=req.user.id for cashier role
@@ -807,6 +807,20 @@ export default function Layout() {
     + (stockCheckSummary?.data?.damaged || 0)
     + (stockCheckSummary?.data?.stale || 0);
 
+  // MP-RESTOCK — "to buy" count badge. Lightweight count-only endpoint (no velocity
+  // RPC), 60s focus-aware poll like the other sidebar counts. Owner/manager + Pro
+  // only (same gate as the Restock nav entry), so it never 403s for other callers.
+  const { data: restockSummary } = useQuery({
+    queryKey: ["restock-to-buy-count"],
+    queryFn: () => api.get("/restock/to-buy-count").then(r => r.data),
+    refetchInterval: 60000,
+    enabled: hasSection(effectivePlan, "restock") &&
+      (role === "owner" || role === "manager"),
+    retry: 1,
+    onError: () => {}
+  });
+  const restockPending = restockSummary?.count || 0;
+
   // MP-DOZIE-SELLER-MIGRATION Phase 2 — "Online Dozie" attention badge. Polls the
   // resolved seller's needs-attention count (pending orders now; messages/disputes
   // later) on the same 30s cadence as the online-cart badge. Owner/manager only
@@ -847,6 +861,7 @@ export default function Layout() {
     : item.badge === "dozie_disputes" ? (dozieAttn_.disputes || 0)
     : item.badge === "dozie_attention" ? (dozieNotif_.total || 0)
     : item.badge === "stock_check"    ? stockCheckPending
+    : item.badge === "restock"        ? restockPending
     : 0;
 
   // STOCK-UX-PASS Part A — cross-account location leak fix.
@@ -1317,6 +1332,7 @@ export default function Layout() {
           approvalsPending={approvalsPending}
           myRequestsApproved={myRequestsApproved}
           stockCheckPending={stockCheckPending}
+          restockPending={restockPending}
           onLogout={handleLogout}
         />
         <motion.div
