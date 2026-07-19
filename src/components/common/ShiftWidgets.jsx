@@ -718,7 +718,9 @@ function SendReportPromptModal({ locationId, onClose }) {
   const phoneOk    = phoneDigits.length >= 8;
   const phoneWithCode = phoneDigits.startsWith("237") ? phoneDigits : "237" + phoneDigits;
 
-  const today    = new Date().toISOString().slice(0, 10);
+  // MP-TIMEZONE-CONVERGE: org-LOCAL today (WAT/UTC+1) so the shift-close daily report
+  // fetches the same day the money windows use — not the device's UTC date near midnight.
+  const today    = new Date(Date.now() + 60 * 60000).toISOString().slice(0, 10);
   const isSaturday = new Date(today + "T00:00:00").getUTCDay() === 6;
 
   // Daily ledger (only enabled once we know auto-send is on + phone OK).
