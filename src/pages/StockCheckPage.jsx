@@ -264,7 +264,7 @@ export default function StockCheckPage() {
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div style={{ fontWeight: 800, fontSize: 22 }}>{en ? "Stock Check" : "Vérification de stock"}</div>
-            <HelpButton topic="damaged-goods" />
+            <HelpButton topic="stock-check" />
           </div>
           <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2, maxWidth: 620 }}>
             {en
