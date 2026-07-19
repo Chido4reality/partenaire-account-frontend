@@ -661,20 +661,13 @@ export default function ReportsPage() {
                                       ↩ {lang === "en" ? "Return" : "Retour"} ({(sale.returns || []).length})
                                     </span>
                                   )}
-                                  {/* MP-SOLD-DATE-NOTE-VISIBILITY (Peter, 2026-07-15): v1's note
-                                      existed but "does not appear anywhere" in this report — the
-                                      badge below is the fix. Title carries the full attributed
-                                      note text so a hover/long-press answers Peter's "open a
-                                      receipt after two weeks" test without expanding the row. */}
-                                  {/* MP-SOLD-DATE-NOTE (Peter, 2026-07-18): show the sold-date VALUE
-                                      on the line (a badge alone failed "even a blind boss can tell").
-                                      Full note (value + who + record stamp) is on the receipt via the
-                                      🖨️ button; the hover title carries it too. */}
+                                  {/* MP-SOLD-DATE-NOTE (Peter, 2026-07-19): collapsed line shows the
+                                      sold-date VALUE inline — no hover needed. The FULL note (recorder
+                                      + record stamp) is a PERMANENT line on the EXPANDED card below;
+                                      a hover title is invisible on touch and 100% of users are on
+                                      phones, so NO title attribute here — nothing relies on hover. */}
                                   {sale.sold_date_note && (
-                                    <span title={lang === "en"
-                                        ? `NOTE — Sold Date: ${fmtSoldDateBadge(sale.sold_date_note)}${sale.sold_date_note_by_name ? ` · recorded by ${sale.sold_date_note_by_name}` : ""}${sale.sold_date_note_at ? ` · recorded ${new Date(sale.sold_date_note_at).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}`
-                                        : `NOTE — Date de vente : ${fmtSoldDateBadge(sale.sold_date_note)}${sale.sold_date_note_by_name ? ` · saisi par ${sale.sold_date_note_by_name}` : ""}${sale.sold_date_note_at ? ` · enregistré ${new Date(sale.sold_date_note_at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}`}
-                                      style={{ fontSize: 11, padding: "1px 8px", borderRadius: 10, background: "rgba(251,197,3,0.15)", color: "var(--brand-light)", fontWeight: 700 }}>
+                                    <span style={{ fontSize: 11, padding: "1px 8px", borderRadius: 10, background: "rgba(251,197,3,0.15)", color: "var(--brand-light)", fontWeight: 700 }}>
                                       📝 {lang === "en" ? "Sold" : "Vendu"}: {fmtSoldDateBadge(sale.sold_date_note)}
                                     </span>
                                   )}
@@ -783,6 +776,18 @@ export default function ReportsPage() {
                             {/* Expanded items */}
                             {isExpanded && (
                               <div style={{ borderTop: "1px solid var(--border)", background: "var(--bg-elevated)" }}>
+                                {/* MP-SOLD-DATE-NOTE (Peter, 2026-07-19): PERMANENT full note on the
+                                    expanded card — always readable on a phone, no hover/tooltip. */}
+                                {sale.sold_date_note && (
+                                  <div style={{ padding: "8px 20px", borderBottom: "1px solid var(--border)", background: "rgba(251,197,3,0.10)", fontSize: 12, color: "var(--brand-light)", lineHeight: 1.5 }}>
+                                    📝 {lang === "en" ? "Sold Date: " : "Date de vente : "}
+                                    <strong>{fmtSoldDateBadge(sale.sold_date_note)}</strong>
+                                    {sale.sold_date_note_by_name ? (lang === "en" ? ` · recorded by ${sale.sold_date_note_by_name}` : ` · saisi par ${sale.sold_date_note_by_name}`) : ""}
+                                    {sale.sold_date_note_at ? (lang === "en"
+                                      ? ` · recorded ${new Date(sale.sold_date_note_at).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`
+                                      : ` · enregistré ${new Date(sale.sold_date_note_at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`) : ""}
+                                  </div>
+                                )}
                                 {items.map((item, idx) => (
                                   <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 20px", borderBottom: idx < items.length - 1 ? "1px solid var(--border)" : "none" }}>
                                     <div style={{ flex: 1 }}>
