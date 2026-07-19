@@ -234,7 +234,7 @@ export default function InventoryPage() {
   }, [showAddProduct, showReceive, showAdjust, showEditProduct, showRapidEntry, showImport]);
 
   // ── DATA QUERIES ────────────────────────────────────────────────────────────
-  const { data: stockData, isLoading: stockLoading } = useOfflineCachedQuery({
+  const { data: stockData, isLoading: stockLoading, isError: stockError } = useOfflineCachedQuery({
     queryKey: ["stock", locStockFilter, search],
     queryFn: () => {
       // MP-STOCK-LOCATION-FILTER: drive by the in-tab Location dropdown
@@ -1361,6 +1361,15 @@ export default function InventoryPage() {
         // /Actions columns on a ~360px phone.
         <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "auto" }}>
           {stockLoading ? <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>Loading...</div>
+          : (stockError && filtered.length === 0) ? (
+            // MP-INVENTORY-SEARCH-FALSE-EMPTY: a fetch failure must NOT read as
+            // "No results" — an existing product would look missing. Show a retry.
+            <div className="empty-state">
+              <div style={{ fontSize: 24, marginBottom: 12, opacity: 0.4 }}>⚠️</div>
+              <div style={{ fontWeight: 600 }}>{lang === "en" ? "Couldn't load stock — check your connection and try again." : "Impossible de charger le stock — vérifiez votre connexion et réessayez."}</div>
+              <button className="btn btn-secondary" style={{ marginTop: 12 }} onClick={() => qc.invalidateQueries({ queryKey: ["stock"] })}>{lang === "en" ? "Retry" : "Réessayer"}</button>
+            </div>
+          )
           : filtered.length === 0 ? (
             <div className="empty-state">
               <div style={{ fontSize: 24, marginBottom: 12, opacity: 0.4 }}>📦</div>
