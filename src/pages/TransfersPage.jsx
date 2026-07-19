@@ -839,46 +839,70 @@ export default function TransfersPage() {
   );
 }
 
-// MP-TRANSFER-RECEIVE-CONFIRM (Phase 2): per-line "what actually arrived". Inputs
-// pre-fill to the sent qty; only lines that differ create a variance server-side
-// (the stock credited at the destination is exactly what's entered here).
+// MP-TRANSFER-RECEIVE-CONFIRM (Phase 2) + MP-TRANSFER-RECEIPT-DAMAGE: per-line "what
+// actually arrived" — GOOD units (credited to sellable stock) and DAMAGED units
+// (recorded to the damaged pile at receipt, sellable-as-damaged). Good is pre-filled
+// to the sent qty; damaged defaults 0. Good + damaged can't exceed sent; anything still
+// missing (sent − good − damaged) is a genuine transit variance flagged for the owner.
 function AdjustReceiptModal({ transfer, lang, busy, onCancel, onSubmit }) {
   const en = lang === "en";
   const items = transfer.pa_transfer_items || [];
   const [recv, setRecv] = useState(() => Object.fromEntries(items.map(it => [it.id, String(it.quantity)])));
-  const setOne = (id, v) => setRecv(p => ({ ...p, [id]: v }));
-  const anyDiff = items.some(it => Math.max(0, Number(recv[it.id]) || 0) !== Number(it.quantity));
-  const submit = () => onSubmit(items.map(it => ({ item_id: it.id, received_quantity: Math.max(0, Number(recv[it.id]) || 0) })));
+  const [dmg, setDmg]   = useState(() => Object.fromEntries(items.map(it => [it.id, "0"])));
+  const setOne    = (id, v) => setRecv(p => ({ ...p, [id]: v }));
+  const setDmgOne = (id, v) => setDmg(p => ({ ...p, [id]: v }));
+  const good = (it) => Math.max(0, Number(recv[it.id]) || 0);
+  const dam  = (it) => Math.max(0, Number(dmg[it.id]) || 0);
+  const overLine   = (it) => good(it) + dam(it) > Number(it.quantity);
+  const anyOver    = items.some(overLine);
+  const anyDamaged = items.some(it => dam(it) > 0);
+  const anyLost    = items.some(it => (Number(it.quantity) - good(it) - dam(it)) !== 0);
+  const submit = () => {
+    if (anyOver) return;
+    onSubmit(items.map(it => ({ item_id: it.id, received_quantity: good(it), damaged_quantity: dam(it) })));
+  };
   return (
     <div className="modal-overlay" onClick={() => !busy && onCancel()}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
         <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>{en ? "What actually arrived?" : "Ce qui est réellement arrivé ?"}</div>
         <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
-          {en ? "Enter the received quantity per line. Any difference is flagged for the owner as a stock variance — the stock added is exactly what you enter here."
-              : "Entrez la quantité reçue par ligne. Tout écart est signalé au patron — le stock ajouté est exactement ce que vous saisissez ici."}
+          {en ? "Per line: how many GOOD units, and how many arrived DAMAGED. Good units go on sale; damaged go to the damaged pile. Anything still missing is flagged as a variance."
+              : "Par ligne : combien d'unités BONNES et combien sont arrivées ABÎMÉES. Les bonnes sont mises en vente ; les abîmées vont au stock abîmé. Tout manquant est signalé comme écart."}
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 340, overflowY: "auto" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 360, overflowY: "auto" }}>
           {items.map(it => {
             const sent = Number(it.quantity);
-            const diff = Math.max(0, Number(recv[it.id]) || 0) - sent;
+            const lost = sent - good(it) - dam(it);
+            const over = overLine(it);
             return (
-              <div key={it.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "8px 10px", background: "var(--bg-elevated)", borderRadius: 8 }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13.5 }}>{it.pa_products?.name || "—"}</div>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                    {en ? "Sent" : "Envoyé"}: {sent}{diff !== 0 ? ` · ${en ? "diff" : "écart"} ${diff > 0 ? "+" : ""}${diff}` : ""}
-                  </div>
+              <div key={it.id} style={{ padding: "8px 10px", background: "var(--bg-elevated)", borderRadius: 8, border: over ? "1px solid #f87171" : "1px solid transparent" }}>
+                <div style={{ fontWeight: 600, fontSize: 13.5 }}>{it.pa_products?.name || "—"}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6, flexWrap: "wrap" }}>
+                  <label style={{ fontSize: 11, color: "var(--text-muted)" }}>{en ? "Good" : "Bon"}
+                    <input type="number" min="0" value={recv[it.id]} onChange={e => setOne(it.id, e.target.value)}
+                      style={{ width: 62, marginLeft: 6, textAlign: "right", padding: "5px 7px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)" }} />
+                  </label>
+                  <label style={{ fontSize: 11, color: "var(--text-muted)" }}>{en ? "Damaged" : "Abîmé"}
+                    <input type="number" min="0" value={dmg[it.id]} onChange={e => setDmgOne(it.id, e.target.value)}
+                      style={{ width: 62, marginLeft: 6, textAlign: "right", padding: "5px 7px", borderRadius: 8, border: `1px solid ${dam(it) > 0 ? "#fbbf24" : "var(--border)"}`, background: "var(--bg-card)", color: "var(--text-primary)" }} />
+                  </label>
+                  <span style={{ fontSize: 11, color: over ? "#f87171" : "var(--text-muted)" }}>
+                    {en ? "Sent" : "Envoyé"}: {sent}
+                    {over ? ` · ${en ? "exceeds sent!" : "dépasse l'envoi !"}`
+                          : (lost !== 0 ? ` · ${lost > 0 ? (en ? "missing " : "manquant ") + lost : "+" + (-lost)}` : "")}
+                  </span>
                 </div>
-                <input type="number" min="0" value={recv[it.id]} onChange={e => setOne(it.id, e.target.value)}
-                  style={{ width: 80, textAlign: "right", padding: "6px 8px", borderRadius: 8, border: `1px solid ${diff !== 0 ? "#fbbf24" : "var(--border)"}`, background: "var(--bg-card)", color: "var(--text-primary)" }} />
               </div>
             );
           })}
         </div>
+        {anyOver && <div style={{ fontSize: 11.5, color: "#f87171", marginTop: 8 }}>{en ? "Good + damaged can't exceed what was sent." : "Bon + abîmé ne peut pas dépasser l'envoi."}</div>}
         <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
           <button className="btn btn-secondary" style={{ flex: 1 }} disabled={busy} onClick={onCancel}>{en ? "Cancel" : "Annuler"}</button>
-          <button className="btn btn-primary" style={{ flex: 2 }} disabled={busy} onClick={submit}>
-            {busy ? "…" : anyDiff ? (en ? "Confirm with variance" : "Confirmer avec écart") : (en ? "Confirm receipt" : "Confirmer")}
+          <button className="btn btn-primary" style={{ flex: 2 }} disabled={busy || anyOver} onClick={submit}>
+            {busy ? "…" : anyDamaged ? (en ? "Confirm (damage noted)" : "Confirmer (abîmé noté)")
+                        : anyLost ? (en ? "Confirm with variance" : "Confirmer avec écart")
+                        : (en ? "Confirm receipt" : "Confirmer")}
           </button>
         </div>
       </div>
