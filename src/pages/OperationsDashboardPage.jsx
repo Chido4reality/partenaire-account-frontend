@@ -195,6 +195,7 @@ export default function OperationsDashboardPage() {
   const methodDisplay = (bucket, raw) =>
     bucket === "cash" ? (en ? "Cash" : "Espèces")
     : bucket === "momo" ? momoLabel(fmt.currency, en)
+    : bucket === "bank" ? (en ? "Bank" : "Virement")   // MP-BANK-TOKEN
     : (raw || "—");
 
   // ── Chart data ───────────────────────────────────────────────
