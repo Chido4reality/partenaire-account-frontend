@@ -487,13 +487,32 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
     varColor = "#f87171";
   }
 
+  // MP-DRAWER-CLARITY: sale-only non-cash split + shift credit, and the "Total sales
+  // = cash in drawer + not-cash" tie. SALE payments only (payment_type==='sale') — a
+  // non-cash DEBT collection is money-in but not a sale, so it belongs to the day-level
+  // Debt-collected breakdown, keeping this block one consistent sales story.
+  const _saleNonCash = (cat?.mobile_money_received?.transactions || []).filter(tx => tx.payment_type === "sale");
+  const momoSale = _saleNonCash.filter(tx => tx.payment_method === "mobile_money").reduce((s, tx) => s + (Number(tx.amount) || 0), 0);
+  const bankSale = _saleNonCash.filter(tx => tx.payment_method === "bank" || tx.payment_method === "bank_transfer").reduce((s, tx) => s + (Number(tx.amount) || 0), 0);
+  const creditGivenShift = Number(cat?.credit_given_shift || 0);
+  const cashSalesInDrawer = Number(cat?.sales_cash?.total || 0);
+  const nonCashSaleTotal = momoSale + bankSale;
+  const notCashTotal = nonCashSaleTotal + creditGivenShift;
+  const totalSalesShift = cashSalesInDrawer + notCashTotal;
+
   return (
     <ModalShell onClose={() => { setError(null); setConfirming(false); onClose(); }} busy={m.isPending}>
       <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>
         🔒 {lang === "fr" ? "Fermer le poste de caisse" : "Close cash shift"}
       </div>
-      <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
+      <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>
         {lang === "fr" ? "Comptez l'argent dans la caisse et entrez le total." : "Count the cash and enter the total."}
+      </div>
+      {/* MP-DRAWER-CLARITY (a): the drawer is the physical cash box only. */}
+      <div style={{ background: "rgba(251,197,3,0.08)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px", marginBottom: 16, fontSize: 11.5, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+        {lang === "fr"
+          ? "Ceci est la caisse physique. Seul l'argent liquide compte ici — Mobile Money, virement et crédit sont de vraies ventes mais aucun espèce ne change de main ; ils sont montrés ci-dessous, pas dans la caisse."
+          : "This is the physical cash box. Only cash counts here — MoMo, bank and credit are real sales but no cash changes hands; they're shown below, not in the drawer."}
       </div>
 
       <div style={{ background: "var(--bg-card)", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
@@ -599,22 +618,24 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
           <strong style={{ fontSize: 18, color: "var(--brand-light)" }}>{fmt(expected)}</strong>
         </div>
 
-        {/* MP-SHIFT-CLOSE-DEBT-VOID-MOMO: money received that is NOT in the
-            physical cash drawer — shown so the owner can see it was collected
-            (e.g. a mobile-money debt payment) without it distorting the count. */}
-        {cat && cat.mobile_money_received && cat.mobile_money_received.total > 0 && (
+        {/* MP-DRAWER-CLARITY (b): "Not in the drawer" — SALE-only non-cash + credit,
+            with a tie line naming the gap. Non-cash DEBT collections are covered by
+            the day-level Debt-collected breakdown, not here (one consistent sales story). */}
+        {cat && (momoSale > 0 || bankSale > 0 || creditGivenShift > 0) && (
           <>
             <div style={{ height: 1, background: "var(--border)", margin: "10px 0 6px" }} />
-            <CategoryRow
-              label={`${momoLabel(fmt.currency, !fr)} ${fr ? "reçu (hors caisse)" : "received (not in cash drawer)"}`}
-              total={cat.mobile_money_received.total} count={cat.mobile_money_received.count} sign="">
-              {cat.mobile_money_received.transactions.map(tx => (
-                <div key={tx.payment_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
-                  <span>{tx.sale_number || "—"} {tx.customer_name ? `· ${tx.customer_name}` : ""}</span>
-                  <span style={{ fontFamily: "monospace" }}>{fmt(tx.amount)}</span>
-                </div>
-              ))}
-            </CategoryRow>
+            <div style={{ fontWeight: 700, fontSize: 12, color: "var(--text-secondary)", marginBottom: 4 }}>
+              {fr ? "Pas dans la caisse (ventes non-espèces)" : "Not in the drawer (non-cash sales)"}
+            </div>
+            <Row label={`${momoLabel(fmt.currency, !fr)} ${fr ? "reçu" : "received"}`} value={fmt(momoSale)} />
+            <Row label={fr ? "Virement reçu" : "Bank received"} value={fmt(bankSale)} />
+            <Row label={fr ? "Crédit accordé (ce poste)" : "Credit given (this shift)"} value={fmt(creditGivenShift)} />
+            <div style={{ height: 1, background: "var(--border)", margin: "6px 0" }} />
+            <div style={{ fontSize: 11.5, color: "var(--text-muted)", lineHeight: 1.5 }}>
+              {fr
+                ? `Total ventes ${fmt(totalSalesShift)} = ${fmt(cashSalesInDrawer)} en caisse + ${fmt(notCashTotal)} hors caisse.`
+                : `Total sales ${fmt(totalSalesShift)} = ${fmt(cashSalesInDrawer)} in drawer + ${fmt(notCashTotal)} not cash.`}
+            </div>
           </>
         )}
         {/* Payments taken then voided — transparency only, ZERO drawer effect. */}
