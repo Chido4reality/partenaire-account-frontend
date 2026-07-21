@@ -141,16 +141,25 @@ export default function OperationsDashboardPage() {
   // two date inputs; the chip presets reset to known windows.
   const [from, setFrom] = useState(daysAgo(6));
   const [to, setTo] = useState(toIso(new Date()));
+  const [locId, setLocId] = useState(""); // MP-OPS-LOCATION: "" = All locations (default)
   const [dismissed, setDismissed] = useState(loadDismissed);
   const dismiss = (id) => setDismissed(prev => { const n = new Set(prev); n.add(id); saveDismissed(n); return n; });
   const undoDismiss = (id) => setDismissed(prev => { const n = new Set(prev); n.delete(id); saveDismissed(n); return n; });
 
   // ── Queries ──────────────────────────────────────────────────
   const overview = useOfflineCachedQuery({
-    queryKey: ["dash-overview", from, to],
-    queryFn:  () => api.get(`/dashboard/overview?from=${from}&to=${to}`).then(r => r.data?.data || null),
+    // MP-OPS-LOCATION: scoreboard scoped by location; "" (All) omits the param so the
+    // response is byte-identical to before.
+    queryKey: ["dash-overview", from, to, locId],
+    queryFn:  () => api.get(`/dashboard/overview?from=${from}&to=${to}${locId ? `&location_id=${locId}` : ""}`).then(r => r.data?.data || null),
     staleTime: 30000,
   });
+  const locationsQ = useOfflineCachedQuery({
+    queryKey: ["locations"],
+    queryFn: () => api.get("/locations").then(r => r.data),
+    staleTime: 300000,
+  });
+  const opsLocations = locationsQ.data?.data || [];
   const anomalies = useOfflineCachedQuery({
     queryKey: ["dash-anomalies", from, to],
     queryFn:  () => api.get(`/dashboard/anomalies?from=${from}&to=${to}`).then(r => r.data?.data || { anomalies: [] }),
@@ -254,6 +263,15 @@ export default function OperationsDashboardPage() {
       {/* ── Range picker (shared <DateRangeFilter>) ───────────── */}
       <DateRangeFilter from={from} to={to} onChange={({ from, to }) => { setFrom(from); setTo(to); }}
         showTodayChip style={{ marginBottom: 18 }} />
+
+      {/* MP-OPS-LOCATION: per-location scoreboard scope (default All locations). */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 18 }}>
+        <label className="label" style={{ margin: 0 }}>{en ? "Location" : "Site"}</label>
+        <select className="input" value={locId} onChange={e => setLocId(e.target.value)} style={{ width: 200 }}>
+          <option value="">{en ? "All locations" : "Tous les sites"}</option>
+          {opsLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+        </select>
+      </div>
 
       {/* ── SECTION 1: Multi-day overview ──────────────────── */}
       <Card
