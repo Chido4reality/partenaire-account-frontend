@@ -182,6 +182,7 @@ export default function OperationsDashboardPage() {
   const openDebtDetail = async (c, method) => {
     const label = method === "cash" ? (en ? "Debt (Cash)" : "Dette (Espèces)")
       : method === "momo" ? `${en ? "Debt (" : "Dette ("}${momoLabelShort(fmt.currency, en)})`
+      : method === "bank" ? (en ? "Debt (Bank)" : "Dette (Virement)")
       : (en ? "Debt collected" : "Dette encaissée");
     setDebtDetail({ cashier_name: c.cashier_name, label, loading: true, items: [], total: 0 });
     try {
@@ -321,6 +322,7 @@ export default function OperationsDashboardPage() {
                   <th style={thStyleRight}>{en ? "Debt collected" : "Dette encaissée"}</th>
                   <th style={thStyleRight}>{en ? "Debt (Cash)" : "Dette (Espèces)"}</th>
                   <th style={thStyleRight}>{(en ? "Debt (" : "Dette (") + momoLabelShort(fmt.currency, en) + ")"}</th>
+                  <th style={thStyleRight}>{en ? "Debt (Bank)" : "Dette (Virement)"}</th>
                   <th style={thStyleRight}>{en ? "Total income" : "Revenu total"}</th>
                   <th style={thStyleRight}>{en ? "Voided ⚠" : "Annulés ⚠"}</th>
                   <th style={thStyleRight}>{en ? "Refunds" : "Remb."}</th>
@@ -365,6 +367,13 @@ export default function OperationsDashboardPage() {
                       {Number(c.debt_collected_momo) > 0
                         ? <span onClick={() => openDebtDetail(c, "momo")} title={en ? "See which customers paid" : "Voir quels clients ont payé"}
                             style={{ cursor: "pointer", textDecoration: "underline" }}>{fmt(c.debt_collected_momo)}</span>
+                        : <span style={{ color: "var(--text-muted)" }}>—</span>}
+                    </td>
+                    {/* MP-BANK-TOKEN: Debt (Bank) — consumes debt_collected_bank (chat adds it to the RPC). */}
+                    <td style={tdStyleRight}>
+                      {Number(c.debt_collected_bank) > 0
+                        ? <span onClick={() => openDebtDetail(c, "bank")} title={en ? "See which customers paid" : "Voir quels clients ont payé"}
+                            style={{ cursor: "pointer", textDecoration: "underline" }}>{fmt(c.debt_collected_bank)}</span>
                         : <span style={{ color: "var(--text-muted)" }}>—</span>}
                     </td>
                     {/* Total income = all money RECEIVED (sales cash+MoMo + debt cash+MoMo),
