@@ -46,6 +46,7 @@ import api from "../../utils/api";
 import { useCurrency } from "../../utils/useCurrency";
 import { buildLedgerTextV2 as buildLedgerText, buildWeeklyText } from "../../utils/reportText";
 import { momoLabel } from "../../utils/paymentLabels";
+import CreditGivenModal from "./CreditGivenModal"; // MP-CREDIT-DRILLDOWN
 
 // ── ModalShell — same overlay pattern as the rest of the app ─────
 // zIndex 3500: must clear Vaul's mobile bottom-sheet portal (z:1701)
@@ -402,6 +403,7 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
   const [notes, setNotes]           = useState("");
   const [confirming, setConfirming] = useState(false);
   const [error, setError]           = useState(null);
+  const [creditScope, setCreditScope] = useState(null); // MP-CREDIT-DRILLDOWN
 
   const expected = Number(shift?.expected_drawer || 0);
 
@@ -629,7 +631,17 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
             </div>
             <Row label={`${momoLabel(fmt.currency, !fr)} ${fr ? "reçu" : "received"}`} value={fmt(momoSale)} />
             <Row label={fr ? "Virement reçu" : "Bank received"} value={fmt(bankSale)} />
-            <Row label={fr ? "Crédit accordé (ce poste)" : "Credit given (this shift)"} value={fmt(creditGivenShift)} />
+            {/* MP-CREDIT-DRILLDOWN: tap → the credit sales rung this shift (who + items). */}
+            <Row label={fr ? "Crédit accordé (ce poste)" : "Credit given (this shift)"}
+              value={creditGivenShift > 0
+                ? <span onClick={() => setCreditScope({
+                      label: fr ? "Crédit accordé (ce poste)" : "Credit given (this shift)",
+                      subtitle: shift?.cashier_name || undefined,
+                      shift_id: shift.shift_id,
+                    })}
+                    style={{ cursor: "pointer", textDecoration: "underline" }}
+                    title={fr ? "Voir les ventes à crédit" : "See the credit sales"}>{fmt(creditGivenShift)}</span>
+                : fmt(creditGivenShift)} />
             <div style={{ height: 1, background: "var(--border)", margin: "6px 0" }} />
             <div style={{ fontSize: 11.5, color: "var(--text-muted)", lineHeight: 1.5 }}>
               {fr
@@ -638,6 +650,8 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
             </div>
           </>
         )}
+        {/* MP-CREDIT-DRILLDOWN: the credit sales rung this shift, behind "Credit given". */}
+        <CreditGivenModal scope={creditScope} onClose={() => setCreditScope(null)} />
         {/* Payments taken then voided — transparency only, ZERO drawer effect. */}
         {cat && cat.voided_collections && cat.voided_collections.total > 0 && (
           <CategoryRow

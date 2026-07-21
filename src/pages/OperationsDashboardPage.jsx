@@ -26,6 +26,7 @@ import { useCurrency } from "../utils/useCurrency";
 import { openWhatsApp } from "../utils/whatsapp";
 import { opsAnomalyGuidance, opsSeverityCue } from "../utils/anomalyExplain";
 import { momoLabel, momoLabelShort } from "../utils/paymentLabels";
+import CreditGivenModal from "../components/common/CreditGivenModal"; // MP-CREDIT-DRILLDOWN
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ComposedChart, Cell,
@@ -202,6 +203,16 @@ export default function OperationsDashboardPage() {
       setDebtDetail(prev => prev ? { ...prev, loading: false, items: [], total: 0, error: true } : null);
     }
   };
+  // ── MP-CREDIT-DRILLDOWN: tap a "Credit given" figure → the individual credit
+  // sales behind it (customer + cashier + amount + time), for this cashier over the
+  // same range/location. Fraud/red-flag review; a row expands to the items sold.
+  const [creditScope, setCreditScope] = useState(null);
+  const openCreditDetail = (c) => setCreditScope({
+    label:    en ? "Credit given" : "Crédit accordé",
+    subtitle: `${c.cashier_name} · ${from}${from !== to ? ` → ${to}` : ""}`,
+    from, to, cashier_id: c.cashier_id, location_id: locId || undefined,
+  });
+
   const methodDisplay = (bucket, raw) =>
     bucket === "cash" ? (en ? "Cash" : "Espèces")
     : bucket === "momo" ? momoLabel(fmt.currency, en)
@@ -363,7 +374,13 @@ export default function OperationsDashboardPage() {
                     <td style={tdStyleRight}>{fmt(c.total_sales)}</td>
                     <td style={tdStyleRight}><strong>{fmt(c.cash_valid != null ? c.cash_valid : c.cash_collected)}</strong></td>
                     <td style={tdStyleRight}>{fmt(c.momo_collected || 0)}</td>
-                    <td style={tdStyleRight}>{fmt(c.credit_given || 0)}</td>
+                    {/* MP-CREDIT-DRILLDOWN: tap Credit given → who received it + who gave it + items. */}
+                    <td style={tdStyleRight}>
+                      {Number(c.credit_given) > 0
+                        ? <span onClick={() => openCreditDetail(c)} title={en ? "See the credit sales behind this" : "Voir les ventes à crédit derrière ce total"}
+                            style={{ color: "#fbbf24", fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}>{fmt(c.credit_given)}</span>
+                        : <span style={{ color: "var(--text-muted)" }}>—</span>}
+                    </td>
                     {/* MP-SCOREBOARD-DEBT-COLLECTED: debt collected this period (all
                         methods, payment date, non-voided) — distinct from Cash (valid),
                         which is sales cash. Makes a debt-collecting day visible. */}
@@ -876,6 +893,9 @@ export default function OperationsDashboardPage() {
           {en ? "→ Single-day Daily Report" : "→ Rapport quotidien (un jour)"}
         </Link>
       </div>
+
+      {/* MP-CREDIT-DRILLDOWN: the credit sales behind a cashier's "Credit given". */}
+      <CreditGivenModal scope={creditScope} onClose={() => setCreditScope(null)} />
 
       {/* MP-SCOREBOARD-DEBT-TAPTHROUGH: which customers a cashier's debt total came from. */}
       {debtDetail && (

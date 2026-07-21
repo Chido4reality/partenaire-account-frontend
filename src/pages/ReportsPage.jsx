@@ -14,6 +14,7 @@ import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 import { buildLedgerTextV2 as buildLedgerTextUtil, buildWeeklyText as buildWeeklyTextUtil,
   refundKindLabel, shortRetRef } from "../utils/reportText";
 import CollapsibleBlock from "../components/common/CollapsibleBlock";
+import CreditGivenModal from "../components/common/CreditGivenModal"; // MP-CREDIT-DRILLDOWN
 
 // MP-DEBT-LINE-FULL-VISIBILITY: pa_sale_items can now hold debt-payment
 // rows (line_type='debt_payment', product_id=NULL). Helpers to keep
@@ -62,6 +63,7 @@ export default function ReportsPage() {
   // daily-sales / sales-detail aggregations. "" = All locations (default,
   // same as Dashboard) so the two pages show the same canonical number.
   const [repLoc, setRepLoc] = useState("");
+  const [creditScope, setCreditScope] = useState(null); // MP-CREDIT-DRILLDOWN
   const { selectedLocation } = useSettingsStore();
   const [ledgerDate, setLedgerDate] = useState(new Date().toISOString().split("T")[0]);
   const [ledgerLoc, setLedgerLoc] = useState(selectedLocation?.id || "all");
@@ -529,10 +531,19 @@ export default function ReportsPage() {
               { label: lang === "en" ? "Gross profit" : "Bénéfice brut", value: fmt(totals.gross_profit), sub: avgMargin + "% avg", color: "#34d399" },
               { label: lang === "en" ? "Expenses" : "Dépenses", value: fmt(totals.total_expenditure), color: "#f87171" },
               { label: lang === "en" ? "Net profit" : "Bénéfice net", value: fmt(totals.net_profit), color: totals.net_profit >= 0 ? "#34d399" : "#f87171" },
-              { label: lang === "en" ? "Credit given today" : "Crédit accordé (jour)", value: fmt(totals.credit_given), color: "#fbbf24" },
+              { label: lang === "en" ? "Credit given today" : "Crédit accordé (jour)", value: fmt(totals.credit_given), color: "#fbbf24",
+                // MP-CREDIT-DRILLDOWN: tap → the credit sales behind the total, for this range/location.
+                onClick: Number(totals.credit_given) > 0 ? () => setCreditScope({
+                  label: lang === "en" ? "Credit given" : "Crédit accordé",
+                  subtitle: `${from}${from !== to ? ` → ${to}` : ""}`,
+                  from, to, location_id: repLoc || undefined,
+                }) : undefined },
             ].map(card => (
-              <div key={card.label} className="stat-card">
-                <div className="stat-label">{card.label}</div>
+              <div key={card.label} className="stat-card"
+                onClick={card.onClick}
+                style={card.onClick ? { cursor: "pointer" } : undefined}
+                title={card.onClick ? (lang === "en" ? "Tap to review the credit sales" : "Touchez pour examiner les ventes à crédit") : undefined}>
+                <div className="stat-label">{card.label}{card.onClick ? " 🔍" : ""}</div>
                 <div className="stat-value" style={{ color: card.color, fontSize: 18 }}>{card.value}</div>
                 {card.sub && <div className="stat-sub">{card.sub}</div>}
               </div>
@@ -1841,6 +1852,9 @@ export default function ReportsPage() {
           onClose={() => setReceiptSale(null)}
         />
       )}
+
+      {/* MP-CREDIT-DRILLDOWN: the credit sales behind "Credit given today". */}
+      <CreditGivenModal scope={creditScope} onClose={() => setCreditScope(null)} />
     </div>
   );
 }
