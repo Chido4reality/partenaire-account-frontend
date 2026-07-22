@@ -40,7 +40,6 @@ export default function GoodsBufferPage() {
   const user = useAuthStore(s => s.user);
   const org = useAuthStore(s => s.org);
   const selectedLocation = useSettingsStore(s => s.selectedLocation);
-  const meName = user?.full_name || user?.name || null;
 
   const [locFilter, setLocFilter] = useState(""); // "" = all locations
 
@@ -222,7 +221,10 @@ export default function GoodsBufferPage() {
       ) : (
         <div className="card" style={{ padding: 0 }}>
           {pending.map((r, i) => {
-            const isMine = meName && r.created_by_name && r.created_by_name === meName;
+            // Own-line gate by created_by ID (shared branch logins mean full_names
+            // collide/blank — name-match would offer Edit/Delete on someone else's line).
+            // created_by_name stays for DISPLAY only. RPC NOT_YOUR_BUFFER_LINE is the real guard.
+            const isMine = !!(r.created_by && user?.id && r.created_by === user.id);
             const editable = isMine && num(r.qty_released) === 0 && r.status === "pending";
             const releasable = canRelease && (r.status === "pending" || r.status === "partial") && num(r.qty_remaining) > 0;
             return (
