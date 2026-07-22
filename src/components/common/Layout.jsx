@@ -85,6 +85,7 @@ const NAV = [
   // Plus-only. owner + manager (cashiers excluded). Server also gates (requirePro +
   // requireRole). NOTE: also registered in NavDrawer.jsx SECTIONS (mobile) + App.jsx.
   { to: "/restock",      en: "Restock", fr: "Réapprovisionner", icon: "🛒", roles: ["owner","manager"], section: "restock", badge: "restock" },
+  { to: "/goods-buffer", en: "Goods Buffer", fr: "Zone tampon", icon: "📦", roles: ["owner","manager","cashier","warehouse","accountant"], section: "sales", badge: "goodsBuffer" }, // MP-GOODS-BUFFER
   // MP-CASHIER-ROLE-GATING: cashier records petty-cash expenses
   // (boss errands, drawer outflows, personal). Backend filters
   // GET /expenditures by recorded_by=req.user.id for cashier role
@@ -821,6 +822,18 @@ export default function Layout() {
   });
   const restockPending = restockSummary?.count || 0;
 
+  // MP-GOODS-BUFFER — "arrived, not yet in stock" badge. Counts pending+partial buffer
+  // lines org-wide. Open to EVERY staff role (same as the nav entry). Shares the
+  // ["goods-buffer-count"] key the page invalidates on create/release/close.
+  const { data: bufferCount } = useQuery({
+    queryKey: ["goods-buffer-count"],
+    queryFn: () => api.get("/goods-buffer/pending").then(r => (Array.isArray(r.data?.data) ? r.data.data.length : 0)),
+    refetchInterval: 60000,
+    retry: 1,
+    onError: () => {}
+  });
+  const goodsBufferPending = bufferCount || 0;
+
   // MP-DOZIE-SELLER-MIGRATION Phase 2 — "Online Dozie" attention badge. Polls the
   // resolved seller's needs-attention count (pending orders now; messages/disputes
   // later) on the same 30s cadence as the online-cart badge. Owner/manager only
@@ -862,6 +875,7 @@ export default function Layout() {
     : item.badge === "dozie_attention" ? (dozieNotif_.total || 0)
     : item.badge === "stock_check"    ? stockCheckPending
     : item.badge === "restock"        ? restockPending
+    : item.badge === "goodsBuffer"    ? goodsBufferPending
     : 0;
 
   // STOCK-UX-PASS Part A — cross-account location leak fix.

@@ -996,6 +996,9 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
         // role default. Not defaulted to anything here — an untouched control
         // must save exactly what the server already has (null stays null).
         filter_policy: perms.filter_policy === "" ? null : (perms.filter_policy ?? null),
+        // MP-GOODS-BUFFER: boolean — may this staffer PRICE + RELEASE buffer goods into
+        // inventory? Default OFF.
+        buffer_access: !!perms.buffer_access,
       };
       PERM_ACTIONS.forEach((a) => {
         const v = perms[a.key];
@@ -1527,6 +1530,29 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                     {en
                       ? "Even allowed actions will ask for your approval when the amount is this high or more."
                       : "Même les actions autorisées demanderont votre approbation à partir de ce montant."}
+                  </div>
+                </div>
+                {/* MP-GOODS-BUFFER: may this staffer PRICE + RELEASE buffer goods into
+                    inventory? Default OFF — pricing/release is owner-level trust. */}
+                <div style={{ marginTop: 4, marginBottom: 8, padding: "9px 11px", background: "var(--bg-elevated)", borderRadius: 8 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 5 }}>
+                    {en ? "Goods Buffer — price & release into stock" : "Zone tampon — fixer prix & ajouter au stock"}
+                  </div>
+                  <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>
+                    {[
+                      { val: false, en: "No", fr: "Non", bg: "rgba(239,68,68,0.9)", fg: "#fff" },
+                      { val: true,  en: "Allowed", fr: "Autorisé", bg: "rgba(16,185,129,0.9)", fg: "#06281d" },
+                    ].map((o) => (
+                      <button key={String(o.val)} onClick={() => setPerms(p => ({ ...(p || {}), buffer_access: o.val }))}
+                        style={{ flex: 1, padding: "7px 4px", fontSize: 12.5, fontWeight: 700, border: "none", cursor: "pointer",
+                          background: !!perms.buffer_access === o.val ? o.bg : "var(--bg-elevated)", color: !!perms.buffer_access === o.val ? o.fg : "var(--text-muted)" }}>
+                        {en ? o.en : o.fr}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                    {en ? "Everyone can pre-register arrivals. Only this lets them set prices and add goods to inventory."
+                        : "Tout le monde peut pré-enregistrer les arrivées. Ceci autorise en plus à fixer les prix et ajouter au stock."}
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
