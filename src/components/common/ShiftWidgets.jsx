@@ -44,6 +44,7 @@ import toast from "react-hot-toast";
 import { useAuthStore, useLangStore, useSettingsStore } from "../../store";
 import api from "../../utils/api";
 import { useCurrency } from "../../utils/useCurrency";
+import { SHOP_TZ } from "../../utils/shopTime"; // MP-REPORT-TZ
 import { buildLedgerTextV2 as buildLedgerText, buildWeeklyText } from "../../utils/reportText";
 import { momoLabel } from "../../utils/paymentLabels";
 import CreditGivenModal from "./CreditGivenModal"; // MP-CREDIT-DRILLDOWN
@@ -903,7 +904,7 @@ export function ActiveShiftIndicator() {
   }
 
   const isOpen   = !!(data && data.shift_id);
-  const opened   = isOpen && new Date(data.opened_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  const opened   = isOpen && new Date(data.opened_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ });
   const expected = Number(data?.expected_drawer || 0);
   // MP-OPEN-SHIFT-LOCATION-CLARITY: show WHICH location the
   // shift is at so cashiers know which till they're committing

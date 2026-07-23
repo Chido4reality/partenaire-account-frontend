@@ -2421,7 +2421,11 @@ export default function POSPage() {
                     {!selectedLocation ? (lang === "en" ? "Select location first" : "Choisir emplacement") : hasDebt ? (lang === "en" ? "Collect Payment →" : "Encaisser →") : (lang === "en" ? "Proceed to Payment →" : "Paiement →")}
                   </button>
                 </RestrictedAction>
-                {!hasDebt && (
+                {/* MP-HOLD-DEBT-GATE: hide Hold only for a DEBT-ONLY cart (nothing holdable) —
+                    a mixed cart's product lines are holdable and the hold mutation already
+                    strips the debt sentinels. Was `!hasDebt`, which hid Hold on any mixed
+                    debt cart (Paul's reported symptom). */}
+                {!isDebtOnlyCart && (
                   <button disabled={cart.length === 0 || !selectedLocation} onClick={() => { setHoldLabel(""); setHoldNotes(""); setShowHold(true); }}
                     style={{ height: 40, fontSize: 13, fontWeight: 700, borderRadius: 12, cursor: cart.length === 0 ? "not-allowed" : "pointer", background: "transparent", border: "1.5px solid rgba(245,158,11,0.5)", color: cart.length === 0 ? "var(--text-muted)" : "#fbbf24", opacity: cart.length === 0 || !selectedLocation ? 0.5 : 1 }}>
                     ⏸ {lang === "en" ? "Hold Sale" : "Mettre en attente"}

@@ -23,6 +23,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useLangStore } from "../store";
 import api from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
+import { SHOP_TZ } from "../utils/shopTime"; // MP-REPORT-TZ
 import { openWhatsApp } from "../utils/whatsapp";
 import { opsAnomalyGuidance, opsSeverityCue } from "../utils/anomalyExplain";
 import { momoLabel, momoLabelShort } from "../utils/paymentLabels";
@@ -684,8 +685,8 @@ export default function OperationsDashboardPage() {
                       <td style={{ ...tdStyleRight, color: "#f87171", fontWeight: 700 }}>{fmt(v.amount)}</td>
                       <td style={tdStyle}>{v.method === "mobile_money" ? momoLabelShort(fmt.currency, en) : v.method === "cash" ? (en ? "Cash" : "Espèces") : (v.method || "—")}</td>
                       <td style={{ ...tdStyle, fontSize: 11, color: "var(--text-muted)" }}>
-                        {v.paid_at ? new Date(v.paid_at).toLocaleTimeString(en ? "en-GB" : "fr-FR", { hour: "2-digit", minute: "2-digit" }) : "—"}
-                        {v.voided_at ? " → " + new Date(v.voided_at).toLocaleTimeString(en ? "en-GB" : "fr-FR", { hour: "2-digit", minute: "2-digit" }) : ""}
+                        {v.paid_at ? new Date(v.paid_at).toLocaleTimeString(en ? "en-GB" : "fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ }) : "—"}
+                        {v.voided_at ? " → " + new Date(v.voided_at).toLocaleTimeString(en ? "en-GB" : "fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ }) : ""}
                       </td>
                       <td style={{ ...tdStyle, fontSize: 12 }}>{v.void_reason || "—"}</td>
                     </tr>

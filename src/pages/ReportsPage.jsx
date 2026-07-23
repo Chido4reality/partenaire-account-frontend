@@ -15,6 +15,7 @@ import { buildLedgerTextV2 as buildLedgerTextUtil, buildWeeklyText as buildWeekl
   refundKindLabel, shortRetRef } from "../utils/reportText";
 import CollapsibleBlock from "../components/common/CollapsibleBlock";
 import CreditGivenModal from "../components/common/CreditGivenModal"; // MP-CREDIT-DRILLDOWN
+import { SHOP_TZ } from "../utils/shopTime"; // MP-REPORT-TZ: render times in the shop's zone, not the viewer's
 
 // MP-DEBT-LINE-FULL-VISIBILITY: pa_sale_items can now hold debt-payment
 // rows (line_type='debt_payment', product_id=NULL). Helpers to keep
@@ -890,8 +891,8 @@ export default function ReportsPage() {
                                     <strong>{fmtSoldDateBadge(sale.sold_date_note)}</strong>
                                     {sale.sold_date_note_by_name ? (lang === "en" ? ` · recorded by ${sale.sold_date_note_by_name}` : ` · saisi par ${sale.sold_date_note_by_name}`) : ""}
                                     {sale.sold_date_note_at ? (lang === "en"
-                                      ? ` · recorded ${new Date(sale.sold_date_note_at).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`
-                                      : ` · enregistré ${new Date(sale.sold_date_note_at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`) : ""}
+                                      ? ` · recorded ${new Date(sale.sold_date_note_at).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })}`
+                                      : ` · enregistré ${new Date(sale.sold_date_note_at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })}`) : ""}
                                   </div>
                                 )}
                                 {items.map((item, idx) => (
@@ -941,7 +942,7 @@ export default function ReportsPage() {
                                           <span style={{ color: "#f87171" }}>-{fmt(r.refund_amount)} {r.refund_method && r.refund_method !== "none" ? `(${r.refund_method})` : ""}</span>
                                         </div>
                                         <div style={{ color: "var(--text-muted)", marginTop: 2 }}>
-                                          {new Date(r.created_at).toLocaleString()} · {r.processed_by_name || "—"}
+                                          {new Date(r.created_at).toLocaleString(lang === "en" ? "en-GB" : "fr-FR", { timeZone: SHOP_TZ })} · {r.processed_by_name || "—"}
                                           {r.reason ? ` · ${lang === "en" ? "reason" : "raison"}: ${r.reason}` : ""}
                                           {r.return_type ? ` · ${r.return_type}` : ""}
                                         </div>
@@ -1317,7 +1318,7 @@ export default function ReportsPage() {
             const bl = ledger.blocks || null;
             const tfmt = (iso) => iso
               ? new Date(iso).toLocaleTimeString(lang === "en" ? "en-GB" : "fr-FR",
-                  { hour: "2-digit", minute: "2-digit" })
+                  { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })
               : "—";
             const BlockRow = ({ label, value, indent, bold, color, sign }) => (
               <div style={{ display: "flex", justifyContent: "space-between",
@@ -1654,7 +1655,7 @@ export default function ReportsPage() {
                         const isVoid   = r.kind === "void_refund";
                         const tStr = r.created_at
                           ? new Date(r.created_at).toLocaleTimeString(lang === "en" ? "en-GB" : "fr-FR",
-                              { hour: "2-digit", minute: "2-digit" })
+                              { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })
                           : "";
                         return (
                           <div key={i} style={{ padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
@@ -1757,9 +1758,9 @@ export default function ReportsPage() {
                     the count yet — anything we'd show would be made up). */}
                 {dr ? (() => {
                   const drIsClosed = dr.status === "closed" && dr.actual != null;
-                  const openedTime = new Date(dr.opened_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+                  const openedTime = new Date(dr.opened_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ });
                   const closedTime = dr.closed_at
-                    ? new Date(dr.closed_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+                    ? new Date(dr.closed_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })
                     : null;
                   const heading = dr.status === "closed"
                     ? (lang === "en"
