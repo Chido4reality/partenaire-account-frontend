@@ -17,6 +17,7 @@ import toast from "react-hot-toast";
 import { useLangStore } from "../store";
 import { hasFeature } from "../utils/planCapabilities";
 import { useCurrency } from "../utils/useCurrency";
+import { SHOP_TZ } from "../utils/shopTime"; // MP-REPORT-TZ
 import api from "../utils/api";
 import { formatLastSeen, isRecentlyActive } from "../utils/lastSeen";
 import ApprovalDetailView from "../components/common/ApprovalDetailView"; // MP-APPROVAL-DETAIL (all types, on-expand)
@@ -800,7 +801,7 @@ const RISK = {
 function timeLabel(iso, en) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleTimeString(en ? "en-GB" : "fr-FR", { hour: "2-digit", minute: "2-digit" })
+  return d.toLocaleTimeString(en ? "en-GB" : "fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })
     + " · " + d.toLocaleDateString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short" });
 }
 
