@@ -204,6 +204,57 @@ function ItemLine({ it, en, fmt }) {
 
 const TONE = { danger: "#f87171", warn: "#fbbf24", info: "#60a5fa" };
 
+// MP-CREDIT-TRUST: does this request extend credit, and to whom? bundled_sale (Σ credit
+// actions' balance_due) or credit_sale (payload.balance_due). Returns null when there's no
+// credit or no customer (walk-in) → the trust line is simply omitted.
+function creditInfo(row) {
+  const p = (row && row.payload && typeof row.payload === "object") ? row.payload : {};
+  const customer_id = p.customer_id || (p.sale_request && p.sale_request.customer_id) || null;
+  if (!customer_id) return null;
+  let amount = 0;
+  if (row.action_type === "credit_sale") amount = num(p.balance_due);
+  else if (Array.isArray(p.actions)) for (const a of p.actions) if (a && a.type === "credit") amount += num(a.balance_due);
+  if (amount <= 0) return null;
+  return { customer_id, credit_amount: amount };
+}
+
+// The CUSTOMER-TRUST line — live standing so the boss isn't approving blind. Flags
+// visually when risky (new customer / first purchase / after-debt crossing ~80% of limit).
+function TrustLine({ trust, creditAmount, en, fmt }) {
+  const totalDebt = num(trust.total_debt);
+  const after = totalDebt + num(creditAmount);
+  const limit = (trust.credit_limit === null || trust.credit_limit === undefined) ? null : num(trust.credit_limit);
+  const pct = (limit && limit > 0) ? Math.round((after / limit) * 100) : null; // never /0
+  let isNew = false, ms = null;
+  if (trust.created_at) { ms = Date.now() - new Date(trust.created_at).getTime(); isNew = ms >= 0 && ms < 2 * 24 * 3600 * 1000; }
+  const first = num(trust.sales_count) <= 1;
+  const risky = isNew || first || (pct != null && pct >= 80);
+
+  let history;
+  if (isNew) {
+    const when = ms != null && ms < 24 * 3600 * 1000 ? (en ? "today" : "aujourd'hui") : (en ? "this week" : "cette semaine");
+    history = en ? `New customer (created ${when}${first ? ", first purchase" : ""})`
+                 : `Nouveau client (créé ${when}${first ? ", premier achat" : ""})`;
+  } else {
+    const since = trust.created_at ? new Date(trust.created_at).toLocaleDateString(en ? "en-GB" : "fr-FR", { month: "short", year: "numeric" }) : "—";
+    const n = num(trust.sales_count);
+    history = en ? `Customer since ${since} · ${n} purchase${n === 1 ? "" : "s"}`
+                 : `Client depuis ${since} · ${n} achat${n === 1 ? "" : "s"}`;
+  }
+  const debt = en ? `owes ${fmt(totalDebt)} now → ${fmt(after)} after` : `doit ${fmt(totalDebt)} → ${fmt(after)} après`;
+  const lim = (limit && limit > 0) ? (en ? `${pct}% of ${fmt(limit)} limit` : `${pct}% de la limite ${fmt(limit)}`)
+                                   : (en ? "no limit set" : "aucune limite définie");
+
+  return (
+    <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 8, fontSize: 12.5, fontWeight: 700, lineHeight: 1.4,
+      border: `1px solid ${risky ? "#f87171" : "var(--border)"}`,
+      background: risky ? "rgba(248,113,113,0.10)" : "var(--bg-subtle, rgba(0,0,0,0.02))",
+      color: risky ? "#f87171" : "var(--text-secondary)" }}>
+      {risky ? "⚠ " : ""}{`${history} · ${debt} · ${lim}`}
+    </div>
+  );
+}
+
 export default function ApprovalDetailView({ approval, defaultOpen = false }) {
   const en = useLangStore(s => s.lang) === "en";
   const fmt = useCurrency();
@@ -223,6 +274,23 @@ export default function ApprovalDetailView({ approval, defaultOpen = false }) {
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, approval?.id]);
+
+  // MP-CREDIT-TRUST: for a credit request, fetch the customer's LIVE standing at expand
+  // time (never snapshotted). ANY failure → omit the line silently; approve/reject stay.
+  const ci = detail ? creditInfo(detail) : null;
+  const [trust, setTrust] = useState(null); // the customer-trust data, or null
+  useEffect(() => {
+    const cid = ci && ci.customer_id;
+    if (!cid) { setTrust(null); return; }
+    let alive = true;
+    setTrust(null);
+    api.get(`/staff/customer-trust/${cid}`)
+      .then(r => r.data?.data || null)
+      .then(d => { if (alive && d) setTrust(d); })
+      .catch(() => { if (alive) setTrust(null); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ci && ci.customer_id]);
 
   const reasons = detail ? buildReasons(detail, en, fmt) : [];
   const order = detail ? orderView(detail) : { items: [] };
@@ -252,6 +320,11 @@ export default function ApprovalDetailView({ approval, defaultOpen = false }) {
             </div>
           ) : (
             <>
+              {/* 0. CUSTOMER TRUST (credit requests) — the line that prevents blind approval */}
+              {ci && trust && (
+                <TrustLine trust={trust} creditAmount={ci.credit_amount} en={en} fmt={fmt} />
+              )}
+
               {/* 1. WHY */}
               {reasons.length > 0 && (
                 <div style={{ marginBottom: hasOrder ? 10 : 0 }}>
