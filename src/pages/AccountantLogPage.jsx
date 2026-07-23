@@ -196,6 +196,9 @@ export default function AccountantLogPage() {
     credit_sale: en ? "sell on credit" : "vendre à crédit",
     bundled_sale: en ? "make a sale that needs approval" : "faire une vente à approuver",
   };
+  // MP-APPROVAL-VERB: never surface a raw action_type enum on the boss's screen — any
+  // unmapped type falls back to a plain phrase, not "bundled_sale".
+  const approvalVerb = (t) => APPROVAL_VERB[t] || (en ? "make a change that needs approval" : "faire une modification à approuver");
 
   const approveMut = useMutation({
     mutationFn: ({ id, pin }) => api.post(`/staff/approvals/${id}/approve`, { pin }),
@@ -312,7 +315,7 @@ export default function AccountantLogPage() {
           {pendingApprovals.map((a, i) => (
             <div key={a.id} style={{ padding: "12px 14px", borderTop: i === 0 ? "none" : "1px solid var(--border)" }}>
               <div style={{ fontWeight: 600, fontSize: 14.5 }}>
-                {(a.requested_by_name || (en ? "A staff member" : "Un employé"))} {en ? "wants to" : "veut"} {APPROVAL_VERB[a.action_type] || a.action_type}
+                {(a.requested_by_name || (en ? "A staff member" : "Un employé"))} {en ? "wants to" : "veut"} {approvalVerb(a.action_type)}
               </div>
               <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 2 }}>
                 {/* MP-BELOW-COST-CLEAR-WORDING: a below-cost amount is the shortfall,
@@ -474,7 +477,7 @@ export default function AccountantLogPage() {
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 6 }}>{en ? "Approve this action?" : "Approuver cette action ?"}</div>
             <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 14 }}>
-              {(pinFor.requested_by_name || (en ? "A staff member" : "Un employé"))} {en ? "wants to" : "veut"} {APPROVAL_VERB[pinFor.action_type] || pinFor.action_type}
+              {(pinFor.requested_by_name || (en ? "A staff member" : "Un employé"))} {en ? "wants to" : "veut"} {approvalVerb(pinFor.action_type)}
               {/* MP-BELOW-COST-CLEAR-WORDING: the below-cost amount is the shortfall — show it labelled below, not inline as a total. */}
               {!["below_cost_sale", "discount"].includes(pinFor.action_type) && pinFor.amount != null ? ` — ${fmtCur(Math.abs(Number(pinFor.amount)))}` : ""}{pinFor.target_ref ? ` — ${pinFor.target_ref}` : ""}.
               <br />{en ? "Approving gives the green light — the staff member completes it at the counter." : "Approuver donne le feu vert — l'employé la finalise au comptoir."}
@@ -505,7 +508,7 @@ export default function AccountantLogPage() {
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 6 }}>{en ? "Reject this request?" : "Rejeter cette demande ?"}</div>
             <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 14 }}>
-              {(rejectFor.requested_by_name || (en ? "A staff member" : "Un employé"))} {en ? "wanted to" : "voulait"} {APPROVAL_VERB[rejectFor.action_type] || rejectFor.action_type}.
+              {(rejectFor.requested_by_name || (en ? "A staff member" : "Un employé"))} {en ? "wanted to" : "voulait"} {approvalVerb(rejectFor.action_type)}.
             </div>
             <div className="form-group"><label className="label">{en ? "Reason (optional)" : "Raison (facultatif)"}</label>
               <input className="input" value={rejectNote} onChange={e => setRejectNote(e.target.value)}
