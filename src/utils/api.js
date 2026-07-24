@@ -394,6 +394,15 @@ api.interceptors.response.use(res => {
     "entry_not_pending", "rate_limited",
   ]);
   if (err.response?.status === 401 && !APPROVAL_ERRORS.has(err.response?.data?.error)) {
+    // MP-DEACTIVATION-ENFORCEMENT (Amendment 4b): make the disabled-account 401 EXPLICIT
+    // rather than relying on it merely being absent from APPROVAL_ERRORS. When the auth
+    // middleware rejects an already-logged-in user whose account was turned off, drop a
+    // one-shot flash so the login screen says WHY ("your account was disabled") instead of
+    // a silent bounce that reads like a random session expiry. sessionStorage so it never
+    // persists past the tab.
+    if (err.response?.data?.error === "account_disabled") {
+      try { sessionStorage.setItem("mp-flash-disabled", "1"); } catch { /* private mode */ }
+    }
     useAuthStore.getState().logout();
     // MP-PEAK-MTN-RESILIENCE: don't HARD-redirect (window.location) when the user is
     // already on /login — a background 401 mid-typing would wipe the phone/password

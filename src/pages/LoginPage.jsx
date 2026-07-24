@@ -5,18 +5,28 @@ import { useAuthStore, useLangStore } from "../store";
 import api from "../utils/api";
 
 export default function LoginPage() {
+  const { t, lang, setLang }    = useLangStore();
+
   // MP-AUTH-STATE-HYGIENE: surface the user-change tripwire reason.
+  // MP-DEACTIVATION-ENFORCEMENT (Amendment 4b): if the auth middleware bounced an
+  // already-logged-in user because their account was disabled, api.js dropped a
+  // one-shot flash — explain WHY here instead of a silent redirect.
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("flash") === "session_changed") {
       toast("Session changed — please log in again.", { icon: "🔒" });
     }
-  }, []);
+    try {
+      if (sessionStorage.getItem("mp-flash-disabled")) {
+        sessionStorage.removeItem("mp-flash-disabled");
+        toast.error(t("auth.accountDisabled"), { icon: "🚫", duration: 6000 });
+      }
+    } catch { /* private mode */ }
+  }, [t]);
 
   const [phone, setPhone]       = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading]   = useState(false);
   const { login }               = useAuthStore();
-  const { t, lang, setLang }    = useLangStore();
   const navigate                = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -31,9 +41,13 @@ export default function LoginPage() {
       // (ERR_NETWORK) = connectivity problem, not bad credentials. Say so
       // clearly and fast (6s timeout) instead of a generic error after a hang.
       const networkish = !err.response || err.code === "ECONNABORTED" || err.code === "ERR_NETWORK";
+      // Disabled account (correct PIN, account turned off) gets its own bilingual line.
+      const disabled = err.response?.data?.error === "account_disabled";
       toast.error(networkish
         ? (lang === "fr" ? "Pas de connexion — vérifiez votre réseau" : "No connection — check your network")
-        : (err.response?.data?.message || t("common.error")));
+        : disabled
+          ? t("auth.accountDisabled")
+          : (err.response?.data?.message || t("common.error")));
     } finally { setLoading(false); }
   };
 
