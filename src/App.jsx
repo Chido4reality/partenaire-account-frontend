@@ -13,6 +13,7 @@ import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import Layout from "./components/common/Layout";
 import EnvBanner from "./components/EnvBanner";
+import LockGate from "./components/LockGate";
 import Dashboard from "./pages/Dashboard";
 import POSPage from "./pages/POSPage";
 import OnlineCartPage from "./pages/OnlineCartPage";
@@ -524,7 +525,7 @@ export default function App() {
         <Routes>
           <Route path="/login"    element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
-          <Route path="/" element={<Guard><Layout /></Guard>}>
+          <Route path="/" element={<Guard><LockGate><Layout /></LockGate></Guard>}>
             <Route index               element={<RoleGuard path="/"><Dashboard /></RoleGuard>} />
             <Route path="pos"          element={<RoleGuard path="/pos"><POSPage /></RoleGuard>} />
             <Route path="online-cart"  element={<RoleGuard path="/online-cart"><PlanGuard path="/online-cart"><OnlineCartPage /></PlanGuard></RoleGuard>} />

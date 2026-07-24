@@ -284,6 +284,15 @@ function safeJson(s) { try { return JSON.parse(s); } catch { return {}; } }
 api.interceptors.response.use(res => {
   // MP-PEAK-MTN-RESILIENCE: a request landed → clear any "retrying…" reassurance toast.
   try { toast.dismiss("mp-net-retry"); } catch { /* noop */ }
+  // MP-STALE-TRUST-LOCKOUT: the backend stamps X-MP-Active-Verified on any response where it
+  // CONFIRMED the caller is still active (never on a deactivated user or a fail-open blip).
+  // Refresh the offline tripwire + pick up the org's current window. This is what makes the
+  // lock lift smoothly the instant an honest cashier reconnects — no re-login.
+  try {
+    if (res?.headers?.["x-mp-active-verified"] === "1") {
+      useAuthStore.getState().markVerified?.(res.headers["x-mp-max-offline-hours"]);
+    }
+  } catch { /* noop */ }
   // MP-DEGRADED-ROUTING: a successful 2xx on an offline-eligible write
   // path is a vote of confidence that the network is healthy. Decrement
   // _writeAttemptFailures (clamps at 0 in network.js) so the degraded

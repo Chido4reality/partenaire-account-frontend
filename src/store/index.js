@@ -8,6 +8,13 @@ import { safeStorage } from "../utils/safeStorage";
 // snapshot) instead of throwing into React and crashing the app.
 const safeJSONStorage = createJSONStorage(() => safeStorage);
 
+// MP-STALE-TRUST-LOCKOUT: clamp the offline window to 4..72h (default 24), mirroring the
+// backend clamp — the client trusts its own persisted value while offline, so it must be sane.
+export const clampOfflineHours = (n) => {
+  const v = Math.floor(Number(n));
+  return Number.isFinite(v) ? Math.max(4, Math.min(72, v)) : 24;
+};
+
 export const useAuthStore = create(persist(
   (set) => ({
     user: null, org: null, token: null, isAuthenticated: false,
@@ -16,17 +23,47 @@ export const useAuthStore = create(persist(
     // same way as a real login token; this flag just powers the banner.
     impersonating: false,
     impersonation: null, // { admin_email, target_org_name, target_org_mp_id, target_user_name }
-    login: (user, org, token) => set({ user, org, token, isAuthenticated: true, impersonating: false, impersonation: null }),
+    // MP-STALE-TRUST-LOCKOUT: best-effort TRIPWIRE (NOT a security boundary — the server is
+    // the real gate). lastVerifiedActive = client clock at the last CONFIRMED-active server
+    // response (see api.js interceptor); maxOfflineHours = the org's current offline window.
+    // Both persist in mp-auth so they survive an app restart. A user who edits these in
+    // localStorage only fools their own device into staying usable a bit longer — the moment
+    // it reconnects it hits account_disabled / the write carve-out on the server.
+    lastVerifiedActive: null,
+    maxOfflineHours: 24,
+    login: (user, org, token) => set({ user, org, token, isAuthenticated: true, impersonating: false, impersonation: null,
+      lastVerifiedActive: Date.now(), maxOfflineHours: clampOfflineHours(org?.max_offline_hours) }),
     // MP-RECEIPT-LIVE-CASHIER-NAME: merge fresh fields (e.g. a renamed full_name)
     // into the cached user without a re-login, so receipts / "served by" reflect
     // the current pa_users.full_name. No-op when logged out.
     patchUser: (patch) => set((s) => (s.user ? { user: { ...s.user, ...patch } } : {})),
-    loginImpersonated: (user, org, token, meta) => set({ user, org, token, isAuthenticated: true, impersonating: true, impersonation: meta || null }),
-    endImpersonation: () => set({ user: null, org: null, token: null, isAuthenticated: false, impersonating: false, impersonation: null }),
-    logout: () => set({ user: null, org: null, token: null, isAuthenticated: false, impersonating: false, impersonation: null }),
+    // Refresh the tripwire on every CONFIRMED-active server response. maxHrs (from the
+    // X-MP-Max-Offline-Hours header) propagates a boss's window change on next contact.
+    markVerified: (maxHrs) => set((s) => ({
+      lastVerifiedActive: Date.now(),
+      maxOfflineHours: maxHrs != null ? clampOfflineHours(maxHrs) : s.maxOfflineHours,
+    })),
+    loginImpersonated: (user, org, token, meta) => set({ user, org, token, isAuthenticated: true, impersonating: true, impersonation: meta || null,
+      lastVerifiedActive: Date.now(), maxOfflineHours: clampOfflineHours(org?.max_offline_hours) }),
+    endImpersonation: () => set({ user: null, org: null, token: null, isAuthenticated: false, impersonating: false, impersonation: null, lastVerifiedActive: null }),
+    logout: () => set({ user: null, org: null, token: null, isAuthenticated: false, impersonating: false, impersonation: null, lastVerifiedActive: null }),
   }),
   { name: "mp-auth", storage: safeJSONStorage }
 ));
+
+// Is the session stale-locked? Owner is exempt from the TIME lock only (an owner can't be
+// deactivated, so a network outage must never lock the boss out). A future-dated stamp is
+// treated as invalid (forged / clock rolled back) → locked. A null stamp (pre-feature
+// session) is grace-not-locked; LockGate fires a background probe to stamp it.
+export function isStaleLocked(state) {
+  const { isAuthenticated, user, lastVerifiedActive, maxOfflineHours } = state;
+  if (!isAuthenticated || !user) return false;
+  if (user.role === "owner") return false;
+  if (lastVerifiedActive == null) return false;
+  const age = Date.now() - lastVerifiedActive;
+  if (age < 0) return true; // future-dated → invalid
+  return age > clampOfflineHours(maxOfflineHours) * 3600 * 1000;
+}
 
 export const useLangStore = create(persist(
   (set, get) => ({

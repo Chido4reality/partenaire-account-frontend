@@ -175,7 +175,8 @@ export default function SettingsPage() {
     transfer_receipt_confirmation_enabled: false,
     transfer_require_second_person: true,
     cashier_undo_requires_approval: true,
-    promo_footer_enabled: true
+    promo_footer_enabled: true,
+    max_offline_hours: 24
   });
   // MP-WHATSAPP-ALERTS: per-month add-on fee (read-only, from mp_pricing_config
   // via GET /settings) + the org currency, for the billing toggle label.
@@ -299,6 +300,7 @@ export default function SettingsPage() {
       transfer_require_second_person: d.transfer_require_second_person !== false,
       cashier_undo_requires_approval: d.cashier_undo_requires_approval !== false,
       promo_footer_enabled: d.promo_footer_enabled !== false,
+      max_offline_hours: Math.max(4, Math.min(72, Number(d.max_offline_hours) || 24)),
     });
     setWaAlertsFee(Number(d.whatsapp_alerts_fee) || 0);
     setWaAlertsCur(d.currency || "XAF");
@@ -1187,6 +1189,34 @@ export default function SettingsPage() {
                 </label>
               </div>
             )}
+
+            {/* MP-STALE-TRUST-LOCKOUT: how long a staff phone may keep working OFFLINE before
+                it must reconnect. Plain language for a shop owner; available on every plan.
+                The owner is never locked out; this only affects other staff. */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--bg-elevated)", borderRadius: 10 }}>
+              <div style={{ maxWidth: 320 }}>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>
+                  {lang === "en" ? "How long staff can work offline" : "Durée de travail hors ligne du personnel"}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  {lang === "en"
+                    ? "If a staff phone has no internet for longer than this, the app locks until it reconnects. You (the owner) are never locked out."
+                    : "Si le téléphone d'un employé n'a pas internet plus longtemps que ça, l'application se bloque jusqu'à la reconnexion. Vous (le propriétaire) n'êtes jamais bloqué."}
+                </div>
+              </div>
+              <select
+                value={shopForm.max_offline_hours}
+                onChange={e => setFF("max_offline_hours", Number(e.target.value))}
+                style={{ flexShrink: 0, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", fontSize: 13 }}
+              >
+                <option value={4}>{lang === "en" ? "4 hours" : "4 heures"}</option>
+                <option value={8}>{lang === "en" ? "8 hours" : "8 heures"}</option>
+                <option value={12}>{lang === "en" ? "12 hours" : "12 heures"}</option>
+                <option value={24}>{lang === "en" ? "1 day (24h)" : "1 jour (24h)"}</option>
+                <option value={48}>{lang === "en" ? "2 days (48h)" : "2 jours (48h)"}</option>
+                <option value={72}>{lang === "en" ? "3 days (72h)" : "3 jours (72h)"}</option>
+              </select>
+            </div>
 
             {/* MP-UNDO-TO-CART: let cashiers undo their OWN recent sale (30-min/same-shift
                 window) WITHOUT owner/manager approval. OFF by default (approval required).
