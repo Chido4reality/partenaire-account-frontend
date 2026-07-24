@@ -12,6 +12,7 @@ import api from "./utils/api";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import Layout from "./components/common/Layout";
+import EnvBanner from "./components/EnvBanner";
 import Dashboard from "./pages/Dashboard";
 import POSPage from "./pages/POSPage";
 import OnlineCartPage from "./pages/OnlineCartPage";
@@ -517,6 +518,7 @@ export default function App() {
   }
   return (
     <ErrorBoundary>
+    <EnvBanner />
     <QueryClientProvider client={qc}>
       <BrowserRouter>
         <Routes>
