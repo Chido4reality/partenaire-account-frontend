@@ -409,7 +409,8 @@ api.interceptors.response.use(res => {
     // one-shot flash so the login screen says WHY ("your account was disabled") instead of
     // a silent bounce that reads like a random session expiry. sessionStorage so it never
     // persists past the tab.
-    if (err.response?.data?.error === "account_disabled") {
+    const isDisabled = err.response?.data?.error === "account_disabled";
+    if (isDisabled) {
       try { sessionStorage.setItem("mp-flash-disabled", "1"); } catch { /* private mode */ }
     }
     useAuthStore.getState().logout();
@@ -418,7 +419,14 @@ api.interceptors.response.use(res => {
     // they're entering AND force a full bundle re-download over the bad link. Only
     // navigate away when they're on an authed page; the SPA route guard will render
     // /login once the store is cleared.
-    if (window.location.pathname !== "/login") window.location.href = "/login";
+    // MP-DEACTIVATION-ENFORCEMENT (fix A): carry the disabled reason in the URL. The
+    // sessionStorage flag alone loses a race — logout() makes the SPA route-guard mount
+    // /login and consume the one-shot flag (firing a toast) BEFORE this hard reload tears
+    // the page down and wipes it, so nothing shows. The query param survives the reload
+    // and is read by the FINAL LoginPage mount. sessionStorage is kept as a fallback.
+    if (window.location.pathname !== "/login") {
+      window.location.href = isDisabled ? "/login?flash=account_disabled" : "/login";
+    }
   }
   // Sprint A: any 403 with { error: 'upgrade_required' } pops the universal
   // PaywallModal. Layout listens for this event so individual pages don't

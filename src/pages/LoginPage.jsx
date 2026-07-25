@@ -12,15 +12,21 @@ export default function LoginPage() {
   // already-logged-in user because their account was disabled, api.js dropped a
   // one-shot flash — explain WHY here instead of a silent redirect.
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("flash") === "session_changed") {
+    const flash = new URLSearchParams(window.location.search).get("flash");
+    if (flash === "session_changed") {
       toast("Session changed — please log in again.", { icon: "🔒" });
     }
+    // Fix A: the disabled reason arrives reload-proof in the URL (?flash=account_disabled)
+    // for a forced logout; the sessionStorage flag is the fallback (e.g. no-reload paths).
+    // Either source → the bilingual message. Clear the fallback so it can't double-fire.
+    let disabled = flash === "account_disabled";
     try {
       if (sessionStorage.getItem("mp-flash-disabled")) {
         sessionStorage.removeItem("mp-flash-disabled");
-        toast.error(t("auth.accountDisabled"), { icon: "🚫", duration: 6000 });
+        disabled = true;
       }
     } catch { /* private mode */ }
+    if (disabled) toast.error(t("auth.accountDisabled"), { icon: "🚫", duration: 6000 });
   }, [t]);
 
   const [phone, setPhone]       = useState("");
