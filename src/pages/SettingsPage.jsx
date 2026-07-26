@@ -176,7 +176,8 @@ export default function SettingsPage() {
     transfer_require_second_person: true,
     cashier_undo_requires_approval: true,
     promo_footer_enabled: true,
-    max_offline_hours: 24
+    max_offline_hours: 24,
+    staff_can_view_own_activity: false
   });
   // MP-WHATSAPP-ALERTS: per-month add-on fee (read-only, from mp_pricing_config
   // via GET /settings) + the org currency, for the billing toggle label.
@@ -301,6 +302,7 @@ export default function SettingsPage() {
       cashier_undo_requires_approval: d.cashier_undo_requires_approval !== false,
       promo_footer_enabled: d.promo_footer_enabled !== false,
       max_offline_hours: Math.max(4, Math.min(72, Number(d.max_offline_hours) || 24)),
+      staff_can_view_own_activity: d.staff_can_view_own_activity === true,
     });
     setWaAlertsFee(Number(d.whatsapp_alerts_fee) || 0);
     setWaAlertsCur(d.currency || "XAF");
@@ -1216,6 +1218,27 @@ export default function SettingsPage() {
                 <option value={48}>{lang === "en" ? "2 days (48h)" : "2 jours (48h)"}</option>
                 <option value={72}>{lang === "en" ? "3 days (72h)" : "3 jours (72h)"}</option>
               </select>
+            </div>
+
+            {/* MP-STAFF-ACTIVITY-LEDGER Phase 4: let each staff member see their OWN activity
+                record (never anyone else's). Off by default — the boss opts in. */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--bg-elevated)", borderRadius: 10 }}>
+              <div style={{ maxWidth: 320 }}>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>
+                  {lang === "en" ? "Let staff see their own activity" : "Laisser le personnel voir sa propre activité"}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  {lang === "en"
+                    ? "Each staff member can open a list of only their OWN actions (sales, transfers, goods). They never see other staff. Off = only you see the log."
+                    : "Chaque employé peut voir la liste de ses PROPRES actions uniquement (ventes, transferts, marchandises). Il ne voit jamais les autres. Désactivé = vous seul voyez le journal."}
+                </div>
+              </div>
+              <label style={{ position: "relative", width: 44, height: 24, cursor: "pointer", flexShrink: 0 }}>
+                <input type="checkbox" checked={shopForm.staff_can_view_own_activity} onChange={e => setFF("staff_can_view_own_activity", e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+                <span style={{ position: "absolute", inset: 0, borderRadius: 12, background: shopForm.staff_can_view_own_activity ? "var(--brand)" : "var(--border)", transition: "0.2s" }}>
+                  <span style={{ position: "absolute", width: 18, height: 18, borderRadius: "50%", background: "#fff", top: 3, left: shopForm.staff_can_view_own_activity ? 23 : 3, transition: "0.2s" }} />
+                </span>
+              </label>
             </div>
 
             {/* MP-UNDO-TO-CART: let cashiers undo their OWN recent sale (30-min/same-shift

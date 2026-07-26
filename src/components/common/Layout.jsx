@@ -86,6 +86,9 @@ const NAV = [
   // requireRole). NOTE: also registered in NavDrawer.jsx SECTIONS (mobile) + App.jsx.
   { to: "/restock",      en: "Restock", fr: "Réapprovisionner", icon: "🛒", roles: ["owner","manager"], section: "restock", badge: "restock" },
   { to: "/goods-buffer", en: "Goods Buffer", fr: "Zone tampon", icon: "📦", roles: ["owner","manager","cashier","warehouse","accountant"], section: "sales", badge: "goodsBuffer" }, // MP-GOODS-BUFFER
+  // MP-STAFF-ACTIVITY-LEDGER Phase 4: a staff member's OWN activity. Non-owner roles only
+  // (the owner has the full Accountant Log), and only when the org opted in (requiresStaffActivity).
+  { to: "/my-activity", en: "My Activity", fr: "Mon activité", icon: "📒", roles: ["manager","cashier","warehouse","accountant"], section: "sales", requiresStaffActivity: true },
   // MP-CASHIER-ROLE-GATING: cashier records petty-cash expenses
   // (boss errands, drawer outflows, personal). Backend filters
   // GET /expenditures by recorded_by=req.user.id for cashier role
@@ -693,6 +696,8 @@ export default function Layout() {
     }
     if (!hasSection(effectivePlan, item.section)) return false;
     if (lite && LITE_HIDDEN_ROUTES.has(item.to)) return false;
+    // MP-STAFF-ACTIVITY-LEDGER Phase 4: the staff self-view only appears when the owner opted in.
+    if (item.requiresStaffActivity && !(org && org.staff_can_view_own_activity)) return false;
     return true;
   }).map(item => {
     // Pro Plus feature entries: if the org isn't entitled, either HIDE the entry

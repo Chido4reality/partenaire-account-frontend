@@ -32,6 +32,7 @@ import OperationsDashboardPage from "./pages/OperationsDashboardPage"; // MP-OWN
 import StockCheckPage from "./pages/StockCheckPage"; // MP-STOCK-CHECK
 import RestockPage from "./pages/RestockPage"; // MP-RESTOCK
 import GoodsBufferPage from "./pages/GoodsBufferPage"; // MP-GOODS-BUFFER
+import MyActivityPage from "./pages/MyActivityPage"; // MP-STAFF-ACTIVITY-LEDGER Phase 4
 import PendingSyncPage from "./pages/PendingSyncPage"; // MP-PENDING-SYNC-SCREEN
 import AssistantPage from "./pages/AssistantPage"; // Pro Plus Feature 1 — AI Assistant chat UI
 import AttendancePage from "./pages/AttendancePage"; // Staff Maintenance Phase 3 — shared-device PIN attendance
@@ -115,6 +116,9 @@ const ROUTE_ACCESS = {
   // MP-GOODS-BUFFER: every staff role can pre-register arrived goods (pricing/release
   // is gated inside the RPCs by pa_staff_permissions.buffer_access, not by route).
   "/goods-buffer": ["owner", "manager", "cashier", "warehouse", "accountant"],
+  // MP-STAFF-ACTIVITY-LEDGER Phase 4: a staff member's OWN activity. Any role may reach the
+  // route; the page 403-guards when the org setting is off, and the nav entry only shows when on.
+  "/my-activity":  ["owner", "manager", "cashier", "warehouse", "accountant"],
   // MP-REFUNDS-STAFF-ACCESS: refunds/exchanges are operational —
   // every role that can sell must also be able to process a return.
   // Backend mirror in returns.js: /return + /exchange open to
@@ -546,6 +550,7 @@ export default function App() {
             <Route path="stock-check"  element={<RoleGuard path="/stock-check"><StockCheckPage /></RoleGuard>} />
             <Route path="restock"      element={<RoleGuard path="/restock"><RestockPage /></RoleGuard>} />
             <Route path="goods-buffer" element={<RoleGuard path="/goods-buffer"><GoodsBufferPage /></RoleGuard>} />
+            <Route path="my-activity" element={<RoleGuard path="/my-activity"><MyActivityPage /></RoleGuard>} />
             {/* MP-REFUNDS-STAFF-ACCESS: no PlanGuard — refunds are
                 operational and must work on every plan tier. */}
             <Route path="refunds"      element={<RoleGuard path="/refunds"><RefundsPage /></RoleGuard>} />
