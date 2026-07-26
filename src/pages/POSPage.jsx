@@ -18,7 +18,7 @@ import { useOfflineCachedQuery, cacheKeyFor } from "../utils/offlineQuery";
 import { useLiteMode } from "../hooks/useLiteMode";
 import CameraScanner from "../components/common/CameraScanner";
 import { genSaleCodes } from "../utils/receiptCodes";
-import { ActiveShiftIndicator, useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
+import { ActiveShiftIndicator, useActiveShift, noShiftHint, OpenShiftModal } from "../components/common/ShiftWidgets";
 import MobileShiftChip from "../components/layout/MobileShiftChip";
 import MobileCartSheet from "../components/pos/MobileCartSheet";
 import PayButton from "../components/pos/PayButton";
@@ -197,6 +197,11 @@ export default function POSPage() {
   // exceeding available stock (WARN, may proceed).
   const [blockModal, setBlockModal]           = useState(null);
   const [oversellModal, setOversellModal]     = useState(null);
+  // MP-OPEN-SHIFT-SHORTCUT (Phase 1/E): open the shift inline from the cart instead of
+  // dead-ending on the "Open shift to confirm" text. The cart persists (component state +
+  // useDraftCartStore), so on success the cashier lands back on the order they built and
+  // Confirm enables the moment useActiveShift sees the new shift.
+  const [showOpenShift, setShowOpenShift]     = useState(false);
   // MP-CREDIT-LIMIT-MODAL: dedicated UI for backend's CREDIT_LIMIT_EXCEEDED
   // 400. Backend already returns structured fields (credit_limit,
   // current_debt, new_balance) alongside the verbose French sentence;
@@ -2572,9 +2577,18 @@ export default function POSPage() {
                     outside the scroll area) so it can't be scrolled out
                     of sight either. */}
                 {!shiftIsOpen && (
-                  <div style={{ padding: "8px 12px", background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.35)", borderRadius: 8, fontSize: 12, color: "#fbbf24", fontWeight: 600, marginTop: 8, marginBottom: 8, textAlign: "center" }}>
+                  // MP-OPEN-SHIFT-SHORTCUT: tappable — opens the shift form inline instead of
+                  // a dead text hint. Cart is preserved; Confirm enables once the shift opens.
+                  <button
+                    type="button"
+                    onClick={() => setShowOpenShift(true)}
+                    style={{ display: "block", width: "100%", padding: "10px 12px", background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.45)", borderRadius: 8, fontSize: 12.5, color: "#fbbf24", fontWeight: 700, marginTop: 8, marginBottom: 8, textAlign: "center", cursor: "pointer" }}
+                  >
                     {noShiftHint(lang)}
-                  </div>
+                    <span style={{ display: "block", fontWeight: 600, fontSize: 11, marginTop: 3, opacity: 0.9 }}>
+                      {lang === "en" ? "Tap to open your shift now" : "Touchez pour ouvrir votre poste"}
+                    </span>
+                  </button>
                 )}
                 <div style={{ display: "flex", gap: 8, paddingTop: 8, flexShrink: 0, borderTop: mobile ? "1px solid var(--border)" : "none", background: "var(--bg-surface)" }}>
                   <button onClick={() => setShowPayment(false)} className="btn btn-secondary" style={{ flex: 1 }}>← {lang === "en" ? "Back" : "Retour"}</button>
@@ -3301,6 +3315,14 @@ export default function POSPage() {
           </div>
         </div>
       )}
+
+      {/* MP-OPEN-SHIFT-SHORTCUT: inline shift-open from the cart. onOpened does NOTHING to
+          the cart (it persists) — useActiveShift flips shiftIsOpen and Confirm re-enables. */}
+      <OpenShiftModal
+        open={showOpenShift}
+        onClose={() => setShowOpenShift(false)}
+        onOpened={() => setShowOpenShift(false)}
+      />
 
       {/* ── BUG 3: WARN + ALLOW — overselling ── */}
       {oversellModal && (
