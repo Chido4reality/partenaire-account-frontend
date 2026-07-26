@@ -3345,6 +3345,19 @@ export default function POSPage() {
                   ? "You can still sell — stock will go negative and the sale is flagged for restock follow-up."
                   : "Vous pouvez vendre — le stock passera en négatif et la vente sera signalée pour réapprovisionnement."}
               </div>
+              {/* MP-OPEN-SHIFT-SHORTCUT: same inline escape from the oversell dead-end. */}
+              {!shiftIsOpen && (
+                <button
+                  type="button"
+                  onClick={() => setShowOpenShift(true)}
+                  style={{ display: "block", width: "100%", padding: "10px 12px", background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.45)", borderRadius: 8, fontSize: 12.5, color: "#fbbf24", fontWeight: 700, marginBottom: 10, textAlign: "center", cursor: "pointer" }}
+                >
+                  {noShiftHint(lang)}
+                  <span style={{ display: "block", fontWeight: 600, fontSize: 11, marginTop: 3, opacity: 0.9 }}>
+                    {lang === "en" ? "Tap to open your shift now" : "Touchez pour ouvrir votre poste"}
+                  </span>
+                </button>
+              )}
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => setOversellModal(null)} className="btn btn-secondary" style={{ flex: 1 }}>
                   {lang === "en" ? "Cancel" : "Annuler"}
