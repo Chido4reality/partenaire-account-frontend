@@ -569,6 +569,56 @@ C'est la différence entre tenir une boutique et **posséder une entreprise qui 
 It's the difference between running a shop and **owning a business that runs even when you're not there**.`,
     },
   },
+  {
+    id: "accountant_log", section: "sales", icon: "🛡️",
+    title: { fr: "Journal du comptable et Registre", en: "Accountant Log & Activity Ledger" },
+    body: {
+      fr: `### À quoi sert cet écran ?
+Il vous montre **qui a fait quoi, et quand** dans votre boutique — surtout quand vous n'êtes pas là. Ouvrez le **Registre** pour tout voir, et filtrez par employé, par type d'action, ou par dates (par exemple « juin à juillet »).
+
+### Que veut dire chaque type ?
+- **Vente** : un article a été vendu.
+- **Annulation** : une vente a été annulée.
+- **Remboursement** : de l'argent a été rendu au client.
+- **Transfert envoyé / reçu** : des marchandises ont été déplacées entre boutiques — qui a envoyé, qui a reçu.
+- **Marchandises reçues** : quelqu'un a enregistré des marchandises arrivées.
+- **Marchandises tarifées** : le patron a fixé le prix et mis les marchandises en stock.
+- **Dette encaissée** : un client a remboursé une dette.
+- **Remise** : un rabais a été donné sur une vente.
+- **Stock ajusté** : la quantité en stock a été corrigée à la main.
+- **Poste ouvert / fermé** : un caissier a ouvert ou fermé sa caisse.
+
+### Ce que vous décidez, vous le patron
+- **Laisser le personnel voir sa propre activité** (dans Paramètres) : si activé, chaque employé peut voir la liste de **ses propres** actions — jamais celles des autres. Désactivé = vous seul voyez le journal.
+- **Alertes** : recevez une notification quand une action à vérifier a lieu (annulation, remboursement, dette modifiée…).
+
+> Astuce : tapez un numéro **TRF-…** (transfert) ou **BUF-…** (marchandises) dans la recherche pour ouvrir directement son détail.
+
+**Note :** les changements de **prix** et de **coût** ne sont enregistrés qu'à partir d'aujourd'hui — le passé n'a pas d'historique.`,
+      en: `### What is this screen for?
+It shows you **who did what, and when** in your shop — especially while you're away. Open the **Ledger** to see everything, and filter by staff member, by type of action, or by dates (for example "June to July").
+
+### What does each type mean?
+- **Sale**: an item was sold.
+- **Void**: a sale was cancelled.
+- **Refund**: money was given back to a customer.
+- **Transfer sent / received**: goods moved between shops — who sent, who received.
+- **Goods received**: someone logged goods that arrived.
+- **Goods priced/released**: the boss set the price and put the goods into stock.
+- **Debt collected**: a customer paid back a debt.
+- **Discount**: a price cut was given on a sale.
+- **Stock adjusted**: the stock quantity was corrected by hand.
+- **Shift opened / closed**: a cashier opened or closed their drawer.
+
+### What you, the boss, decide
+- **Let staff see their own activity** (in Settings): if on, each staff member can see a list of **their own** actions — never anyone else's. Off = only you see the log.
+- **Alerts**: get a notification when something worth checking happens (a void, a refund, a debt change…).
+
+> Tip: type a **TRF-…** (transfer) or **BUF-…** (goods) number in the search box to open its detail directly.
+
+**Note:** **price** and **cost** changes are only recorded from today onward — the past has no history.`,
+    },
+  },
 ];
 
 export default HELP_TOPICS;

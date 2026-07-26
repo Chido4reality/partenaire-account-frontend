@@ -26,6 +26,7 @@ import { momoLabel, momoLabelShort } from "../utils/paymentLabels";
 import TransferDetailModal from "../components/TransferDetailModal"; // MP-STAFF-ACTIVITY-LEDGER Phase 3
 import BufferDetailModal from "../components/BufferDetailModal";
 import { LEDGER_TYPES, LEDGER_TYPE_ORDER, ltLabel, fmtLedgerWhen } from "../utils/ledgerTypes";
+import HelpButton from "../components/common/HelpButton"; // MP-STAFF-ACTIVITY-LEDGER Phase 5
 
 // Role badge colours — mirror SettingsPage ROLES.
 const ROLE_META = {
@@ -318,7 +319,10 @@ export default function AccountantLogPage() {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6, gap: 12 }}>
         <div>
-          <div style={{ fontWeight: 700, fontSize: 20 }}>🛡️ {en ? "Accountant Log" : "Journal du comptable"}</div>
+          <div style={{ fontWeight: 700, fontSize: 20, display: "flex", alignItems: "center", gap: 8 }}>
+            🛡️ {en ? "Accountant Log" : "Journal du comptable"}
+            <HelpButton topic="accountant_log" style={{ width: 24, height: 24, fontSize: 13 }} />
+          </div>
           <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 2 }}>
             {en ? "Everyone working in your shop, and your control over them." : "Tous ceux qui travaillent dans votre boutique, et votre contrôle sur eux."}
           </div>
