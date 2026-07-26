@@ -55,6 +55,7 @@ export default function AccountantLogPage() {
   const [form, setForm] = useState({ full_name: "", phone: "", password: "" });
   const [confirmKill, setConfirmKill] = useState(null); // { staff, nextActive }
   const [detailStaff, setDetailStaff] = useState(null);  // open staff's activity screen
+  const [showLedger, setShowLedger] = useState(false);   // MP-STAFF-ACTIVITY-LEDGER: full typed feed
   const [deepLink, setDeepLink] = useState(null);        // { highlightId, initialDay } from a tapped alert
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -302,6 +303,11 @@ export default function AccountantLogPage() {
       onBack={() => { setDetailStaff(null); setDeepLink(null); }} />
   );
 
+  // MP-STAFF-ACTIVITY-LEDGER: the all-staff / by-type / by-range typed feed.
+  if (showLedger) return wrap(
+    <LedgerView staffList={staff} en={en} onBack={() => setShowLedger(false)} />
+  );
+
   const canSubmitAdd = form.full_name.trim() && form.phone.trim() && form.password.length >= 4 && !addAccountant.isPending;
 
   return wrap(
@@ -314,9 +320,15 @@ export default function AccountantLogPage() {
             {en ? "Everyone working in your shop, and your control over them." : "Tous ceux qui travaillent dans votre boutique, et votre contrôle sur eux."}
           </div>
         </div>
-        <button className="btn btn-primary" style={{ whiteSpace: "nowrap" }} onClick={() => setShowAdd(true)}>
-          + {en ? "Add accountant" : "Ajouter un comptable"}
-        </button>
+        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+          {/* MP-STAFF-ACTIVITY-LEDGER: open the full typed activity feed (all staff / by type / by range). */}
+          <button className="btn btn-secondary" style={{ whiteSpace: "nowrap" }} onClick={() => setShowLedger(true)}>
+            📒 {en ? "Ledger" : "Registre"}
+          </button>
+          <button className="btn btn-primary" style={{ whiteSpace: "nowrap" }} onClick={() => setShowAdd(true)}>
+            + {en ? "Add accountant" : "Ajouter un comptable"}
+          </button>
+        </div>
       </div>
 
       {/* Controls: instant-alerts on/off + WhatsApp share of today's summary */}
@@ -973,6 +985,173 @@ const PERM_ACTIONS = [
     } },
 ];
 const permDefault = (a) => a.defaultPolicy || "allow";
+
+// ── MP-STAFF-ACTIVITY-LEDGER (Phase 2) ───────────────────────────────────────
+// One typed timeline of how goods + money moved — filterable by staff, activity type,
+// and a from–to date range. Backed by the ADDITIVE pa_staff_ledger RPC (sales + transfers
+// + audit money/goods events). The risk view (pa_staff_activity / StaffActivityView) is
+// untouched. Retroactive over existing history; price/cost changes are forward-only.
+const LEDGER_TYPES = {
+  sale:              { icon: "🧾", en: "Sale",                 fr: "Vente" },
+  void:              { icon: "❌", en: "Void",                 fr: "Annulation" },
+  return:            { icon: "↩️", en: "Refund / return",      fr: "Remboursement" },
+  transfer_sent:     { icon: "📤", en: "Transfer sent",        fr: "Transfert envoyé" },
+  transfer_received: { icon: "📥", en: "Transfer received",    fr: "Transfert reçu" },
+  goods_received:    { icon: "📦", en: "Goods received",       fr: "Marchandises reçues" },
+  goods_released:    { icon: "🏷️", en: "Goods priced/released", fr: "Marchandises tarifées" },
+  debt_collection:   { icon: "💰", en: "Debt collected",       fr: "Dette encaissée" },
+  credit_given:      { icon: "📝", en: "Credit given",         fr: "Crédit accordé" },
+  discount:          { icon: "🔖", en: "Discount",             fr: "Remise" },
+  stock_adjustment:  { icon: "📊", en: "Stock adjusted",       fr: "Stock ajusté" },
+  shift_open:        { icon: "🔓", en: "Shift opened",         fr: "Poste ouvert" },
+  shift_close:       { icon: "🔒", en: "Shift closed",         fr: "Poste fermé" },
+  price_change:      { icon: "💲", en: "Price changed",        fr: "Prix modifié" },
+  cost_change:       { icon: "💵", en: "Cost changed",         fr: "Coût modifié" },
+  expense:           { icon: "💸", en: "Expense",              fr: "Dépense" },
+  login:             { icon: "🔑", en: "Login",                fr: "Connexion" },
+  debt_adjustment:   { icon: "⚖️", en: "Debt adjusted",        fr: "Dette ajustée" },
+};
+const LEDGER_TYPE_ORDER = ["sale", "void", "return", "transfer_sent", "transfer_received",
+  "goods_received", "goods_released", "debt_collection", "credit_given", "discount",
+  "stock_adjustment", "price_change", "cost_change", "expense", "shift_open", "shift_close"];
+
+// Shop-timezone rendering (WAT/Africa/Lagos), mirroring the M1 report-time fix so a
+// Cameroon shop's events don't shift on a foreign device.
+function fmtLedgerWhen(iso, en) {
+  try {
+    return new Date(iso).toLocaleString(en ? "en-GB" : "fr-FR",
+      { timeZone: "Africa/Lagos", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  } catch { return ""; }
+}
+function ltLabel(type, en) { const t = LEDGER_TYPES[type]; return t ? (en ? t.en : t.fr) : type; }
+
+function LedgerDetailRow({ label, value }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "6px 0", borderBottom: "1px solid var(--border)", fontSize: 13 }}>
+      <span style={{ color: "var(--text-muted)" }}>{label}</span>
+      <span style={{ fontWeight: 600, textAlign: "right" }}>{value}</span>
+    </div>
+  );
+}
+// Phase 2 basic detail. Phase 3 routes transfer/buffer taps to the rich detail modals.
+function LedgerDetailModal({ row, en, fmt, onClose }) {
+  const t = LEDGER_TYPES[row.activity_type];
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 4000, padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--bg-surface)", borderRadius: 14, padding: 20, maxWidth: 420, width: "100%", maxHeight: "80vh", overflowY: "auto" }}>
+        <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 10 }}>
+          {t?.icon} {ltLabel(row.activity_type, en)}
+          {row.ref_number ? <span style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text-muted)", marginLeft: 8 }}>{row.ref_number}</span> : null}
+        </div>
+        <LedgerDetailRow label={en ? "Who" : "Qui"} value={`${row.actor_name || "—"}${row.actor_role ? ` (${row.actor_role})` : ""}`} />
+        <LedgerDetailRow label={en ? "When" : "Quand"} value={fmtLedgerWhen(row.occurred_at, en)} />
+        {row.branch_name && <LedgerDetailRow label={en ? "Branch" : "Boutique"} value={row.branch_name} />}
+        {row.amount != null && <LedgerDetailRow label={en ? "Amount" : "Montant"} value={fmt(row.amount)} />}
+        {(row.ref_type === "transfer" || row.ref_type === "buffer") && (
+          <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 10 }}>
+            {en ? "Full transfer/goods detail view is coming next." : "La vue détaillée du transfert/des marchandises arrive bientôt."}
+          </div>
+        )}
+        <button onClick={onClose} className="btn btn-secondary" style={{ width: "100%", marginTop: 14 }}>{en ? "Close" : "Fermer"}</button>
+      </div>
+    </div>
+  );
+}
+
+function LedgerView({ staffList, en, onBack }) {
+  const fmt = useCurrency();
+  const [staffId, setStaffId] = useState("all");
+  const [type, setType] = useState("all");
+  // Default window: last 30 days → today. A boss back after 2 months widens "From" to June.
+  const [fromDate, setFromDate] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); });
+  const [toDate, setToDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [detail, setDetail] = useState(null);
+
+  const fromIso = new Date(fromDate + "T00:00:00").toISOString();
+  const toIso = (() => { const d = new Date(toDate + "T00:00:00"); d.setDate(d.getDate() + 1); return d.toISOString(); })(); // inclusive of toDate
+  const qs = [
+    staffId !== "all" ? `user_id=${staffId}` : "",
+    type !== "all" ? `types=${encodeURIComponent(type)}` : "",
+    `from=${encodeURIComponent(fromIso)}`, `to=${encodeURIComponent(toIso)}`, "limit=300",
+  ].filter(Boolean).join("&");
+
+  const ledgerQ = useQuery({
+    queryKey: ["staff-ledger", staffId, type, fromIso, toIso],
+    queryFn: () => api.get(`/staff/ledger?${qs}`).then((r) => r.data),
+  });
+  const rows = ledgerQ.data?.data || [];
+  const sel = { padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", fontSize: 13, width: "100%" };
+
+  return (
+    <div>
+      <button onClick={onBack} className="btn btn-secondary" style={{ marginBottom: 12 }}>← {en ? "Back" : "Retour"}</button>
+      <div style={{ fontWeight: 700, fontSize: 20, marginBottom: 2 }}>📒 {en ? "Activity Ledger" : "Registre d'activité"}</div>
+      <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 12 }}>
+        {en ? "Everything that moved — sales, transfers, goods and money — by who and when."
+            : "Tout ce qui a bougé — ventes, transferts, marchandises et argent — par qui et quand."}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+        <div>
+          <label style={{ fontSize: 11, color: "var(--text-muted)" }}>{en ? "Staff" : "Personnel"}</label>
+          <select value={staffId} onChange={(e) => setStaffId(e.target.value)} style={sel}>
+            <option value="all">{en ? "All staff" : "Tout le personnel"}</option>
+            {(staffList || []).map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={{ fontSize: 11, color: "var(--text-muted)" }}>{en ? "Type" : "Type"}</label>
+          <select value={type} onChange={(e) => setType(e.target.value)} style={sel}>
+            <option value="all">{en ? "All types" : "Tous les types"}</option>
+            {LEDGER_TYPE_ORDER.map((t) => <option key={t} value={t}>{LEDGER_TYPES[t].icon} {ltLabel(t, en)}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={{ fontSize: 11, color: "var(--text-muted)" }}>{en ? "From" : "Du"}</label>
+          <input type="date" value={fromDate} max={toDate} onChange={(e) => setFromDate(e.target.value)} style={sel} />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, color: "var(--text-muted)" }}>{en ? "To" : "Au"}</label>
+          <input type="date" value={toDate} min={fromDate} onChange={(e) => setToDate(e.target.value)} style={sel} />
+        </div>
+      </div>
+
+      <div style={{ fontSize: 11, color: "var(--text-muted)", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px", marginBottom: 12 }}>
+        ℹ️ {en ? "Price and cost changes are recorded only from today onward — earlier ones have no history."
+              : "Les changements de prix et de coût ne sont enregistrés qu'à partir d'aujourd'hui — les précédents n'ont pas d'historique."}
+      </div>
+
+      {ledgerQ.isLoading ? (
+        <div style={{ textAlign: "center", color: "var(--text-muted)", padding: 24 }}>{en ? "Loading…" : "Chargement…"}</div>
+      ) : ledgerQ.isError ? (
+        <div style={{ textAlign: "center", color: "var(--danger, #dc2626)", padding: 24 }}>{en ? "Could not load the ledger." : "Impossible de charger le registre."}</div>
+      ) : rows.length === 0 ? (
+        <div style={{ textAlign: "center", color: "var(--text-muted)", padding: 24 }}>{en ? "Nothing in this range." : "Rien dans cette période."}</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {rows.map((r) => (
+            <button key={r.entry_id} onClick={() => setDetail(r)}
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, textAlign: "left", cursor: "pointer", width: "100%" }}>
+              <div style={{ fontSize: 20, flexShrink: 0 }}>{LEDGER_TYPES[r.activity_type]?.icon || "•"}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 13.5 }}>
+                  {ltLabel(r.activity_type, en)}
+                  {r.ref_number ? <span style={{ color: "var(--text-muted)", fontWeight: 500, fontFamily: "monospace", fontSize: 11, marginLeft: 6 }}>{r.ref_number}</span> : null}
+                </div>
+                <div style={{ fontSize: 11.5, color: "var(--text-secondary)" }}>
+                  👤 {r.actor_name || "—"}{r.actor_role ? ` · ${r.actor_role}` : ""} · {fmtLedgerWhen(r.occurred_at, en)}{r.branch_name ? ` · ${r.branch_name}` : ""}
+                </div>
+              </div>
+              {r.amount != null && <div style={{ fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{fmt(r.amount)}</div>}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {detail && <LedgerDetailModal row={detail} en={en} fmt={fmt} onClose={() => setDetail(null)} />}
+    </div>
+  );
+}
 
 function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
   const fmt = useCurrency();
