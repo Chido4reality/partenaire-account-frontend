@@ -10,6 +10,8 @@ import { useLangStore, useAuthStore } from "../store";
 import DateRangeFilter, { inRange, wideRange } from "../components/common/DateRangeFilter";
 import api, { formatDate } from "../utils/api";
 import RestrictedAction from "../components/common/RestrictedAction";
+import { useSearchParams } from "react-router-dom";
+import TransferDetailModal from "../components/TransferDetailModal"; // MP-STAFF-ACTIVITY-LEDGER Phase 3
 
 export default function TransfersPage() {
   const { lang } = useLangStore();
@@ -25,6 +27,16 @@ export default function TransfersPage() {
   const [scanInput, setScanInput]   = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [editingId, setEditingId]   = useState(null);  // (B) null = creating; id = editing a pending transfer
+
+  // MP-STAFF-ACTIVITY-LEDGER Phase 3: open a transfer's detail from a tapped row OR a
+  // ?tr=<id> deep-link (search box routes here). Kept in sync with the URL param.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [detailTransferId, setDetailTransferId] = useState(searchParams.get("tr") || null);
+  useEffect(() => { const tr = searchParams.get("tr"); if (tr) setDetailTransferId(tr); }, [searchParams]);
+  const closeTransferDetail = () => {
+    setDetailTransferId(null);
+    if (searchParams.get("tr")) { searchParams.delete("tr"); setSearchParams(searchParams, { replace: true }); }
+  };
 
   // (A) tick-list multi-select picker state
   const [pickerOpen, setPickerOpen]     = useState(false);
@@ -654,6 +666,7 @@ export default function TransfersPage() {
   // -- TRANSFER LIST ------------------------------------------
   return (
     <div style={{ padding: 24, maxWidth: 1000, margin: "0 auto" }}>
+      {detailTransferId && <TransferDetailModal transferId={detailTransferId} onClose={closeTransferDetail} />}
       <div className="page-header">
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <h1 className="page-title" style={{ margin: 0 }}>{lang === "en" ? "Stock Transfers" : "Transferts de stock"}</h1>
@@ -767,7 +780,11 @@ export default function TransfersPage() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                      <span style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text-secondary)" }}>{tr.transfer_number}</span>
+                      {/* MP-STAFF-ACTIVITY-LEDGER Phase 3: tap the number → full detail chain. */}
+                      <button onClick={() => setDetailTransferId(tr.id)}
+                        style={{ fontFamily: "monospace", fontSize: 12, color: "var(--brand)", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline" }}>
+                        {tr.transfer_number}
+                      </button>
                       <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: sc.bg, color: sc.color }}>{tr.status}</span>
                     </div>
                     <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>

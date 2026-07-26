@@ -23,6 +23,8 @@ import { formatLastSeen, isRecentlyActive } from "../utils/lastSeen";
 import ApprovalDetailView from "../components/common/ApprovalDetailView"; // MP-APPROVAL-DETAIL (all types, on-expand)
 import { explainAnomaly, severityCue, groupLabel, anomalySeverity } from "../utils/anomalyExplain";
 import { momoLabel, momoLabelShort } from "../utils/paymentLabels";
+import TransferDetailModal from "../components/TransferDetailModal"; // MP-STAFF-ACTIVITY-LEDGER Phase 3
+import BufferDetailModal from "../components/BufferDetailModal";
 
 // Role badge colours — mirror SettingsPage ROLES.
 const ROLE_META = {
@@ -1066,6 +1068,15 @@ function LedgerView({ staffList, en, onBack }) {
   const [fromDate, setFromDate] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); });
   const [toDate, setToDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [detail, setDetail] = useState(null);
+  const [transferId, setTransferId] = useState(null); // Phase 3: rich transfer detail
+  const [bufferId, setBufferId] = useState(null);      // Phase 3: rich buffer detail
+
+  // Route by ref_type: transfers + goods → the rich detail views; everything else → basic.
+  const openDetail = (r) => {
+    if (r.ref_type === "transfer" && r.ref_id) setTransferId(r.ref_id);
+    else if (r.ref_type === "buffer" && r.ref_id) setBufferId(r.ref_id);
+    else setDetail(r);
+  };
 
   const fromIso = new Date(fromDate + "T00:00:00").toISOString();
   const toIso = (() => { const d = new Date(toDate + "T00:00:00"); d.setDate(d.getDate() + 1); return d.toISOString(); })(); // inclusive of toDate
@@ -1130,7 +1141,7 @@ function LedgerView({ staffList, en, onBack }) {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {rows.map((r) => (
-            <button key={r.entry_id} onClick={() => setDetail(r)}
+            <button key={r.entry_id} onClick={() => openDetail(r)}
               style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, textAlign: "left", cursor: "pointer", width: "100%" }}>
               <div style={{ fontSize: 20, flexShrink: 0 }}>{LEDGER_TYPES[r.activity_type]?.icon || "•"}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -1149,6 +1160,8 @@ function LedgerView({ staffList, en, onBack }) {
       )}
 
       {detail && <LedgerDetailModal row={detail} en={en} fmt={fmt} onClose={() => setDetail(null)} />}
+      {transferId && <TransferDetailModal transferId={transferId} onClose={() => setTransferId(null)} />}
+      {bufferId && <BufferDetailModal bufferId={bufferId} onClose={() => setBufferId(null)} />}
     </div>
   );
 }

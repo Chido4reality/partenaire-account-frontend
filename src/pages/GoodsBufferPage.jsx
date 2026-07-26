@@ -12,6 +12,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import api from "../utils/api";
 import { useAuthStore, useLangStore, useSettingsStore } from "../store";
+import { useSearchParams } from "react-router-dom";
+import BufferDetailModal from "../components/BufferDetailModal"; // MP-STAFF-ACTIVITY-LEDGER Phase 3
 import { useCurrency } from "../utils/useCurrency";
 import ProductSearchBox from "../components/common/ProductSearchBox";
 import { openWhatsApp } from "../utils/whatsapp";
@@ -46,6 +48,17 @@ export default function GoodsBufferPage() {
   const selectedLocation = useSettingsStore(s => s.selectedLocation);
 
   const [locFilter, setLocFilter] = useState(""); // "" = all locations
+
+  // MP-STAFF-ACTIVITY-LEDGER Phase 3: open a buffer's detail from a tapped row OR a
+  // ?buf=<id> deep-link (search box routes here). Works for released buffers too — the
+  // modal fetches by id and doesn't depend on the pending list.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [detailBufferId, setDetailBufferId] = useState(searchParams.get("buf") || null);
+  useEffect(() => { const b = searchParams.get("buf"); if (b) setDetailBufferId(b); }, [searchParams]);
+  const closeBufferDetail = () => {
+    setDetailBufferId(null);
+    if (searchParams.get("buf")) { searchParams.delete("buf"); setSearchParams(searchParams, { replace: true }); }
+  };
 
   // ── Queries ──────────────────────────────────────────────────
   const pendingQ = useQuery({
@@ -144,6 +157,7 @@ export default function GoodsBufferPage() {
   // ── Render ───────────────────────────────────────────────────
   return (
     <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 4px 40px" }}>
+      {detailBufferId && <BufferDetailModal bufferId={detailBufferId} onClose={closeBufferDetail} />}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, margin: "10px 0 4px" }}>
         <h2 style={{ margin: 0 }}>{en ? "Goods Buffer" : "Zone tampon"}</h2>
         <button className="btn btn-secondary" onClick={sendWhatsApp} title="WhatsApp">💬 {en ? "Share" : "Partager"}</button>
@@ -237,7 +251,11 @@ export default function GoodsBufferPage() {
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontWeight: 700, fontSize: 14.5 }}>
-                      {r.product_label}
+                      {/* MP-STAFF-ACTIVITY-LEDGER Phase 3: tap the product → full receipt detail. */}
+                      <button onClick={() => setDetailBufferId(r.buffer_id)}
+                        style={{ background: "none", border: "none", padding: 0, cursor: "pointer", font: "inherit", fontWeight: 700, color: "var(--brand)", textAlign: "left" }}>
+                        {r.product_label}
+                      </button>
                       {r.is_new_product ? <span style={{ fontSize: 11, color: "#60a5fa", marginLeft: 6 }}>{en ? "NEW" : "NOUVEAU"}</span> : null}
                     </div>
                     <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>

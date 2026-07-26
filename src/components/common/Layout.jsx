@@ -1303,11 +1303,17 @@ export default function Layout() {
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                   <span style={{ fontSize: 12, fontWeight: 700 }}>{res.ref}</span>
                   <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 9, background: res.type === "sale" ? "rgba(251,197,3,0.15)" : "rgba(245,158,11,0.15)", color: res.type === "sale" ? "var(--brand-light)" : "#fbbf24" }}>
-                    {res.type === "sale" ? (lang === "en" ? "MP Sale" : "Vente MP") : (lang === "en" ? "Dozie" : "Dozie")}
+                    {res.type === "sale" ? (lang === "en" ? "MP Sale" : "Vente MP")
+                      : res.type === "transfer" ? (lang === "en" ? "Transfer" : "Transfert")
+                      : res.type === "buffer" ? (lang === "en" ? "Goods" : "Marchandises")
+                      : "Dozie"}
                   </span>
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-                  {Number(res.total || 0).toLocaleString()} {fmt.symbol} · {res.status}
+                  {/* MP-STAFF-ACTIVITY-LEDGER Phase 3: transfers/buffers carry no money — show status only. */}
+                  {(res.type === "transfer" || res.type === "buffer")
+                    ? res.status
+                    : `${Number(res.total || 0).toLocaleString()} ${fmt.symbol} · ${res.status}`}
                   {res.date ? " · " + new Date(res.date).toLocaleDateString() : ""}
                 </div>
               </div>
