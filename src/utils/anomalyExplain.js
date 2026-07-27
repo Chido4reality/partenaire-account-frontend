@@ -245,6 +245,38 @@ function explainAnomalyCore(audit, en, money) {
       };
     }
 
+    // MP-MANAGER-DELEGATION: staff add/deactivate/reactivate — name the ACTOR, the
+    // action, and (critically) the TARGET who was affected, not just the actor.
+    case "staff_added":
+    case "staff_deactivated":
+    case "staff_reactivated": {
+      const ROLE_NOUN = {
+        cashier:    { en: "cashier",         fr: "caissier" },
+        manager:    { en: "manager",         fr: "responsable" },
+        warehouse:  { en: "warehouse staff", fr: "magasinier" },
+        accountant: { en: "accountant",      fr: "comptable" },
+      };
+      const rn = ROLE_NOUN[d.target_role] || { en: d.target_role || "staff member", fr: d.target_role || "membre du personnel" };
+      const tgt = has(d.target_name) ? String(d.target_name).trim() : (en ? "a staff member" : "un membre");
+      const reason = has(d.reason) ? (en ? ` Reason: ${d.reason}.` : ` Raison : ${d.reason}.`) : "";
+      const verbEn = action === "staff_added" ? "added" : action === "staff_reactivated" ? "reactivated" : "deactivated";
+      const verbFr = action === "staff_added" ? "a ajouté" : action === "staff_reactivated" ? "a réactivé" : "a désactivé";
+      return {
+        severity: action === "staff_deactivated" ? "high" : "normal",
+        what: en
+          ? `${actor} ${verbEn} the ${rn.en} ${tgt}.${reason}`
+          : `${actor} ${verbFr} le ${rn.fr} ${tgt}.${reason}`,
+        why: action === "staff_deactivated"
+          ? (en ? "Deactivating a staff member blocks their access immediately. Make sure it was expected."
+                : "Désactiver un membre bloque son accès immédiatement. Assurez-vous que c'était prévu.")
+          : "",
+        do: action === "staff_deactivated"
+          ? (en ? `If you didn't expect ${actor} to deactivate ${tgt}, ask why.`
+                : `Si vous n'attendiez pas que ${actor} désactive ${tgt}, demandez pourquoi.`)
+          : "",
+      };
+    }
+
     default: {
       // No dedicated script — render a best-effort "what" from the action name
       // and any obvious payload amount; leave why/do empty.

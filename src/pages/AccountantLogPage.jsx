@@ -805,6 +805,13 @@ function detailFields(r, en, money) {
       if (has(d.target_name)) F.push({ label: en ? "Customer" : "Client", value: d.target_name });
       if (has(d.total_debt)) F.push({ label: en ? "Debt was" : "Dette", value: m(d.total_debt) });
       break;
+    case "staff_added":
+    case "staff_deactivated":
+    case "staff_reactivated":
+      if (has(d.target_name)) F.push({ label: en ? "Staff member" : "Membre", value: `${d.target_name}${has(d.target_role) ? ` (${d.target_role})` : ""}` });
+      if (has(d.actor_name)) F.push({ label: en ? "By" : "Par", value: d.actor_name });
+      if (has(d.reason)) F.push({ label: en ? "Reason" : "Motif", value: d.reason });
+      break;
     default:
       break;
   }
