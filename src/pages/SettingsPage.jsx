@@ -96,6 +96,16 @@ export default function SettingsPage() {
   const qc = useQueryClient();
   const fmt = useCurrency();
   const isOwner = user?.role === "owner";
+  // MP-MANAGER-DELEGATION Phase 3: a manager only sees the staff add/deactivate controls
+  // when the owner delegated can_manage_staff (the server enforces it regardless — this
+  // just hides buttons that would 403). Owner always can.
+  const { data: myPermsResp } = useQuery({
+    queryKey: ["my-permissions"],
+    queryFn: () => api.get("/staff/my-permissions").then((r) => r.data),
+    enabled: user?.role === "manager",
+    staleTime: 300000,
+  });
+  const canManageStaff = isOwner || (user?.role === "manager" && !!myPermsResp?.data?.can_manage_staff);
   const handleVersionTap = () => {
     const now = Date.now();
     if (now - _debugTaps.t > 2000) _debugTaps.count = 0;
@@ -697,7 +707,7 @@ export default function SettingsPage() {
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <div style={{ fontWeight: 600, fontSize: 15 }}>{lang === "en" ? "Staff Members" : "Membres du personnel"}</div>
-            {(isOwner || user?.role === "manager") && (
+            {canManageStaff && (
               <button className="btn btn-primary" onClick={() => setShowAddStaff(true)}>+ {lang === "en" ? "Add staff" : "Ajouter"}</button>
             )}
           </div>
@@ -812,7 +822,7 @@ export default function SettingsPage() {
                       <span style={{ fontSize: 11, padding: "2px 10px", borderRadius: 12, background: rs.bg, color: rs.color, fontWeight: 600 }}>
                         {ROLES.find(r => r.value === s.role)?.[lang === "en" ? "en" : "fr"] || s.role}
                       </span>
-                      {(isOwner || user?.role === "manager") && s.id !== user?.id && (
+                      {canManageStaff && s.id !== user?.id && (
                         <>
                           <button className="btn btn-secondary btn-sm" onClick={() => openEditStaff(s)}>
                             {lang === "en" ? "Edit" : "Modifier"}
@@ -1887,7 +1897,7 @@ export default function SettingsPage() {
             )}
             <div style={{ background: "var(--bg-elevated)", borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "var(--text-muted)" }}>
               {staffForm.role === "cashier" && (lang === "en" ? "✓ Can: make sales, view own sales" : "✓ Peut: faire des ventes, voir ses propres ventes")}
-              {staffForm.role === "manager" && (lang === "en" ? "✓ Can: all sales + inventory + add staff" : "✓ Peut: ventes + inventaire + ajouter personnel")}
+              {staffForm.role === "manager" && (lang === "en" ? "✓ Can: all sales + inventory. Staff management & approvals only if you delegate them (Accountant Log → Permissions)" : "✓ Peut: ventes + inventaire. Gestion du personnel & approbations seulement si vous les déléguez (Journal → Permissions)")}
               {staffForm.role === "warehouse" && (lang === "en" ? "✓ Can: receive goods, adjust stock" : "✓ Peut: réceptionner, ajuster le stock")}
               {staffForm.role === "accountant" && (lang === "en" ? "✓ Can: sales + inventory + reports. ✗ No staff, billing, or Accountant Log" : "✓ Peut: ventes + inventaire + rapports. ✗ Pas de personnel, facturation, ni Journal du comptable")}
             </div>

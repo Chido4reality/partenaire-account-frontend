@@ -971,6 +971,20 @@ function buildEvidenceHtml({ data, en, fmt }) {
 // block) — every other policy here defaults to allow. `defaultPolicy` lets the
 // UI (display AND save) reflect each key's real server-side default instead of
 // assuming "allow" for all of them.
+// MP-MANAGER-DELEGATION Phase 3 — the action_types a delegated manager can be given to
+// APPROVE on the boss's behalf (deputy). Maps 1:1 to pa_action_approvals.action_type +
+// pa_staff_permissions.can_approve. Below-cost is deliberately absent — it ALWAYS goes to
+// the owner and the server refuses it even if sent.
+const DEPUTY_APPROVABLE = [
+  { key: "void",         en: "Cancel a sale",        fr: "Annuler une vente" },
+  { key: "refund",       en: "Give a refund",        fr: "Faire un remboursement" },
+  { key: "bundled_sale", en: "Sales needing approval (discount, credit, over-sell)", fr: "Ventes à approuver (remise, crédit, rupture)" },
+  { key: "transfer",     en: "Transfer goods",       fr: "Transférer des marchandises" },
+  { key: "stock_adjust", en: "Stock changes",        fr: "Modifications de stock" },
+  { key: "debt_adjust",  en: "Debt changes",         fr: "Modifications de dette" },
+  { key: "expense",      en: "Expenses",             fr: "Dépenses" },
+];
+
 const PERM_ACTIONS = [
   { key: "void_policy",         en: "Cancel a sale",        fr: "Annuler une vente" },
   { key: "refund_policy",       en: "Give a refund",        fr: "Faire un remboursement" },
@@ -1220,6 +1234,12 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
         // MP-GOODS-BUFFER: boolean — may this staffer PRICE + RELEASE buffer goods into
         // inventory? Default OFF.
         buffer_access: !!perms.buffer_access,
+        // MP-MANAGER-DELEGATION Phase 3: the delegation grant (only meaningful for a
+        // manager). Sent every save; the server filters can_approve to valid types and
+        // never accepts below_cost. Owner-only screen (this whole page is owner-gated).
+        can_approve: Array.isArray(perms.can_approve) ? perms.can_approve : [],
+        branch_scope: perms.branch_scope === "all" ? "all" : "own",
+        can_manage_staff: !!perms.can_manage_staff,
       };
       PERM_ACTIONS.forEach((a) => {
         const v = perms[a.key];
@@ -1776,6 +1796,81 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                         : "Tout le monde peut pré-enregistrer les arrivées. Ceci autorise en plus à fixer les prix et ajouter au stock."}
                   </div>
                 </div>
+                {/* MP-MANAGER-DELEGATION Phase 3 — "Delegate as manager": only shown for a
+                    MANAGER. Everything above governs what THIS person may do directly; this
+                    section lends them the boss's authority to APPROVE OTHER staff, scope it
+                    to a branch, and (guarded) manage cashiers. One tap removes it all. */}
+                {staff.role === "manager" && (
+                  <div style={{ marginTop: 10, marginBottom: 8, padding: "11px 12px", background: "rgba(230,190,92,0.06)", border: "1px solid rgba(230,190,92,0.35)", borderRadius: 10 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 800, color: "var(--brand-light)", marginBottom: 2 }}>
+                      {en ? "⭐ Delegate as manager" : "⭐ Déléguer comme responsable"}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginBottom: 10 }}>
+                      {en ? "Let this manager act for you while you're away. Turn any of it off and he's a plain manager again."
+                          : "Laissez ce responsable agir pour vous en votre absence. Désactivez et il redevient un simple responsable."}
+                    </div>
+
+                    <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 5 }}>{en ? "Can APPROVE other staff's:" : "Peut APPROUVER pour les autres :"}</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 4 }}>
+                      {DEPUTY_APPROVABLE.map((a) => {
+                        const on = Array.isArray(perms.can_approve) && perms.can_approve.includes(a.key);
+                        return (
+                          <label key={a.key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, cursor: "pointer" }}>
+                            <input type="checkbox" checked={on}
+                              onChange={() => setPerms((p) => {
+                                const cur = Array.isArray(p.can_approve) ? p.can_approve : [];
+                                return { ...p, can_approve: cur.includes(a.key) ? cur.filter((k) => k !== a.key) : [...cur, a.key] };
+                              })} />
+                            <span>{en ? a.en : a.fr}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: "var(--text-muted)", marginBottom: 10 }}>
+                      {en ? "Below-cost sales always come to you — never delegated." : "Les ventes sous le prix plancher vous reviennent toujours — jamais déléguées."}
+                    </div>
+
+                    <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 5 }}>{en ? "Where he can act:" : "Où il peut agir :"}</div>
+                    <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)", marginBottom: 10 }}>
+                      {[
+                        { val: "own", en: "His branch only", fr: "Sa succursale seulement" },
+                        { val: "all", en: "All branches", fr: "Toutes les succursales" },
+                      ].map((o) => (
+                        <button key={o.val} onClick={() => setPerms((p) => ({ ...(p || {}), branch_scope: o.val }))}
+                          style={{ flex: 1, padding: "7px 4px", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
+                            background: (perms.branch_scope || "own") === o.val ? "rgba(230,190,92,0.9)" : "var(--bg-elevated)",
+                            color: (perms.branch_scope || "own") === o.val ? "#2a1e00" : "var(--text-muted)" }}>
+                          {en ? o.en : o.fr}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 5 }}>{en ? "Manage staff:" : "Gérer le personnel :"}</div>
+                    <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>
+                      {[
+                        { val: false, en: "No", fr: "Non" },
+                        { val: true,  en: "Add & deactivate cashiers", fr: "Ajouter & désactiver caissiers" },
+                      ].map((o) => (
+                        <button key={String(o.val)} onClick={() => setPerms((p) => ({ ...(p || {}), can_manage_staff: o.val }))}
+                          style={{ flex: 1, padding: "7px 4px", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
+                            background: !!perms.can_manage_staff === o.val ? (o.val ? "rgba(16,185,129,0.9)" : "rgba(239,68,68,0.9)") : "var(--bg-elevated)",
+                            color: !!perms.can_manage_staff === o.val ? (o.val ? "#06281d" : "#fff") : "var(--text-muted)" }}>
+                          {en ? o.en : o.fr}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: "var(--text-muted)", marginTop: 4 }}>
+                      {en ? "Cashiers only — he can never add or deactivate a manager, the owner, or himself, and every such action alerts you."
+                          : "Caissiers uniquement — il ne peut jamais ajouter ou désactiver un responsable, le propriétaire, ni lui-même, et chaque action vous alerte."}
+                    </div>
+
+                    <button className="btn btn-secondary" style={{ width: "100%", marginTop: 10 }}
+                      onClick={() => setPerms((p) => ({ ...(p || {}), can_approve: [], branch_scope: "own", can_manage_staff: false }))}>
+                      {en ? "↺ Remove all delegation" : "↺ Retirer toute délégation"}
+                    </button>
+                  </div>
+                )}
+
                 <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
                   <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowPerms(false)}>{en ? "Cancel" : "Annuler"}</button>
                   <button className="btn btn-primary" style={{ flex: 2 }} disabled={permsBusy} onClick={savePerms}>
