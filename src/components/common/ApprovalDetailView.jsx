@@ -79,9 +79,15 @@ function buildReasons(row, en, fmt) {
       if (!a || typeof a !== "object") continue;
       if (a.type === "below_cost") {
         const name = a.name || (en ? "an item" : "un article");
+        // MP-MANAGER-DELEGATION polish: speak in COST terms (not "floor"), and phrase a
+        // missing/zero cost gracefully rather than printing "0". Older rows without
+        // cost_price fall to the same graceful message.
+        const costLine = (a.cost_price != null && Number(a.cost_price) > 0)
+          ? (en ? `the cost price is ${fmt(num(a.cost_price))}` : `le prix de revient est ${fmt(num(a.cost_price))}`)
+          : (en ? "no cost price set" : "aucun prix de revient défini");
         out.push({ tone: "danger", text: en
-          ? `Below cost: ${name}${has(a.quantity) ? ` ×${a.quantity}` : ""} at ${fmt(num(a.attempted_price))} — floor is ${fmt(num(a.min_price))}`
-          : `En dessous du coût : ${name}${has(a.quantity) ? ` ×${a.quantity}` : ""} à ${fmt(num(a.attempted_price))} — plancher ${fmt(num(a.min_price))}` });
+          ? `Below cost: ${name}${has(a.quantity) ? ` ×${a.quantity}` : ""} at ${fmt(num(a.attempted_price))} — ${costLine}`
+          : `En dessous du coût : ${name}${has(a.quantity) ? ` ×${a.quantity}` : ""} à ${fmt(num(a.attempted_price))} — ${costLine}` });
       } else if (a.type === "credit") {
         out.push({ tone: "warn", text: en
           ? `On credit: ${fmt(num(a.balance_due))} left unpaid`
