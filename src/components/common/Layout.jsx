@@ -124,6 +124,9 @@ const NAV = [
   // Staffer-facing approval queue. Non-owner staff only; section:"sales" so it's
   // always visible (no plan-gate); badge = count of APPROVED-not-finalized items.
   { to: "/my-requests", en: "My Requests", fr: "Mes demandes", icon: "📨", roles: ["manager","cashier","warehouse","accountant"], section: "sales", badge: "my_requests" },
+  // MP-MANAGER-DELEGATION — deputy inbox, MANAGER only (owner uses the Accountant Log
+  // inbox). Only useful once the owner delegates approvals; harmless empty list otherwise.
+  { to: "/team-approvals", en: "Approvals", fr: "Approbations", icon: "✅", roles: ["manager"], section: "sales" },
   { to: "/settings",     en: "Settings",   fr: "Paramètres",      icon: "⚙️", roles: ["owner","manager"],                       section: "settings" },
   // MP-HELP v1 — in-app guide (bundled, offline). Everyone can get stuck, so ALL
   // roles; also registered in NavDrawer.jsx SECTIONS (mobile) + App.jsx ROUTE_ACCESS.

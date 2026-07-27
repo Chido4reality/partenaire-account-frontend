@@ -39,6 +39,7 @@ import AttendancePage from "./pages/AttendancePage"; // Staff Maintenance Phase 
 import AssetsPage from "./pages/AssetsPage"; // Pro Plus Feature 3 — Asset ledger
 import AccountantLogPage from "./pages/AccountantLogPage"; // Accountant Log Phase 1 — owner-only staff oversight
 import MyRequestsPage from "./pages/MyRequestsPage"; // staffer-facing approval queue (non-owner)
+import TeamApprovalsPage from "./pages/TeamApprovalsPage"; // MP-MANAGER-DELEGATION deputy inbox
 import FiltersPage from "./pages/FiltersPage"; // MP-FILTERS — what/who/when clarity screen
 import HelpPage from "./pages/HelpPage"; // MP-HELP v1 — bundled offline in-app guide
 
@@ -146,6 +147,11 @@ const ROUTE_ACCESS = {
   "/accountant-log": ["owner"],
   // My Requests — staffer's own approval queue. Any NON-OWNER staffer.
   "/my-requests": ["manager", "cashier", "warehouse", "accountant"],
+  // MP-MANAGER-DELEGATION — a delegated manager's deputy inbox (approve/reject team
+  // requests the owner delegated). Route open to owner+manager; the server scopes the
+  // list to the manager's grant and re-checks every decide. Owner normally uses the
+  // Accountant Log inbox; nav link shows for managers only (see Layout).
+  "/team-approvals": ["owner", "manager"],
   // MP-FILTERS — every role gets it; a cashier/warehouse's own view is
   // restricted to their own data SERVER-SIDE (backend/src/lib/filterScope.js),
   // not by hiding this route.
@@ -566,6 +572,7 @@ export default function App() {
             <Route path="assets"       element={<RoleGuard path="/assets"><AssetsPage /></RoleGuard>} />
             <Route path="accountant-log" element={<RoleGuard path="/accountant-log"><AccountantLogPage /></RoleGuard>} />
             <Route path="my-requests" element={<RoleGuard path="/my-requests"><MyRequestsPage /></RoleGuard>} />
+            <Route path="team-approvals" element={<RoleGuard path="/team-approvals"><TeamApprovalsPage /></RoleGuard>} />
             <Route path="filters"     element={<RoleGuard path="/filters"><PlanGuard path="/filters"><FiltersPage /></PlanGuard></RoleGuard>} />
             <Route path="settings"     element={<RoleGuard path="/settings"><PlanGuard path="/settings"><SettingsPage /></PlanGuard></RoleGuard>} />
             <Route path="help"         element={<RoleGuard path="/help"><HelpPage /></RoleGuard>} />
