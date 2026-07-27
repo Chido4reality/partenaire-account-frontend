@@ -405,10 +405,17 @@ export default function SettingsPage() {
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
 
+  // MP-MANAGER-DELEGATION Phase 2: deactivate via the PATCH is_active:false path — the
+  // same properly-gated endpoint (owner, or a can_manage_staff manager on a cashier),
+  // closing the old "PATCH loophole" where that path was ungated. Bilingual error surfaced
+  // so a refused non-delegated manager / non-cashier target sees exactly why.
   const deactivateStaffMutation = useMutation({
-    mutationFn: (id) => api.delete("/auth/users/" + id),
+    mutationFn: (id) => api.patch("/auth/users/" + id, { is_active: false }),
     onSuccess: () => { toast.success(lang === "en" ? "Staff deactivated!" : "Personnel désactivé!"); qc.invalidateQueries(["staff"]); },
-    onError: (err) => toast.error(err.response?.data?.message || "Error")
+    onError: (err) => {
+      const d = err.response?.data || {};
+      toast.error((lang === "en" ? (d.message_en || d.message) : (d.message_fr || d.message)) || "Error");
+    }
   });
 
   const reactivateStaffMutation = useMutation({
