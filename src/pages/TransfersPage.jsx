@@ -235,7 +235,11 @@ export default function TransfersPage() {
       qc.invalidateQueries(["transfers"]);
       qc.invalidateQueries(["stock"]);
     },
-    onError: (err) => toast.error(err.response?.data?.message || "Error")
+    // MP-TRANSFER-APPROVAL-IN-TRANSIT: surface use_dispatch_confirm (flag-ON orgs) bilingually.
+    onError: (err) => {
+      const d = err.response?.data || {};
+      toast.error((lang === "en" ? (d.message_en || d.message) : (d.message_fr || d.message)) || "Error");
+    }
   });
 
   // MP-TRANSFER-RECEIVE-CONFIRM (Phase 1) — sender ships: pending→in_transit
