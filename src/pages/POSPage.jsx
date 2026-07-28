@@ -493,7 +493,7 @@ export default function POSPage() {
     }
   });
 
-  const { data: allProducts } = useQuery({
+  const { data: allProducts, refetch: refetchProducts } = useQuery({
     queryKey: ["pos-products", selectedLocation?.id],
     networkMode: 'always',
     queryFn: async () => {
@@ -981,7 +981,10 @@ export default function POSPage() {
         wholesale_price: Number(product.wholesale_price) || 0,
         min_price: product.min_price || 0,
         cost_price: product.cost_price,
-        stock: product.stock?.quantity,
+        // MP-POS-STOCK-RACE Fix A: mirror the search/restore coercion so the cart snapshot is
+        // always a NUMBER (handles the picker's {quantity} object AND the scalar shape), never
+        // `undefined`. The authoritative availability decision is re-read live in attemptCheckout.
+        stock: Number(product.stock?.quantity ?? product.stock ?? 0),
         is_multipart: !!product.is_multipart,   // MP-MULTIPART: kit → no own stock
       }];
     });
@@ -1907,7 +1910,7 @@ export default function POSPage() {
     }
     setOversellModal(null); saleMutation.mutate();
   };
-  const attemptCheckout = () => {
+  const attemptCheckout = async () => {
     const real = cart.filter(i =>
       i.product_id && i.product_id !== "__DEBT__" &&
       i.product_id !== "__DEBT_PAYMENT__" && i.type !== "debt_payment");
@@ -1922,7 +1925,28 @@ export default function POSPage() {
     // The backend consumes purely by damaged_source_id (location-agnostic), so skip
     // both client-side stock checks for it exactly like a kit line.
     const isKitLine = (i) => i.is_multipart || Object.prototype.hasOwnProperty.call(parentAvail, i.product_id) || i.is_damaged;
-    const notStocked = real.filter(i => !isKitLine(i) && (i.stock === null || i.stock === undefined));
+    const plain = real.filter(i => !isKitLine(i));
+
+    // MP-POS-STOCK-RACE Fix B — resolve availability from the LIVE products list, not the
+    // cart snapshot (which was captured at add-time and can be stale). A product's stock
+    // reads `null` BOTH when the list hasn't loaded/is stale AND when it's genuinely not
+    // stocked here (backend returns stock:null for a missing pa_stock row), so the VALUE
+    // alone can't tell them apart. We therefore NEVER block off a possibly-stale list: if
+    // any line reads no-stock while online, force ONE fresh fetch and decide on THAT. A
+    // stock still null after a confirmed-fresh fetch is a genuine "not stocked" → block.
+    // (Offline: use best-available cache/snapshot, no worse than before.)
+    const stockFrom = (list, i) => {
+      const p = (list || []).find(x => x.id === i.product_id);
+      const q = p ? (p.stock?.quantity ?? p.stock) : i.stock; // fall back to snapshot if absent
+      return (q === null || q === undefined) ? null : Number(q);
+    };
+    let list = allProducts?.data || [];
+    if (navigator.onLine && plain.some(i => stockFrom(list, i) === null)) {
+      toast(lang === "en" ? "Checking stock…" : "Vérification du stock…");
+      try { const r = await refetchProducts(); if (r?.data?.data) list = r.data.data; } catch { /* offline/failed → best-available */ }
+    }
+
+    const notStocked = plain.filter(i => stockFrom(list, i) === null);
     if (notStocked.length) {
       setBlockModal({
         locationName: selectedLocation?.name || "",
@@ -1931,9 +1955,9 @@ export default function POSPage() {
       });
       return;
     }
-    const oversold = real
-      .filter(i => !isKitLine(i) && typeof i.stock === "number" && i.quantity > i.stock)
-      .map(i => ({ name: i.name, available: i.stock, selling: i.quantity }));
+    const oversold = plain
+      .filter(i => i.quantity > stockFrom(list, i))
+      .map(i => ({ name: i.name, available: stockFrom(list, i), selling: i.quantity }));
     if (oversold.length) { setOversellModal({ items: oversold }); return; }
     runCheckout();
   };
