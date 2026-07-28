@@ -466,7 +466,7 @@ export default function SettingsPage() {
   });
 
   const handlePinSave = () => {
-    if (pinForm.new_pin.length !== 4) { setPinError(lang === "en" ? "PIN must be exactly 4 digits" : "PIN doit être exactement 4 chiffres"); return; }
+    if (!/^\d{4,6}$/.test(pinForm.new_pin)) { setPinError(lang === "en" ? "PIN must be 4-6 digits" : "Le PIN doit contenir 4 à 6 chiffres"); return; }
     if (pinForm.new_pin !== pinForm.confirm_pin) { setPinError(lang === "en" ? "PINs don't match" : "Les PIN ne correspondent pas"); return; }
     setPinError(""); pinMutation.mutate();
   };
@@ -1336,20 +1336,20 @@ export default function SettingsPage() {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
                   <div className="form-group">
                     <label className="label">{lang === "en" ? "Current PIN" : "PIN actuel"}</label>
-                    <input className="input" type="password" inputMode="numeric" maxLength={4}
-                      value={pinForm.current_pin} onChange={e => setPinForm(f => ({ ...f, current_pin: e.target.value.replace(/\D/g,"").slice(0,4) }))}
+                    <input className="input" type="password" inputMode="numeric" maxLength={6}
+                      value={pinForm.current_pin} onChange={e => setPinForm(f => ({ ...f, current_pin: e.target.value.replace(/\D/g,"").slice(0,6) }))}
                       placeholder="••••" style={{ textAlign: "center", letterSpacing: 6 }} />
                   </div>
                   <div className="form-group">
-                    <label className="label">{lang === "en" ? "New PIN" : "Nouveau PIN"}</label>
-                    <input className="input" type="password" inputMode="numeric" maxLength={4}
-                      value={pinForm.new_pin} onChange={e => setPinForm(f => ({ ...f, new_pin: e.target.value.replace(/\D/g,"").slice(0,4) }))}
+                    <label className="label">{lang === "en" ? "New PIN (4-6 digits)" : "Nouveau PIN (4-6 chiffres)"}</label>
+                    <input className="input" type="password" inputMode="numeric" maxLength={6}
+                      value={pinForm.new_pin} onChange={e => setPinForm(f => ({ ...f, new_pin: e.target.value.replace(/\D/g,"").slice(0,6) }))}
                       placeholder="••••" style={{ textAlign: "center", letterSpacing: 6 }} />
                   </div>
                   <div className="form-group">
                     <label className="label">{lang === "en" ? "Confirm PIN" : "Confirmer"}</label>
-                    <input className="input" type="password" inputMode="numeric" maxLength={4}
-                      value={pinForm.confirm_pin} onChange={e => setPinForm(f => ({ ...f, confirm_pin: e.target.value.replace(/\D/g,"").slice(0,4) }))}
+                    <input className="input" type="password" inputMode="numeric" maxLength={6}
+                      value={pinForm.confirm_pin} onChange={e => setPinForm(f => ({ ...f, confirm_pin: e.target.value.replace(/\D/g,"").slice(0,6) }))}
                       placeholder="••••" style={{ textAlign: "center", letterSpacing: 6 }} />
                   </div>
                 </div>
