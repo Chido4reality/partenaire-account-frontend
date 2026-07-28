@@ -261,7 +261,12 @@ export default function TransfersPage() {
       setAdjustFor(null);
       qc.invalidateQueries(["transfers"]); qc.invalidateQueries(["transfers-incoming"]); qc.invalidateQueries(["stock"]); qc.invalidateQueries(["stock-check-summary"]);
     },
-    onError: (err) => toast.error(err.response?.data?.message || "Error")
+    // MP-TRANSFER-APPROVAL-IN-TRANSIT: surface the server's bilingual reason clearly
+    // (e.g. cannot_confirm_own_dispatch / not_your_destination) — never a raw 4xx.
+    onError: (err) => {
+      const d = err.response?.data || {};
+      toast.error((lang === "en" ? (d.message_en || d.message) : (d.message_fr || d.message)) || "Error");
+    }
   });
 
   // (B) EDIT a PENDING transfer: reopen the editor preloaded with its from/to +
@@ -316,6 +321,15 @@ export default function TransfersPage() {
     if (s === "in_transit") return { bg: "rgba(245,158,11,0.15)", color: "#fbbf24" };
     if (s === "cancelled") return { bg: "rgba(239,68,68,0.15)", color: "#f87171" };
     return { bg: "rgba(251,197,3,0.15)", color: "var(--brand-light)" };
+  };
+  // MP-TRANSFER-APPROVAL-IN-TRANSIT: human, bilingual status — never the raw enum.
+  // "In transit" / "En transit" must read distinct from "Completed" / "Terminé".
+  const statusLabel = (s) => {
+    if (s === "completed")  return lang === "en" ? "Completed"  : "Terminé";
+    if (s === "in_transit") return lang === "en" ? "In transit" : "En transit";
+    if (s === "cancelled")  return lang === "en" ? "Cancelled"  : "Annulé";
+    if (s === "pending")    return lang === "en" ? "Pending"    : "En attente";
+    return s;
   };
 
   const resetNew = () => {
@@ -785,7 +799,7 @@ export default function TransfersPage() {
                         style={{ fontFamily: "monospace", fontSize: 12, color: "var(--brand)", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline" }}>
                         {tr.transfer_number}
                       </button>
-                      <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: sc.bg, color: sc.color }}>{tr.status}</span>
+                      <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: sc.bg, color: sc.color }}>{statusLabel(tr.status)}</span>
                     </div>
                     <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>
                       {fromName} <span style={{ color: "var(--text-muted)" }}>></span> {toName}
