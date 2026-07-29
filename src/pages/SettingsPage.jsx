@@ -32,7 +32,14 @@ const roleStyle = (role) => {
 // editing a staff member (or a downgraded org) never trips the server's
 // upgrade-required gate, and a previously-set assignment is left untouched.
 function buildStaffPayload(form, effectivePlan) {
-  const p = { full_name: form.full_name, phone: form.phone, password: form.password, role: form.role };
+  const p = { full_name: form.full_name, phone: form.phone, role: form.role };
+  // MP-STAFF-PIN-CLOBBER: only send the PIN when the owner ACTUALLY typed a new one, and
+  // flag it as a DELIBERATE change. A blank field means "keep the existing PIN" — it must
+  // never reach the backend, or a stray/autofilled value could re-hash over a staff member's
+  // real PIN on an unrelated Save (the "my staff's password stopped working" bug). change_password
+  // is the backend's intent gate; the empty-by-default + autofill-blocked field keeps it honest.
+  const pw = (form.password || "").trim();
+  if (pw) { p.password = pw; p.change_password = true; }
   if (hasFeature(effectivePlan, "staff_location_binding")) {
     p.assigned_location_id = form.assigned_location_id || null;
   }
@@ -1861,7 +1868,14 @@ export default function SettingsPage() {
             </div>
             <div className="form-group">
               <label className="label">{editStaff ? (lang === "en" ? "New password (blank = keep)" : "Nouveau mot de passe (vide = garder)") : (lang === "en" ? "Password *" : "Mot de passe *")}</label>
-              <input className="input" type="password" value={staffForm.password} onChange={e => setSF("password", e.target.value)} placeholder={editStaff ? (lang === "en" ? "Leave blank to keep" : "Laisser vide pour garder") : "Min 6 caractères"} />
+              {/* MP-STAFF-PIN-CLOBBER: autoComplete="new-password" + a decoupled (non-"password")
+                  field name stop the browser/password-manager from AUTOFILLING the owner's own saved
+                  login into this box — which, on Save, used to silently re-hash over a staff PIN.
+                  The field is empty-by-default (openEditStaff seeds password:"") so a blank Save keeps
+                  the existing PIN. Paired with the backend change_password intent gate. */}
+              <input className="input" type="password" name="mp-new-staff-pin" autoComplete="new-password"
+                value={staffForm.password} onChange={e => setSF("password", e.target.value)}
+                placeholder={editStaff ? (lang === "en" ? "Leave blank to keep current PIN" : "Laisser vide pour garder le PIN actuel") : (lang === "en" ? "Min 6 characters" : "Min 6 caractères")} />
             </div>
             <div className="form-group"><label className="label">Role</label>
               <select className="input" value={staffForm.role} onChange={e => setSF("role", e.target.value)}>
