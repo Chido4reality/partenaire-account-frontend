@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
@@ -204,6 +204,13 @@ export default function SettingsPage() {
   const [showPinSection, setShowPinSection] = useState(false);
   const [pinError, setPinError]   = useState("");
   const [shopLoaded, setShopLoaded] = useState(false);
+  // MP-SETTINGS-DIRTY-TRACKING: the Save must send ONLY fields the owner actually changed,
+  // never the whole form. A full-object PATCH let a stale device silently revert an untouched
+  // flag (the transfer receive-confirmation "turns off by itself" bug — same disease as the
+  // staff-PIN clobber). savedSnapshotRef = the last server-persisted values to diff against;
+  // nextSnapshotRef = shopForm captured at mutate-time, promoted to saved on success.
+  const savedSnapshotRef = useRef(null);
+  const nextSnapshotRef  = useRef(null);
 
   // Dozie state
   const [dozieForm, setDozieForm] = useState({ dozie_pin: "", city: "Douala", shop_description: "" });
@@ -297,7 +304,9 @@ export default function SettingsPage() {
   useEffect(() => {
     const d = shopResp?.data;
     if (!d || shopLoaded) return;
-    setShopForm({
+    // Build the normalized form once, then seed BOTH the live form and the saved-snapshot
+    // (dirty-tracking baseline) from the same object so an untouched field compares equal.
+    const normalized = {
       name:                     d.name || "",
       slogan:                   d.slogan || "",
       email:                    d.email || "",
@@ -320,7 +329,9 @@ export default function SettingsPage() {
       promo_footer_enabled: d.promo_footer_enabled !== false,
       max_offline_hours: Math.max(4, Math.min(72, Number(d.max_offline_hours) || 24)),
       staff_can_view_own_activity: d.staff_can_view_own_activity === true,
-    });
+    };
+    setShopForm(normalized);
+    savedSnapshotRef.current = { ...normalized };
     setWaAlertsFee(Number(d.whatsapp_alerts_fee) || 0);
     setWaAlertsCur(d.currency || "XAF");
     setShopLoaded(true);
@@ -442,9 +453,33 @@ export default function SettingsPage() {
   });
 
   // ── SHOP SETTINGS MUTATIONS ────────────────────────────────────────────────
+  // MP-SETTINGS-CONTROL-FLAGS: money-control toggles whose SILENT revert has real
+  // consequences. The Save stamps settings_control_intent:true whenever one of these is in
+  // the delta, so the backend can tell a deliberate change from a stale full-object write.
+  const CONTROL_FLAGS = ["transfer_receipt_confirmation_enabled", "transfer_require_second_person", "cashier_undo_requires_approval"];
   const saveShopMutation = useMutation({
-    mutationFn: () => api.patch("/settings", shopForm),
+    // MP-SETTINGS-DIRTY-TRACKING: diff the live form against the last-saved snapshot and PATCH
+    // ONLY changed fields. The test is "differs from snapshot", NOT "is falsy" — a field the
+    // owner genuinely set to false still differs and is sent; an untouched field is omitted so
+    // it can never be reverted by this Save.
+    mutationFn: () => {
+      const snap = savedSnapshotRef.current || {};
+      const delta = {};
+      for (const k of Object.keys(shopForm)) {
+        if (shopForm[k] !== snap[k]) delta[k] = shopForm[k];
+      }
+      nextSnapshotRef.current = { ...shopForm };  // promoted to saved on success
+      if (Object.keys(delta).length === 0) {
+        return Promise.resolve({ data: { success: true, data: null, message: "no-change" } });
+      }
+      if (CONTROL_FLAGS.some(f => Object.prototype.hasOwnProperty.call(delta, f))) {
+        delta.settings_control_intent = true;
+      }
+      return api.patch("/settings", delta);
+    },
     onSuccess: () => {
+      // The values we just sent are now the persisted baseline for the next diff.
+      if (nextSnapshotRef.current) savedSnapshotRef.current = nextSnapshotRef.current;
       toast.success(lang === "en" ? "✓ Settings saved!" : "✓ Paramètres sauvegardés!", { duration: 3000 });
       qc.invalidateQueries(["org-settings"]);
       // Mode flip changes shift-resolution semantics across the
