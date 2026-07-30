@@ -3,7 +3,7 @@ import HelpButton from "../components/common/HelpButton";
 import ClearButton from "../components/common/ClearButton";
 import ProductSearchBox from "../components/common/ProductSearchBox";
 import { useState, useEffect, useRef } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useLangStore, useAuthStore } from "../store";
