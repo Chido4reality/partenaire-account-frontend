@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
@@ -155,6 +155,33 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
 
   const items = sale.pa_sale_items || [];
   const total = items.reduce((s, i) => s + i.quantity * i.unit_price, 0);
+
+  // MP-TXN-HISTORY: remaining-returnable per product, from GET /sales/:id history —
+  // mirrors the RPC over-return guard EXACTLY (returnable = sold qty − already-returned qty
+  // per line). Drives the "Returned" annotation on Sale contents, the Return/Exchange button
+  // gating, and the per-line qty cap so a fully-refunded item can NEVER be paid out twice.
+  const returnableByProduct = {};
+  for (const r of (sale.history?.returnable || [])) returnableByProduct[r.product_id] = r;
+  const hasReturnableData = Array.isArray(sale.history?.returnable);
+  // returnable_qty for a product; null ⇒ unknown (no history yet, offline) → don't cap in
+  // the UI (the backend RPC still enforces it).
+  const returnableQtyFor = (pid) => (returnableByProduct[pid] ? returnableByProduct[pid].returnable_qty : null);
+  // Nothing left to return ⇒ gate the money actions. Absent history (offline / not yet
+  // enriched) leaves actions enabled — the atomic RPC is the hard backstop either way.
+  const nothingReturnable = hasReturnableData && sale.history?.summary?.any_returnable === false;
+  const returnableKey = (sale.history?.returnable || []).map(r => `${r.product_id}:${r.returnable_qty}`).join(",");
+
+  // When the history (and its per-product caps) arrives via enrichment, clamp the pre-seeded
+  // return quantities to what's actually returnable and de-select fully-returned lines.
+  useEffect(() => {
+    if (!hasReturnableData) return;
+    setSelectedItems(prev => prev.map(it => {
+      const cap = returnableQtyFor(it.product_id);
+      if (cap == null) return it;
+      return { ...it, returnQty: cap > 0 ? Math.max(1, Math.min(it.returnQty, cap)) : 0, selected: it.selected && cap > 0 };
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [returnableKey]);
 
   const toggleItem = (idx) => {
     setSelectedItems(prev => prev.map((it, i) => i === idx ? { ...it, selected: !it.selected } : it));
@@ -568,25 +595,47 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
                   const pname = (lang === "en" && item.pa_products?.name_en)
                     ? item.pa_products.name_en
                     : item.pa_products?.name;
+                  // MP-TXN-HISTORY: reflect what's already come back — a fully-returned line
+                  // is struck through + tagged "Returned" (never reads as live, sellable
+                  // contents); a partial line shows "X of Y returned".
+                  const rinfo = item.product_id ? returnableByProduct[item.product_id] : null;
+                  const returnedQty = rinfo ? rinfo.returned_qty : 0;
+                  const fullyReturned = !isDebt && rinfo && rinfo.returnable_qty === 0 && returnedQty > 0;
+                  const partiallyReturned = !isDebt && rinfo && rinfo.returnable_qty > 0 && returnedQty > 0;
                   return (
-                    <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "6px 0", fontSize: 13, borderBottom: i < items.length - 1 ? "1px solid var(--border)" : "none" }}>
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "6px 0", fontSize: 13, borderBottom: i < items.length - 1 ? "1px solid var(--border)" : "none", opacity: fullyReturned ? 0.6 : 1 }}>
                       {isDebt ? (
                         <span style={{ color: "var(--text-secondary)" }}>💰 {lang === "en" ? "Debt repayment" : "Remboursement dette"}</span>
                       ) : (
-                        <span style={{ fontWeight: 600 }}>
+                        <span style={{ fontWeight: 600, textDecoration: fullyReturned ? "line-through" : "none", color: fullyReturned ? "var(--text-muted)" : undefined }}>
                           {pname || (lang === "en" ? "Item" : "Article")}
-                          <span style={{ color: "var(--brand-light)", fontWeight: 700 }}> × {item.quantity}</span>
+                          <span style={{ color: fullyReturned ? "var(--text-muted)" : "var(--brand-light)", fontWeight: 700 }}> × {item.quantity}</span>
                           {item.pa_products?.unit && <span style={{ color: "var(--text-muted)", fontSize: 11 }}> {item.pa_products.unit}</span>}
+                          {fullyReturned && (
+                            <span style={{ marginLeft: 8, padding: "1px 7px", borderRadius: 8, background: "rgba(248,113,113,0.15)", color: "#f87171", fontSize: 10, fontWeight: 700, textDecoration: "none", verticalAlign: "middle" }}>
+                              {lang === "en" ? "RETURNED" : "RETOURNÉ"}
+                            </span>
+                          )}
+                          {partiallyReturned && (
+                            <span style={{ marginLeft: 8, padding: "1px 7px", borderRadius: 8, background: "rgba(251,191,36,0.15)", color: "#fbbf24", fontSize: 10, fontWeight: 700, verticalAlign: "middle" }}>
+                              {lang === "en" ? `${returnedQty} of ${item.quantity} returned` : `${returnedQty} sur ${item.quantity} retourné`}
+                            </span>
+                          )}
                         </span>
                       )}
-                      <span style={{ color: "var(--text-muted)", whiteSpace: "nowrap" }}>{fmt(item.quantity * item.unit_price)}</span>
+                      <span style={{ color: "var(--text-muted)", whiteSpace: "nowrap", textDecoration: fullyReturned ? "line-through" : "none" }}>{fmt(item.quantity * item.unit_price)}</span>
                     </div>
                   );
                 })}
                 <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, marginTop: 2, fontWeight: 800, fontSize: 14, borderTop: "1px solid var(--border)" }}>
                   <span>{lang === "en" ? "Total" : "Total"}</span>
-                  <span>{fmt(total)}</span>
+                  <span style={{ textDecoration: nothingReturnable ? "line-through" : "none", color: nothingReturnable ? "var(--text-muted)" : undefined }}>{fmt(total)}</span>
                 </div>
+                {nothingReturnable && (
+                  <div style={{ fontSize: 11.5, color: "#f87171", marginTop: 6, fontWeight: 600 }}>
+                    {lang === "en" ? "↩️ All items returned/refunded — nothing live on this sale." : "↩️ Tous les articles retournés/remboursés — rien d'actif sur cette vente."}
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -616,21 +665,31 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
               </button>
               </RestrictedAction>
             )}
+            {/* MP-TXN-HISTORY: Return + Exchange are gated by REMAINING-RETURNABLE-QTY
+                (sold − already returned), not just "has any return". A fully-refunded
+                sale disables both so no one pays a refund out twice; a partial sale stays
+                enabled and the item picker below caps each line to what's still returnable. */}
             <RestrictedAction block>
-            <button onClick={() => setMode("refund")}
-              style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(251,191,36,0.4)", background: "rgba(251,191,36,0.08)", color: "#fbbf24", cursor: "pointer", textAlign: "left", fontWeight: 600 }}>
+            <button onClick={nothingReturnable ? undefined : () => setMode("refund")}
+              disabled={nothingReturnable}
+              style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(251,191,36,0.4)", background: "rgba(251,191,36,0.08)", color: "#fbbf24", cursor: nothingReturnable ? "not-allowed" : "pointer", textAlign: "left", fontWeight: 600, opacity: nothingReturnable ? 0.5 : 1 }}>
               ↩️ {lang === "en" ? "Return + Refund (full or partial)" : "Retour + Remboursement (total ou partiel)"}
               <div style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)", marginTop: 3 }}>
-                {lang === "en" ? "Customer returns product, gets money back" : "Client retourne produit, reçoit remboursement"}
+                {nothingReturnable
+                  ? (lang === "en" ? "Nothing left to return — all items already returned/refunded" : "Rien à retourner — articles déjà retournés/remboursés")
+                  : (lang === "en" ? "Customer returns product, gets money back" : "Client retourne produit, reçoit remboursement")}
               </div>
             </button>
             </RestrictedAction>
             <RestrictedAction block>
-            <button onClick={() => setMode("exchange")}
-              style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(251,197,3,0.4)", background: "rgba(251,197,3,0.08)", color: "var(--brand-light)", cursor: "pointer", textAlign: "left", fontWeight: 600 }}>
+            <button onClick={nothingReturnable ? undefined : () => setMode("exchange")}
+              disabled={nothingReturnable}
+              style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(251,197,3,0.4)", background: "rgba(251,197,3,0.08)", color: "var(--brand-light)", cursor: nothingReturnable ? "not-allowed" : "pointer", textAlign: "left", fontWeight: 600, opacity: nothingReturnable ? 0.5 : 1 }}>
               🔄 {lang === "en" ? "Exchange (swap for another product)" : "Échange (contre un autre produit)"}
               <div style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)", marginTop: 3 }}>
-                {lang === "en" ? "Customer swaps product" : "Client échange un produit"}
+                {nothingReturnable
+                  ? (lang === "en" ? "Nothing left to exchange — all items already returned/refunded" : "Rien à échanger — articles déjà retournés/remboursés")
+                  : (lang === "en" ? "Customer swaps product" : "Client échange un produit")}
               </div>
             </button>
             </RestrictedAction>
@@ -716,19 +775,35 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
             <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>
               {lang === "en" ? "Select items to return:" : "Sélectionner les articles à retourner:"}
             </div>
-            {selectedItems.map((item, i) => (
-              <div key={i} style={{ background: "var(--bg-card)", borderRadius: 10, padding: "10px 12px", marginBottom: 8, border: `1px solid ${item.selected ? "var(--brand)" : "var(--border)"}` }}>
+            {selectedItems.map((item, i) => {
+              // MP-TXN-HISTORY: cap each line at what's still returnable (sold − already
+              // returned). A line with 0 remaining is disabled + tagged so it can't be
+              // re-selected and refunded twice; null cap = no history yet → sold qty.
+              const cap = returnableQtyFor(item.product_id);
+              const exhausted = cap === 0;
+              const alreadyReturned = returnableByProduct[item.product_id]?.returned_qty || 0;
+              const maxQty = cap == null ? item.quantity : cap;
+              return (
+              <div key={i} style={{ background: "var(--bg-card)", borderRadius: 10, padding: "10px 12px", marginBottom: 8, border: `1px solid ${item.selected && !exhausted ? "var(--brand)" : "var(--border)"}`, opacity: exhausted ? 0.55 : 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <input type="checkbox" checked={item.selected} onChange={() => toggleItem(i)} style={{ width: 16, height: 16 }} />
+                  <input type="checkbox" checked={item.selected && !exhausted} disabled={exhausted} onChange={() => toggleItem(i)} style={{ width: 16, height: 16 }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 13 }}>{item.pa_products?.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Sold: {item.quantity} × {fmt(item.unit_price)}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                      Sold: {item.quantity} × {fmt(item.unit_price)}
+                      {alreadyReturned > 0 && (lang === "en" ? ` · ${alreadyReturned} returned` : ` · ${alreadyReturned} retourné`)}
+                    </div>
+                    {exhausted && (
+                      <div style={{ fontSize: 11, color: "#f87171", fontWeight: 600, marginTop: 2 }}>
+                        {lang === "en" ? "Already fully returned" : "Déjà entièrement retourné"}
+                      </div>
+                    )}
                   </div>
-                  {item.selected && (
+                  {item.selected && !exhausted && (
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en" ? "Return qty:" : "Qté retour:"}</span>
-                      <input type="number" value={item.returnQty} onChange={e => setReturnQty(i, e.target.value)}
-                        min={1} max={item.quantity}
+                      <input type="number" value={item.returnQty} onChange={e => setReturnQty(i, Math.min(+e.target.value || 1, maxQty))}
+                        min={1} max={maxQty}
                         style={{ width: 60, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", fontSize: 13 }} />
                       <select value={item.retReason} onChange={e => setItemReason(i, e.target.value)}
                         style={{ padding: "4px 6px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", fontSize: 12 }}>
@@ -738,6 +813,7 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
                   )}
                 </div>
               </div>
+            );})}
             ))}
 
             {/* Restock condition */}
@@ -785,25 +861,40 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
             <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>
               ↩️ {lang === "en" ? "Items being returned:" : "Articles retournés:"}
             </div>
-            {selectedItems.map((item, i) => (
-              <div key={i} style={{ background: "var(--bg-card)", borderRadius: 10, padding: "10px 12px", marginBottom: 8, border: `1px solid ${item.selected ? "rgba(239,68,68,0.4)" : "var(--border)"}` }}>
+            {selectedItems.map((item, i) => {
+              // MP-TXN-HISTORY: same remaining-returnable cap as the refund picker — an
+              // already-returned line can't be swapped again.
+              const cap = returnableQtyFor(item.product_id);
+              const exhausted = cap === 0;
+              const alreadyReturned = returnableByProduct[item.product_id]?.returned_qty || 0;
+              const maxQty = cap == null ? item.quantity : cap;
+              return (
+              <div key={i} style={{ background: "var(--bg-card)", borderRadius: 10, padding: "10px 12px", marginBottom: 8, border: `1px solid ${item.selected && !exhausted ? "rgba(239,68,68,0.4)" : "var(--border)"}`, opacity: exhausted ? 0.55 : 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <input type="checkbox" checked={item.selected} onChange={() => toggleItem(i)} style={{ width: 16, height: 16 }} />
+                  <input type="checkbox" checked={item.selected && !exhausted} disabled={exhausted} onChange={() => toggleItem(i)} style={{ width: 16, height: 16 }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 13 }}>{item.pa_products?.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{item.quantity} × {fmt(item.unit_price)}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                      {item.quantity} × {fmt(item.unit_price)}
+                      {alreadyReturned > 0 && (lang === "en" ? ` · ${alreadyReturned} returned` : ` · ${alreadyReturned} retourné`)}
+                    </div>
+                    {exhausted && (
+                      <div style={{ fontSize: 11, color: "#f87171", fontWeight: 600, marginTop: 2 }}>
+                        {lang === "en" ? "Already fully returned" : "Déjà entièrement retourné"}
+                      </div>
+                    )}
                   </div>
-                  {item.selected && (
+                  {item.selected && !exhausted && (
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en" ? "Qty:" : "Qté:"}</span>
-                      <input type="number" value={item.returnQty} onChange={e => setReturnQty(i, e.target.value)}
-                        min={1} max={item.quantity}
+                      <input type="number" value={item.returnQty} onChange={e => setReturnQty(i, Math.min(+e.target.value || 1, maxQty))}
+                        min={1} max={maxQty}
                         style={{ width: 56, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", fontSize: 13 }} />
                     </div>
                   )}
                 </div>
               </div>
-            ))}
+            );})}
 
             {/* New items picker */}
             <div style={{ fontWeight: 600, fontSize: 13, marginTop: 16, marginBottom: 8 }}>
