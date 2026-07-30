@@ -7,6 +7,7 @@ import { useCurrency } from "../../utils/useCurrency";
 import { momoLabel } from "../../utils/paymentLabels";
 import ClearButton from "./ClearButton";
 import OwnerPIN from "./OwnerPIN";
+import TransactionTimeline from "./TransactionTimeline";
 import { useSettingsStore, useAuthStore } from "../../store";
 import useOwnerApproval from "../../hooks/useOwnerApproval";
 import { isPendingApproval, keepWorkingToast } from "../../utils/approval";
@@ -499,6 +500,12 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
               : ` · enregistré ${new Date(sale.sold_date_note_at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`) : ""}
           </div>
         )}
+
+        {/* MP-TXN-HISTORY: full chronological timeline + net-money summary of this
+            transaction (sold → swap → refund, any depth). Renders only when the sale
+            has evolved (returns/swaps exist); a plain sale shows nothing here. Reads the
+            `history` payload from GET /sales/:id — display-only, no writes. */}
+        <TransactionTimeline history={sale.history} lang={lang} fmt={fmt} />
 
         {/* MP-REFUND-SEARCH-ENHANCED: online-channel warning. Cashier
             refunds CASH from the till; original-channel re-refund
