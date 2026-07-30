@@ -3,12 +3,13 @@ import HelpButton from "../components/common/HelpButton";
 import ClearButton from "../components/common/ClearButton";
 import ProductSearchBox from "../components/common/ProductSearchBox";
 import { useState, useEffect, useRef } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useLangStore, useAuthStore } from "../store";
 import DateRangeFilter, { inRange, wideRange } from "../components/common/DateRangeFilter";
 import api, { formatDate } from "../utils/api";
+import { useMyPermissions } from "../utils/useMyPermissions";
 import RestrictedAction from "../components/common/RestrictedAction";
 import { useSearchParams } from "react-router-dom";
 import TransferDetailModal from "../components/TransferDetailModal"; // MP-STAFF-ACTIVITY-LEDGER Phase 3
@@ -84,11 +85,11 @@ export default function TransfersPage() {
   const incoming = incomingData?.data || [];
 
   // MP-TRANSFER-GOVERNANCE: the current user's own grant (for the cancel-button gate).
-  const { data: myTransferPerms } = useQuery({
-    queryKey: ["my-permissions"],
-    queryFn: () => api.get("/staff/my-permissions").then(r => r.data),
+  // MP-MY-PERMISSIONS-ONE-SHAPE: via the shared hook — this used to read `?.data?.x` off
+  // a cache entry POSPage writes UNWRAPPED under the same key, so the grant read as false
+  // whenever POS had fetched last. See useMyPermissions.js.
+  const { perms: myPerms } = useMyPermissions({
     enabled: user?.role === "manager", // owner is unconditionally allowed; others never
-    staleTime: 60000,
   });
 
   const scanRef   = useRef(null);
@@ -330,7 +331,14 @@ export default function TransfersPage() {
   });
   // MP-TRANSFER-GOVERNANCE: who may cancel — the OWNER, or a MANAGER the boss granted
   // can_cancel_transfers. (The server is authoritative; this only decides button visibility.)
-  const canCancelTransfers = isOwner || (user?.role === "manager" && !!myTransferPerms?.data?.can_cancel_transfers);
+  const canCancelTransfers = isOwner || (user?.role === "manager" && !!myPerms?.can_cancel_transfers);
+  // Part 4 — the per-org owner-cancel lock, mirrored in the UI. When it's ON, a granted
+  // manager may still cancel STAFF transfers but not the OWNER's; the row carries
+  // `owner_actor` (dispatcher once in-transit, else creator — computed server-side by the
+  // same rule the cancel route enforces). Owner is never locked out of anything.
+  const ownerCancelLock = !!settingsData?.data?.transfer_owner_cancel_lock;
+  const canCancelThis = (tr) =>
+    canCancelTransfers && (isOwner || !ownerCancelLock || !tr.owner_actor);
   const promptCancel = (tr) => {
     const reason = window.prompt(lang === "en"
       ? "Cancel this transfer? Enter a reason (logged):"
@@ -842,7 +850,7 @@ export default function TransfersPage() {
                       <button className="btn btn-secondary btn-sm" onClick={() => startEdit(tr)}>
                         {lang === "en" ? "Edit" : "Modifier"}
                       </button>
-                      {canCancelTransfers && (
+                      {canCancelThis(tr) && (
                         <button className="btn btn-sm"
                           disabled={cancelMutation.isPending}
                           onClick={() => promptCancel(tr)}
@@ -876,7 +884,7 @@ export default function TransfersPage() {
                   {/* MP-TRANSFER-GOVERNANCE: cancel/reverse an in-transit (fully un-received)
                       transfer — permission-gated; the server blocks once any qty is received
                       and reverses the source leg. */}
-                  {tr.status === "in_transit" && canCancelTransfers && (
+                  {tr.status === "in_transit" && canCancelThis(tr) && (
                     <button className="btn btn-sm" style={{ flexShrink: 0, background: "transparent", border: "1px solid #f87171", color: "#f87171" }}
                       disabled={cancelMutation.isPending}
                       onClick={() => promptCancel(tr)}>

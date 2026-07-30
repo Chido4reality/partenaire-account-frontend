@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useAuthStore, useLangStore, useSettingsStore } from "../store";
 import api from "../utils/api";
+import { useMyPermissions } from "../utils/useMyPermissions";
 import { useCurrency } from "../utils/useCurrency";
 import { formatLastSeen, isRecentlyActive } from "../utils/lastSeen";
 import PaywallModal from "../components/common/PaywallModal";
@@ -106,13 +107,9 @@ export default function SettingsPage() {
   // MP-MANAGER-DELEGATION Phase 3: a manager only sees the staff add/deactivate controls
   // when the owner delegated can_manage_staff (the server enforces it regardless — this
   // just hides buttons that would 403). Owner always can.
-  const { data: myPermsResp } = useQuery({
-    queryKey: ["my-permissions"],
-    queryFn: () => api.get("/staff/my-permissions").then((r) => r.data),
-    enabled: user?.role === "manager",
-    staleTime: 300000,
-  });
-  const canManageStaff = isOwner || (user?.role === "manager" && !!myPermsResp?.data?.can_manage_staff);
+  // MP-MY-PERMISSIONS-ONE-SHAPE: shared hook, one unwrap (see useMyPermissions.js).
+  const { perms: myPerms } = useMyPermissions({ enabled: user?.role === "manager", staleTime: 300000 });
+  const canManageStaff = isOwner || (user?.role === "manager" && !!myPerms?.can_manage_staff);
   const handleVersionTap = () => {
     const now = Date.now();
     if (now - _debugTaps.t > 2000) _debugTaps.count = 0;
