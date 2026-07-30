@@ -191,6 +191,7 @@ export default function SettingsPage() {
     whatsapp_alerts_addon: false,
     transfer_receipt_confirmation_enabled: false,
     transfer_require_second_person: true,
+    transfer_owner_cancel_lock: false,
     cashier_undo_requires_approval: true,
     promo_footer_enabled: true,
     max_offline_hours: 24,
@@ -325,6 +326,7 @@ export default function SettingsPage() {
       whatsapp_alerts_addon:    d.whatsapp_alerts_addon === true,
       transfer_receipt_confirmation_enabled: d.transfer_receipt_confirmation_enabled === true,
       transfer_require_second_person: d.transfer_require_second_person !== false,
+      transfer_owner_cancel_lock: d.transfer_owner_cancel_lock === true,
       cashier_undo_requires_approval: d.cashier_undo_requires_approval !== false,
       promo_footer_enabled: d.promo_footer_enabled !== false,
       max_offline_hours: Math.max(4, Math.min(72, Number(d.max_offline_hours) || 24)),
@@ -456,7 +458,7 @@ export default function SettingsPage() {
   // MP-SETTINGS-CONTROL-FLAGS: money-control toggles whose SILENT revert has real
   // consequences. The Save stamps settings_control_intent:true whenever one of these is in
   // the delta, so the backend can tell a deliberate change from a stale full-object write.
-  const CONTROL_FLAGS = ["transfer_receipt_confirmation_enabled", "transfer_require_second_person", "cashier_undo_requires_approval"];
+  const CONTROL_FLAGS = ["transfer_receipt_confirmation_enabled", "transfer_require_second_person", "transfer_owner_cancel_lock", "cashier_undo_requires_approval"];
   const saveShopMutation = useMutation({
     // MP-SETTINGS-DIRTY-TRACKING: diff the live form against the last-saved snapshot and PATCH
     // ONLY changed fields. The test is "differs from snapshot", NOT "is falsy" — a field the
@@ -1250,6 +1252,25 @@ export default function SettingsPage() {
                 </label>
               </div>
             )}
+
+            {/* MP-TRANSFER-GOVERNANCE Part 4: per-org owner-cancel lock. When ON, a manager you
+                granted cancel rights can cancel STAFF transfers but not YOUR (the owner's). */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--bg-elevated)", borderRadius: 10 }}>
+              <div style={{ maxWidth: 320 }}>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{lang === "en" ? "Only the owner can cancel an owner's transfer" : "Seul le propriétaire peut annuler un transfert du propriétaire"}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  {lang === "en"
+                    ? "On: a manager with cancel rights can cancel staff transfers but not yours. Off: a granted manager can cancel any transfer, including yours."
+                    : "Activé : un responsable autorisé peut annuler les transferts du personnel mais pas les vôtres. Désactivé : un responsable autorisé peut annuler n'importe quel transfert, y compris les vôtres."}
+                </div>
+              </div>
+              <label style={{ position: "relative", width: 44, height: 24, cursor: "pointer", flexShrink: 0 }}>
+                <input type="checkbox" checked={shopForm.transfer_owner_cancel_lock} onChange={e => setFF("transfer_owner_cancel_lock", e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+                <span style={{ position: "absolute", inset: 0, borderRadius: 12, background: shopForm.transfer_owner_cancel_lock ? "var(--brand)" : "var(--border)", transition: "0.2s" }}>
+                  <span style={{ position: "absolute", width: 18, height: 18, borderRadius: "50%", background: "#fff", top: 3, left: shopForm.transfer_owner_cancel_lock ? 23 : 3, transition: "0.2s" }} />
+                </span>
+              </label>
+            </div>
 
             {/* MP-STALE-TRUST-LOCKOUT: how long a staff phone may keep working OFFLINE before
                 it must reconnect. Plain language for a shop owner; available on every plan.

@@ -1240,6 +1240,7 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
         can_approve: Array.isArray(perms.can_approve) ? perms.can_approve : [],
         branch_scope: perms.branch_scope === "all" ? "all" : "own",
         can_manage_staff: !!perms.can_manage_staff,
+        can_cancel_transfers: !!perms.can_cancel_transfers, // MP-TRANSFER-GOVERNANCE
       };
       PERM_ACTIONS.forEach((a) => {
         const v = perms[a.key];
@@ -1864,8 +1865,28 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                           : "Caissiers uniquement — il ne peut jamais ajouter ou désactiver un responsable, le propriétaire, ni lui-même, et chaque action vous alerte."}
                     </div>
 
+                    {/* MP-TRANSFER-GOVERNANCE Part 1: grant a manager the right to cancel/reverse transfers. */}
+                    <div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 12, marginBottom: 5 }}>{en ? "Cancel / reverse transfers:" : "Annuler / inverser des transferts :"}</div>
+                    <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>
+                      {[
+                        { val: false, en: "No", fr: "Non" },
+                        { val: true,  en: "Can cancel transfers", fr: "Peut annuler des transferts" },
+                      ].map((o) => (
+                        <button key={String(o.val)} onClick={() => setPerms((p) => ({ ...(p || {}), can_cancel_transfers: o.val }))}
+                          style={{ flex: 1, padding: "7px 4px", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
+                            background: !!perms.can_cancel_transfers === o.val ? (o.val ? "rgba(16,185,129,0.9)" : "rgba(239,68,68,0.9)") : "var(--bg-elevated)",
+                            color: !!perms.can_cancel_transfers === o.val ? (o.val ? "#06281d" : "#fff") : "var(--text-muted)" }}>
+                          {en ? o.en : o.fr}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: "var(--text-muted)", marginTop: 4 }}>
+                      {en ? "Cancels a pending or fully un-received in-transit transfer, returning stock to source. Every cancel is logged. If 'only the owner can cancel an owner's transfer' is on (Settings), he still can't touch yours."
+                          : "Annule un transfert en attente ou en transit non reçu, rendant le stock à la source. Chaque annulation est enregistrée. Si « seul le propriétaire peut annuler un transfert du propriétaire » est activé (Paramètres), il ne peut pas toucher les vôtres."}
+                    </div>
+
                     <button className="btn btn-secondary" style={{ width: "100%", marginTop: 10 }}
-                      onClick={() => setPerms((p) => ({ ...(p || {}), can_approve: [], branch_scope: "own", can_manage_staff: false }))}>
+                      onClick={() => setPerms((p) => ({ ...(p || {}), can_approve: [], branch_scope: "own", can_manage_staff: false, can_cancel_transfers: false }))}>
                       {en ? "↺ Remove all delegation" : "↺ Retirer toute délégation"}
                     </button>
                   </div>

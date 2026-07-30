@@ -83,6 +83,14 @@ export default function TransfersPage() {
   });
   const incoming = incomingData?.data || [];
 
+  // MP-TRANSFER-GOVERNANCE: the current user's own grant (for the cancel-button gate).
+  const { data: myTransferPerms } = useQuery({
+    queryKey: ["my-permissions"],
+    queryFn: () => api.get("/staff/my-permissions").then(r => r.data),
+    enabled: user?.role === "manager", // owner is unconditionally allowed; others never
+    staleTime: 60000,
+  });
+
   const scanRef   = useRef(null);
 
   // USB/keyboard barcode buffer
@@ -306,15 +314,30 @@ export default function TransfersPage() {
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
 
-  // (B) CANCEL a pending transfer (soft) — server hard-rejects non-pending.
+  // (B) CANCEL/REVERSE a pending or fully-un-received in-transit transfer. MP-TRANSFER-
+  // GOVERNANCE: the server reverses the source leg (in-transit), logs who/when/why, and
+  // enforces the permission + owner-lock. Blocked once any qty is received (already_received).
   const cancelMutation = useMutation({
-    mutationFn: (id) => api.patch(`/transfers/${id}/cancel`),
-    onSuccess: () => {
-      toast.success(lang === "en" ? "Transfer cancelled" : "Transfert annulé");
+    mutationFn: ({ id, reason }) => api.patch(`/transfers/${id}/cancel`, { reason }),
+    onSuccess: (res) => {
+      toast.success(res?.data?.reversed_source
+        ? (lang === "en" ? "Transfer cancelled — stock returned to source" : "Transfert annulé — stock rendu à la source")
+        : (lang === "en" ? "Transfer cancelled" : "Transfert annulé"));
       qc.invalidateQueries(["transfers"]);
+      qc.invalidateQueries({ queryKey: ["transfers-incoming"] });
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
+  // MP-TRANSFER-GOVERNANCE: who may cancel — the OWNER, or a MANAGER the boss granted
+  // can_cancel_transfers. (The server is authoritative; this only decides button visibility.)
+  const canCancelTransfers = isOwner || (user?.role === "manager" && !!myTransferPerms?.data?.can_cancel_transfers);
+  const promptCancel = (tr) => {
+    const reason = window.prompt(lang === "en"
+      ? "Cancel this transfer? Enter a reason (logged):"
+      : "Annuler ce transfert ? Saisissez une raison (enregistrée) :", "");
+    if (reason === null) return;                 // user dismissed
+    cancelMutation.mutate({ id: tr.id, reason: (reason || "").trim() });
+  };
 
   // A1: client-side date filter across ALL tabs (rows carry created_at).
   const transfers = (transferData?.data || []).filter(tr => inRange(tr.created_at, range.from, range.to));
@@ -819,12 +842,14 @@ export default function TransfersPage() {
                       <button className="btn btn-secondary btn-sm" onClick={() => startEdit(tr)}>
                         {lang === "en" ? "Edit" : "Modifier"}
                       </button>
-                      <button className="btn btn-sm"
-                        disabled={cancelMutation.isPending}
-                        onClick={() => { if (window.confirm(lang === "en" ? "Cancel this pending transfer?" : "Annuler ce transfert en attente ?")) cancelMutation.mutate(tr.id); }}
-                        style={{ background: "transparent", border: "1px solid #f87171", color: "#f87171" }}>
-                        {lang === "en" ? "Cancel" : "Annuler"}
-                      </button>
+                      {canCancelTransfers && (
+                        <button className="btn btn-sm"
+                          disabled={cancelMutation.isPending}
+                          onClick={() => promptCancel(tr)}
+                          style={{ background: "transparent", border: "1px solid #f87171", color: "#f87171" }}>
+                          {lang === "en" ? "Cancel" : "Annuler"}
+                        </button>
+                      )}
                       {confirmFlow ? (
                         <button className="btn btn-success btn-sm" disabled={dispatchMutation.isPending}
                           onClick={() => dispatchMutation.mutate(tr.id)}>
@@ -846,6 +871,16 @@ export default function TransfersPage() {
                       disabled={waybillBusy === tr.id}
                       onClick={() => handleWaybill(tr)}>
                       {waybillBusy === tr.id ? "…" : `📄 ${lang === "en" ? "Waybill" : "Bon de livraison"}`}
+                    </button>
+                  )}
+                  {/* MP-TRANSFER-GOVERNANCE: cancel/reverse an in-transit (fully un-received)
+                      transfer — permission-gated; the server blocks once any qty is received
+                      and reverses the source leg. */}
+                  {tr.status === "in_transit" && canCancelTransfers && (
+                    <button className="btn btn-sm" style={{ flexShrink: 0, background: "transparent", border: "1px solid #f87171", color: "#f87171" }}
+                      disabled={cancelMutation.isPending}
+                      onClick={() => promptCancel(tr)}>
+                      {lang === "en" ? "Cancel / reverse" : "Annuler / inverser"}
                     </button>
                   )}
                 </div>
