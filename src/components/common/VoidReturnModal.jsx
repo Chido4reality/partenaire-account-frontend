@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import api from "../../utils/api";
+import { useMyPermissions } from "../../utils/useMyPermissions";
 import { useCurrency } from "../../utils/useCurrency";
 import { momoLabel } from "../../utils/paymentLabels";
 import ClearButton from "./ClearButton";
@@ -110,15 +111,9 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
   // Part C: the staffer's own void policy decides how a void is gated:
   //   'approve' → skip the PIN modal, route through the async request queue.
   //   'allow'/unset → existing on-the-spot owner-PIN modal.  'block' → blocked.
-  const { data: myPermResp } = useQuery({
-    queryKey: ["my-permissions"],
-    queryFn: () => api.get("/staff/my-permissions").then(r => r.data),
-    enabled: user?.role !== "owner",
-    staleTime: 60000,
-    retry: 1,
-    onError: () => {},
-  });
-  const voidPolicy = myPermResp?.data?.void_policy || "allow";
+  // MP-MY-PERMISSIONS-ONE-SHAPE: shared hook, one unwrap (see useMyPermissions.js).
+  const { perms: myPerms } = useMyPermissions({ enabled: user?.role !== "owner", retry: 1 });
+  const voidPolicy = myPerms?.void_policy || "allow";
   const allProducts = productsData?.data || [];
   const filteredProducts = exchSearch.trim().length > 0
     ? allProducts.filter(p => p.name.toLowerCase().includes(exchSearch.toLowerCase()) && p.is_active !== false)

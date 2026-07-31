@@ -1240,6 +1240,7 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
         can_approve: Array.isArray(perms.can_approve) ? perms.can_approve : [],
         branch_scope: perms.branch_scope === "all" ? "all" : "own",
         can_manage_staff: !!perms.can_manage_staff,
+        can_cancel_transfers: !!perms.can_cancel_transfers, // MP-TRANSFER-GOVERNANCE
       };
       PERM_ACTIONS.forEach((a) => {
         const v = perms[a.key];
@@ -1796,6 +1797,48 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                         : "Tout le monde peut pré-enregistrer les arrivées. Ceci autorise en plus à fixer les prix et ajouter au stock."}
                   </div>
                 </div>
+                {/* MP-TRANSFER-GOVERNANCE Part 2 — BRANCH REACH, hoisted OUT of the
+                    manager-only delegation box below. branch_scope governs two different
+                    roles: a MANAGER's deputy reach (which branch's approvals he decides)
+                    and a WAREHOUSE keeper's stock reach (which location's stock he moves).
+                    A keeper is never a deputy, so while this lived inside the delegation
+                    box he was permanently locked to his own location with no control the
+                    boss could reach — a warehouse keeper created through the UI could not
+                    transfer at all. This is a SCOPE control, never a grant: 'all' only
+                    WIDENS powers the staffer already holds and confers no approval, deputy
+                    or staff-management authority by itself (enforced server-side —
+                    canManagerDecide checks can_approve BEFORE branch_scope, and
+                    staffMgmtAuthority reads only can_manage_staff). */}
+                {(staff.role === "manager" || staff.role === "warehouse") && (
+                  <div style={{ marginTop: 10, marginBottom: 8 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 5 }}>
+                      {staff.role === "warehouse"
+                        ? (en ? "Branch reach — whose stock he can move" : "Portée — quel stock il peut déplacer")
+                        : (en ? "Branch reach — where he can act" : "Portée — où il peut agir")}
+                    </div>
+                    <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>
+                      {[
+                        { val: "own", en: "His branch only", fr: "Sa succursale seulement" },
+                        { val: "all", en: "All branches", fr: "Toutes les succursales" },
+                      ].map((o) => (
+                        <button key={o.val} onClick={() => setPerms((p) => ({ ...(p || {}), branch_scope: o.val }))}
+                          style={{ flex: 1, padding: "7px 4px", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
+                            background: (perms.branch_scope || "own") === o.val ? "rgba(230,190,92,0.9)" : "var(--bg-elevated)",
+                            color: (perms.branch_scope || "own") === o.val ? "#2a1e00" : "var(--text-muted)" }}>
+                          {en ? o.en : o.fr}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                      {staff.role === "warehouse"
+                        ? (en ? "“His branch only” (default) limits him to the location assigned in Settings → Staff — he must have one to move stock at all. “All branches” lets him move stock at any location. This gives him NO approval or staff-management powers."
+                              : "« Sa succursale seulement » (défaut) le limite à la boutique assignée dans Paramètres → Personnel — il lui en faut une pour déplacer du stock. « Toutes les succursales » lui permet de déplacer du stock partout. Cela ne lui donne AUCUN pouvoir d'approbation ni de gestion du personnel.")
+                        : (en ? "Limits where he can act. On its own it grants nothing — it only widens what you delegate below."
+                              : "Limite où il peut agir. Seul, cela n'accorde rien — cela élargit seulement ce que vous déléguez ci-dessous.")}
+                    </div>
+                  </div>
+                )}
+
                 {/* MP-MANAGER-DELEGATION Phase 3 — "Delegate as manager": only shown for a
                     MANAGER. Everything above governs what THIS person may do directly; this
                     section lends them the boss's authority to APPROVE OTHER staff, scope it
@@ -1830,19 +1873,9 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                       {en ? "Below-cost sales always come to you — never delegated." : "Les ventes sous le prix plancher vous reviennent toujours — jamais déléguées."}
                     </div>
 
-                    <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 5 }}>{en ? "Where he can act:" : "Où il peut agir :"}</div>
-                    <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)", marginBottom: 10 }}>
-                      {[
-                        { val: "own", en: "His branch only", fr: "Sa succursale seulement" },
-                        { val: "all", en: "All branches", fr: "Toutes les succursales" },
-                      ].map((o) => (
-                        <button key={o.val} onClick={() => setPerms((p) => ({ ...(p || {}), branch_scope: o.val }))}
-                          style={{ flex: 1, padding: "7px 4px", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
-                            background: (perms.branch_scope || "own") === o.val ? "rgba(230,190,92,0.9)" : "var(--bg-elevated)",
-                            color: (perms.branch_scope || "own") === o.val ? "#2a1e00" : "var(--text-muted)" }}>
-                          {en ? o.en : o.fr}
-                        </button>
-                      ))}
+                    <div style={{ fontSize: 10.5, color: "var(--text-muted)", marginBottom: 10 }}>
+                      {en ? "Which branch he may decide for is set by \"Branch reach\" above."
+                          : "La succursale où il peut décider est définie par « Portée » ci-dessus."}
                     </div>
 
                     <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 5 }}>{en ? "Manage staff:" : "Gérer le personnel :"}</div>
@@ -1864,8 +1897,28 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                           : "Caissiers uniquement — il ne peut jamais ajouter ou désactiver un responsable, le propriétaire, ni lui-même, et chaque action vous alerte."}
                     </div>
 
+                    {/* MP-TRANSFER-GOVERNANCE Part 1: grant a manager the right to cancel/reverse transfers. */}
+                    <div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 12, marginBottom: 5 }}>{en ? "Cancel / reverse transfers:" : "Annuler / inverser des transferts :"}</div>
+                    <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>
+                      {[
+                        { val: false, en: "No", fr: "Non" },
+                        { val: true,  en: "Can cancel transfers", fr: "Peut annuler des transferts" },
+                      ].map((o) => (
+                        <button key={String(o.val)} onClick={() => setPerms((p) => ({ ...(p || {}), can_cancel_transfers: o.val }))}
+                          style={{ flex: 1, padding: "7px 4px", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
+                            background: !!perms.can_cancel_transfers === o.val ? (o.val ? "rgba(16,185,129,0.9)" : "rgba(239,68,68,0.9)") : "var(--bg-elevated)",
+                            color: !!perms.can_cancel_transfers === o.val ? (o.val ? "#06281d" : "#fff") : "var(--text-muted)" }}>
+                          {en ? o.en : o.fr}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: "var(--text-muted)", marginTop: 4 }}>
+                      {en ? "Cancels a pending or fully un-received in-transit transfer, returning stock to source. Every cancel is logged. If 'only the owner can cancel an owner's transfer' is on (Settings), he still can't touch yours."
+                          : "Annule un transfert en attente ou en transit non reçu, rendant le stock à la source. Chaque annulation est enregistrée. Si « seul le propriétaire peut annuler un transfert du propriétaire » est activé (Paramètres), il ne peut pas toucher les vôtres."}
+                    </div>
+
                     <button className="btn btn-secondary" style={{ width: "100%", marginTop: 10 }}
-                      onClick={() => setPerms((p) => ({ ...(p || {}), can_approve: [], branch_scope: "own", can_manage_staff: false }))}>
+                      onClick={() => setPerms((p) => ({ ...(p || {}), can_approve: [], branch_scope: "own", can_manage_staff: false, can_cancel_transfers: false }))}>
                       {en ? "↺ Remove all delegation" : "↺ Retirer toute délégation"}
                     </button>
                   </div>

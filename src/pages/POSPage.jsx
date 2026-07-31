@@ -10,6 +10,7 @@ import { useLangStore, useSettingsStore, useAuthStore, useDraftCartStore } from 
 // Staff who attempt a sub-min price now get a toast.error explaining
 // why; the backend at sales.js:46-62 is the source of truth either way.
 import api from "../utils/api";
+import { useMyPermissions } from "../utils/useMyPermissions";
 import { useCurrency } from "../utils/useCurrency";
 import { formatMoney, currencySymbol } from "../utils/currency";
 import { t } from "../utils/i18n";
@@ -124,11 +125,9 @@ export default function POSPage() {
   // UI shows (see sales.js), this is just so a blocked staffer never sees a
   // control they can't use. Owner never calls this (always exempt server-
   // side) but the query is harmless for them too.
-  const { data: myPerms } = useQuery({
-    queryKey: ["my-permissions"],
-    queryFn: () => api.get("/staff/my-permissions").then(r => r.data?.data),
-    staleTime: 5 * 60 * 1000,
-  });
+  // MP-MY-PERMISSIONS-ONE-SHAPE: shared hook — this key is read by four screens and
+  // each used to unwrap it differently (see useMyPermissions.js).
+  const { perms: myPerms } = useMyPermissions({ staleTime: 5 * 60 * 1000 });
   const soldDateAllowed = user?.role === "owner" || (myPerms && myPerms.sold_date_policy !== "block");
   const [custSearch, setCustSearch]       = useState("");
   const [showCustDrop, setShowCustDrop]   = useState(false);

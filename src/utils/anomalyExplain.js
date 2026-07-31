@@ -277,6 +277,22 @@ function explainAnomalyCore(audit, en, money) {
       };
     }
 
+    // MP-TRANSFER-GOVERNANCE Part 3: a cancelled/reversed transfer — who, which transfer, why.
+    case "transfer_cancelled": {
+      const tn = has(d.transfer_number) ? String(d.transfer_number) : (en ? "a transfer" : "un transfert");
+      const reason = has(d.reason) ? (en ? ` Reason: ${d.reason}.` : ` Raison : ${d.reason}.`) : "";
+      const restored = d.reversed_source ? (en ? " Stock was returned to the source." : " Le stock a été rendu à la source.") : "";
+      return {
+        severity: "high",
+        what: en ? `${actor} cancelled transfer ${tn}.${reason}${restored}`
+                 : `${actor} a annulé le transfert ${tn}.${reason}${restored}`,
+        why: en ? "Cancelling reverses a dispatched transfer and returns stock to where it came from."
+                : "L'annulation inverse un transfert envoyé et rend le stock à son origine.",
+        do: en ? `If you didn't expect ${actor} to cancel ${tn}, ask why.`
+               : `Si vous n'attendiez pas que ${actor} annule ${tn}, demandez pourquoi.`,
+      };
+    }
+
     default: {
       // No dedicated script — render a best-effort "what" from the action name
       // and any obvious payload amount; leave why/do empty.
