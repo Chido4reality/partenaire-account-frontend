@@ -24,6 +24,7 @@ import { useEffect, useState } from "react";
 import api from "../../utils/api";
 import { useLangStore } from "../../store";
 import { useCurrency } from "../../utils/useCurrency";
+import { transferCountLabel } from "../../utils/transferCount"; // MP-APPROVAL-FULL-DETAIL
 
 const num = (x) => Number(x) || 0;
 const has = (v) => v !== null && v !== undefined && v !== "";
@@ -189,11 +190,9 @@ function buildReasons(row, en, fmt, lk) {
       // all resolved to names by the backend. The full list renders below in THE ITEMS;
       // this line is the headline: how much, from where, to where.
       const items = Array.isArray(p.items) ? p.items : [];
-      const n = items.length;
-      const units = items.reduce((s, it) => s + num(it && it.quantity), 0);
       out.push({ tone: "info", text: en
-        ? `Move ${units} unit${units === 1 ? "" : "s"} across ${n} item${n === 1 ? "" : "s"}: ${lk.location(p.from_location)} → ${lk.location(p.to_location)}`
-        : `Déplacer ${units} unité${units === 1 ? "" : "s"} sur ${n} article${n === 1 ? "" : "s"} : ${lk.location(p.from_location)} → ${lk.location(p.to_location)}` });
+        ? `Move ${transferCountLabel(items, true)}: ${lk.location(p.from_location)} → ${lk.location(p.to_location)}`
+        : `Déplacer ${transferCountLabel(items, false)} : ${lk.location(p.from_location)} → ${lk.location(p.to_location)}` });
       if (has(p.notes)) out.push({ tone: "info", text: `${en ? "Note" : "Note"}: ${p.notes}` });
       break;
     }
