@@ -28,6 +28,42 @@ import { useCurrency } from "../../utils/useCurrency";
 const num = (x) => Number(x) || 0;
 const has = (v) => v !== null && v !== undefined && v !== "";
 
+// ── MP-APPROVAL-FULL-DETAIL: id → name, always with a graceful fallback ──────────
+// The backend attaches `resolved` (one batched lookup per card). Anything it could
+// NOT resolve — a since-deleted product, a renamed-away branch, an old row — degrades
+// to a short id stub or "unknown". Never a crash, and never a full raw UUID in the
+// boss's face. An older backend that sends no `resolved` at all lands here too, so
+// the card still renders.
+const shortId = (id) => (typeof id === "string" && id.length > 8 ? `#${id.slice(0, 8)}` : (has(id) ? String(id) : ""));
+
+function makeLookup(detail, en) {
+  const r = (detail && detail.resolved && typeof detail.resolved === "object") ? detail.resolved : {};
+  const pick = (map, id) => ((map && typeof map === "object" && has(id)) ? map[id] : null);
+  return {
+    product: (id) => {
+      const p = pick(r.products, id);
+      if (p && p.name) return p.name;
+      const unknown = en ? "Unknown item" : "Article inconnu";
+      return has(id) ? `${unknown} ${shortId(id)}` : unknown;
+    },
+    // A NULL location is meaningful, not missing: an external-source receive.
+    location: (id) => {
+      if (!has(id)) return en ? "outside supplier" : "fournisseur externe";
+      const l = pick(r.locations, id);
+      if (l && l.name) return l.name;
+      return `${en ? "Unknown branch" : "Succursale inconnue"} ${shortId(id)}`;
+    },
+    customer: (id) => pick(r.customers, id),
+    sale: (id) => pick(r.sales, id),
+    // The sale's human number, or a stub — used wherever a payload holds only a sale uuid.
+    saleNumber: (id) => {
+      const s = pick(r.sales, id);
+      if (s && s.sale_number) return s.sale_number;
+      return has(id) ? shortId(id) : (en ? "unknown sale" : "vente inconnue");
+    },
+  };
+}
+
 const fmtDate = (d, en) => {
   if (!has(d)) return "—";
   try { return new Date(d).toLocaleDateString(en ? "en-GB" : "fr-FR", { day: "numeric", month: "short", year: "numeric" }); }
@@ -69,7 +105,7 @@ const oversellLine = (it, en) => {
 };
 
 // ── WHY: one plain line per reason. tone drives the colour cue. ──────────────────
-function buildReasons(row, en, fmt) {
+function buildReasons(row, en, fmt, lk) {
   const p = (row && row.payload && typeof row.payload === "object") ? row.payload : {};
   const out = [];
 
@@ -126,40 +162,82 @@ function buildReasons(row, en, fmt) {
       else out.push({ tone: "warn", text: en ? "Selling an out-of-stock item" : "Vente d'un article en rupture" });
       break;
     }
-    case "void":
+    case "void": {
+      // The payload holds only sale_id — resolve it to the sale NUMBER and its total so
+      // the boss knows which sale, and how much, before cancelling it.
+      const s = lk.sale(p.sale_id);
+      const amt = (s && has(s.total_amount)) ? ` — ${fmt(num(s.total_amount))}` : "";
       out.push({ tone: "danger", text: en
-        ? `Cancel a sale${has(p.reason) ? `: ${p.reason}` : ""}${has(p.cashier_name) ? ` — rung by ${p.cashier_name}` : ""}`
-        : `Annuler une vente${has(p.reason) ? ` : ${p.reason}` : ""}${has(p.cashier_name) ? ` — encaissée par ${p.cashier_name}` : ""}` });
+        ? `Cancel sale ${lk.saleNumber(p.sale_id)}${amt}${has(p.reason) ? `: ${p.reason}` : ""}${has(p.cashier_name) ? ` — rung by ${p.cashier_name}` : ""}`
+        : `Annuler la vente ${lk.saleNumber(p.sale_id)}${amt}${has(p.reason) ? ` : ${p.reason}` : ""}${has(p.cashier_name) ? ` — encaissée par ${p.cashier_name}` : ""}` });
       break;
-    case "refund":
+    }
+    case "refund": {
+      const onSale = has(p.p_sale_id) ? `${en ? " on sale " : " sur la vente "}${lk.saleNumber(p.p_sale_id)}` : "";
       out.push({ tone: "warn", text: en
-        ? `Refund ${fmt(num(p.p_refund_amount))}${has(p.p_return_type) ? ` — ${returnTypeLabel(p.p_return_type, en)}` : ""}${has(p.p_reason) ? ` (${p.p_reason})` : ""}`
-        : `Remboursement ${fmt(num(p.p_refund_amount))}${has(p.p_return_type) ? ` — ${returnTypeLabel(p.p_return_type, en)}` : ""}${has(p.p_reason) ? ` (${p.p_reason})` : ""}` });
+        ? `Refund ${fmt(num(p.p_refund_amount))}${onSale}${has(p.p_return_type) ? ` — ${returnTypeLabel(p.p_return_type, en)}` : ""}${has(p.p_reason) ? ` (${p.p_reason})` : ""}`
+        : `Remboursement ${fmt(num(p.p_refund_amount))}${onSale}${has(p.p_return_type) ? ` — ${returnTypeLabel(p.p_return_type, en)}` : ""}${has(p.p_reason) ? ` (${p.p_reason})` : ""}` });
+      if (has(p.p_price_difference) && num(p.p_price_difference) !== 0) {
+        out.push({ tone: "info", text: en
+          ? `Price difference: ${fmt(num(p.p_price_difference))}`
+          : `Différence de prix : ${fmt(num(p.p_price_difference))}` });
+      }
       break;
+    }
     case "transfer": {
-      // from/to and item ids are UUIDs with no names in the payload — show only what
-      // reads plainly (count + notes). Flagged as thin detail.
-      const n = Array.isArray(p.items) ? p.items.length : 0;
+      // Item lines are { product_id, quantity, note } and from/to are location UUIDs —
+      // all resolved to names by the backend. The full list renders below in THE ITEMS;
+      // this line is the headline: how much, from where, to where.
+      const items = Array.isArray(p.items) ? p.items : [];
+      const n = items.length;
+      const units = items.reduce((s, it) => s + num(it && it.quantity), 0);
       out.push({ tone: "info", text: en
-        ? `Transfer of ${n} item${n === 1 ? "" : "s"} between branches${has(p.notes) ? ` — ${p.notes}` : ""}`
-        : `Transfert de ${n} article${n === 1 ? "" : "s"} entre agences${has(p.notes) ? ` — ${p.notes}` : ""}` });
+        ? `Move ${units} unit${units === 1 ? "" : "s"} across ${n} item${n === 1 ? "" : "s"}: ${lk.location(p.from_location)} → ${lk.location(p.to_location)}`
+        : `Déplacer ${units} unité${units === 1 ? "" : "s"} sur ${n} article${n === 1 ? "" : "s"} : ${lk.location(p.from_location)} → ${lk.location(p.to_location)}` });
+      if (has(p.notes)) out.push({ tone: "info", text: `${en ? "Note" : "Note"}: ${p.notes}` });
       break;
     }
     case "debt_adjust": {
       const u = (p.updates && typeof p.updates === "object") ? p.updates : {};
-      const parts = [];
-      if (has(u.total_debt)) parts.push(`${en ? "debt" : "dette"} → ${fmt(num(u.total_debt))}`);
-      if (has(u.credit_limit)) parts.push(`${en ? "limit" : "limite"} → ${fmt(num(u.credit_limit))}`);
-      out.push({ tone: "warn", text: en
-        ? `Change customer${has(u.name) ? ` ${u.name}` : ""}${parts.length ? `: ${parts.join(", ")}` : ""}`
-        : `Modifier le client${has(u.name) ? ` ${u.name}` : ""}${parts.length ? ` : ${parts.join(", ")}` : ""}` });
+      const cust = lk.customer(p.customer_id);
+      const who = (cust && cust.name) || u.name;
+      // Show the CURRENT balance next to the proposed one — a debt change is
+      // unjudgeable without knowing what it's changing FROM.
+      if (has(u.total_debt)) {
+        const from = (cust && has(cust.total_debt)) ? fmt(num(cust.total_debt)) : (en ? "unknown" : "inconnu");
+        out.push({ tone: "warn", text: en
+          ? `Debt: ${from} → ${fmt(num(u.total_debt))}`
+          : `Dette : ${from} → ${fmt(num(u.total_debt))}` });
+      }
+      if (has(u.credit_limit)) {
+        const from = (cust && has(cust.credit_limit)) ? fmt(num(cust.credit_limit)) : (en ? "unknown" : "inconnu");
+        out.push({ tone: "info", text: en
+          ? `Credit limit: ${from} → ${fmt(num(u.credit_limit))}`
+          : `Limite de crédit : ${from} → ${fmt(num(u.credit_limit))}` });
+      }
+      out.unshift({ tone: "warn", text: en
+        ? `Change customer${has(who) ? ` ${who}` : ""}`
+        : `Modifier le client${has(who) ? ` ${who}` : ""}` });
       break;
     }
-    case "below_cost_sale": // legacy standalone (retired path, but old rows exist)
+    case "below_cost_sale": { // legacy standalone (retired path, but old rows exist)
+      const short = has(p.shortfall) ? num(p.shortfall) : (has(row.amount) ? Math.abs(num(row.amount)) : null);
       out.push({ tone: "danger", text: en
-        ? `Below the floor price${has(p.customer_name) ? ` — ${p.customer_name}` : ""}${has(row.amount) ? ` (short by ${fmt(Math.abs(num(row.amount)))})` : ""}`
-        : `Sous le prix plancher${has(p.customer_name) ? ` — ${p.customer_name}` : ""}${has(row.amount) ? ` (manque ${fmt(Math.abs(num(row.amount)))})` : ""}` });
+        ? `Below cost${has(p.customer_name) ? ` — ${p.customer_name}` : ""}${short != null ? ` — short by ${fmt(short)} in total` : ""}`
+        : `En dessous du coût${has(p.customer_name) ? ` — ${p.customer_name}` : ""}${short != null ? ` — manque ${fmt(short)} au total` : ""}` });
+      // One line per offending item: what's being charged vs what it cost.
+      for (const b of (Array.isArray(p.below_cost) ? p.below_cost : [])) {
+        if (!b || typeof b !== "object") continue;
+        const nm = b.name || lk.product(b.product_id);
+        const floor = has(b.cost_price) && num(b.cost_price) > 0
+          ? (en ? `cost ${fmt(num(b.cost_price))}` : `revient ${fmt(num(b.cost_price))}`)
+          : (has(b.min_price) ? (en ? `floor ${fmt(num(b.min_price))}` : `plancher ${fmt(num(b.min_price))}`) : (en ? "no cost set" : "aucun coût défini"));
+        out.push({ tone: "danger", text: en
+          ? `${nm}${has(b.qty) ? ` ×${num(b.qty)}` : ""} at ${fmt(num(b.unit_price))} — ${floor}${has(b.shortfall) ? ` (short ${fmt(num(b.shortfall))})` : ""}`
+          : `${nm}${has(b.qty) ? ` ×${num(b.qty)}` : ""} à ${fmt(num(b.unit_price))} — ${floor}${has(b.shortfall) ? ` (manque ${fmt(num(b.shortfall))})` : ""}` });
+      }
       break;
+    }
     default:
       break;
   }
@@ -167,27 +245,65 @@ function buildReasons(row, en, fmt) {
 }
 
 // ── THE ORDER: the sale items + customer + payment, when the payload carries them. ──
-function orderView(row) {
+function orderView(row, lk, en) {
   const p = (row && row.payload && typeof row.payload === "object") ? row.payload : {};
+  const base = { items: [], customer: null, pay_mode: null, paid_amount: null, title: null, where: null };
   if (row.action_type === "bundled_sale" || p.sale_request) {
     const sr = (p.sale_request && typeof p.sale_request === "object") ? p.sale_request : {};
     return {
+      ...base,
       items: Array.isArray(sr.items) ? sr.items : [],
       customer: p.customer_name,
       pay_mode: sr.pay_mode,
       paid_amount: sr.paid_amount,
       notes: sr.notes,
       sold_date: sr.sold_date,
+      where: has(sr.location_id) ? lk.location(sr.location_id) : (has(p.location_id) ? lk.location(p.location_id) : null),
     };
   }
   if (row.action_type === "discount") {
-    return { items: Array.isArray(p.items) ? p.items : [], customer: p.customer_name, pay_mode: null, paid_amount: null };
+    return { ...base, items: Array.isArray(p.items) ? p.items : [], customer: p.customer_name,
+             where: has(p.location_id) ? lk.location(p.location_id) : null };
   }
   if (row.action_type === "refund") {
-    // p_items_returned use {qty,name,unit_price}
-    return { items: Array.isArray(p.p_items_returned) ? p.p_items_returned : [], customer: null, pay_mode: p.p_refund_method, paid_amount: null };
+    // p_items_returned use {qty, name, unit_price, reason, notes}
+    return { ...base, items: Array.isArray(p.p_items_returned) ? p.p_items_returned : [],
+             pay_mode: p.p_refund_method,
+             title: en ? "Items returned" : "Articles retournés",
+             where: has(p.p_location_id) ? lk.location(p.p_location_id) : null };
   }
-  return { items: [], customer: null, pay_mode: null, paid_amount: null };
+  if (row.action_type === "below_cost_sale") {
+    // The offending lines (price vs cost) are already itemised in WHY — show the WHOLE
+    // cart here instead, so the boss sees what else is on the sale. Older rows that
+    // carry no full `items` fall back to the below-cost lines rather than showing nothing.
+    const full = Array.isArray(p.items) && p.items.length ? p.items : (Array.isArray(p.below_cost) ? p.below_cost : []);
+    return { ...base, items: full, customer: p.customer_name,
+             where: has(p.location_id) ? lk.location(p.location_id) : null };
+  }
+  if (row.action_type === "transfer") {
+    // The payload's own lines carry NO name — resolve each product_id. `note` is
+    // per-line and worth surfacing (it's how staff explain an odd quantity).
+    const items = (Array.isArray(p.items) ? p.items : []).map((it) => ({
+      name: lk.product(it && it.product_id),
+      quantity: it && it.quantity,
+      note: it && it.note,
+    }));
+    return { ...base, items,
+             title: en ? "What's being moved" : "Ce qui est déplacé",
+             where: `${lk.location(p.from_location)} → ${lk.location(p.to_location)}` };
+  }
+  if (row.action_type === "void") {
+    // Nothing about the sale is in the payload — the lines come from the resolved sale.
+    const s = lk.sale(p.sale_id);
+    const items = (s && Array.isArray(s.items) ? s.items : []).map((it) => ({
+      name: it.name || lk.product(it.product_id),
+      quantity: it.quantity,
+      unit_price: it.unit_price,
+    }));
+    return { ...base, items,
+             title: en ? "What's on that sale" : "Ce que contient cette vente" };
+  }
+  return base;
 }
 
 function ItemLine({ it, en, fmt }) {
@@ -195,15 +311,23 @@ function ItemLine({ it, en, fmt }) {
   const name = it.name || (en ? "Item" : "Article");
   const price = has(it.unit_price) ? fmt(num(it.unit_price)) : null;
   const disc = discBadge(it, en, fmt);
+  // MP-APPROVAL-FULL-DETAIL: a per-line note/reason is often the only explanation for an
+  // odd quantity or a return — surface it under the line rather than dropping it.
+  const sub = [it.note, it.reason, it.notes].filter((x) => has(x)).join(" · ");
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "3px 0", fontSize: 12.5 }}>
-      <span style={{ color: "var(--text-secondary)", minWidth: 0 }}>
-        {qty ? `${qty}× ` : ""}{name}
-        {it.is_damaged ? <span style={{ color: "#f59e0b" }}>{en ? " · damaged" : " · abîmé"}</span> : null}
-      </span>
-      <span style={{ whiteSpace: "nowrap", color: "var(--text-muted)" }}>
-        {price || ""}{disc ? ` · ${disc}` : ""}
-      </span>
+    <div style={{ padding: "3px 0", fontSize: 12.5 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+        <span style={{ color: "var(--text-secondary)", minWidth: 0 }}>
+          {qty ? `${qty}× ` : ""}{name}
+          {it.is_damaged ? <span style={{ color: "#f59e0b" }}>{en ? " · damaged" : " · abîmé"}</span> : null}
+        </span>
+        <span style={{ whiteSpace: "nowrap", color: "var(--text-muted)" }}>
+          {price || ""}{disc ? ` · ${disc}` : ""}
+        </span>
+      </div>
+      {sub ? (
+        <div style={{ fontSize: 11.5, color: "var(--text-muted)", paddingLeft: 2, fontStyle: "italic" }}>{sub}</div>
+      ) : null}
     </div>
   );
 }
@@ -298,9 +422,10 @@ export default function ApprovalDetailView({ approval, defaultOpen = false }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ci && ci.customer_id]);
 
-  const reasons = detail ? buildReasons(detail, en, fmt) : [];
-  const order = detail ? orderView(detail) : { items: [] };
-  const hasOrder = order.items.length > 0 || has(order.customer) || has(order.pay_mode);
+  const lk = makeLookup(detail, en);
+  const reasons = detail ? buildReasons(detail, en, fmt, lk) : [];
+  const order = detail ? orderView(detail, lk, en) : { items: [] };
+  const hasOrder = order.items.length > 0 || has(order.customer) || has(order.pay_mode) || has(order.where);
 
   return (
     <div style={{ marginTop: 8 }}>
@@ -349,11 +474,12 @@ export default function ApprovalDetailView({ approval, defaultOpen = false }) {
               {hasOrder && (
                 <div>
                   <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.4, color: "var(--text-muted)", marginBottom: 4 }}>
-                    {en ? "The order" : "La commande"}
+                    {order.title || (en ? "The order" : "La commande")}
                   </div>
-                  {(has(order.customer) || has(order.pay_mode) || has(order.paid_amount)) && (
+                  {(has(order.customer) || has(order.pay_mode) || has(order.paid_amount) || has(order.where)) && (
                     <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginBottom: order.items.length ? 6 : 0 }}>
                       {[
+                        has(order.where) ? `${en ? "Where" : "Où"}: ${order.where}` : null,
                         has(order.customer) ? `${en ? "Customer" : "Client"}: ${order.customer}` : null,
                         has(order.pay_mode) ? `${en ? "Paid by" : "Paiement"}: ${payModeLabel(order.pay_mode, en)}` : null,
                         has(order.paid_amount) ? `${en ? "Paid" : "Payé"}: ${fmt(num(order.paid_amount))}` : null,

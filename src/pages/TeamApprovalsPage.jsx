@@ -10,6 +10,7 @@ import toast from "react-hot-toast";
 import { useLangStore } from "../store";
 import { useCurrency } from "../utils/useCurrency";
 import api from "../utils/api";
+import ApprovalDetailView from "../components/common/ApprovalDetailView"; // MP-APPROVAL-FULL-DETAIL
 
 const VERB = {
   void:            { en: "cancel a sale",      fr: "annuler une vente" },
@@ -114,6 +115,11 @@ export default function TeamApprovalsPage() {
             <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 3 }}>
               {[r.requested_by_name, r.amount != null ? fmt(Math.abs(Number(r.amount))) : null, r.target_ref, r.branch_name].filter(Boolean).join(" · ") || "—"}
             </div>
+            {/* MP-APPROVAL-FULL-DETAIL: a delegated manager decides the same requests the
+                boss does and was equally blind here. Safe by construction — the server
+                404s any row outside his grant, and below-cost (the only owner-only figure
+                this renders) is never delegated, so cost/floor can't reach this screen. */}
+            <ApprovalDetailView approval={r} />
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }}
                 disabled={rejectMut.isPending || approveMut.isPending}
