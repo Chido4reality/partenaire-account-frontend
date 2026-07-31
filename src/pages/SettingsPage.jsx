@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useAuthStore, useLangStore, useSettingsStore } from "../store";
 import api from "../utils/api";
+import { useMyPermissions } from "../utils/useMyPermissions";
 import { useCurrency } from "../utils/useCurrency";
 import { formatLastSeen, isRecentlyActive } from "../utils/lastSeen";
 import PaywallModal from "../components/common/PaywallModal";
@@ -106,13 +107,9 @@ export default function SettingsPage() {
   // MP-MANAGER-DELEGATION Phase 3: a manager only sees the staff add/deactivate controls
   // when the owner delegated can_manage_staff (the server enforces it regardless — this
   // just hides buttons that would 403). Owner always can.
-  const { data: myPermsResp } = useQuery({
-    queryKey: ["my-permissions"],
-    queryFn: () => api.get("/staff/my-permissions").then((r) => r.data),
-    enabled: user?.role === "manager",
-    staleTime: 300000,
-  });
-  const canManageStaff = isOwner || (user?.role === "manager" && !!myPermsResp?.data?.can_manage_staff);
+  // MP-MY-PERMISSIONS-ONE-SHAPE: shared hook, one unwrap (see useMyPermissions.js).
+  const { perms: myPerms } = useMyPermissions({ enabled: user?.role === "manager", staleTime: 300000 });
+  const canManageStaff = isOwner || (user?.role === "manager" && !!myPerms?.can_manage_staff);
   const handleVersionTap = () => {
     const now = Date.now();
     if (now - _debugTaps.t > 2000) _debugTaps.count = 0;
@@ -191,6 +188,7 @@ export default function SettingsPage() {
     whatsapp_alerts_addon: false,
     transfer_receipt_confirmation_enabled: false,
     transfer_require_second_person: true,
+    transfer_owner_cancel_lock: false,
     cashier_undo_requires_approval: true,
     promo_footer_enabled: true,
     max_offline_hours: 24,
@@ -325,6 +323,7 @@ export default function SettingsPage() {
       whatsapp_alerts_addon:    d.whatsapp_alerts_addon === true,
       transfer_receipt_confirmation_enabled: d.transfer_receipt_confirmation_enabled === true,
       transfer_require_second_person: d.transfer_require_second_person !== false,
+      transfer_owner_cancel_lock: d.transfer_owner_cancel_lock === true,
       cashier_undo_requires_approval: d.cashier_undo_requires_approval !== false,
       promo_footer_enabled: d.promo_footer_enabled !== false,
       max_offline_hours: Math.max(4, Math.min(72, Number(d.max_offline_hours) || 24)),
@@ -456,7 +455,7 @@ export default function SettingsPage() {
   // MP-SETTINGS-CONTROL-FLAGS: money-control toggles whose SILENT revert has real
   // consequences. The Save stamps settings_control_intent:true whenever one of these is in
   // the delta, so the backend can tell a deliberate change from a stale full-object write.
-  const CONTROL_FLAGS = ["transfer_receipt_confirmation_enabled", "transfer_require_second_person", "cashier_undo_requires_approval"];
+  const CONTROL_FLAGS = ["transfer_receipt_confirmation_enabled", "transfer_require_second_person", "transfer_owner_cancel_lock", "cashier_undo_requires_approval"];
   const saveShopMutation = useMutation({
     // MP-SETTINGS-DIRTY-TRACKING: diff the live form against the last-saved snapshot and PATCH
     // ONLY changed fields. The test is "differs from snapshot", NOT "is falsy" — a field the
@@ -1251,6 +1250,25 @@ export default function SettingsPage() {
               </div>
             )}
 
+            {/* MP-TRANSFER-GOVERNANCE Part 4: per-org owner-cancel lock. When ON, a manager you
+                granted cancel rights can cancel STAFF transfers but not YOUR (the owner's). */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--bg-elevated)", borderRadius: 10 }}>
+              <div style={{ maxWidth: 320 }}>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{lang === "en" ? "Only the owner can cancel an owner's transfer" : "Seul le propriétaire peut annuler un transfert du propriétaire"}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  {lang === "en"
+                    ? "On: a manager with cancel rights can cancel staff transfers but not yours. Off: a granted manager can cancel any transfer, including yours."
+                    : "Activé : un responsable autorisé peut annuler les transferts du personnel mais pas les vôtres. Désactivé : un responsable autorisé peut annuler n'importe quel transfert, y compris les vôtres."}
+                </div>
+              </div>
+              <label style={{ position: "relative", width: 44, height: 24, cursor: "pointer", flexShrink: 0 }}>
+                <input type="checkbox" checked={shopForm.transfer_owner_cancel_lock} onChange={e => setFF("transfer_owner_cancel_lock", e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+                <span style={{ position: "absolute", inset: 0, borderRadius: 12, background: shopForm.transfer_owner_cancel_lock ? "var(--brand)" : "var(--border)", transition: "0.2s" }}>
+                  <span style={{ position: "absolute", width: 18, height: 18, borderRadius: "50%", background: "#fff", top: 3, left: shopForm.transfer_owner_cancel_lock ? 23 : 3, transition: "0.2s" }} />
+                </span>
+              </label>
+            </div>
+
             {/* MP-STALE-TRUST-LOCKOUT: how long a staff phone may keep working OFFLINE before
                 it must reconnect. Plain language for a shop owner; available on every plan.
                 The owner is never locked out; this only affects other staff. */}
@@ -1927,7 +1945,7 @@ export default function SettingsPage() {
                 manager. OPTIONAL for all three (blank = org-wide / all
                 branches). Owner is always org-wide (no field, role filtered out
                 of the picker above). */}
-            {["cashier", "accountant", "manager"].includes(staffForm.role) && hasFeature(effectivePlan, "staff_location_binding") && (
+            {["cashier", "accountant", "manager", "warehouse"].includes(staffForm.role) && hasFeature(effectivePlan, "staff_location_binding") && (
               <div className="form-group">
                 <label className="label">
                   {lang === "en" ? "Assigned location (Pro Plus)" : "Emplacement assigné (Pro Plus)"}
@@ -1937,10 +1955,18 @@ export default function SettingsPage() {
                   <option value="">{lang === "en" ? "— None (org-wide / all branches) —" : "— Aucun (toute l'organisation / toutes les branches) —"}</option>
                   {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
                 </select>
+                {/* MP-TRANSFER-GOVERNANCE Part 2: for a WAREHOUSE keeper this field is not
+                    optional — the transfer scope gate fails CLOSED without it, so an
+                    unpinned keeper cannot move stock anywhere. Say so plainly rather than
+                    leaving the boss to discover it as a 403. */}
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                  {lang === "en"
-                    ? "Optional. Pins this staff member to one branch, on any device. Leave as None for org-wide access to all branches."
-                    : "Optionnel. Rattache ce membre à une seule branche, sur tout appareil. Laissez Aucun pour un accès à toutes les branches."}
+                  {staffForm.role === "warehouse"
+                    ? (lang === "en"
+                        ? "Required for a warehouse keeper — he can only move stock at the location assigned here. Without one he cannot transfer at all. To let him move stock at every location, set Branch reach to “All branches” in Accountant Log → Permissions."
+                        : "Obligatoire pour un magasinier — il ne peut déplacer du stock qu'à la boutique assignée ici. Sans boutique, il ne peut faire aucun transfert. Pour qu'il agisse partout, mettez la Portée sur « Toutes les succursales » dans Journal → Permissions.")
+                    : (lang === "en"
+                        ? "Optional. Pins this staff member to one branch, on any device. Leave as None for org-wide access to all branches."
+                        : "Optionnel. Rattache ce membre à une seule branche, sur tout appareil. Laissez Aucun pour un accès à toutes les branches.")}
                 </div>
               </div>
             )}
