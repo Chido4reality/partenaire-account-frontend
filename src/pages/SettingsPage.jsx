@@ -1945,7 +1945,7 @@ export default function SettingsPage() {
                 manager. OPTIONAL for all three (blank = org-wide / all
                 branches). Owner is always org-wide (no field, role filtered out
                 of the picker above). */}
-            {["cashier", "accountant", "manager"].includes(staffForm.role) && hasFeature(effectivePlan, "staff_location_binding") && (
+            {["cashier", "accountant", "manager", "warehouse"].includes(staffForm.role) && hasFeature(effectivePlan, "staff_location_binding") && (
               <div className="form-group">
                 <label className="label">
                   {lang === "en" ? "Assigned location (Pro Plus)" : "Emplacement assigné (Pro Plus)"}
@@ -1955,10 +1955,18 @@ export default function SettingsPage() {
                   <option value="">{lang === "en" ? "— None (org-wide / all branches) —" : "— Aucun (toute l'organisation / toutes les branches) —"}</option>
                   {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
                 </select>
+                {/* MP-TRANSFER-GOVERNANCE Part 2: for a WAREHOUSE keeper this field is not
+                    optional — the transfer scope gate fails CLOSED without it, so an
+                    unpinned keeper cannot move stock anywhere. Say so plainly rather than
+                    leaving the boss to discover it as a 403. */}
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                  {lang === "en"
-                    ? "Optional. Pins this staff member to one branch, on any device. Leave as None for org-wide access to all branches."
-                    : "Optionnel. Rattache ce membre à une seule branche, sur tout appareil. Laissez Aucun pour un accès à toutes les branches."}
+                  {staffForm.role === "warehouse"
+                    ? (lang === "en"
+                        ? "Required for a warehouse keeper — he can only move stock at the location assigned here. Without one he cannot transfer at all. To let him move stock at every location, set Branch reach to “All branches” in Accountant Log → Permissions."
+                        : "Obligatoire pour un magasinier — il ne peut déplacer du stock qu'à la boutique assignée ici. Sans boutique, il ne peut faire aucun transfert. Pour qu'il agisse partout, mettez la Portée sur « Toutes les succursales » dans Journal → Permissions.")
+                    : (lang === "en"
+                        ? "Optional. Pins this staff member to one branch, on any device. Leave as None for org-wide access to all branches."
+                        : "Optionnel. Rattache ce membre à une seule branche, sur tout appareil. Laissez Aucun pour un accès à toutes les branches.")}
                 </div>
               </div>
             )}
