@@ -545,6 +545,13 @@ export default function AccountantLogPage() {
               {(pinFor.requested_by_name || (en ? "A staff member" : "Un employé"))} {en ? "wants to" : "veut"} {approvalVerb(pinFor.action_type, pinFor.target_ref)}
               {/* MP-BELOW-COST-CLEAR-WORDING: the below-cost amount is the shortfall — show it labelled below, not inline as a total. */}
               {!["below_cost_sale", "discount"].includes(pinFor.action_type) && pinFor.amount != null ? ` — ${fmtCur(Math.abs(Number(pinFor.amount)))}` : ""}{metaRef(pinFor) ? ` — ${metaRef(pinFor)}` : ""}.
+              {/* MP-APPROVAL-FULL-DETAIL: WHO + WHEN must be on every approval surface, not
+                  just the inbox card — this modal is where the decision is actually made. */}
+              {pinFor.created_at ? (
+                <span style={{ color: "var(--text-muted)" }}>
+                  {" "}({en ? "requested" : "demandé"} {new Date(pinFor.created_at).toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })})
+                </span>
+              ) : null}
               <br />{en ? "Approving gives the green light — the staff member completes it at the counter." : "Approuver donne le feu vert — l'employé la finalise au comptoir."}
             </div>
             {/* MP-APPROVAL-DETAIL: show the full why + order right where he decides (auto-open). */}

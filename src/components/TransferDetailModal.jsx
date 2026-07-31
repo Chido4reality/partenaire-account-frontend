@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import api from "../utils/api";
 import { useLangStore } from "../store";
+import { transferCountLabel } from "../utils/transferCount"; // MP-APPROVAL-FULL-DETAIL
 
 // MP-STAFF-ACTIVITY-LEDGER Phase 3: the full plain-language transfer chain, reachable from
 // the Transfers list, the Activity Ledger, and search (?tr=<id>). Shop-timezone times.
@@ -69,7 +70,10 @@ export default function TransferDetailModal({ transferId, onClose }) {
             </div>
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-              <span style={pill}>{itemCount} {en ? (itemCount === 1 ? "item" : "items") : (itemCount === 1 ? "article" : "articles")}</span>
+              {/* MP-APPROVAL-FULL-DETAIL: was "{n} items/articles", which conflated
+                  distinct products with total pieces. Same wording as every other
+                  transfer count summary now. */}
+              <span style={pill}>{transferCountLabel(items, en, { short: true })}</span>
               <span style={pill}>{t.confirm_pin_verified ? `🔐 ${en ? "PIN verified" : "PIN vérifié"}` : `○ ${en ? "No PIN" : "Sans PIN"}`}</span>
               <span style={pill}>{varianceText}</span>
               <span style={pill}>{en ? "Status" : "Statut"}: {t.status}</span>
