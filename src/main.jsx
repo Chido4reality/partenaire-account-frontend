@@ -8,6 +8,13 @@ ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode><App /></React.StrictMode>
 );
 
+// MP-BLANK-SCREEN-FIX: we got here, so the bundle loaded and React mounted (this also
+// replaced the inline #mp-boot screen). Clear the boot-recovery counter set by the
+// inline handler in index.html — otherwise the ONE allowed auto-reload would stay
+// spent for the rest of the tab's life and a later chunk failure would go straight to
+// the manual retry instead of self-healing.
+try { sessionStorage.removeItem("mp-boot-reloads"); } catch { /* private mode */ }
+
 // MP-SW-LIFECYCLE (3 Jun): the PWA service worker is REDUNDANT on native
 // (Capacitor serves the app shell from the local APK bundle) and was the
 // root cause of the "-0157 offline broken" stale-install P0 — an older
