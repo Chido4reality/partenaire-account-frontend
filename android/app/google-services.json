@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "596964084130",
+    "project_id": "mon-partenaire-dozie",
+    "storage_bucket": "mon-partenaire-dozie.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:596964084130:android:1c6125eeaf7b3ca11c0afb",
+        "android_client_info": {
+          "package_name": "com.partenaire.monpartenaire"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDkLo3RH5ATU9Sa3Hw56R0GihGf_Y9dBmI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
