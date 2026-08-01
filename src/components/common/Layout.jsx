@@ -14,6 +14,7 @@ import { safeSetItem } from "../../utils/safeStorage";
 import { cacheKeyFor } from "../../utils/offlineQuery";
 import { openWhatsApp } from "../../utils/whatsapp";
 import { nukeClientState, hardRedirectToLogin } from "../../utils/authReset";
+import { refreshIfGranted, promptIfSensible, revokeOnLogout, canUsePush } from "../../utils/push"; // MP-PUSH
 // MP-SUB-FLOW-MERGE: UpgradeModal retired — both entry points now use the one
 // canonical /request-activation flow (RequestActivationPage). No second checkout
 // path / confirmation handler left to drift.
@@ -599,11 +600,46 @@ export default function Layout() {
   // best-effort (stateless JWT — it just audits) and must run BEFORE the
   // nuke since the api interceptor reads the token from the auth store.
   const handleLogout = async () => {
+    // MP-PUSH: retire THIS handset's token first — while the auth token still exists,
+    // since the revoke call is authed. A shared or handed-over phone must stop receiving
+    // the previous user's approvals the moment they log out.
+    try { await revokeOnLogout(); } catch (_) { /* best-effort */ }
     try { await api.post("/auth/logout"); } catch (_) { /* audit-only; proceed */ }
     logout();
     nukeClientState(queryClient);
     hardRedirectToLogin();
   };
+
+  // MP-PUSH: token lifecycle. On every authenticated mount, silently re-register when
+  // permission is ALREADY granted — FCM rotates tokens without telling the user, and a
+  // stale token means alerts quietly stop arriving. This never prompts.
+  useEffect(() => {
+    if (!user?.id || !canUsePush()) return;
+    const onTap = (data) => {
+      // A tap from the lock screen should land where the thing actually is, not on the
+      // dashboard leaving the boss to hunt for it.
+      if (data?.ref_type === "action_approval") {
+        navigate(user.role === "owner" ? "/accountant-log"
+               : user.role === "manager" ? "/team-approvals" : "/my-requests");
+      }
+    };
+    refreshIfGranted({ onTap });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, user?.role]);
+
+  // MP-PUSH: the ONE contextual permission ask. Deliberately NOT at first launch — a
+  // cold prompt gets denied, and on Android a denial is permanent (the OS blocks
+  // re-prompting). We ask the first time the user opens a screen where alerts are
+  // self-evidently useful: the boss's approval inbox, a deputy's inbox, or a staffer's
+  // own requests. promptIfSensible() is idempotent and asks at most once, ever.
+  useEffect(() => {
+    if (!user?.id || !canUsePush()) return;
+    const p = location.pathname || "";
+    const relevant = p.startsWith("/accountant-log") || p.startsWith("/team-approvals") || p.startsWith("/my-requests");
+    if (!relevant) return;
+    promptIfSensible({});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, user?.id]);
 
   // MP-AUTH-STATE-HYGIENE — FIX 2: user-change tripwire. If the persisted
   // last-user id doesn't match the authenticated user (different person
