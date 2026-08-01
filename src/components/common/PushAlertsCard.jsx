@@ -10,7 +10,7 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import api from "../../utils/api";
-import { canUsePush, promptIfSensible, pushStatus } from "../../utils/push";
+import { canUsePush, promptIfSensible, pushStatus, waitForRegistration } from "../../utils/push";
 
 export default function PushAlertsCard({ lang }) {
   const en = lang === "en";
@@ -28,14 +28,23 @@ export default function PushAlertsCard({ lang }) {
 
   const enable = async () => {
     setBusy(true);
-    const r = await promptIfSensible({});
+    // force: this is an explicit request, so it must always attempt the prompt even if
+    // the automatic contextual ask already fired earlier in the session.
+    const r = await promptIfSensible({ force: true });
+    // Registration completes asynchronously; without this the status re-read races it
+    // and the card reports OFF on a successful enable.
+    if (r === "granted") await waitForRegistration();
     await load();
     setBusy(false);
+
     if (r === "granted") toast.success(en ? "Alerts on." : "Alertes activées.");
     else if (r === "denied") {
       toast.error(en
-        ? "Android is blocking alerts. Turn them on in System Settings."
-        : "Android bloque les alertes. Activez-les dans les Paramètres du téléphone.");
+        ? "Android is blocking alerts for this app. Open Settings → Apps → Mon Partenaire Dozie → Notifications and allow them."
+        : "Android bloque les alertes. Ouvrez Paramètres → Applications → Mon Partenaire Dozie → Notifications et autorisez-les.");
+    } else {
+      // 'unavailable' (not a native build / plugin missing) — never leave the tap silent.
+      toast.error(en ? "Alerts aren't available on this device." : "Alertes indisponibles sur cet appareil.");
     }
   };
 

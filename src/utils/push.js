@@ -35,6 +35,9 @@ const storeToken = (t) => { try { t ? localStorage.setItem(TOKEN_KEY, t) : local
 // Wire the listeners ONCE per app start. `registration` fires on first grant AND whenever
 // FCM silently rotates the token, so this is also the refresh path — we just re-POST.
 let listenersBound = false;
+// Resolved by the `registration` handler once the token has actually been stored, so
+// callers can wait for the real completion instead of guessing.
+let tokenWaiters = [];
 async function bindListeners(onTap) {
   const P = await getPlugin();
   if (!P || listenersBound) return;
@@ -62,7 +65,13 @@ async function bindListeners(onTap) {
     try {
       await api.post("/devices/token", { token, platform: "android" });
       storeToken(token);
-    } catch { /* offline — the next app start re-registers */ }
+      tokenWaiters.splice(0).forEach((fn) => { try { fn(); } catch { /* ignore */ } });
+    } catch (e) {
+      // Offline, or the backend rejected it. The next app start re-registers. Release
+      // any waiter so the UI reports honestly instead of hanging on the timeout.
+      console.warn("[push] token POST failed:", e && e.message);
+      tokenWaiters.splice(0).forEach((fn) => { try { fn(); } catch { /* ignore */ } });
+    }
   });
 
   P.addListener("registrationError", (e) => {
@@ -77,18 +86,24 @@ async function bindListeners(onTap) {
 }
 
 // Ask only when the user has just done something that makes alerts obviously useful.
+//
+// `force` = the user EXPLICITLY asked (the Settings button). The once-only guard exists
+// to stop the AUTOMATIC contextual ask nagging; applying it to a deliberate button press
+// made that button a silent no-op once the automatic ask had already fired — which is
+// exactly what it did. An explicit request must always try.
+//
 // Returns 'granted' | 'denied' | 'skipped' | 'unavailable'.
-export async function promptIfSensible({ onTap } = {}) {
+export async function promptIfSensible({ onTap, force = false } = {}) {
   const P = await getPlugin();
   if (!P) return "unavailable";
   await bindListeners(onTap);
   try {
     let perm = await P.checkPermissions();
     if (perm.receive === "granted") { await P.register(); return "granted"; }
-    // 'denied' → the OS will not show the dialog again; asking would be a no-op that
-    // burns our one chance to look responsive. Settings deep-link is the only route.
+    // 'denied' → the OS will not show the dialog again. Nothing we call can change that;
+    // only System Settings can.
     if (perm.receive === "denied") return "denied";
-    if (readAsked()) return "skipped";
+    if (readAsked() && !force) return "skipped";
     markAsked();
     perm = await P.requestPermissions();
     if (perm.receive === "granted") { await P.register(); return "granted"; }
@@ -97,6 +112,20 @@ export async function promptIfSensible({ onTap } = {}) {
     console.warn("[push] permission flow failed:", e && e.message);
     return "unavailable";
   }
+}
+
+// P.register() resolves as soon as registration is REQUESTED — the token arrives later on
+// the `registration` event, and only then is it POSTed. Callers that re-read status
+// immediately therefore saw zero devices and reported failure on a success. Await this
+// between the two.
+export function waitForRegistration(ms = 10000) {
+  return new Promise((resolve) => {
+    if (getStoredToken()) return resolve(true);
+    let done = false;
+    const finish = (ok) => { if (!done) { done = true; resolve(ok); } };
+    const timer = setTimeout(() => finish(false), ms);
+    tokenWaiters.push(() => { clearTimeout(timer); finish(true); });
+  });
 }
 
 // Called at app start for an already-granted user: re-register so a rotated token is
