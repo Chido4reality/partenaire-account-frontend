@@ -8,6 +8,7 @@ import { useMyPermissions } from "../utils/useMyPermissions";
 import { useCurrency } from "../utils/useCurrency";
 import { formatLastSeen, isRecentlyActive } from "../utils/lastSeen";
 import PaywallModal from "../components/common/PaywallModal";
+import PushAlertsCard from "../components/common/PushAlertsCard"; // MP-PUSH
 import { hasFeature, getCapabilities } from "../utils/planCapabilities";
 import { useLiteMode } from "../hooks/useLiteMode";
 import { useTrialState } from "../hooks/useTrialState";
@@ -1460,6 +1461,11 @@ export default function SettingsPage() {
               💳 {lang === "en" ? "Manage subscription" : "Gérer l'abonnement"}
             </Link>
           </div>
+
+          {/* MP-PUSH: per-user alert status. On the Account tab (not Shop) because it is
+              a PER-DEVICE, PER-USER setting — a cashier needs it as much as the owner.
+              Hidden entirely on the web build, where push doesn't exist. */}
+          <PushAlertsCard lang={lang} />
         </div>
       )}
 
