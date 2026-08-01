@@ -10,7 +10,7 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import api from "../../utils/api";
-import { canUsePush, promptIfSensible, pushStatus, waitForRegistration, diagnosePush } from "../../utils/push";
+import { canUsePush, promptIfSensible, pushStatus, waitForRegistration, diagnosePush, disableOnThisDevice } from "../../utils/push";
 
 export default function PushAlertsCard({ lang }) {
   const en = lang === "en";
@@ -67,6 +67,22 @@ export default function PushAlertsCard({ lang }) {
     }
   };
 
+  const disable = async () => {
+    setBusy(true);
+    const ok = await disableOnThisDevice();
+    await load();
+    setBusy(false);
+    if (ok) {
+      toast.success(en ? "Alerts off on this phone." : "Alertes désactivées sur ce téléphone.");
+    } else {
+      // The local token is cleared either way, so the card will read OFF — but the server
+      // may not have got the message. Say so rather than imply a clean stop.
+      toast.error(en
+        ? "Couldn't reach the server — alerts may continue until you're back online."
+        : "Serveur injoignable — les alertes peuvent continuer jusqu'à votre reconnexion.");
+    }
+  };
+
   const sendTest = async () => {
     setTesting(true);
     try {
@@ -110,6 +126,14 @@ export default function PushAlertsCard({ lang }) {
           {!on && (
             <button className="btn btn-primary" disabled={busy} onClick={enable}>
               {busy ? "…" : (en ? "Turn on alerts" : "Activer les alertes")}
+            </button>
+          )}
+          {/* The OFF half. Without this the only way to stop being buzzed was Android's
+              own settings, which is both hard to find and heavier than intended — it
+              silences the app entirely rather than just deregistering this device. */}
+          {on && (
+            <button className="btn btn-secondary" disabled={busy} onClick={disable}>
+              {busy ? "…" : (en ? "Turn off alerts" : "Désactiver les alertes")}
             </button>
           )}
           {/* Shown whenever the SERVER can send, not only when this card believes it is

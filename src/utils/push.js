@@ -142,13 +142,37 @@ export async function refreshIfGranted({ onTap } = {}) {
   } catch { return false; }
 }
 
-// Logout: stop this handset receiving the shop's alerts. A shared or handed-over phone
-// must not keep buzzing with the previous user's approvals.
-export async function revokeOnLogout() {
+// Stop THIS handset receiving alerts. Server-side this sets pa_device_tokens.revoked_at,
+// and the sender only ever selects tokens where revoked_at IS NULL — so the backend stops
+// sending to this device immediately, rather than sending into the void.
+//
+// NOTE what this deliberately does NOT do: an Android app cannot revoke its own
+// notification permission. So "off" means "this device is deregistered from our push",
+// not "Android permission withdrawn". That is the honest and useful meaning — the user
+// wants to stop being buzzed, and re-enabling later needs no trip to system settings
+// because the OS permission is still granted.
+//
+// Returns true when the server confirmed the revoke.
+export async function disableOnThisDevice() {
   const token = getStoredToken();
-  if (!token) return;
-  try { await api.delete("/devices/token", { data: { token } }); } catch { /* best-effort */ }
+  if (!token) return true; // nothing registered from here — already off
+  let ok = false;
+  try {
+    await api.delete("/devices/token", { data: { token } });
+    ok = true;
+  } catch (e) {
+    console.warn("[push] revoke failed:", e && e.message);
+  }
+  // Clear locally regardless: if the network call failed we must not keep claiming this
+  // device is registered. The next successful registration re-creates the row.
   storeToken(null);
+  return ok;
+}
+
+// Logout: same mechanism. A shared or handed-over phone must not keep buzzing with the
+// previous user's approvals.
+export async function revokeOnLogout() {
+  await disableOnThisDevice();
 }
 
 export async function pushStatus() {
