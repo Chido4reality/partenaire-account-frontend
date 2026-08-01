@@ -21,7 +21,24 @@ export default function PushAlertsCard({ lang }) {
   const [diagBusy, setDiagBusy] = useState(false);
 
   const load = async () => setStatus(await pushStatus());
-  useEffect(() => { if (canUsePush()) load(); }, []);
+
+  // The card used to read status ONCE at mount. A token registered by anything other
+  // than the enable button — the automatic contextual ask, or the Diagnose run — landed
+  // AFTER that read, so the card sat on a stale snapshot and showed OFF while the token
+  // was demonstrably registered server-side. It wasn't misreading state; it had no
+  // reason to look again. Re-read on mount AND whenever the screen regains focus, which
+  // also covers returning from the Android notification settings.
+  useEffect(() => {
+    if (!canUsePush()) return;
+    load();
+    const refresh = () => { if (!document.hidden) load(); };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, []);
 
   // Web build: push doesn't exist here, so promising it would be a lie.
   if (!canUsePush()) return null;
@@ -95,11 +112,13 @@ export default function PushAlertsCard({ lang }) {
               {busy ? "…" : (en ? "Turn on alerts" : "Activer les alertes")}
             </button>
           )}
-          {on && (
-            <button className="btn btn-secondary" disabled={testing} onClick={sendTest}>
-              {testing ? "…" : (en ? "Send a test alert" : "Envoyer un test")}
-            </button>
-          )}
+          {/* Shown whenever the SERVER can send, not only when this card believes it is
+              ON. Hiding it behind `on` meant a stale ON/OFF reading also removed the one
+              control that would have proved the truth — the exact lockout that cost us a
+              build cycle. The worst case now is a test that reports no device. */}
+          <button className="btn btn-secondary" disabled={testing} onClick={sendTest}>
+            {testing ? "…" : (en ? "Send a test alert" : "Envoyer un test")}
+          </button>
         </div>
       )}
 
@@ -111,7 +130,9 @@ export default function PushAlertsCard({ lang }) {
             setDiagBusy(true); setDiag(null);
             try { const r = await diagnosePush(); setDiag(r); }
             catch (e) { setDiag({ steps: [{ name: "diagnose threw", ok: false, error: String(e && e.message) }] }); }
-            finally { setDiagBusy(false); }
+            // The diagnose run REGISTERS a token. Without this the card kept showing OFF
+            // straight after a run that had just proven registration works.
+            finally { await load(); setDiagBusy(false); }
           }}>
           {diagBusy ? (en ? "Running…" : "En cours…") : (en ? "🔍 Diagnose alerts" : "🔍 Diagnostiquer")}
         </button>
