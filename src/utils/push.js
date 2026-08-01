@@ -155,16 +155,28 @@ export async function refreshIfGranted({ onTap } = {}) {
 // Returns true when the server confirmed the revoke.
 export async function disableOnThisDevice() {
   const token = getStoredToken();
-  if (!token) return true; // nothing registered from here — already off
   let ok = false;
   try {
-    await api.delete("/devices/token", { data: { token } });
-    ok = true;
+    // Try the precise revoke first when we have a token.
+    let revoked = 0;
+    if (token) {
+      const r = await api.delete("/devices/token", { data: { token } });
+      revoked = r?.data?.revoked ?? 0;
+    }
+    // FCM rotates tokens silently, so the stored copy can be stale and match nothing.
+    // Turning alerts off must never be a no-op that reports success — fall back to
+    // retiring every live device for this user, which is what "turn my alerts off"
+    // means anyway.
+    if (revoked === 0) {
+      const r2 = await api.delete("/devices/token", { data: { all: true } });
+      revoked = r2?.data?.revoked ?? 0;
+    }
+    ok = revoked > 0 || !token; // nothing registered at all also counts as "off"
   } catch (e) {
     console.warn("[push] revoke failed:", e && e.message);
   }
-  // Clear locally regardless: if the network call failed we must not keep claiming this
-  // device is registered. The next successful registration re-creates the row.
+  // Clear locally regardless: if the call failed we must not keep claiming this device
+  // is registered. The next successful registration re-creates the row.
   storeToken(null);
   return ok;
 }
