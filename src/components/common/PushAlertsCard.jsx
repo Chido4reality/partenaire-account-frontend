@@ -10,13 +10,15 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import api from "../../utils/api";
-import { canUsePush, promptIfSensible, pushStatus, waitForRegistration } from "../../utils/push";
+import { canUsePush, promptIfSensible, pushStatus, waitForRegistration, diagnosePush } from "../../utils/push";
 
 export default function PushAlertsCard({ lang }) {
   const en = lang === "en";
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [diag, setDiag] = useState(null);
+  const [diagBusy, setDiagBusy] = useState(false);
 
   const load = async () => setStatus(await pushStatus());
   useEffect(() => { if (canUsePush()) load(); }, []);
@@ -99,6 +101,31 @@ export default function PushAlertsCard({ lang }) {
             </button>
           )}
         </div>
+      )}
+
+      {/* TEMPORARY diagnostic. Shows the trace on-screen AND uploads it, so we learn
+          the failure point even if the upload itself is what's broken. */}
+      <div style={{ marginTop: 10 }}>
+        <button className="btn btn-secondary" disabled={diagBusy}
+          onClick={async () => {
+            setDiagBusy(true); setDiag(null);
+            try { const r = await diagnosePush(); setDiag(r); }
+            catch (e) { setDiag({ steps: [{ name: "diagnose threw", ok: false, error: String(e && e.message) }] }); }
+            finally { setDiagBusy(false); }
+          }}>
+          {diagBusy ? (en ? "Running…" : "En cours…") : (en ? "🔍 Diagnose alerts" : "🔍 Diagnostiquer")}
+        </button>
+      </div>
+      {diag && (
+        <pre style={{ marginTop: 10, fontSize: 10.5, lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "break-word",
+          background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: 10, maxHeight: 300, overflow: "auto" }}>
+{(diag.steps || []).map((s) =>
+  `${s.ok ? "OK  " : "FAIL"} ${s.name}` +
+  (s.value !== undefined && s.value !== null ? `\n     -> ${JSON.stringify(s.value)}` : "") +
+  (s.error ? `\n     !! ${s.error}` : "")
+).join("\n")}
+{`\n\nuploaded: ${JSON.stringify(diag.stored)}`}
+        </pre>
       )}
 
       {status && status.push_configured && !on && (
