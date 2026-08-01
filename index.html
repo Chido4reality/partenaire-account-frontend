@@ -18,9 +18,150 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Mon Partenaire Dozie" />
     <meta name="description" content="POS & gestion de stock pour commerçants" />
+
+    <!-- MP-BLANK-SCREEN-FIX (boot screen).
+         DELIBERATELY INLINE. index.css is itself a network fetch, so a splash that
+         depended on it would flash white first — on a slow phone link that is most of
+         the wait. These rules paint on the first byte of HTML, before any stylesheet
+         or JS exists. Colours are the brand navy/gold from index.css. -->
+    <style>
+      html, body { height: 100%; margin: 0; background: #152B52; }
+      #mp-boot {
+        position: fixed; inset: 0; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 18px;
+        background: #152B52; color: #F5F2EA;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        text-align: center; padding: 24px;
+      }
+      #mp-boot .mp-ring {
+        width: 44px; height: 44px; border-radius: 50%;
+        border: 3px solid rgba(251, 197, 3, 0.25); border-top-color: #FBC503;
+        animation: mp-spin 0.9s linear infinite;
+      }
+      @keyframes mp-spin { to { transform: rotate(360deg); } }
+      /* Respect reduced-motion: keep a visible indicator, drop the spin. */
+      @media (prefers-reduced-motion: reduce) { #mp-boot .mp-ring { animation: none; } }
+      #mp-boot .mp-name { font-size: 15px; font-weight: 700; color: #FBC503; letter-spacing: 0.3px; }
+      #mp-boot .mp-msg  { font-size: 13.5px; opacity: 0.85; line-height: 1.5; }
+      #mp-boot .mp-slow { font-size: 12.5px; opacity: 0.75; max-width: 300px; line-height: 1.5; }
+      #mp-boot button {
+        margin-top: 2px; padding: 11px 22px; font-size: 14px; font-weight: 700;
+        color: #152B52; background: #FBC503; border: none; border-radius: 10px;
+        cursor: pointer; font-family: inherit;
+        /* Comfortable tap target — this is the phone user's only way out. */
+        min-height: 44px; min-width: 160px;
+      }
+      #mp-boot [hidden] { display: none !important; }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- The boot screen lives INSIDE #root: React's createRoot().render() replaces the
+         container's children on first mount, so it disappears on its own with no
+         teardown code and no chance of it lingering over the app. -->
+    <div id="root">
+      <div id="mp-boot">
+        <div class="mp-ring"></div>
+        <div class="mp-name">Mon Partenaire Dozie</div>
+        <div class="mp-msg">Chargement…<br />Loading…</div>
+        <div class="mp-slow" id="mp-boot-slow" hidden>
+          La connexion est lente. Vous pouvez réessayer.<br />
+          Slow connection. You can try again.
+        </div>
+        <button id="mp-boot-retry" hidden type="button">Réessayer / Retry</button>
+      </div>
+    </div>
+
+    <!-- MP-BLANK-SCREEN-FIX (recovery). Plain (non-module) inline script so it runs even
+         when the module bundle itself fails to load — which is exactly the case it exists
+         to handle. Three layers:
+           1. vite:preloadError / script-load failure  -> ONE automatic recovery reload
+           2. a hard sessionStorage cap                -> a permanently missing asset can
+              never become a reload loop (worse than a blank screen)
+           3. a 12s watchdog                           -> offers a manual retry, which is
+              the hard-refresh phones don't have
+         The retry unregisters the app SW and clears Cache Storage, so a user already
+         stranded on a stale shell self-heals without switching browser. -->
+    <script>
+      (function () {
+        var RELOAD_KEY = "mp-boot-reloads";
+        var MAX_AUTO_RELOADS = 1;
+        var WATCHDOG_MS = 12000;
+        var handled = false;
+
+        function el(id) { return document.getElementById(id); }
+        function showRetry() {
+          var slow = el("mp-boot-slow"), btn = el("mp-boot-retry");
+          if (slow) slow.hidden = false;
+          if (btn) btn.hidden = false;
+        }
+
+        // Drop the app's SW + caches so the next load comes fresh from the network.
+        // The admin portal has its own SW (/sw-admin.js) — leave it alone.
+        function selfHeal() {
+          var jobs = [];
+          try {
+            if ("serviceWorker" in navigator) {
+              jobs.push(navigator.serviceWorker.getRegistrations().then(function (regs) {
+                return Promise.all(regs.map(function (r) {
+                  var url = (r.active && r.active.scriptURL) || (r.waiting && r.waiting.scriptURL) ||
+                            (r.installing && r.installing.scriptURL) || "";
+                  return url.indexOf("sw-admin.js") === -1 ? r.unregister() : null;
+                }));
+              }).catch(function () {}));
+            }
+            if (typeof caches !== "undefined" && caches.keys) {
+              jobs.push(caches.keys().then(function (keys) {
+                return Promise.all(keys.map(function (k) {
+                  return /admin/i.test(k) ? null : caches.delete(k);
+                }));
+              }).catch(function () {}));
+            }
+          } catch (e) { /* best-effort — never block the reload */ }
+          return Promise.all(jobs).catch(function () {});
+        }
+
+        function recover() {
+          if (handled) return;
+          handled = true;
+          var n = 0;
+          try { n = parseInt(sessionStorage.getItem(RELOAD_KEY) || "0", 10) || 0; } catch (e) { n = MAX_AUTO_RELOADS; }
+
+          // OFFLINE GUARD: never wipe the precache while the device is offline — that
+          // cache IS the offline app. Offer a manual retry instead and leave it intact.
+          if (typeof navigator !== "undefined" && navigator.onLine === false) { showRetry(); return; }
+
+          if (n >= MAX_AUTO_RELOADS) { showRetry(); return; }
+          try { sessionStorage.setItem(RELOAD_KEY, String(n + 1)); } catch (e) {}
+          selfHeal().then(function () { window.location.reload(); });
+        }
+
+        // 1. Vite emits this when a dynamic chunk fails to load (the app lazy-loads
+        //    xlsx, jsPDF via waybill, @zxing, and the Capacitor plugins).
+        window.addEventListener("vite:preloadError", recover);
+
+        // 2. Capture-phase listener catches a <script>/<link> that failed outright —
+        //    including the entry module rejected for a wrong MIME type, which is what a
+        //    missing asset produced while the SPA rewrite answered it with index.html.
+        window.addEventListener("error", function (e) {
+          var t = e && e.target;
+          if (!t || t === window) return;
+          if (t.tagName === "SCRIPT" || t.tagName === "LINK") recover();
+        }, true);
+
+        // 3. Watchdog: still on the boot screen after WATCHDOG_MS → offer the way out.
+        //    Non-destructive; a genuinely slow load keeps going behind it.
+        setTimeout(function () { if (el("mp-boot")) showRetry(); }, WATCHDOG_MS);
+
+        var btn = el("mp-boot-retry");
+        if (btn) btn.addEventListener("click", function () {
+          btn.disabled = true;
+          btn.textContent = "…";
+          try { sessionStorage.removeItem(RELOAD_KEY); } catch (e) {}
+          selfHeal().then(function () { window.location.reload(); });
+        });
+      })();
+    </script>
+
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

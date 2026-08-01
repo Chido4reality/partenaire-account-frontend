@@ -30,6 +30,18 @@ export default defineConfig({
       injectRegister: false,        // registration is manual + platform-gated in main.jsx (native skips the SW to avoid stale-install)
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg}"],
+        // MP-BLANK-SCREEN-FIX: the main bundle is ~2.4 MB and Workbox's DEFAULT limit is
+        // 2 MiB, so it was being SILENTLY DROPPED from the precache manifest (every build
+        // logged "won't be precached" and it was missed). That left the SW holding
+        // index.html but NOT the JS that shell points at — the shell/bundle skew behind
+        // the blank screen. Precaching both puts them in ONE Workbox revision, and a
+        // precache install is atomic: the new SW takes the whole manifest or none of it,
+        // so the cached shell can never reference a bundle the SW doesn't hold.
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+        // A new SW must take over the CURRENT page, not the one after. registerType
+        // 'autoUpdate' sets skipWaiting, but clientsClaim was absent from the built
+        // sw.js — so an activated SW sat idle for one more load.
+        clientsClaim: true,
         // Never precache the admin portal's standalone shell/assets — it
         // has its own SW; precaching it here would make the two fight.
         globIgnores: ["**/admin.html", "**/admin-manifest.json", "**/sw-admin.js"],
