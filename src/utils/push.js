@@ -35,10 +35,57 @@ const storeToken = (t) => { try { t ? localStorage.setItem(TOKEN_KEY, t) : local
 
 // Wire the listeners ONCE per app start. `registration` fires on first grant AND whenever
 // FCM silently rotates the token, so this is also the refresh path — we just re-POST.
-let listenersBound = false;
-// Resolved by the `registration` handler once the token has actually been stored, so
-// callers can wait for the real completion instead of guessing.
-let tokenWaiters = [];
+//
+// LISTENER-FIRST, SINGLE-FLIGHT. `listenersBound` used to be set at the TOP of
+// bindListeners, before the awaited createChannel and before addListener ran. Two things
+// followed: a second concurrent caller returned immediately believing the listeners were
+// attached when they were not, and the first caller sat through up to 6s of createChannel
+// with no `registration` handler installed. Now every caller awaits the SAME promise, and
+// that promise does not resolve until the handlers are actually on.
+let bindPromise = null;
+
+// THE RESULT OF THE LAST `registration` EVENT, captured the MOMENT it fires.
+//
+// This is the fix for the race that cost us the login path. The sequence is:
+//   register() → (later) `registration` event → POST /devices/token → done
+// The waiter used to be created AFTER register() resolved. register() resolves as soon as
+// registration is REQUESTED, but on a warm handset FCM can deliver the token and the POST
+// can finish inside that window — draining an EMPTY waiter list. The real result then had
+// nowhere to go, the waiter that arrived a moment later waited for an event that had
+// already happened, and 12s later the flow recorded `no_token` on a registration that had
+// in fact succeeded. The Diagnose button never hit this because it armed everything up
+// front and time-boxed each step.
+//
+// So the outcome is now written to a module var synchronously, before any await, and a
+// waiter armed afterwards still finds it. Belt and braces with the waiter list below,
+// because we only get one shot per login.
+let lastRegistration = null;   // { token, at, posted: "pending"|"ok"|"failed", error }
+// Armed BEFORE register() is called. At most one is live at a time.
+let pendingWait = null;
+
+// Resolve whatever is waiting on a registration outcome, from either mechanism.
+function settleWait(result) {
+  const w = pendingWait;
+  if (!w || w.done) return;
+  w.done = true;
+  pendingWait = null;
+  clearTimeout(w.timer);
+  try { w.resolve(result); } catch { /* ignore */ }
+}
+
+// Arm the waiter. MUST be called BEFORE P.register(), never after.
+// Resolves { ok } | { ok:false, timedOut:true } | { ok:false, error }.
+function armRegistrationWait(ms) {
+  settleWait({ ok: false, superseded: true });   // never leave an older wait dangling
+  // Clear the previous attempt's result so a stale success (another user's login on this
+  // same handset, an earlier attempt in this process) can never be read as this one's.
+  lastRegistration = null;
+  return new Promise((resolve) => {
+    const w = { resolve, done: false, timer: null };
+    w.timer = setTimeout(() => settleWait({ ok: false, timedOut: true }), ms);
+    pendingWait = w;
+  });
+}
 
 // Every native bridge call in the enable path goes through this.
 //
@@ -61,54 +108,79 @@ function tb(promise, ms, label, trace) {
   ]);
 }
 
-async function bindListeners(onTap, trace) {
-  const P = await getPlugin();
-  if (!P || listenersBound) return;
-  listenersBound = true;
+function bindListeners(onTap, trace) {
+  if (bindPromise) return bindPromise;
+  bindPromise = (async () => {
+    const P = await getPlugin();
+    if (!P) { bindPromise = null; return; }
 
-  // The server sends android.notification.channelId = 'mp_alerts'. On Android 8+ a
-  // message aimed at a channel that doesn't exist is DROPPED silently, so create it
-  // before registering. importance 4 = HIGH: heads-up + sound, which is the whole point
-  // of a lock-screen alert.
-  // Time-boxed: a stalled createChannel used to hang the whole enable path.
-  await tb(P.createChannel({
-    id: "mp_alerts",
-    name: "Alertes / Alerts",
-    description: "Approbations, actions à risque, résumé du jour",
-    importance: 4,
-    visibility: 1,   // public — readable on the lock screen
-    sound: "default",
-    vibration: true,
-  }), 6000, "createChannel", trace);
+    // LISTENERS FIRST — before createChannel, before anything that can stall. A token
+    // event arriving during a 6s channel-creation stall used to fall on the floor.
+    P.addListener("registration", async (t) => {
+      const token = t && t.value;
+      if (!token) return;
+      // Synchronous, before any await: whoever asks later can still read this.
+      lastRegistration = { token, at: Date.now(), posted: "pending", error: null };
+      // Waiters are told WHETHER THE POST SUCCEEDED. Both branches used to resolve them
+      // identically, so a FAILED upload looked exactly like a successful one: the login
+      // flow recorded "granted", the card found no device server-side and showed OFF, and
+      // because "granted" has no explanation text there was no amber line either. Silent,
+      // and indistinguishable from working.
+      try {
+        await api.post("/devices/token", { token, platform: "android" });
+        storeToken(token);
+        lastRegistration = { token, at: Date.now(), posted: "ok", error: null };
+        settleWait({ ok: true });
+      } catch (e) {
+        const detail = e?.response?.status ? `HTTP ${e.response.status}` : (e?.message || "network error");
+        console.warn("[push] token POST failed:", detail);
+        lastRegistration = { token, at: Date.now(), posted: "failed", error: detail };
+        settleWait({ ok: false, error: detail });
+      }
+    });
 
-  P.addListener("registration", async (t) => {
-    const token = t && t.value;
-    if (!token) return;
-    // Waiters are told WHETHER THE POST SUCCEEDED. Previously both branches resolved them
-    // identically, so a FAILED upload looked exactly like a successful one: the login flow
-    // recorded "granted", the card found no device server-side and showed OFF, and because
-    // "granted" has no explanation text there was no amber line either. Silent, and
-    // indistinguishable from working.
-    try {
-      await api.post("/devices/token", { token, platform: "android" });
-      storeToken(token);
-      tokenWaiters.splice(0).forEach((fn) => { try { fn({ ok: true }); } catch { /* ignore */ } });
-    } catch (e) {
-      const detail = e?.response?.status ? `HTTP ${e.response.status}` : (e?.message || "network error");
-      console.warn("[push] token POST failed:", detail);
-      tokenWaiters.splice(0).forEach((fn) => { try { fn({ ok: false, error: detail }); } catch { /* ignore */ } });
-    }
-  });
+    P.addListener("registrationError", (e) => {
+      // Almost always a missing/mismatched google-services.json.
+      const detail = String((e && e.error) || "registrationError");
+      console.warn("[push] registration failed:", detail);
+      // Don't make the caller sit out the full timeout for a failure the OS already
+      // reported. This is the one case where we KNOW no token is coming.
+      settleWait({ ok: false, error: detail });
+    });
 
-  P.addListener("registrationError", (e) => {
-    // Almost always a missing/mismatched google-services.json. Never surface to the user.
-    console.warn("[push] registration failed:", e && e.error);
-  });
+    // Tapped from the lock screen / tray while the app was backgrounded or killed.
+    P.addListener("pushNotificationActionPerformed", (action) => {
+      try { onTap && onTap(action?.notification?.data || {}); } catch { /* ignore */ }
+    });
 
-  // Tapped from the lock screen / tray while the app was backgrounded or killed.
-  P.addListener("pushNotificationActionPerformed", (action) => {
-    try { onTap && onTap(action?.notification?.data || {}); } catch { /* ignore */ }
-  });
+    // The server sends android.notification.channelId = 'mp_alerts'. On Android 8+ a
+    // message aimed at a channel that doesn't exist is DROPPED silently, so create it
+    // before registering. importance 4 = HIGH: heads-up + sound, which is the whole point
+    // of a lock-screen alert.
+    // Time-boxed: a stalled createChannel used to hang the whole enable path.
+    await tb(P.createChannel({
+      id: "mp_alerts",
+      name: "Alertes / Alerts",
+      description: "Approbations, actions à risque, résumé du jour",
+      importance: 4,
+      visibility: 1,   // public — readable on the lock screen
+      sound: "default",
+      vibration: true,
+    }), 6000, "createChannel", trace);
+  })();
+  return bindPromise;
+}
+
+// register() + wait, in the ONLY order that is race-free: arm, then register, then await.
+// Returns { ok } | { ok:false, stage:"register" } | { ok:false, timedOut } | { ok:false, error }.
+async function registerAndWait(P, trace, ms = 20000) {
+  const wait = armRegistrationWait(ms);
+  const reg = await tb(P.register(), 15000, "register", trace);
+  if (!reg.ok) {
+    settleWait({ ok: false, superseded: true });
+    return { ok: false, stage: "register", timedOut: !!reg.timedOut };
+  }
+  return await wait;
 }
 
 // Ask only when the user has just done something that makes alerts obviously useful.
@@ -118,7 +190,9 @@ async function bindListeners(onTap, trace) {
 // made that button a silent no-op once the automatic ask had already fired — which is
 // exactly what it did. An explicit request must always try.
 //
-// Returns 'granted' | 'denied' | 'skipped' | 'unavailable'.
+// Returns 'granted' | 'denied' | 'skipped' | 'unavailable' | 'incomplete'.
+// 'incomplete' = permission is fine and register() went through, but the token never came
+// back or the server refused it. The specific reason is in lastRegistrationOutcome().
 export async function promptIfSensible({ onTap, force = false } = {}) {
   const trace = [];
   const P = await getPlugin();
@@ -151,9 +225,38 @@ export async function promptIfSensible({ onTap, force = false } = {}) {
     if (receive !== "granted") { uploadTrace(trace, `not_granted:${receive}`); return "denied"; }
   }
 
-  const reg = await tb(P.register(), 15000, "register", trace);
-  if (!reg.ok) { uploadTrace(trace, "register_failed"); return "unavailable"; }
-  return "granted";
+  // Same race-free order as the login path, and it records the same outcome — so the
+  // Retry button and the automatic login attempt can no longer disagree about what
+  // happened on this handset.
+  const r = await registerAndWait(P, trace);
+  if (!r.ok) uploadTrace(trace, r.stage === "register" ? "register_failed" : (r.timedOut ? "no_token" : "server_rejected"));
+  recordAttempt(r);
+  return r.ok ? "granted" : (r.stage === "register" ? "unavailable" : "incomplete");
+}
+
+// Turn a registerAndWait result into the stored outcome the Settings card explains.
+// One place, so every entry point reports the same thing.
+function recordAttempt(r) {
+  if (r.ok) return rec("granted", "permission granted, token stored on the server");
+  if (r.stage === "register")
+    return rec("register_failed", r.timedOut ? "register() timed out" : "register() rejected");
+  if (r.timedOut)
+    return rec("no_token", "permission granted, register() ok, but the phone returned no token in time");
+  return rec("server_rejected", `the phone produced a token but the server refused it: ${r.error || "unknown"}`);
+}
+
+// Record what an attempt actually hit, so a silent failure can be READ rather than
+// guessed at. Goes to localStorage (surfaced on the Settings card) and to logcat.
+// Deliberately not a server round-trip: the diagnostics table and endpoint were removed,
+// and this needs no schema to be useful.
+function rec(outcome, detail) {
+  try {
+    localStorage.setItem(LAST_KEY, JSON.stringify({
+      outcome, detail: detail ?? null, at: new Date().toISOString(),
+    }));
+  } catch { /* private mode */ }
+  try { console.warn("[push] registration:", outcome, detail ?? ""); } catch { /* ignore */ }
+  return outcome;
 }
 
 // THE single entry point, called once per authenticated app start.
@@ -167,23 +270,10 @@ export async function promptIfSensible({ onTap, force = false } = {}) {
 //   permission undecided → show the OS prompt once, register on Allow
 //   permission denied    → do nothing; only Android's settings can undo that
 export async function ensureRegisteredOnLogin({ onTap } = {}) {
-  const rec = (outcome, detail) => {
-    // Record what this attempt actually hit, so a silent failure can be READ rather than
-    // guessed at. Goes to localStorage (surfaced on the Settings card) and to logcat.
-    // Deliberately not a server round-trip: the diagnostics table and endpoint were
-    // removed, and this needs no schema to be useful.
-    try {
-      localStorage.setItem(LAST_KEY, JSON.stringify({
-        outcome, detail: detail ?? null, at: new Date().toISOString(),
-      }));
-    } catch { /* private mode */ }
-    try { console.warn("[push] login registration:", outcome, detail ?? ""); } catch { /* ignore */ }
-    return outcome;
-  };
-
   if (!isNative()) return rec("unavailable", "not a native build");
   const P = await getPlugin();
   if (!P) return rec("unavailable", "push plugin did not load");
+  // Listeners are on — really on, not just flagged — before anything else happens.
   await bindListeners(onTap, null);
 
   const chk = await tb(P.checkPermissions(), 6000, "checkPermissions(login)", null);
@@ -192,20 +282,18 @@ export async function ensureRegisteredOnLogin({ onTap } = {}) {
 
   if (receive === "granted") {
     // Silent path. No prompt, no UI, no dependence on any screen.
-    const reg = await tb(P.register(), 15000, "register(login)", null);
-    if (!reg.ok) return rec("register_failed", reg.timedOut ? "register() timed out" : "register() rejected");
-    // register() only REQUESTS registration; the token lands on the `registration` event
-    // and is POSTed there. Wait for that so the recorded outcome reflects reality.
-    const got = await waitForRegistration(12000);
-    if (got.ok) return rec("granted", "permission granted, token stored on the server");
-    if (got.timedOut) return rec("no_token", "permission granted, register() ok, but the phone returned no token within 12s");
-    return rec("server_rejected", `the phone produced a token but the server refused it: ${got.error || "unknown"}`);
+    // registerAndWait arms the waiter BEFORE register() — see lastRegistration above for
+    // why the old order lost the token on a fast handset and reported no_token.
+    return recordAttempt(await registerAndWait(P, null));
   }
   if (receive === "denied") {
     return rec("blocked", "Android reports notifications DENIED for this app — only phone settings can change it");
   }
 
+  // Undecided: prompt once. promptIfSensible records its own outcome via recordAttempt,
+  // so the only thing left to note here is the case where it never got that far.
   const r = await promptIfSensible({ onTap });
+  if (r === "granted" || r === "incomplete") return r;
   return rec(r, `permission was '${receive}' before prompting`);
 }
 
@@ -226,35 +314,32 @@ function uploadTrace(trace, outcome) {
   catch { /* ignore */ }
 }
 
-// P.register() resolves as soon as registration is REQUESTED — the token arrives later on
-// the `registration` event, and only then is it POSTed. Callers that re-read status
-// immediately therefore saw zero devices and reported failure on a success. Await this
-// between the two.
-// Resolves { ok, error?, timedOut? } — the CALLER needs to distinguish "the phone never
-// produced a token" from "it did, but the server refused it". Those are opposite fixes.
+// What THIS process's most recent registration attempt produced. Callers that want to
+// wait no longer need this — promptIfSensible and ensureRegisteredOnLogin already await
+// the real completion internally — but it stays exported as a read-only check.
+//
+// It reads the module var, NOT localStorage. The old version short-circuited on a stored
+// token, which is a lie for a fresh login: the token in localStorage may belong to the
+// previous session (or the previous USER of a shared handset) and prove nothing about
+// whether the server has a row for whoever just signed in.
 export function waitForRegistration(ms = 10000) {
   return new Promise((resolve) => {
-    if (getStoredToken()) return resolve({ ok: true });
-    let done = false;
-    const finish = (v) => { if (!done) { done = true; resolve(v); } };
-    const timer = setTimeout(() => finish({ ok: false, timedOut: true }), ms);
-    tokenWaiters.push((r) => { clearTimeout(timer); finish(r || { ok: false }); });
+    const deadline = Date.now() + ms;
+    const check = () => {
+      const r = lastRegistration;
+      if (r && r.posted === "ok") return resolve({ ok: true });
+      if (r && r.posted === "failed") return resolve({ ok: false, error: r.error });
+      if (Date.now() >= deadline) return resolve({ ok: false, timedOut: true });
+      setTimeout(check, 250);
+    };
+    check();
   });
 }
 
-// Called at app start for an already-granted user: re-register so a rotated token is
-// refreshed. Never prompts.
-export async function refreshIfGranted({ onTap } = {}) {
-  const P = await getPlugin();
-  if (!P) return false;
-  await bindListeners(onTap);
-  try {
-    const perm = await P.checkPermissions();
-    if (perm.receive !== "granted") return false;
-    await P.register();
-    return true;
-  } catch { return false; }
-}
+// NOTE: refreshIfGranted() is gone. It was dead code (nothing imported it once
+// ensureRegisteredOnLogin became the single entry point) and it was the last un-time-boxed
+// register() left in the file — exactly the shape that produced every hang this feature
+// has had. A rotated token is refreshed by the login path, which re-registers every time.
 
 // Stop THIS handset receiving alerts. Server-side this sets pa_device_tokens.revoked_at,
 // and the sender only ever selects tokens where revoked_at IS NULL — so the backend stops
@@ -298,6 +383,10 @@ async function disableOnThisDevice() {
   // Clear locally regardless: if the call failed we must not keep claiming this device
   // is registered. The next successful registration re-creates the row.
   storeToken(null);
+  // …and drop this process's registration result, so the next user to log in on this
+  // handset cannot read the previous user's success as their own.
+  lastRegistration = null;
+  settleWait({ ok: false, superseded: true });
   // Deliberately NO P.unregister(). Added in vc97 and the OFF path started hanging in the
   // same build; FCM does not expect apps to register/unregister repeatedly, and we no
   // longer need it — the server simply stops selecting a revoked token.
@@ -310,8 +399,16 @@ export async function revokeOnLogout() {
   await disableOnThisDevice();
 }
 
-export async function pushStatus() {
-  try { return (await api.get("/devices/status")).data?.data || null; } catch { return null; }
+// TIME-BOXED. This is a plain GET, but api.js gives reads a 20s ceiling AND retries a
+// timeout with backoff — so on a bad link the card could sit "checking" for well over a
+// minute (we measured ~78s) with nothing on screen explaining it. A status read is
+// informational; it is never worth more than a few seconds. On timeout we return a
+// distinguishable value rather than null, because "we couldn't check" and "you have no
+// devices" must not look the same to the user.
+export async function pushStatus(ms = 8000) {
+  const r = await tb(api.get("/devices/status"), ms, "pushStatus", null);
+  if (!r.ok) return { unknown: true };
+  return r.value?.data?.data || null;
 }
 
 export function canUsePush() { return isNative(); }

@@ -98,7 +98,29 @@ function compressImageFile(file, maxDim = 512, quality = 0.7) {
 // users, a permanent support lever for field debugging.
 let _debugTaps = { count: 0, t: 0 };
 
+// The footer used to read a hardcoded "v1.0.0" — the same string in every build ever
+// shipped, so it could not answer the one question a field tester actually has: WHICH
+// binary am I looking at? Read the real package version from the native layer instead.
+// Falls back to the hardcoded web label off-device, where there is no APK to identify.
+function useAppVersion() {
+  const [v, setV] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!window.Capacitor?.isNativePlatform?.()) return;
+      try {
+        const { App } = await import("@capacitor/app");
+        const info = await App.getInfo();
+        if (alive && info) setV(`v${info.version} (build ${info.build})`);
+      } catch { /* non-native or plugin missing — keep the fallback */ }
+    })();
+    return () => { alive = false; };
+  }, []);
+  return v;
+}
+
 export default function SettingsPage() {
+  const appVersion = useAppVersion();
   const { user, org } = useAuthStore();
   const { lang, setLang } = useLangStore();
   const { selectedLocation, setLocation } = useSettingsStore();
@@ -2219,7 +2241,7 @@ export default function SettingsPage() {
       {/* MP-DEBUG-REVEAL: tappable version footer — 5 taps toggles debug mode. */}
       <div onClick={handleVersionTap}
         style={{ textAlign: "center", padding: "20px 0 8px", color: "var(--text-muted)", fontSize: 11, userSelect: "none" }}>
-        Mon Partenaire Dozie · v1.0.0
+        Mon Partenaire Dozie · {appVersion || "v1.0.0"}
       </div>
     </div>
   );

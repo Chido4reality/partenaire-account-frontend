@@ -13,7 +13,7 @@
 // settings. Nothing here can hang, because nothing here does anything.
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { canUsePush, pushStatus, lastRegistrationOutcome, promptIfSensible, waitForRegistration } from "../../utils/push";
+import { canUsePush, pushStatus, lastRegistrationOutcome, promptIfSensible } from "../../utils/push";
 
 // Plain-language explanation of what the last login attempt hit. The point is that a
 // failure to register must be READABLE without a debugger, a diagnostics table, or
@@ -76,6 +76,10 @@ export default function PushAlertsCard({ lang }) {
   // Web build: push doesn't exist here, so claiming it would be a lie.
   if (!canUsePush()) return null;
 
+  // `unknown` = the status read timed out. Deliberately NOT folded into "OFF": telling
+  // someone their alerts are off when we simply couldn't reach the server is the kind of
+  // small lie that sends them into Android settings to fix nothing.
+  const unknown = !!status?.unknown;
   const registered = (status?.my_live_devices || 0) > 0 && status?.push_configured;
   const reason = explainOutcome(outcome, en);
 
@@ -83,13 +87,17 @@ export default function PushAlertsCard({ lang }) {
     setRetrying(true);
     try {
       // force:true — an explicit press must always attempt, even if the automatic ask
-      // already ran this session.
+      // already ran this session. promptIfSensible now arms the token waiter BEFORE
+      // register() and awaits the real completion itself, so there is nothing left to
+      // wait for here — and no window in which the token can land unheard.
       const r = await promptIfSensible({ force: true });
-      if (r === "granted") await waitForRegistration(12000);
       setOutcome(lastRegistrationOutcome());
       const s = await pushStatus();
       setStatus(s);
-      if ((s?.my_live_devices || 0) > 0) {
+      // r === "granted" already means the server ACKed the token, so trust it even when
+      // the follow-up status read times out — otherwise a slow link turns a success into
+      // a "still not registered" error message.
+      if ((s?.my_live_devices || 0) > 0 || r === "granted") {
         toast.success(en ? "Alerts on." : "Alertes activées.");
       } else if (r === "denied") {
         toast.error(en
@@ -109,7 +117,9 @@ export default function PushAlertsCard({ lang }) {
         </span>
         <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 700,
           color: registered ? "#10b981" : "var(--text-muted)" }}>
-          {registered ? (en ? "ON" : "ACTIVÉ") : (en ? "OFF" : "DÉSACTIVÉ")}
+          {registered ? (en ? "ON" : "ACTIVÉ")
+            : unknown ? (en ? "—" : "—")
+            : (en ? "OFF" : "DÉSACTIVÉ")}
         </span>
       </div>
 
@@ -119,7 +129,14 @@ export default function PushAlertsCard({ lang }) {
           : "Les approbations, les actions à risque du personnel et le résumé du jour arrivent sur votre téléphone même quand l'application est fermée. Les alertes de stock bas restent dans l'application."}
       </div>
 
-      {status && !status.push_configured ? (
+      {unknown ? (
+        // The status read timed out (time-boxed at 8s — it used to be able to hang for
+        // over a minute). Say so plainly instead of showing a confident OFF.
+        <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 10, lineHeight: 1.55 }}>
+          {en ? "Couldn't check the alert status just now — connection too slow. It will refresh when you come back to this screen."
+              : "Impossible de vérifier l'état des alertes — connexion trop lente. Cela se mettra à jour en revenant sur cet écran."}
+        </div>
+      ) : status && !status.push_configured ? (
         // Not the user's fault and nothing they can do — say so rather than imply they
         // have a setting to find.
         <div style={{ fontSize: 12.5, color: "#fbbf24", background: "rgba(251,191,36,0.10)",
@@ -141,7 +158,7 @@ export default function PushAlertsCard({ lang }) {
           every previous hang. Every call inside it is time-boxed. Without it, a user whose
           registration failed once had no way back except logging out and in — a dead end
           for anyone who doesn't know that trick. */}
-      {!registered && status?.push_configured && (
+      {!registered && (status?.push_configured || unknown) && (
         <div style={{ marginTop: 10 }}>
           <button className="btn btn-primary" disabled={retrying} onClick={retry}>
             {retrying ? (en ? "Trying…" : "Tentative…") : (en ? "Turn on alerts / Retry" : "Activer les alertes / Réessayer")}
