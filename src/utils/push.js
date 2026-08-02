@@ -146,8 +146,12 @@ export async function promptIfSensible({ onTap, force = false } = {}) {
 // Upload the step trace whenever the enable path does NOT reach a clean grant, so the
 // next failure names itself instead of needing another instrumented build. Silent and
 // best-effort — a diagnostic must never become the thing that breaks.
-async function uploadTrace(trace, outcome) {
-  try { await api.post("/devices/diag", { steps: [...trace, { name: "outcome", ok: false, value: outcome }] }); }
+function uploadTrace(trace, outcome) {
+  // Was a POST to /api/devices/diag backed by a pa_push_diagnostics table, added while
+  // hunting the enable hangs. Both are gone now that the toggle is gone. The step trace
+  // is still worth keeping — it goes to logcat, where it costs nothing and needs no
+  // schema, and is there if this path ever misbehaves again.
+  try { console.warn("[push] enable did not complete:", outcome, JSON.stringify(trace)); }
   catch { /* ignore */ }
 }
 
@@ -190,7 +194,13 @@ export async function refreshIfGranted({ onTap } = {}) {
 // because the OS permission is still granted.
 //
 // Returns true when the server confirmed the revoke.
-export async function disableOnThisDevice() {
+// Used ONLY by logout — never by a UI toggle. There is no in-app on/off any more:
+// every hang this feature produced lived in a native bridge call on that toggle
+// (createChannel, register-after-revoke, unregister), so the toggle is gone and alerts
+// are controlled where every other Android app controls them — the OS notification
+// settings. What remains here is the security case: a shared or handed-over phone must
+// stop receiving the previous user's approvals, and that is a pure server-side revoke.
+async function disableOnThisDevice() {
   const token = getStoredToken();
   let ok = false;
   try {
@@ -215,16 +225,9 @@ export async function disableOnThisDevice() {
   // Clear locally regardless: if the call failed we must not keep claiming this device
   // is registered. The next successful registration re-creates the row.
   storeToken(null);
-
-  // Also drop the FCM registration itself. Revoking server-side only stops US sending;
-  // the handset stays registered with Google, so a later register() can be a no-op that
-  // never re-fires `registration` — leaving the enable path waiting for an event that
-  // will not come. Time-boxed, best-effort: failing to unregister must not block the OFF.
-  try {
-    const P = await getPlugin();
-    if (P && typeof P.unregister === "function") await tb(P.unregister(), 6000, "unregister", null);
-  } catch { /* best-effort */ }
-
+  // Deliberately NO P.unregister(). Added in vc97 and the OFF path started hanging in the
+  // same build; FCM does not expect apps to register/unregister repeatedly, and we no
+  // longer need it — the server simply stops selecting a revoked token.
   return ok;
 }
 
@@ -239,73 +242,3 @@ export async function pushStatus() {
 }
 
 export function canUsePush() { return isNative(); }
-
-// ── TEMPORARY DIAGNOSTIC ────────────────────────────────────────────────────────
-// Walks the ENTIRE registration path step by step, recording what each call actually
-// returned instead of inferring it. Every step is individually try/caught and time-
-// boxed, so one hanging native call cannot swallow the trace — which is the failure
-// mode that would otherwise produce "nothing happens at all" with no toast.
-// Remove together with /api/devices/diag once registration is understood.
-const withTimeout = (p, ms, label) => Promise.race([
-  Promise.resolve(p).then((v) => ({ ok: true, value: v })).catch((e) => ({ ok: false, error: String(e && e.message || e) })),
-  new Promise((r) => setTimeout(() => r({ ok: false, error: `TIMED OUT after ${ms}ms`, timedOut: true, label }), ms)),
-]);
-
-export async function diagnosePush() {
-  const steps = [];
-  const add = (name, result) => steps.push({ name, ...result, at: new Date().toISOString() });
-
-  add("isNativePlatform", { ok: true, value: isNative() });
-  add("userAgent", { ok: true, value: (typeof navigator !== "undefined" && navigator.userAgent) || "?" });
-
-  let P = null;
-  const imp = await withTimeout((async () => {
-    const mod = await import("@capacitor/push-notifications");
-    return Object.keys(mod || {});
-  })(), 8000, "import");
-  add("import @capacitor/push-notifications", imp);
-  if (imp.ok) {
-    try { P = (await import("@capacitor/push-notifications")).PushNotifications; } catch (e) { /* recorded above */ }
-  }
-  add("plugin object present", { ok: !!P, value: P ? Object.keys(P).slice(0, 12) : null });
-  if (!P) return finish(steps);
-
-  add("createChannel", await withTimeout(P.createChannel({
-    id: "mp_alerts", name: "Alertes / Alerts", importance: 4, visibility: 1, sound: "default", vibration: true,
-  }), 8000, "createChannel"));
-
-  const chk = await withTimeout(P.checkPermissions(), 8000, "checkPermissions");
-  add("checkPermissions", chk);
-
-  const req = await withTimeout(P.requestPermissions(), 20000, "requestPermissions");
-  add("requestPermissions", req);
-
-  // Listen BEFORE register so we cannot miss the event.
-  let gotToken = null, gotError = null;
-  try {
-    P.addListener("registration", (t) => { gotToken = t && t.value; });
-    P.addListener("registrationError", (e) => { gotError = JSON.stringify(e); });
-  } catch (e) { add("addListener", { ok: false, error: String(e && e.message) }); }
-
-  add("register()", await withTimeout(P.register(), 10000, "register"));
-
-  // The token arrives on the event, not from register() — give it a real window.
-  for (let i = 0; i < 20 && !gotToken && !gotError; i++) await new Promise((r) => setTimeout(r, 500));
-  add("registration event", { ok: !!gotToken, value: gotToken ? `token len=${gotToken.length}` : null, error: gotError });
-
-  if (gotToken) {
-    try {
-      const r = await api.post("/devices/token", { token: gotToken, platform: "android", device_label: "diag" });
-      add("POST /devices/token", { ok: true, value: `HTTP ${r.status} ${JSON.stringify(r.data)}` });
-    } catch (e) {
-      add("POST /devices/token", { ok: false, error: `HTTP ${e?.response?.status} ${JSON.stringify(e?.response?.data || e?.message)}` });
-    }
-  }
-  return finish(steps);
-}
-
-async function finish(steps) {
-  let stored = null;
-  try { stored = (await api.post("/devices/diag", { steps })).data; } catch (e) { stored = { error: String(e && e.message) }; }
-  return { steps, stored };
-}

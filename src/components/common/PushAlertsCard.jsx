@@ -1,35 +1,29 @@
-// MP-PUSH — the user-facing state of lock-screen alerts, on Settings → Account.
+// MP-PUSH — informational only. Settings → Account.
 //
-// Exists for the DECLINE path. Android treats a denied notification permission as
-// final: the OS refuses to show the dialog again, so an app that only asks in-flow
-// leaves the user permanently stuck with no explanation and no way back. This screen
-// is that way back — it says plainly whether alerts are on, lets them turn them on if
-// the prompt was never answered, and otherwise tells them exactly where in System
-// Settings to fix it. We do NOT deep-link: that needs another native plugin, and a
-// button that silently does nothing is worse than clear instructions.
+// THIS COMPONENT MAKES NO NATIVE CALLS AND HAS NO CONTROLS.
+//
+// Every hang this feature produced lived in a native bridge call sitting behind a button
+// users could tap: createChannel stalling inside bindListeners, register() after a revoke
+// never re-firing `registration`, then unregister() itself. Each fix surfaced the next,
+// because the fault was not any individual call — it was putting the plugin's
+// register/unregister lifecycle behind a toggle at all.
+//
+// So: the token registers ONCE when permission is granted and is never unregistered, and
+// alerts are managed where every other Android app manages them — the OS notification
+// settings. Nothing here can hang, because nothing here does anything.
 import { useEffect, useState } from "react";
-import toast from "react-hot-toast";
-import api from "../../utils/api";
-import { canUsePush, promptIfSensible, pushStatus, waitForRegistration, diagnosePush, disableOnThisDevice } from "../../utils/push";
+import { canUsePush, pushStatus } from "../../utils/push";
 
 export default function PushAlertsCard({ lang }) {
   const en = lang === "en";
   const [status, setStatus] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [diag, setDiag] = useState(null);
-  const [diagBusy, setDiagBusy] = useState(false);
 
-  const load = async () => setStatus(await pushStatus());
-
-  // The card used to read status ONCE at mount. A token registered by anything other
-  // than the enable button — the automatic contextual ask, or the Diagnose run — landed
-  // AFTER that read, so the card sat on a stale snapshot and showed OFF while the token
-  // was demonstrably registered server-side. It wasn't misreading state; it had no
-  // reason to look again. Re-read on mount AND whenever the screen regains focus, which
-  // also covers returning from the Android notification settings.
+  // Re-read on mount and whenever the screen regains focus — which is exactly what
+  // happens on returning from Android's notification settings, so the status reflects a
+  // change the user just made there. A plain GET; no bridge involved.
   useEffect(() => {
     if (!canUsePush()) return;
+    const load = async () => setStatus(await pushStatus());
     load();
     const refresh = () => { if (!document.hidden) load(); };
     window.addEventListener("focus", refresh);
@@ -40,60 +34,10 @@ export default function PushAlertsCard({ lang }) {
     };
   }, []);
 
-  // Web build: push doesn't exist here, so promising it would be a lie.
+  // Web build: push doesn't exist here, so claiming it would be a lie.
   if (!canUsePush()) return null;
 
-  const on = (status?.my_live_devices || 0) > 0 && status?.push_configured;
-
-  const enable = async () => {
-    setBusy(true);
-    // force: this is an explicit request, so it must always attempt the prompt even if
-    // the automatic contextual ask already fired earlier in the session.
-    const r = await promptIfSensible({ force: true });
-    // Registration completes asynchronously; without this the status re-read races it
-    // and the card reports OFF on a successful enable.
-    if (r === "granted") await waitForRegistration();
-    await load();
-    setBusy(false);
-
-    if (r === "granted") toast.success(en ? "Alerts on." : "Alertes activées.");
-    else if (r === "denied") {
-      toast.error(en
-        ? "Android is blocking alerts for this app. Open Settings → Apps → Mon Partenaire Dozie → Notifications and allow them."
-        : "Android bloque les alertes. Ouvrez Paramètres → Applications → Mon Partenaire Dozie → Notifications et autorisez-les.");
-    } else {
-      // 'unavailable' (not a native build / plugin missing) — never leave the tap silent.
-      toast.error(en ? "Alerts aren't available on this device." : "Alertes indisponibles sur cet appareil.");
-    }
-  };
-
-  const disable = async () => {
-    setBusy(true);
-    const ok = await disableOnThisDevice();
-    await load();
-    setBusy(false);
-    if (ok) {
-      toast.success(en ? "Alerts off on this phone." : "Alertes désactivées sur ce téléphone.");
-    } else {
-      // The local token is cleared either way, so the card will read OFF — but the server
-      // may not have got the message. Say so rather than imply a clean stop.
-      toast.error(en
-        ? "Couldn't reach the server — alerts may continue until you're back online."
-        : "Serveur injoignable — les alertes peuvent continuer jusqu'à votre reconnexion.");
-    }
-  };
-
-  const sendTest = async () => {
-    setTesting(true);
-    try {
-      await api.post("/devices/test");
-      toast.success(en
-        ? "Test sent — lock your phone and watch for it."
-        : "Test envoyé — verrouillez votre téléphone et regardez.");
-    } catch {
-      toast.error(en ? "Could not send the test." : "Impossible d'envoyer le test.");
-    } finally { setTesting(false); }
-  };
+  const registered = (status?.my_live_devices || 0) > 0 && status?.push_configured;
 
   return (
     <div style={{ marginTop: 22, paddingTop: 18, borderTop: "1px solid var(--border)" }}>
@@ -102,82 +46,30 @@ export default function PushAlertsCard({ lang }) {
           🔔 {en ? "Lock-screen alerts" : "Alertes sur l'écran verrouillé"}
         </span>
         <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 700,
-          color: on ? "#10b981" : "var(--text-muted)" }}>
-          {on ? (en ? "ON" : "ACTIVÉ") : (en ? "OFF" : "DÉSACTIVÉ")}
+          color: registered ? "#10b981" : "var(--text-muted)" }}>
+          {registered ? (en ? "ON" : "ACTIVÉ") : (en ? "OFF" : "DÉSACTIVÉ")}
         </span>
       </div>
 
-      <div style={{ fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.5, marginBottom: 12 }}>
+      <div style={{ fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.55 }}>
         {en
-          ? "Get approvals, risky staff actions and the end-of-day summary on your phone even when the app is closed. Low-stock alerts stay in the app only."
-          : "Recevez les approbations, les actions à risque du personnel et le résumé du jour sur votre téléphone même quand l'application est fermée. Les alertes de stock bas restent dans l'application."}
+          ? "Approvals, risky staff actions and the end-of-day summary arrive on your phone even when the app is closed. Low-stock alerts stay in the app only."
+          : "Les approbations, les actions à risque du personnel et le résumé du jour arrivent sur votre téléphone même quand l'application est fermée. Les alertes de stock bas restent dans l'application."}
       </div>
 
-      {/* push_configured=false means the SERVER has no Firebase credentials — the user
-          can do nothing about that, so say so honestly instead of offering a dead button. */}
       {status && !status.push_configured ? (
+        // Not the user's fault and nothing they can do — say so rather than imply they
+        // have a setting to find.
         <div style={{ fontSize: 12.5, color: "#fbbf24", background: "rgba(251,191,36,0.10)",
-          border: "1px solid rgba(251,191,36,0.35)", borderRadius: 8, padding: "9px 11px" }}>
+          border: "1px solid rgba(251,191,36,0.35)", borderRadius: 8, padding: "9px 11px", marginTop: 10 }}>
           {en ? "Alerts aren't available yet on this server."
               : "Les alertes ne sont pas encore disponibles sur ce serveur."}
         </div>
       ) : (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {!on && (
-            <button className="btn btn-primary" disabled={busy} onClick={enable}>
-              {busy ? "…" : (en ? "Turn on alerts" : "Activer les alertes")}
-            </button>
-          )}
-          {/* The OFF half. Without this the only way to stop being buzzed was Android's
-              own settings, which is both hard to find and heavier than intended — it
-              silences the app entirely rather than just deregistering this device. */}
-          {on && (
-            <button className="btn btn-secondary" disabled={busy} onClick={disable}>
-              {busy ? "…" : (en ? "Turn off alerts" : "Désactiver les alertes")}
-            </button>
-          )}
-          {/* Shown whenever the SERVER can send, not only when this card believes it is
-              ON. Hiding it behind `on` meant a stale ON/OFF reading also removed the one
-              control that would have proved the truth — the exact lockout that cost us a
-              build cycle. The worst case now is a test that reports no device. */}
-          <button className="btn btn-secondary" disabled={testing} onClick={sendTest}>
-            {testing ? "…" : (en ? "Send a test alert" : "Envoyer un test")}
-          </button>
-        </div>
-      )}
-
-      {/* TEMPORARY diagnostic. Shows the trace on-screen AND uploads it, so we learn
-          the failure point even if the upload itself is what's broken. */}
-      <div style={{ marginTop: 10 }}>
-        <button className="btn btn-secondary" disabled={diagBusy}
-          onClick={async () => {
-            setDiagBusy(true); setDiag(null);
-            try { const r = await diagnosePush(); setDiag(r); }
-            catch (e) { setDiag({ steps: [{ name: "diagnose threw", ok: false, error: String(e && e.message) }] }); }
-            // The diagnose run REGISTERS a token. Without this the card kept showing OFF
-            // straight after a run that had just proven registration works.
-            finally { await load(); setDiagBusy(false); }
-          }}>
-          {diagBusy ? (en ? "Running…" : "En cours…") : (en ? "🔍 Diagnose alerts" : "🔍 Diagnostiquer")}
-        </button>
-      </div>
-      {diag && (
-        <pre style={{ marginTop: 10, fontSize: 10.5, lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "break-word",
-          background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: 10, maxHeight: 300, overflow: "auto" }}>
-{(diag.steps || []).map((s) =>
-  `${s.ok ? "OK  " : "FAIL"} ${s.name}` +
-  (s.value !== undefined && s.value !== null ? `\n     -> ${JSON.stringify(s.value)}` : "") +
-  (s.error ? `\n     !! ${s.error}` : "")
-).join("\n")}
-{`\n\nuploaded: ${JSON.stringify(diag.stored)}`}
-        </pre>
-      )}
-
-      {status && status.push_configured && !on && (
-        <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 10, lineHeight: 1.55 }}>
           {en
-            ? "If nothing happens when you tap, Android has already blocked alerts for this app. Open Settings → Apps → Mon Partenaire Dozie → Notifications and allow them."
-            : "Si rien ne se passe, Android a déjà bloqué les alertes. Ouvrez Paramètres → Applications → Mon Partenaire Dozie → Notifications et autorisez-les."}
+            ? "To turn alerts off or back on, use your phone's own settings: press and hold a notification, or open Settings → Apps → Mon Partenaire Dozie → Notifications."
+            : "Pour désactiver ou réactiver les alertes, utilisez les réglages de votre téléphone : appuyez longuement sur une notification, ou ouvrez Paramètres → Applications → Mon Partenaire Dozie → Notifications."}
         </div>
       )}
     </div>
