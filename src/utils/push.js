@@ -107,13 +107,35 @@ async function registerDeviceToken({ onTap, force = false } = {}) {
 
   if (!isNative()) return { outcome: "unavailable", detail: "not a native build" };
 
-  // 1. IMPORT — time-boxed. This is the call vc102 left unbounded behind a shared promise,
-  //    so a stalled import hung every caller with no timeout able to save them.
+  // 1. IMPORT — time-boxed.
+  //
+  // NEVER RESOLVE A PROMISE WITH A CAPACITOR PLUGIN OBJECT. This one line is the whole
+  // bug, in every build from vc99 to vc104.
+  //
+  // A Capacitor plugin is a Proxy: ANY property read on it becomes a native method call,
+  // including `.then`. So JS classifies it as a thenable, and any promise resolved with it
+  // tries to unwrap it by calling `PushNotifications.then(resolve, reject)` — which is not
+  // implemented on Android. The error is swallowed as an unhandled rejection and the
+  // promise NEVER SETTLES. Two ways we hit it:
+  //     import(...).then((mod) => mod.PushNotifications)   // vc103/104 — returned from .then
+  //     async getPlugin() { ...; return plugin }           // vc102 — returned from async fn
+  // Both look completely ordinary. Both hang forever. vc102 had no ceiling on it, so the
+  // Settings card sat on "Trying…"; vc103/104 boxed it at 8s and misreported the hang as
+  // "the plugin took too long to load", sending us after a cold-start contention problem
+  // that did not exist — logcat showed the import starting 1.2s after boot.
+  //
+  // diagnosePush() never tripped it: it returned Object.keys(mod) (a plain array) across
+  // the promise boundary and then took the proxy by DIRECT ASSIGNMENT. That, and nothing
+  // about its step order, is why it registered 5/5 while login registered 0/5.
+  //
+  // So: the proxy is captured by closure and only a boolean crosses the boundary.
   let P = null;
-  const imp = add("import", await withTimeout(
-    import("@capacitor/push-notifications").then((mod) => mod.PushNotifications), 8000, "import"));
-  if (imp.ok) P = imp.value;
-  if (!P) {
+  const imp = add("import", await withTimeout((async () => {
+    const mod = await import("@capacitor/push-notifications");
+    P = mod.PushNotifications;   // direct assignment — never returned, never awaited
+    return !!P;                  // a plain boolean is safe to resolve with
+  })(), 8000, "import"));
+  if (!imp.ok || !P) {
     return { outcome: "unavailable", detail: imp.timedOut ? "the push plugin took too long to load" : "the push plugin did not load" };
   }
 

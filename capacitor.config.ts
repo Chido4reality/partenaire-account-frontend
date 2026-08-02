@@ -37,6 +37,20 @@ const config: CapacitorConfig = {
   // doesn't flash white before the React shell mounts.
   backgroundColor: '#152B52',
 
+  // ── FIELD DIAGNOSTICS — REVERT BOTH BEFORE THE NEXT PLAY UPLOAD ──────────────
+  // 'production' forwards JS console output to logcat in RELEASE builds too;
+  // the default 'debug' only does it for debug builds, which is why a release
+  // APK produced no [push] lines at all over USB — the traces were being written
+  // and thrown away. Debugging the push chain without this was guesswork with
+  // extra steps.
+  loggingBehavior: 'production',
+  android: {
+    // Enables chrome://inspect against the release WebView. Does NOT set
+    // android:debuggable, so `run-as` and the app's private data stay closed.
+    webContentsDebuggingEnabled: true,
+  },
+  // ─────────────────────────────────────────────────────────────────────────────
+
   plugins: {
     SplashScreen: {
       // Brand-colour splash held for 1.5s, then fades into the React

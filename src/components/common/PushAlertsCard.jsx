@@ -43,7 +43,12 @@ function explainOutcome(o, en) {
       return en ? "Registration failed on this phone. Log out and back in; if it persists, tell support."
                 : "L'enregistrement a échoué. Reconnectez-vous ; si cela persiste, signalez-le.";
     case "unavailable":
-      return en ? "Alerts aren't available on this device." : "Alertes indisponibles sur cet appareil.";
+      // The detail used to be DROPPED here, which made this the one outcome that
+      // told you nothing: "unavailable" covers a plugin that timed out loading, one
+      // that failed to load, and a non-native build — three different causes with
+      // three different fixes, all printed as the same dead-end sentence. Show it.
+      return (en ? "Alerts aren't available on this device." : "Alertes indisponibles sur cet appareil.")
+        + (o.detail ? ` (${o.detail})` : "");
     default:
       return null;
   }
