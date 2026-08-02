@@ -10,8 +10,9 @@
 // the value is obvious (see promptIfSensible), and never nag again.
 import api from "./api";
 
-const ASKED_KEY = "mp-push-asked";       // we have shown the OS prompt once
+const ASKED_KEY = "mp-push-asked";       // the OS prompt got a definitive answer once
 const TOKEN_KEY = "mp-push-token";       // last token we registered, for logout revoke
+const LAST_KEY  = "mp-push-last";        // outcome of the last login registration attempt
 
 const isNative = () =>
   typeof window !== "undefined" && !!window.Capacitor?.isNativePlatform?.();
@@ -162,21 +163,50 @@ export async function promptIfSensible({ onTap, force = false } = {}) {
 //   permission undecided → show the OS prompt once, register on Allow
 //   permission denied    → do nothing; only Android's settings can undo that
 export async function ensureRegisteredOnLogin({ onTap } = {}) {
-  if (!isNative()) return "unavailable";
+  const rec = (outcome, detail) => {
+    // Record what this attempt actually hit, so a silent failure can be READ rather than
+    // guessed at. Goes to localStorage (surfaced on the Settings card) and to logcat.
+    // Deliberately not a server round-trip: the diagnostics table and endpoint were
+    // removed, and this needs no schema to be useful.
+    try {
+      localStorage.setItem(LAST_KEY, JSON.stringify({
+        outcome, detail: detail ?? null, at: new Date().toISOString(),
+      }));
+    } catch { /* private mode */ }
+    try { console.warn("[push] login registration:", outcome, detail ?? ""); } catch { /* ignore */ }
+    return outcome;
+  };
+
+  if (!isNative()) return rec("unavailable", "not a native build");
   const P = await getPlugin();
-  if (!P) return "unavailable";
+  if (!P) return rec("unavailable", "push plugin did not load");
   await bindListeners(onTap, null);
 
   const chk = await tb(P.checkPermissions(), 6000, "checkPermissions(login)", null);
-  const receive = chk.ok && chk.value ? chk.value.receive : null;
+  if (!chk.ok) return rec("unavailable", chk.timedOut ? "checkPermissions timed out" : "checkPermissions failed");
+  const receive = chk.value ? chk.value.receive : null;
 
   if (receive === "granted") {
     // Silent path. No prompt, no UI, no dependence on any screen.
     const reg = await tb(P.register(), 15000, "register(login)", null);
-    return reg.ok ? "granted" : "unavailable";
+    if (!reg.ok) return rec("register_failed", reg.timedOut ? "register() timed out" : "register() rejected");
+    // register() only REQUESTS registration; the token lands on the `registration` event
+    // and is POSTed there. Wait for that so the recorded outcome reflects reality.
+    const got = await waitForRegistration(12000);
+    return rec(got ? "granted" : "no_token", got ? "permission granted, token stored" :
+      "permission granted, register() ok, but no registration event within 12s");
   }
-  if (receive === "denied") return "denied";
-  return promptIfSensible({ onTap });
+  if (receive === "denied") {
+    return rec("blocked", "Android reports notifications DENIED for this app — only phone settings can change it");
+  }
+
+  const r = await promptIfSensible({ onTap });
+  return rec(r, `permission was '${receive}' before prompting`);
+}
+
+// What the last login attempt hit. Read by the Settings card.
+export function lastRegistrationOutcome() {
+  try { return JSON.parse(localStorage.getItem(LAST_KEY) || "null"); } catch { return null; }
 }
 
 // Upload the step trace whenever the enable path does NOT reach a clean grant, so the

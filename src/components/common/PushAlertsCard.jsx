@@ -12,7 +12,35 @@
 // alerts are managed where every other Android app manages them — the OS notification
 // settings. Nothing here can hang, because nothing here does anything.
 import { useEffect, useState } from "react";
-import { canUsePush, pushStatus } from "../../utils/push";
+import { canUsePush, pushStatus, lastRegistrationOutcome } from "../../utils/push";
+
+// Plain-language explanation of what the last login attempt hit. The point is that a
+// failure to register must be READABLE without a debugger, a diagnostics table, or
+// another instrumented build.
+function explainOutcome(o, en) {
+  if (!o) return null;
+  switch (o.outcome) {
+    case "granted":
+      return null; // registered — the ON badge already says so
+    case "blocked":
+      return en
+        ? "Your phone is blocking notifications for this app. Open Settings → Apps → Mon Partenaire Dozie → Notifications and allow them, then log out and back in."
+        : "Votre téléphone bloque les notifications pour cette application. Ouvrez Paramètres → Applications → Mon Partenaire Dozie → Notifications, autorisez-les, puis déconnectez-vous et reconnectez-vous.";
+    case "denied":
+      return en ? "Notification permission was refused. Allow it in your phone's settings, then log out and back in."
+                : "L'autorisation a été refusée. Autorisez-la dans les réglages du téléphone, puis reconnectez-vous.";
+    case "no_token":
+      return en ? "Permission is allowed, but the phone didn't return a notification token. Check the internet connection and log out and back in."
+                : "L'autorisation est accordée, mais le téléphone n'a pas renvoyé de jeton. Vérifiez la connexion et reconnectez-vous.";
+    case "register_failed":
+      return en ? "Registration failed on this phone. Log out and back in; if it persists, tell support."
+                : "L'enregistrement a échoué. Reconnectez-vous ; si cela persiste, signalez-le.";
+    case "unavailable":
+      return en ? "Alerts aren't available on this device." : "Alertes indisponibles sur cet appareil.";
+    default:
+      return null;
+  }
+}
 
 export default function PushAlertsCard({ lang }) {
   const en = lang === "en";
@@ -38,6 +66,8 @@ export default function PushAlertsCard({ lang }) {
   if (!canUsePush()) return null;
 
   const registered = (status?.my_live_devices || 0) > 0 && status?.push_configured;
+  const outcome = lastRegistrationOutcome();
+  const reason = explainOutcome(outcome, en);
 
   return (
     <div style={{ marginTop: 22, paddingTop: 18, borderTop: "1px solid var(--border)" }}>
@@ -70,6 +100,22 @@ export default function PushAlertsCard({ lang }) {
           {en
             ? "To turn alerts off or back on, use your phone's own settings: press and hold a notification, or open Settings → Apps → Mon Partenaire Dozie → Notifications."
             : "Pour désactiver ou réactiver les alertes, utilisez les réglages de votre téléphone : appuyez longuement sur une notification, ou ouvrez Paramètres → Applications → Mon Partenaire Dozie → Notifications."}
+        </div>
+      )}
+
+      {/* Why this phone isn't registered, in plain words. Only shown when it isn't. */}
+      {!registered && reason && (
+        <div style={{ fontSize: 11.5, lineHeight: 1.55, marginTop: 10, padding: "9px 11px", borderRadius: 8,
+          color: "#fbbf24", background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.35)" }}>
+          {reason}
+          {outcome?.at && (
+            <div style={{ opacity: 0.7, marginTop: 4 }}>
+              {(en ? "Last check: " : "Dernière vérification : ") +
+                new Date(outcome.at).toLocaleString(en ? "en-GB" : "fr-FR",
+                  { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+              {outcome.outcome ? ` · ${outcome.outcome}` : ""}
+            </div>
+          )}
         </div>
       )}
     </div>
