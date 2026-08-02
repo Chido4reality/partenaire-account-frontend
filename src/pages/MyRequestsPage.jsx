@@ -22,6 +22,10 @@ const VERB = {
   expense:         { en: "expense",              fr: "dépense" },
   discount:        { en: "discount",             fr: "remise" },
   below_cost_sale: { en: "below-cost sale",       fr: "vente sous le prix plancher" },
+  // MP-CORRECTIONS
+  float_edit:      { en: "opening-float correction", fr: "correction du fonds de caisse" },
+  expense_edit:    { en: "expense correction",    fr: "correction de dépense" },
+  expense_delete:  { en: "expense deletion",      fr: "suppression de dépense" },
 };
 const verb = (a, en) => (VERB[a] ? (en ? VERB[a].en : VERB[a].fr) : a);
 
