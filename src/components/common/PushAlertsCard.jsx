@@ -87,9 +87,9 @@ export default function PushAlertsCard({ lang }) {
     setRetrying(true);
     try {
       // force:true — an explicit press must always attempt, even if the automatic ask
-      // already ran this session. promptIfSensible now arms the token waiter BEFORE
-      // register() and awaits the real completion itself, so there is nothing left to
-      // wait for here — and no window in which the token can land unheard.
+      // already ran this session. This runs the SAME routine the login path runs (the
+      // Diagnose sequence), and every step inside it is time-boxed, so this button always
+      // terminates — it cannot sit on "Trying…" indefinitely the way vc102 could.
       const r = await promptIfSensible({ force: true });
       setOutcome(lastRegistrationOutcome());
       const s = await pushStatus();
@@ -99,7 +99,7 @@ export default function PushAlertsCard({ lang }) {
       // a "still not registered" error message.
       if ((s?.my_live_devices || 0) > 0 || r === "granted") {
         toast.success(en ? "Alerts on." : "Alertes activées.");
-      } else if (r === "denied") {
+      } else if (r === "denied" || r === "blocked") {
         toast.error(en
           ? "Your phone is blocking notifications. Allow them in Settings → Apps → Mon Partenaire Dozie → Notifications."
           : "Votre téléphone bloque les notifications. Autorisez-les dans Paramètres → Applications → Mon Partenaire Dozie → Notifications.");
