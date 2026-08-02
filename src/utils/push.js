@@ -118,29 +118,65 @@ export async function promptIfSensible({ onTap, force = false } = {}) {
   const trace = [];
   const P = await getPlugin();
   trace.push({ name: "getPlugin", ok: !!P });
-  if (!P) { await uploadTrace(trace, "no_plugin"); return "unavailable"; }
+  if (!P) { uploadTrace(trace, "no_plugin"); return "unavailable"; }
 
   await bindListeners(onTap, trace);
 
   const chk = await tb(P.checkPermissions(), 6000, "checkPermissions", trace);
-  if (!chk.ok) { await uploadTrace(trace, "checkPermissions_failed"); return "unavailable"; }
+  if (!chk.ok) { uploadTrace(trace, "checkPermissions_failed"); return "unavailable"; }
   let receive = chk.value && chk.value.receive;
 
   if (receive !== "granted") {
     // 'denied' → the OS will not show the dialog again. Nothing we call can change that;
     // only System Settings can.
-    if (receive === "denied") { await uploadTrace(trace, "denied"); return "denied"; }
+    if (receive === "denied") { uploadTrace(trace, "denied"); return "denied"; }
     if (readAsked() && !force) return "skipped";
-    markAsked();
+
     const req = await tb(P.requestPermissions(), 25000, "requestPermissions", trace);
-    if (!req.ok) { await uploadTrace(trace, "requestPermissions_failed"); return "unavailable"; }
+    if (!req.ok) { uploadTrace(trace, "requestPermissions_failed"); return "unavailable"; }
     receive = req.value && req.value.receive;
-    if (receive !== "granted") { await uploadTrace(trace, "not_granted"); return "denied"; }
+
+    // Mark asked ONLY on a definitive answer. markAsked() used to run BEFORE the dialog,
+    // so a prompt the user SWIPED AWAY (permission stays 'prompt', neither granted nor
+    // denied) burned the single ask — and with no in-app toggle left there was then no
+    // way to register at all, short of reinstalling. A dismissed prompt now costs
+    // nothing: we simply ask again next login.
+    if (receive === "granted" || receive === "denied") markAsked();
+
+    if (receive !== "granted") { uploadTrace(trace, `not_granted:${receive}`); return "denied"; }
   }
 
   const reg = await tb(P.register(), 15000, "register", trace);
-  if (!reg.ok) { await uploadTrace(trace, "register_failed"); return "unavailable"; }
+  if (!reg.ok) { uploadTrace(trace, "register_failed"); return "unavailable"; }
   return "granted";
+}
+
+// THE single entry point, called once per authenticated app start.
+//
+// Registration no longer depends on the user visiting Accountant Log or any other
+// screen — tying it to a route meant a user who never opened that screen never
+// registered, and a user whose ask had been marked by an earlier build could never
+// recover. Behaviour:
+//   permission granted   → register silently, EVERY login (re-registers a rotated token,
+//                          and rescues anyone whose ask was marked by an older build)
+//   permission undecided → show the OS prompt once, register on Allow
+//   permission denied    → do nothing; only Android's settings can undo that
+export async function ensureRegisteredOnLogin({ onTap } = {}) {
+  if (!isNative()) return "unavailable";
+  const P = await getPlugin();
+  if (!P) return "unavailable";
+  await bindListeners(onTap, null);
+
+  const chk = await tb(P.checkPermissions(), 6000, "checkPermissions(login)", null);
+  const receive = chk.ok && chk.value ? chk.value.receive : null;
+
+  if (receive === "granted") {
+    // Silent path. No prompt, no UI, no dependence on any screen.
+    const reg = await tb(P.register(), 15000, "register(login)", null);
+    return reg.ok ? "granted" : "unavailable";
+  }
+  if (receive === "denied") return "denied";
+  return promptIfSensible({ onTap });
 }
 
 // Upload the step trace whenever the enable path does NOT reach a clean grant, so the

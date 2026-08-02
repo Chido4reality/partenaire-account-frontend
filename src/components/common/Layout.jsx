@@ -14,7 +14,7 @@ import { safeSetItem } from "../../utils/safeStorage";
 import { cacheKeyFor } from "../../utils/offlineQuery";
 import { openWhatsApp } from "../../utils/whatsapp";
 import { nukeClientState, hardRedirectToLogin } from "../../utils/authReset";
-import { refreshIfGranted, promptIfSensible, revokeOnLogout, canUsePush } from "../../utils/push"; // MP-PUSH
+import { ensureRegisteredOnLogin, revokeOnLogout, canUsePush } from "../../utils/push"; // MP-PUSH
 // MP-SUB-FLOW-MERGE: UpgradeModal retired — both entry points now use the one
 // canonical /request-activation flow (RequestActivationPage). No second checkout
 // path / confirmation handler left to drift.
@@ -610,9 +610,16 @@ export default function Layout() {
     hardRedirectToLogin();
   };
 
-  // MP-PUSH: token lifecycle. On every authenticated mount, silently re-register when
-  // permission is ALREADY granted — FCM rotates tokens without telling the user, and a
-  // stale token means alerts quietly stop arriving. This never prompts.
+  // MP-PUSH: registration happens ONCE per authenticated app start, right here.
+  //
+  // It used to be split — a silent re-register on mount, plus a permission ask gated to
+  // the approvals screens. That meant a user who never opened those screens never
+  // registered, and anyone whose "asked" flag had been set by an earlier build could
+  // never recover, because the buttons that used to force it are gone. Now one call
+  // covers every case: register silently when permission is already granted (which also
+  // refreshes a rotated token and rescues a stale asked-flag), prompt once when it has
+  // never been decided, and do nothing when it has been denied — only Android's own
+  // settings can undo a denial.
   useEffect(() => {
     if (!user?.id || !canUsePush()) return;
     const onTap = (data) => {
@@ -623,23 +630,9 @@ export default function Layout() {
                : user.role === "manager" ? "/team-approvals" : "/my-requests");
       }
     };
-    refreshIfGranted({ onTap });
+    ensureRegisteredOnLogin({ onTap });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, user?.role]);
-
-  // MP-PUSH: the ONE contextual permission ask. Deliberately NOT at first launch — a
-  // cold prompt gets denied, and on Android a denial is permanent (the OS blocks
-  // re-prompting). We ask the first time the user opens a screen where alerts are
-  // self-evidently useful: the boss's approval inbox, a deputy's inbox, or a staffer's
-  // own requests. promptIfSensible() is idempotent and asks at most once, ever.
-  useEffect(() => {
-    if (!user?.id || !canUsePush()) return;
-    const p = location.pathname || "";
-    const relevant = p.startsWith("/accountant-log") || p.startsWith("/team-approvals") || p.startsWith("/my-requests");
-    if (!relevant) return;
-    promptIfSensible({});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname, user?.id]);
 
   // MP-AUTH-STATE-HYGIENE — FIX 2: user-change tripwire. If the persisted
   // last-user id doesn't match the authenticated user (different person
