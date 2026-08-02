@@ -201,6 +201,10 @@ export default function AccountantLogPage() {
     oversell: en ? "sell when out of stock" : "vendre en rupture de stock",
     credit_sale: en ? "sell on credit" : "vendre à crédit",
     bundled_sale: en ? "make a sale that needs approval" : "faire une vente à approuver",
+    // MP-CORRECTIONS — corrections to money already recorded.
+    float_edit: en ? "correct the opening float" : "corriger le fonds de caisse",
+    expense_edit: en ? "correct an expense" : "corriger une dépense",
+    expense_delete: en ? "delete an expense" : "supprimer une dépense",
   };
   // MP-BUNDLE-VERB: a bundled_sale's reasons live in its target_ref (reason tokens joined
   // by "+"). When there is exactly ONE distinct reason, name it; 2+ distinct (or
@@ -1017,6 +1021,22 @@ const PERM_ACTIONS = [
     note: {
       en: "BLOCKED by default. A note only — it never changes the receipt's real date or any report/total — but lets a staffer label a sale \"actually sold on [date]\" when they register it late. Allow only staff you trust to use this honestly.",
       fr: "BLOQUÉ par défaut. Une simple note — elle ne change jamais la date réelle du reçu ni aucun rapport/total — mais permet à un employé d'indiquer qu'une vente a \"eu lieu le [date]\" quand il l'enregistre en retard. N'autorisez que le personnel de confiance.",
+    } },
+  // MP-CORRECTIONS: correcting money that is ALREADY RECORDED. Two separate keys — a boss
+  // may trust someone with petty-cash typos but not with the drawer's opening float.
+  // Both SAFE-DEFAULT-BLOCK, and for staff the only meaningful non-blocked setting is
+  // "needs your approval": a staffer never edits recorded money without a boss decision.
+  { key: "float_edit_policy",   en: "Correct the opening float", fr: "Corriger le fonds de caisse",
+    defaultPolicy: "block",
+    note: {
+      en: "BLOCKED by default. Lets a staff member ASK to fix a mistyped opening float — you still approve it, and you see the old and new amount before you do. Only the CURRENT OPEN shift can be corrected; once a shift is closed its float is final.",
+      fr: "BLOQUÉ par défaut. Permet à un employé de DEMANDER la correction d'un fonds de caisse mal saisi — vous approuvez quand même, et vous voyez l'ancien et le nouveau montant avant. Seule la caisse OUVERTE peut être corrigée ; une fois fermée, son fonds est définitif.",
+    } },
+  { key: "expense_edit_policy", en: "Correct or delete an expense", fr: "Corriger ou supprimer une dépense",
+    defaultPolicy: "block",
+    note: {
+      en: "BLOCKED by default. Lets a staff member ASK to fix or remove an expense they entered wrongly — you approve, and you see exactly what changes (or what disappears) first. Expenses belonging to a CLOSED shift can never be changed.",
+      fr: "BLOQUÉ par défaut. Permet à un employé de DEMANDER la correction ou la suppression d'une dépense mal saisie — vous approuvez, et vous voyez d'abord exactement ce qui change (ou ce qui disparaît). Les dépenses d'une caisse FERMÉE ne peuvent jamais être modifiées.",
     } },
 ];
 const permDefault = (a) => a.defaultPolicy || "allow";

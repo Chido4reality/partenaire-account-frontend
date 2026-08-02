@@ -23,6 +23,11 @@ const VERB = {
   discount:        { en: "discount",           fr: "remise" },
   transfer:        { en: "transfer goods",     fr: "transfert de marchandises" },
   bundled_sale:    { en: "a sale needing approval", fr: "une vente à approuver" },
+  // MP-CORRECTIONS. NOTE these only appear here if the owner adds them to a manager's
+  // can_approve grant — the deputy inbox is server-scoped to that list.
+  float_edit:      { en: "opening-float correction", fr: "correction du fonds de caisse" },
+  expense_edit:    { en: "expense correction",  fr: "correction de dépense" },
+  expense_delete:  { en: "expense deletion",    fr: "suppression de dépense" },
 };
 const verb = (a, en) => (VERB[a] ? (en ? VERB[a].en : VERB[a].fr) : a);
 

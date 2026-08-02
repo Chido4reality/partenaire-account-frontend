@@ -196,6 +196,74 @@ function buildReasons(row, en, fmt, lk) {
       if (has(p.notes)) out.push({ tone: "info", text: `${en ? "Note" : "Note"}: ${p.notes}` });
       break;
     }
+    // ── MP-CORRECTIONS ───────────────────────────────────────────────────────
+    // A correction is unjudgeable without the number it is changing FROM. Same
+    // principle as debt_adjust below: always render old → new, never just the
+    // proposed value, or the boss is stamping blind.
+    case "float_edit": {
+      const from = num(p.old_opening_float), to = num(p.new_opening_float);
+      const delta = to - from;
+      out.push({ tone: "warn", text: en
+        ? `Opening float: ${fmt(from)} → ${fmt(to)}  (${delta >= 0 ? "+" : ""}${fmt(delta)})`
+        : `Fonds de caisse : ${fmt(from)} → ${fmt(to)}  (${delta >= 0 ? "+" : ""}${fmt(delta)})` });
+      // Which drawer, whose, and when — a float correction only makes sense against
+      // a specific shift.
+      const where = has(p.location_id) ? lk.location(p.location_id) : "";
+      const bits = [has(p.cashier_name) ? p.cashier_name : "", where, has(p.shift_date) ? fmtDate(p.shift_date, en) : ""].filter(Boolean);
+      if (bits.length) out.push({ tone: "info", text: `${en ? "Shift" : "Caisse"}: ${bits.join(" · ")}` });
+      out.push({ tone: "info", text: en
+        ? "This changes the expected drawer for that open shift."
+        : "Ceci modifie le solde attendu de cette caisse ouverte." });
+      if (has(p.reason)) out.push({ tone: "info", text: `${en ? "Reason" : "Motif"}: ${p.reason}` });
+      break;
+    }
+    case "expense_edit": {
+      const b = (p.before && typeof p.before === "object") ? p.before : {};
+      const patch = (p.patch && typeof p.patch === "object") ? p.patch : {};
+      // One line PER CHANGED FIELD. A correction that quietly moved the date as well
+      // as the amount must not read as an amount-only change.
+      if (has(patch.amount)) {
+        const from = num(b.amount), to = num(patch.amount), d = to - from;
+        out.push({ tone: "warn", text: en
+          ? `Amount: ${fmt(from)} → ${fmt(to)}  (${d >= 0 ? "+" : ""}${fmt(d)})`
+          : `Montant : ${fmt(from)} → ${fmt(to)}  (${d >= 0 ? "+" : ""}${fmt(d)})` });
+      }
+      if (has(patch.description)) {
+        out.push({ tone: "info", text: en
+          ? `Description: "${b.description || "—"}" → "${patch.description}"`
+          : `Description : « ${b.description || "—"} » → « ${patch.description} »` });
+      }
+      if (has(patch.exp_date)) {
+        out.push({ tone: "info", text: en
+          ? `Date: ${fmtDate(b.exp_date, en)} → ${fmtDate(patch.exp_date, en)}`
+          : `Date : ${fmtDate(b.exp_date, en)} → ${fmtDate(patch.exp_date, en)}` });
+      }
+      if (has(patch.category_id)) {
+        out.push({ tone: "info", text: en ? "Category changed" : "Catégorie modifiée" });
+      }
+      if (has(p.shift_id)) {
+        out.push({ tone: "info", text: en
+          ? "This changes the expected drawer for that open shift."
+          : "Ceci modifie le solde attendu de cette caisse ouverte." });
+      }
+      if (has(p.reason)) out.push({ tone: "info", text: `${en ? "Reason" : "Motif"}: ${p.reason}` });
+      break;
+    }
+    case "expense_delete": {
+      const b = (p.before && typeof p.before === "object") ? p.before : {};
+      // For a delete there is no "new" value — what the boss needs is exactly WHAT
+      // DISAPPEARS, in full, because after approval the row is gone.
+      out.push({ tone: "danger", text: en
+        ? `Delete expense: ${fmt(num(b.amount))} — "${b.description || "—"}"${has(b.exp_date) ? ` (${fmtDate(b.exp_date, en)})` : ""}`
+        : `Supprimer la dépense : ${fmt(num(b.amount))} — « ${b.description || "—"} »${has(b.exp_date) ? ` (${fmtDate(b.exp_date, en)})` : ""}` });
+      if (has(p.shift_id)) {
+        out.push({ tone: "warn", text: en
+          ? "Removing it raises the expected drawer for that open shift by the same amount."
+          : "La retirer augmente d'autant le solde attendu de cette caisse ouverte." });
+      }
+      if (has(p.reason)) out.push({ tone: "info", text: `${en ? "Reason" : "Motif"}: ${p.reason}` });
+      break;
+    }
     case "debt_adjust": {
       const u = (p.updates && typeof p.updates === "object") ? p.updates : {};
       const cust = lk.customer(p.customer_id);
@@ -290,6 +358,21 @@ function orderView(row, lk, en) {
     return { ...base, items,
              title: en ? "What's being moved" : "Ce qui est déplacé",
              where: `${lk.location(p.from_location)} → ${lk.location(p.to_location)}` };
+  }
+  // MP-CORRECTIONS: a correction has no item list — the WHY block above already carries
+  // the whole story (old → new, per changed field). Give the panel the branch/shift
+  // context and no items, rather than an empty "items" table that looks like missing data.
+  if (row.action_type === "float_edit") {
+    return { ...base, items: [],
+             title: en ? "Opening float correction" : "Correction du fonds de caisse",
+             where: has(p.location_id) ? lk.location(p.location_id) : null };
+  }
+  if (row.action_type === "expense_edit" || row.action_type === "expense_delete") {
+    return { ...base, items: [],
+             title: row.action_type === "expense_delete"
+               ? (en ? "Expense being deleted" : "Dépense supprimée")
+               : (en ? "Expense correction" : "Correction de dépense"),
+             where: has(p.location_id) ? lk.location(p.location_id) : null };
   }
   if (row.action_type === "void") {
     // Nothing about the sale is in the payload — the lines come from the resolved sale.

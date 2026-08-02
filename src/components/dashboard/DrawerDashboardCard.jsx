@@ -20,11 +20,16 @@
 // components/common/ShiftWidgets.jsx (Stage 2) — no duplication.
 
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { useLangStore, useSettingsStore } from "../../store";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import toast from "react-hot-toast";
+import { useLangStore, useSettingsStore, useAuthStore } from "../../store";
 import api from "../../utils/api";
 import { useCurrency } from "../../utils/useCurrency";
 import { OpenShiftModal, CloseShiftModal } from "../common/ShiftWidgets";
+// MP-MY-PERMISSIONS-ONE-SHAPE: shared hook, one unwrap. A local useQuery(["my-permissions"])
+// with a different queryFn shape silently reads as DENIED — that bug has already recurred
+// once on this key, so never re-implement it here.
+import { useMyPermissions } from "../../utils/useMyPermissions";
 
 // ── Row primitives ────────────────────────────────────────────────
 function StaticRow({ label, value, valueColor }) {
@@ -243,6 +248,89 @@ function Header({ onToggle, isExpanded, leading, trailing, action }) {
   );
 }
 
+// ── MP-CORRECTIONS: opening-float correction ─────────────────────
+// OPEN SHIFTS ONLY. A closed shift's float is final: its expected_cash/difference
+// snapshot is frozen at close while pa_drawer_ledger recomputes, so editing it after the
+// fact would leave the same shift reporting two different variances. The server enforces
+// this too (lib/corrections.js) — this modal simply never offers it.
+//
+// Owner → applied immediately. Granted staff → raises a request the boss approves; the
+// approval card shows old → new so he can judge the correction rather than stamp it.
+function EditFloatModal({ shift, fr, fmt, onClose, onDone }) {
+  const [value, setValue]   = useState(String(Number(shift?.opening_float || 0)));
+  const [reason, setReason] = useState("");
+  const [busy, setBusy]     = useState(false);
+  const prev = Number(shift?.opening_float || 0);
+  const next = Number(value);
+  const valid = Number.isFinite(next) && next >= 0 && next !== prev;
+
+  const submit = async () => {
+    if (!valid || busy) return;
+    setBusy(true);
+    try {
+      const res = await api.patch(`/shifts/${shift.shift_id || shift.id}/float`, {
+        opening_float: next, reason: reason.trim() || null,
+      });
+      // 202 = parked for the boss. 200 = applied. Say which — a staffer who thinks their
+      // correction landed when it is actually waiting will re-enter it.
+      if (res.status === 202) {
+        toast.success(fr ? "Demande envoyée au patron pour approbation."
+                         : "Request sent to the boss for approval.");
+      } else {
+        toast.success(fr ? "Fonds de caisse corrigé." : "Opening float corrected.");
+      }
+      onDone && onDone();
+      onClose();
+    } catch (e) {
+      const d = e?.response?.data;
+      toast.error((fr ? d?.message_fr : d?.message_en) || d?.message ||
+                  (fr ? "Échec de la correction." : "Correction failed."));
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--bg-elevated)",
+        border: "1px solid var(--border)", borderRadius: 14, padding: 18, width: "100%", maxWidth: 380 }}>
+        <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>
+          {fr ? "Corriger le fonds de caisse" : "Correct the opening float"}
+        </div>
+        <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginBottom: 14, lineHeight: 1.5 }}>
+          {fr ? "Uniquement pour la caisse ouverte. Une caisse fermée ne peut plus être corrigée."
+              : "Open shift only. Once a shift is closed its float is final."}
+        </div>
+
+        <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginBottom: 6 }}>
+          {fr ? "Montant actuel" : "Current amount"}: <strong>{fmt(prev)}</strong>
+        </div>
+        <input type="number" inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)}
+          autoFocus className="input" style={{ width: "100%", marginBottom: 10 }}
+          placeholder={fr ? "Nouveau montant" : "New amount"} />
+        <input type="text" value={reason} onChange={(e) => setReason(e.target.value)}
+          className="input" style={{ width: "100%", marginBottom: 12 }}
+          placeholder={fr ? "Motif (optionnel)" : "Reason (optional)"} maxLength={300} />
+
+        {valid && (
+          <div style={{ fontSize: 13, marginBottom: 12, padding: "8px 10px", borderRadius: 8,
+            background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.35)", color: "#fbbf24" }}>
+            {fmt(prev)} → {fmt(next)} ({next - prev >= 0 ? "+" : ""}{fmt(next - prev)})
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button className="btn btn-secondary" onClick={onClose} disabled={busy}>
+            {fr ? "Annuler" : "Cancel"}
+          </button>
+          <button className="btn btn-primary" onClick={submit} disabled={!valid || busy}>
+            {busy ? (fr ? "…" : "…") : (fr ? "Enregistrer" : "Save")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────
 // MAIN
 // ─────────────────────────────────────────────────────────────────
@@ -274,6 +362,15 @@ export default function DrawerDashboardCard() {
   const [showClose, setShowClose]   = useState(false);
   const [drill, setDrill]           = useState(null); // 'sales' | 'refunds' | 'expenses'
   const [isExpanded, setIsExpanded] = useState(false);
+  const [showEditFloat, setShowEditFloat] = useState(false); // MP-CORRECTIONS
+
+  // MP-CORRECTIONS: who may reach the float-correction control. Owner always; staff only
+  // when the boss granted float_edit_policy='approve' (their tap raises a request, it does
+  // not apply anything). The server re-checks — this only decides whether to show it.
+  const { user } = useAuthStore();
+  const qc = useQueryClient();
+  const { perms: myPerms } = useMyPermissions({ enabled: user?.role !== "owner", staleTime: 300000 });
+  const canEditFloat = user?.role === "owner" || myPerms?.float_edit_policy === "approve";
 
   // ── Resolve state ───────────────────────────────────────────────
   const hasOpenShift = !!(current && current.shift_id);
@@ -435,6 +532,22 @@ export default function DrawerDashboardCard() {
             label={fr ? "Solde d'ouverture" : "Opening float"}
             value={fmt(Number(shift.opening_float || 0))} />
 
+          {/* MP-CORRECTIONS: correct a mistyped float. OPEN shift only — hasOpenShift
+              gates it, and the server refuses a closed one regardless. The label says
+              "Ask to correct" for staff because their tap raises a request, it does not
+              change anything; promising otherwise would be a lie about what happens. */}
+          {hasOpenShift && canEditFloat && (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: -2, marginBottom: 4 }}>
+              <button onClick={() => setShowEditFloat(true)}
+                style={{ background: "none", border: "none", color: "var(--text-muted)",
+                  fontSize: 11.5, cursor: "pointer", padding: "2px 0", textDecoration: "underline" }}>
+                {user?.role === "owner"
+                  ? (fr ? "Corriger le solde d'ouverture" : "Correct the opening float")
+                  : (fr ? "Demander une correction" : "Ask to correct it")}
+              </button>
+            </div>
+          )}
+
           <ClickRow
             label={fr ? "+ Ventes en espèces" : "+ Cash sales"}
             value={fmt(Number(shift.cash_sales_received || 0))}
@@ -506,6 +619,16 @@ export default function DrawerDashboardCard() {
           mutations + invalidation, so this card stays read-only. */}
       <OpenShiftModal  open={showOpen}  onClose={() => setShowOpen(false)} />
       <CloseShiftModal open={showClose} onClose={() => setShowClose(false)} shift={current} />
+
+      {/* MP-CORRECTIONS — open shift only. Invalidate the shared current-shift key on
+          success so the drawer math re-reads immediately; pa_drawer_ledger recomputes
+          expected_drawer from the new float on the very next fetch. */}
+      {showEditFloat && hasOpenShift && (
+        <EditFloatModal
+          shift={current} fr={fr} fmt={fmt}
+          onClose={() => setShowEditFloat(false)}
+          onDone={() => qc.invalidateQueries({ queryKey: ["current-shift", locId] })} />
+      )}
 
       {drill && (
         <DetailModal
