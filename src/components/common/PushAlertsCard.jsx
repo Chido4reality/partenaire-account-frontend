@@ -12,11 +12,14 @@
 // alerts are managed where every other Android app manages them — the OS notification
 // settings. Nothing here can hang, because nothing here does anything.
 import { useEffect, useState } from "react";
-import { canUsePush, pushStatus, lastRegistrationOutcome } from "../../utils/push";
+import toast from "react-hot-toast";
+import { canUsePush, pushStatus, lastRegistrationOutcome, promptIfSensible, waitForRegistration } from "../../utils/push";
 
 // Plain-language explanation of what the last login attempt hit. The point is that a
 // failure to register must be READABLE without a debugger, a diagnostics table, or
 // another instrumented build.
+const outcomeDetail = (o) => (o && typeof o.detail === "string" ? o.detail.split(":").pop().trim() : "");
+
 function explainOutcome(o, en) {
   if (!o) return null;
   switch (o.outcome) {
@@ -30,8 +33,12 @@ function explainOutcome(o, en) {
       return en ? "Notification permission was refused. Allow it in your phone's settings, then log out and back in."
                 : "L'autorisation a été refusée. Autorisez-la dans les réglages du téléphone, puis reconnectez-vous.";
     case "no_token":
-      return en ? "Permission is allowed, but the phone didn't return a notification token. Check the internet connection and log out and back in."
-                : "L'autorisation est accordée, mais le téléphone n'a pas renvoyé de jeton. Vérifiez la connexion et reconnectez-vous.";
+      return en ? "Permission is allowed, but the phone didn't return a notification token. Check the internet connection, then tap Retry."
+                : "L'autorisation est accordée, mais le téléphone n'a pas renvoyé de jeton. Vérifiez la connexion, puis touchez Réessayer.";
+    case "server_rejected":
+      return (en ? "The phone produced a token but the server refused it" : "Le téléphone a produit un jeton mais le serveur l'a refusé")
+        + (outcomeDetail(o) ? ` (${outcomeDetail(o)})` : "")
+        + (en ? ". Check the connection and tap Retry." : ". Vérifiez la connexion et touchez Réessayer.");
     case "register_failed":
       return en ? "Registration failed on this phone. Log out and back in; if it persists, tell support."
                 : "L'enregistrement a échoué. Reconnectez-vous ; si cela persiste, signalez-le.";
@@ -45,13 +52,17 @@ function explainOutcome(o, en) {
 export default function PushAlertsCard({ lang }) {
   const en = lang === "en";
   const [status, setStatus] = useState(null);
+  const [retrying, setRetrying] = useState(false);
+  // Held in state, not read during render: the outcome is written by the login flow AFTER
+  // this card may already have mounted, and a plain localStorage read would never refresh.
+  const [outcome, setOutcome] = useState(() => lastRegistrationOutcome());
 
   // Re-read on mount and whenever the screen regains focus — which is exactly what
   // happens on returning from Android's notification settings, so the status reflects a
   // change the user just made there. A plain GET; no bridge involved.
   useEffect(() => {
     if (!canUsePush()) return;
-    const load = async () => setStatus(await pushStatus());
+    const load = async () => { setStatus(await pushStatus()); setOutcome(lastRegistrationOutcome()); };
     load();
     const refresh = () => { if (!document.hidden) load(); };
     window.addEventListener("focus", refresh);
@@ -66,8 +77,29 @@ export default function PushAlertsCard({ lang }) {
   if (!canUsePush()) return null;
 
   const registered = (status?.my_live_devices || 0) > 0 && status?.push_configured;
-  const outcome = lastRegistrationOutcome();
   const reason = explainOutcome(outcome, en);
+
+  const retry = async () => {
+    setRetrying(true);
+    try {
+      // force:true — an explicit press must always attempt, even if the automatic ask
+      // already ran this session.
+      const r = await promptIfSensible({ force: true });
+      if (r === "granted") await waitForRegistration(12000);
+      setOutcome(lastRegistrationOutcome());
+      const s = await pushStatus();
+      setStatus(s);
+      if ((s?.my_live_devices || 0) > 0) {
+        toast.success(en ? "Alerts on." : "Alertes activées.");
+      } else if (r === "denied") {
+        toast.error(en
+          ? "Your phone is blocking notifications. Allow them in Settings → Apps → Mon Partenaire Dozie → Notifications."
+          : "Votre téléphone bloque les notifications. Autorisez-les dans Paramètres → Applications → Mon Partenaire Dozie → Notifications.");
+      } else {
+        toast.error(en ? "Still not registered — see the note below." : "Toujours pas enregistré — voir la note ci-dessous.");
+      }
+    } finally { setRetrying(false); }
+  };
 
   return (
     <div style={{ marginTop: 22, paddingTop: 18, borderTop: "1px solid var(--border)" }}>
@@ -100,6 +132,20 @@ export default function PushAlertsCard({ lang }) {
           {en
             ? "To turn alerts off or back on, use your phone's own settings: press and hold a notification, or open Settings → Apps → Mon Partenaire Dozie → Notifications."
             : "Pour désactiver ou réactiver les alertes, utilisez les réglages de votre téléphone : appuyez longuement sur une notification, ou ouvrez Paramètres → Applications → Mon Partenaire Dozie → Notifications."}
+        </div>
+      )}
+
+      {/* RETRY — the only control, and only when something is wrong.
+          This is NOT the old on/off toggle: it can only ever ADD a registration, never
+          unregister, so it cannot reproduce the register/unregister cycling that caused
+          every previous hang. Every call inside it is time-boxed. Without it, a user whose
+          registration failed once had no way back except logging out and in — a dead end
+          for anyone who doesn't know that trick. */}
+      {!registered && status?.push_configured && (
+        <div style={{ marginTop: 10 }}>
+          <button className="btn btn-primary" disabled={retrying} onClick={retry}>
+            {retrying ? (en ? "Trying…" : "Tentative…") : (en ? "Turn on alerts / Retry" : "Activer les alertes / Réessayer")}
+          </button>
         </div>
       )}
 

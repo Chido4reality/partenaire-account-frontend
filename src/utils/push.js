@@ -84,15 +84,19 @@ async function bindListeners(onTap, trace) {
   P.addListener("registration", async (t) => {
     const token = t && t.value;
     if (!token) return;
+    // Waiters are told WHETHER THE POST SUCCEEDED. Previously both branches resolved them
+    // identically, so a FAILED upload looked exactly like a successful one: the login flow
+    // recorded "granted", the card found no device server-side and showed OFF, and because
+    // "granted" has no explanation text there was no amber line either. Silent, and
+    // indistinguishable from working.
     try {
       await api.post("/devices/token", { token, platform: "android" });
       storeToken(token);
-      tokenWaiters.splice(0).forEach((fn) => { try { fn(); } catch { /* ignore */ } });
+      tokenWaiters.splice(0).forEach((fn) => { try { fn({ ok: true }); } catch { /* ignore */ } });
     } catch (e) {
-      // Offline, or the backend rejected it. The next app start re-registers. Release
-      // any waiter so the UI reports honestly instead of hanging on the timeout.
-      console.warn("[push] token POST failed:", e && e.message);
-      tokenWaiters.splice(0).forEach((fn) => { try { fn(); } catch { /* ignore */ } });
+      const detail = e?.response?.status ? `HTTP ${e.response.status}` : (e?.message || "network error");
+      console.warn("[push] token POST failed:", detail);
+      tokenWaiters.splice(0).forEach((fn) => { try { fn({ ok: false, error: detail }); } catch { /* ignore */ } });
     }
   });
 
@@ -193,8 +197,9 @@ export async function ensureRegisteredOnLogin({ onTap } = {}) {
     // register() only REQUESTS registration; the token lands on the `registration` event
     // and is POSTed there. Wait for that so the recorded outcome reflects reality.
     const got = await waitForRegistration(12000);
-    return rec(got ? "granted" : "no_token", got ? "permission granted, token stored" :
-      "permission granted, register() ok, but no registration event within 12s");
+    if (got.ok) return rec("granted", "permission granted, token stored on the server");
+    if (got.timedOut) return rec("no_token", "permission granted, register() ok, but the phone returned no token within 12s");
+    return rec("server_rejected", `the phone produced a token but the server refused it: ${got.error || "unknown"}`);
   }
   if (receive === "denied") {
     return rec("blocked", "Android reports notifications DENIED for this app — only phone settings can change it");
@@ -225,13 +230,15 @@ function uploadTrace(trace, outcome) {
 // the `registration` event, and only then is it POSTed. Callers that re-read status
 // immediately therefore saw zero devices and reported failure on a success. Await this
 // between the two.
+// Resolves { ok, error?, timedOut? } — the CALLER needs to distinguish "the phone never
+// produced a token" from "it did, but the server refused it". Those are opposite fixes.
 export function waitForRegistration(ms = 10000) {
   return new Promise((resolve) => {
-    if (getStoredToken()) return resolve(true);
+    if (getStoredToken()) return resolve({ ok: true });
     let done = false;
-    const finish = (ok) => { if (!done) { done = true; resolve(ok); } };
-    const timer = setTimeout(() => finish(false), ms);
-    tokenWaiters.push(() => { clearTimeout(timer); finish(true); });
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    const timer = setTimeout(() => finish({ ok: false, timedOut: true }), ms);
+    tokenWaiters.push((r) => { clearTimeout(timer); finish(r || { ok: false }); });
   });
 }
 
