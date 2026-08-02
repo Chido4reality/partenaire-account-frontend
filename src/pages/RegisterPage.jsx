@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAuthStore, useLangStore } from "../store";
 import api from "../utils/api";
+import { setLanguageLocalPending } from "../utils/setLanguage"; // MP-LANGUAGE-PERSIST
 
 const CATS = [
   { value: "moto_parts",       en: "Motorcycle parts",           fr: "Pièces moto" },
@@ -42,7 +43,7 @@ export default function RegisterPage() {
   // when the user edits the phone input.
   const [phoneError, setPhoneError] = useState("");
   const { login } = useAuthStore();
-  const { lang, setLang } = useLangStore();
+  const { lang } = useLangStore();
   const navigate = useNavigate();
   const set = (k, v) => {
     setForm(f => ({ ...f, [k]: v }));
@@ -178,7 +179,9 @@ export default function RegisterPage() {
         </div>
 
         <div style={{ textAlign: "center", marginTop: 14 }}>
-          <button onClick={() => setLang(lang === "en" ? "fr" : "en")}
+          {/* MP-LANGUAGE-PERSIST: pre-auth — records the choice as pending so it lands on
+              pa_users.language once the account exists. */}
+          <button onClick={() => setLanguageLocalPending(lang === "en" ? "fr" : "en")}
             style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}>
             🌐 {lang === "en" ? "Français" : "English"}
           </button>

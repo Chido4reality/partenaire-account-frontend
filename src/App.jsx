@@ -377,7 +377,13 @@ export default function App() {
         if (!cancelled && fresh?.full_name) {
           // MP-ONBOARDING-DB-FLAG: refresh the authoritative onboarding flag too,
           // so a cached session (or one whose login predated the flag) gets it.
-          patchUser({ full_name: fresh.full_name, name: fresh.full_name, role: fresh.role, has_seen_onboarding: !!fresh.has_seen_onboarding });
+          // MP-LANGUAGE-PERSIST: carry pa_users.language into the cached session too.
+          // /auth/me selects the whole row, so it has always been available here — the
+          // client just never looked, which is why a saved language could never reach the
+          // UI. Layout's sync effect watches user.language and reconciles from this.
+          // Doing it here (rather than only in the login response) means the fix works
+          // against the CURRENTLY DEPLOYED backend, with no deploy required.
+          patchUser({ full_name: fresh.full_name, name: fresh.full_name, role: fresh.role, has_seen_onboarding: !!fresh.has_seen_onboarding, language: fresh.language || null });
         }
       } catch (_) { /* offline / transient — keep the cached name */ }
     })();

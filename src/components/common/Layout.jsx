@@ -15,6 +15,7 @@ import { cacheKeyFor } from "../../utils/offlineQuery";
 import { openWhatsApp } from "../../utils/whatsapp";
 import { nukeClientState, hardRedirectToLogin } from "../../utils/authReset";
 import { ensureRegisteredOnLogin, revokeOnLogout, canUsePush } from "../../utils/push"; // MP-PUSH
+import { setLanguage, syncLanguageOnLogin } from "../../utils/setLanguage"; // MP-LANGUAGE-PERSIST
 // MP-SUB-FLOW-MERGE: UpgradeModal retired — both entry points now use the one
 // canonical /request-activation flow (RequestActivationPage). No second checkout
 // path / confirmation handler left to drift.
@@ -410,7 +411,7 @@ export default function Layout() {
   // that don't surface in Lite. Reads from authStore.org.lite_mode
   // (default true) — owners flip via Settings → Mode.
   const lite = useLiteMode();
-  const { lang, setLang }     = useLangStore();
+  const { lang }              = useLangStore();
   const queryClient           = useQueryClient(); // MP-AUTH-STATE-HYGIENE
   const { isOnline: storeOnline } = useOfflineStore();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -610,6 +611,16 @@ export default function Layout() {
     hardRedirectToLogin();
   };
 
+  // MP-LANGUAGE-PERSIST: reconcile the language store with the saved pa_users.language,
+  // once per authenticated app start. The store defaults to "en" and used to be the ONLY
+  // input, so a saved preference never reached the UI and a fresh install always looked
+  // English. syncLanguageOnLogin owns the conflict rules (pending choice > pre-fix
+  // adoption > server), deliberately in one place — see its comment block.
+  useEffect(() => {
+    if (!user?.id) return;
+    syncLanguageOnLogin(user.language || null);
+  }, [user?.id, user?.language]);
+
   // MP-PUSH: registration happens ONCE per authenticated app start, right here.
   //
   // It used to be split — a silent re-register on mount, plus a permission ask gated to
@@ -650,11 +661,10 @@ export default function Layout() {
     }
     if (last !== cur) safeSetItem("mp_last_user_id", cur);
   }, [user?.id, queryClient]);
-  const toggleLang = () => {
-    const nl = lang === "en" ? "fr" : "en";
-    setLang(nl);
-    api.patch("/auth/language", { language: nl }).catch(() => {});
-  };
+  // MP-LANGUAGE-PERSIST: this was the ONLY toggle of five that told the server. The
+  // PATCH now lives in the shared setLanguage() helper so Settings and the mobile drawer
+  // get the same behaviour and a future toggle cannot forget it.
+  const toggleLang = () => setLanguage(lang === "en" ? "fr" : "en");
 
   const { data: notifData } = useQuery({
     queryKey: ["notifications"],

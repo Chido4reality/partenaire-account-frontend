@@ -16,6 +16,7 @@ import { useLangStore, useAuthStore } from "../../store";
 import NavItem from "./NavItem";
 import { tapHaptic } from "../../utils/haptics";
 import { openWhatsApp } from "../../utils/whatsapp";
+import { setLanguage } from "../../utils/setLanguage"; // MP-LANGUAGE-PERSIST
 
 export const DRAWER_WIDTH = 280;
 
@@ -68,7 +69,7 @@ export default function NavDrawer({
   restockPending,
   onLogout,
 }) {
-  const { lang, setLang } = useLangStore();
+  const { lang } = useLangStore();
   const { user, org } = useAuthStore();
   const role = user?.role || "";
 
@@ -274,8 +275,11 @@ export default function NavDrawer({
                   </a>
                 );
               })()}
+              {/* MP-LANGUAGE-PERSIST: the PHONE's language toggle, and it was a bare
+                  setLang() — display-only. On mobile this is the toggle users actually
+                  reach, so it is the one that most needed to save the choice. */}
               <button
-                onClick={() => setLang(lang === "en" ? "fr" : "en")}
+                onClick={() => setLanguage(lang === "en" ? "fr" : "en")}
                 style={{
                   display: "flex", alignItems: "center", gap: 10, width: "100%",
                   padding: "10px 14px", borderRadius: 10, marginBottom: 8,

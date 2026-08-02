@@ -6,6 +6,7 @@ import { useAuthStore, useLangStore, useSettingsStore } from "../store";
 import api from "../utils/api";
 import { useMyPermissions } from "../utils/useMyPermissions";
 import { useCurrency } from "../utils/useCurrency";
+import { setLanguage } from "../utils/setLanguage"; // MP-LANGUAGE-PERSIST
 import { formatLastSeen, isRecentlyActive } from "../utils/lastSeen";
 import PaywallModal from "../components/common/PaywallModal";
 import PushAlertsCard from "../components/common/PushAlertsCard"; // MP-PUSH
@@ -122,7 +123,7 @@ function useAppVersion() {
 export default function SettingsPage() {
   const appVersion = useAppVersion();
   const { user, org } = useAuthStore();
-  const { lang, setLang } = useLangStore();
+  const { lang } = useLangStore();
   const { selectedLocation, setLocation } = useSettingsStore();
   const qc = useQueryClient();
   const fmt = useCurrency();
@@ -1475,7 +1476,10 @@ export default function SettingsPage() {
             ))}
           </div>
           <div style={{ marginTop: 20, display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button className="btn btn-secondary" onClick={() => setLang(lang === "en" ? "fr" : "en")}>
+            {/* MP-LANGUAGE-PERSIST: was a bare setLang() — it changed the display and
+                never saved the choice, so notifications kept arriving in the old
+                language. setLanguage() writes pa_users.language too. */}
+            <button className="btn btn-secondary" onClick={() => setLanguage(lang === "en" ? "fr" : "en")}>
               🌐 {lang === "en" ? "Switch to Français" : "Switch to English"}
             </button>
             {/* MP-RESTRICTED-MODE (B2): subscription entry point — always reachable. */}
