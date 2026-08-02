@@ -38,7 +38,29 @@ let listenersBound = false;
 // Resolved by the `registration` handler once the token has actually been stored, so
 // callers can wait for the real completion instead of guessing.
 let tokenWaiters = [];
-async function bindListeners(onTap) {
+
+// Every native bridge call in the enable path goes through this.
+//
+// A `try/catch` around `await P.someNativeCall()` protects against a REJECTION. It does
+// nothing about a promise that never settles — and that is what left "Turn on alerts"
+// spinning forever: one stalled bridge call meant bindListeners never returned, so
+// promptIfSensible never proceeded and enable() never reached its toast. Diagnose was
+// immune only because it time-boxed everything. Now the real path does too: a stall
+// becomes a recorded, reported failure instead of an infinite spinner.
+function tb(promise, ms, label, trace) {
+  const started = Date.now();
+  return Promise.race([
+    Promise.resolve(promise)
+      .then((value) => { trace && trace.push({ name: label, ok: true, ms: Date.now() - started, value: value ?? null }); return { ok: true, value }; })
+      .catch((e) => { trace && trace.push({ name: label, ok: false, ms: Date.now() - started, error: String((e && e.message) || e) }); return { ok: false, error: e }; }),
+    new Promise((r) => setTimeout(() => {
+      trace && trace.push({ name: label, ok: false, ms: Date.now() - started, error: `TIMED OUT after ${ms}ms` });
+      r({ ok: false, timedOut: true });
+    }, ms)),
+  ]);
+}
+
+async function bindListeners(onTap, trace) {
   const P = await getPlugin();
   if (!P || listenersBound) return;
   listenersBound = true;
@@ -47,17 +69,16 @@ async function bindListeners(onTap) {
   // message aimed at a channel that doesn't exist is DROPPED silently, so create it
   // before registering. importance 4 = HIGH: heads-up + sound, which is the whole point
   // of a lock-screen alert.
-  try {
-    await P.createChannel({
-      id: "mp_alerts",
-      name: "Alertes / Alerts",
-      description: "Approbations, actions à risque, résumé du jour",
-      importance: 4,
-      visibility: 1,   // public — readable on the lock screen
-      sound: "default",
-      vibration: true,
-    });
-  } catch { /* older Android or already exists */ }
+  // Time-boxed: a stalled createChannel used to hang the whole enable path.
+  await tb(P.createChannel({
+    id: "mp_alerts",
+    name: "Alertes / Alerts",
+    description: "Approbations, actions à risque, résumé du jour",
+    importance: 4,
+    visibility: 1,   // public — readable on the lock screen
+    sound: "default",
+    vibration: true,
+  }), 6000, "createChannel", trace);
 
   P.addListener("registration", async (t) => {
     const token = t && t.value;
@@ -94,24 +115,40 @@ async function bindListeners(onTap) {
 //
 // Returns 'granted' | 'denied' | 'skipped' | 'unavailable'.
 export async function promptIfSensible({ onTap, force = false } = {}) {
+  const trace = [];
   const P = await getPlugin();
-  if (!P) return "unavailable";
-  await bindListeners(onTap);
-  try {
-    let perm = await P.checkPermissions();
-    if (perm.receive === "granted") { await P.register(); return "granted"; }
+  trace.push({ name: "getPlugin", ok: !!P });
+  if (!P) { await uploadTrace(trace, "no_plugin"); return "unavailable"; }
+
+  await bindListeners(onTap, trace);
+
+  const chk = await tb(P.checkPermissions(), 6000, "checkPermissions", trace);
+  if (!chk.ok) { await uploadTrace(trace, "checkPermissions_failed"); return "unavailable"; }
+  let receive = chk.value && chk.value.receive;
+
+  if (receive !== "granted") {
     // 'denied' → the OS will not show the dialog again. Nothing we call can change that;
     // only System Settings can.
-    if (perm.receive === "denied") return "denied";
+    if (receive === "denied") { await uploadTrace(trace, "denied"); return "denied"; }
     if (readAsked() && !force) return "skipped";
     markAsked();
-    perm = await P.requestPermissions();
-    if (perm.receive === "granted") { await P.register(); return "granted"; }
-    return "denied";
-  } catch (e) {
-    console.warn("[push] permission flow failed:", e && e.message);
-    return "unavailable";
+    const req = await tb(P.requestPermissions(), 25000, "requestPermissions", trace);
+    if (!req.ok) { await uploadTrace(trace, "requestPermissions_failed"); return "unavailable"; }
+    receive = req.value && req.value.receive;
+    if (receive !== "granted") { await uploadTrace(trace, "not_granted"); return "denied"; }
   }
+
+  const reg = await tb(P.register(), 15000, "register", trace);
+  if (!reg.ok) { await uploadTrace(trace, "register_failed"); return "unavailable"; }
+  return "granted";
+}
+
+// Upload the step trace whenever the enable path does NOT reach a clean grant, so the
+// next failure names itself instead of needing another instrumented build. Silent and
+// best-effort — a diagnostic must never become the thing that breaks.
+async function uploadTrace(trace, outcome) {
+  try { await api.post("/devices/diag", { steps: [...trace, { name: "outcome", ok: false, value: outcome }] }); }
+  catch { /* ignore */ }
 }
 
 // P.register() resolves as soon as registration is REQUESTED — the token arrives later on
@@ -178,6 +215,16 @@ export async function disableOnThisDevice() {
   // Clear locally regardless: if the call failed we must not keep claiming this device
   // is registered. The next successful registration re-creates the row.
   storeToken(null);
+
+  // Also drop the FCM registration itself. Revoking server-side only stops US sending;
+  // the handset stays registered with Google, so a later register() can be a no-op that
+  // never re-fires `registration` — leaving the enable path waiting for an event that
+  // will not come. Time-boxed, best-effort: failing to unregister must not block the OFF.
+  try {
+    const P = await getPlugin();
+    if (P && typeof P.unregister === "function") await tb(P.unregister(), 6000, "unregister", null);
+  } catch { /* best-effort */ }
+
   return ok;
 }
 
