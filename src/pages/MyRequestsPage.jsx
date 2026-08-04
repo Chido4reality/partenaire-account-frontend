@@ -9,6 +9,7 @@ import toast from "react-hot-toast";
 import { useLangStore } from "../store";
 import { useCurrency } from "../utils/useCurrency";
 import api from "../utils/api";
+import { useMyRequests } from "../utils/useMyRequests"; // MP-CORRECTIONS-GUARDRAIL
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 import BelowCostLossDetail from "../components/common/BelowCostLossDetail";
 import DiscountApprovalDetail from "../components/common/DiscountApprovalDetail";
@@ -54,12 +55,9 @@ export default function MyRequestsPage() {
   const [finalizingId, setFinalizingId] = useState(null);
   const [cancelFor, setCancelFor] = useState(null); // request row pending a cancel confirm
 
-  const { data: resp, isLoading } = useQuery({
-    queryKey: ["my-requests"],
-    queryFn: () => api.get("/staff/my-requests").then((r) => r.data),
-    refetchInterval: 7000, // React Query auto-clears on unmount + pauses backgrounded
-  });
-  const requests = resp?.data || [];
+  // MP-CORRECTIONS-GUARDRAIL: shared hook — the nav badge reads the same key, and one
+  // key with two unwrap shapes is a bug this codebase has already shipped twice.
+  const { requests, awaitingCompletion, isLoading } = useMyRequests({ refetchInterval: 7000 });
 
   // Org settings (currency, name, logo…) for the receipt — same source the
   // refund/void receipts use elsewhere.
@@ -123,6 +121,30 @@ export default function MyRequestsPage() {
           ? "Actions waiting for the owner. When one is Approved, tap it to complete it and print the receipt."
           : "Actions en attente du propriétaire. Quand une est Approuvée, touchez-la pour la finaliser et imprimer le reçu."}
       </div>
+
+      {/* ── MP-CORRECTIONS-GUARDRAIL ────────────────────────────────────────
+          The nav badge already counts these, but a badge is easy to walk past —
+          and walking past it is the whole failure mode: the owner approves,
+          believes it is done, and the action never executes. For a float
+          correction that means the drawer keeps a figure the boss has already
+          agreed is wrong, until the shift closes and freezes it.
+          So: say it in words, at the top, with the count and what happens next. */}
+      {awaitingCompletion.length > 0 && (
+        <div style={{ marginBottom: 14, padding: "12px 14px", borderRadius: 12,
+          background: "rgba(16,185,129,0.10)", border: "1px solid rgba(16,185,129,0.40)" }}>
+          <div style={{ fontWeight: 700, fontSize: 14.5, color: "#34d399" }}>
+            {awaitingCompletion.length === 1
+              ? (en ? "1 approved action to complete" : "1 action approuvée à terminer")
+              : (en ? `${awaitingCompletion.length} approved actions to complete`
+                    : `${awaitingCompletion.length} actions approuvées à terminer`)}
+          </div>
+          <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 4, lineHeight: 1.5 }}>
+            {en
+              ? "The owner approved these, but nothing has happened yet — they only take effect once you complete them below. A cash shift cannot be closed while a correction to it is still waiting."
+              : "Le propriétaire les a approuvées, mais rien n'a encore changé — elles ne prennent effet qu'une fois terminées ci-dessous. Une caisse ne peut pas être fermée tant qu'une correction la concernant est en attente."}
+          </div>
+        </div>
+      )}
 
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         {isLoading && <div style={{ padding: 20, color: "var(--text-muted)" }}>{en ? "Loading…" : "Chargement…"}</div>}

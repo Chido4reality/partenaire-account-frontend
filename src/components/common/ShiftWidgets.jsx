@@ -431,10 +431,22 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
   const validAmt = amt !== null && Number.isFinite(amt) && amt >= 0;
   const variance = validAmt ? amt - expected : null;
 
+  // MP-CORRECTIONS-GUARDRAIL: the server refuses (409 correction_not_applied) when an
+  // APPROVED-but-unapplied correction still targets this shift. Closing would freeze
+  // expected_cash/difference on a figure the boss has already agreed is wrong, and the
+  // open-shift-only rule then makes it uneditable forever. Held in state so the refusal
+  // renders as a real explanation rather than a bare toast, and so the owner's
+  // deliberate override survives the re-submit.
+  const [blockedBy, setBlockedBy] = useState(null);   // { outstanding[], can_override, message }
+  const [override, setOverride]   = useState(false);
+
   const m = useMutation({
     mutationFn: () => api.post(`/shifts/${shift.shift_id}/close`, {
       actual_cash: amt,
       notes:       notes || null,
+      // Only ever sent after the owner explicitly ticks the override — never a
+      // silent role-based bypass.
+      ...(override ? { force_close: true } : {}),
     }),
     onSuccess: (res) => {
       const d = res?.data?.data || {};
@@ -456,10 +468,20 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
       qc.invalidateQueries({ queryKey: ["my-shift"] });
       qc.invalidateQueries({ queryKey: ["all-shifts"] });
       setActual(""); setNotes(""); setConfirming(false); setError(null);
+      setBlockedBy(null); setOverride(false);
       onClose(); onClosed?.(d);
     },
     onError: (err) => {
-      setError(err.response?.data?.message
+      const d = err.response?.data || {};
+      // MP-CORRECTIONS-GUARDRAIL: this refusal is not a generic error — it names an
+      // outstanding correction and (for the owner) offers a deliberate override, so it
+      // gets its own panel instead of the one-line error string.
+      if (d.code === "correction_not_applied") {
+        setBlockedBy(d);
+        setConfirming(false);
+        return;
+      }
+      setError((lang === "fr" ? (d.message_fr || d.message) : (d.message_en || d.message))
         || (lang === "fr" ? "Erreur réseau. Réessayez." : "Network error. Retry."));
       setConfirming(false);
     }
@@ -698,6 +720,44 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
             : "The variance will be recorded in history. Continue?"}
         </div>
       )}
+      {/* ── MP-CORRECTIONS-GUARDRAIL: an approved correction has not been applied ──
+          BLOCKS the close. Not a warning: once this shift closes, expected_cash /
+          difference freeze, and the open-shift-only rule makes the float permanently
+          uneditable — so a figure the boss already agreed was wrong would be locked in
+          for good. Names WHO must act and WHAT freezes, because "an error occurred"
+          at end of day tells a cashier nothing they can act on. */}
+      {blockedBy && (
+        <div style={{ background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.45)",
+          borderRadius: 10, padding: "11px 13px", marginBottom: 12 }}>
+          <div style={{ fontWeight: 700, fontSize: 13.5, color: "#f87171", marginBottom: 4 }}>
+            {lang === "fr" ? "Correction approuvée non appliquée" : "Approved correction not applied"}
+          </div>
+          {(blockedBy.outstanding || []).map((o) => (
+            <div key={o.id} style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 2 }}>
+              • <strong>{o.requested_by_name || (lang === "fr" ? "un employé" : "a staff member")}</strong>
+              {o.target_ref ? ` — ${o.target_ref}` : ""}
+            </div>
+          ))}
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6, lineHeight: 1.5 }}>
+            {lang === "fr"
+              ? "Après la fermeture, le fonds de caisse devient définitif et l'écart sera figé sur le mauvais montant."
+              : "Once this shift is closed the opening float is final and the variance freezes on the wrong figure."}
+          </div>
+          {blockedBy.can_override && (
+            <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 10,
+              fontSize: 12, color: "var(--text-secondary)", cursor: "pointer" }}>
+              <input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)}
+                style={{ marginTop: 2 }} />
+              <span>
+                {lang === "fr"
+                  ? "Fermer quand même — je comprends que la correction sera perdue et que l'écart restera figé."
+                  : "Close anyway — I understand the correction will be lost and the variance stays frozen."}
+              </span>
+            </label>
+          )}
+        </div>
+      )}
+
       {error && (
         <div style={{ background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: "#f87171" }}>
           {error}
@@ -706,14 +766,23 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
 
       <div style={{ display: "flex", gap: 8 }}>
         <button className="btn btn-secondary" style={{ flex: 1 }} disabled={m.isPending}
-          onClick={() => { setError(null); setConfirming(false); onClose(); }}>
+          onClick={() => { setError(null); setConfirming(false); setBlockedBy(null); setOverride(false); onClose(); }}>
           {lang === "fr" ? "Annuler" : "Cancel"}
         </button>
-        <button className="btn btn-primary" style={{ flex: 2, ...(confirming && variance !== 0 ? { background: "#fbbf24", borderColor: "#fbbf24" } : {}) }}
-          disabled={!validAmt || m.isPending}
+        {/* MP-CORRECTIONS-GUARDRAIL: once blocked, the button stays disabled until the
+            correction is completed elsewhere — or, for an owner, until the override is
+            deliberately ticked. A non-owner has no way past it, which is the point:
+            they cannot waive a correction the boss already approved. */}
+        <button className="btn btn-primary" style={{ flex: 2, ...(confirming && variance !== 0 ? { background: "#fbbf24", borderColor: "#fbbf24" } : {}),
+            ...(blockedBy && override ? { background: "#dc2626", borderColor: "#dc2626", color: "#fff" } : {}) }}
+          disabled={!validAmt || m.isPending || (!!blockedBy && !override)}
           onClick={handleSubmit}>
           {m.isPending
             ? "..."
+            : blockedBy && !override
+              ? (lang === "fr" ? "Bloqué — correction en attente" : "Blocked — correction pending")
+            : blockedBy && override
+              ? (lang === "fr" ? "⚠ Fermer malgré tout" : "⚠ Close anyway")
             : confirming && variance !== 0
               ? (lang === "fr" ? "✓ Confirmer la fermeture" : "✓ Confirm close")
               : (lang === "fr" ? "✓ Fermer le poste" : "✓ Close shift")}
