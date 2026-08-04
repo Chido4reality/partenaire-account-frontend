@@ -182,6 +182,32 @@ export default function AccountantLogPage() {
     refetchInterval: 30000, // keep the owner's inbox fresh
   });
   const pendingApprovals = approvalsResp?.data || [];
+
+  // ── MP-CORRECTIONS-GUARDRAIL: approved-but-NOT-yet-completed ──────────────
+  // Approval on this rail is a GREEN LIGHT only — the requester must finalize to
+  // execute. Until now an approved row simply vanished from this inbox, so the boss
+  // approved, believed it was done, and never learned it wasn't. (That is exactly
+  // what happened to us: a float correction sat approved-unapplied while the drawer
+  // kept the wrong figure.)
+  //
+  // Rendered BELOW as a read-only INFO strip, deliberately not styled like the
+  // pending queue — nothing here needs a decision, so it must not read as a second
+  // pile of work or the boss will start ignoring both.
+  const { data: awaitingResp } = useQuery({
+    queryKey: ["staff-approvals-awaiting"],
+    queryFn: () => api.get("/staff/approvals?status=approved").then((r) => r.data),
+    enabled: entitled,
+    refetchInterval: 30000,
+  });
+  const awaitingCompletion = awaitingResp?.data || [];
+  // "3d" / "4h" / "12m" since approval — an old one is the whole signal.
+  const sinceLabel = (iso) => {
+    if (!iso) return "";
+    const mins = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
+    if (mins < 60) return `${mins}m`;
+    if (mins < 1440) return `${Math.floor(mins / 60)}h`;
+    return `${Math.floor(mins / 1440)}d`;
+  };
   const [pinFor, setPinFor] = useState(null);     // approval row being approved (PIN prompt)
   const [pinValue, setPinValue] = useState("");
   const [rejectFor, setRejectFor] = useState(null); // approval row being rejected (note prompt)
@@ -261,6 +287,10 @@ export default function AccountantLogPage() {
       toast.success(en ? "Approved — staff will complete it" : "Approuvé — le personnel le finalisera");
       setPinFor(null); setPinValue("");
       qc.invalidateQueries({ queryKey: ["staff-approvals-pending"] });
+      // MP-CORRECTIONS-GUARDRAIL: the row moves pending → approved, so the
+      // "waiting to be completed" strip must refresh too or the boss sees it
+      // disappear from one list without appearing in the other.
+      qc.invalidateQueries({ queryKey: ["staff-approvals-awaiting"] });
       qc.invalidateQueries({ queryKey: ["accountant-log-watched"] });
     },
     onError: (e) => toast.error(e?.response?.data?.message || (en ? "Could not approve" : "Échec de l'approbation")),
@@ -409,6 +439,49 @@ export default function AccountantLogPage() {
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ── MP-CORRECTIONS-GUARDRAIL: approved, waiting to be completed ──────
+          INFO ONLY. Muted/neutral on purpose — the amber block above is the
+          decision queue; this one asks nothing of the boss. Styling it the same
+          would turn one glanceable "you have work" signal into two competing
+          ones, and he'd learn to skip both. What it must do is make the state
+          EXIST: an approved correction that nobody finalised used to be
+          invisible to everyone. The age badge is the point — "3d" is the tell. */}
+      {awaitingCompletion.length > 0 && (
+        <div className="card" style={{ marginTop: 12, padding: 0, overflow: "hidden" }}>
+          <div style={{ padding: "9px 14px", display: "flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,0.03)" }}>
+            <span style={{ fontSize: 15 }}>✅</span>
+            <span style={{ fontWeight: 600, fontSize: 13.5, color: "var(--text-secondary)" }}>
+              {en ? "Approved — waiting to be completed" : "Approuvé — en attente d'exécution"}
+            </span>
+            <span style={{ marginLeft: "auto", background: "rgba(255,255,255,0.10)", color: "var(--text-secondary)",
+              borderRadius: 999, padding: "1px 9px", fontSize: 12, fontWeight: 700 }}>
+              {awaitingCompletion.length}
+            </span>
+          </div>
+          {awaitingCompletion.map((a, i) => (
+            <div key={a.id} style={{ padding: "10px 14px", borderTop: i === 0 ? "none" : "1px solid var(--border)",
+              display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 13.5, color: "var(--text-secondary)" }}>
+                {en ? "Waiting for " : "En attente de "}
+                <strong style={{ color: "var(--text-primary)" }}>{a.requested_by_name || (en ? "the staff member" : "l'employé")}</strong>
+                {en ? " to complete: " : " pour terminer : "}
+                {approvalVerb(a.action_type, a.target_ref)}
+                {a.target_ref ? ` (${a.target_ref})` : ""}
+              </div>
+              <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--text-muted)" }}>
+                {en ? "approved " : "approuvé "}{sinceLabel(a.decided_at)}{en ? " ago" : ""}
+              </span>
+            </div>
+          ))}
+          <div style={{ padding: "8px 14px", borderTop: "1px solid var(--border)", fontSize: 11.5,
+            color: "var(--text-muted)", lineHeight: 1.5 }}>
+            {en
+              ? "You've approved these — nothing has changed yet. The staff member must open My Requests and complete each one. A shift cannot be closed while a correction to it is still waiting."
+              : "Vous les avez approuvées — rien n'a encore changé. L'employé doit ouvrir Mes demandes et terminer chacune. Une caisse ne peut pas être fermée tant qu'une correction la concernant est en attente."}
+          </div>
         </div>
       )}
 
