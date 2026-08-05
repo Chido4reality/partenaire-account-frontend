@@ -30,6 +30,9 @@ import { OpenShiftModal, CloseShiftModal } from "../common/ShiftWidgets";
 // with a different queryFn shape silently reads as DENIED — that bug has already recurred
 // once on this key, so never re-implement it here.
 import { useMyPermissions } from "../../utils/useMyPermissions";
+// MP-DRAWER-REVEAL
+import { useDrawerReveal, MASK, hideDrawer } from "../../utils/useDrawerReveal";
+import RevealPinModal from "../common/RevealPinModal";
 
 // ── Row primitives ────────────────────────────────────────────────
 function StaticRow({ label, value, valueColor }) {
@@ -382,6 +385,27 @@ export default function DrawerDashboardCard() {
   const { perms: myPerms } = useMyPermissions({ enabled: user?.role !== "owner", staleTime: 300000 });
   const canEditFloat = user?.role === "owner" || myPerms?.float_edit_policy === "approve";
 
+  // ── MP-DRAWER-REVEAL ──────────────────────────────────────────────────────
+  // Org setting, default TRUE. Read from the same ["settings"] cache other screens
+  // already use, so this adds no request. Gate applies on MOBILE only.
+  const { data: orgResp } = useQuery({
+    queryKey: ["settings"],
+    queryFn: () => api.get("/settings").then((r) => r.data),
+    staleTime: 300000,
+  });
+  const hideSetting = orgResp?.data?.hide_drawer_amount !== false;   // absent ⇒ treat as ON
+  const { gateOn, revealed } = useDrawerReveal({ enabled: hideSetting });
+  const [askPin, setAskPin] = useState(false);
+  const masked = gateOn && !revealed;
+  // One helper for every cash figure on this card, so a new row cannot be added later
+  // that forgets to mask — the leak-by-omission failure this feature is about.
+  const money = (n) => (masked ? MASK : fmt(Number(n) || 0));
+
+  // Re-hide when the selected LOCATION changes: the figure on screen would otherwise
+  // belong to one branch while the header says another, and a branch switch is a
+  // deliberate context change — the reveal shouldn't survive it.
+  useEffect(() => { if (gateOn) hideDrawer(); }, [locId, gateOn]);
+
   // ── Resolve state ───────────────────────────────────────────────
   const hasOpenShift = !!(current && current.shift_id);
   const recentClosed = history?.shifts?.[0];
@@ -486,7 +510,20 @@ export default function DrawerDashboardCard() {
   const expected      = Number(shift.expected_drawer || 0);
 
   // Headline (right-side summary number) varies by state.
-  const headline = hasOpenShift
+  // MP-DRAWER-REVEAL: this collapsed headline is THE leak — it renders the till figure
+  // the instant the dashboard opens, with no tap. Masked first, and the tap target says
+  // what to do rather than just showing dots.
+  const headline = masked
+    ? (
+      <span onClick={(e) => { e.stopPropagation(); setAskPin(true); }}
+        style={{ fontSize: 12.5, color: "var(--text-muted)", cursor: "pointer", whiteSpace: "nowrap" }}>
+        🔒 <strong style={{ letterSpacing: 2 }}>{MASK}</strong>
+        <span style={{ marginLeft: 6, textDecoration: "underline" }}>
+          {fr ? "Afficher" : "Tap to reveal"}
+        </span>
+      </span>
+    )
+    : hasOpenShift
     ? (
       <span style={{ fontSize: 13 }}>
         {fr ? "Attendu : " : "Expected: "}
@@ -538,15 +575,36 @@ export default function DrawerDashboardCard() {
         />}>
         {/* ── Expanded body ────────────────────────────────────── */}
         <div style={{ borderTop: "1px solid var(--border)", paddingTop: 6 }}>
+          {/* MP-DRAWER-REVEAL: while masked, the body shows one reveal prompt instead of
+              a column of dots — dots next to every label read as "broken", and a user who
+              thinks the screen is broken force-quits rather than taps. */}
+          {masked && (
+            <div onClick={() => setAskPin(true)}
+              style={{ padding: "18px 14px", textAlign: "center", cursor: "pointer" }}>
+              <div style={{ fontSize: 26, letterSpacing: 4, fontWeight: 800, color: "var(--text-muted)" }}>{MASK}</div>
+              <div style={{ marginTop: 6, fontSize: 12.5, color: "var(--text-secondary)", textDecoration: "underline" }}>
+                🔒 {fr ? "Touchez pour afficher l'argent en caisse" : "Tap to reveal the cash in the drawer"}
+              </div>
+              <div style={{ marginTop: 4, fontSize: 11, color: "var(--text-muted)" }}>
+                {fr ? "Votre code vous sera demandé" : "You'll be asked for your PIN"}
+              </div>
+            </div>
+          )}
+
+          {!masked && (
           <StaticRow
             label={fr ? "Solde d'ouverture" : "Opening float"}
-            value={fmt(Number(shift.opening_float || 0))} />
+            value={money(shift.opening_float)} />
+          )}
 
           {/* MP-CORRECTIONS: correct a mistyped float. OPEN shift only — hasOpenShift
               gates it, and the server refuses a closed one regardless. The label says
               "Ask to correct" for staff because their tap raises a request, it does not
               change anything; promising otherwise would be a lie about what happens. */}
-          {hasOpenShift && canEditFloat && (
+          {/* Gated by construction: `masked` hides it with the rest of the body. You
+              cannot sensibly correct a figure you cannot see, and it would otherwise be a
+              way to learn the float (the modal shows the current amount). */}
+          {hasOpenShift && canEditFloat && !masked && (
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: -2, marginBottom: 4 }}>
               <button onClick={() => setShowEditFloat(true)}
                 style={{ background: "none", border: "none", color: "var(--text-muted)",
@@ -558,23 +616,27 @@ export default function DrawerDashboardCard() {
             </div>
           )}
 
+          {/* Every component of the till figure is gated too — cash sales, refunds and
+              expenses each narrow it down, and the drill-downs behind them list
+              per-transaction amounts. Gating only the total would be leak-by-omission. */}
+          {!masked && (<>
           <ClickRow
             label={fr ? "+ Ventes en espèces" : "+ Cash sales"}
-            value={fmt(Number(shift.cash_sales_received || 0))}
+            value={money(shift.cash_sales_received)}
             valueColor="#34d399"
             onClick={() => setDrill("sales")}
             title={fr ? "Cliquer pour le détail" : "Click for detail"} />
 
           <ClickRow
             label={fr ? "− Remboursements espèces" : "− Cash refunds"}
-            value={fmt(Number(shift.cash_refunds || 0))}
+            value={money(shift.cash_refunds)}
             valueColor="#f87171"
             onClick={() => setDrill("refunds")}
             title={fr ? "Cliquer pour le détail" : "Click for detail"} />
 
           <ClickRow
             label={fr ? "− Dépenses espèces" : "− Cash expenses"}
-            value={fmt(Number(shift.cash_expenses || 0))}
+            value={money(shift.cash_expenses)}
             valueColor="#f87171"
             onClick={() => setDrill("expenses")}
             title={fr ? "Cliquer pour le détail" : "Click for detail"} />
@@ -586,16 +648,17 @@ export default function DrawerDashboardCard() {
               {fr ? "Caisse attendue" : "Expected drawer"}
             </span>
             <strong style={{ fontSize: 20, color: "var(--brand-light)" }}>
-              {fmt(expected)}
+              {money(expected)}
             </strong>
           </div>
+          </>)}
 
-          {closedToday && (
+          {!masked && closedToday && (
             <>
               <div style={{ height: 1, background: "var(--border)", margin: "0 14px 6px" }} />
               <StaticRow
                 label={fr ? "Solde réel" : "Actual cash"}
-                value={fmt(Number(shift.actual_cash || 0))} />
+                value={money(shift.actual_cash)} />
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 14px", fontSize: 13 }}>
                 <span style={{ color: "var(--text-muted)" }}>{fr ? "Écart" : "Variance"}</span>
                 <strong style={{ color: varianceColor, fontWeight: 700 }}>
@@ -640,12 +703,16 @@ export default function DrawerDashboardCard() {
           onDone={() => qc.invalidateQueries({ queryKey: ["current-shift", locId] })} />
       )}
 
-      {drill && (
+      {/* MP-DRAWER-REVEAL: `masked` also guards the drill-downs — they list
+          per-transaction cash amounts, which reconstruct the total. */}
+      {drill && !masked && (
         <DetailModal
           kind={drill}
           shiftId={shift.shift_id || shift.id}
           onClose={() => setDrill(null)} />
       )}
+
+      <RevealPinModal open={askPin} onClose={() => setAskPin(false)} />
     </>
   );
 }

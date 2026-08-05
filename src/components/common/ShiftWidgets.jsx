@@ -48,6 +48,9 @@ import { SHOP_TZ } from "../../utils/shopTime"; // MP-REPORT-TZ
 import { buildLedgerTextV2 as buildLedgerText, buildWeeklyText } from "../../utils/reportText";
 import { momoLabel } from "../../utils/paymentLabels";
 import CreditGivenModal from "./CreditGivenModal"; // MP-CREDIT-DRILLDOWN
+// MP-DRAWER-REVEAL
+import { useDrawerReveal, MASK } from "../../utils/useDrawerReveal";
+import RevealPinModal from "./RevealPinModal";
 
 // ── ModalShell — same overlay pattern as the rest of the app ─────
 // zIndex 3500: must clear Vaul's mobile bottom-sheet portal (z:1701)
@@ -944,6 +947,18 @@ export function ActiveShiftIndicator() {
   // null = no prompt pending.
   const [reportPromptLoc, setReportPromptLoc] = useState(null);
 
+  // MP-DRAWER-REVEAL: same org setting + same module-level reveal as the drawer card,
+  // so ONE unlock covers every drawer surface and one timeout re-hides them all.
+  const [askPin, setAskPin] = useState(false);
+  const { data: orgSettingsResp } = useQuery({
+    queryKey: ["settings"],
+    queryFn: () => api.get("/settings").then((r) => r.data),
+    staleTime: 300000,
+  });
+  const { gateOn: drawerGateOn, revealed: drawerRevealed } =
+    useDrawerReveal({ enabled: orgSettingsResp?.data?.hide_drawer_amount !== false });
+  const drawerMasked = drawerGateOn && !drawerRevealed;
+
   const { data, isLoading } = useQuery({
     queryKey: ["current-shift", locId],
     queryFn: () => api.get(`/shifts/current?location_id=${locId}`).then(r => r.data?.data),
@@ -1007,10 +1022,24 @@ export function ActiveShiftIndicator() {
                   : `Shift open since ${opened}`)}
           </span>
           <span style={{ color: "var(--text-muted)", fontSize: 12 }}>•</span>
-          <span style={{ fontSize: 13 }}>
-            {lang === "fr" ? "Caisse attendue : " : "Expected drawer: "}
-            <strong style={{ color: "var(--brand-light)" }}>{fmt(expected)}</strong>
-          </span>
+          {/* MP-DRAWER-REVEAL: this banner renders on POS, Dashboard AND Shifts — it is
+              the second always-visible leak alongside the drawer card's collapsed header,
+              and gating only the card would have missed it entirely. stopPropagation
+              because the parent row opens the CLOSE modal on click. */}
+          {drawerMasked ? (
+            <span onClick={(e) => { e.stopPropagation(); setAskPin(true); }}
+              style={{ fontSize: 12.5, color: "var(--text-muted)", cursor: "pointer" }}>
+              🔒 <strong style={{ letterSpacing: 2 }}>{MASK}</strong>
+              <span style={{ marginLeft: 6, textDecoration: "underline" }}>
+                {lang === "fr" ? "Afficher" : "Tap to reveal"}
+              </span>
+            </span>
+          ) : (
+            <span style={{ fontSize: 13 }}>
+              {lang === "fr" ? "Caisse attendue : " : "Expected drawer: "}
+              <strong style={{ color: "var(--brand-light)" }}>{fmt(expected)}</strong>
+            </span>
+          )}
           {data?.cashier_name && (
             <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: "auto" }}>
               {/* MP-DRAWER-MODE-TOGGLE: in shared mode the listed
@@ -1042,6 +1071,8 @@ export function ActiveShiftIndicator() {
           </button>
         </div>
       )}
+
+      <RevealPinModal open={askPin} onClose={() => setAskPin(false)} />
 
       <OpenShiftModal  open={showOpen}  onClose={() => setShowOpen(false)} />
       <CloseShiftModal

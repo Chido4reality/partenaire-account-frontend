@@ -192,7 +192,8 @@ export default function SettingsPage() {
     cashier_undo_requires_approval: true,
     promo_footer_enabled: true,
     max_offline_hours: 24,
-    staff_can_view_own_activity: false
+    staff_can_view_own_activity: false,
+    hide_drawer_amount: true   // MP-DRAWER-REVEAL — default ON
   });
   // MP-WHATSAPP-ALERTS: per-month add-on fee (read-only, from mp_pricing_config
   // via GET /settings) + the org currency, for the billing toggle label.
@@ -328,6 +329,9 @@ export default function SettingsPage() {
       promo_footer_enabled: d.promo_footer_enabled !== false,
       max_offline_hours: Math.max(4, Math.min(72, Number(d.max_offline_hours) || 24)),
       staff_can_view_own_activity: d.staff_can_view_own_activity === true,
+      // MP-DRAWER-REVEAL: absent ⇒ ON. Reading a missing column as "off" would silently
+      // unmask every till figure for any org whose settings row predates the migration.
+      hide_drawer_amount: d.hide_drawer_amount !== false,
     };
     setShopForm(normalized);
     savedSnapshotRef.current = { ...normalized };
@@ -455,7 +459,10 @@ export default function SettingsPage() {
   // MP-SETTINGS-CONTROL-FLAGS: money-control toggles whose SILENT revert has real
   // consequences. The Save stamps settings_control_intent:true whenever one of these is in
   // the delta, so the backend can tell a deliberate change from a stale full-object write.
-  const CONTROL_FLAGS = ["transfer_receipt_confirmation_enabled", "transfer_require_second_person", "transfer_owner_cancel_lock", "cashier_undo_requires_approval"];
+  // MP-DRAWER-REVEAL: hide_drawer_amount joins these. It defaults ON, so a stale
+  // full-object PATCH flipping it OFF would unmask every till figure on every phone in
+  // the org — the exact failure the gate exists to prevent. Intent-gated like the rest.
+  const CONTROL_FLAGS = ["transfer_receipt_confirmation_enabled", "transfer_require_second_person", "transfer_owner_cancel_lock", "cashier_undo_requires_approval", "hide_drawer_amount"];
   const saveShopMutation = useMutation({
     // MP-SETTINGS-DIRTY-TRACKING: diff the live form against the last-saved snapshot and PATCH
     // ONLY changed fields. The test is "differs from snapshot", NOT "is falsy" — a field the
@@ -1314,6 +1321,31 @@ export default function SettingsPage() {
                 <input type="checkbox" checked={shopForm.staff_can_view_own_activity} onChange={e => setFF("staff_can_view_own_activity", e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
                 <span style={{ position: "absolute", inset: 0, borderRadius: 12, background: shopForm.staff_can_view_own_activity ? "var(--brand)" : "var(--border)", transition: "0.2s" }}>
                   <span style={{ position: "absolute", width: 18, height: 18, borderRadius: "50%", background: "#fff", top: 3, left: shopForm.staff_can_view_own_activity ? 23 : 3, transition: "0.2s" }} />
+                </span>
+              </label>
+            </div>
+
+            {/* MP-DRAWER-REVEAL: hide the live till figure on PHONES until the viewer
+                re-enters their own PIN. ON by default — a lost/stolen/glanced-at handset
+                shouldn't broadcast how much cash is in the drawer. Desktop is left
+                ungated (back office, different threat). The off-switch is here for the
+                single-owner shop whose phone never leaves their hand, where the extra tap
+                is pure friction. Presentational gate: defends a glance, not devtools. */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--bg-elevated)", borderRadius: 10, marginTop: 12 }}>
+              <div style={{ maxWidth: 300 }}>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>
+                  {lang === "en" ? "Hide the cash amount until PIN" : "Masquer le montant en caisse jusqu'au code"}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  {lang === "en"
+                    ? "On phones, the drawer amount shows as ••••• until you enter your PIN. It hides again after 90 seconds or when you leave the screen. Protects you if the phone is lost, stolen, or glanced at."
+                    : "Sur téléphone, le montant en caisse s'affiche ••••• jusqu'à la saisie de votre code. Il se masque après 90 secondes ou dès que vous quittez l'écran. Vous protège si le téléphone est perdu, volé ou regardé."}
+                </div>
+              </div>
+              <label style={{ position: "relative", width: 44, height: 24, cursor: "pointer", flexShrink: 0 }}>
+                <input type="checkbox" checked={shopForm.hide_drawer_amount} onChange={e => setFF("hide_drawer_amount", e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+                <span style={{ position: "absolute", inset: 0, borderRadius: 12, background: shopForm.hide_drawer_amount ? "var(--brand)" : "var(--border)", transition: "0.2s" }}>
+                  <span style={{ position: "absolute", width: 18, height: 18, borderRadius: "50%", background: "#fff", top: 3, left: shopForm.hide_drawer_amount ? 23 : 3, transition: "0.2s" }} />
                 </span>
               </label>
             </div>
