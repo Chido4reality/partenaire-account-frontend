@@ -200,6 +200,21 @@ export default function AccountantLogPage() {
     refetchInterval: 30000,
   });
   const awaitingCompletion = awaitingResp?.data || [];
+  // Cancel an approved row that can never be completed. Reuses the existing
+  // /approvals/:id/cancel endpoint (valid on 'pending' OR 'approved', owner allowed),
+  // so it writes the standard action_approval_cancelled audit row and executes nothing.
+  const cancelAwaitingMut = useMutation({
+    mutationFn: (id) => api.post(`/staff/approvals/${id}/cancel`, {
+      reason: "cancelled by owner — could no longer be completed",
+    }),
+    onSuccess: () => {
+      toast.success(en ? "Request cancelled." : "Demande annulée.");
+      qc.invalidateQueries({ queryKey: ["staff-approvals-awaiting"] });
+      qc.invalidateQueries({ queryKey: ["staff-approvals-pending"] });
+    },
+    onError: (e) => toast.error(e?.response?.data?.message || (en ? "Could not cancel" : "Échec de l'annulation")),
+  });
+
   // "3d" / "4h" / "12m" since approval — an old one is the whole signal.
   const sinceLabel = (iso) => {
     if (!iso) return "";
@@ -474,6 +489,18 @@ export default function AccountantLogPage() {
               <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--text-muted)" }}>
                 {en ? "approved " : "approuvé "}{sinceLabel(a.decided_at)}{en ? " ago" : ""}
               </span>
+              {/* Some approved rows can NEVER be completed — the shift they target has
+                  closed, or the staffer has left, or the moment simply passed. Without a
+                  way out they sit here forever and this strip becomes permanent noise,
+                  which is how a useful signal dies. Cancel is the same terminal state and
+                  the same audit row the /cancel endpoint writes; it executes nothing. */}
+              <button
+                onClick={() => cancelAwaitingMut.mutate(a.id)}
+                disabled={cancelAwaitingMut.isPending}
+                style={{ background: "none", border: "1px solid var(--border)", borderRadius: 7,
+                  color: "var(--text-muted)", fontSize: 11, padding: "2px 8px", cursor: "pointer" }}>
+                {en ? "Cancel" : "Annuler"}
+              </button>
             </div>
           ))}
           <div style={{ padding: "8px 14px", borderTop: "1px solid var(--border)", fontSize: 11.5,
