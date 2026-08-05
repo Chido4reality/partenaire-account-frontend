@@ -1090,6 +1090,39 @@ export default function SettingsPage() {
                 )}
               </div>
 
+              {/* MP-DRAWER-REVEAL: hide the live till figure on PHONES until the viewer
+                  re-enters their own PIN. ON by default — a lost/stolen/glanced-at handset
+                  shouldn't broadcast how much cash is in the drawer. Desktop is ungated
+                  (back office, different threat). The off-switch is for the single-owner
+                  shop whose phone never leaves their hand, where the tap is pure friction.
+                  Presentational gate: defends a glance, not devtools.
+
+                  PLACED HERE, directly under Cash drawer mode, ON PURPOSE. It first
+                  shipped ~15 controls further down this form, next to unrelated staff
+                  toggles, and was simply not findable — an off-switch nobody can locate
+                  is not an off-switch. Someone thinking about the drawer looks at the
+                  drawer settings. */}
+              <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--bg-elevated)", borderRadius: 10 }}>
+                  <div style={{ maxWidth: 320 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>
+                      🔒 {lang === "en" ? "Hide the cash amount until PIN" : "Masquer le montant en caisse jusqu'au code"}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, lineHeight: 1.45 }}>
+                      {lang === "en"
+                        ? "On phones, the drawer amount shows as ••••• until you enter your PIN. It hides again after 90 seconds, or when you leave the screen. Protects you if the phone is lost, stolen or glanced at. No effect on computers."
+                        : "Sur téléphone, le montant en caisse s'affiche ••••• jusqu'à la saisie de votre code. Il se masque après 90 secondes ou dès que vous quittez l'écran. Vous protège si le téléphone est perdu, volé ou regardé. Sans effet sur ordinateur."}
+                    </div>
+                  </div>
+                  <label style={{ position: "relative", width: 44, height: 24, cursor: "pointer", flexShrink: 0 }}>
+                    <input type="checkbox" checked={shopForm.hide_drawer_amount} onChange={e => setFF("hide_drawer_amount", e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+                    <span style={{ position: "absolute", inset: 0, borderRadius: 12, background: shopForm.hide_drawer_amount ? "var(--brand)" : "var(--border)", transition: "0.2s" }}>
+                      <span style={{ position: "absolute", width: 18, height: 18, borderRadius: "50%", background: "#fff", top: 3, left: shopForm.hide_drawer_amount ? 23 : 3, transition: "0.2s" }} />
+                    </span>
+                  </label>
+                </div>
+              </div>
+
               {/* Sprint A: receipt_footer is part of receipt_branding —
                   Premium only. Non-Premium plans see the input disabled
                   with a lock badge; click opens the paywall modal. */}
@@ -1321,31 +1354,6 @@ export default function SettingsPage() {
                 <input type="checkbox" checked={shopForm.staff_can_view_own_activity} onChange={e => setFF("staff_can_view_own_activity", e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
                 <span style={{ position: "absolute", inset: 0, borderRadius: 12, background: shopForm.staff_can_view_own_activity ? "var(--brand)" : "var(--border)", transition: "0.2s" }}>
                   <span style={{ position: "absolute", width: 18, height: 18, borderRadius: "50%", background: "#fff", top: 3, left: shopForm.staff_can_view_own_activity ? 23 : 3, transition: "0.2s" }} />
-                </span>
-              </label>
-            </div>
-
-            {/* MP-DRAWER-REVEAL: hide the live till figure on PHONES until the viewer
-                re-enters their own PIN. ON by default — a lost/stolen/glanced-at handset
-                shouldn't broadcast how much cash is in the drawer. Desktop is left
-                ungated (back office, different threat). The off-switch is here for the
-                single-owner shop whose phone never leaves their hand, where the extra tap
-                is pure friction. Presentational gate: defends a glance, not devtools. */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--bg-elevated)", borderRadius: 10, marginTop: 12 }}>
-              <div style={{ maxWidth: 300 }}>
-                <div style={{ fontWeight: 600, fontSize: 13 }}>
-                  {lang === "en" ? "Hide the cash amount until PIN" : "Masquer le montant en caisse jusqu'au code"}
-                </div>
-                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                  {lang === "en"
-                    ? "On phones, the drawer amount shows as ••••• until you enter your PIN. It hides again after 90 seconds or when you leave the screen. Protects you if the phone is lost, stolen, or glanced at."
-                    : "Sur téléphone, le montant en caisse s'affiche ••••• jusqu'à la saisie de votre code. Il se masque après 90 secondes ou dès que vous quittez l'écran. Vous protège si le téléphone est perdu, volé ou regardé."}
-                </div>
-              </div>
-              <label style={{ position: "relative", width: 44, height: 24, cursor: "pointer", flexShrink: 0 }}>
-                <input type="checkbox" checked={shopForm.hide_drawer_amount} onChange={e => setFF("hide_drawer_amount", e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
-                <span style={{ position: "absolute", inset: 0, borderRadius: 12, background: shopForm.hide_drawer_amount ? "var(--brand)" : "var(--border)", transition: "0.2s" }}>
-                  <span style={{ position: "absolute", width: 18, height: 18, borderRadius: "50%", background: "#fff", top: 3, left: shopForm.hide_drawer_amount ? 23 : 3, transition: "0.2s" }} />
                 </span>
               </label>
             </div>
