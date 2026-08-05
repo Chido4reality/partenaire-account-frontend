@@ -346,7 +346,14 @@ export default function DrawerDashboardCard() {
     queryKey: ["current-shift", locId],
     queryFn: () => api.get(`/shifts/current?location_id=${locId}`).then(r => r.data?.data),
     enabled: !!locId,
-    refetchInterval: 30000,
+    // MP-DRAWER-FRESHNESS: 30s → 3s so the drawer reflects a float/expense change
+    // promptly. NOTE this runs against MP-PEAK-MTN-RESILIENCE, which deliberately
+    // RAISED poll intervals (7s/15s → 60s) because congested peak-hour MTN routes were
+    // aborting requests. This is 10x the request rate on that same network.
+    // The targeted invalidations (here + ExpenditurePage) are what actually fix the lag;
+    // this interval is belt-and-braces and is the first thing to put back up if the
+    // request volume bites.
+    refetchInterval: 3000,
   });
 
   // For state 3 — peek at the most recent closed shift to see if it
@@ -355,6 +362,9 @@ export default function DrawerDashboardCard() {
     queryKey: ["shifts-history", locId, 1, 0],
     queryFn: () => api.get(`/shifts/history?location_id=${locId}&limit=1&offset=0`).then(r => r.data?.data),
     enabled: !!locId,
+    // Deliberately NOT dropped to 3s: this only answers "was the last closed shift
+    // today?" for the empty state. It cannot change as a result of a float or expense
+    // edit, so polling it fast would be pure request volume for no freshness gain.
     refetchInterval: 30000,
   });
 

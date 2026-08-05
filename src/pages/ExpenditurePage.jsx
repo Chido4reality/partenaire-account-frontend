@@ -116,6 +116,9 @@ export default function ExpenditurePage() {
       setForm({ location_id: "", category_id: "", amount: "", description: "", exp_date: new Date().toISOString().split("T")[0] });
       qc.invalidateQueries(["expenditures"]);
       qc.invalidateQueries(["daily-summary"]);
+      // MP-DRAWER-FRESHNESS: recording an expense takes cash OUT of the drawer, so the
+      // drawer card has to re-read too — it never did.
+      qc.invalidateQueries({ queryKey: ["current-shift"] });
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
@@ -274,13 +277,29 @@ export default function ExpenditurePage() {
         <CorrectExpenseModal
           exp={editExp} lang={lang} fmt={fmt} categories={categories}
           onClose={() => setEditExp(null)}
-          onDone={() => qc.invalidateQueries({ queryKey: ["expenditures"] })} />
+          onDone={() => {
+            qc.invalidateQueries({ queryKey: ["expenditures"] });
+            // MP-DRAWER-FRESHNESS: an expense IS drawer cash — pa_drawer_ledger computes
+            // expected_drawer as float + sales − refunds − cash_expenses. Without this the
+            // drawer card kept a stale figure until its next poll, which is the actual
+            // cause of the "drawer lags after an expense change" report.
+            qc.invalidateQueries({ queryKey: ["current-shift"] });
+            qc.invalidateQueries({ queryKey: ["daily-summary"] });
+          }} />
       )}
       {deleteExp && (
         <DeleteExpenseModal
           exp={deleteExp} lang={lang} fmt={fmt}
           onClose={() => setDeleteExp(null)}
-          onDone={() => qc.invalidateQueries({ queryKey: ["expenditures"] })} />
+          onDone={() => {
+            qc.invalidateQueries({ queryKey: ["expenditures"] });
+            // MP-DRAWER-FRESHNESS: an expense IS drawer cash — pa_drawer_ledger computes
+            // expected_drawer as float + sales − refunds − cash_expenses. Without this the
+            // drawer card kept a stale figure until its next poll, which is the actual
+            // cause of the "drawer lags after an expense change" report.
+            qc.invalidateQueries({ queryKey: ["current-shift"] });
+            qc.invalidateQueries({ queryKey: ["daily-summary"] });
+          }} />
       )}
     </div>
   );
