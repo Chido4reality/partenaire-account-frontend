@@ -81,17 +81,47 @@ if (typeof document !== "undefined") {
   } catch { /* ignore */ }
 }
 
+// Is this a HANDHELD?
+//
+// The gate first shipped keyed on Capacitor isNativePlatform() alone — i.e. the installed
+// APK only. That was wrong: the web app on a phone browser is the SAME handset with the
+// SAME threat, and it is how a good number of users actually run this. The gate missed
+// exactly the people it was written for.
+//
+// Signal = native app, OR (coarse pointer AND narrow viewport):
+//   • `pointer: coarse` is true for touch/stylus, false for a mouse — so a real desktop
+//     stays ungated even when its window is dragged narrow, which is what "desktop
+//     ungated" was asking for. A width check alone would have gated it.
+//   • width < 768 is the SAME breakpoint Layout already uses to decide the mobile shell,
+//     so "mobile" means one thing across the app rather than two.
+// A touch-screen laptop under 768px wide would gate. Acceptable: it is a touch device
+// showing a phone-shaped layout, and the org can switch the setting off.
+function isHandheld() {
+  if (typeof window === "undefined") return false;
+  if (window.Capacitor?.isNativePlatform?.()) return true;
+  const coarse = typeof window.matchMedia === "function"
+    && window.matchMedia("(pointer: coarse)").matches;
+  return coarse && window.innerWidth < 768;
+}
+
 // `gateOn` — is the gate active at all? False ⇒ everything renders unmasked and no PIN is
-// ever asked for (web/desktop, or an org that switched it off).
+// ever asked for (desktop, or an org that switched it off).
 export function useDrawerReveal({ enabled = true } = {}) {
-  const native = typeof window !== "undefined" && !!window.Capacitor?.isNativePlatform?.();
-  const gateOn = enabled && native;
   const [, force] = useState(0);
+  const gateOn = enabled && isHandheld();
 
   useEffect(() => {
     const fn = () => force((n) => n + 1);
     listeners.add(fn);
-    return () => listeners.delete(fn);
+    // Re-evaluate on resize/rotate so the gate doesn't get stuck in whatever state the
+    // first render happened to see (rotating a phone, or a tablet in split screen).
+    window.addEventListener("resize", fn);
+    window.addEventListener("orientationchange", fn);
+    return () => {
+      listeners.delete(fn);
+      window.removeEventListener("resize", fn);
+      window.removeEventListener("orientationchange", fn);
+    };
   }, []);
 
   // Re-hide on navigation away / location switch. The consumer passes a key (route +
