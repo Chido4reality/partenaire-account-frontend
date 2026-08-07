@@ -11,7 +11,7 @@
 //   • a placeholder detail screen (Phase 2 fills it with the activity feed).
 // NO activity feed, NO approval logic here — those are later phases.
 import { useState, useMemo, useEffect } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useLangStore } from "../store";
@@ -20,6 +20,7 @@ import { useCurrency } from "../utils/useCurrency";
 import { SHOP_TZ } from "../utils/shopTime"; // MP-REPORT-TZ
 import api from "../utils/api";
 import { formatLastSeen, isRecentlyActive } from "../utils/lastSeen";
+import { useStockCheckSummary, NOT_COUNTED_AMBER_AT } from "../utils/useStockCheckSummary";
 import ApprovalDetailView from "../components/common/ApprovalDetailView"; // MP-APPROVAL-DETAIL (all types, on-expand)
 import { explainAnomaly, severityCue, groupLabel, anomalySeverity } from "../utils/anomalyExplain";
 import { momoLabel, momoLabelShort } from "../utils/paymentLabels";
@@ -54,6 +55,14 @@ export default function AccountantLogPage() {
     queryKey: ["my-plan"], queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data), staleTime: 60000,
   });
   const entitled = hasFeature(planResp?.data?.effective_plan || "trial", "accountant_log");
+  const navigate = useNavigate();
+
+  // MP-COUNT-INTEGRITY (F2.4). Shared hook — same key AND same queryFn as the
+  // sidebar badge and StockCheckPage. `enabled` differs per consumer, which is
+  // safe; the queryFn must not. Gated on entitlement so it never 403s for a plan
+  // that cannot see this page anyway.
+  const { data: stockCheckSummary } = useStockCheckSummary({ enabled: entitled, onError: () => {} });
+  const notCounted30d = Number(stockCheckSummary?.data?.not_counted_30d) || 0;
 
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ full_name: "", phone: "", password: "" });
@@ -454,6 +463,38 @@ export default function AccountantLogPage() {
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ── MP-COUNT-INTEGRITY (F2.4): variances closed WITHOUT a count ───────
+          The condition attached to allowing "not counted" at all. A boss can close
+          a real variance by saying it was never counted — that has to be legitimate
+          (a discontinued product, a duplicate flag), but if it is free and invisible
+          it becomes the route of least resistance and the Done hole reopens under a
+          new name. So it surfaces here, in the log the boss already reads, and turns
+          amber once it stops looking like an exception.
+          Same shared hook as the sidebar badge and the Stock Check page — one
+          queryFn for one key; see utils/useStockCheckSummary.js for why that matters. */}
+      {notCounted30d > 0 && (
+        <div className="card" style={{ marginTop: 12, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10,
+          border: notCounted30d >= NOT_COUNTED_AMBER_AT ? "1px solid rgba(251,191,36,0.35)" : undefined,
+          background: notCounted30d >= NOT_COUNTED_AMBER_AT ? "rgba(251,191,36,0.07)" : undefined }}>
+          <span style={{ fontSize: 15 }}>{notCounted30d >= NOT_COUNTED_AMBER_AT ? "⚠️" : "🕗"}</span>
+          <div style={{ fontSize: 13.5, color: "var(--text-secondary)", flex: 1 }}>
+            {en
+              ? <><strong style={{ color: notCounted30d >= NOT_COUNTED_AMBER_AT ? "#fbbf24" : "var(--text-primary)" }}>{notCounted30d}</strong> stock difference{notCounted30d === 1 ? " was" : "s were"} closed without being counted in the last 30 days.</>
+              : <><strong style={{ color: notCounted30d >= NOT_COUNTED_AMBER_AT ? "#fbbf24" : "var(--text-primary)" }}>{notCounted30d}</strong> écart{notCounted30d === 1 ? "" : "s"} de stock clos sans comptage sur les 30 derniers jours.</>}
+            {notCounted30d >= NOT_COUNTED_AMBER_AT && (
+              <div style={{ fontSize: 12, color: "#fbbf24", marginTop: 2 }}>
+                {en ? "That is enough to be a pattern rather than an exception — worth a look."
+                    : "C'est assez pour être une habitude plutôt qu'une exception — à regarder."}
+              </div>
+            )}
+          </div>
+          <button onClick={() => navigate("/stock-check")}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 12.5, textDecoration: "underline", whiteSpace: "nowrap" }}>
+            {en ? "View" : "Voir"}
+          </button>
         </div>
       )}
 

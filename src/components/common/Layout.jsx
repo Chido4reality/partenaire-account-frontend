@@ -29,6 +29,7 @@ import ClearButton from "./ClearButton";
 import { explainAnomaly, severityCue } from "../../utils/anomalyExplain";
 import { normalizeScannedSaleRef } from "../../utils/receiptCodeStyle";
 import { hasSeenOnboardingLocally, reconcileOnboardingSeen } from "../../utils/onboarding";
+import { useStockCheckSummary } from "../../utils/useStockCheckSummary";
 import toast from "react-hot-toast";
 
 // Sprint A: each nav item declares the capability section it belongs to.
@@ -798,13 +799,14 @@ export default function Layout() {
 
   // MP-STOCK-CHECK — pending re-count badge, live poll. Only fetched when the nav
   // item is visible (pro/pro_plus section), so it never 403s for other plans.
-  const { data: stockCheckSummary } = useQuery({
-    queryKey: ["stock-check-summary"],
-    queryFn: () => api.get("/stock-checks/summary").then(r => r.data),
+  // MP-COUNT-INTEGRITY (F2): moved to the shared hook so this key has ONE queryFn.
+  // It now has three consumers (here, StockCheckPage, AccountantLogPage) and
+  // react-query dedupes by key — divergent shapes here are the ["locations"] /
+  // ["my-permissions"] bug class, which has already shipped twice.
+  const { data: stockCheckSummary } = useStockCheckSummary({
     refetchInterval: 60000, // MP-PEAK-MTN-RESILIENCE (was 15s)
     enabled: hasSection(effectivePlan, "stock_check") &&
       (role === "owner" || role === "manager" || role === "warehouse"),
-    retry: 1,
     onError: () => {}
   });
   // MP-DAMAGED-GOODS / MP-STALE-PRODUCT-SCAN: the stock-check attention badge

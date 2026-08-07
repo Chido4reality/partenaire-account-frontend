@@ -21,22 +21,89 @@ import toast from "react-hot-toast";
 import { unitLabel } from "../utils/units";
 import DateRangeFilter, { inRange, wideRange } from "../components/common/DateRangeFilter";
 import { genLocalId } from "../utils/pendingSync";
+import { useStockCheckSummary, NOT_COUNTED_AMBER_AT } from "../utils/useStockCheckSummary";
 
 // MP-STALE-PRODUCT-SCAN: mirrors backend lib/stockChecks.js's STALE_THRESHOLD_DAYS
 // (fixed, not per-org configurable — Peter, 2026-07-14). Display-only.
 const STALE_DAYS = 60;
 
-// MP-STOCK-CHECK-RESOLVE (Part B): reason → does it correct stock? (mirrors backend)
-const RESOLVE_REASONS = [
-  { key: "miscount",       corrects: true,  en: "Miscount — goods were there",     fr: "Erreur de comptage — présents" },
-  { key: "recovered",      corrects: true,  en: "Recovered / found",               fr: "Retrouvé" },
-  { key: "damaged",        corrects: true,  en: "Damaged / written off",           fr: "Endommagé / radié" },
-  { key: "confirmed_loss", corrects: false, en: "Confirmed loss (theft/lost)",     fr: "Perte confirmée (vol/perdu)" },
+// ── MP-COUNT-INTEGRITY (F2) — mirrors backend routes/stockChecks.js ─────────
+// The old list asked the owner to pick from four outcomes that quietly conflated
+// two different questions; "Miscount" claimed the COUNT was wrong and then
+// corrected stock TO that count. There is only one question worth asking:
+//
+//                        WHICH NUMBER IS WRONG?
+//
+// Direction is never chosen — it is sign(corrected − expected), shown back to the
+// owner as "stock goes down/up by N" before they commit.
+const RESOLVE_BRANCHES = [
+  { key: "stock_wrong", corrects: true,
+    en: "The STOCK RECORD was wrong",  fr: "Le STOCK enregistré était faux",
+    hintEn: "The count is right — correct the stock to what was counted.",
+    hintFr: "Le comptage a raison — corriger le stock au nombre compté." },
+  { key: "count_wrong", corrects: false,
+    en: "The COUNT was wrong",         fr: "Le COMPTAGE était faux",
+    hintEn: "The system is right — stock is left exactly as it is.",
+    hintFr: "Le système a raison — le stock reste inchangé." },
+  { key: "not_counted", corrects: false,
+    en: "It was never actually counted", fr: "Il n'a jamais été compté",
+    hintEn: "Close it without a count. A note is required, and it is counted for 30 days.",
+    hintFr: "Fermer sans comptage. Note obligatoire, et compté pendant 30 jours." },
 ];
-const reasonLabel = (key, en) => {
-  const r = RESOLVE_REASONS.find(x => x.key === key);
-  return r ? (en ? r.en : r.fr) : key;
+
+// Direction-scoped. 'damaged' exists ONLY in the shortfall list — you cannot damage
+// your way into having more stock, so the surplus case is unrepresentable rather
+// than merely discouraged. Audit-only except 'damaged', which feeds the pile.
+const SUB_SHORTFALL = [
+  { key: "damaged",         en: "Damaged",                  fr: "Endommagé" },
+  { key: "theft",           en: "Theft",                    fr: "Vol" },
+  { key: "expired",         en: "Expired",                  fr: "Périmé" },
+  { key: "unrecorded_sale", en: "Sold, never recorded",     fr: "Vendu, jamais enregistré" },
+  { key: "other",           en: "Other / don't know",       fr: "Autre / je ne sais pas" },
+];
+const SUB_SURPLUS = [
+  { key: "found",              en: "Found / misplaced",          fr: "Retrouvé / mal rangé" },
+  { key: "unrecorded_receipt", en: "Received, never recorded",   fr: "Reçu, jamais enregistré" },
+  { key: "unrecorded_return",  en: "Customer return not logged", fr: "Retour client non enregistré" },
+  { key: "other",              en: "Other / don't know",         fr: "Autre / je ne sais pas" },
+];
+
+// Display-only: rows resolved before F2 still carry these, and the Resolved tab
+// must keep rendering them truthfully rather than showing a raw key.
+const LEGACY_REASON_LABELS = {
+  miscount:       { en: "Miscount — goods were there", fr: "Erreur de comptage — présents" },
+  recovered:      { en: "Recovered / found",           fr: "Retrouvé" },
+  damaged:        { en: "Damaged / written off",       fr: "Endommagé / radié" },
+  confirmed_loss: { en: "Confirmed loss (theft/lost)", fr: "Perte confirmée (vol/perdu)" },
 };
+const reasonLabel = (key, en) => {
+  const b = RESOLVE_BRANCHES.find(x => x.key === key);
+  if (b) return en ? b.en : b.fr;
+  const l = LEGACY_REASON_LABELS[key];
+  return l ? (en ? l.en : l.fr) : (key || "—");
+};
+const subReasonLabel = (key, en) => {
+  const s = [...SUB_SHORTFALL, ...SUB_SURPLUS].find(x => x.key === key);
+  return s ? (en ? s.en : s.fr) : key;
+};
+
+// MP-COUNT-INTEGRITY: the instant the goods-buffer release started writing a
+// movement row on prod. A check created BEFORE this could have had its stock move
+// with no ledger entry at all, so its frozen "Expected" is not evidence of
+// anything — Guard B cannot see those movements because they were never written.
+// Rows older than this are shown as LEGACY and routed to Recount / Remove rather
+// than to a normal resolve. Backend has the same constant for the same reason.
+const LEGACY_CHECK_EPOCH = "2026-08-05T10:16:15Z";
+// A RE-BASELINED ROW IS NO LONGER LEGACY, whatever its created_at says. /recount
+// re-anchors qty_expected to live stock, which is precisely the thing "legacy"
+// warns about — so a row that has been recounted must stop carrying the badge and
+// stop being steered away from a normal resolve, or the fix would look like it
+// hadn't worked. created_at keeps its original value by design (it is the forensic
+// anchor), so age alone can no longer answer this question; rebaselined_at can.
+const isLegacyCheck = (row) => !!(
+  row && row.created_at && !row.rebaselined_at &&
+  new Date(row.created_at) < new Date(LEGACY_CHECK_EPOCH)
+);
 
 function fmtDate(iso, en) {
   if (!iso) return "—";
@@ -92,6 +159,25 @@ export default function StockCheckPage() {
   const [scrapFor, setScrapFor] = useState(null);       // MP-DAMAGED-GOODS-SCRAP-OUT: pile row being scrapped (owner-only, qty prompt)
   const [range, setRange] = useState(wideRange());     // A2 date filter (≈1yr default → nothing hidden)
   const [damagedOnly, setDamagedOnly] = useState(false); // Resolved tab: shop's damage record
+
+  // F2.3 one-time banner. Versioned key: a later change can raise its own banner
+  // without un-dismissing this one, and this one never comes back.
+  const F2_BANNER_KEY = "mp-stockcheck-f2-seen";
+  const [showF2Banner, setShowF2Banner] = useState(() => {
+    try { return localStorage.getItem(F2_BANNER_KEY) !== "1"; } catch { return false; }
+  });
+  const dismissF2Banner = () => {
+    try { localStorage.setItem(F2_BANNER_KEY, "1"); } catch { /* private mode → just hide for this session */ }
+    setShowF2Banner(false);
+  };
+
+  // F2.4 — the not-counted tally. Shared hook, NOT an inline useQuery: this key is
+  // also read by Layout.jsx and AccountantLogPage.jsx, and react-query dedupes by
+  // key, so a second declaration with a different queryFn shape would silently hand
+  // one of them the other's data. That exact failure has already shipped twice
+  // (["locations"], ["my-permissions"]).
+  const summary = useStockCheckSummary();
+  const notCounted30d = Number(summary.data?.data?.not_counted_30d) || 0;
 
   // MP-STOCK-CHECK-LIVE-VS-EXPECTED (Peter, 2026-07-17 — Paul was about to leave
   // over this): "Expected" freezes at movement time and silently drifts from
@@ -204,13 +290,31 @@ export default function StockCheckPage() {
       api.post(`/stock-checks/${id}/verify`, { counted_qty, resolution }).then(r => r.data),
     onSuccess: (res) => {
       if (res.matches) {
-        toast.success(en ? "✓ Done — removed from the list" : "✓ Fait — retiré de la liste");
+        toast.success(en ? "✓ Counted — removed from the list" : "✓ Compté — retiré de la liste");
       } else {
-        toast(en ? `⚠ Mismatch kept — expected ${res.expected}, counted ${res.counted}`
-                 : `⚠ Écart conservé — attendu ${res.expected}, compté ${res.counted}`,
+        toast(en ? `⚠ Mismatch kept — expected ${res.expected}, counted ${res.counted}. The boss resolves it.`
+                 : `⚠ Écart conservé — attendu ${res.expected}, compté ${res.counted}. Le patron le résout.`,
           { icon: "⚠️", duration: 6000, style: { background: "#451a03", color: "#fbbf24", border: "1px solid #92400e" } });
       }
       setResolveFor(null);
+      invalidateAll();
+    },
+    onError: (e) => toast.error(e?.response?.data?.message || (en ? "Failed" : "Échec")),
+  });
+
+  // MP-COUNT-INTEGRITY (F2.3): a refused resolve must NOT be a toast that vanishes.
+  // The refusal is the screen — it carries the two ways out (Recount / Remove), so
+  // it is held in state and rendered inside the modal, which stays open.
+  const [varRefusal, setVarRefusal] = useState(null);
+
+  const recountMut = useMutation({
+    mutationFn: (id) => api.post(`/stock-checks/${id}/recount`).then(r => r.data),
+    onSuccess: (res) => {
+      toast.success(en
+        ? `Sent back to “To count” — now measured against today's stock (${res.rebaselined_to}).`
+        : `Renvoyé dans « À compter » — mesuré sur le stock d'aujourd'hui (${res.rebaselined_to}).`,
+        { duration: 6000 });
+      setVarResolveFor(null); setVarRefusal(null);
       invalidateAll();
     },
     onError: (e) => toast.error(e?.response?.data?.message || (en ? "Failed" : "Échec")),
@@ -226,19 +330,35 @@ export default function StockCheckPage() {
     onError: (e) => toast.error(e?.response?.data?.message || (en ? "Failed" : "Échec")),
   });
 
-  // Part B: owner resolves a MISMATCH with a reason + corrected qty → status='resolved',
-  // and (miscount/recovered/damaged) corrects pa_stock. confirmed_loss leaves stock.
+  // F2.1: owner resolves a MISMATCH. stock_wrong corrects pa_stock to the true
+  // quantity; count_wrong and not_counted leave it alone. Direction comes from the
+  // sign of (resolved_qty − qty_expected), computed server-side and echoed back.
   const varResolveMut = useMutation({
-    mutationFn: ({ id, reason, resolved_qty }) =>
-      api.post(`/stock-checks/${id}/resolve`, { reason, resolved_qty }).then(r => r.data),
+    mutationFn: ({ id, reason, resolved_qty, sub_reason, note }) =>
+      api.post(`/stock-checks/${id}/resolve`, { reason, resolved_qty, sub_reason, note }).then(r => r.data),
     onSuccess: (res) => {
-      toast.success(res.corrected
-        ? (en ? `Resolved — stock corrected to ${res.resolved_qty}` : `Résolu — stock corrigé à ${res.resolved_qty}`)
-        : (en ? "Resolved — stock unchanged (loss recorded)" : "Résolu — stock inchangé (perte enregistrée)"));
-      setVarResolveFor(null);
+      const msg = res.reason === "not_counted"
+        ? (en ? "Removed from the list — recorded as not counted" : "Retiré de la liste — enregistré comme non compté")
+        : res.corrected
+          ? (en ? `Resolved — stock ${res.direction === "surplus" ? "raised" : "lowered"} to ${res.resolved_qty}`
+                : `Résolu — stock ${res.direction === "surplus" ? "augmenté" : "réduit"} à ${res.resolved_qty}`)
+          : (en ? "Resolved — stock left unchanged" : "Résolu — stock inchangé");
+      toast.success(msg);
+      setVarResolveFor(null); setVarRefusal(null);
       invalidateAll();
     },
-    onError: (e) => toast.error(e?.response?.data?.message || (en ? "Failed" : "Échec")),
+    // A GUARD REFUSAL IS NOT AN ERROR TOAST. stale_count / baseline_mismatch /
+    // resolve_on_transfer are the three the owner will actually meet, and each has
+    // its own way forward; they go to the modal. Anything else is a genuine failure
+    // and still gets a toast, so a real outage does not masquerade as a guard.
+    onError: (e) => {
+      const body = e?.response?.data || {};
+      if (["stale_count", "baseline_mismatch", "resolve_on_transfer"].includes(body.code)) {
+        setVarRefusal(body);
+        return;
+      }
+      toast.error(body.message_en && en ? body.message_en : (body.message || (en ? "Failed" : "Échec")));
+    },
   });
 
   const allRows = Array.isArray(list.data) ? list.data : [];
@@ -279,6 +399,33 @@ export default function StockCheckPage() {
         )}
       </div>
 
+      {/* ── MP-COUNT-INTEGRITY (F2.3) — ONE-TIME BANNER ──────────────────────
+          Ships WITH the guard, never after. On day one the guard refuses 22 of the
+          36 pending checks on prod, and every non-stale one of them, because those
+          products have moved since they were flagged. Without this the owner opens
+          a screen he has just been told is fixed and meets a wall of refusals with
+          no explanation — which reads as the fix having broken it.
+          Dismissed per-user in localStorage; the key is versioned so a future change
+          can raise a new banner without clearing this one. */}
+      {showF2Banner && (
+        <div style={{ background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.3)", borderRadius: 12,
+                      padding: "12px 14px", marginTop: 6, display: "flex", gap: 12, alignItems: "flex-start" }}>
+          <div style={{ fontSize: 18, lineHeight: 1.2 }}>✅</div>
+          <div style={{ flex: 1, fontSize: 12.5, lineHeight: 1.6, color: "var(--text-secondary)" }}>
+            <div style={{ fontWeight: 800, color: "var(--text-primary, #fff)", marginBottom: 3 }}>
+              {en ? "Counting is now protected" : "Le comptage est maintenant protégé"}
+            </div>
+            {en
+              ? <>Two things changed. A count that finds a <b>difference can no longer be closed as done</b> — it is kept for you to resolve. And a variance <b>counted before the stock moved</b> is now refused instead of silently overwriting the sales and transfers since. You will see some refusals on older checks: use <b>Recount</b> to measure against today's stock, or <b>Remove from list</b> if it is not worth counting.</>
+              : <>Deux changements. Un comptage qui trouve un <b>écart ne peut plus être clos comme « fait »</b> — il vous est conservé. Et un écart <b>compté avant que le stock ne bouge</b> est désormais refusé au lieu d'effacer les ventes et transferts survenus depuis. Vous verrez des refus sur d'anciennes vérifications : utilisez <b>Recompter</b> pour mesurer sur le stock d'aujourd'hui, ou <b>Retirer de la liste</b> si cela n'en vaut pas la peine.</>}
+          </div>
+          <button onClick={dismissF2Banner}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>
+            {en ? "Got it" : "Compris"}
+          </button>
+        </div>
+      )}
+
       {/* Watched products — persistent boss oversight. Owner adds/removes; every
           movement of a watched product into its location auto-creates a check. */}
       <WatchedSection watchList={watchList} loading={watches.isLoading} en={en} isOwner={isOwner}
@@ -305,7 +452,7 @@ export default function StockCheckPage() {
 
       {/* Resolved tab → "Damaged" filter = the shop's damage record (no separate table) */}
       {tab === "resolved" && (
-        <div style={{ marginBottom: 12 }}>
+        <div style={{ marginBottom: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <button onClick={() => setDamagedOnly(v => !v)}
             style={{ padding: "6px 12px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer",
               border: `1px solid ${damagedOnly ? "#fbbf24" : "var(--border)"}`,
@@ -313,6 +460,21 @@ export default function StockCheckPage() {
               color: damagedOnly ? "#fbbf24" : "var(--text-secondary)" }}>
             🔨 {en ? "Damaged only" : "Endommagés uniquement"}
           </button>
+
+          {/* F2.4 — the not-counted tally. This is the condition attached to letting
+              "not counted" exist at all: closing a real variance without counting it
+              must cost something VISIBLE, or it is the Done hole again wearing a new
+              label. Amber from 5 in 30 days — one is an exception, five is a habit. */}
+          {notCounted30d > 0 && (
+            <span title={en ? "Variances closed without a count in the last 30 days" : "Écarts clos sans comptage sur 30 jours"}
+              style={{ padding: "6px 12px", borderRadius: 999, fontSize: 12, fontWeight: 700,
+                border: `1px solid ${notCounted30d >= NOT_COUNTED_AMBER_AT ? "#fbbf24" : "var(--border)"}`,
+                background: notCounted30d >= NOT_COUNTED_AMBER_AT ? "rgba(251,191,36,0.15)" : "transparent",
+                color: notCounted30d >= NOT_COUNTED_AMBER_AT ? "#fbbf24" : "var(--text-secondary)" }}>
+              {notCounted30d >= NOT_COUNTED_AMBER_AT ? "⚠ " : ""}
+              {en ? `Not counted (30 days): ${notCounted30d}` : `Non comptés (30 j) : ${notCounted30d}`}
+            </span>
+          )}
         </div>
       )}
 
@@ -436,6 +598,16 @@ export default function StockCheckPage() {
                     <span>{r.movement_type === "receive" ? (en ? "receive" : "réception") : r.movement_type === "transfer" ? (en ? "transfer" : "transfert") : (en ? "manual" : "manuel")}</span>
                     {r.reference && <span>#{r.reference}</span>}
                     <span>{fmtDate(r.created_at, en)}</span>
+                    {/* F2.3 LEGACY MARKER. Before the buffer RPC went live, stock could
+                        change with no movement row, so Guard B's "has anything moved?"
+                        test is blind for these rows and their frozen Expected proves
+                        nothing. Say so on the row rather than only at the refusal. */}
+                    {isLegacyCheck(r) && r.status !== "resolved" && (
+                      <span title={en ? "Created before the counting fix — its Expected figure may be unreliable" : "Créée avant la correction — son « Attendu » peut être peu fiable"}
+                        style={{ color: "#94a3b8", border: "1px solid rgba(148,163,184,0.35)", borderRadius: 999, padding: "0 7px", fontSize: 11 }}>
+                        🕗 {en ? "legacy" : "ancienne"}
+                      </span>
+                    )}
                   </div>
                   <div style={{ fontSize: 12.5, marginTop: 6, display: "flex", gap: 14, flexWrap: "wrap" }}>
                     <span style={{ color: "var(--text-muted)" }}>{en ? "Before" : "Avant"}: <b style={{ color: "var(--text-primary)" }}>{Number(r.qty_before)}</b></span>
@@ -470,16 +642,35 @@ export default function StockCheckPage() {
                     </div>
                   )}
                   {/* Part C: resolution audit line (what / why / who / when) */}
-                  {isResolved && (
-                    <div style={{ fontSize: 12, marginTop: 6, color: "#34d399", background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.2)", borderRadius: 8, padding: "6px 10px" }}>
-                      ✅ {reasonLabel(r.resolution_reason, en)}
-                      {r.resolved_qty != null && <span style={{ color: "var(--text-secondary)" }}> · {en ? "corrected to" : "corrigé à"} <b>{Number(r.resolved_qty)}</b></span>}
-                      {r.resolution_reason === "confirmed_loss" && <span style={{ color: "var(--text-muted)" }}> · {en ? "stock unchanged" : "stock inchangé"}</span>}
-                      <div style={{ color: "var(--text-muted)", marginTop: 2 }}>
-                        {r.resolved_by_name ? `${en ? "by" : "par"} ${r.resolved_by_name} · ` : ""}{fmtDate(r.resolved_at, en)}
+                  {isResolved && (() => {
+                    // F2: not_counted is NOT a green success — nothing was verified.
+                    // Rendering it in the same reassuring colour as a real resolution
+                    // is exactly how a dismissal disguises itself as work done.
+                    const dismissed = r.resolution_reason === "not_counted";
+                    const noStockChange = dismissed || r.resolution_reason === "count_wrong" || r.resolution_reason === "confirmed_loss";
+                    const c = dismissed ? { fg: "#94a3b8", bg: "rgba(148,163,184,0.09)", bd: "rgba(148,163,184,0.28)" }
+                                        : { fg: "#34d399", bg: "rgba(52,211,153,0.08)", bd: "rgba(52,211,153,0.2)" };
+                    return (
+                      <div style={{ fontSize: 12, marginTop: 6, color: c.fg, background: c.bg, border: `1px solid ${c.bd}`, borderRadius: 8, padding: "6px 10px" }}>
+                        {dismissed ? "🕗" : "✅"} {reasonLabel(r.resolution_reason, en)}
+                        {r.resolution_sub_reason && (
+                          <span style={{ color: "var(--text-secondary)" }}> · {subReasonLabel(r.resolution_sub_reason, en)}</span>
+                        )}
+                        {!noStockChange && r.resolved_qty != null && (
+                          <span style={{ color: "var(--text-secondary)" }}> · {en ? "corrected to" : "corrigé à"} <b>{Number(r.resolved_qty)}</b></span>
+                        )}
+                        {noStockChange && (
+                          <span style={{ color: "var(--text-muted)" }}> · {en ? "stock unchanged" : "stock inchangé"}</span>
+                        )}
+                        {r.resolution_note && (
+                          <div style={{ color: "var(--text-secondary)", marginTop: 3, fontStyle: "italic" }}>“{r.resolution_note}”</div>
+                        )}
+                        <div style={{ color: "var(--text-muted)", marginTop: 2 }}>
+                          {r.resolved_by_name ? `${en ? "by" : "par"} ${r.resolved_by_name} · ` : ""}{fmtDate(r.resolved_at, en)}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
                 {r.status === "pending" && (
                   <div style={{ display: "flex", gap: 8, alignSelf: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
@@ -587,9 +778,14 @@ export default function StockCheckPage() {
       )}
 
       {varResolveFor && (
-        <ResolveVarianceModal row={varResolveFor} en={en} busy={varResolveMut.isPending}
-          onCancel={() => setVarResolveFor(null)}
-          onResolve={(reason, resolved_qty) => varResolveMut.mutate({ id: varResolveFor.id, reason, resolved_qty })} />
+        <ResolveVarianceModal row={varResolveFor} en={en}
+          busy={varResolveMut.isPending} recounting={recountMut.isPending}
+          refusal={varRefusal}
+          onClearRefusal={() => setVarRefusal(null)}
+          onRecount={() => recountMut.mutate(varResolveFor.id)}
+          onOpenTransfer={(id) => { setVarResolveFor(null); setVarRefusal(null); navigate(`/transfers?tr=${id}`); }}
+          onCancel={() => { setVarResolveFor(null); setVarRefusal(null); }}
+          onResolve={(payload) => varResolveMut.mutate({ id: varResolveFor.id, ...payload })} />
       )}
 
       {showWatch && <WatchProductModal en={en} onClose={() => setShowWatch(false)}
@@ -669,70 +865,117 @@ function WatchedSection({ watchList, loading, en, isOwner, onRemoved }) {
   );
 }
 
-// Resolve a pending check: enter the physical count, then ✓ Done (verified, wiped
-// from the list — with a confirm warning) or ⚠ Mismatch (kept forever as the trail).
+// ── MP-COUNT-INTEGRITY (F2.2/F2.3) — enter the physical count ────────────────
+// REBUILT, not patched. The old modal presented Done and Mismatch as a CHOICE
+// after typing a number, with Done as the green primary. Staff took the green
+// button, a confirm dialog told them in plain words that the difference would not
+// be recorded, and they took it anyway — because "Mismatch" reads as an accusation
+// against yourself. That is not a copy problem; it is a question that should never
+// have been asked. The count either matches or it doesn't, and that is arithmetic,
+// not an opinion.
+//
+// So there is now ONE action — Record count — and the modal shows, live, what the
+// number entered will be recorded as. The backend enforces the same rule (a
+// difference can never be stamped verified), so the two cannot drift apart.
+//
+// The only remaining choice is the SAFE direction: escalate a MATCHING count to a
+// mismatch, for "the number is right but something is wrong here". You can no
+// longer suppress a difference, only raise one.
 function ResolveModal({ row, en, onCancel, onResolve, busy }) {
   const p = row.pa_products || {};
   const expected = Number(row.qty_expected) || 0;
   const [value, setValue] = useState("");
-  const [confirmDone, setConfirmDone] = useState(false);
   const n = Number(value);
   const valid = Number.isFinite(n) && n >= 0 && value !== "";
   const matches = valid && n === expected;
+  const diff = valid ? n - expected : 0;
 
-  const goMismatch = () => { if (!valid) { toast.error(en ? "Enter a valid count" : "Entrez un comptage valide"); return; } onResolve(n, "mismatch"); };
-  const goDone = () => { if (!valid) { toast.error(en ? "Enter a valid count" : "Entrez un comptage valide"); return; } setConfirmDone(true); };
+  // The snapshot has already drifted: "Expected" describes a moment that has passed.
+  // Previously this was a grey footnote UNDER the input and the Done button sat
+  // beside it regardless — the page showed the staleness and then let it be
+  // overridden in the same breath. It is now stated first, above the field, in the
+  // colour of a warning, because it changes what the number being typed MEANS.
+  const stale = row.qty_now != null && row.qty_now !== expected;
+  const legacy = isLegacyCheck(row);
+
+  const submit = (resolution) => {
+    if (!valid) { toast.error(en ? "Enter a valid count" : "Entrez un comptage valide"); return; }
+    onResolve(n, resolution);
+  };
 
   return (
     <div className="modal-overlay" onClick={() => !busy && onCancel()}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
-        <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>{en ? "Resolve count" : "Résoudre le comptage"}</div>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 430 }}>
+        <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>{en ? "Record count" : "Enregistrer le comptage"}</div>
         <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 14 }}>
           {en ? (p.name_en || p.name) : p.name} · {(row.pa_locations || {}).name}
         </div>
 
-        {!confirmDone ? (
-          <>
-            <label style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>
-              {en ? "How many did you physically count?" : "Combien avez-vous physiquement compté ?"}
-            </label>
-            <input className="input" type="number" min="0" autoFocus value={value} onChange={e => setValue(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && goDone()} placeholder={en ? "Counted quantity" : "Quantité comptée"} style={{ marginTop: 6 }} />
-            <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 6 }}>
-              {en ? `Expected at movement time: ${expected}.` : `Attendu au moment du mouvement : ${expected}.`}
-              {/* MP-STOCK-CHECK-LIVE-VS-EXPECTED: same live figure as the list row,
-                  right where staff are about to type in a physical count. */}
-              {row.qty_now != null && row.qty_now !== expected && (
-                <span> {en ? `In stock now: ${row.qty_now} (sales/transfers since this was flagged).` : `En stock actuellement : ${row.qty_now} (ventes/transferts depuis ce signalement).`}</span>
-              )}
-              {valid && !matches && <span style={{ color: "#fbbf24" }}> {en ? `Off by ${n - expected > 0 ? "+" : ""}${n - expected}.` : `Écart de ${n - expected > 0 ? "+" : ""}${n - expected}.`}</span>}
+        {/* Both numbers, equally weighted and explicitly labelled — not one number
+            with the other as a footnote. */}
+        <div style={{ display: "flex", gap: 8, marginBottom: stale || legacy ? 10 : 14 }}>
+          <div style={{ flex: 1, background: "var(--bg-elevated, rgba(255,255,255,0.04))", borderRadius: 10, padding: "8px 10px" }}>
+            <div style={{ fontSize: 10.5, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.4 }}>
+              {en ? "Expected (when flagged)" : "Attendu (au signalement)"}
             </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-              <button className="btn btn-secondary" style={{ flex: 1 }} disabled={busy} onClick={onCancel}>{en ? "Cancel" : "Annuler"}</button>
-              <button className="btn" style={{ flex: 1.4, background: "#92400e", color: "#fde68a", fontWeight: 700 }} disabled={busy} onClick={goMismatch}>
-                ⚠ {en ? "Mismatch" : "Écart"}
-              </button>
-              <button className="btn btn-success" style={{ flex: 1.4, fontWeight: 700 }} disabled={busy} onClick={goDone}>
-                ✓ {en ? "Done" : "Fait"}
-              </button>
+            <div style={{ fontSize: 19, fontWeight: 800 }}>{expected}</div>
+          </div>
+          <div style={{ flex: 1, background: "var(--bg-elevated, rgba(255,255,255,0.04))", borderRadius: 10, padding: "8px 10px" }}>
+            <div style={{ fontSize: 10.5, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.4 }}>
+              {en ? "In stock now" : "En stock maintenant"}
             </div>
-          </>
-        ) : (
-          <>
-            <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.25)", borderRadius: 10, padding: 12 }}>
-              {matches
-                ? (en ? `Count matches (${expected}). Marking this Done removes it from the list.`
-                      : `Le comptage correspond (${expected}). Marquer « Fait » le retire de la liste.`)
-                : (en ? `Counted ${n} vs expected ${expected}. Marking Done anyway will accept it as OK and remove it from the list — it will NOT be recorded as a mismatch. Continue?`
-                      : `Compté ${n} contre ${expected} attendu. Marquer « Fait » quand même l'accepte et le retire de la liste — il ne sera PAS enregistré comme écart. Continuer ?`)}
+            <div style={{ fontSize: 19, fontWeight: 800, color: stale ? "#fbbf24" : undefined }}>
+              {row.qty_now != null ? row.qty_now : "—"}
             </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-              <button className="btn btn-secondary" style={{ flex: 1 }} disabled={busy} onClick={() => setConfirmDone(false)}>{en ? "Back" : "Retour"}</button>
-              <button className="btn btn-success" style={{ flex: 2, fontWeight: 700 }} disabled={busy} onClick={() => onResolve(n, "done")}>
-                {busy ? "…" : (en ? "✓ Confirm Done" : "✓ Confirmer")}
-              </button>
-            </div>
-          </>
+          </div>
+        </div>
+
+        {(stale || legacy) && (
+          <div style={{ fontSize: 12, lineHeight: 1.55, background: "rgba(251,191,36,0.09)", border: "1px solid rgba(251,191,36,0.3)",
+                        borderRadius: 10, padding: "9px 11px", marginBottom: 14, color: "#fbbf24" }}>
+            {legacy
+              ? (en ? "⚠ This check is from before the counting fix. Its “Expected” figure may not be reliable. Count what is physically on the shelf — the boss will re-baseline it."
+                    : "⚠ Cette vérification date d'avant la correction. Son « Attendu » peut être peu fiable. Comptez ce qui est physiquement en rayon — le patron refera la base.")
+              : (en ? `⚠ Stock has moved since this was flagged (${expected} → ${row.qty_now}). Count what is physically there now; the difference will be kept for the boss.`
+                    : `⚠ Le stock a bougé depuis le signalement (${expected} → ${row.qty_now}). Comptez ce qui est réellement là ; l'écart sera conservé pour le patron.`)}
+          </div>
+        )}
+
+        <label style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>
+          {en ? "How many did you physically count?" : "Combien avez-vous physiquement compté ?"}
+        </label>
+        <input className="input" type="number" min="0" autoFocus value={value} onChange={e => setValue(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && submit(undefined)}
+          placeholder={en ? "Counted quantity" : "Quantité comptée"} style={{ marginTop: 6 }} />
+
+        {/* LIVE OUTCOME. The old flow made the user pick the outcome; this one
+            states it before they commit, so there is nothing left to "click through". */}
+        <div style={{ fontSize: 12.5, marginTop: 10, minHeight: 34, lineHeight: 1.5,
+                      color: !valid ? "var(--text-muted)" : matches ? "#34d399" : "#fbbf24" }}>
+          {!valid
+            ? (en ? "Enter the count to see what will be recorded." : "Entrez le comptage pour voir ce qui sera enregistré.")
+            : matches
+              ? (en ? `✓ Matches (${expected}). This will be recorded as counted and cleared from the list.`
+                    : `✓ Correspond (${expected}). Sera enregistré comme compté et retiré de la liste.`)
+              : (en ? `⚠ Off by ${diff > 0 ? "+" : ""}${diff}. This will be kept as a MISMATCH for the boss to resolve — a difference cannot be closed as done.`
+                    : `⚠ Écart de ${diff > 0 ? "+" : ""}${diff}. Sera conservé comme ÉCART à résoudre par le patron — un écart ne peut pas être clos comme « fait ».`)}
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <button className="btn btn-secondary" style={{ flex: 1 }} disabled={busy} onClick={onCancel}>{en ? "Cancel" : "Annuler"}</button>
+          <button className="btn btn-primary" style={{ flex: 2, fontWeight: 700 }} disabled={busy || !valid} onClick={() => submit(undefined)}>
+            {busy ? "…" : (en ? "Record count" : "Enregistrer")}
+          </button>
+        </div>
+
+        {/* The one remaining escalation, and only in the safe direction. */}
+        {matches && !busy && (
+          <button onClick={() => submit("mismatch")}
+            style={{ display: "block", margin: "10px auto 0", background: "none", border: "none", cursor: "pointer",
+                     color: "var(--text-muted)", fontSize: 11.5, textDecoration: "underline" }}>
+            {en ? "It matches, but something is still wrong — flag it anyway"
+                : "Ça correspond, mais quelque chose cloche — signaler quand même"}
+          </button>
         )}
       </div>
     </div>
@@ -762,58 +1005,266 @@ function ConfirmDeleteModal({ row, en, onCancel, onConfirm, busy }) {
   );
 }
 
-// Part B: owner resolves a MISMATCH — pick a reason, enter the corrected true
-// quantity, Update. miscount/recovered/damaged correct stock; confirmed_loss doesn't.
-function ResolveVarianceModal({ row, en, busy, onCancel, onResolve }) {
+// ── MP-COUNT-INTEGRITY (F2.1/F2.3) — owner resolves a MISMATCH ───────────────
+// REBUILT. Asks the one question that matters (which number is wrong?), derives
+// direction from the sign rather than from a word, and — critically — renders the
+// backend's REFUSALS as a first-class state with a way out of each.
+//
+// The refusal copy is not decoration. On the day this ships, 22 of the 36 pending
+// checks on prod will be refused by Guard B, and every non-stale one of them will,
+// because each of those products has moved since it was flagged. Without this panel
+// the owner meets a wall of red toasts on the screen he has just been told is now
+// trustworthy. The guard and this panel ship together or neither ships.
+function ResolveVarianceModal({ row, en, busy, recounting, onCancel, onResolve, refusal, onClearRefusal, onRecount, onOpenTransfer }) {
   const p = row.pa_products || {};
   const expected = Number(row.qty_expected) || 0;
   const counted = Number(row.qty_counted) || 0;
-  const [reason, setReason] = useState("miscount");
-  // Pre-fill the corrected qty with what was physically counted (the boss's best number).
-  const [qty, setQty] = useState(String(counted));
-  const chosen = RESOLVE_REASONS.find(r => r.key === reason);
-  const corrects = !!(chosen && chosen.corrects);
+  const legacy = isLegacyCheck(row);
+
+  const [reason, setReason] = useState("stock_wrong");
+  const [qty, setQty] = useState(String(counted));       // best available number
+  const [subReason, setSubReason] = useState("");
+  const [note, setNote] = useState("");
+
+  const branch = RESOLVE_BRANCHES.find(b => b.key === reason) || RESOLVE_BRANCHES[0];
   const n = Number(qty);
-  const valid = Number.isFinite(n) && n >= 0 && qty !== "";
+  const qtyValid = Number.isFinite(n) && n >= 0 && qty !== "";
+  // DIRECTION FROM THE SIGN — never from the reason word. Mirrors the backend.
+  const delta = qtyValid ? n - expected : 0;
+  const subOptions = delta < 0 ? SUB_SHORTFALL : SUB_SURPLUS;
+
+  // Changing the answer invalidates a refusal that was about the previous answer.
+  const pick = (key) => { setReason(key); if (refusal) onClearRefusal(); };
+  // A sub reason chosen for one direction is meaningless in the other; drop it
+  // rather than submit something the backend will (correctly) refuse.
+  useEffect(() => {
+    if (subReason && !subOptions.some(o => o.key === subReason)) setSubReason("");
+  }, [delta < 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const canSubmit = reason === "not_counted" ? note.trim().length > 0
+    : reason === "count_wrong" ? true
+    : qtyValid && delta !== 0;
+
   const submit = () => {
-    if (corrects && !valid) { toast.error(en ? "Enter a valid quantity" : "Entrez une quantité valide"); return; }
-    // confirmed_loss ignores the qty for stock, but we still send it for the record.
-    onResolve(reason, corrects ? n : (valid ? n : counted));
+    if (!canSubmit) return;
+    onResolve({
+      reason,
+      // count_wrong asserts the SYSTEM figure stands; sending anything else is a
+      // contradiction the backend rejects, so the UI never lets one be formed.
+      resolved_qty: reason === "count_wrong" ? expected : (reason === "not_counted" ? expected : n),
+      sub_reason: reason === "stock_wrong" && subReason ? subReason : null,
+      note: note.trim() || null,
+    });
   };
+
+  // ── REFUSAL PANEL ─────────────────────────────────────────────────────────
+  const code = refusal && refusal.code;
+  const refusalView = () => {
+    if (code === "resolve_on_transfer") {
+      return (
+        <>
+          <div style={{ fontSize: 13, lineHeight: 1.6 }}>
+            {en ? "This check came from a transfer. The destination was already credited with what was received, so correcting it here would subtract the shortfall twice."
+                : "Cette vérification vient d'un transfert. La destination a déjà été créditée de ce qui a été reçu ; corriger ici retirerait le manque deux fois."}
+          </div>
+          {refusal.transfer_number && (
+            <div style={{ fontSize: 12.5, marginTop: 8, color: "var(--text-secondary)" }}>
+              {en ? "Resolve it on transfer" : "À résoudre sur le transfert"} <b>{refusal.transfer_number}</b>.
+            </div>
+          )}
+        </>
+      );
+    }
+    if (code === "baseline_mismatch") {
+      return (
+        <div style={{ fontSize: 13, lineHeight: 1.6 }}>
+          {en ? <>The count expected <b>{refusal.qty_expected}</b> but stock is at <b>{refusal.stock_now}</b>, with no movement recorded to explain the gap. Something changed this product outside the normal paths, so correcting it now would write a number we cannot justify. <b>Recount it.</b></>
+              : <>Le comptage attendait <b>{refusal.qty_expected}</b> mais le stock est à <b>{refusal.stock_now}</b>, sans aucun mouvement pour l'expliquer. Ce produit a changé hors des chemins normaux ; corriger maintenant écrirait un chiffre injustifiable. <b>Recomptez.</b></>}
+        </div>
+      );
+    }
+    // stale_count — the common case on deploy day.
+    // The date shown is counted_at, which is the BASELINE (greatest of created_at and
+    // rebaselined_at) — not when the check was first raised. After a recount those
+    // differ, and quoting the original date would tell the owner his count was stale
+    // from three weeks before the recount he just performed.
+    const since = refusal?.counted_at ? fmtDate(refusal.counted_at, en) : null;
+    return (
+      <div style={{ fontSize: 13, lineHeight: 1.6 }}>
+        {en ? <>This was <b>counted before the stock changed</b>{typeof refusal?.moved_count === "number" ? <> — {refusal.moved_count} movement{refusal.moved_count === 1 ? "" : "s"}{since ? ` since ${since}` : " since"}, net {refusal.net_since_count > 0 ? "+" : ""}{refusal.net_since_count}</> : null}. Correcting from the old count would wipe every sale and transfer that happened in between.</>
+            : <>Ceci a été <b>compté avant que le stock ne change</b>{typeof refusal?.moved_count === "number" ? <> — {refusal.moved_count} mouvement(s){since ? ` depuis le ${since}` : " depuis"}, net {refusal.net_since_count > 0 ? "+" : ""}{refusal.net_since_count}</> : null}. Corriger à partir de l'ancien comptage effacerait toutes les ventes et transferts survenus entre-temps.</>}
+      </div>
+    );
+  };
+
   return (
-    <div className="modal-overlay" onClick={() => !busy && onCancel()}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+    <div className="modal-overlay" onClick={() => !busy && !recounting && onCancel()}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460, maxHeight: "88vh", overflowY: "auto" }}>
         <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>{en ? "Resolve variance" : "Résoudre l'écart"}</div>
         <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 12 }}>
           {en ? (p.name_en || p.name) : p.name} · {(row.pa_locations || {}).name}
         </div>
-        <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginBottom: 12 }}>
-          {en ? "Expected" : "Attendu"}: <b>{expected}</b> · {en ? "counted" : "compté"}: <b>{counted}</b> ({counted - expected > 0 ? "+" : ""}{counted - expected})
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          {[[en ? "System said" : "Système", expected], [en ? "Counted" : "Compté", counted],
+            [en ? "Difference" : "Différence", `${counted - expected > 0 ? "+" : ""}${counted - expected}`]].map(([label, v], i) => (
+            <div key={label} style={{ flex: 1, background: "var(--bg-elevated, rgba(255,255,255,0.04))", borderRadius: 10, padding: "8px 10px" }}>
+              <div style={{ fontSize: 10.5, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: i === 2 && counted !== expected ? "#fbbf24" : undefined }}>{v}</div>
+            </div>
+          ))}
         </div>
 
-        <label style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>{en ? "Reason / outcome" : "Raison / résultat"}</label>
-        <select className="input" value={reason} onChange={e => setReason(e.target.value)} style={{ marginTop: 6, marginBottom: 12 }}>
-          {RESOLVE_REASONS.map(r => <option key={r.key} value={r.key}>{en ? r.en : r.fr}</option>)}
-        </select>
+        {legacy && !refusal && (
+          <div style={{ fontSize: 12, lineHeight: 1.55, background: "rgba(148,163,184,0.10)", border: "1px solid rgba(148,163,184,0.3)",
+                        borderRadius: 10, padding: "9px 11px", marginBottom: 12, color: "var(--text-secondary)" }}>
+            {en ? "🕗 Legacy check — created before the counting fix. Stock could move without leaving a record back then, so these numbers may not be comparable. Prefer Recount."
+                : "🕗 Vérification ancienne — créée avant la correction. Le stock pouvait bouger sans laisser de trace ; ces chiffres ne sont peut-être pas comparables. Préférez Recompter."}
+          </div>
+        )}
 
-        <label style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>
-          {en ? "Corrected true quantity" : "Quantité réelle corrigée"}
-        </label>
-        <input className="input" type="number" min="0" value={qty} onChange={e => setQty(e.target.value)}
-          placeholder={en ? "True quantity now" : "Quantité réelle actuelle"} style={{ marginTop: 6 }}
-          disabled={!corrects} />
-        <div style={{ fontSize: 11.5, color: corrects ? "var(--text-muted)" : "#fbbf24", marginTop: 6, lineHeight: 1.5 }}>
-          {corrects
-            ? (en ? `Stock at this location will be set to this number (${chosen.key === "damaged" ? "damaged units removed" : "corrected"}).`
-                  : `Le stock à cet emplacement sera fixé à ce nombre (${chosen.key === "damaged" ? "unités endommagées retirées" : "corrigé"}).`)
-            : (en ? "Confirmed loss: stock is left as-is — the gap is recorded as a real loss."
-                  : "Perte confirmée : le stock reste inchangé — l'écart est enregistré comme perte réelle.")}
-        </div>
+        {refusal ? (
+          <>
+            <div style={{ background: "rgba(251,191,36,0.09)", border: "1px solid rgba(251,191,36,0.32)",
+                          borderRadius: 10, padding: "11px 13px", color: "#fbbf24" }}>
+              <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 6 }}>
+                {code === "resolve_on_transfer"
+                  ? (en ? "Resolve this on the transfer" : "À résoudre sur le transfert")
+                  : (en ? "Counted before the update" : "Compté avant la mise à jour")}
+              </div>
+              {refusalView()}
+            </div>
 
-        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-          <button className="btn btn-secondary" style={{ flex: 1 }} disabled={busy} onClick={onCancel}>{en ? "Cancel" : "Annuler"}</button>
-          <button className="btn btn-primary" style={{ flex: 2 }} disabled={busy} onClick={submit}>{busy ? "…" : (en ? "Update" : "Mettre à jour")}</button>
-        </div>
+            {/* GUARD A'S EXIT. This is the whole reason not_counted is NOT exempt
+                from Guard A: the transfer variance has somewhere to go, so it must
+                be prompted rather than dismissed. The prompt is only a prompt if it
+                actually opens the transfer — a refusal naming a transfer number with
+                no way to reach it is a dead end wearing a hand-off's clothes.
+                20 Complete Chain Bajaj left Principal Magazine and were credited
+                nowhere; this button is what stops the next 20. */}
+            {code === "resolve_on_transfer" && refusal.transfer_id && (
+              <button className="btn btn-primary" style={{ width: "100%", marginTop: 14, fontWeight: 700 }}
+                disabled={busy} onClick={() => onOpenTransfer(refusal.transfer_id)}>
+                {en ? "Open the transfer" : "Ouvrir le transfert"} {refusal.transfer_number ? `· ${refusal.transfer_number}` : ""}
+              </button>
+            )}
+
+            {code !== "resolve_on_transfer" && (
+              <>
+                <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                  <button className="btn btn-primary" style={{ flex: 1.5, fontWeight: 700 }} disabled={busy || recounting} onClick={onRecount}>
+                    {recounting ? "…" : (en ? "↻ Recount now" : "↻ Recompter")}
+                  </button>
+                  <button className="btn" style={{ flex: 1.5, background: "#3f3f46", color: "#e4e4e7", fontWeight: 600 }}
+                    disabled={busy || recounting}
+                    onClick={() => { setReason("not_counted"); onClearRefusal(); }}>
+                    {en ? "Remove from list" : "Retirer de la liste"}
+                  </button>
+                </div>
+                <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.5 }}>
+                  {en ? "Recount sends it back to “To count” measured against today's stock. Remove closes it without a count — that needs a reason and is counted for 30 days."
+                      : "Recompter le renvoie dans « À compter », mesuré sur le stock d'aujourd'hui. Retirer le ferme sans comptage — il faut une raison, et c'est compté pendant 30 jours."}
+                </div>
+              </>
+            )}
+            <button className="btn btn-secondary" style={{ width: "100%", marginTop: 10 }} disabled={busy || recounting} onClick={onCancel}>
+              {en ? "Close" : "Fermer"}
+            </button>
+          </>
+        ) : (
+          <>
+            <label style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 700 }}>
+              {en ? "Which number is wrong?" : "Quel chiffre est faux ?"}
+            </label>
+            <div style={{ marginTop: 8, marginBottom: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+              {RESOLVE_BRANCHES.map(b => (
+                <button key={b.key} onClick={() => pick(b.key)} disabled={busy}
+                  style={{ textAlign: "left", padding: "9px 11px", borderRadius: 10, cursor: "pointer",
+                           background: reason === b.key ? "rgba(99,102,241,0.14)" : "transparent",
+                           border: `1px solid ${reason === b.key ? "rgba(99,102,241,0.55)" : "var(--border, rgba(255,255,255,0.12))"}` }}>
+                  <div style={{ fontWeight: 700, fontSize: 13 }}>{en ? b.en : b.fr}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 2, lineHeight: 1.45 }}>{en ? b.hintEn : b.hintFr}</div>
+                </button>
+              ))}
+            </div>
+
+            {reason === "stock_wrong" && (<>
+              <label style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>
+                {en ? "True quantity on the shelf" : "Quantité réelle en rayon"}
+              </label>
+              <input className="input" type="number" min="0" value={qty} onChange={e => setQty(e.target.value)} style={{ marginTop: 6 }} />
+              {/* Direction is SHOWN, never chosen. */}
+              <div style={{ fontSize: 12, marginTop: 7, lineHeight: 1.5, color: !qtyValid ? "var(--text-muted)" : delta === 0 ? "#fbbf24" : delta < 0 ? "#f87171" : "#34d399" }}>
+                {!qtyValid ? (en ? "Enter the corrected quantity." : "Entrez la quantité corrigée.")
+                  : delta === 0 ? (en ? "That is already the system's figure — nothing to correct." : "C'est déjà le chiffre du système — rien à corriger.")
+                  : delta < 0 ? (en ? `Stock goes DOWN by ${Math.abs(delta)} (${expected} → ${n}).` : `Le stock BAISSE de ${Math.abs(delta)} (${expected} → ${n}).`)
+                  : (en ? `Stock goes UP by ${delta} (${expected} → ${n}).` : `Le stock MONTE de ${delta} (${expected} → ${n}).`)}
+              </div>
+
+              {qtyValid && delta !== 0 && (<>
+                <label style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600, display: "block", marginTop: 12 }}>
+                  {delta < 0 ? (en ? "Where did they go? (optional)" : "Où sont-elles passées ? (facultatif)")
+                             : (en ? "Where did they come from? (optional)" : "D'où viennent-elles ? (facultatif)")}
+                </label>
+                <select className="input" value={subReason} onChange={e => setSubReason(e.target.value)} style={{ marginTop: 6 }}>
+                  <option value="">{en ? "— not specified —" : "— non précisé —"}</option>
+                  {subOptions.map(o => <option key={o.key} value={o.key}>{en ? o.en : o.fr}</option>)}
+                </select>
+                <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 6, lineHeight: 1.5 }}>
+                  {subReason === "damaged"
+                    ? (en ? `📦 ${Math.abs(delta)} unit(s) will be added to the Damaged pile, where they can still be sold cheap or scrapped.`
+                          : `📦 ${Math.abs(delta)} unité(s) iront dans la pile Endommagés, où elles peuvent encore être vendues ou mises au rebut.`)
+                    : (en ? "Recorded for the record only — it does not change the correction."
+                          : "Enregistré pour la trace uniquement — cela ne change pas la correction.")}
+                </div>
+              </>)}
+            </>)}
+
+            {reason === "count_wrong" && (
+              <div style={{ fontSize: 12.5, lineHeight: 1.6, background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.25)",
+                            borderRadius: 10, padding: "10px 12px" }}>
+                {en ? <>Stock stays at <b>{expected}</b>. Nothing is corrected and no adjustment is written — the variance is closed as a counting error.</>
+                    : <>Le stock reste à <b>{expected}</b>. Rien n'est corrigé et aucun ajustement n'est écrit — l'écart est clos comme erreur de comptage.</>}
+              </div>
+            )}
+
+            {reason === "not_counted" && (
+              <div style={{ background: "rgba(148,163,184,0.10)", border: "1px solid rgba(148,163,184,0.3)", borderRadius: 10, padding: "10px 12px" }}>
+                <div style={{ fontSize: 12.5, lineHeight: 1.6, marginBottom: 8 }}>
+                  {en ? "Stock is not touched. This is counted on your Resolved tab and in the Accountant Log for 30 days, so dismissals stay visible."
+                      : "Le stock n'est pas modifié. Ceci est compté dans l'onglet Résolus et dans le Journal comptable pendant 30 jours, pour que les abandons restent visibles."}
+                </div>
+                <label style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 700 }}>
+                  {en ? "Why was it not counted? (required)" : "Pourquoi n'a-t-il pas été compté ? (obligatoire)"}
+                </label>
+                <textarea className="input" rows={2} value={note} onChange={e => setNote(e.target.value)} style={{ marginTop: 6, resize: "vertical" }}
+                  placeholder={en ? "e.g. product no longer stocked, duplicate flag, shop was closed…" : "ex. produit arrêté, doublon, boutique fermée…"} />
+              </div>
+            )}
+
+            {reason !== "not_counted" && (
+              <>
+                <label style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600, display: "block", marginTop: 12 }}>
+                  {en ? "Note (optional)" : "Note (facultative)"}
+                </label>
+                <input className="input" value={note} onChange={e => setNote(e.target.value)} style={{ marginTop: 6 }}
+                  placeholder={en ? "Anything the boss should remember about this" : "Ce qu'il faut retenir à ce sujet"} />
+              </>
+            )}
+
+            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} disabled={busy} onClick={onCancel}>{en ? "Cancel" : "Annuler"}</button>
+              <button className="btn btn-primary" style={{ flex: 2 }} disabled={busy || !canSubmit} onClick={submit}>
+                {busy ? "…" : (en ? "Resolve" : "Résoudre")}
+              </button>
+            </div>
+            <button onClick={onRecount} disabled={busy || recounting}
+              style={{ display: "block", margin: "10px auto 0", background: "none", border: "none", cursor: "pointer",
+                       color: "var(--text-muted)", fontSize: 11.5, textDecoration: "underline" }}>
+              {recounting ? "…" : (en ? "↻ Send back for a recount instead" : "↻ Renvoyer pour un recomptage")}
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
