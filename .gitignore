@@ -27,3 +27,6 @@ android/keystore.properties
 
 .vercel
 .env*
+
+# scratch files from local API testing — never commit
+r.json
