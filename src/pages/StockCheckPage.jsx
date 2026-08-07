@@ -1026,6 +1026,12 @@ function ResolveVarianceModal({ row, en, busy, recounting, onCancel, onResolve, 
   const [subReason, setSubReason] = useState("");
   const [note, setNote] = useState("");
 
+  // What the shelf holds RIGHT NOW. baseline_mismatch reports it authoritatively
+  // (that refusal exists because it disagrees with the frozen figure); otherwise
+  // fall back to the live qty_now the list query attaches to every non-resolved row.
+  const liveNow = (refusal && typeof refusal.stock_now === "number") ? refusal.stock_now
+    : (row.qty_now != null ? Number(row.qty_now) : null);
+
   const branch = RESOLVE_BRANCHES.find(b => b.key === reason) || RESOLVE_BRANCHES[0];
   const n = Number(qty);
   const qtyValid = Number.isFinite(n) && n >= 0 && qty !== "";
@@ -1105,12 +1111,32 @@ function ResolveVarianceModal({ row, en, busy, recounting, onCancel, onResolve, 
           {en ? (p.name_en || p.name) : p.name} · {(row.pa_locations || {}).name}
         </div>
 
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          {[[en ? "System said" : "Système", expected], [en ? "Counted" : "Compté", counted],
-            [en ? "Difference" : "Différence", `${counted - expected > 0 ? "+" : ""}${counted - expected}`]].map(([label, v], i) => (
-            <div key={label} style={{ flex: 1, background: "var(--bg-elevated, rgba(255,255,255,0.04))", borderRadius: 10, padding: "8px 10px" }}>
-              <div style={{ fontSize: 10.5, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: i === 2 && counted !== expected ? "#fbbf24" : undefined }}>{v}</div>
+        {/* ── THE FOUR NUMBERS, EACH LABELLED BY WHEN IT WAS TRUE ────────────
+            "System said" was wrong on both counts: it did not say WHEN, and there
+            was no figure for now. On a stale check the panel therefore showed
+            "SYSTEM SAID 88" beside a warning that stock is no longer 88, and never
+            said what it actually is — the owner is told the number is wrong and not
+            told the right one. The list row and the staff count modal have said
+            "Expected (when flagged)" vs "In stock now" all along; the owner modal
+            is the one place that did not, so it is the one place that confused.
+            In stock now is sourced from the refusal when it carries one
+            (baseline_mismatch reports stock_now authoritatively) and otherwise from
+            the row's live qty_now, which the list query already attaches. */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+          {[
+            { label: en ? "Expected (when flagged)" : "Attendu (au signalement)", v: expected },
+            { label: en ? "Counted" : "Compté", v: counted },
+            { label: en ? "Difference" : "Différence", v: `${counted - expected > 0 ? "+" : ""}${counted - expected}`,
+              amber: counted !== expected },
+            ...(liveNow != null ? [{ label: en ? "In stock now" : "En stock maintenant", v: liveNow,
+              amber: liveNow !== expected, live: true }] : []),
+          ].map((t) => (
+            <div key={t.label} style={{ flex: "1 1 40%", minWidth: 96,
+              background: t.live && t.amber ? "rgba(251,191,36,0.10)" : "var(--bg-elevated, rgba(255,255,255,0.04))",
+              border: t.live && t.amber ? "1px solid rgba(251,191,36,0.3)" : "1px solid transparent",
+              borderRadius: 10, padding: "8px 10px" }}>
+              <div style={{ fontSize: 10.5, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.4 }}>{t.label}</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: t.amber ? "#fbbf24" : undefined }}>{t.v}</div>
             </div>
           ))}
         </div>
