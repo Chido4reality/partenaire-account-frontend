@@ -1,5 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<!-- translate="no" belongs on <html>, not just the meta: the meta is Google's
+     documented opt-out, the attribute is the HTML-standard one other engines
+     honour. Cheap to carry both; the failure mode of missing one is a crashed POS.
+     NOTE lang="en" is deliberate and unrelated — index.html is a static shell and
+     the app's real language comes from the in-app toggle, not this attribute. -->
+<html lang="en" translate="no" class="notranslate">
   <head>
     <meta charset="UTF-8" />
     <!-- viewport-fit=cover activates env(safe-area-inset-*) so the app can pad
@@ -7,6 +12,25 @@
          windowOptOutEdgeToEdgeEnforcement) the insets resolve to 0 and the
          padding no-ops; it engages automatically if/when the opt-out is removed. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!-- MP-TRANSLATE-CRASH (2026-08-07). Chrome's page translator rewrites TEXT
+         NODES IN PLACE, replacing them with its own <font> wrappers. React still
+         holds references to the originals, so the next re-render calls removeChild
+         on a node that is no longer there and throws
+         `NotFoundError: Failed to execute 'removeChild' on 'Node'`. With a single
+         app-level ErrorBoundary that blanked the WHOLE app, POS included.
+         CONFIRMED, not theorised: the crashing dashboard had 8 <font> elements in
+         it. React never emits <font>.
+         This is not cosmetic for our users — Paul runs MP in French on a tablet in
+         Cameroon, so Chrome offers to translate constantly, and "always translate"
+         is a persisted per-site preference that re-applies on EVERY load. That is
+         why the crash did not clear on reload and why it looked unrelated to
+         translation.
+         MP already has its own language toggle and ships both languages, so browser
+         translation is pure downside here. Both forms: the meta is the documented
+         opt-out, the class covers engines that only honour the attribute. -->
+    <meta name="google" content="notranslate" />
+
     <title>Mon Partenaire Dozie</title>
 
     <!-- PWA -->
