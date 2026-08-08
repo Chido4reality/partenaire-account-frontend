@@ -103,7 +103,7 @@ export function buildLedgerText(ledger, lang) {
   }
 
   L.push("");
-  L.push("— Mon Partenaire Dozie POS");
+  L.push("— Stenamo Business POS");
   return L.join("\n");
 }
 
@@ -274,7 +274,7 @@ export function buildLedgerTextV2(ledger, lang) {
   }
 
   L.push("");
-  L.push("— Mon Partenaire Dozie POS");
+  L.push("— Stenamo Business POS");
   return L.join("\n");
 }
 

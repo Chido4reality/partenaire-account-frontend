@@ -889,7 +889,7 @@
         <a class="sb-link" data-route="dashboard"><span class="sb-link-icon">🏠</span><span class="sb-link-label">Dashboard</span></a>
         <a class="sb-link" data-route="live"><span class="sb-link-icon">📡</span><span class="sb-link-label">Live Traffic</span></a>
 
-        <div class="sb-section">Mon Partenaire</div>
+        <div class="sb-section">Stenamo Business</div>
         <a class="sb-link" data-route="businesses"><span class="sb-link-icon">🏪</span><span class="sb-link-label">Businesses</span></a>
         <a class="sb-link" data-route="subscriptions"><span class="sb-link-icon">💳</span><span class="sb-link-label">Subscriptions</span></a>
         <a class="sb-link" data-route="subscription-discounts" id="sb-link-subdiscounts"><span class="sb-link-icon">🏷️</span><span class="sb-link-label">Plan discounts</span></a>
@@ -902,7 +902,7 @@
         <!-- <a class="sb-link" data-route="subscription-requests"><span class="sb-link-icon">✉️</span><span class="sb-link-label">Sub. requests</span></a> -->
         <a class="sb-link" data-route="mp-finance"><span class="sb-link-icon">📊</span><span class="sb-link-label">MP Finance</span></a>
 
-        <div class="sb-section">Partenaire Dozie</div>
+        <div class="sb-section">Stenamo Market</div>
         <a class="sb-link" data-route="marketplace-users"><span class="sb-link-icon">👥</span><span class="sb-link-label">Marketplace users</span></a>
         <a class="sb-link" data-route="verifications"><span class="sb-link-icon">✅</span><span class="sb-link-label">Verifications</span></a>
         <a class="sb-link" data-route="dozie-subscriptions"><span class="sb-link-icon">🎟️</span><span class="sb-link-label">Dozie subscriptions</span></a>
@@ -931,7 +931,7 @@
         <div class="page-head">
           <div>
             <div class="page-title">Dashboard</div>
-            <div class="page-sub">Live snapshot across Mon Partenaire and Partenaire Dozie.</div>
+            <div class="page-sub">Live snapshot across Stenamo Business and Stenamo Market.</div>
           </div>
           <button class="btn" id="dashboard-refresh">Refresh</button>
         </div>
@@ -954,7 +954,7 @@
         <div class="page-head">
           <div>
             <div class="page-title">Live Traffic</div>
-            <div class="page-sub">Logged-in users online now + a live activity feed across Mon Partenaire and Partenaire Dozie. Auto-refreshes every 7s.</div>
+            <div class="page-sub">Logged-in users online now + a live activity feed across Stenamo Business and Stenamo Market. Auto-refreshes every 7s.</div>
           </div>
           <div style="display:flex;gap:10px;align-items:center">
             <span class="page-sub" id="live-updated"></span>
@@ -980,7 +980,7 @@
         <div class="page-head">
           <div>
             <div class="page-title">Businesses</div>
-            <div class="page-sub">Mon Partenaire orgs — plans, status, owner controls.</div>
+            <div class="page-sub">Stenamo Business orgs — plans, status, owner controls.</div>
           </div>
           <div style="display:flex; gap:8px">
             <button class="btn" id="biz-refresh">Refresh</button>
@@ -1111,7 +1111,7 @@
         <div class="page-head">
           <div>
             <div class="page-title">MP Finance</div>
-            <div class="page-sub">Revenue, MRR, ARPU, and trends for the Mon Partenaire subscription business.</div>
+            <div class="page-sub">Revenue, MRR, ARPU, and trends for the Stenamo Business subscription business.</div>
           </div>
           <button class="btn" id="finance-refresh">Refresh</button>
         </div>
@@ -1156,7 +1156,7 @@
         <div class="page-head">
           <div>
             <div class="page-title">Marketplace users</div>
-            <div class="page-sub">Partenaire Dozie buyers and sellers.</div>
+            <div class="page-sub">Stenamo Market buyers and sellers.</div>
           </div>
           <button class="btn" id="dz-users-refresh">Refresh</button>
         </div>
@@ -1322,7 +1322,7 @@
         <div class="page-head">
           <div>
             <div class="page-title">Sell restrictions</div>
-            <div class="page-sub">Allowlist of which categories and towns may sell on Partenaire Dozie. Turn one OFF and sellers in that category / town can no longer publish. Master admin only.</div>
+            <div class="page-sub">Allowlist of which categories and towns may sell on Stenamo Market. Turn one OFF and sellers in that category / town can no longer publish. Master admin only.</div>
           </div>
           <button class="btn" id="sr-refresh-btn">Refresh</button>
         </div>
@@ -1668,14 +1668,14 @@
         <div class="page-head">
           <div>
             <div class="page-title">Audit log</div>
-            <div class="page-sub">Unified history of admin actions across Mon Partenaire and Partenaire Dozie.</div>
+            <div class="page-sub">Unified history of admin actions across Stenamo Business and Stenamo Market.</div>
           </div>
           <button class="btn" id="al-export-btn">Export CSV</button>
         </div>
         <div class="card" id="al-filter-card" style="margin-bottom:16px">
           <div class="al-filter-grid">
             <div class="field"><label>Source</label>
-              <select id="al-source"><option value="both">Both</option><option value="pa">Mon Partenaire</option><option value="ptn">Partenaire Dozie (legacy)</option></select>
+              <select id="al-source"><option value="both">Both</option><option value="pa">Stenamo Business</option><option value="ptn">Stenamo Market (legacy)</option></select>
             </div>
             <div class="field"><label>Admin</label>
               <input type="text" id="al-admin-email" placeholder="email@example.com" />
@@ -3958,7 +3958,7 @@
           '<div class="card" style="margin-top:12px;background:var(--bg-tertiary)">' +
             '<div class="settings-card-sub">Featured Seller (Marketplace)</div>' +
             '<div style="font-style:italic;color:var(--text-muted);font-size:13px">' +
-              'This business has no linked Partenaire Dozie seller, so it can’t be featured on the marketplace.' +
+              'This business has no linked Stenamo Market seller, so it can’t be featured on the marketplace.' +
             '</div>' +
           '</div>';
       }
@@ -4066,7 +4066,7 @@
           extras += `<button class="btn" style="margin-top:8px" data-mp-jump="${escapeHtml(mp.mp_id || '')}">Open in Businesses →</button>`;
         }
       } else if (status === 'no_mp_account') {
-        extras = `<div class="settings-card-sub" style="margin-top:6px">This seller has no linked Mon Partenaire account — they registered for Dozie only.</div>`;
+        extras = `<div class="settings-card-sub" style="margin-top:6px">This seller has no linked Stenamo Business account — they registered for Dozie only.</div>`;
       }
       const card = `
         <div class="card" style="background:var(--bg-tertiary);margin-top:12px">
@@ -4162,7 +4162,7 @@
     function openDzImpersonate(u) {
       openModal({
         title: 'View as user', sub: (u.name || u.phone) + ' · ' + (u.role || '—'),
-        content: '<p style="font-size:13px;margin:0 0 8px">Opens Partenaire Dozie in a new tab as <strong>' + escapeHtml(u.name || u.phone) + '</strong>. Your admin session stays intact. The impersonation token is valid for 1 hour and is logged to the audit trail.</p>',
+        content: '<p style="font-size:13px;margin:0 0 8px">Opens Stenamo Market in a new tab as <strong>' + escapeHtml(u.name || u.phone) + '</strong>. Your admin session stays intact. The impersonation token is valid for 1 hour and is logged to the audit trail.</p>',
         secondary: { label: 'Cancel' },
         primary: { label: 'Open as user', onClick: async (close) => {
           try {
@@ -4500,12 +4500,12 @@
       // dzWaLink produces %0A for the embedded newlines automatically.
       const buyerMsg =
         'Bonjour ' + (buyer.name || '') + ', concernant votre litige #' + idShort +
-        ' sur Partenaire Dozie. Nous examinons votre demande. ' +
-        'Référence commande: ' + (d.order_ref || '') + '. Équipe Partenaire Dozie.';
+        ' sur Stenamo Market. Nous examinons votre demande. ' +
+        'Référence commande: ' + (d.order_ref || '') + '. Équipe Stenamo Market.';
       const sellerMsg =
         'Bonjour ' + (seller.name || '') + ', concernant le litige #' + idShort +
         ' sur votre commande ' + (d.order_ref || '') +
-        '. Veuillez soumettre votre réponse dans les 48h. Équipe Partenaire Dozie.';
+        '. Veuillez soumettre votre réponse dans les 48h. Équipe Stenamo Market.';
       const buyerWa  = dzWaLink(buyer.phone,  buyerMsg);
       const sellerWa = dzWaLink(seller.phone, sellerMsg);
       const isResolved = d.status === 'resolved';
@@ -4815,7 +4815,7 @@
     const SEARCH_GROUPS = [
       {
         key:   'mon_partenaire',
-        title: 'Mon Partenaire',
+        title: 'Stenamo Business',
         kinds: [
           { key: 'businesses', heading: 'Businesses',  label: b => (b.name || '—') + (b.mp_id ? ' · ' + b.mp_id : ''),
             sub:   b => 'Business · ' + (b.plan || '—') + ' · ' + (b.status || '—') },
@@ -4829,7 +4829,7 @@
       },
       {
         key:   'partenaire_dozie',
-        title: 'Partenaire Dozie',
+        title: 'Stenamo Market',
         kinds: [
           { key: 'users',      heading: 'Users',       label: u => (u.name || '—') + (u.phone ? ' · ' + u.phone : ''),
             sub:   u => 'Dozie ' + (u.role || 'user') + (u.city ? ' · ' + u.city : '') },
@@ -5769,8 +5769,8 @@
             <textarea id="bc-body" maxlength="500" placeholder="What do you want them to know?">${escapeHtml(b.body || '')}</textarea></div>
           <div class="field"><label>Audience app</label>
             <select id="bc-app">
-              <option value="mon_partenaire"${isMP   ? ' selected' : ''}>Mon Partenaire</option>
-              <option value="partenaire_dozie"${isDz ? ' selected' : ''}>Partenaire Dozie</option>
+              <option value="mon_partenaire"${isMP   ? ' selected' : ''}>Stenamo Business</option>
+              <option value="partenaire_dozie"${isDz ? ' selected' : ''}>Stenamo Market</option>
               <option value="both"${isBoth ? ' selected' : ''}>Both</option>
             </select>
           </div>

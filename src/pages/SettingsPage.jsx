@@ -559,7 +559,7 @@ export default function SettingsPage() {
   const activateDozieMutation = useMutation({
     mutationFn: () => api.post("/dozie/activate", dozieForm),
     onSuccess: (res) => {
-      toast.success(lang === "en" ? "✓ Linked to Partenaire Dozie!" : "✓ Lié à Partenaire Dozie!");
+      toast.success(lang === "en" ? "✓ Linked to Stenamo Market!" : "✓ Lié à Stenamo Market!");
       qc.invalidateQueries(["dozie-status"]);
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
@@ -576,7 +576,7 @@ export default function SettingsPage() {
       const mode = res?.data?.data?.mode;
       const msg = mode === "pin_changed"
         ? (lang === "en" ? "✓ Dozie PIN updated" : "✓ PIN Dozie mis à jour")
-        : (lang === "en" ? "✓ Dozie PIN set — you can now sell on Partenaire Dozie" : "✓ PIN Dozie défini — vous pouvez vendre sur Partenaire Dozie");
+        : (lang === "en" ? "✓ Dozie PIN set — you can now sell on Stenamo Market" : "✓ PIN Dozie défini — vous pouvez vendre sur Stenamo Market");
       toast.success(msg);
       setDoziePinForm({ new_pin: "", confirm_pin: "" });
       setShowChangeDoziePin(false);
@@ -681,7 +681,7 @@ export default function SettingsPage() {
     // toggle was supposed to suppress); the Mode tab itself stays so
     // the owner can opt back into Pro.
     { key: "mode",      en: "Mode",               fr: "Mode",                ownerOnly: true },
-    { key: "dozie",     en: "Partenaire Dozie",   fr: "Partenaire Dozie",    ownerOnly: true, hideInLite: true },
+    { key: "dozie",     en: "Stenamo Market",   fr: "Stenamo Market",    ownerOnly: true, hideInLite: true },
   ];
 
   return (
@@ -1154,10 +1154,10 @@ export default function SettingsPage() {
               <div className="form-group" style={{ gridColumn: "1 / -1" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--bg-elevated)", borderRadius: 10, gap: 12 }}>
                   <div>
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>{lang === "en" ? "Show Mon Partenaire advert on receipts" : "Afficher la pub Mon Partenaire sur les reçus"}</div>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{lang === "en" ? "Show Stenamo Business advert on receipts" : "Afficher la pub Stenamo Business sur les reçus"}</div>
                     <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en"
-                      ? "A small \"Powered by Mon Partenaire\" line at the very bottom of each receipt."
-                      : "Une petite ligne « Propulsé par Mon Partenaire » tout en bas de chaque reçu."}</div>
+                      ? "A small \"Powered by Stenamo Business\" line at the very bottom of each receipt."
+                      : "Une petite ligne « Propulsé par Stenamo Business » tout en bas de chaque reçu."}</div>
                   </div>
                   <label style={{ position: "relative", width: 44, height: 24, cursor: "pointer", flexShrink: 0 }}>
                     <input type="checkbox" checked={shopForm.receipt_advert_enabled} onChange={e => setFF("receipt_advert_enabled", e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
@@ -1225,12 +1225,12 @@ export default function SettingsPage() {
               </label>
             </div>
 
-            {/* MP-RESTOCK-PROMO-FOOTER: append one Mon Partenaire branding line to the
+            {/* MP-RESTOCK-PROMO-FOOTER: append one Stenamo Business branding line to the
                 supplier-order WhatsApp message (Restock only — never receipts/waybill).
                 Default ON. */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--bg-elevated)", borderRadius: 10 }}>
               <div style={{ maxWidth: 300 }}>
-                <div style={{ fontWeight: 600, fontSize: 13 }}>{lang === "en" ? "Add a Mon Partenaire promo line to supplier orders" : "Ajouter une ligne promo Mon Partenaire aux commandes fournisseurs"}</div>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{lang === "en" ? "Add a Stenamo Business promo line to supplier orders" : "Ajouter une ligne promo Stenamo Business aux commandes fournisseurs"}</div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                   {lang === "en"
                     ? "One short line at the bottom of the WhatsApp order you send suppliers. Restock only."
@@ -1618,7 +1618,7 @@ export default function SettingsPage() {
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
               <div style={{ fontSize: 32 }}>✦</div>
               <div>
-                <div style={{ fontWeight: 800, fontSize: 17 }}>Partenaire Dozie</div>
+                <div style={{ fontWeight: 800, fontSize: 17 }}>Stenamo Market</div>
                 <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
                   {lang === "en" ? "Wholesale & B2B marketplace" : "Marché de gros & B2B"}
                 </div>
@@ -1626,8 +1626,8 @@ export default function SettingsPage() {
             </div>
             <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
               {lang === "en"
-                ? "Connect your Mon Partenaire account to Partenaire Dozie. Your products will be listed for wholesale buyers, and you can log in to Dozie using your phone number."
-                : "Connectez votre compte Mon Partenaire à Partenaire Dozie. Vos produits seront listés pour les acheteurs en gros, et vous pourrez vous connecter à Dozie avec votre numéro de téléphone."}
+                ? "Connect your Stenamo Business account to Stenamo Market. Your products will be listed for wholesale buyers, and you can log in to Dozie using your phone number."
+                : "Connectez votre compte Stenamo Business à Stenamo Market. Vos produits seront listés pour les acheteurs en gros, et vous pourrez vous connecter à Dozie avec votre numéro de téléphone."}
             </div>
           </div>
 
@@ -1641,8 +1641,8 @@ export default function SettingsPage() {
               </div>
               <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16, lineHeight: 1.6 }}>
                 {lang === "en"
-                  ? "Partenaire Dozie is available on Gold (3 cities) and Premium (all cities) plans."
-                  : "Partenaire Dozie est disponible sur les plans Gold (3 villes) et Premium (toutes les villes)."}
+                  ? "Stenamo Market is available on Gold (3 cities) and Premium (all cities) plans."
+                  : "Stenamo Market est disponible sur les plans Gold (3 villes) et Premium (toutes les villes)."}
               </div>
               <div style={{ display: "flex", gap: 8, justifyContent: "center", fontSize: 12, marginBottom: 16 }}>
                 <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 8, padding: "8px 14px", color: "#f59e0b" }}>
@@ -1666,8 +1666,8 @@ export default function SettingsPage() {
                   </div>
                   <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2, lineHeight: 1.5 }}>
                     {lang === "en"
-                      ? "Your shop is already connected to Partenaire Dozie. Set a 4-digit PIN to start selling."
-                      : "Votre boutique est déjà connectée à Partenaire Dozie. Définissez un PIN à 4 chiffres pour commencer à vendre."}
+                      ? "Your shop is already connected to Stenamo Market. Set a 4-digit PIN to start selling."
+                      : "Votre boutique est déjà connectée à Stenamo Market. Définissez un PIN à 4 chiffres pour commencer à vendre."}
                   </div>
                 </div>
               </div>
@@ -1705,8 +1705,8 @@ export default function SettingsPage() {
 
               <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: "rgba(251,197,3,0.08)", border: "1px solid rgba(251,197,3,0.2)", fontSize: 12, color: "var(--brand-light)", lineHeight: 1.5 }}>
                 💡 {lang === "en"
-                  ? "After setting your PIN, log into Partenaire Dozie with your registered phone number and this PIN. Your active MP products will be listed automatically."
-                  : "Après avoir défini votre PIN, connectez-vous à Partenaire Dozie avec votre numéro de téléphone et ce PIN. Vos produits MP actifs seront listés automatiquement."}
+                  ? "After setting your PIN, log into Stenamo Market with your registered phone number and this PIN. Your active MP products will be listed automatically."
+                  : "Après avoir défini votre PIN, connectez-vous à Stenamo Market avec votre numéro de téléphone et ce PIN. Vos produits MP actifs seront listés automatiquement."}
               </div>
             </div>
           ) : dozieStatus?.activated ? (
@@ -1714,7 +1714,7 @@ export default function SettingsPage() {
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
                 <div style={{ fontSize: 28 }}>✅</div>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 15 }}>{lang === "en" ? "Connected to Partenaire Dozie" : "Connecté à Partenaire Dozie"}</div>
+                  <div style={{ fontWeight: 700, fontSize: 15 }}>{lang === "en" ? "Connected to Stenamo Market" : "Connecté à Stenamo Market"}</div>
                   <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
                     {lang === "en" ? "Your shop is live on the marketplace" : "Votre boutique est en ligne sur le marché"}
                   </div>
@@ -1732,8 +1732,8 @@ export default function SettingsPage() {
               </div>
               <div style={{ marginTop: 16, background: "rgba(251,197,3,0.08)", border: "1px solid rgba(251,197,3,0.2)", borderRadius: 10, padding: 12, fontSize: 12, color: "var(--brand-light)" }}>
                 💡 {lang === "en"
-                  ? "Log in to Partenaire Dozie using your registered phone number and the Dozie PIN you set during activation."
-                  : "Connectez-vous à Partenaire Dozie avec votre numéro de téléphone et le code PIN Dozie défini lors de l'activation."}
+                  ? "Log in to Stenamo Market using your registered phone number and the Dozie PIN you set during activation."
+                  : "Connectez-vous à Stenamo Market avec votre numéro de téléphone et le code PIN Dozie défini lors de l'activation."}
               </div>
 
               {/* MP-DOZIE-ACTIVATE-UI: Change Dozie PIN affordance.
@@ -1749,8 +1749,8 @@ export default function SettingsPage() {
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>
                       {lang === "en"
-                        ? "Change the 4-digit PIN you use to log into Partenaire Dozie."
-                        : "Modifier le PIN à 4 chiffres utilisé pour se connecter à Partenaire Dozie."}
+                        ? "Change the 4-digit PIN you use to log into Stenamo Market."
+                        : "Modifier le PIN à 4 chiffres utilisé pour se connecter à Stenamo Market."}
                     </div>
                   </div>
                   <button onClick={() => {
@@ -1791,8 +1791,8 @@ export default function SettingsPage() {
                   ) : (
                     <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border)", fontSize: 12, color: "var(--text-muted)" }}>
                       {lang === "en"
-                        ? "Set a PIN below to enable your Partenaire Dozie login."
-                        : "Définissez un PIN ci-dessous pour activer votre connexion Partenaire Dozie."}
+                        ? "Set a PIN below to enable your Stenamo Market login."
+                        : "Définissez un PIN ci-dessous pour activer votre connexion Stenamo Market."}
                     </div>
                   )
                 )}
@@ -1863,7 +1863,7 @@ export default function SettingsPage() {
             </div>
           ) : (
             <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, padding: 24 }}>
-              <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>{lang === "en" ? "Activate Partenaire Dozie" : "Activer Partenaire Dozie"}</div>
+              <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>{lang === "en" ? "Activate Stenamo Market" : "Activer Stenamo Market"}</div>
               <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 20 }}>
                 {lang === "en" ? "This will create your seller profile and list your products on the wholesale marketplace." : "Cela créera votre profil vendeur et listera vos produits sur le marché de gros."}
               </div>
@@ -1896,14 +1896,14 @@ export default function SettingsPage() {
                   value={dozieForm.dozie_pin} onChange={e => setDozieForm(f => ({ ...f, dozie_pin: e.target.value.replace(/\D/g, "").slice(0, 4) }))}
                   placeholder="e.g. 1234" />
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                  {lang === "en" ? "You will use this PIN to log in to Partenaire Dozie" : "Vous utiliserez ce PIN pour vous connecter à Partenaire Dozie"}
+                  {lang === "en" ? "You will use this PIN to log in to Stenamo Market" : "Vous utiliserez ce PIN pour vous connecter à Stenamo Market"}
                 </div>
               </div>
 
               <button className="btn btn-primary" style={{ width: "100%", height: 46, marginTop: 8 }}
                 disabled={dozieForm.dozie_pin.length !== 4 || activateDozieMutation.isPending}
                 onClick={() => activateDozieMutation.mutate()}>
-                {activateDozieMutation.isPending ? "..." : (lang === "en" ? "✦ Activate Partenaire Dozie" : "✦ Activer Partenaire Dozie")}
+                {activateDozieMutation.isPending ? "..." : (lang === "en" ? "✦ Activate Stenamo Market" : "✦ Activer Stenamo Market")}
               </button>
             </div>
           )}
@@ -2253,7 +2253,7 @@ export default function SettingsPage() {
       {/* MP-DEBUG-REVEAL: tappable version footer — 5 taps toggles debug mode. */}
       <div onClick={handleVersionTap}
         style={{ textAlign: "center", padding: "20px 0 8px", color: "var(--text-muted)", fontSize: 11, userSelect: "none" }}>
-        Mon Partenaire Dozie · v1.0.0
+        Stenamo Business · v1.0.0
       </div>
     </div>
   );

@@ -51,8 +51,8 @@ const SUPPORT_PHONE = "237621840952";
 // a Title-Cased slug when a feature isn't listed (defensive).
 const FEATURE_COPY = {
   dozie_access: {
-    en: { title: "Upgrade to access Partenaire Dozie", body: "Partenaire Dozie — the wholesale marketplace — is included on Trial, Gold, and Premium plans." },
-    fr: { title: "Mise à niveau requise pour Partenaire Dozie", body: "Partenaire Dozie — la place de marché — est incluse dans les plans Essai, Gold et Premium." }
+    en: { title: "Upgrade to access Stenamo Market", body: "Stenamo Market — the wholesale marketplace — is included on Trial, Gold, and Premium plans." },
+    fr: { title: "Mise à niveau requise pour Stenamo Market", body: "Stenamo Market — la place de marché — est incluse dans les plans Essai, Gold et Premium." }
   },
   inventory_cap: {
     en: { title: "Inventory cap reached", body: "Silver is capped at 10 products. Upgrade to add more." },

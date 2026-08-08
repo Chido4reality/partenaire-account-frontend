@@ -69,7 +69,7 @@ export default function MyDozieMessagesPage() {
     return wrap(
       <div className="card" style={{ textAlign: "center", padding: 28 }}>
         <div style={{ fontSize: 40, marginBottom: 12 }}>💬</div>
-        <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 8 }}>{en ? "Partenaire Dozie not activated" : "Partenaire Dozie non activé"}</div>
+        <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 8 }}>{en ? "Stenamo Market not activated" : "Stenamo Market non activé"}</div>
         <div style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 18 }}>
           {en ? "Activate your Dozie seller profile in Settings to chat with buyers here." : "Activez votre profil vendeur Dozie dans Paramètres pour discuter avec les acheteurs ici."}
         </div>
@@ -122,7 +122,7 @@ export default function MyDozieMessagesPage() {
     <div>
       <div style={{ fontWeight: 800, fontSize: 20, marginBottom: 4 }}>{en ? "Dozie Messages" : "Messages Dozie"}</div>
       <div style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 14 }}>
-        {en ? "Chat with your Partenaire Dozie buyers. They see your replies in the Dozie app." : "Discutez avec vos acheteurs Partenaire Dozie. Ils voient vos réponses dans l’app Dozie."}
+        {en ? "Chat with your Stenamo Market buyers. They see your replies in the Dozie app." : "Discutez avec vos acheteurs Stenamo Market. Ils voient vos réponses dans l’app Dozie."}
       </div>
       {convLoading && <div style={{ color: "var(--text-muted)" }}>{en ? "Loading…" : "Chargement…"}</div>}
       {!convLoading && !conversations.length && <div style={{ color: "var(--text-muted)" }}>{en ? "No conversations yet." : "Aucune conversation."}</div>}

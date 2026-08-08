@@ -71,7 +71,7 @@ export default function MyDozieListingsPage() {
     return wrap(
       <div className="card" style={{ textAlign: "center", padding: 28 }}>
         <div style={{ fontSize: 40, marginBottom: 12 }}>🛒</div>
-        <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 8 }}>{en ? "Partenaire Dozie not activated" : "Partenaire Dozie non activé"}</div>
+        <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 8 }}>{en ? "Stenamo Market not activated" : "Stenamo Market non activé"}</div>
         <div style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 18, lineHeight: 1.6 }}>
           {en ? "Activate your Dozie seller profile in Settings, then publish products to the wholesale marketplace from here."
               : "Activez votre profil vendeur Dozie dans Paramètres, puis publiez vos produits sur le marché de gros ici."}
@@ -104,8 +104,8 @@ export default function MyDozieListingsPage() {
     <div>
       <div style={{ fontWeight: 800, fontSize: 20, marginBottom: 4 }}>{en ? "My Dozie Listings" : "Mes annonces Dozie"}</div>
       <div style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 16, lineHeight: 1.55 }}>
-        {en ? `Publish your products to the Partenaire Dozie wholesale marketplace. Buyers see these live. City: ${sellerCity || "—"} (from Shop Settings).`
-            : `Publiez vos produits sur le marché de gros Partenaire Dozie. Les acheteurs les voient en direct. Ville : ${sellerCity || "—"} (depuis Paramètres boutique).`}
+        {en ? `Publish your products to the Stenamo Market wholesale marketplace. Buyers see these live. City: ${sellerCity || "—"} (from Shop Settings).`
+            : `Publiez vos produits sur le marché de gros Stenamo Market. Les acheteurs les voient en direct. Ville : ${sellerCity || "—"} (depuis Paramètres boutique).`}
       </div>
 
       {listLoading && <div style={{ color: "var(--text-muted)" }}>{en ? "Loading listings…" : "Chargement…"}</div>}

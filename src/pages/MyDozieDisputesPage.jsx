@@ -86,7 +86,7 @@ export default function MyDozieDisputesPage() {
     return wrap(
       <div className="card" style={{ textAlign: "center", padding: 28 }}>
         <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
-        <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 8 }}>{en ? "Partenaire Dozie not activated" : "Partenaire Dozie non activé"}</div>
+        <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 8 }}>{en ? "Stenamo Market not activated" : "Stenamo Market non activé"}</div>
         <div style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 18 }}>
           {en ? "Activate your Dozie seller profile in Settings to handle buyer disputes here." : "Activez votre profil vendeur Dozie dans Paramètres pour gérer les litiges ici."}
         </div>

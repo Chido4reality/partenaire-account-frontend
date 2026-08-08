@@ -124,7 +124,7 @@ export default function MyDozieOrdersPage() {
     return wrap(
       <div className="card" style={{ textAlign: "center", padding: 28 }}>
         <div style={{ fontSize: 40, marginBottom: 12 }}>📦</div>
-        <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 8 }}>{en ? "Partenaire Dozie not activated" : "Partenaire Dozie non activé"}</div>
+        <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 8 }}>{en ? "Stenamo Market not activated" : "Stenamo Market non activé"}</div>
         <div style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 18 }}>
           {en ? "Activate your Dozie seller profile in Settings to receive marketplace orders here." : "Activez votre profil vendeur Dozie dans Paramètres pour recevoir les commandes ici."}
         </div>
@@ -144,13 +144,13 @@ export default function MyDozieOrdersPage() {
     <div>
       <div style={{ fontWeight: 800, fontSize: 20, marginBottom: 4 }}>{en ? "My Dozie Orders" : "Mes commandes Dozie"}</div>
       <div style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 14 }}>
-        {en ? "Incoming wholesale orders from Partenaire Dozie. Payment is handled at your shop (at-shop)." : "Commandes de gros reçues via Partenaire Dozie. Le paiement se fait à la boutique."}
+        {en ? "Incoming wholesale orders from Stenamo Market. Payment is handled at your shop (at-shop)." : "Commandes de gros reçues via Stenamo Market. Le paiement se fait à la boutique."}
       </div>
 
       {rep && (
         <div style={{ border: "1px solid var(--border)", borderRadius: 12, padding: "12px 14px", marginBottom: 14, background: "var(--bg-card)" }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>
-            🛒 {en ? "Partenaire Dozie — marketplace" : "Partenaire Dozie — marché"}
+            🛒 {en ? "Stenamo Market — marketplace" : "Stenamo Market — marché"}
           </div>
           <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
             {[

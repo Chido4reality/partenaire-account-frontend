@@ -59,8 +59,14 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
       },
       manifest: {
-        name: "Mon Partenaire Dozie",
-        short_name: "Partenaire",
+        name: "Stenamo Business",
+        // short_name is the HOME-SCREEN ICON LABEL, not an abbreviation of the
+        // brand. Android truncates around 12-13 characters, so "Stenamo Business"
+        // would render as "Stenamo Busi…". "Stenamo" fits, and is what people
+        // actually say. The same string is used for the Android launcher label
+        // (android app_name) for the same reason — the full name lives in `name`
+        // above and in the Play listing.
+        short_name: "Stenamo",
         description: "POS & gestion de stock pour commerçants",
         start_url: "/",
         scope: "/",

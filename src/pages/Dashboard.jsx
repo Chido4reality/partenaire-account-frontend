@@ -177,8 +177,8 @@ export default function Dashboard() {
             <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 700, fontSize: 13 }}>
                 {lang === 'en'
-                  ? "Your shop is connected to Partenaire Dozie, but you haven't published any products yet."
-                  : "Votre boutique est connectée à Partenaire Dozie, mais aucun produit n'est encore publié."}
+                  ? "Your shop is connected to Stenamo Market, but you haven't published any products yet."
+                  : "Votre boutique est connectée à Stenamo Market, mais aucun produit n'est encore publié."}
               </div>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
                 {lang === 'en'

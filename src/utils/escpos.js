@@ -216,7 +216,7 @@ export function buildSaleEscposBytes({
     d.align("C").line(saleNumber);
   }
 
-  // MP-RECEIPT-ADVERT: text-only "Powered by Mon Partenaire" at the very bottom,
+  // MP-RECEIPT-ADVERT: text-only "Powered by Stenamo Business" at the very bottom,
   // language by org country; ASCII-folded for cheap printers. Omitted when off.
   const adverts = advertLines(org);
   if (adverts.length) {
