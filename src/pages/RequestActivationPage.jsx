@@ -20,6 +20,7 @@ import { useCurrency } from "../utils/useCurrency";
 import { openWhatsApp } from "../utils/whatsapp";
 import { isFrenchEnglishOrg } from "../utils/receiptExtras";
 
+import { SUPPORT_PHONE } from "../utils/support";
 // Manual (offline) fallback methods → admin approval, ONLY for paying the owner
 // directly offline. MP-SUB-NO-PHANTOM-PENDING: Mobile Money / Orange are NOT
 // here — those are Flutterwave methods and go through the FW hosted page (the
@@ -134,7 +135,7 @@ export default function RequestActivationPage() {
   // send. Language by ORG CURRENCY (XAF → French, NGN → English), the SAME gate as
   // the receipt advert (isFrenchEnglishOrg). Real values pulled from the org +
   // selected plan already on this screen — nothing hardcoded but the admin number.
-  const ADMIN_WA = "237621840952"; // +237 621 840 952
+  const ADMIN_WA = SUPPORT_PHONE;
   const buildActivationWaMessage = () => {
     const shop = (org && org.name) || "";
     const mpId = myPlanData?.data?.user_id_number || "";            // MP-000xxx (as shown in-app)

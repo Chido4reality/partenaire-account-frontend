@@ -17,6 +17,7 @@ import NavItem from "./NavItem";
 import { tapHaptic } from "../../utils/haptics";
 import { openWhatsApp } from "../../utils/whatsapp";
 
+import { SUPPORT_PHONE } from "../../utils/support";
 export const DRAWER_WIDTH = 280;
 
 // Section grouping by route path. Items not listed in any section are
@@ -250,7 +251,7 @@ export default function NavDrawer({
                   users keep these on the phone — the desktop sidebar never
                   renders on mobile. Reuses openWhatsApp + setLang. */}
               {(() => {
-                const phone = "237621840952";
+                const phone = SUPPORT_PHONE;
                 const supportBody =
                   "Bonjour Partenaire Support,\n" +
                   "Mon ID: " + (org?.user_id_number || "") + "\n" +

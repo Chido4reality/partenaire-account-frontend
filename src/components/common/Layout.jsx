@@ -32,6 +32,7 @@ import { hasSeenOnboardingLocally, reconcileOnboardingSeen } from "../../utils/o
 import { useStockCheckSummary } from "../../utils/useStockCheckSummary";
 import toast from "react-hot-toast";
 
+import { SUPPORT_PHONE } from "../../utils/support";
 // Sprint A: each nav item declares the capability section it belongs to.
 // `section: 'sales'` and `section: 'settings'` are always visible (every
 // tier includes them). Other sections are filtered against the effective
@@ -1630,10 +1631,10 @@ export default function Layout() {
               "Nom: " + (org?.name || "") + "\n" +
               "Plan: " + tier + "\n" +
               "Message:\n";
-            const href = "https://wa.me/237621840952?text=" + encodeURIComponent(supportBody);
+            const href = "https://wa.me/" + SUPPORT_PHONE + "?text=" + encodeURIComponent(supportBody);
             return (
               <a href={href} target="_blank" rel="noopener noreferrer"
-                onClick={(e) => openWhatsApp(e, "237621840952", supportBody)}
+                onClick={(e) => openWhatsApp(e, SUPPORT_PHONE, supportBody)}
                 style={{ display: "block", width: "100%", padding: "6px 10px", borderRadius: 8, background: "rgba(37,211,102,0.08)", border: "1px solid rgba(37,211,102,0.2)", color: "#25d366", fontSize: 11, textAlign: "left", textDecoration: "none", marginBottom: 6 }}>
                 💬 {lang === "en" ? "Contact Support" : "Contacter le Support"}
               </a>

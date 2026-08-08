@@ -20,6 +20,7 @@ import api from "../../utils/api";
 import { getCapabilities, hasSection, hasFeature } from "../../utils/planCapabilities";
 import { openWhatsApp } from "../../utils/whatsapp";
 
+import { SUPPORT_PHONE } from "../../utils/support";
 // MP-PAYWALL-LOCALIZED-PRICING (29 Jun): the tier list + prices shown here now
 // come from the SAME localized GET /subscriptions/plans response the checkout /
 // RequestActivationPage uses — so a Nigeria org sees NGN and a Cameroon org sees
@@ -45,7 +46,7 @@ function minimumTierFor(feature) {
   return "lite";
 }
 
-const SUPPORT_PHONE = "237621840952";
+
 
 // Human-readable label per feature key, both languages. Falls back to
 // a Title-Cased slug when a feature isn't listed (defensive).

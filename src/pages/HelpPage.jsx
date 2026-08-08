@@ -8,19 +8,13 @@ import { useLangStore } from "../store";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import { openWhatsApp } from "../utils/whatsapp";
 import api from "../utils/api";
+import { SUPPORT_PHONE, SUPPORT_TEL, SUPPORT_EMAIL } from "../utils/support";
 import { HELP_TOPICS } from "../data/helpTopics";
 
-// Support routing (Peter-provided). Default to Cameroon when country is unknown.
-const SUPPORT = {
-  cm: { wa: "237621840952", tel: "+237621840952" },
-  ng: { wa: "2348147236608", tel: "+2348147236608" },
-  email: "support@partenairedozie.com",
-};
-function supportForCountry(country) {
-  const c = String(country || "").trim().toLowerCase();
-  if (c.includes("niger")) return SUPPORT.ng;   // Nigeria
-  return SUPPORT.cm;                             // Cameroun / Cameroon / unknown → CM
-}
+// ONE support line for both countries — see utils/support.js. The previous
+// per-country table (cm / ng) and supportForCountry() are gone rather than left as
+// a dead branch: with a single number there is nothing to route, and only this page
+// ever honoured the routing anyway.
 
 // ── markdown-lite: '### ' heading, '- '/'• ' bullet, '1.' numbered, '> ' quote,
 // '**bold**' inline. Content is trusted (bundled) and rendered as TEXT nodes only
@@ -77,7 +71,6 @@ export default function HelpPage() {
     queryFn: () => api.get("/settings").then(r => r.data),
     staleTime: 300000,
   });
-  const support = supportForCountry(orgResp?.data?.country);
   const waMsg = en ? "Hello, I need help with Stenamo Business." : "Bonjour, j'ai besoin d'aide avec Stenamo Business.";
 
   const topic = openId ? HELP_TOPICS.find(t => t.id === openId) : null;
@@ -93,11 +86,11 @@ export default function HelpPage() {
           style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", borderRadius: 10, border: "none", background: "#25D366", color: "#fff", fontWeight: 700, cursor: "pointer" }}>
           💬 WhatsApp
         </button>
-        <a href={`mailto:${SUPPORT.email}?subject=${encodeURIComponent(en ? "Help — Stenamo Business" : "Aide — Stenamo Business")}`}
+        <a href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(en ? "Help — Stenamo Business" : "Aide — Stenamo Business")}`}
           style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text)", fontWeight: 700, textDecoration: "none" }}>
           ✉️ {en ? "Email" : "Email"}
         </a>
-        <a href={`tel:${support.tel}`}
+        <a href={`tel:${SUPPORT_TEL}`}
           style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text)", fontWeight: 700, textDecoration: "none" }}>
           📞 {en ? "Call" : "Appeler"}
         </a>
