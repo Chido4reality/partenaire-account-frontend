@@ -7,6 +7,8 @@ import api, { formatDate, getGreeting } from '../utils/api';
 import { useCurrency } from '../utils/useCurrency';
 import { ActiveShiftIndicator } from '../components/common/ShiftWidgets';
 import DrawerDashboardCard from '../components/dashboard/DrawerDashboardCard';
+// MP-TILE-ISOLATION: one broken tile must not blank the app (and the POS with it).
+import TileErrorBoundary from '../components/common/TileErrorBoundary';
 
 const StatCard = ({ label, value, sub, color = 'var(--brand-light)', icon, onClick }) => (
   <div className="stat-card" onClick={onClick} style={{ cursor: onClick ? 'pointer' : 'default' }}>
@@ -197,7 +199,9 @@ export default function Dashboard() {
           ["current-shift", locId] cache with the indicator so they
           stay in sync without a duplicate request. */}
       <div style={{ marginBottom: 24 }}>
-        <DrawerDashboardCard />
+        <TileErrorBoundary name="drawer-card" fr={lang === 'fr'}>
+          <DrawerDashboardCard />
+        </TileErrorBoundary>
       </div>
 
       {/* Header */}
@@ -251,7 +255,7 @@ export default function Dashboard() {
       {/* ── WAREHOUSE VIEW ── */}
       {isWarehouse && (
         <div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
+          <TileErrorBoundary name="stat-grid-1" fr={lang === 'fr'}><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
             <StatCard icon="📦" label={lang === 'en' ? "Low stock items" : "Articles stock bas"}
               value={lowStockCount || 0} color="#fbbf24"
               sub={lang === 'en' ? "Need restocking" : "À réapprovisionner"}
@@ -260,7 +264,7 @@ export default function Dashboard() {
               value="→" color="var(--brand-light)"
               sub={lang === 'en' ? "View transfers" : "Voir transferts"}
               onClick={() => navigate('/transfers')} />
-          </div>
+          </div></TileErrorBoundary>
           <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: 24, textAlign: 'center' }}>
             <div style={{ fontSize: 32, marginBottom: 12 }}>📦</div>
             <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>{lang === 'en' ? "Warehouse Dashboard" : "Tableau de bord entrepôt"}</div>
@@ -276,7 +280,7 @@ export default function Dashboard() {
       {/* ── CASHIER VIEW ── */}
       {isCashier && (
         <div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
+          <TileErrorBoundary name="stat-grid-2" fr={lang === 'fr'}><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
             <StatCard icon="🛒" label={lang === 'en' ? "My sales today" : "Mes ventes aujourd'hui"}
               value={isLoading ? '...' : fmt(s.gross_sales || 0)}
               sub={`${s.sale_count || 0} ${t('dashboard.transactions')}`}
@@ -287,7 +291,7 @@ export default function Dashboard() {
             <StatCard icon="💳" label={lang === 'en' ? "Credit sales" : "Ventes crédit"}
               value={isLoading ? '...' : fmt(s.credit_sales || 0)}
               color="#f59e0b" onClick={() => navigate('/credits')} />
-          </div>
+          </div></TileErrorBoundary>
 
           <div style={{ display: 'flex', gap: 10, marginBottom: 24 }}>
             <QuickBtn icon="🛒" label={lang === 'en' ? "New Sale" : "Nouvelle vente"} to="/pos" color="var(--brand)" />
@@ -301,7 +305,7 @@ export default function Dashboard() {
       {(isOwner || isManager) && (
         <div>
           {/* Stats grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
+          <TileErrorBoundary name="stat-grid-3" fr={lang === 'fr'}><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
             <StatCard icon="📊" label={t('dashboard.todaySales')}
               value={isLoading ? '...' : fmt(s.gross_sales || 0)}
               sub={`${s.sale_count || 0} ${t('dashboard.transactions')}`}
@@ -339,7 +343,7 @@ export default function Dashboard() {
                 : (voidCount === 1 ? 'vente annulée' : 'ventes annulées')}`}
               color={voidCount > 0 ? '#ef4444' : 'var(--text-muted)'}
               onClick={() => navigate('/operations')} />
-          </div>
+          </div></TileErrorBoundary>
 
           {/* MP-MOBILE-UI-PHASE-1-5: stack columns on mobile so the
               Recent Sales card isn't squeezed into a ~60px slot beside
