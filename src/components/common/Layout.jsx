@@ -14,6 +14,8 @@ import { safeSetItem } from "../../utils/safeStorage";
 import { cacheKeyFor } from "../../utils/offlineQuery";
 import { openWhatsApp } from "../../utils/whatsapp";
 import { nukeClientState, hardRedirectToLogin } from "../../utils/authReset";
+import { ensureRegisteredOnLogin, revokeOnLogout, canUsePush } from "../../utils/push"; // MP-PUSH
+import { setLanguage, syncLanguageOnLogin } from "../../utils/setLanguage"; // MP-LANGUAGE-PERSIST
 // MP-SUB-FLOW-MERGE: UpgradeModal retired — both entry points now use the one
 // canonical /request-activation flow (RequestActivationPage). No second checkout
 // path / confirmation handler left to drift.
@@ -411,7 +413,7 @@ export default function Layout() {
   // that don't surface in Lite. Reads from authStore.org.lite_mode
   // (default true) — owners flip via Settings → Mode.
   const lite = useLiteMode();
-  const { lang, setLang }     = useLangStore();
+  const { lang }              = useLangStore();
   const queryClient           = useQueryClient(); // MP-AUTH-STATE-HYGIENE
   const { isOnline: storeOnline } = useOfflineStore();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -601,11 +603,49 @@ export default function Layout() {
   // best-effort (stateless JWT — it just audits) and must run BEFORE the
   // nuke since the api interceptor reads the token from the auth store.
   const handleLogout = async () => {
+    // MP-PUSH: retire THIS handset's token first — while the auth token still exists,
+    // since the revoke call is authed. A shared or handed-over phone must stop receiving
+    // the previous user's approvals the moment they log out.
+    try { await revokeOnLogout(); } catch (_) { /* best-effort */ }
     try { await api.post("/auth/logout"); } catch (_) { /* audit-only; proceed */ }
     logout();
     nukeClientState(queryClient);
     hardRedirectToLogin();
   };
+
+  // MP-LANGUAGE-PERSIST: reconcile the language store with the saved pa_users.language,
+  // once per authenticated app start. The store defaults to "en" and used to be the ONLY
+  // input, so a saved preference never reached the UI and a fresh install always looked
+  // English. syncLanguageOnLogin owns the conflict rules (pending choice > pre-fix
+  // adoption > server), deliberately in one place — see its comment block.
+  useEffect(() => {
+    if (!user?.id) return;
+    syncLanguageOnLogin(user.language || null);
+  }, [user?.id, user?.language]);
+
+  // MP-PUSH: registration happens ONCE per authenticated app start, right here.
+  //
+  // It used to be split — a silent re-register on mount, plus a permission ask gated to
+  // the approvals screens. That meant a user who never opened those screens never
+  // registered, and anyone whose "asked" flag had been set by an earlier build could
+  // never recover, because the buttons that used to force it are gone. Now one call
+  // covers every case: register silently when permission is already granted (which also
+  // refreshes a rotated token and rescues a stale asked-flag), prompt once when it has
+  // never been decided, and do nothing when it has been denied — only Android's own
+  // settings can undo a denial.
+  useEffect(() => {
+    if (!user?.id || !canUsePush()) return;
+    const onTap = (data) => {
+      // A tap from the lock screen should land where the thing actually is, not on the
+      // dashboard leaving the boss to hunt for it.
+      if (data?.ref_type === "action_approval") {
+        navigate(user.role === "owner" ? "/accountant-log"
+               : user.role === "manager" ? "/team-approvals" : "/my-requests");
+      }
+    };
+    ensureRegisteredOnLogin({ onTap });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, user?.role]);
 
   // MP-AUTH-STATE-HYGIENE — FIX 2: user-change tripwire. If the persisted
   // last-user id doesn't match the authenticated user (different person
@@ -623,11 +663,10 @@ export default function Layout() {
     }
     if (last !== cur) safeSetItem("mp_last_user_id", cur);
   }, [user?.id, queryClient]);
-  const toggleLang = () => {
-    const nl = lang === "en" ? "fr" : "en";
-    setLang(nl);
-    api.patch("/auth/language", { language: nl }).catch(() => {});
-  };
+  // MP-LANGUAGE-PERSIST: this was the ONLY toggle of five that told the server. The
+  // PATCH now lives in the shared setLanguage() helper so Settings and the mobile drawer
+  // get the same behaviour and a future toggle cannot forget it.
+  const toggleLang = () => setLanguage(lang === "en" ? "fr" : "en");
 
   const { data: notifData } = useQuery({
     queryKey: ["notifications"],

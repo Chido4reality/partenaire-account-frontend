@@ -39,6 +39,12 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- MP-PUSH: required from Android 13 (API 33) to post ANY notification. It is a
+         runtime permission, so the manifest entry alone shows nothing — the app must
+         also ask (utils/push.js promptIfSensible). Not a Play "sensitive" permission,
+         so it needs no declaration form, but it DOES change the permission delta vs
+         vc90 — re-run the rejection audit on the first build that carries this. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- MP-CAPACITOR-CAMERA: CameraScanner uses navigator.mediaDevices.getUserMedia
          via zxing for barcode + QR scan (Inventory receive-goods, POS, Refunds).
          Android WebView's runtime permission grant requires the permission to be

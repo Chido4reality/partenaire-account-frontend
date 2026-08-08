@@ -37,6 +37,17 @@ const config: CapacitorConfig = {
   // doesn't flash white before the React shell mounts.
   backgroundColor: '#152B52',
 
+  // NOTE — FIELD DIAGNOSTICS, DELIBERATELY OFF.
+  // Setting loggingBehavior:'production' forwards JS console output to logcat in
+  // RELEASE builds, and android.webContentsDebuggingEnabled opens chrome://inspect
+  // against the release WebView. Both were switched on temporarily to find the push
+  // registration bug (vc104) and reverted for shipping.
+  //
+  // Worth knowing they exist: a release build discards JS console by DEFAULT, so an
+  // on-device trace written with console.log is written and thrown away. That cost a
+  // build to learn. If a field-only bug ever needs reading again, turn these two on,
+  // ship a numbered build to the tester, and revert before the Play upload.
+
   plugins: {
     SplashScreen: {
       // Brand-colour splash held for 1.5s, then fades into the React

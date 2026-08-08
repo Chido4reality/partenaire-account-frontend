@@ -6,8 +6,10 @@ import { useAuthStore, useLangStore, useSettingsStore } from "../store";
 import api from "../utils/api";
 import { useMyPermissions } from "../utils/useMyPermissions";
 import { useCurrency } from "../utils/useCurrency";
+import { setLanguage } from "../utils/setLanguage"; // MP-LANGUAGE-PERSIST
 import { formatLastSeen, isRecentlyActive } from "../utils/lastSeen";
 import PaywallModal from "../components/common/PaywallModal";
+import PushAlertsCard from "../components/common/PushAlertsCard"; // MP-PUSH
 import { hasFeature, getCapabilities } from "../utils/planCapabilities";
 import { useLiteMode } from "../hooks/useLiteMode";
 import { useTrialState } from "../hooks/useTrialState";
@@ -97,9 +99,31 @@ function compressImageFile(file, maxDim = 512, quality = 0.7) {
 // users, a permanent support lever for field debugging.
 let _debugTaps = { count: 0, t: 0 };
 
+// The footer used to read a hardcoded "v1.0.0" — the same string in every build ever
+// shipped, so it could not answer the one question a field tester actually has: WHICH
+// binary am I looking at? Read the real package version from the native layer instead.
+// Falls back to the hardcoded web label off-device, where there is no APK to identify.
+function useAppVersion() {
+  const [v, setV] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!window.Capacitor?.isNativePlatform?.()) return;
+      try {
+        const { App } = await import("@capacitor/app");
+        const info = await App.getInfo();
+        if (alive && info) setV(`v${info.version} (build ${info.build})`);
+      } catch { /* non-native or plugin missing — keep the fallback */ }
+    })();
+    return () => { alive = false; };
+  }, []);
+  return v;
+}
+
 export default function SettingsPage() {
+  const appVersion = useAppVersion();
   const { user, org } = useAuthStore();
-  const { lang, setLang } = useLangStore();
+  const { lang } = useLangStore();
   const { selectedLocation, setLocation } = useSettingsStore();
   const qc = useQueryClient();
   const fmt = useCurrency();
@@ -1492,7 +1516,10 @@ export default function SettingsPage() {
             ))}
           </div>
           <div style={{ marginTop: 20, display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button className="btn btn-secondary" onClick={() => setLang(lang === "en" ? "fr" : "en")}>
+            {/* MP-LANGUAGE-PERSIST: was a bare setLang() — it changed the display and
+                never saved the choice, so notifications kept arriving in the old
+                language. setLanguage() writes pa_users.language too. */}
+            <button className="btn btn-secondary" onClick={() => setLanguage(lang === "en" ? "fr" : "en")}>
               🌐 {lang === "en" ? "Switch to Français" : "Switch to English"}
             </button>
             {/* MP-RESTRICTED-MODE (B2): subscription entry point — always reachable. */}
@@ -1500,6 +1527,11 @@ export default function SettingsPage() {
               💳 {lang === "en" ? "Manage subscription" : "Gérer l'abonnement"}
             </Link>
           </div>
+
+          {/* MP-PUSH: per-user alert status. On the Account tab (not Shop) because it is
+              a PER-DEVICE, PER-USER setting — a cashier needs it as much as the owner.
+              Hidden entirely on the web build, where push doesn't exist. */}
+          <PushAlertsCard lang={lang} />
         </div>
       )}
 
@@ -2253,7 +2285,7 @@ export default function SettingsPage() {
       {/* MP-DEBUG-REVEAL: tappable version footer — 5 taps toggles debug mode. */}
       <div onClick={handleVersionTap}
         style={{ textAlign: "center", padding: "20px 0 8px", color: "var(--text-muted)", fontSize: 11, userSelect: "none" }}>
-        Stenamo Business · v1.0.0
+        Stenamo Business · {appVersion || "v1.0.0"}
       </div>
     </div>
   );

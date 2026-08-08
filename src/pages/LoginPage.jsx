@@ -3,9 +3,10 @@ import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAuthStore, useLangStore } from "../store";
 import api from "../utils/api";
+import { setLanguageLocalPending } from "../utils/setLanguage"; // MP-LANGUAGE-PERSIST
 
 export default function LoginPage() {
-  const { t, lang, setLang }    = useLangStore();
+  const { t, lang }             = useLangStore();
 
   // MP-AUTH-STATE-HYGIENE: surface the user-change tripwire reason.
   // MP-DEACTIVATION-ENFORCEMENT (Amendment 4b): if the auth middleware bounced an
@@ -87,7 +88,11 @@ export default function LoginPage() {
           </div>
         </div>
         <div style={{ textAlign: "center", marginTop: 16 }}>
-          <button onClick={() => setLang(lang === "en" ? "fr" : "en")} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}>
+          {/* MP-LANGUAGE-PERSIST: no session yet, so this can't PATCH — it records the
+              choice as pending and syncLanguageOnLogin flushes it the moment the user
+              signs in. "I picked English on the login screen" now survives into the
+              account instead of being a display-only change. */}
+          <button onClick={() => setLanguageLocalPending(lang === "en" ? "fr" : "en")} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}>
             🌐 {lang === "en" ? "Francais" : "English"}
           </button>
         </div>
