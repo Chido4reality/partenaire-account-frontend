@@ -1,6 +1,6 @@
 // MP-CAPACITOR-AND-OFFLINE-FIRST-ARCHITECTURE Slice 2
 //
-// Capacitor config for Mon Partenaire (POS) Android wrap.
+// Capacitor config for Stenamo Business (POS) Android wrap.
 //
 // Bundle ID:   com.partenaire.monpartenaire  (Play Store target)
 // Web bundle:  dist/  (vite build output — `npm run build` then
@@ -21,7 +21,7 @@ import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId:    'com.partenaire.monpartenaire',
-  appName:  'Mon Partenaire Dozie',
+  appName:  'Stenamo Business',
   webDir:   'dist',
 
   // androidScheme:'https' lets the Android WebView treat
