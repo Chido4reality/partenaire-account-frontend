@@ -75,6 +75,10 @@ const LEGACY_REASON_LABELS = {
   recovered:      { en: "Recovered / found",           fr: "Retrouvé" },
   damaged:        { en: "Damaged / written off",       fr: "Endommagé / radié" },
   confirmed_loss: { en: "Confirmed loss (theft/lost)", fr: "Perte confirmée (vol/perdu)" },
+  // MP-STALE-OUT-OF-QUEUE: NEVER render this as "Verified". Nobody counted
+  // anything — the row was acknowledged as a slow mover. Labelling it as a
+  // verified count is the same class of lie as a "miscount" that rewrote stock.
+  slow_mover:     { en: "Acknowledged — slow mover",   fr: "Acquitté — rotation lente" },
 };
 const reasonLabel = (key, en) => {
   const b = RESOLVE_BRANCHES.find(x => x.key === key);
@@ -320,6 +324,23 @@ export default function StockCheckPage() {
     onError: (e) => toast.error(e?.response?.data?.message || (en ? "Failed" : "Échec")),
   });
 
+  // MP-STALE-OUT-OF-QUEUE: "yes, it's genuinely just slow." Writes
+  // verified + resolution_reason='slow_mover' + qty_counted null, which engages the
+  // scan's existing 60-day cooldown WITHOUT claiming anyone counted anything.
+  const ackSlowMut = useMutation({
+    mutationFn: (id) => api.post(`/stock-checks/${id}/acknowledge-slow`).then(r => r.data),
+    onSuccess: (res) => {
+      toast.success(en
+        ? `Acknowledged — we won't ask again for ${res.quiet_for_days || STALE_DAYS} days`
+        : `Acquitté — nous n'en reparlerons pas avant ${res.quiet_for_days || STALE_DAYS} jours`);
+      invalidateAll();
+    },
+    onError: (e) => {
+      const b = e?.response?.data || {};
+      toast.error((en ? b.message_en : b.message_fr) || b.message || (en ? "Failed" : "Échec"));
+    },
+  });
+
   const deleteMut = useMutation({
     mutationFn: (id) => api.delete(`/stock-checks/${id}`).then(r => r.data),
     onSuccess: () => {
@@ -433,17 +454,33 @@ export default function StockCheckPage() {
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 8, margin: "14px 0" }}>
-        {["pending", "mismatch", "resolved", "damaged", "stale"].map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            style={{ padding: "7px 14px", borderRadius: 999, border: "1px solid var(--border)", cursor: "pointer", fontWeight: 700, fontSize: 13,
-              background: tab === t ? "var(--brand-light)" : "transparent", color: tab === t ? "#1a1a2e" : "var(--text-secondary)" }}>
-            {t === "pending" ? (en ? "To count" : "À compter")
-              : t === "mismatch" ? (en ? "Mismatches" : "Écarts")
-              : t === "resolved" ? (en ? "Resolved" : "Résolus")
-              : t === "damaged" ? (en ? "Damaged" : "Endommagé")
-              : (en ? "Not moving" : "Sans mouvement")}
-          </button>
-        ))}
+        {["pending", "mismatch", "resolved", "damaged", "stale"].map(t => {
+          // MP-STALE-OUT-OF-QUEUE: counts on the tabs, so the split is visible at a
+          // glance instead of being something you have to click to discover. The
+          // stale count is rendered MUTED and never joins the sidebar badge — an
+          // observation should not look like a job.
+          const n = t === "pending" ? summary.data?.data?.pending
+            : t === "mismatch" ? summary.data?.data?.mismatch
+            : t === "damaged" ? summary.data?.data?.damaged
+            : t === "stale" ? summary.data?.data?.stale
+            : null;
+          return (
+            <button key={t} onClick={() => setTab(t)}
+              style={{ padding: "7px 14px", borderRadius: 999, border: "1px solid var(--border)", cursor: "pointer", fontWeight: 700, fontSize: 13,
+                background: tab === t ? "var(--brand-light)" : "transparent", color: tab === t ? "#1a1a2e" : "var(--text-secondary)" }}>
+              {t === "pending" ? (en ? "To count" : "À compter")
+                : t === "mismatch" ? (en ? "Mismatches" : "Écarts")
+                : t === "resolved" ? (en ? "Resolved" : "Résolus")
+                : t === "damaged" ? (en ? "Damaged" : "Endommagé")
+                : (en ? "Not moving" : "Sans mouvement")}
+              {n > 0 && (
+                <span style={{ marginLeft: 6, fontWeight: 700, opacity: tab === t ? 0.75 : (t === "stale" ? 0.5 : 0.8) }}>
+                  {n}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* A2 date filter — applies to every tab except Not moving (a ranked
@@ -754,10 +791,25 @@ export default function StockCheckPage() {
                       {value > 0 && <span style={{ color: "var(--text-muted)" }}>{en ? "Tied up" : "Immobilisé"}: <b style={{ color: "#f87171" }}>{fmt(value)}</b></span>}
                     </div>
                   </div>
-                  <div style={{ alignSelf: "center" }}>
+                  <div style={{ alignSelf: "center", display: "flex", flexDirection: "column", gap: 6, alignItems: "stretch" }}>
                     <button onClick={() => setResolveFor(r)} className="btn btn-primary" style={{ fontWeight: 700, whiteSpace: "nowrap" }}>
                       🔍 {en ? "Count it" : "Compter"}
                     </button>
+                    {/* MP-STALE-OUT-OF-QUEUE: the action that actually silences a slow
+                        mover. Before this the only options were to count it or delete
+                        it — and DELETE is the one thing that guarantees it returns,
+                        because the nightly scan's 60-day cooldown keys on verified_at
+                        and a deleted row has none. 27 cleared at midnight became 28 by
+                        04:40. Owner-only, mirroring who can delete. */}
+                    {isOwner && (
+                      <button onClick={() => ackSlowMut.mutate(r.id)} disabled={ackSlowMut.isPending}
+                        title={en ? `Stops asking for ${STALE_DAYS} days` : `N'en reparle plus pendant ${STALE_DAYS} jours`}
+                        style={{ padding: "6px 12px", borderRadius: 8, cursor: "pointer", whiteSpace: "nowrap",
+                          border: "1px solid var(--border)", background: "transparent",
+                          color: "var(--text-secondary)", fontSize: 12, fontWeight: 700 }}>
+                        {ackSlowMut.isPending ? "…" : (en ? "It's just slow" : "C'est juste lent")}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

@@ -809,14 +809,20 @@ export default function Layout() {
       (role === "owner" || role === "manager" || role === "warehouse"),
     onError: () => {}
   });
-  // MP-DAMAGED-GOODS / MP-STALE-PRODUCT-SCAN: the stock-check attention badge
-  // covers pending re-counts, damaged-goods piles awaiting action, AND stale
-  // (not-moving) products — one summarized number on the sidebar; the Stock
-  // Check page's own tabs (To count / Damaged / Not moving) break it down so
-  // nothing is hidden, just not spelled out three times in the nav.
-  const stockCheckPending = (stockCheckSummary?.data?.pending || 0)
-    + (stockCheckSummary?.data?.damaged || 0)
-    + (stockCheckSummary?.data?.stale || 0);
+  // MP-STALE-OUT-OF-QUEUE (2026-08-08): this used to add `stale` in too, and that
+  // one expression was the whole bug Peter caught. For Paul's shop it rendered 42
+  // against a real to-count queue of 14 — 28 of the 42 were slow-mover reports that
+  // re-flag nightly no matter what anyone does. Four rows in five being permanent
+  // noise teaches a shopkeeper to skim the badge, and the one row that is a genuine
+  // fraud signal goes past with them. That defeats the point of the whole feature.
+  //
+  // A movement-triggered flag is an ACTION; a slow mover is an OBSERVATION. They
+  // are not added together anywhere. `attention` is computed server-side
+  // (routes/stockChecks.js /summary) precisely so each client cannot invent its own
+  // definition — read it, don't re-derive it. The fallback keeps an older backend
+  // working, and still excludes stale.
+  const stockCheckPending = stockCheckSummary?.data?.attention
+    ?? ((stockCheckSummary?.data?.pending || 0) + (stockCheckSummary?.data?.damaged || 0));
 
   // MP-RESTOCK — "to buy" count badge. Lightweight count-only endpoint (no velocity
   // RPC), 60s focus-aware poll like the other sidebar counts. Owner/manager + Pro
