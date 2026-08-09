@@ -11,6 +11,7 @@ import { useLangStore, useSettingsStore, useAuthStore, useDraftCartStore } from 
 // why; the backend at sales.js:46-62 is the source of truth either way.
 import api from "../utils/api";
 import { useMyPermissions } from "../utils/useMyPermissions";
+import { useTicketSummary, ticketSummaryKey } from "../utils/useTicketSummary"; // MP-CASHIER-PHASE-1b
 import { useCurrency } from "../utils/useCurrency";
 import { formatMoney, currencySymbol } from "../utils/currency";
 import { t } from "../utils/i18n";
@@ -87,6 +88,13 @@ export default function POSPage() {
   const { selectedLocation, setLocation } = useSettingsStore();
   const { user } = useAuthStore();
   const qc = useQueryClient();
+  // MP-CASHIER-PHASE-1b: the till's mode, from the server, via the shared hook —
+  // same single source the sidebar gate and both badges read. NOT
+  // selectedLocation.sales_mode: that rides the ["locations"] cache, which has
+  // silently drifted twice. Degrades safe — a failed read leaves mode 'direct',
+  // i.e. today's behaviour, which is the right way for this to fail.
+  const { summary: tillSummary } = useTicketSummary(selectedLocation?.id || null, { onError: () => {} });
+  const isCashierMode = (tillSummary?.mode || "direct") === "cashier";
   // MP-PROPLUS-CASHIER-LOCATION: when set, this cashier is pinned to a home
   // location (Pro Plus). Layout already force-overwrites selectedLocation to it;
   // here we LOCK the picker so it can't be changed on-device. Backend also
@@ -1587,6 +1595,28 @@ export default function POSPage() {
       // SW intercept is now a no-op (public/sw-offline-sales.js
       // header comment explains why); requests go straight to the
       // network and real failures land in onError below.
+      // ── MP-CASHIER-PHASE-1b: SAME payload, SAME approval refs, one endpoint ──
+      // "Send to Cashier" is the salesperson's TERMINAL action, so it is the same
+      // single bundled prompt as today at a different trigger — deliberately NOT
+      // a rebuilt cascade. Reusing salePayload verbatim is what guarantees that:
+      // bundled_approval_token / bundled_approval_id ride the /ticket call exactly
+      // as they ride /sales, and the server's approval_required response is handled
+      // by the one onError branch below, unchanged.
+      //
+      // The payment fields are dropped, not zeroed. The salesperson makes no
+      // payment choice in cashier mode — the cashier does, later, at /pay — and
+      // omitting the keys is the shape proven end-to-end against staging. Sending
+      // pay_mode here would hand the phantom-paid guard an intent nobody expressed.
+      if (isCashierMode) {
+        const ticketPayload = {
+          ...salePayload,
+          payment_method: "cash",   // DB default; the cashier's real choice overwrites it at payment
+          paid_amount: undefined,
+          pay_mode: undefined,
+          due_date: undefined,
+        };
+        return await api.post("/sales/ticket", ticketPayload).then(r => r.data);
+      }
       const result = await api.post("/sales", salePayload).then(r => r.data);
       return result;
     },
@@ -1604,6 +1634,20 @@ export default function POSPage() {
         setDebtBanner(null);
         setOnlineCtx(null);
       };
+
+      // MP-CASHIER-PHASE-1b: a raised ticket is NOT a completed sale. No receipt
+      // is printed here — no money has been taken, and a printed receipt for an
+      // unpaid ticket is the one artefact that could put a customer out of the
+      // door with goods nobody has been paid for. The order slip the customer
+      // carries to the cashier is the sale NUMBER, which is minted at raise and
+      // survives unchanged through payment.
+      if (isCashierMode && data?.data?.sale_number) {
+        toast.success(`${t("ticket_sent", lang)} · ${data.data.sale_number}`, { duration: 3500 });
+        resetCart();
+        qc.invalidateQueries({ queryKey: ticketSummaryKey(selectedLocation?.id || null) });
+        qc.invalidateQueries({ queryKey: ["tickets", "pending_payment", selectedLocation?.id || null] });
+        return;
+      }
 
       // (Previous data?.offline branch removed — see fetch comment
       // above. The SW no longer returns the fake offline shape, so
@@ -2442,7 +2486,39 @@ export default function POSPage() {
               <span style={{ fontWeight: 800, fontSize: 20, color: "var(--brand-light)", letterSpacing: "-0.5px" }}>{fmt(total)}</span>
             </div>
 
-            {!showPayment ? (
+            {/* ── MP-CASHIER-PHASE-1b: the till takes no money ──────────────
+                In cashier mode the salesperson never chooses a payment method —
+                the cashier does, later. So the whole payment block collapses to
+                the Order Total already rendered above plus ONE button. Same
+                screen, not a second one: the cart, scanner, customer picker and
+                approval prompts are untouched, only the terminal action changes.
+                Hold stays available below — parking a customer mid-cart is a
+                cart operation, not a payment one, and removing it would quietly
+                take a tool away from the salesperson. */}
+            {isCashierMode ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "2px 2px 6px" }}>
+                  <span style={{ fontSize: 13, opacity: 0.8 }}>{t("order_total", lang)}</span>
+                  <span style={{ fontWeight: 800, fontSize: 18 }}>{fmt(total)}</span>
+                </div>
+                <RestrictedAction block>
+                  <button className="btn btn-primary btn-block"
+                    disabled={cart.length === 0 || !selectedLocation || saleMutation.isPending}
+                    onClick={() => saleMutation.mutate()}
+                    style={{ height: 44, fontSize: 14, fontWeight: 700, borderRadius: 12 }}>
+                    {!selectedLocation
+                      ? (lang === "en" ? "Select location first" : "Choisir emplacement")
+                      : saleMutation.isPending ? "…" : `${t("send_to_cashier", lang)} →`}
+                  </button>
+                </RestrictedAction>
+                {!isDebtOnlyCart && (
+                  <button disabled={cart.length === 0 || !selectedLocation} onClick={() => { setHoldLabel(""); setHoldNotes(""); setShowHold(true); }}
+                    style={{ height: 40, fontSize: 13, fontWeight: 700, borderRadius: 12, cursor: cart.length === 0 ? "not-allowed" : "pointer", background: "transparent", border: "1.5px solid rgba(245,158,11,0.5)", color: cart.length === 0 ? "var(--text-muted)" : "#fbbf24", opacity: cart.length === 0 || !selectedLocation ? 0.5 : 1 }}>
+                    ⏸ {lang === "en" ? "Hold Sale" : "Mettre en attente"}
+                  </button>
+                )}
+              </div>
+            ) : !showPayment ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <RestrictedAction block>
                   <button className="btn btn-primary btn-block" disabled={cart.length === 0 || !selectedLocation} onClick={() => setShowPayment(true)} style={{ height: 44, fontSize: 14, fontWeight: 700, borderRadius: 12 }}>
