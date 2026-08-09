@@ -1409,6 +1409,11 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
         branch_scope: perms.branch_scope === "all" ? "all" : "own",
         can_manage_staff: !!perms.can_manage_staff,
         can_cancel_transfers: !!perms.can_cancel_transfers, // MP-TRANSFER-GOVERNANCE
+        // MP-CASHIER-PHASE-1b: sent on every save like the flags above, so an
+        // untouched grant round-trips as itself rather than being cleared by a
+        // save that happened to be about something else.
+        can_receive_payment: !!perms.can_receive_payment,
+        can_release_goods: !!perms.can_release_goods,
       };
       PERM_ACTIONS.forEach((a) => {
         const v = perms[a.key];
@@ -2003,6 +2008,43 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                               : "« Sa succursale seulement » (défaut) le limite à la boutique assignée dans Paramètres → Personnel — il lui en faut une pour déplacer du stock. « Toutes les succursales » lui permet de déplacer du stock partout. Cela ne lui donne AUCUN pouvoir d'approbation ni de gestion du personnel.")
                         : (en ? "Limits where he can act. On its own it grants nothing — it only widens what you delegate below."
                               : "Limite où il peut agir. Seul, cela n'accorde rien — cela élargit seulement ce que vous déléguez ci-dessous.")}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── MP-CASHIER-PHASE-1b: the two cashier-workflow grants ──────────
+                    Shown for every staff role, because who works the till is a shop
+                    decision, not a role one. Both default OFF and stay inert at a
+                    direct-mode shop: the server checks sales_mode BEFORE it reads
+                    either flag, so granting them somewhere that sells directly changes
+                    nothing until that shop is switched in Settings → Sales Workflow.
+                    Owners and managers already hold both implicitly and are not
+                    offered them here — a checkbox that cannot be unticked is a lie. */}
+                {staff.role !== "owner" && staff.role !== "manager" && (
+                  <div style={{ marginTop: 10, marginBottom: 8 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 5 }}>
+                      {en ? "Cashier workflow" : "Circuit caissier"}
+                    </div>
+                    {[
+                      { key: "can_receive_payment", en: "Can take payment", fr: "Peut encaisser",
+                        hen: "Sees the Cashier queue and settles tickets a salesperson sent.",
+                        hfr: "Voit la file Caissier et encaisse les tickets envoyés par un vendeur." },
+                      { key: "can_release_goods", en: "Can hand over goods", fr: "Peut remettre la marchandise",
+                        hen: "Sees the Pickup list and marks paid orders as collected.",
+                        hfr: "Voit la liste Retrait et marque les commandes payées comme retirées." },
+                    ].map((f) => (
+                      <label key={f.key} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "6px 0", cursor: "pointer" }}>
+                        <input type="checkbox" checked={!!perms[f.key]} style={{ marginTop: 3 }}
+                          onChange={(e) => setPerms((p) => ({ ...(p || {}), [f.key]: e.target.checked }))} />
+                        <span>
+                          <span style={{ fontSize: 13, fontWeight: 600 }}>{en ? f.en : f.fr}</span>
+                          <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)" }}>{en ? f.hen : f.hfr}</span>
+                        </span>
+                      </label>
+                    ))}
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                      {en ? "Both do nothing at a shop that sells directly. Switch the shop in Settings → Sales Workflow first."
+                          : "Les deux n'ont aucun effet dans une boutique en vente directe. Basculez d'abord la boutique dans Paramètres → Circuit de vente."}
                     </div>
                   </div>
                 )}
