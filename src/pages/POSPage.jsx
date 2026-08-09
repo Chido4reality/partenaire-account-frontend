@@ -12,6 +12,7 @@ import { useLangStore, useSettingsStore, useAuthStore, useDraftCartStore } from 
 import api from "../utils/api";
 import { useMyPermissions } from "../utils/useMyPermissions";
 import { useTicketSummary, ticketSummaryKey } from "../utils/useTicketSummary"; // MP-CASHIER-PHASE-1b
+import { printTicketSlipViaBluetooth } from "../utils/btPrint"; // MP-CASHIER-PHASE-1b
 import { useCurrency } from "../utils/useCurrency";
 import { formatMoney, currencySymbol } from "../utils/currency";
 import { t } from "../utils/i18n";
@@ -95,6 +96,36 @@ export default function POSPage() {
   // i.e. today's behaviour, which is the right way for this to fail.
   const { summary: tillSummary } = useTicketSummary(selectedLocation?.id || null, { onError: () => {} });
   const isCashierMode = (tillSummary?.mode || "direct") === "cashier";
+  // Per-shop: does the customer carry a printed slip, or get called by number?
+  // Defaults to 'slip' when the column hasn't loaded — printing a slip nobody
+  // needed is harmless; failing to print one the shop relies on is not.
+  const handoff = selectedLocation?.ticket_handoff || "slip";
+
+  // MP-CASHIER-PHASE-1b: the last raised ticket, kept SO THE SLIP CAN BE
+  // REPRINTED. By the time printing runs the ticket already exists in the
+  // cashier's queue, so a printer that is off, out of paper or out of range must
+  // never read as a failed sale — it is a failed slip, and the way out is to
+  // print it again, not to re-ring the cart.
+  const [lastSlip, setLastSlip] = useState(null); // { payload, printed:boolean, error:string|null }
+
+  // Print (or reprint) the order slip. NEVER throws to the caller: the ticket is
+  // already raised, so every outcome here is recorded in state and shown as a
+  // banner the salesperson can act on, not as an exception that looks like the
+  // sale failed.
+  const printSlip = async (payload) => {
+    try {
+      await printTicketSlipViaBluetooth(payload);
+      setLastSlip({ payload, printed: true, error: null });
+    } catch (e) {
+      const code = e && e.code;
+      const why = code === "NO_DEVICE"
+        ? (lang === "en" ? "No printer selected." : "Aucune imprimante selectionnee.")
+        : code === "NOT_NATIVE"
+          ? (lang === "en" ? "Printing needs the Android app." : "L'impression necessite l'application Android.")
+          : (lang === "en" ? "The printer did not respond." : "L'imprimante n'a pas repondu.");
+      setLastSlip({ payload, printed: false, error: why });
+    }
+  };
   // MP-PROPLUS-CASHIER-LOCATION: when set, this cashier is pinned to a home
   // location (Pro Plus). Layout already force-overwrites selectedLocation to it;
   // here we LOCK the picker so it can't be changed on-device. Backend also
@@ -1648,10 +1679,35 @@ export default function POSPage() {
       // carries to the cashier is the sale NUMBER, which is minted at raise and
       // survives unchanged through payment.
       if (isCashierMode && data?.data?.sale_number) {
-        toast.success(`${t("ticket_sent", lang)} · ${data.data.sale_number}`, { duration: 3500 });
+        const sale = data.data;
+        // Snapshot BEFORE resetCart — the slip is built from the cart that was
+        // just sent, and resetCart is about to empty it.
+        const slip = {
+          org: orgSettings, lang,
+          // SAME source the sale receipts use (PaymentEventReceipt keeps the roll
+          // width in localStorage, remembered across receipts) — not an org
+          // column, which does not exist. Reading a non-existent field would have
+          // silently handed an 80mm shop a 58mm slip forever.
+          widthMm: (() => { try { return Number(localStorage.getItem("mp_thermal_width")) === 80 ? 80 : 58; } catch { return 58; } })(),
+          saleNumber: sale.sale_number,
+          raisedByName: user?.full_name || "",
+          customerName: customer?.name || "",
+          itemCount: cart.length,
+          total: Number(sale.total_amount) || total,
+          dueNow: sale.paid_amount != null ? Number(sale.paid_amount) : null,
+          onAccount: Math.max(0, (Number(sale.total_amount) || total) - (Number(sale.paid_amount) || 0)),
+          when: new Date(),
+        };
+        toast.success(`${t("ticket_sent", lang)} · ${sale.sale_number}`, { duration: 3500 });
         resetCart();
         qc.invalidateQueries({ queryKey: ticketSummaryKey(selectedLocation?.id || null) });
         qc.invalidateQueries({ queryKey: ["tickets", "pending_payment", selectedLocation?.id || null] });
+
+        // A shop on the 'called' handoff has no slip to print — the cashier calls
+        // the number. Nothing to do, and nothing to apologise for.
+        if (handoff !== "slip") { setLastSlip(null); return; }
+        setLastSlip({ payload: slip, printed: false, error: null });
+        printSlip(slip);
         return;
       }
 
@@ -2501,6 +2557,37 @@ export default function POSPage() {
                 Hold stays available below — parking a customer mid-cart is a
                 cart operation, not a payment one, and removing it would quietly
                 take a tool away from the salesperson. */}
+            {/* MP-CASHIER-PHASE-1b: the slip banner. Stays until the next send, so
+                a salesperson who walks away and comes back can still reprint. The
+                ticket is ALREADY in the cashier's queue either way — this banner
+                is about the paper, never about the sale. */}
+            {isCashierMode && lastSlip && (
+              <div style={{
+                border: `1px solid ${lastSlip.printed ? "rgba(16,185,129,0.5)" : "#d9a441"}`,
+                background: lastSlip.printed ? "rgba(16,185,129,0.10)" : "rgba(217,164,65,0.12)",
+                borderRadius: 10, padding: "10px 12px", marginBottom: 10, fontSize: 13, lineHeight: 1.45,
+              }}>
+                <div style={{ fontWeight: 700 }}>
+                  {lastSlip.printed
+                    ? (lang === "en" ? `Slip printed · ${lastSlip.payload.saleNumber}` : `Bon imprime · ${lastSlip.payload.saleNumber}`)
+                    : (lang === "en" ? `Slip NOT printed · ${lastSlip.payload.saleNumber}` : `Bon NON imprime · ${lastSlip.payload.saleNumber}`)}
+                </div>
+                {!lastSlip.printed && (
+                  <div style={{ marginTop: 2 }}>
+                    {lastSlip.error}{" "}
+                    {lang === "en"
+                      ? "The order is already with the cashier — give the customer this number, or the cashier can find it by their name."
+                      : "La commande est deja chez le caissier — donnez ce numero au client, ou le caissier peut la trouver par son nom."}
+                  </div>
+                )}
+                <button
+                  onClick={() => printSlip(lastSlip.payload)}
+                  style={{ marginTop: 8, padding: "7px 14px", borderRadius: 8, border: "1px solid var(--border)", background: "transparent", color: "inherit", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>
+                  🖨 {lang === "en" ? "Reprint slip" : "Reimprimer le bon"}
+                </button>
+              </div>
+            )}
+
             {isCashierMode ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "2px 2px 6px" }}>

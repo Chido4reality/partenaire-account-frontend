@@ -241,6 +241,81 @@ export function buildSaleEscposBytes({
 }
 
 // Convenience: same as above but returns a base64 string for the native bridge.
+// ── MP-CASHIER-PHASE-1b: THE ORDER SLIP ─────────────────────────────────────
+// What the customer carries from the salesperson to the cashier. It is NOT a
+// receipt: no money has been taken when this prints, and it must never be
+// mistaken for proof of payment — so it says so, in both languages, in a box
+// that cannot be skimmed past.
+//
+// The sale number is printed at double width AND double height (GS ! 0x11)
+// because the cashier reads it across a counter from a customer holding it, not
+// from a slip in their own hand.
+//
+// It reuses the sale number the ticket already carries. Nothing here mints an
+// identifier; a second one is how a customer ends up holding a number the till
+// cannot find.
+//
+// NO QR, deliberately. ESC/POS QR support varies by printer and has already
+// bitten this codebase once (the "wide error!" CODE128 failure that forced the
+// switch to native QR), so putting one here would mean a hardware claim nobody
+// has tested on Paul's actual printer. The flow works on the number alone.
+export function buildTicketSlipEscposBytes({
+  org = {}, lang = "fr", widthMm = 58,
+  saleNumber = "", raisedByName = "", customerName = "",
+  itemCount = 0, total = 0, when = null,
+  dueNow = null, onAccount = 0,
+} = {}) {
+  const en = lang === "en";
+  const W = Number(widthMm) === 80 ? 48 : 32;
+  const sym = (org.currency && /ngn/i.test(org.currency)) ? "NGN" : "FCFA";
+  const d = when instanceof Date ? when : new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  const stamp = `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+
+  const doc = newDoc(W);
+  doc.init();
+
+  doc.align("C").bold(true).line(org.name || "").bold(false);
+  doc.line(en ? "ORDER SLIP" : "BON DE COMMANDE");
+  doc.rule();
+
+  // The number, big. GS ! n — high nibble = width multiplier, low = height.
+  doc.align("C");
+  doc.raw(GS, 0x21, 0x11);          // double width + double height
+  doc.line(saleNumber || "");
+  doc.raw(GS, 0x21, 0x00);          // back to normal for everything after
+  doc.feed(1);
+
+  doc.align("L");
+  doc.cols(en ? "Items" : "Articles", String(itemCount));
+  doc.cols(en ? "Total" : "Total", `${money(total)} ${sym}`);
+  // When the salesperson set terms, the slip states what the customer will be
+  // asked for AT THE TILL. A slip that says 20 000 when the cashier asks for
+  // 5 000 is an argument at the counter.
+  if (dueNow != null && Number(dueNow) !== Number(total)) {
+    doc.cols(en ? "Pay now" : "A payer", `${money(dueNow)} ${sym}`);
+    if (Number(onAccount) > 0) doc.cols(en ? "On account" : "Sur compte", `${money(onAccount)} ${sym}`);
+  }
+  if (customerName) doc.cols(en ? "Customer" : "Client", customerName);
+  if (raisedByName) doc.cols(en ? "Served by" : "Servi par", raisedByName);
+  doc.cols(en ? "Time" : "Heure", stamp);
+  doc.rule();
+
+  doc.align("C").bold(true);
+  doc.wrapped(en ? "NOT A RECEIPT - NOTHING PAID YET" : "PAS UN RECU - RIEN N'EST PAYE");
+  doc.bold(false);
+  doc.wrapped(en
+    ? "Take this to the cashier to pay. Your receipt is issued after payment."
+    : "Presentez ceci au caissier pour payer. Votre recu est remis apres le paiement.");
+
+  doc.feed(3).cut();
+  return new Uint8Array(doc.bytes);
+}
+
+export function buildTicketSlipEscposBase64(opts) {
+  return bytesToBase64(buildTicketSlipEscposBytes(opts));
+}
+
 export function buildSaleEscposBase64(opts) {
   return bytesToBase64(buildSaleEscposBytes(opts));
 }

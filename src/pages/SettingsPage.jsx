@@ -409,6 +409,35 @@ export default function SettingsPage() {
   // strand tickets; we hold that in state and re-send with confirm:true only
   // after the owner has read a sentence naming the count. Never an auto-retry.
   const [modeConfirm, setModeConfirm] = useState(null); // { loc, pending, message }
+
+  // The two ORG-level workflow settings are saved by TARGETED patch, not through
+  // the shopForm dirty-tracking Save. That Save exists because a full-object write
+  // could silently revert a control flag someone else changed; a one-field PATCH
+  // has nothing to revert, and routing these through the other tab's Save button
+  // would mean the Sales Workflow tab had a control whose effect appeared
+  // somewhere else.
+  const orgWorkflow = shopResp?.data || {};
+  const [uncollectedHours, setUncollectedHours] = useState("");
+  useEffect(() => {
+    if (shopResp?.data?.uncollected_alert_hours != null) setUncollectedHours(String(shopResp.data.uncollected_alert_hours));
+  }, [shopResp?.data?.uncollected_alert_hours]);
+
+  const orgWorkflowMutation = useMutation({
+    mutationFn: (delta) => api.patch("/settings", delta),
+    onSuccess: () => { toast.success(lang === "en" ? "✓ Saved" : "✓ Enregistré"); qc.invalidateQueries(["org-settings"]); },
+    onError: (err) => toast.error(err.response?.data?.message || "Error"),
+  });
+  const saveOrgWorkflow = (delta) => orgWorkflowMutation.mutate(delta);
+
+  const locWorkflowMutation = useMutation({
+    mutationFn: ({ loc, delta }) => api.patch(`/locations/${loc.id}/ticket-settings`, delta),
+    onSuccess: () => { toast.success(lang === "en" ? "✓ Saved" : "✓ Enregistré"); qc.invalidateQueries(["locations"]); },
+    onError: (err) => {
+      const d = err.response?.data || {};
+      toast.error((lang === "en" ? d.message_en : d.message_fr) || d.message || "Error");
+    },
+  });
+  const saveLocWorkflow = (loc, delta) => locWorkflowMutation.mutate({ loc, delta });
   const salesModeMutation = useMutation({
     mutationFn: ({ loc, mode, confirm }) =>
       api.patch(`/locations/${loc.id}/sales-mode`, { sales_mode: mode, ...(confirm ? { confirm: true } : {}) }),
@@ -895,26 +924,104 @@ export default function SettingsPage() {
             })}
           </div>
 
-          {/* Deferred settings get a HOME, not an implementation. Four half-features
-              would be worse than four honest "not yet"s, and the block existing is
-              what stops each of them being bolted on somewhere else later. */}
-          <div style={{ marginTop: 24, opacity: 0.55 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.4, marginBottom: 8 }}>
-              {lang === "en" ? "NOT YET AVAILABLE" : "PAS ENCORE DISPONIBLE"}
+          {/* ── THE FOUR SETTINGS ────────────────────────────────────────────
+              Every default is today's behaviour, so switching a shop to cashier
+              mode requires touching NONE of these. That is the property that
+              matters; the controls are just how you depart from it. */}
+          <div style={{ marginTop: 28 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.4, marginBottom: 10 }}>
+              {lang === "en" ? "WORKFLOW OPTIONS" : "OPTIONS DU CIRCUIT"}
             </div>
-            {[
-              { en: "Offline ticketing", fr: "Tickets hors ligne",
-                den: "Raise, pay and hand over without a connection.", dfr: "Créer, encaisser et remettre sans connexion." },
-              { en: "Uncollected ticket alert", fr: "Alerte tickets non retirés",
-                den: "Warn when goods are paid for but not collected after a set time.", dfr: "Alerter quand des marchandises payées ne sont pas retirées après un délai." },
-              { en: "Order slip or called queue", fr: "Ticket papier ou file appelée",
-                den: "Whether the customer carries a printed slip or is called by number.", dfr: "Le client porte un ticket imprimé ou est appelé par numéro." },
-              { en: "Default for new shops", fr: "Par défaut pour les nouvelles boutiques",
-                den: "Which workflow a newly added shop starts in.", dfr: "Le circuit d'une boutique nouvellement ajoutée." },
-            ].map(s => (
-              <div key={s.en} style={{ border: "1px dashed var(--border)", borderRadius: 10, padding: "10px 14px", marginBottom: 8 }}>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{lang === "en" ? s.en : s.fr}</div>
-                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{lang === "en" ? s.den : s.dfr}</div>
+
+            {/* Org-wide: how long before uncollected goods alert the owner. */}
+            <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px", marginBottom: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>
+                {lang === "en" ? "Alert me about uncollected goods after" : "M'alerter pour la marchandise non retirée après"}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2, marginBottom: 8 }}>
+                {lang === "en"
+                  ? "Paid goods that have not been handed over are still on your shelf while the system counts them as sold. This is the only notification the cashier workflow sends."
+                  : "La marchandise payée mais non remise est encore en rayon alors que le système la compte comme vendue. C'est la seule notification envoyée par le circuit caissier."}
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input className="input" type="number" min={1} max={168} style={{ width: 110 }}
+                  value={uncollectedHours}
+                  onChange={e => setUncollectedHours(e.target.value)} />
+                <span style={{ fontSize: 13 }}>{lang === "en" ? "hours" : "heures"}</span>
+                <button className="btn btn-secondary btn-sm"
+                  onClick={() => saveOrgWorkflow({ uncollected_alert_hours: Number(uncollectedHours) || 24 })}>
+                  {lang === "en" ? "Save" : "Enregistrer"}
+                </button>
+              </div>
+            </div>
+
+            {/* Org-wide: what a newly added shop starts as. */}
+            <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px", marginBottom: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>
+                {lang === "en" ? "New shops start as" : "Les nouvelles boutiques démarrent en"}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2, marginBottom: 8 }}>
+                {lang === "en"
+                  ? "Only affects shops you add from now on. Existing shops keep whatever they are set to above."
+                  : "N'affecte que les boutiques ajoutées à partir de maintenant. Les boutiques existantes gardent leur réglage ci-dessus."}
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {["direct", "cashier"].map(m => (
+                  <button key={m} onClick={() => saveOrgWorkflow({ default_sales_mode: m })}
+                    style={{ padding: "7px 14px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer",
+                      border: (orgWorkflow.default_sales_mode || "direct") === m ? "1.5px solid #34d399" : "1px solid var(--border)",
+                      background: (orgWorkflow.default_sales_mode || "direct") === m ? "rgba(16,185,129,0.15)" : "transparent",
+                      color: (orgWorkflow.default_sales_mode || "direct") === m ? "#34d399" : "var(--text-muted)" }}>
+                    {m === "direct" ? (lang === "en" ? "Direct" : "Directe") : (lang === "en" ? "Cashier" : "Caissier")}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Per-shop: slip vs called, and offline ticketing. Only meaningful
+                where the workflow is actually on, so the list is cashier shops. */}
+            {locations.filter(l => l.type !== "warehouse" && l.sales_mode === "cashier").map(loc => (
+              <div key={loc.id} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px", marginBottom: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{loc.name}</div>
+
+                <div style={{ fontSize: 13, fontWeight: 600 }}>
+                  {lang === "en" ? "How the customer reaches the cashier" : "Comment le client rejoint le caissier"}
+                </div>
+                <div style={{ display: "flex", gap: 6, margin: "6px 0 4px" }}>
+                  {[
+                    { v: "slip",   en: "Printed slip", fr: "Bon imprimé" },
+                    { v: "called", en: "Called by number", fr: "Appelé par numéro" },
+                  ].map(o => (
+                    <button key={o.v} onClick={() => saveLocWorkflow(loc, { ticket_handoff: o.v })}
+                      style={{ padding: "7px 14px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer",
+                        border: (loc.ticket_handoff || "slip") === o.v ? "1.5px solid #34d399" : "1px solid var(--border)",
+                        background: (loc.ticket_handoff || "slip") === o.v ? "rgba(16,185,129,0.15)" : "transparent",
+                        color: (loc.ticket_handoff || "slip") === o.v ? "#34d399" : "var(--text-muted)" }}>
+                      {lang === "en" ? o.en : o.fr}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>
+                  {lang === "en"
+                    ? "A slip prints automatically when the salesperson sends the order. If the printer fails they can reprint it, and the cashier can still find the order by the customer's name."
+                    : "Un bon s'imprime automatiquement quand le vendeur envoie la commande. Si l'imprimante échoue, il peut le réimprimer, et le caissier peut retrouver la commande par le nom du client."}
+                </div>
+
+                <label style={{ display: "flex", gap: 8, alignItems: "flex-start", cursor: "pointer" }}>
+                  <input type="checkbox" style={{ marginTop: 3 }}
+                    checked={!!loc.ticket_offline_enabled}
+                    onChange={e => saveLocWorkflow(loc, { ticket_offline_enabled: e.target.checked })} />
+                  <span>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>
+                      {lang === "en" ? "Allow raising orders offline" : "Autoriser les commandes hors ligne"}
+                    </span>
+                    <span style={{ display: "block", fontSize: 12, color: "var(--text-muted)" }}>
+                      {lang === "en"
+                        ? "Not available yet. Taking payment and handing over already need a connection; raising offline would print a number the till has not accepted."
+                        : "Pas encore disponible. Encaisser et remettre nécessitent déjà une connexion ; créer hors ligne imprimerait un numéro que la caisse n'a pas accepté."}
+                    </span>
+                  </span>
+                </label>
               </div>
             ))}
           </div>

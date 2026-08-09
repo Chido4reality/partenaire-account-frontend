@@ -184,6 +184,13 @@ export default function TicketListPage({ variant = "queue" }) {
               }}>
                 <div style={{ minWidth: 210 }}>
                   <div style={{ fontWeight: 700, fontSize: 16 }}>{tk.sale_number}</div>
+                  {/* The customer's name is the FALLBACK when the slip did not
+                      print. A printer that is off or out of paper must not leave
+                      a customer unable to be served, so the queue is searchable
+                      by eye on the name as well as the number. */}
+                  {tk.pa_customers?.name && (
+                    <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>{tk.pa_customers.name}</div>
+                  )}
                   <div style={{ fontSize: 13, opacity: 0.75, marginTop: 2 }}>
                     {lines.length} {t("items_count", lang)} · {t("sent_by", lang)} {tk.ticket_raised_by_name || "—"}
                   </div>
