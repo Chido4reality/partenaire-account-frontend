@@ -191,16 +191,49 @@ export default function TicketListPage({ variant = "queue" }) {
                     {t("waiting_for", lang)} {waitedFor(tk.created_at, lang)}
                   </div>
                 </div>
-                <div style={{ fontWeight: 700, fontSize: 17 }}>{fmt(Number(tk.total_amount) || 0)}</div>
-                <button
-                  disabled={!isOnline || busy}
-                  onClick={() => settle.mutate({ id: tk.id, version: tk.version })}
-                  style={{
-                    padding: "10px 18px", borderRadius: 8, border: "none", fontWeight: 700,
-                    background: (!isOnline || busy) ? "#bbb" : "#14213d", color: "#fff",
-                    cursor: (!isOnline || busy) ? "not-allowed" : "pointer",
-                  }}
-                >{busy ? "…" : t(V.actionKey, lang)}</button>
+                {/* The terms were set by the salesperson and the cashier cannot
+                    change them, so the row states what is actually due NOW rather
+                    than the order total. "Take payment" is a lie on a credit
+                    ticket — sometimes no money changes hands, and the button must
+                    not claim otherwise. */}
+                {(() => {
+                  const totalAmt = Number(tk.total_amount) || 0;
+                  const dueNow   = Number(tk.paid_amount) || 0;
+                  const onAcct   = Math.max(0, totalAmt - dueNow);
+                  const isCredit = variant === "queue" && onAcct > 0;
+                  return (
+                    <>
+                      <div style={{ textAlign: "right", minWidth: 130 }}>
+                        <div style={{ fontWeight: 700, fontSize: 17 }}>
+                          {variant === "queue" ? fmt(dueNow) : fmt(totalAmt)}
+                        </div>
+                        {isCredit && (
+                          <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
+                            {en ? `${fmt(onAcct)} on account` : `${fmt(onAcct)} sur le compte`}
+                            {tk.due_date ? ` · ${tk.due_date}` : ""}
+                          </div>
+                        )}
+                        {variant === "queue" && !isCredit && (
+                          <div style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>
+                            {en ? "paid in full" : "payé intégralement"}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        disabled={!isOnline || busy}
+                        onClick={() => settle.mutate({ id: tk.id, version: tk.version })}
+                        style={{
+                          padding: "10px 18px", borderRadius: 8, border: "none", fontWeight: 700,
+                          background: (!isOnline || busy) ? "#bbb" : "#14213d", color: "#fff",
+                          cursor: (!isOnline || busy) ? "not-allowed" : "pointer",
+                        }}
+                      >{busy ? "…"
+                        : variant === "pickup" ? t("release_goods", lang)
+                        : dueNow === 0        ? (en ? "Confirm" : "Confirmer")
+                        : (en ? `Collect ${fmt(dueNow)}` : `Encaisser ${fmt(dueNow)}`)}</button>
+                    </>
+                  );
+                })()}
               </div>
             );
           })}

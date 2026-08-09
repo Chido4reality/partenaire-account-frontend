@@ -1608,13 +1608,19 @@ export default function POSPage() {
       // omitting the keys is the shape proven end-to-end against staging. Sending
       // pay_mode here would hand the phantom-paid guard an intent nobody expressed.
       if (isCashierMode) {
-        const ticketPayload = {
-          ...salePayload,
-          payment_method: "cash",   // DB default; the cashier's real choice overwrites it at payment
-          paid_amount: undefined,
-          pay_mode: undefined,
-          due_date: undefined,
-        };
+        // TERMS TRAVEL WITH THE TICKET. paid_amount / pay_mode / due_date are the
+        // salesperson's decision, made with the customer in front of them, and they
+        // ride unchanged — the same fields the direct path sends, from the same state.
+        //
+        // An earlier version stripped all three, which was wrong twice over: it made
+        // the till decide credit (a lending decision by the person with the least
+        // context), and derivePayment rejects a CUSTOMER sale with no paid_amount
+        // outright, so a ticket with a customer attached could not be raised at all.
+        // Every ticket in the run that "proved" this path had customer_id null.
+        //
+        // Only the TENDER is left to the cashier: they are the one who takes the
+        // money, so cash-vs-momo-vs-bank is theirs and is set at /pay.
+        const ticketPayload = { ...salePayload, payment_method: "cash" };
         return await api.post("/sales/ticket", ticketPayload).then(r => r.data);
       }
       const result = await api.post("/sales", salePayload).then(r => r.data);
@@ -2501,9 +2507,60 @@ export default function POSPage() {
                   <span style={{ fontSize: 13, opacity: 0.8 }}>{t("order_total", lang)}</span>
                   <span style={{ fontWeight: 800, fontSize: 18 }}>{fmt(total)}</span>
                 </div>
+
+                {/* ── TERMS BELONG TO THE SALESPERSON ────────────────────────
+                    Credit is not a tender. The cashier picks how the money
+                    arrives; whether this customer should have credit at all is
+                    a decision about their account, and the person who knows is
+                    the one standing with them. Letting the till choose "credit"
+                    hands a lending decision to the person with the least
+                    context — the incident that motivated MP's credit permission.
+                    So the three-way choice happens HERE, before the send, and
+                    the credit approval fires at raise inside the same bundled
+                    prompt as below-cost. Walk-ins never see this: credit is
+                    impossible without a customer. */}
+                {customer && !isDebtOnlyCart && (
+                  <>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                      {PAYMENT_MODES.map(pm => {
+                        const sel = payMode === pm.key && payModeChosen;
+                        return (
+                          <button key={pm.key} onClick={() => { setPayMode(pm.key); setPayModeChosen(true); }}
+                            style={{ padding: "8px 4px", borderRadius: 10, border: `1.5px solid ${sel ? pm.color : "var(--border)"}`, background: sel ? pm.color + "18" : "transparent", color: sel ? pm.color : "var(--text-secondary)", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
+                            <div style={{ fontSize: 14 }}>{pm.icon}</div>
+                            <div style={{ marginTop: 2 }}>{lang === "en" ? pm.en : pm.fr}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {!payModeChosen && (
+                      <div style={{ padding: "8px 12px", background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.35)", borderRadius: 8, fontSize: 12, color: "#fbbf24", fontWeight: 600 }}>
+                        ⚠️ {lang === "en"
+                          ? "Choose the terms before sending — the cashier cannot change them."
+                          : "Choisissez les conditions avant d'envoyer — le caissier ne pourra pas les modifier."}
+                      </div>
+                    )}
+                    {payMode === "partial" && (
+                      <input className="input" type="number" value={paidAmt} onChange={e => setPaidAmt(e.target.value)}
+                        placeholder={`${lang === "en" ? "Collected at the till" : "À encaisser à la caisse"} (${currencySymbol(orgSettings.currency)})`} />
+                    )}
+                    {(payMode === "partial" || payMode === "credit") && (
+                      <input className="input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} title={t("due_date", lang)} />
+                    )}
+                    {payModeChosen && payMode !== "paid" && (
+                      <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                        {lang === "en"
+                          ? `Cashier collects ${fmt(paid)} · ${fmt(balance)} on ${customer.name}'s account.`
+                          : `Le caissier encaisse ${fmt(paid)} · ${fmt(balance)} sur le compte de ${customer.name}.`}
+                      </div>
+                    )}
+                  </>
+                )}
+
                 <RestrictedAction block>
                   <button className="btn btn-primary btn-block"
-                    disabled={cart.length === 0 || !selectedLocation || saleMutation.isPending}
+                    disabled={cart.length === 0 || !selectedLocation || saleMutation.isPending
+                              || (customer && !isDebtOnlyCart && !payModeChosen)}
                     onClick={() => saleMutation.mutate()}
                     style={{ height: 44, fontSize: 14, fontWeight: 700, borderRadius: 12 }}>
                     {!selectedLocation
