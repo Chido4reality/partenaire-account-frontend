@@ -38,8 +38,16 @@ const VARIANTS = {
 // not the same as hiding: the count is always stated, and nothing is behind a
 // tap into a detail view — a list you have to open twice is one people stop
 // trusting, and a storekeeper with an armful of stock will not open it at all.
+//
+// ⚠️ THIS APP HAS ONE THEME AND IT IS DARK (--bg-base #0f0e17, --text-primary
+// #f4f3ff, see index.css). Every colour here comes from that scale. A hardcoded
+// light fill with no colour set is invisible: the text inherits near-white and
+// lands on near-white, which is exactly how the item lines shipped illegible.
+// The item lines are the PRIMARY content of a pickup row — the quantity is the
+// heaviest thing on the line, then the product name, both at least as prominent
+// as the sale number. Nothing here is a footnote.
 const MAX_VISIBLE_LINES = 5;
-const LINE_PX = 27;
+const LINE_PX = 34;
 
 // ⚠️ A pa_sale_items row is NOT necessarily a product. A debt_payment line is
 // money travelling on the ticket, and legacy rows carry no line_type at all
@@ -157,14 +165,20 @@ export default function TicketListPage({ variant = "queue" }) {
     },
   });
 
+  // A TINT over the dark base, never a light fill — the same pattern the POS
+  // slip banner uses. This panel carried a cream background with no colour set,
+  // so every refusal, the offline warning and both empty states rendered
+  // near-white on near-white: the messages that matter most when something has
+  // gone wrong were the least readable things on the screen.
   const Panel = ({ tone = "amber", title, detail, children }) => (
     <div style={{
-      border: `1px solid ${tone === "amber" ? "#d9a441" : "#c94f4f"}`,
-      background: tone === "amber" ? "#fff8e8" : "#fdf0f0",
+      border: `1px solid ${tone === "amber" ? "rgba(245,158,11,0.45)" : "rgba(239,68,68,0.45)"}`,
+      background: tone === "amber" ? "rgba(245,158,11,0.12)" : "rgba(239,68,68,0.12)",
+      color: "var(--text-primary)",
       borderRadius: 10, padding: "14px 16px", margin: "12px 0", lineHeight: 1.45,
     }}>
       <div style={{ fontWeight: 700, marginBottom: detail || children ? 6 : 0 }}>{title}</div>
-      {detail ? <div style={{ fontSize: 14, opacity: 0.85 }}>{detail}</div> : null}
+      {detail ? <div style={{ fontSize: 14, color: "var(--text-secondary)" }}>{detail}</div> : null}
       {children}
     </div>
   );
@@ -206,7 +220,7 @@ export default function TicketListPage({ variant = "queue" }) {
       )}
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
         <h2 style={{ margin: 0 }}>{t(V.titleKey, lang)}</h2>
-        <span style={{ opacity: 0.7, fontSize: 14 }}>
+        <span style={{ color: "var(--text-secondary)", fontSize: 14 }}>
           {t(V.subKey, lang)} · {tickets.length}
         </span>
       </div>
@@ -217,7 +231,7 @@ export default function TicketListPage({ variant = "queue" }) {
         <Panel tone="red" title={refusal.title} detail={refusal.detail}>
           <button
             onClick={() => { setRefusal(null); refetch(); }}
-            style={{ marginTop: 10, padding: "8px 14px", borderRadius: 8, border: "1px solid #c94f4f", background: "#fff", cursor: "pointer" }}
+            style={{ marginTop: 10, padding: "8px 14px", borderRadius: 8, border: "1px solid var(--border-hover)", background: "var(--bg-elevated)", color: "var(--text-primary)", fontWeight: 600, cursor: "pointer" }}
           >{t("reload_list", lang)}</button>
         </Panel>
       ) : null}
@@ -228,12 +242,12 @@ export default function TicketListPage({ variant = "queue" }) {
         <Panel tone="red"
           title={en ? "Could not load the list." : "Impossible de charger la liste."}
           detail={en ? "This is a connection problem, not an empty queue." : "C'est un problème de connexion, pas une file vide."}>
-          <button onClick={() => refetch()} style={{ marginTop: 10, padding: "8px 14px", borderRadius: 8, border: "1px solid #c94f4f", background: "#fff", cursor: "pointer" }}>
+          <button onClick={() => refetch()} style={{ marginTop: 10, padding: "8px 14px", borderRadius: 8, border: "1px solid var(--border-hover)", background: "var(--bg-elevated)", color: "var(--text-primary)", fontWeight: 600, cursor: "pointer" }}>
             {t("reload_list", lang)}
           </button>
         </Panel>
       ) : isLoading ? (
-        <div style={{ padding: 24, opacity: 0.6 }}>…</div>
+        <div style={{ padding: 24, color: "var(--text-secondary)" }}>…</div>
       ) : tickets.length === 0 ? (
         <Panel title={t(V.emptyKey, lang)} />
       ) : (
@@ -267,7 +281,8 @@ export default function TicketListPage({ variant = "queue" }) {
                 onClick={() => settle.mutate({ id: tk.id, version: tk.version })}
                 style={{
                   padding: "10px 18px", borderRadius: 8, border: "none", fontWeight: 700,
-                  background: (!isOnline || busy) ? "#bbb" : "#14213d", color: "#fff",
+                  background: (!isOnline || busy) ? "var(--bg-elevated)" : "var(--brand)",
+                  color: (!isOnline || busy) ? "var(--text-muted)" : "var(--on-brand)",
                   cursor: (!isOnline || busy) ? "not-allowed" : "pointer", whiteSpace: "nowrap",
                 }}
               >{busy ? "…"
@@ -288,11 +303,11 @@ export default function TicketListPage({ variant = "queue" }) {
                   <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>{tk.pa_customers.name}</div>
                 )}
                 {variant === "queue" && (
-                  <div style={{ fontSize: 13, opacity: 0.75, marginTop: 2 }}>
+                  <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 2 }}>
                     {goods.length} {t("items_count", lang)} · {t("sent_by", lang)} {tk.ticket_raised_by_name || "—"}
                   </div>
                 )}
-                <div style={{ fontSize: 13, opacity: 0.75, marginTop: 2 }}>
+                <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 2 }}>
                   {t("waiting_for", lang)} {waitedFor(tk.created_at, lang)}
                   {variant === "pickup" ? ` · ${t("sent_by", lang)} ${tk.ticket_raised_by_name || "—"}` : ""}
                 </div>
@@ -307,7 +322,7 @@ export default function TicketListPage({ variant = "queue" }) {
               const scrolls = goods.length > MAX_VISIBLE_LINES;
               return (
                 <div key={tk.id} style={{
-                  border: "1px solid #e2e2e2", borderRadius: 10, padding: 14,
+                  border: "1px solid var(--border)", background: "var(--bg-card)", borderRadius: 10, padding: 14,
                   display: "flex", flexDirection: "column", gap: 10,
                 }}>
                   <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
@@ -316,8 +331,13 @@ export default function TicketListPage({ variant = "queue" }) {
                   </div>
 
                   <div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 12, opacity: 0.7, marginBottom: 4 }}>
-                      <span style={{ fontWeight: 700, letterSpacing: 0.3 }}>
+                    {/* A label, in the app's label style — the lines below it are
+                        the content and must outweigh it. */}
+                    <div style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "baseline",
+                      fontSize: 11, letterSpacing: "0.05em", color: "var(--text-secondary)", marginBottom: 6,
+                    }}>
+                      <span style={{ fontWeight: 600 }}>
                         {t("to_hand_over", lang).toUpperCase()} · {goods.length}
                       </span>
                       {scrolls ? <span>{t("scroll_for_more", lang)}</span> : null}
@@ -326,13 +346,17 @@ export default function TicketListPage({ variant = "queue" }) {
                       // Not "nothing to do" — a paid ticket with no goods lines is
                       // a debt-only ticket or a projection that lost its lines, and
                       // either way he must not hand over a guess.
-                      <div style={{ fontSize: 13, fontStyle: "italic", opacity: 0.75 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: "var(--warning)" }}>
                         {en ? "No goods on this ticket — check with the cashier before handing anything over."
                             : "Aucune marchandise sur ce ticket — vérifiez avec le caissier avant de remettre quoi que ce soit."}
                       </div>
                     ) : (
+                      // NO PANEL. The lines sit on the card itself, separated by
+                      // hairlines. An inverted light pill inside a dark card is
+                      // what forced the contrast problem, and a container adds
+                      // nothing a separator does not.
                       <div style={{
-                        border: "1px solid #ececec", borderRadius: 8, background: "#fafafa",
+                        borderTop: "1px solid var(--border)",
                         maxHeight: scrolls ? MAX_VISIBLE_LINES * LINE_PX : undefined,
                         overflowY: scrolls ? "auto" : "visible",
                         // Contain the scroll so a flick inside the block does not
@@ -341,26 +365,36 @@ export default function TicketListPage({ variant = "queue" }) {
                       }}>
                         {goods.map((l, i) => (
                           <div key={l.id || i} style={{
-                            display: "flex", alignItems: "baseline", gap: 8,
-                            padding: "5px 10px", minHeight: LINE_PX,
-                            borderTop: i ? "1px solid #f0f0f0" : "none",
+                            display: "flex", alignItems: "baseline", gap: 10,
+                            padding: "7px 2px", minHeight: LINE_PX,
+                            borderTop: i ? "1px solid var(--border)" : "none",
                           }}>
-                            {/* Quantity leads and is the heaviest thing on the
-                                line — it is what he counts out. */}
-                            <span style={{ fontWeight: 800, fontSize: 15, minWidth: 34, fontVariantNumeric: "tabular-nums" }}>
-                              {qtyText(l.quantity)}
-                            </span>
-                            <span style={{ fontSize: 14, flex: 1, lineHeight: 1.25 }}>
+                            {/* The quantity is the most prominent thing on the
+                                line: he reads "2" before he reads the name. */}
+                            <span style={{
+                              fontWeight: 800, fontSize: 19, lineHeight: 1.2, minWidth: 40,
+                              color: "var(--text-primary)", fontVariantNumeric: "tabular-nums",
+                            }}>{qtyText(l.quantity)}</span>
+                            <span style={{
+                              fontSize: 16, fontWeight: 600, flex: 1, lineHeight: 1.3,
+                              color: "var(--text-primary)",
+                            }}>
                               {lineName(l, en)}
-                              {l.pa_products?.unit ? <span style={{ opacity: 0.6 }}> ({l.pa_products.unit})</span> : null}
+                              {l.pa_products?.unit
+                                ? <span style={{ color: "var(--text-secondary)", fontWeight: 400 }}> ({l.pa_products.unit})</span>
+                                : null}
                             </span>
                             {/* Damaged stock lives in a different pile. Fetching
                                 it from sellable stock is a real mis-pick, so the
                                 line says so. */}
                             {l.is_damaged ? (
                               <span style={{
-                                fontSize: 11, fontWeight: 700, color: "#a33", background: "#fdecec",
-                                border: "1px solid #f2caca", borderRadius: 5, padding: "1px 6px", whiteSpace: "nowrap",
+                                // --danger as TEXT is only 3.6:1 on its own tint. The red is
+                                // carried by the fill and border instead, so the word
+                                // itself sits at full primary contrast.
+                                fontSize: 11, fontWeight: 700, color: "var(--text-primary)",
+                                background: "rgba(239,68,68,0.22)", border: "1px solid rgba(239,68,68,0.55)",
+                                borderRadius: 5, padding: "2px 7px", whiteSpace: "nowrap",
                               }}>{t("damaged_short", lang)}</span>
                             ) : null}
                           </div>
@@ -379,25 +413,25 @@ export default function TicketListPage({ variant = "queue" }) {
             // than the order total — "Take payment" is a lie on a credit ticket.
             return (
               <div key={tk.id} style={{
-                border: "1px solid #e2e2e2", borderRadius: 10, padding: 14,
+                border: "1px solid var(--border)", background: "var(--bg-card)", borderRadius: 10, padding: 14,
                 display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap",
               }}>
                 {heading}
                 <div style={{ textAlign: "right", minWidth: 130 }}>
                   <div style={{ fontWeight: 700, fontSize: 17 }}>{fmt(dueNow)}</div>
                   {debtPortion > 0 && (
-                    <div style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
                       {en ? `${fmt(settles)} settles debt` : `${fmt(settles)} règle la dette`}
                     </div>
                   )}
                   {isCredit && (
-                    <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
                       {en ? `${fmt(onAcct)} goods on account` : `${fmt(onAcct)} marchandise sur compte`}
                       {tk.due_date ? ` · ${tk.due_date}` : ""}
                     </div>
                   )}
                   {!isCredit && (
-                    <div style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
                       {en ? "paid in full" : "payé intégralement"}
                     </div>
                   )}
