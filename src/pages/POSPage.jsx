@@ -1284,10 +1284,17 @@ export default function POSPage() {
   // is the over-amount. Under-payments (partial < due) behave exactly as before.
   const partialTendered = +paidAmt || 0;
   const debtTendered     = +debtPayAmt || 0;
+  // MP-CASHIER-PHASE-1b: with a debt repayment in the cart the MINIMUM the
+  // cashier may collect is the repayment itself. Below that, paidToDebt caps at
+  // what was handed over and the shortfall becomes debtLineCarryover — fresh
+  // credit standing in for a repayment the customer said they were making. The
+  // salesperson can still choose part-payment; they just cannot part-pay the
+  // promise. Mirrors the server's split (debt is taken FIRST out of `paid`).
   const paid    = isDebtOnlyCart
     ? (debtPayAmt ? Math.min(debtTendered, total) : total)
     : (payMode === "paid" ? total : payMode === "credit" ? 0 : Math.min(partialTendered, total));
   const balance = Math.max(0, total - paid);
+  const underCollectsDebt = isCashierMode && debtAmt > 0 && paid < debtAmt;
   // Change to hand back (cash only): tendered over the amount due.
   const tenderChange = isDebtOnlyCart
     ? Math.max(0, debtTendered - total)
@@ -2430,16 +2437,15 @@ export default function POSPage() {
                     {item.isDebtPayment ? "💰" : "🧾"} {lang === "en" ? "Debt Repayment" : "Remboursement dette"} · DEBT
                   </div>
                 )}
-                {/* MP-CASHIER-PHASE-1b: say it ON THE LINE, the moment it is in the
-                    cart. The server refuses a ticket carrying a debt repayment, so
-                    without this the salesperson builds the whole cart and is
-                    refused by a button — learning nothing about what to do instead.
-                    Here it is next to the thing to remove, while it is still easy. */}
+                {/* MP-CASHIER-PHASE-1b: a debt repayment DOES travel to the cashier.
+                    It said the opposite for one day; the reversal is in the commit.
+                    In this mode the cashier is the only person who touches money, so
+                    a repayment must go through them by definition. */}
                 {isCashierMode && (item.isDebt || item.isDebtPayment) && (
-                  <div style={{ fontSize: 11, color: "#f87171", marginBottom: 6, lineHeight: 1.4 }}>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, lineHeight: 1.4 }}>
                     {lang === "en"
-                      ? "Cannot be sent to a cashier — collect this at the till directly."
-                      : "Ne peut pas etre envoye au caissier — encaissez-le directement a la caisse."}
+                      ? "The cashier will collect this."
+                      : "Le caissier encaissera ce montant."}
                   </div>
                 )}
                 {/* MP-DAMAGED-GOODS: clear badge so the cashier sees this line is
@@ -2641,8 +2647,15 @@ export default function POSPage() {
                     impossible without a customer. */}
                 {customer && !isDebtOnlyCart && (
                   <>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-                      {PAYMENT_MODES.map(pm => {
+                    {/* ON CREDIT IS NOT OFFERED WITH A DEBT LINE. The debt line IS
+                        the promise to pay now; "on credit" would collect nothing and
+                        push the whole repayment back onto the account as fresh
+                        credit — the customer would leave owing MORE than they walked
+                        in with. A customer who does not want to pay it now simply
+                        should not add the line. Said out loud below, because an
+                        option that silently disappears reads as a bug. */}
+                    <div style={{ display: "grid", gridTemplateColumns: cartHasDebtLine ? "1fr 1fr" : "1fr 1fr 1fr", gap: 6 }}>
+                      {PAYMENT_MODES.filter(pm => !(cartHasDebtLine && pm.key === "credit")).map(pm => {
                         const sel = payMode === pm.key && payModeChosen;
                         return (
                           <button key={pm.key} onClick={() => { setPayMode(pm.key); setPayModeChosen(true); }}
@@ -2653,6 +2666,13 @@ export default function POSPage() {
                         );
                       })}
                     </div>
+                    {cartHasDebtLine && (
+                      <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.4 }}>
+                        {lang === "en"
+                          ? "“On credit” is not available with a debt repayment — the repayment is the promise to pay now. Remove the line to sell on credit."
+                          : "« Crédit » n'est pas disponible avec un remboursement — le remboursement EST l'engagement de payer maintenant. Retirez la ligne pour vendre à crédit."}
+                      </div>
+                    )}
                     {!payModeChosen && (
                       <div style={{ padding: "8px 12px", background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.35)", borderRadius: 8, fontSize: 12, color: "#fbbf24", fontWeight: 600 }}>
                         ⚠️ {lang === "en"
@@ -2667,13 +2687,42 @@ export default function POSPage() {
                     {(payMode === "partial" || payMode === "credit") && (
                       <input className="input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} title={t("due_date", lang)} />
                     )}
-                    {payModeChosen && payMode !== "paid" && (
-                      <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                        {lang === "en"
-                          ? `Cashier collects ${fmt(paid)} · ${fmt(balance)} on ${customer.name}'s account.`
-                          : `Le caissier encaisse ${fmt(paid)} · ${fmt(balance)} sur le compte de ${customer.name}.`}
-                      </div>
-                    )}
+                    {/* ── WHAT THE MONEY DOES, not just what it weighs ────────────
+                        "Cashier collects 30 000 · 1 000 on account" was ambiguous
+                        the moment a repayment was in the cart: there are two
+                        different 30 000s in play — the debt being settled and the
+                        cash being handed over. Each line now names its job, and the
+                        customer's before → after is stated once, because that is the
+                        number they will argue about. Collapses to a single line when
+                        it is a plain full payment. */}
+                    {payModeChosen && (() => {
+                      const settles   = Math.min(paid, debtAmt);
+                      const toGoods   = Math.max(0, paid - debtAmt);
+                      const onAccount = Math.max(0, total - paid);
+                      const owedNow   = Number(customer?.total_debt || 0);
+                      const owedAfter = Math.max(0, owedNow - settles + onAccount);
+                      const plain     = debtAmt <= 0 && onAccount <= 0;
+                      if (plain) return null;   // goods-only, paid in full — say nothing new
+                      return (
+                        <div style={{ fontSize: 12, lineHeight: 1.6, background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px" }}>
+                          <div style={{ fontWeight: 700, marginBottom: 2 }}>
+                            {lang === "en" ? `Cashier collects ${fmt(paid)}` : `Le caissier encaisse ${fmt(paid)}`}
+                          </div>
+                          {debtAmt > 0 && (
+                            <div>{fmt(settles)} — {lang === "en" ? "settles debt" : "règle la dette"}</div>
+                          )}
+                          {debtAmt > 0 && (
+                            <div>{fmt(toGoods)} — {lang === "en" ? "towards goods" : "pour la marchandise"}</div>
+                          )}
+                          {onAccount > 0 && (
+                            <div>{fmt(onAccount)} — {lang === "en" ? "goods on account (new credit)" : "marchandise sur compte (nouveau crédit)"}</div>
+                          )}
+                          <div style={{ marginTop: 4, opacity: 0.85 }}>
+                            {customer.name}: {fmt(owedNow)} → {fmt(owedAfter)}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </>
                 )}
 
@@ -2682,16 +2731,6 @@ export default function POSPage() {
                     so HERE, beside the line, while the salesperson can still act on
                     it, rather than at send. Being refused by a button after
                     building the whole cart teaches nothing about what to do next. */}
-                {cartHasDebtLine && (
-                  <div style={{ padding: "10px 12px", background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 8, fontSize: 12, lineHeight: 1.45 }}>
-                    <div style={{ fontWeight: 700, marginBottom: 2 }}>
-                      {lang === "en" ? "Remove the debt repayment to send this order" : "Retirez le remboursement de dette pour envoyer"}
-                    </div>
-                    {lang === "en"
-                      ? "A debt repayment cannot be sent to a cashier — collect it at the till directly."
-                      : "Un remboursement de dette ne peut pas etre envoye au caissier — encaissez-le directement a la caisse."}
-                  </div>
-                )}
                 </div>
 
                 {/* PINNED action row — outside the scrollable region above, so it
@@ -2700,8 +2739,8 @@ export default function POSPage() {
                 <RestrictedAction block>
                   <button className="btn btn-primary btn-block"
                     disabled={cart.length === 0 || !selectedLocation || saleMutation.isPending
-                              || cartHasDebtLine
-                              || (customer && !isDebtOnlyCart && !payModeChosen)}
+                              || (customer && !isDebtOnlyCart && !payModeChosen)
+                              || underCollectsDebt}
                     onClick={() => saleMutation.mutate()}
                     style={{ height: 44, fontSize: 14, fontWeight: 700, borderRadius: 12 }}>
                     {/* A disabled button that does not say WHY is the same defect as
@@ -2709,7 +2748,7 @@ export default function POSPage() {
                         itself, because the salesperson is holding up a customer. */}
                     {!selectedLocation
                       ? (lang === "en" ? "Select location first" : "Choisir emplacement")
-                      : cartHasDebtLine ? (lang === "en" ? "Remove the debt line" : "Retirez la ligne de dette")
+                      : underCollectsDebt ? (lang === "en" ? `Collect at least ${fmt(debtAmt)}` : `Encaissez au moins ${fmt(debtAmt)}`)
                       : (customer && !isDebtOnlyCart && !payModeChosen)
                         ? (lang === "en" ? "Choose the terms above" : "Choisissez les conditions ci-dessus")
                       : saleMutation.isPending ? "…" : `${t("send_to_cashier", lang)} →`}
