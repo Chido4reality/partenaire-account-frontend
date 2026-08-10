@@ -1271,6 +1271,13 @@ export default function POSPage() {
   // read by the legacy __DEBT__ allocation loop).
   const isDebtOnlyCart = cart.length > 0 && cart.every(i =>
     i.product_id === "__DEBT__" || i.type === "debt_payment");
+  // MP-CASHIER-PHASE-1b: ANY debt line, not only a debt-ONLY cart. The server
+  // refuses a ticket carrying one (`i.type === 'debt_payment' || !i.product_id`),
+  // so this predicate must match that rule or the UI and the server disagree
+  // about the same cart — mixed carts (debt + products) are exactly the case
+  // isDebtOnlyCart misses.
+  const cartHasDebtLine = cart.some(i =>
+    i.product_id === "__DEBT__" || i.type === "debt_payment" || i.isDebt || i.isDebtPayment);
   // MP-OVERPAY-CAP: the APPLIED payment is capped at the amount due (cart total,
   // or the debt total for a debt-only cart). Excess tendered is CHANGE — shown,
   // never sent/stored. partialTendered is what the cashier typed; partialChange
@@ -2423,6 +2430,18 @@ export default function POSPage() {
                     {item.isDebtPayment ? "💰" : "🧾"} {lang === "en" ? "Debt Repayment" : "Remboursement dette"} · DEBT
                   </div>
                 )}
+                {/* MP-CASHIER-PHASE-1b: say it ON THE LINE, the moment it is in the
+                    cart. The server refuses a ticket carrying a debt repayment, so
+                    without this the salesperson builds the whole cart and is
+                    refused by a button — learning nothing about what to do instead.
+                    Here it is next to the thing to remove, while it is still easy. */}
+                {isCashierMode && (item.isDebt || item.isDebtPayment) && (
+                  <div style={{ fontSize: 11, color: "#f87171", marginBottom: 6, lineHeight: 1.4 }}>
+                    {lang === "en"
+                      ? "Cannot be sent to a cashier — collect this at the till directly."
+                      : "Ne peut pas etre envoye au caissier — encaissez-le directement a la caisse."}
+                  </div>
+                )}
                 {/* MP-DAMAGED-GOODS: clear badge so the cashier sees this line is
                     a damaged-goods sale (still tier-priced, discount allowed). */}
                 {item.is_damaged && (
@@ -2483,7 +2502,15 @@ export default function POSPage() {
             ))}
           </div>
 
-          <div style={{ padding: "14px 16px", borderTop: "2px solid var(--border)", background: "var(--bg-elevated)", ...(mobile && showPayment ? { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" } : {}) }}>
+          {/* MP-CASHIER-PHASE-1b: cashier mode joins the bounded-footer case.
+              This container only became a bounded flex column for `mobile &&
+              showPayment` — the direct payment panel. Cashier mode never sets
+              showPayment, so its footer grew unbounded and the taller content
+              (terms + warning + amount + due date + Send + Hold) pushed the
+              action row off the bottom of the viewport, unreachable.
+              MP-PAUL-FIX-6 fixed exactly this for the direct panel; the fix was
+              already in the file and the new block simply wasn't using it. */}
+          <div style={{ padding: "14px 16px", borderTop: "2px solid var(--border)", background: "var(--bg-elevated)", ...(mobile && (showPayment || isCashierMode) ? { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" } : {}) }}>
             {/* MP-DISCOUNT: sale-level discount control (only with product lines). */}
             {grossProducts > 0 && (
               saleDiscType ? (
@@ -2589,7 +2616,13 @@ export default function POSPage() {
             )}
 
             {isCashierMode ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              // Same shape as the direct panel: a SCROLLABLE region on top and the
+              // action row pinned below it, so the Send button can never be the
+              // thing that falls off the screen. Without this the terms controls
+              // grow the block past the viewport and the salesperson is blocked by
+              // a button they cannot reach.
+              <div style={{ display: "flex", flexDirection: "column", minHeight: 0, gap: 8, flex: mobile ? 1 : undefined }}>
+                <div style={{ overflowY: "auto", minHeight: 0, display: "flex", flexDirection: "column", gap: 8, ...(mobile ? { maxHeight: "50vh" } : {}) }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "2px 2px 6px" }}>
                   <span style={{ fontSize: 13, opacity: 0.8 }}>{t("order_total", lang)}</span>
                   <span style={{ fontWeight: 800, fontSize: 18 }}>{fmt(total)}</span>
@@ -2644,14 +2677,41 @@ export default function POSPage() {
                   </>
                 )}
 
+                {/* A debt repayment cannot travel to a till as an untyped promise —
+                    the server refuses it (debt_line_not_supported_on_ticket). Say
+                    so HERE, beside the line, while the salesperson can still act on
+                    it, rather than at send. Being refused by a button after
+                    building the whole cart teaches nothing about what to do next. */}
+                {cartHasDebtLine && (
+                  <div style={{ padding: "10px 12px", background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 8, fontSize: 12, lineHeight: 1.45 }}>
+                    <div style={{ fontWeight: 700, marginBottom: 2 }}>
+                      {lang === "en" ? "Remove the debt repayment to send this order" : "Retirez le remboursement de dette pour envoyer"}
+                    </div>
+                    {lang === "en"
+                      ? "A debt repayment cannot be sent to a cashier — collect it at the till directly."
+                      : "Un remboursement de dette ne peut pas etre envoye au caissier — encaissez-le directement a la caisse."}
+                  </div>
+                )}
+                </div>
+
+                {/* PINNED action row — outside the scrollable region above, so it
+                    is always reachable no matter how tall the terms get. */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
                 <RestrictedAction block>
                   <button className="btn btn-primary btn-block"
                     disabled={cart.length === 0 || !selectedLocation || saleMutation.isPending
+                              || cartHasDebtLine
                               || (customer && !isDebtOnlyCart && !payModeChosen)}
                     onClick={() => saleMutation.mutate()}
                     style={{ height: 44, fontSize: 14, fontWeight: 700, borderRadius: 12 }}>
+                    {/* A disabled button that does not say WHY is the same defect as
+                        a refusal with no explanation. Each disabled reason names
+                        itself, because the salesperson is holding up a customer. */}
                     {!selectedLocation
                       ? (lang === "en" ? "Select location first" : "Choisir emplacement")
+                      : cartHasDebtLine ? (lang === "en" ? "Remove the debt line" : "Retirez la ligne de dette")
+                      : (customer && !isDebtOnlyCart && !payModeChosen)
+                        ? (lang === "en" ? "Choose the terms above" : "Choisissez les conditions ci-dessus")
                       : saleMutation.isPending ? "…" : `${t("send_to_cashier", lang)} →`}
                   </button>
                 </RestrictedAction>
@@ -2661,6 +2721,7 @@ export default function POSPage() {
                     ⏸ {lang === "en" ? "Hold Sale" : "Mettre en attente"}
                   </button>
                 )}
+                </div>
               </div>
             ) : !showPayment ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
