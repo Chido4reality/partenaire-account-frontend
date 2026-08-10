@@ -61,6 +61,10 @@ export const PLAN_CAPABILITIES = {
     receipt_branding: true,
     dozie_access: true,
     dozie_city_cap: null,
+    // MP-CASHIER-PLAN-GATE: the cashier workflow only means anything in a shop
+    // with separate people, so it starts at Pro. Gates ENABLING it, never
+    // RUNNING it — see locations.js for why a downgrade must not strand tickets.
+    cashier_workflow: true,
     price_fcfa_month: 10000
   },
 
@@ -78,6 +82,7 @@ export const PLAN_CAPABILITIES = {
     receipt_branding: true,
     dozie_access: true,
     dozie_city_cap: null,
+    cashier_workflow: true,   // MP-CASHIER-PLAN-GATE (Pro and above)
     price_fcfa_month: 13000,
     ai_assistant: true,
     // Owner pins a cashier to a home location that follows them across devices
