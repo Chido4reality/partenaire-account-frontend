@@ -1271,30 +1271,16 @@ export default function POSPage() {
   // read by the legacy __DEBT__ allocation loop).
   const isDebtOnlyCart = cart.length > 0 && cart.every(i =>
     i.product_id === "__DEBT__" || i.type === "debt_payment");
-  // MP-CASHIER-PHASE-1b: ANY debt line, not only a debt-ONLY cart. The server
-  // refuses a ticket carrying one (`i.type === 'debt_payment' || !i.product_id`),
-  // so this predicate must match that rule or the UI and the server disagree
-  // about the same cart — mixed carts (debt + products) are exactly the case
-  // isDebtOnlyCart misses.
-  const cartHasDebtLine = cart.some(i =>
-    i.product_id === "__DEBT__" || i.type === "debt_payment" || i.isDebt || i.isDebtPayment);
   // MP-OVERPAY-CAP: the APPLIED payment is capped at the amount due (cart total,
   // or the debt total for a debt-only cart). Excess tendered is CHANGE — shown,
   // never sent/stored. partialTendered is what the cashier typed; partialChange
   // is the over-amount. Under-payments (partial < due) behave exactly as before.
   const partialTendered = +paidAmt || 0;
   const debtTendered     = +debtPayAmt || 0;
-  // MP-CASHIER-PHASE-1b: with a debt repayment in the cart the MINIMUM the
-  // cashier may collect is the repayment itself. Below that, paidToDebt caps at
-  // what was handed over and the shortfall becomes debtLineCarryover — fresh
-  // credit standing in for a repayment the customer said they were making. The
-  // salesperson can still choose part-payment; they just cannot part-pay the
-  // promise. Mirrors the server's split (debt is taken FIRST out of `paid`).
   const paid    = isDebtOnlyCart
     ? (debtPayAmt ? Math.min(debtTendered, total) : total)
     : (payMode === "paid" ? total : payMode === "credit" ? 0 : Math.min(partialTendered, total));
   const balance = Math.max(0, total - paid);
-  const underCollectsDebt = isCashierMode && debtAmt > 0 && paid < debtAmt;
   // Change to hand back (cash only): tendered over the amount due.
   const tenderChange = isDebtOnlyCart
     ? Math.max(0, debtTendered - total)
@@ -2508,15 +2494,7 @@ export default function POSPage() {
             ))}
           </div>
 
-          {/* MP-CASHIER-PHASE-1b: cashier mode joins the bounded-footer case.
-              This container only became a bounded flex column for `mobile &&
-              showPayment` — the direct payment panel. Cashier mode never sets
-              showPayment, so its footer grew unbounded and the taller content
-              (terms + warning + amount + due date + Send + Hold) pushed the
-              action row off the bottom of the viewport, unreachable.
-              MP-PAUL-FIX-6 fixed exactly this for the direct panel; the fix was
-              already in the file and the new block simply wasn't using it. */}
-          <div style={{ padding: "14px 16px", borderTop: "2px solid var(--border)", background: "var(--bg-elevated)", ...(mobile && (showPayment || isCashierMode) ? { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" } : {}) }}>
+          <div style={{ padding: "14px 16px", borderTop: "2px solid var(--border)", background: "var(--bg-elevated)", ...(mobile && showPayment ? { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" } : {}) }}>
             {/* MP-DISCOUNT: sale-level discount control (only with product lines). */}
             {grossProducts > 0 && (
               saleDiscType ? (
@@ -2621,148 +2599,17 @@ export default function POSPage() {
               </div>
             )}
 
-            {isCashierMode ? (
-              // Same shape as the direct panel: a SCROLLABLE region on top and the
-              // action row pinned below it, so the Send button can never be the
-              // thing that falls off the screen. Without this the terms controls
-              // grow the block past the viewport and the salesperson is blocked by
-              // a button they cannot reach.
-              <div style={{ display: "flex", flexDirection: "column", minHeight: 0, gap: 8, flex: mobile ? 1 : undefined }}>
-                <div style={{ overflowY: "auto", minHeight: 0, display: "flex", flexDirection: "column", gap: 8, ...(mobile ? { maxHeight: "50vh" } : {}) }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "2px 2px 6px" }}>
-                  <span style={{ fontSize: 13, opacity: 0.8 }}>{t("order_total", lang)}</span>
-                  <span style={{ fontWeight: 800, fontSize: 18 }}>{fmt(total)}</span>
-                </div>
-
-                {/* ── TERMS BELONG TO THE SALESPERSON ────────────────────────
-                    Credit is not a tender. The cashier picks how the money
-                    arrives; whether this customer should have credit at all is
-                    a decision about their account, and the person who knows is
-                    the one standing with them. Letting the till choose "credit"
-                    hands a lending decision to the person with the least
-                    context — the incident that motivated MP's credit permission.
-                    So the three-way choice happens HERE, before the send, and
-                    the credit approval fires at raise inside the same bundled
-                    prompt as below-cost. Walk-ins never see this: credit is
-                    impossible without a customer. */}
-                {customer && !isDebtOnlyCart && (
-                  <>
-                    {/* ON CREDIT IS NOT OFFERED WITH A DEBT LINE. The debt line IS
-                        the promise to pay now; "on credit" would collect nothing and
-                        push the whole repayment back onto the account as fresh
-                        credit — the customer would leave owing MORE than they walked
-                        in with. A customer who does not want to pay it now simply
-                        should not add the line. Said out loud below, because an
-                        option that silently disappears reads as a bug. */}
-                    <div style={{ display: "grid", gridTemplateColumns: cartHasDebtLine ? "1fr 1fr" : "1fr 1fr 1fr", gap: 6 }}>
-                      {PAYMENT_MODES.filter(pm => !(cartHasDebtLine && pm.key === "credit")).map(pm => {
-                        const sel = payMode === pm.key && payModeChosen;
-                        return (
-                          <button key={pm.key} onClick={() => { setPayMode(pm.key); setPayModeChosen(true); }}
-                            style={{ padding: "8px 4px", borderRadius: 10, border: `1.5px solid ${sel ? pm.color : "var(--border)"}`, background: sel ? pm.color + "18" : "transparent", color: sel ? pm.color : "var(--text-secondary)", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
-                            <div style={{ fontSize: 14 }}>{pm.icon}</div>
-                            <div style={{ marginTop: 2 }}>{lang === "en" ? pm.en : pm.fr}</div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {cartHasDebtLine && (
-                      <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.4 }}>
-                        {lang === "en"
-                          ? "“On credit” is not available with a debt repayment — the repayment is the promise to pay now. Remove the line to sell on credit."
-                          : "« Crédit » n'est pas disponible avec un remboursement — le remboursement EST l'engagement de payer maintenant. Retirez la ligne pour vendre à crédit."}
-                      </div>
-                    )}
-                    {!payModeChosen && (
-                      <div style={{ padding: "8px 12px", background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.35)", borderRadius: 8, fontSize: 12, color: "#fbbf24", fontWeight: 600 }}>
-                        ⚠️ {lang === "en"
-                          ? "Choose the terms before sending — the cashier cannot change them."
-                          : "Choisissez les conditions avant d'envoyer — le caissier ne pourra pas les modifier."}
-                      </div>
-                    )}
-                    {payMode === "partial" && (
-                      <input className="input" type="number" value={paidAmt} onChange={e => setPaidAmt(e.target.value)}
-                        placeholder={`${lang === "en" ? "Collected at the till" : "À encaisser à la caisse"} (${currencySymbol(orgSettings.currency)})`} />
-                    )}
-                    {(payMode === "partial" || payMode === "credit") && (
-                      <input className="input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} title={t("due_date", lang)} />
-                    )}
-                    {/* ── WHAT THE MONEY DOES, not just what it weighs ────────────
-                        "Cashier collects 30 000 · 1 000 on account" was ambiguous
-                        the moment a repayment was in the cart: there are two
-                        different 30 000s in play — the debt being settled and the
-                        cash being handed over. Each line now names its job, and the
-                        customer's before → after is stated once, because that is the
-                        number they will argue about. Collapses to a single line when
-                        it is a plain full payment. */}
-                    {payModeChosen && (() => {
-                      const settles   = Math.min(paid, debtAmt);
-                      const toGoods   = Math.max(0, paid - debtAmt);
-                      const onAccount = Math.max(0, total - paid);
-                      const owedNow   = Number(customer?.total_debt || 0);
-                      const owedAfter = Math.max(0, owedNow - settles + onAccount);
-                      const plain     = debtAmt <= 0 && onAccount <= 0;
-                      if (plain) return null;   // goods-only, paid in full — say nothing new
-                      return (
-                        <div style={{ fontSize: 12, lineHeight: 1.6, background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px" }}>
-                          <div style={{ fontWeight: 700, marginBottom: 2 }}>
-                            {lang === "en" ? `Cashier collects ${fmt(paid)}` : `Le caissier encaisse ${fmt(paid)}`}
-                          </div>
-                          {debtAmt > 0 && (
-                            <div>{fmt(settles)} — {lang === "en" ? "settles debt" : "règle la dette"}</div>
-                          )}
-                          {debtAmt > 0 && (
-                            <div>{fmt(toGoods)} — {lang === "en" ? "towards goods" : "pour la marchandise"}</div>
-                          )}
-                          {onAccount > 0 && (
-                            <div>{fmt(onAccount)} — {lang === "en" ? "goods on account (new credit)" : "marchandise sur compte (nouveau crédit)"}</div>
-                          )}
-                          <div style={{ marginTop: 4, opacity: 0.85 }}>
-                            {customer.name}: {fmt(owedNow)} → {fmt(owedAfter)}
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </>
-                )}
-
-                {/* A debt repayment cannot travel to a till as an untyped promise —
-                    the server refuses it (debt_line_not_supported_on_ticket). Say
-                    so HERE, beside the line, while the salesperson can still act on
-                    it, rather than at send. Being refused by a button after
-                    building the whole cart teaches nothing about what to do next. */}
-                </div>
-
-                {/* PINNED action row — outside the scrollable region above, so it
-                    is always reachable no matter how tall the terms get. */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
-                <RestrictedAction block>
-                  <button className="btn btn-primary btn-block"
-                    disabled={cart.length === 0 || !selectedLocation || saleMutation.isPending
-                              || (customer && !isDebtOnlyCart && !payModeChosen)
-                              || underCollectsDebt}
-                    onClick={() => saleMutation.mutate()}
-                    style={{ height: 44, fontSize: 14, fontWeight: 700, borderRadius: 12 }}>
-                    {/* A disabled button that does not say WHY is the same defect as
-                        a refusal with no explanation. Each disabled reason names
-                        itself, because the salesperson is holding up a customer. */}
-                    {!selectedLocation
-                      ? (lang === "en" ? "Select location first" : "Choisir emplacement")
-                      : underCollectsDebt ? (lang === "en" ? `Collect at least ${fmt(debtAmt)}` : `Encaissez au moins ${fmt(debtAmt)}`)
-                      : (customer && !isDebtOnlyCart && !payModeChosen)
-                        ? (lang === "en" ? "Choose the terms above" : "Choisissez les conditions ci-dessus")
-                      : saleMutation.isPending ? "…" : `${t("send_to_cashier", lang)} →`}
-                  </button>
-                </RestrictedAction>
-                {!isDebtOnlyCart && (
-                  <button disabled={cart.length === 0 || !selectedLocation} onClick={() => { setHoldLabel(""); setHoldNotes(""); setShowHold(true); }}
-                    style={{ height: 40, fontSize: 13, fontWeight: 700, borderRadius: 12, cursor: cart.length === 0 ? "not-allowed" : "pointer", background: "transparent", border: "1.5px solid rgba(245,158,11,0.5)", color: cart.length === 0 ? "var(--text-muted)" : "#fbbf24", opacity: cart.length === 0 || !selectedLocation ? 0.5 : 1 }}>
-                    ⏸ {lang === "en" ? "Hold Sale" : "Mettre en attente"}
-                  </button>
-                )}
-                </div>
-              </div>
-            ) : !showPayment ? (
+            {/* MP-CASHIER-PHASE-1b: NO SEPARATE PAYMENT UI.
+                A bespoke cashier terms block used to live here and it was a
+                duplicate of the panel below — which has been in production for
+                months, is worded well, and is tested by real use. Every bug the
+                duplicate produced came from being a duplicate: a footer that
+                pushed its own buttons off screen, a missing "amount to collect"
+                field the real panel always had, Full Credit vanishing behind a
+                special case, and a breakdown that contradicted its own button.
+                None of them exist in one panel computing both.
+                Cashier mode changes exactly ONE thing: the last button. */}
+            {!showPayment ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <RestrictedAction block>
                   <button className="btn btn-primary btn-block" disabled={cart.length === 0 || !selectedLocation} onClick={() => setShowPayment(true)} style={{ height: 44, fontSize: 14, fontWeight: 700, borderRadius: 12 }}>
@@ -2824,7 +2671,7 @@ export default function POSPage() {
                             : `Le montant ne peut pas dépasser le montant dû (${formatMoney(total, orgSettings.currency)}).`}
                         </div>
                       )}
-                      {payMethod === "cash" && tenderChange > 0 && (
+                      {!isCashierMode && payMethod === "cash" && tenderChange > 0 && (
                         <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "rgba(16,185,129,0.10)", border: "1px solid rgba(16,185,129,0.30)", borderRadius: 8, fontSize: 13, color: "#34d399", fontWeight: 700 }}>
                           <span>{lang === "en" ? "Change" : "Monnaie"}</span>
                           <span>{formatMoney(tenderChange, orgSettings.currency)}</span>
@@ -2867,7 +2714,8 @@ export default function POSPage() {
                         : `Le montant ne peut pas dépasser le montant dû (${formatMoney(total, orgSettings.currency)}).`}
                     </div>
                   )}
-                  {payMode === "partial" && !isDebtOnlyCart && payMethod === "cash" && tenderChange > 0 && (
+                  {/* Change is the tender's business, and the tender is the cashier's. */}
+                  {!isCashierMode && payMode === "partial" && !isDebtOnlyCart && payMethod === "cash" && tenderChange > 0 && (
                     <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "rgba(16,185,129,0.10)", border: "1px solid rgba(16,185,129,0.30)", borderRadius: 8, fontSize: 13, color: "#34d399", fontWeight: 700, marginBottom: 8 }}>
                       <span>{lang === "en" ? "Change" : "Monnaie"}</span>
                       <span>{formatMoney(tenderChange, orgSettings.currency)}</span>
@@ -2876,6 +2724,12 @@ export default function POSPage() {
                   {(payMode === "partial" || payMode === "credit") && !isDebtOnlyCart && (
                     <input className="input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={{ marginBottom: 8 }} title={t("due_date", lang)} />
                   )}
+                  {/* THE TENDER IS THE CASHIER'S. /pay takes payment_method from
+                      whoever collects and overwrites whatever the ticket carries,
+                      so offering the choice here would be a control that looks
+                      like a decision and isn't one. It is the ONLY thing this
+                      panel suppresses in cashier mode. */}
+                  {!isCashierMode && (
                   <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
                     {PAY_METHODS.map(m => (
                       <button key={m.key} onClick={() => setPayMethod(m.key)} style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: `1.5px solid ${payMethod === m.key ? "var(--brand)" : "var(--border)"}`, background: payMethod === m.key ? "rgba(251,197,3,0.12)" : "transparent", color: payMethod === m.key ? "var(--brand-light)" : "var(--text-secondary)", cursor: "pointer", fontSize: 10, fontWeight: 700, transition: "all 0.15s" }}>
@@ -2884,6 +2738,7 @@ export default function POSPage() {
                       </button>
                     ))}
                   </div>
+                  )}
                   <div style={{ background: "var(--bg-card)", borderRadius: 10, padding: "10px 12px", marginBottom: 10, fontSize: 12 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
                       <span style={{ color: "var(--text-muted)" }}>Total</span><strong>{formatMoney(total, orgSettings.currency)}</strong>
@@ -2940,8 +2795,15 @@ export default function POSPage() {
                     onClick={attemptCheckout}
                     disabled={!shiftIsOpen || (!hasDebt && payMode === "partial" && !paidAmt) || ((payMode === "credit" || payMode === "partial") && !customer) || (!isDebtOnlyCart && !!customer && !payModeChosen)}
                     title={!shiftIsOpen ? noShiftHint(lang) : ""}
-                    label={lang === "en" ? "✓ Confirm" : "✓ Valider"}
-                    successLabel={lang === "en" ? "✓ Sold!" : "✓ Vendu !"}
+                    // THE ONE THING CASHIER MODE CHANGES. Same panel, same payload,
+                    // same validation — only where it goes. The endpoint swap lives
+                    // in saleMutation, which posts to /sales/ticket in cashier mode.
+                    label={isCashierMode
+                      ? `${t("send_to_cashier", lang)} →`
+                      : (lang === "en" ? "✓ Confirm" : "✓ Valider")}
+                    successLabel={isCashierMode
+                      ? (lang === "en" ? "✓ Sent!" : "✓ Envoyé !")
+                      : (lang === "en" ? "✓ Sold!" : "✓ Vendu !")}
                     errorLabel={lang === "en" ? "✕ Failed" : "✕ Échec"}
                     onSuccessTimeout={() => setSheetOpen(false)}
                     className="btn btn-success"

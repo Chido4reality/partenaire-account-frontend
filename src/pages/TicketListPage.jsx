@@ -208,15 +208,29 @@ export default function TicketListPage({ variant = "queue" }) {
                   const dueNow   = Number(tk.paid_amount) || 0;
                   const onAcct   = Math.max(0, totalAmt - dueNow);
                   const isCredit = variant === "queue" && onAcct > 0;
+                  // A repayment and new credit can BOTH be in play, and then the
+                  // same figure means two different things — the debt being
+                  // settled and the cash being handed over. Each part names its
+                  // job, exactly as the POS states it before sending, so the
+                  // cashier and the salesperson are reading the same sentence.
+                  const debtPortion = lines
+                    .filter(l => l.line_type === "debt_payment")
+                    .reduce((s, l) => s + (Number(l.unit_price) || 0) * (Number(l.quantity) || 1), 0);
+                  const settles = Math.min(dueNow, debtPortion);
                   return (
                     <>
                       <div style={{ textAlign: "right", minWidth: 130 }}>
                         <div style={{ fontWeight: 700, fontSize: 17 }}>
                           {variant === "queue" ? fmt(dueNow) : fmt(totalAmt)}
                         </div>
+                        {variant === "queue" && debtPortion > 0 && (
+                          <div style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>
+                            {en ? `${fmt(settles)} settles debt` : `${fmt(settles)} règle la dette`}
+                          </div>
+                        )}
                         {isCredit && (
                           <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
-                            {en ? `${fmt(onAcct)} on account` : `${fmt(onAcct)} sur le compte`}
+                            {en ? `${fmt(onAcct)} goods on account` : `${fmt(onAcct)} marchandise sur compte`}
                             {tk.due_date ? ` · ${tk.due_date}` : ""}
                           </div>
                         )}
