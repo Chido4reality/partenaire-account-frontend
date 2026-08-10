@@ -22,6 +22,7 @@ import { useNetworkStatus } from "../utils/useNetworkStatus";
 import { useTicketSummary, ticketSummaryKey, ticketNavVisible } from "../utils/useTicketSummary";
 import { useMyPermissions } from "../utils/useMyPermissions";
 import { t } from "../utils/i18n";
+import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 
 const VARIANTS = {
   queue:  { status: "pending_payment", flag: "can_receive_payment", titleKey: "cashier_queue", subKey: "awaiting_payment", actionKey: "take_payment",  emptyKey: "queue_empty",  linesKey: "pa_sale_ticket_items", verb: "pay" },
@@ -42,6 +43,7 @@ export default function TicketListPage({ variant = "queue" }) {
   const lang = useLangStore(s => s.lang) || "fr";
   const en = lang === "en";
   const role = useAuthStore(s => s.user?.role) || "cashier";
+  const org  = useAuthStore(s => s.org) || {};   // receipt header (name, currency)
   const locationId = useSettingsStore(s => s.selectedLocation?.id) || null;
   const fmt = useCurrency();
   const { isOnline } = useNetworkStatus();
@@ -51,6 +53,18 @@ export default function TicketListPage({ variant = "queue" }) {
   // and leaves the cashier looking at a list that just didn't work, with a
   // customer waiting. Shape: { saleId, code, title, detail }.
   const [refusal, setRefusal] = useState(null);
+  // ── THE PAYMENT RECEIPT, AT COLLECTION ──────────────────────────────────
+  // At SEND the customer gets an order slip that says, in bold, that nothing
+  // has been paid. At COLLECTION they must get the opposite: proof that they
+  // paid and what it settled. Without this a customer who has just handed over
+  // money walks away holding only a document stating they have not paid — and
+  // the shop has no printed record of what the cashier took.
+  //
+  // Reuses PaymentEventReceipt, the same component the direct sale, the debt
+  // collection and the refund paths all print through. /pay already returns the
+  // full sale (items, customer) plus applied_to_invoices, which is exactly the
+  // shape eventType="sale" expects — so this is a render, not a new receipt.
+  const [paidReceipt, setPaidReceipt] = useState(null);
 
   const { summary } = useTicketSummary(locationId, { onError: () => {} });
   const { perms } = useMyPermissions({ enabled: !!locationId, retry: 1 });
@@ -73,8 +87,15 @@ export default function TicketListPage({ variant = "queue" }) {
     // EVERY mutation sends the version the row was RENDERED with. Not a re-read,
     // not the latest — the token the person actually looked at.
     mutationFn: ({ id, version }) => api.post(`/sales/tickets/${id}/${V.verb}`, { version }),
-    onSuccess: () => {
+    onSuccess: (res) => {
       setRefusal(null);
+      // Only a PAYMENT produces a receipt. A release moves goods, not money —
+      // printing a second "payment" document at handover would tell the customer
+      // they paid twice.
+      const body = res?.data;
+      if (variant === "queue" && body?.data) {
+        setPaidReceipt({ ...body.data, applied_to_invoices: body.applied_to_invoices || undefined });
+      }
       qc.invalidateQueries({ queryKey: listKey });
       qc.invalidateQueries({ queryKey: ticketSummaryKey(locationId) });
     },
@@ -138,6 +159,15 @@ export default function TicketListPage({ variant = "queue" }) {
 
   return (
     <div style={{ padding: 16, maxWidth: 760, margin: "0 auto" }}>
+      {paidReceipt && (
+        <PaymentEventReceipt
+          eventType="sale"
+          data={paidReceipt}
+          org={org}
+          lang={lang}
+          onClose={() => setPaidReceipt(null)}
+        />
+      )}
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
         <h2 style={{ margin: 0 }}>{t(V.titleKey, lang)}</h2>
         <span style={{ opacity: 0.7, fontSize: 14 }}>

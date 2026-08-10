@@ -95,7 +95,24 @@ export default function POSPage() {
   // silently drifted twice. Degrades safe — a failed read leaves mode 'direct',
   // i.e. today's behaviour, which is the right way for this to fail.
   const { summary: tillSummary } = useTicketSummary(selectedLocation?.id || null, { onError: () => {} });
-  const isCashierMode = (tillSummary?.mode || "direct") === "cashier";
+  // ── TWO SOURCES, AND THE TERMINAL ACTION FAILS TOWARD THE REVERSIBLE ONE ───
+  // `(tillSummary?.mode || "direct")` alone was wrong for the BUTTON. tillSummary
+  // is undefined until a network round-trip completes, so on every page load and
+  // every location switch there is a window — seconds on a shop's connection —
+  // where a cashier-mode till renders "Confirm" and COMPLETES A REAL SALE instead
+  // of sending it to the queue. Nothing about that is visible: the sale succeeds.
+  //
+  // selectedLocation.sales_mode is available instantly from the locations cache.
+  // It is the weaker source (that cache has drifted before, which is why the nav
+  // gate deliberately does NOT use it) but here the two failure directions are
+  // not symmetric:
+  //   say "direct" wrongly  → an irreversible completed sale, silently
+  //   say "cashier" wrongly → the server answers 400 not_cashier_mode, loudly,
+  //                           and nothing is written
+  // So for the terminal action EITHER source claiming cashier is enough. A gate
+  // fails closed; a money button fails toward the outcome you can undo.
+  const isCashierMode =
+    tillSummary?.mode === "cashier" || selectedLocation?.sales_mode === "cashier";
   // Per-shop: does the customer carry a printed slip, or get called by number?
   // Defaults to 'slip' when the column hasn't loaded — printing a slip nobody
   // needed is harmless; failing to print one the shop relies on is not.
