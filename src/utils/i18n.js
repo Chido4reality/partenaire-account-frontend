@@ -34,6 +34,11 @@ export const STRINGS = {
   ticket_sent:        { fr: "Ticket envoyé au caissier", en: "Sent to the cashier" },
   minutes_short:      { fr: "min",                   en: "min" },
   hours_short:        { fr: "h",                     en: "h" },
+  // The pickup desk hands over GOODS, so its row names them. "articles" is a
+  // count and a count is not a picking list.
+  to_hand_over:       { fr: "À remettre",            en: "To hand over" },
+  damaged_short:      { fr: "abîmé",                 en: "damaged" },
+  scroll_for_more:    { fr: "faites défiler pour voir tout", en: "scroll to see all" },
 };
 
 // t("amount_paid", "fr") -> "Montant payé". Falls back to French, then the key.

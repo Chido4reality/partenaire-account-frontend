@@ -1739,7 +1739,15 @@ export default function POSPage() {
           saleNumber: sale.sale_number,
           raisedByName: user?.full_name || "",
           customerName: customer?.name || "",
-          itemCount: cart.length,
+          // THE LINES, not just how many. Snapshotted here with the rest of the
+          // slip, before resetCart empties the cart. Debt lines are money on the
+          // ticket, not goods, so they are excluded from both the list and the
+          // count — a "3 articles" that included a debt repayment was telling the
+          // customer, and the storekeeper, about an item that does not exist.
+          items: cart
+            .filter(i => i && i.type !== "debt_payment" && i.product_id !== "__DEBT__" && i.product_id && (Number(i.quantity) || 0) > 0)
+            .map(i => ({ name: i.name, quantity: i.quantity, is_damaged: !!i.is_damaged })),
+          itemCount: cart.filter(i => i && i.type !== "debt_payment" && i.product_id !== "__DEBT__" && i.product_id).length,
           total: Number(sale.total_amount) || total,
           dueNow: sale.paid_amount != null ? Number(sale.paid_amount) : null,
           onAccount: Math.max(0, (Number(sale.total_amount) || total) - (Number(sale.paid_amount) || 0)),

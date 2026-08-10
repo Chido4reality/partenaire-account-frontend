@@ -29,6 +29,42 @@ const VARIANTS = {
   pickup: { status: "paid",            flag: "can_release_goods",   titleKey: "pickup_list",   subKey: "awaiting_pickup",  actionKey: "release_goods", emptyKey: "pickup_empty", linesKey: "pa_sale_items",        verb: "release" },
 };
 
+// THE PICKUP DESK HANDS OVER GOODS, so its row has to name them. "1 items" tells
+// a storekeeper coming onto shift nothing about what to fetch, and with two
+// customers waiting it is how the wrong order reaches the wrong person.
+//
+// Past this many lines the block scrolls INSIDE the row rather than growing, so
+// a seven-line order cannot push the next ticket off the screen. Scrolling is
+// not the same as hiding: the count is always stated, and nothing is behind a
+// tap into a detail view — a list you have to open twice is one people stop
+// trusting, and a storekeeper with an armful of stock will not open it at all.
+const MAX_VISIBLE_LINES = 5;
+const LINE_PX = 27;
+
+// ⚠️ A pa_sale_items row is NOT necessarily a product. A debt_payment line is
+// money travelling on the ticket, and legacy rows carry no line_type at all
+// (product_id is the reliable tell — see isDebtLine in routes/sales.js). Either
+// one rendered as a picking line sends the storekeeper to fetch a debt, and both
+// inflate the count the cashier reads.
+// Exported for the line-filter test — these three decide what a storekeeper is
+// sent to fetch, so they are checked against real pa_sale_items rows.
+export const isGoodsLine = (l) => !!l && !!l.product_id && l.line_type !== "debt_payment";
+
+// Never blank. A line whose product embed failed is still a line the storekeeper
+// has to be told about — silently dropping it would hand over a short order.
+export const lineName = (l, en) => {
+  const p = l.pa_products || {};
+  const n = en ? (p.name_en || p.name) : (p.name || p.name_en);
+  return n || (en ? "Unnamed item" : "Article sans nom");
+};
+
+// Quantities can be fractional (2.5 kg). Show what was actually sold, without
+// trailing-zero noise on the whole numbers that make up almost every line.
+export const qtyText = (q) => {
+  const n = Number(q) || 0;
+  return Number.isInteger(n) ? String(n) : String(Number(n.toFixed(3)));
+};
+
 // "12 min" / "2 h 05" — how long the customer has been standing there. Deliberately
 // coarse: the cashier needs "a while" vs "just now", not a stopwatch.
 function waitedFor(iso, lang) {
@@ -206,85 +242,167 @@ export default function TicketListPage({ variant = "queue" }) {
               queue; re-sorting it in the client would jump someone's turn. */}
           {tickets.map(tk => {
             const lines = tk[V.linesKey] || [];
-            const busy = settle.isPending && settle.variables?.id === tk.id;
+            // The picking list and the count both mean GOODS. A debt line is
+            // money and belongs to neither.
+            const goods = lines.filter(isGoodsLine);
+            const busy  = settle.isPending && settle.variables?.id === tk.id;
+
+            const totalAmt = Number(tk.total_amount) || 0;
+            const dueNow   = Number(tk.paid_amount) || 0;
+            const onAcct   = Math.max(0, totalAmt - dueNow);
+            const isCredit = variant === "queue" && onAcct > 0;
+            // A repayment and new credit can BOTH be in play, and then the same
+            // figure means two different things — the debt being settled and the
+            // cash being handed over. Each part names its job, exactly as the POS
+            // states it before sending, so the cashier and the salesperson are
+            // reading the same sentence.
+            const debtPortion = lines
+              .filter(l => l.line_type === "debt_payment")
+              .reduce((s, l) => s + (Number(l.unit_price) || 0) * (Number(l.quantity) || 1), 0);
+            const settles = Math.min(dueNow, debtPortion);
+
+            const actionBtn = (
+              <button
+                disabled={!isOnline || busy}
+                onClick={() => settle.mutate({ id: tk.id, version: tk.version })}
+                style={{
+                  padding: "10px 18px", borderRadius: 8, border: "none", fontWeight: 700,
+                  background: (!isOnline || busy) ? "#bbb" : "#14213d", color: "#fff",
+                  cursor: (!isOnline || busy) ? "not-allowed" : "pointer", whiteSpace: "nowrap",
+                }}
+              >{busy ? "…"
+                : variant === "pickup" ? t("release_goods", lang)
+                : dueNow === 0        ? (en ? "Confirm" : "Confirmer")
+                : (en ? `Collect ${fmt(dueNow)}` : `Encaisser ${fmt(dueNow)}`)}</button>
+            );
+
+            // Sale number, customer and waiting time are how the person at the
+            // counter is matched to the order — both desks need all three.
+            // The customer's name is also the FALLBACK when the slip did not
+            // print: a printer that is off or out of paper must not leave a
+            // customer unable to be served.
+            const heading = (
+              <div style={{ minWidth: 210 }}>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>{tk.sale_number}</div>
+                {tk.pa_customers?.name && (
+                  <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>{tk.pa_customers.name}</div>
+                )}
+                {variant === "queue" && (
+                  <div style={{ fontSize: 13, opacity: 0.75, marginTop: 2 }}>
+                    {goods.length} {t("items_count", lang)} · {t("sent_by", lang)} {tk.ticket_raised_by_name || "—"}
+                  </div>
+                )}
+                <div style={{ fontSize: 13, opacity: 0.75, marginTop: 2 }}>
+                  {t("waiting_for", lang)} {waitedFor(tk.created_at, lang)}
+                  {variant === "pickup" ? ` · ${t("sent_by", lang)} ${tk.ticket_raised_by_name || "—"}` : ""}
+                </div>
+              </div>
+            );
+
+            // ── THE PICKUP ROW ────────────────────────────────────────────
+            // No amount. He is not collecting money, and the figure competes for
+            // the eye with the only thing he is here to read. It is on the
+            // receipt the customer is holding if it is ever needed.
+            if (variant === "pickup") {
+              const scrolls = goods.length > MAX_VISIBLE_LINES;
+              return (
+                <div key={tk.id} style={{
+                  border: "1px solid #e2e2e2", borderRadius: 10, padding: 14,
+                  display: "flex", flexDirection: "column", gap: 10,
+                }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
+                    {heading}
+                    {actionBtn}
+                  </div>
+
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 12, opacity: 0.7, marginBottom: 4 }}>
+                      <span style={{ fontWeight: 700, letterSpacing: 0.3 }}>
+                        {t("to_hand_over", lang).toUpperCase()} · {goods.length}
+                      </span>
+                      {scrolls ? <span>{t("scroll_for_more", lang)}</span> : null}
+                    </div>
+                    {goods.length === 0 ? (
+                      // Not "nothing to do" — a paid ticket with no goods lines is
+                      // a debt-only ticket or a projection that lost its lines, and
+                      // either way he must not hand over a guess.
+                      <div style={{ fontSize: 13, fontStyle: "italic", opacity: 0.75 }}>
+                        {en ? "No goods on this ticket — check with the cashier before handing anything over."
+                            : "Aucune marchandise sur ce ticket — vérifiez avec le caissier avant de remettre quoi que ce soit."}
+                      </div>
+                    ) : (
+                      <div style={{
+                        border: "1px solid #ececec", borderRadius: 8, background: "#fafafa",
+                        maxHeight: scrolls ? MAX_VISIBLE_LINES * LINE_PX : undefined,
+                        overflowY: scrolls ? "auto" : "visible",
+                        // Contain the scroll so a flick inside the block does not
+                        // also drag the list behind it.
+                        overscrollBehavior: "contain", WebkitOverflowScrolling: "touch",
+                      }}>
+                        {goods.map((l, i) => (
+                          <div key={l.id || i} style={{
+                            display: "flex", alignItems: "baseline", gap: 8,
+                            padding: "5px 10px", minHeight: LINE_PX,
+                            borderTop: i ? "1px solid #f0f0f0" : "none",
+                          }}>
+                            {/* Quantity leads and is the heaviest thing on the
+                                line — it is what he counts out. */}
+                            <span style={{ fontWeight: 800, fontSize: 15, minWidth: 34, fontVariantNumeric: "tabular-nums" }}>
+                              {qtyText(l.quantity)}
+                            </span>
+                            <span style={{ fontSize: 14, flex: 1, lineHeight: 1.25 }}>
+                              {lineName(l, en)}
+                              {l.pa_products?.unit ? <span style={{ opacity: 0.6 }}> ({l.pa_products.unit})</span> : null}
+                            </span>
+                            {/* Damaged stock lives in a different pile. Fetching
+                                it from sellable stock is a real mis-pick, so the
+                                line says so. */}
+                            {l.is_damaged ? (
+                              <span style={{
+                                fontSize: 11, fontWeight: 700, color: "#a33", background: "#fdecec",
+                                border: "1px solid #f2caca", borderRadius: 5, padding: "1px 6px", whiteSpace: "nowrap",
+                              }}>{t("damaged_short", lang)}</span>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
+            // ── THE CASHIER ROW ───────────────────────────────────────────
+            // Unchanged: he takes money. The product list would slow the till and
+            // he has no reason to read it. The terms were set by the salesperson
+            // and he cannot change them, so the row states what is due NOW rather
+            // than the order total — "Take payment" is a lie on a credit ticket.
             return (
               <div key={tk.id} style={{
                 border: "1px solid #e2e2e2", borderRadius: 10, padding: 14,
                 display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap",
               }}>
-                <div style={{ minWidth: 210 }}>
-                  <div style={{ fontWeight: 700, fontSize: 16 }}>{tk.sale_number}</div>
-                  {/* The customer's name is the FALLBACK when the slip did not
-                      print. A printer that is off or out of paper must not leave
-                      a customer unable to be served, so the queue is searchable
-                      by eye on the name as well as the number. */}
-                  {tk.pa_customers?.name && (
-                    <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>{tk.pa_customers.name}</div>
+                {heading}
+                <div style={{ textAlign: "right", minWidth: 130 }}>
+                  <div style={{ fontWeight: 700, fontSize: 17 }}>{fmt(dueNow)}</div>
+                  {debtPortion > 0 && (
+                    <div style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>
+                      {en ? `${fmt(settles)} settles debt` : `${fmt(settles)} règle la dette`}
+                    </div>
                   )}
-                  <div style={{ fontSize: 13, opacity: 0.75, marginTop: 2 }}>
-                    {lines.length} {t("items_count", lang)} · {t("sent_by", lang)} {tk.ticket_raised_by_name || "—"}
-                  </div>
-                  <div style={{ fontSize: 13, opacity: 0.75 }}>
-                    {t("waiting_for", lang)} {waitedFor(tk.created_at, lang)}
-                  </div>
+                  {isCredit && (
+                    <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
+                      {en ? `${fmt(onAcct)} goods on account` : `${fmt(onAcct)} marchandise sur compte`}
+                      {tk.due_date ? ` · ${tk.due_date}` : ""}
+                    </div>
+                  )}
+                  {!isCredit && (
+                    <div style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>
+                      {en ? "paid in full" : "payé intégralement"}
+                    </div>
+                  )}
                 </div>
-                {/* The terms were set by the salesperson and the cashier cannot
-                    change them, so the row states what is actually due NOW rather
-                    than the order total. "Take payment" is a lie on a credit
-                    ticket — sometimes no money changes hands, and the button must
-                    not claim otherwise. */}
-                {(() => {
-                  const totalAmt = Number(tk.total_amount) || 0;
-                  const dueNow   = Number(tk.paid_amount) || 0;
-                  const onAcct   = Math.max(0, totalAmt - dueNow);
-                  const isCredit = variant === "queue" && onAcct > 0;
-                  // A repayment and new credit can BOTH be in play, and then the
-                  // same figure means two different things — the debt being
-                  // settled and the cash being handed over. Each part names its
-                  // job, exactly as the POS states it before sending, so the
-                  // cashier and the salesperson are reading the same sentence.
-                  const debtPortion = lines
-                    .filter(l => l.line_type === "debt_payment")
-                    .reduce((s, l) => s + (Number(l.unit_price) || 0) * (Number(l.quantity) || 1), 0);
-                  const settles = Math.min(dueNow, debtPortion);
-                  return (
-                    <>
-                      <div style={{ textAlign: "right", minWidth: 130 }}>
-                        <div style={{ fontWeight: 700, fontSize: 17 }}>
-                          {variant === "queue" ? fmt(dueNow) : fmt(totalAmt)}
-                        </div>
-                        {variant === "queue" && debtPortion > 0 && (
-                          <div style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>
-                            {en ? `${fmt(settles)} settles debt` : `${fmt(settles)} règle la dette`}
-                          </div>
-                        )}
-                        {isCredit && (
-                          <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
-                            {en ? `${fmt(onAcct)} goods on account` : `${fmt(onAcct)} marchandise sur compte`}
-                            {tk.due_date ? ` · ${tk.due_date}` : ""}
-                          </div>
-                        )}
-                        {variant === "queue" && !isCredit && (
-                          <div style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>
-                            {en ? "paid in full" : "payé intégralement"}
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        disabled={!isOnline || busy}
-                        onClick={() => settle.mutate({ id: tk.id, version: tk.version })}
-                        style={{
-                          padding: "10px 18px", borderRadius: 8, border: "none", fontWeight: 700,
-                          background: (!isOnline || busy) ? "#bbb" : "#14213d", color: "#fff",
-                          cursor: (!isOnline || busy) ? "not-allowed" : "pointer",
-                        }}
-                      >{busy ? "…"
-                        : variant === "pickup" ? t("release_goods", lang)
-                        : dueNow === 0        ? (en ? "Confirm" : "Confirmer")
-                        : (en ? `Collect ${fmt(dueNow)}` : `Encaisser ${fmt(dueNow)}`)}</button>
-                    </>
-                  );
-                })()}
+                {actionBtn}
               </div>
             );
           })}

@@ -259,10 +259,15 @@ export function buildSaleEscposBytes({
 // bitten this codebase once (the "wide error!" CODE128 failure that forced the
 // switch to native QR), so putting one here would mean a hardware claim nobody
 // has tested on Paul's actual printer. The flow works on the number alone.
+// ⚠️ IT PRINTS THE LINES, NOT A COUNT. This slip said "Items 3" and nothing
+// else about the goods. The customer cannot check their order against a number,
+// and where the storekeeper reads the slip at the pickup desk he cannot fetch
+// against one either — the same mistake the pickup row made on screen.
+// Quantities lead, because that is what gets counted out.
 export function buildTicketSlipEscposBytes({
   org = {}, lang = "fr", widthMm = 58,
   saleNumber = "", raisedByName = "", customerName = "",
-  itemCount = 0, total = 0, when = null,
+  items = [], itemCount = 0, total = 0, when = null,
   dueNow = null, onAccount = 0,
 } = {}) {
   const en = lang === "en";
@@ -287,7 +292,28 @@ export function buildTicketSlipEscposBytes({
   doc.feed(1);
 
   doc.align("L");
-  doc.cols(en ? "Items" : "Articles", String(itemCount));
+
+  // A debt_payment line is money riding on the ticket, not goods — it must never
+  // appear on a picking list. Defensive here as well as in the caller: this
+  // function is the last thing between the data and the paper.
+  const goods = (items || []).filter(
+    (i) => i && i.type !== "debt_payment" && i.line_type !== "debt_payment" && (i.name || i.product_name)
+  );
+  if (goods.length) {
+    doc.rule();
+    doc.bold(true).line(`${en ? "ITEMS" : "ARTICLES"} (${goods.length})`).bold(false);
+    for (const g of goods) {
+      const q = Number(g.quantity) || 0;
+      const qty = Number.isInteger(q) ? String(q) : String(Number(q.toFixed(3)));
+      const dmg = g.is_damaged ? (en ? " [DAMAGED]" : " [ABIME]") : "";
+      doc.wrapped(`${qty} x ${g.name || g.product_name}${dmg}`);
+    }
+    doc.rule();
+  } else {
+    // No lines were handed in (an older caller, or a debt-only ticket) — the
+    // count is all there is, and printing it is better than printing nothing.
+    doc.cols(en ? "Items" : "Articles", String(itemCount));
+  }
   doc.cols(en ? "Total" : "Total", `${money(total)} ${sym}`);
   // When the salesperson set terms, the slip states what the customer will be
   // asked for AT THE TILL. A slip that says 20 000 when the cashier asks for
