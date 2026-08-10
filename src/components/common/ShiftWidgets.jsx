@@ -677,6 +677,10 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
                   <Row label={fr ? "  dont créé dans un poste précédent" : "  of which raised in an earlier shift"}
                        value={`${cw.raised_earlier_count} · ${fmt(cw.raised_earlier_value)}`} />
                 )}
+                {cw.raised_unknown_count > 0 && (
+                  <Row label={fr ? "  dont créé avant le suivi par poste" : "  of which raised before shift tracking"}
+                       value={`${cw.raised_unknown_count} · ${fmt(cw.raised_unknown_value)}`} />
+                )}
                 {cw.sent_not_collected_count > 0 && (
                   <Row label={fr ? "Envoyé, pas encore encaissé" : "Sent, not yet collected"}
                        value={`${cw.sent_not_collected_count} · ${fmt(cw.sent_not_collected_value)}`} />
