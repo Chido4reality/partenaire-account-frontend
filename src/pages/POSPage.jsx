@@ -94,7 +94,7 @@ export default function POSPage() {
   // selectedLocation.sales_mode: that rides the ["locations"] cache, which has
   // silently drifted twice. Degrades safe — a failed read leaves mode 'direct',
   // i.e. today's behaviour, which is the right way for this to fail.
-  const { summary: tillSummary } = useTicketSummary(selectedLocation?.id || null, { onError: () => {} });
+  const { summary: tillSummary, refetch: refetchTillMode } = useTicketSummary(selectedLocation?.id || null, { onError: () => {} });
   // ── TWO SOURCES, AND THE TERMINAL ACTION FAILS TOWARD THE REVERSIBLE ONE ───
   // `(tillSummary?.mode || "direct")` alone was wrong for the BUTTON. tillSummary
   // is undefined until a network round-trip completes, so on every page load and
@@ -113,6 +113,29 @@ export default function POSPage() {
   // fails closed; a money button fails toward the outcome you can undo.
   const isCashierMode =
     tillSummary?.mode === "cashier" || selectedLocation?.sales_mode === "cashier";
+  // ── AND WHEN NEITHER SOURCE HAS ANSWERED, DO NOT GUESS ────────────────────
+  // Both sources can be silent at once: a location row persisted before the
+  // sales_mode column existed (zustand keeps it across reloads and logins)
+  // carries no sales_mode, and the summary has not come back yet. In that state
+  // `isCashierMode` is false — which is a GUESS, and the wrong guess completes an
+  // irreversible sale on a till that was supposed to send it to a cashier.
+  //
+  // So there is a third state. Unknown is not "direct": the terminal button is
+  // disabled and says it is checking. It costs a moment on the rare device that
+  // has been logged in since before the column; it removes the last window in
+  // which a wrong render can take money.
+  const tillModeKnown =
+    tillSummary?.mode !== undefined || selectedLocation?.sales_mode !== undefined;
+
+  // RE-ASK AT THE MOMENT OF DECISION. The summary is cached (30s stale, 60s
+  // poll), so after an owner flips a till to cashier every OTHER device can hold
+  // a "direct" answer for up to a minute — and the settings-page invalidation
+  // only reaches the owner's own device. That window ends at a button that takes
+  // money, so the mode is refetched when the payment panel opens: one request,
+  // at the one moment the answer decides something irreversible.
+  useEffect(() => {
+    if (showPayment && selectedLocation?.id) refetchTillMode?.();
+  }, [showPayment, selectedLocation?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
   // Per-shop: does the customer carry a printed slip, or get called by number?
   // Defaults to 'slip' when the column hasn't loaded — printing a slip nobody
   // needed is harmless; failing to print one the shop relies on is not.
@@ -2810,14 +2833,16 @@ export default function POSPage() {
                   <PayButton
                     saleMutation={saleMutation}
                     onClick={attemptCheckout}
-                    disabled={!shiftIsOpen || (!hasDebt && payMode === "partial" && !paidAmt) || ((payMode === "credit" || payMode === "partial") && !customer) || (!isDebtOnlyCart && !!customer && !payModeChosen)}
+                    disabled={!tillModeKnown || !shiftIsOpen || (!hasDebt && payMode === "partial" && !paidAmt) || ((payMode === "credit" || payMode === "partial") && !customer) || (!isDebtOnlyCart && !!customer && !payModeChosen)}
                     title={!shiftIsOpen ? noShiftHint(lang) : ""}
                     // THE ONE THING CASHIER MODE CHANGES. Same panel, same payload,
                     // same validation — only where it goes. The endpoint swap lives
                     // in saleMutation, which posts to /sales/ticket in cashier mode.
-                    label={isCashierMode
-                      ? `${t("send_to_cashier", lang)} →`
-                      : (lang === "en" ? "✓ Confirm" : "✓ Valider")}
+                    label={!tillModeKnown
+                      ? (lang === "en" ? "Checking till…" : "Vérification caisse…")
+                      : isCashierMode
+                        ? `${t("send_to_cashier", lang)} →`
+                        : (lang === "en" ? "✓ Confirm" : "✓ Valider")}
                     successLabel={isCashierMode
                       ? (lang === "en" ? "✓ Sent!" : "✓ Envoyé !")
                       : (lang === "en" ? "✓ Sold!" : "✓ Vendu !")}

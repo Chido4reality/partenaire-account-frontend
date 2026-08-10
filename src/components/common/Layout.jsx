@@ -985,9 +985,25 @@ export default function Layout() {
   useEffect(() => {
     const list = _locsResp?.data;
     if (!Array.isArray(list) || list.length === 0) return; // not loaded yet
-    if (selectedLocation && !list.some(l => l.id === selectedLocation.id)) {
-      setLocation(null); // stale/foreign selection → clear it
-    }
+    if (!selectedLocation) return;
+    const fresh = list.find(l => l.id === selectedLocation.id);
+    if (!fresh) { setLocation(null); return; }   // stale/foreign selection → clear it
+    // MP-CASHIER-PHASE-1b: REFRESH the stored object, don't just validate its id.
+    //
+    // This effect used to only CLEAR a selection whose id was missing, so the
+    // persisted row itself (zustand `mp-settings`, survives reloads and logins)
+    // kept whatever fields it had when it was first chosen — FOREVER. A device
+    // that selected this shop while it was in DIRECT mode kept
+    // sales_mode:'direct' after the owner flipped it to cashier, and a device
+    // that chose it before the column existed had no sales_mode at all.
+    //
+    // That matters because POSPage reads selectedLocation.sales_mode as the
+    // INSTANT half of its cashier-mode test — the half that closes the window
+    // where the slow summary query has not answered yet and the terminal button
+    // would otherwise read "Confirm" and complete a real sale. A permanently
+    // stale copy quietly re-opens exactly that window on the devices most likely
+    // to hit it: the ones that have been logged in longest.
+    if (JSON.stringify(fresh) !== JSON.stringify(selectedLocation)) setLocation(fresh);
   }, [_locsResp, selectedLocation, setLocation]);
 
   // MP-PROPLUS-CASHIER-LOCATION: a Pro Plus cashier pinned to a home location is
