@@ -127,15 +127,6 @@ export default function POSPage() {
   const tillModeKnown =
     tillSummary?.mode !== undefined || selectedLocation?.sales_mode !== undefined;
 
-  // RE-ASK AT THE MOMENT OF DECISION. The summary is cached (30s stale, 60s
-  // poll), so after an owner flips a till to cashier every OTHER device can hold
-  // a "direct" answer for up to a minute — and the settings-page invalidation
-  // only reaches the owner's own device. That window ends at a button that takes
-  // money, so the mode is refetched when the payment panel opens: one request,
-  // at the one moment the answer decides something irreversible.
-  useEffect(() => {
-    if (showPayment && selectedLocation?.id) refetchTillMode?.();
-  }, [showPayment, selectedLocation?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
   // Per-shop: does the customer carry a printed slip, or get called by number?
   // Defaults to 'slip' when the column hasn't loaded — printing a slip nobody
   // needed is harmless; failing to print one the shop relies on is not.
@@ -223,6 +214,22 @@ export default function POSPage() {
   const [payMethod, setPayMethod]         = useState("cash");
   const [notes, setNotes]                 = useState("");
   const [showPayment, setShowPayment]     = useState(false);
+
+  // RE-ASK AT THE MOMENT OF DECISION. The summary is cached (30s stale, 60s
+  // poll), so after an owner flips a till to cashier every OTHER device can hold
+  // a "direct" answer for up to a minute — and the settings-page invalidation
+  // only reaches the owner's own device. That window ends at a button that takes
+  // money, so the mode is refetched when the payment panel opens: one request,
+  // at the one moment the answer decides something irreversible.
+  //
+  // ⚠️ MUST STAY BELOW the showPayment declaration above. A dependency array is
+  // evaluated DURING RENDER, so placing this effect higher reads showPayment in
+  // its temporal dead zone and throws "Cannot access 'showPayment' before
+  // initialization" — which does not break the cashier path, it breaks the whole
+  // POS, on every till.
+  useEffect(() => {
+    if (showPayment && selectedLocation?.id) refetchTillMode?.();
+  }, [showPayment, selectedLocation?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
   // MP-DISCOUNT: sale-level discount (line discounts live on each cart item).
   const [saleDiscType, setSaleDiscType]     = useState("");   // "" | "amount" | "percent"
   const [saleDiscValue, setSaleDiscValue]   = useState("");
