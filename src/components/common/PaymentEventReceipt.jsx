@@ -174,8 +174,47 @@ function buildBodyLines(eventType, data, lang, org) {
     ? `${en ? "Customer" : "Client"}: ${customerName}`
     : null;
 
+  // ── THE RECEIPT'S LINES, FROM EITHER SHAPE ────────────────────────────────
+  // ⚠️ WHY THIS EXISTS. Every caller until now was the device that RANG the
+  // sale, so it still had the cart in memory and passed it as `data.items`
+  // (POSPage: `items: cart`). The cashier collecting a ticket is a different
+  // person on a different device who never had that cart — they have the server
+  // row, where the lines are `pa_sale_items` and the product name is nested one
+  // level down in the embed. The component read only `data.items`, so the
+  // payment receipt printed a sale number, a total and "PAID", with nothing
+  // saying what was bought. A total proves a number; it does not prove a sale.
+  //
+  // Additive and guarded: this only runs when `items` is absent, so the four
+  // existing call sites that pass a cart are byte-for-byte unaffected. It also
+  // means any future caller can hand over a raw server sale row and get a
+  // correct receipt, which is the shape /pay and GET /sales/:id both return.
+  const saleItems = (() => {
+    if (Array.isArray(data.items) && data.items.length) return data.items;
+    const rows = Array.isArray(data.pa_sale_items) ? data.pa_sale_items : [];
+    return rows.map((l) => {
+      // A debt_payment line is money riding on the sale, not goods, and carries
+      // no product to take a name from — so it gets a named one. `type` is what
+      // the renderers below switch on to show it as a repayment rather than as
+      // an item with a quantity.
+      const isDebtLine = l.line_type === "debt_payment" || (!l.product_id && !l.line_type);
+      if (isDebtLine) {
+        return { type: "debt_payment", name: en ? "Debt repayment" : "Remboursement de dette",
+                 quantity: 1, unit_price: Number(l.unit_price) || 0 };
+      }
+      const p = l.pa_products || {};
+      return {
+        name: (en ? (p.name_en || p.name) : (p.name || p.name_en))
+              || (en ? "Unnamed item" : "Article sans nom"),
+        quantity: Number(l.quantity) || 0,
+        unit_price: Number(l.unit_price) || 0,
+        is_damaged: l.is_damaged === true,
+        product_id: l.product_id,
+      };
+    });
+  })();
+
   if (eventType === "sale") {
-    const items = data.items || [];
+    const items = saleItems;
     // MP-DAMAGED-GOODS: flag damaged lines on the receipt (preview + WhatsApp +
     // non-facture print all share these lines). Server stamps is_damaged.
     const dmg = (i) => i.is_damaged ? (en ? " (DAMAGED GOODS)" : " (MARCHANDISE ENDOMMAGÉE)") : "";
@@ -207,6 +246,32 @@ function buildBodyLines(eventType, data, lang, org) {
       lines.push(`🟡 ${en ? "PARTIAL PAYMENT" : "PAIEMENT PARTIEL"}`);
       lines.push(`${en ? "Paid" : "Payé"}: ${fmtAmt(paid)} ${sym}`);
       lines.push(`${en ? "Balance due" : "Reste dû"}: ${fmtAmt(balance)} ${sym}`);
+    }
+    // ── WHAT THE MONEY SETTLED, on a MIXED ticket ──────────────────────────
+    // A sale can carry a debt repayment as well as goods (cashier mode made
+    // that routine: the till is the cashier, so old invoices are settled here
+    // too). The goods are itemised above; without this the customer is told a
+    // figure was collected but not which invoices it closed — and "paid for
+    // what?" is exactly the question this receipt exists to answer. Same entry
+    // shape and the same tolerant field reads as the debt_collection branch
+    // below, so one wording is maintained rather than two.
+    const appliedHere = Array.isArray(data.applied_to_invoices) ? data.applied_to_invoices : [];
+    if (appliedHere.length) {
+      lines.push("─────────────────────");
+      lines.push(en ? "Settled:" : "Réglé :");
+      appliedHere.forEach((inv) => {
+        if (!inv) return;
+        const ref = inv.sale_number || inv.sale_id || "?";
+        const raw = inv.applied ?? inv.amount ?? inv.applied_amount ?? 0;
+        lines.push(`  ${ref} — ${fmtAmt(raw)} ${sym}`);
+      });
+      // The repayment that had nowhere to go: the customer owed less than the
+      // ticket claimed because someone collected in between. Surfaced, never
+      // absorbed — the cashier is holding money this sale did not account for.
+      const unapplied = Number(data.unapplied_repayment || 0);
+      if (unapplied > 0) {
+        lines.push(`  ${en ? "Not applied (already settled)" : "Non imputé (déjà réglé)"} — ${fmtAmt(unapplied)} ${sym}`);
+      }
     }
   }
 
@@ -601,7 +666,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
   const saleReceiptOpts = (widthMm) => {
     const isDebt = (i) => i.type === "debt_payment" || i.isDebt || i.isDebtPayment
       || i.product_id === "__DEBT__" || i.product_id === "__DEBT_PAYMENT__";
-    const items = (data.items || []).map((i) => isDebt(i)
+    const items = saleItems.map((i) => isDebt(i)
       ? { name: i.name, quantity: 1, unit_price: Number(i.unit_price) || 0 }
       : { name: dmgName(i), quantity: Number(i.quantity) || 0, unit_price: Number(i.unit_price) || 0 });
     const grossItems = items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0);
@@ -687,7 +752,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
     if (eventType === "sale") {
       const isDebt = (i) => i.type === "debt_payment" || i.isDebt || i.isDebtPayment
         || i.product_id === "__DEBT__" || i.product_id === "__DEBT_PAYMENT__";
-      const items = (data.items || []).map((i) => isDebt(i)
+      const items = saleItems.map((i) => isDebt(i)
         ? { name: i.name, quantity: 1, unit_price: Number(i.unit_price) || 0 }
         : { name: dmgName(i), quantity: Number(i.quantity) || 0, unit_price: Number(i.unit_price) || 0 });
       // MP-RECEIPT-PRINT-CLOSE-FIX: render the facture in an IN-APP overlay
@@ -747,7 +812,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
 
     let bodyHtml;
     if (eventType === "sale") {
-      const items = data.items || [];
+      const items = saleItems;
       const isDebtLine = (i) => i.type === "debt_payment" || i.isDebt || i.isDebtPayment
         || i.product_id === "__DEBT__" || i.product_id === "__DEBT_PAYMENT__";
       const rows = items.map((i) => {

@@ -43,10 +43,18 @@ const STATUS = {
   refunded:        { en: "Refunded",       fr: "Remboursé",  tone: "danger" },
 };
 
+// The ticket list is the one block that grows without bound: a shop at 200 sales
+// a day over a 30-day window is thousands of rows, and rendering all of them
+// froze nothing at 35 but will at 3,000. Paged in the client because the
+// endpoint already caps at 500 and returns a `truncated` flag — so the page
+// count is honest about what it holds rather than implying it holds everything.
+const TICKETS_PER_PAGE = 50;
+
 export default function CashierOversightTab({ from, to, locationId, lang }) {
   const en = lang === "en";
   const fmt = useCurrency();
   const [openId, setOpenId] = useState(null);
+  const [page, setPage] = useState(0);
 
   const { data: resp, isLoading, isError, refetch } = useQuery({
     queryKey: ["cashier-oversight", from, to, locationId || ""],
@@ -95,6 +103,11 @@ export default function CashierOversightTab({ from, to, locationId, lang }) {
   if (isLoading || !d) return <div style={{ padding: 24, color: "var(--text-secondary)" }}>…</div>;
 
   const T = d.per_cashier_totals, S = d.per_salesperson_totals;
+  // Clamp rather than reset-on-change: narrowing the date range while on page 5
+  // would otherwise render an empty table with no way back. Derived in render so
+  // there is no effect to fire, and no window where page > last page.
+  const lastPage = Math.max(0, Math.ceil(d.ticket_count / TICKETS_PER_PAGE) - 1);
+  const safePage = Math.min(page, lastPage);
   const nothing = d.per_cashier.length === 0 && d.per_salesperson.length === 0;
 
   return (
@@ -271,7 +284,9 @@ export default function CashierOversightTab({ from, to, locationId, lang }) {
           sub={en ? "Who raised it, who took the money, who handed over the goods — and when."
                   : "Qui l'a créé, qui a encaissé, qui a remis la marchandise — et quand."}
           right={<span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-            {d.ticket_count}{d.truncated ? (en ? " (first 500)" : " (500 premiers)") : ""}
+            {d.ticket_count === 0 ? "0" :
+              `${safePage * TICKETS_PER_PAGE + 1}–${Math.min((safePage + 1) * TICKETS_PER_PAGE, d.ticket_count)} ${en ? "of" : "sur"} ${d.ticket_count}`}
+            {d.truncated ? (en ? " · first 500 only" : " · 500 premiers seulement") : ""}
           </span>}
         >
           <div style={{ overflowX: "auto" }}>
@@ -287,7 +302,7 @@ export default function CashierOversightTab({ from, to, locationId, lang }) {
                 </tr>
               </thead>
               <tbody>
-                {d.tickets.map(t => {
+                {d.tickets.slice(safePage * TICKETS_PER_PAGE, (safePage + 1) * TICKETS_PER_PAGE).map(t => {
                   const st = STATUS[t.status] || { en: t.status, fr: t.status, tone: "muted" };
                   const open = openId === t.id;
                   return (
@@ -297,6 +312,19 @@ export default function CashierOversightTab({ from, to, locationId, lang }) {
                           style={{ cursor: "pointer" }}>
                         <td style={{ fontWeight: 600 }}>
                           {open ? "▾ " : "▸ "}{t.sale_number}
+                          {/* A voided ticket is IN this list on purpose — one
+                              somebody tried to collect on is the single event
+                              most worth an owner's attention, and filtering it
+                              out would blind the oversight screen to it. It is
+                              excluded from every figure, so it is marked rather
+                              than counted. */}
+                          {t.is_voided && (
+                            <span style={{
+                              marginLeft: 6, fontSize: 11, fontWeight: 700, color: "var(--text-primary)",
+                              background: "rgba(239,68,68,0.22)", border: "1px solid rgba(239,68,68,0.55)",
+                              borderRadius: 5, padding: "1px 6px", whiteSpace: "nowrap",
+                            }}>{en ? "voided" : "annulé"}</span>
+                          )}
                           {t.self_served && (
                             <span style={{
                               marginLeft: 6, fontSize: 11, fontWeight: 700, color: "var(--text-primary)",
@@ -370,6 +398,23 @@ export default function CashierOversightTab({ from, to, locationId, lang }) {
               </tbody>
             </table>
           </div>
+          {d.ticket_count > TICKETS_PER_PAGE && (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+                          paddingTop: 10, marginTop: 10, borderTop: "1px solid var(--border)" }}>
+              <button className="btn btn-secondary" disabled={safePage === 0}
+                onClick={() => { setPage(Math.max(0, safePage - 1)); setOpenId(null); }}>
+                ← {en ? "Previous" : "Précédent"}
+              </button>
+              <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                {safePage + 1} / {lastPage + 1}
+              </span>
+              <button className="btn btn-secondary"
+                disabled={safePage >= lastPage}
+                onClick={() => { setPage(safePage + 1); setOpenId(null); }}>
+                {en ? "Next" : "Suivant"} →
+              </button>
+            </div>
+          )}
         </Card>
       )}
     </div>

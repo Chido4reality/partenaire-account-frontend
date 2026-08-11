@@ -110,6 +110,38 @@ export default function TicketListPage({ variant = "queue" }) {
   // shape eventType="sale" expects — so this is a render, not a new receipt.
   const [paidReceipt, setPaidReceipt] = useState(null);
 
+  // ── A VOIDED TICKET NEEDS AN EXIT ─────────────────────────────────────────
+  // The seventh-instance guard refuses to release a voided ticket, correctly —
+  // but the row then sat in the pickup list forever with no way to clear it.
+  // Dismissing is CLIENT-SIDE and deliberately so: there is no transition to
+  // make, because a voided ticket has already reached its end state, and
+  // inventing a server-side "dismissed" flag would add a lifecycle to a record
+  // whose lifecycle is the point of this design.
+  //
+  // It must NOT just vanish, either — Peter's complaint about the 409 was
+  // exactly that. So it stays until the storekeeper clears it himself, and the
+  // owner sees it regardless in the oversight tab's ticket list, which now
+  // includes voided tickets and marks them.
+  //
+  // sessionStorage, not localStorage: dismissing is "I have dealt with this
+  // now", not a permanent preference, and a fresh shift should see it again if
+  // it is somehow still there.
+  const [dismissed, setDismissed] = useState(() => {
+    try { return new Set(JSON.parse(sessionStorage.getItem("mp-ticket-dismissed") || "[]")); }
+    catch { return new Set(); }
+  });
+  const dismiss = (id) => {
+    setDismissed(prev => {
+      const next = new Set(prev); next.add(id);
+      try { sessionStorage.setItem("mp-ticket-dismissed", JSON.stringify([...next])); } catch { /* private mode */ }
+      return next;
+    });
+    setRefusal(null);
+  };
+  // Ids this session has been told are voided, so the row can offer the exit
+  // without re-asking the server.
+  const [voidedIds, setVoidedIds] = useState(() => new Set());
+
   const { summary } = useTicketSummary(locationId, { onError: () => {} });
   const { perms } = useMyPermissions({ enabled: !!locationId, retry: 1 });
   const mode = summary?.mode || "direct";
@@ -125,7 +157,7 @@ export default function TicketListPage({ variant = "queue" }) {
     refetchInterval: 60000,
     retry: 1,
   });
-  const tickets = listResp?.data || [];
+  const tickets = (listResp?.data || []).filter(t => !dismissed.has(t.id));
 
   const settle = useMutation({
     // EVERY mutation sends the version the row was RENDERED with. Not a re-read,
@@ -138,7 +170,16 @@ export default function TicketListPage({ variant = "queue" }) {
       // they paid twice.
       const body = res?.data;
       if (variant === "queue" && body?.data) {
-        setPaidReceipt({ ...body.data, applied_to_invoices: body.applied_to_invoices || undefined });
+        // body.data is the SERVER sale row: its lines are pa_sale_items, not the
+        // `items` array POSPage passes from its own cart. PaymentEventReceipt now
+        // understands both — see the saleItems normaliser there. unapplied_repayment
+        // rides along so the receipt can state money the cashier took that no
+        // invoice absorbed, rather than leaving the customer to notice.
+        setPaidReceipt({
+          ...body.data,
+          applied_to_invoices: body.applied_to_invoices || undefined,
+          unapplied_repayment: body.unapplied_repayment || undefined,
+        });
       }
       qc.invalidateQueries({ queryKey: listKey });
       qc.invalidateQueries({ queryKey: ticketSummaryKey(locationId) });
@@ -159,6 +200,11 @@ export default function TicketListPage({ variant = "queue" }) {
           ? (en ? `Current state: ${b.current_status}.` : `État actuel : ${b.current_status}.`)
           : null,
       });
+      // A voided ticket cannot be released and never will be, so the row is
+      // given an exit rather than left to be pressed again forever.
+      if (b.code === "sale_voided" && vars?.id) {
+        setVoidedIds(prev => new Set(prev).add(vars.id));
+      }
       // Whatever the row was showing is now known to be stale.
       qc.invalidateQueries({ queryKey: listKey });
       qc.invalidateQueries({ queryKey: ticketSummaryKey(locationId) });
@@ -275,7 +321,20 @@ export default function TicketListPage({ variant = "queue" }) {
               .reduce((s, l) => s + (Number(l.unit_price) || 0) * (Number(l.quantity) || 1), 0);
             const settles = Math.min(dueNow, debtPortion);
 
-            const actionBtn = (
+            // Once the server has told us this ticket is voided, the only
+            // honest control is the way out — offering "Hand over" again would
+            // be offering an action that is guaranteed to refuse.
+            const isVoided = voidedIds.has(tk.id);
+            const actionBtn = isVoided ? (
+              <button
+                onClick={() => dismiss(tk.id)}
+                style={{
+                  padding: "10px 18px", borderRadius: 8, fontWeight: 700, whiteSpace: "nowrap",
+                  border: "1px solid var(--border-hover)", background: "var(--bg-elevated)",
+                  color: "var(--text-primary)", cursor: "pointer",
+                }}
+              >{en ? "Dismiss" : "Retirer"}</button>
+            ) : (
               <button
                 disabled={!isOnline || busy}
                 onClick={() => settle.mutate({ id: tk.id, version: tk.version })}
