@@ -241,7 +241,14 @@ export function buildLedgerTextV2(ledger, lang) {
   //   MP-REFUNDS-LIST-TYPED-LABELS. Each row carries its kind label
   //   (refund/exchange/void) + credit-split modifier when present.
   //   Skip entirely when no refunds so quiet days aren't padded.
-  const refs = ledger.refunds?.items || [];
+  // MP-VOID-NOT-A-REFUND: the printed/WhatsApp report splits exactly like the
+  // on-screen ledger and the CSV — refunds that reduce net cash, then cancelled
+  // sales that do not. If these two ever diverge, the paper and the screen
+  // disagree in front of the customer. Partition on is_void_triggered (the
+  // server's arithmetic flag), never on `kind`.
+  const allRefs = ledger.refunds?.items || [];
+  const refs    = allRefs.filter(r => !r.is_void_triggered);
+  const voidRefs = allRefs.filter(r =>  r.is_void_triggered);
   if (refs.length) {
     L.push("");
     L.push(`*${en ? "REFUNDS TODAY" : "REMBOURSEMENTS DU JOUR"}*`);
@@ -269,6 +276,24 @@ export function buildLedgerTextV2(ledger, lang) {
           : ` (${n(r.credit_portion)} crédit / ${n(r.cash_portion)} cash)`;
       }
       L.push(amtLine);
+      if (r.reason) L.push(`  ${en ? "Reason" : "Motif"}: ${r.reason}`);
+    });
+  }
+
+  // Cancelled sales — listed so the money is visible, in brackets so it reads
+  // as "not deducted". Their cash never counted towards ARGENT REÇU.
+  if (voidRefs.length) {
+    L.push("");
+    L.push(`*${en ? "CANCELLED SALES — NOT DEDUCTED" : "VENTES ANNULÉES — NON DÉDUIT"}*`);
+    L.push(en
+      ? "The sale's cash was never counted, so reversing it doesn't reduce net cash."
+      : "L'encaissement de la vente n'a jamais été compté, donc son remboursement ne réduit pas le net.");
+    voidRefs.forEach(r => {
+      L.push(`${shortRetRef(r.ret_ref)}  ${refundKindLabel(r.kind, lang)}`);
+      const who  = r.customer_name || (en ? "Walk-in" : "Client occasionnel");
+      const what = r.items_summary || "—";
+      L.push(`  ${who} · ${what}`);
+      L.push(`  (${n(Number(r.refund_amount) || 0)} ${sym})`);
       if (r.reason) L.push(`  ${en ? "Reason" : "Motif"}: ${r.reason}`);
     });
   }
