@@ -182,8 +182,12 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
     setSelectedItems(prev => prev.map((it, i) => i === idx ? { ...it, selected: !it.selected } : it));
   };
 
+  // MP-RETURN-QTY-EDITABLE: QtyInput commits an already-validated integer, but
+  // stay defensive — a NaN in returnQty poisons returnedTotal AND the submit
+  // payload, and neither shows up until the server 400s.
   const setReturnQty = (idx, qty) => {
-    setSelectedItems(prev => prev.map((it, i) => i === idx ? { ...it, returnQty: +qty } : it));
+    const n = Math.max(0, Math.floor(Number(qty) || 0));
+    setSelectedItems(prev => prev.map((it, i) => i === idx ? { ...it, returnQty: n } : it));
   };
 
   // MP-VOID-REASON-REQUIRED-FIELD: derived validity for the void
@@ -349,10 +353,29 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
       } else {
         // Unified return/replace contract (Sprint L). Exchange =
         // refund + replacement_items; backend computes price_difference.
-        const items_returned = selectedItems.filter(i => i.selected).map(i => ({
-          product_id: i.product_id, qty: +i.returnQty,
-          unit_price: +i.unit_price, reason: i.retReason || "other"
-        }));
+        // MP-RETURN-QTY-EDITABLE: final clamp at the wire. Never send a qty above
+        // what's still returnable (sold − already returned) or at/below 0, and drop
+        // emptied lines entirely. The server re-validates both (returns.js:
+        // "Return qty must be greater than 0" / code qty_exceeds) and the
+        // process_return_exchange RPC is the DB backstop — this is fail-fast UX,
+        // NOT the enforcement.
+        const items_returned = selectedItems
+          .filter(i => i.selected)
+          .map(i => {
+            const cap = returnableQtyFor(i.product_id);
+            const lineMax = cap == null ? Math.floor(Number(i.quantity) || 0) : cap;
+            const qty = Math.min(Math.max(Math.floor(Number(i.returnQty) || 0), 0), lineMax);
+            return { product_id: i.product_id, qty,
+              unit_price: +i.unit_price, reason: i.retReason || "other" };
+          })
+          .filter(i => i.qty > 0);
+        if (!items_returned.length) {
+          toast.error(lang === "en"
+            ? "Pick at least one item with a quantity above 0."
+            : "Choisissez au moins un article avec une quantité supérieure à 0.");
+          setLoading(false);
+          return;
+        }
         const replacement_items = mode === "exchange"
           ? newItems.map(i => ({ product_id: i.product_id, qty: +i.quantity, unit_price: +i.sell_price }))
           : [];
@@ -797,9 +820,9 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
                   {item.selected && !exhausted && (
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en" ? "Return qty:" : "Qté retour:"}</span>
-                      <input type="number" value={item.returnQty} onChange={e => setReturnQty(i, Math.min(+e.target.value || 1, maxQty))}
-                        min={1} max={maxQty}
-                        style={{ width: 60, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", fontSize: 13 }} />
+                      <QtyInput value={item.returnQty} max={maxQty} onCommit={n => setReturnQty(i, n)}
+                        lang={lang} width={60}
+                        title={lang === "en" ? `Return qty (max ${maxQty})` : `Qté retour (max ${maxQty})`} />
                       <select value={item.retReason} onChange={e => setItemReason(i, e.target.value)}
                         style={{ padding: "4px 6px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", fontSize: 12 }}>
                         {RET_REASONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -809,7 +832,6 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
                 </div>
               </div>
             );})}
-            ))}
 
             {/* Restock condition */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", background: "var(--bg-card)", borderRadius: 10, marginBottom: 14, border: "1px solid var(--border)" }}>
@@ -882,9 +904,9 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
                   {item.selected && !exhausted && (
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en" ? "Qty:" : "Qté:"}</span>
-                      <input type="number" value={item.returnQty} onChange={e => setReturnQty(i, Math.min(+e.target.value || 1, maxQty))}
-                        min={1} max={maxQty}
-                        style={{ width: 56, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", fontSize: 13 }} />
+                      <QtyInput value={item.returnQty} max={maxQty} onCommit={n => setReturnQty(i, n)}
+                        lang={lang} width={56}
+                        title={lang === "en" ? `Qty (max ${maxQty})` : `Qté (max ${maxQty})`} />
                     </div>
                   )}
                 </div>
@@ -937,9 +959,8 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
                 <input type="number" value={item.sell_price} onChange={e => updateNewItemPrice(i, e.target.value)} min={0}
                   title={lang === "en" ? "Unit price" : "Prix unitaire"}
                   style={{ width: 80, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", fontSize: 13 }} />
-                <input type="number" value={item.quantity} onChange={e => updateNewItemQty(i, e.target.value)} min={1}
-                  title={lang === "en" ? "Qty" : "Qté"}
-                  style={{ width: 50, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", fontSize: 13 }} />
+                <QtyInput value={item.quantity} onCommit={n => updateNewItemQty(i, n)}
+                  lang={lang} width={50} title={lang === "en" ? "Qty" : "Qté"} />
                 <button onClick={() => removeNewItem(i)}
                   style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer", fontSize: 16, padding: "0 4px" }}>×</button>
               </div>
@@ -970,6 +991,73 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// MP-RETURN-QTY-EDITABLE (Paul, VNT-20260810-0113 — 5 of 10 units returned):
+// the per-line Qty box used to coerce on EVERY keystroke —
+// `Math.min(+e.target.value || 1, maxQty)` — so the transient empty string could
+// never exist. Backspacing "10" snapped the field to 1, then typing 5 on top of
+// that made "15", which clamped straight back to 10. A partial return of ANY
+// 2+ digit line was impossible: the field only ever showed 1 or the sold qty.
+//
+// The field now holds a RAW STRING while the user types (empty allowed;
+// non-digits dropped at the keystroke, so nothing non-numeric is ever held) and
+// validates ONLY on blur. handleSubmit re-clamps at the wire, and the server
+// (returns.js qty_exceeds) + process_return_exchange RPC remain the enforcement.
+//
+// Blur policy: empty / 0 / garbage RESTORES the last valid quantity rather than
+// dropping the line. Unticking the checkbox is the explicit way to exclude an
+// item — blurring a field the cashier was mid-way through clearing is not a
+// decision to exclude it, and silently un-returning a line at a counter is the
+// worse failure. Over-max clamps down with a visible "Max N".
+//
+// Same raw-string-then-blur shape POSPage's cart qty (onQtyInput/onQtyBlur) and
+// TransfersPage's AdjustReceiptModal already use.
+function QtyInput({ value, max = Infinity, onCommit, lang, title, width = 60 }) {
+  const [draft, setDraft] = useState(String(value ?? ""));
+  const [editing, setEditing] = useState(false);
+  const [clamped, setClamped] = useState(false);
+
+  // Follow programmatic changes (the returnable-cap clamp that lands when
+  // GET /sales/:id history arrives) — but never yank the field out from under
+  // a cashier who is mid-edit.
+  useEffect(() => { if (!editing) setDraft(String(value ?? "")); }, [value, editing]);
+
+  const commit = () => {
+    setEditing(false);
+    const raw = draft.trim();
+    if (!/^\d+$/.test(raw) || Number(raw) <= 0) {
+      setDraft(String(value));
+      setClamped(false);
+      return;
+    }
+    const n = Math.min(Number(raw), max);
+    setClamped(n !== Number(raw));
+    setDraft(String(n));
+    if (n !== Number(value)) onCommit(n);
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+      <input
+        type="text" inputMode="numeric" pattern="[0-9]*" title={title}
+        value={draft}
+        // Select-on-focus: one tap then type replaces the value outright —
+        // this is a one-handed counter app, not a desktop form.
+        onFocus={e => { setEditing(true); setClamped(false); e.target.select(); }}
+        onChange={e => setDraft(e.target.value.replace(/\D/g, ""))}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); } }}
+        style={{ width, textAlign: "center", padding: "4px 8px", borderRadius: 6,
+          border: `1px solid ${clamped ? "#fbbf24" : "var(--border)"}`,
+          background: "var(--bg-elevated)", color: "var(--text-primary)", fontSize: 13 }} />
+      {clamped && Number.isFinite(max) && (
+        <div style={{ fontSize: 10, color: "#fbbf24", fontWeight: 700, whiteSpace: "nowrap" }}>
+          {lang === "en" ? `Max ${max}` : `Max ${max}`}
+        </div>
+      )}
     </div>
   );
 }
