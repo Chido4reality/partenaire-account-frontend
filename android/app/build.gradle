@@ -39,12 +39,6 @@ android {
         // bump versionName per semver rules.
         versionCode 109
         versionName "2.3.1"
-        // MP-DEBUG-SIDE-BY-SIDE: AndroidManifest.xml uses android:label="${appLabel}".
-        // This default reproduces the previous literal exactly, so every normal
-        // build is unchanged; the debug buildType overrides it only under
-        // -PmpDebugSuffix. Defined here (not only in the buildType) so the
-        // placeholder can never be missing and fail manifest merging.
-        manifestPlaceholders = [appLabel: "@string/app_name"]
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -67,39 +61,6 @@ android {
         }
     }
     buildTypes {
-        // MP-DEBUG-SIDE-BY-SIDE: opt-in ONLY, via -PmpDebugSuffix. Without the
-        // property this block is inert and the debug build is exactly what it is
-        // today, so the release path is untouched.
-        //
-        // With it, the debug APK becomes com.partenaire.monpartenaire.debug and
-        // installs ALONGSIDE the Play/release build instead of demanding an
-        // uninstall — which would cost the tester their login and any queued
-        // offline sales. Use it when a fix has to be verified on the same device
-        // that carries real data:
-        //
-        //     ./gradlew assembleDebug -PmpDebugSuffix
-        //
-        // ⚠️ PUSH IS DISABLED IN THAT BUILD. google-services.json registers only
-        // com.partenaire.monpartenaire, so the google-services plugin would fail
-        // the build ("No matching client found") on the suffixed applicationId.
-        // The apply at the bottom of this file is gated on the same property and
-        // skips the plugin. That is fine for UI verification and NOT fine for
-        // testing FCM — for push work, build without the flag and uninstall first.
-        //
-        // ⚠️ Do NOT pass this flag to assembleRelease/bundleRelease: the gate is
-        // project-wide, so it would strip google-services from a shippable
-        // artifact. Debug only.
-        debug {
-            if (project.hasProperty('mpDebugSuffix')) {
-                applicationIdSuffix ".debug"
-                versionNameSuffix "-debug"
-                // Both apps otherwise install as "Stenamo" with the same icon —
-                // two identical launcher entries is exactly the confusion that
-                // wastes ten minutes at the wrong moment when the tester has the
-                // Play build and the test build side by side.
-                manifestPlaceholders = [appLabel: "Stenamo DEBUG"]
-            }
-        }
         release {
             // MP-R8-LEFT-OFF: minification/obfuscation stays DISABLED. Enabling R8
             // would clear the Play "no deobfuscation file" warning (informational,
@@ -141,13 +102,9 @@ dependencies {
 
 apply from: 'capacitor.build.gradle'
 
-// MP-DEBUG-SIDE-BY-SIDE: skip the plugin when -PmpDebugSuffix is active. The
-// suffixed applicationId (…​.monpartenaire.debug) has no matching client in
-// google-services.json, and the plugin hard-fails the build rather than warning.
-// Push is intentionally dead in that build — see the debug buildType above.
 try {
     def servicesJSON = file('google-services.json')
-    if (servicesJSON.text && !project.hasProperty('mpDebugSuffix')) {
+    if (servicesJSON.text) {
         apply plugin: 'com.google.gms.google-services'
     }
 } catch(Exception e) {

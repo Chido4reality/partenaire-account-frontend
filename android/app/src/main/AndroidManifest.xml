@@ -2,16 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- MP-DEBUG-SIDE-BY-SIDE: android:label below is "${appLabel}". It resolves
-         to "@string/app_name" for every normal build (the placeholder is defined
-         in defaultConfig in app/build.gradle), and only to a distinguishable
-         label under -PmpDebugSuffix. Kept as a placeholder rather than a
-         src/debug/ strings override so the ONE property drives both the
-         applicationId and the launcher label. -->
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
-        android:label="${appLabel}"
+        android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
