@@ -260,13 +260,28 @@ export default function POSPage() {
   // backdrop and gives the modal the entire viewport. resetCart()
   // already returns POSPage to a fresh state on sale success, so this
   // also gives the cleanest "transaction done" finish.
+  //
+  // MP-OPEN-SHIFT-SHORTCUT-INERT-FIX: showOpenShift MUST be in this list.
+  // It is not a cosmetic "modal on top of sheet" concern like the others —
+  // omitting it makes OpenShiftModal completely non-interactive. MobileCartSheet's
+  // Drawer.Root defaults to modal=true, so Radix sets `document.body.style
+  // .pointerEvents = "none"` and hands `pointer-events: auto` back ONLY to its own
+  // portal branch. OpenShiftModal is mounted at POSPage root (below), OUTSIDE that
+  // branch, so it inherits none: it paints above the sheet at z:3500 and then
+  // swallows every tap. Closing the sheet first restores pointer-events document-wide.
+  //
+  // DO NOT "fix" a recurrence by moving OpenShiftModal inside cartPaneInner /
+  // the sheet. Being at the root is correct — the desktop right-pane renders the
+  // same cartPaneInner with no portal at all, and nesting it would make the modal a
+  // child of a drag-to-dismiss sheet. The bug was never its position; it was that a
+  // seventh root-level overlay got added without registering here.
   useEffect(() => {
     if (showReceipt || showHold || showResume || debtReceiptEvent
-        || blockModal || oversellModal || validateModal) {
+        || blockModal || oversellModal || validateModal || showOpenShift) {
       setSheetOpen(false);
     }
   }, [showReceipt, showHold, showResume, debtReceiptEvent,
-      blockModal, oversellModal, validateModal]);
+      blockModal, oversellModal, validateModal, showOpenShift]);
 
   // MP-POS-CART-PERSIST: restore + auto-save draft cart so navigating
   // away (e.g. accidentally tapping a sidebar link) never loses Nora's
