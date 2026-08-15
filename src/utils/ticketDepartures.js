@@ -10,19 +10,41 @@
 // right, whether a body with no message_* still yields a sentence. Those are the
 // things worth proving, and they were unprovable while this lived inside a hook.
 //
-// The server composed the sentence bilingually from the ticket's REAL current
-// status (STATUS_EN/STATUS_FR in lib/saleTickets.js). Rendering it verbatim means
-// one wording to maintain; composing a client-side message here would be a second
-// source of truth that drifts.
-export function refusalFromError(err, en) {
+// The server composes the sentence bilingually from the ticket's REAL state
+// (STATUS_EN/STATUS_FR in lib/saleTickets.js). Rendering it verbatim means one
+// wording to maintain; composing a client-side message here would be a second
+// source of truth that drifts — which is exactly what the state line below was.
+//
+// ⚠️ THE STATE LINE READS current_status_en / current_status_fr, NEVER
+// current_status. Two separate bugs came out of reading the raw column:
+//
+//   1. IT CONTRADICTED THE MESSAGE. is_voided is orthogonal to status, so a
+//      voided queue ticket is is_voided=true AND status='pending_payment'. The
+//      panel therefore said "This ticket was voided." and "Current state:
+//      pending_payment." three lines apart, on EVERY voided refusal.
+//   2. IT LEAKED A RAW ENUM. `État actuel : pending_payment` — untranslated, to
+//      a French cashier, in a box that is supposed to be the clear explanation.
+//
+// The server now composes both labels from the same place as the message
+// (stateLabels in lib/saleTickets.js), so they cannot disagree. There is NO
+// fallback to current_status: against an older backend the state line is simply
+// omitted, because no line is better than a contradictory one.
+//
+// saleNumber is passed IN by the caller, not read from the body. The client knows
+// which row was pressed; the server does not need to tell it. Without it the
+// panel says "this ticket" above a queue of four and identifies none of them,
+// which makes "do not take payment for it" unactionable — "it" is unidentified.
+export function refusalFromError(err, en, opts = {}) {
   const b = (err && err.response && err.response.data) || {};
+  const label = en ? b.current_status_en : b.current_status_fr;
   return {
-    saleId: b.sale_id || null,
+    saleId: b.sale_id || opts.saleId || null,
+    saleNumber: opts.saleNumber || b.sale_number || null,
     code: b.code || "error",
     title: (en ? b.message_en : b.message_fr) || b.message
       || (en ? "That did not work." : "Cela n'a pas fonctionné."),
-    detail: b.current_status
-      ? (en ? `Current state: ${b.current_status}.` : `État actuel : ${b.current_status}.`)
+    detail: label
+      ? (en ? `Current state: ${label}.` : `État actuel : ${label}.`)
       : null,
   };
 }

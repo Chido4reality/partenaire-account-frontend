@@ -241,10 +241,19 @@ export default function TicketListPage({ variant = "queue" }) {
     },
     onError: (err, vars) => {
       const b = err?.response?.data || {};
-      // Mapping lives in refusalFromError (top of file) so it can be exercised
-      // without mounting the page — the panel is a div; the mapping is the part
-      // that can actually be wrong.
-      setRefusal({ ...refusalFromError(err, en), saleId: vars?.id });
+      // Mapping lives in utils/ticketDepartures so it can be exercised without
+      // mounting the page — the panel is a div; the mapping is the part that can
+      // actually be wrong.
+      //
+      // The sale number is resolved HERE, from the row that was pressed. The
+      // server never needs to send it: this client knows exactly which button
+      // was tapped, and a panel that says "this ticket" above four rows names
+      // none of them.
+      const pressed = (listResp?.data || []).find(x => x.id === vars?.id);
+      setRefusal(refusalFromError(err, en, {
+        saleId: vars?.id,
+        saleNumber: pressed?.sale_number || null,
+      }));
       // A voided ticket cannot be released and never will be, so the row is
       // given an exit rather than left to be pressed again forever.
       if (b.code === "sale_voided" && vars?.id) {
@@ -261,13 +270,22 @@ export default function TicketListPage({ variant = "queue" }) {
   // so every refusal, the offline warning and both empty states rendered
   // near-white on near-white: the messages that matter most when something has
   // gone wrong were the least readable things on the screen.
-  const Panel = ({ tone = "amber", title, detail, children }) => (
+  // `lead` sits ABOVE the title: it is the identifier, and it has to be the first
+  // thing read. A refusal panel over a queue of four rows that never names the
+  // ticket makes "do not take payment for it" unactionable.
+  const Panel = ({ tone = "amber", lead, title, detail, children }) => (
     <div style={{
       border: `1px solid ${tone === "amber" ? "rgba(245,158,11,0.45)" : "rgba(239,68,68,0.45)"}`,
       background: tone === "amber" ? "rgba(245,158,11,0.12)" : "rgba(239,68,68,0.12)",
       color: "var(--text-primary)",
       borderRadius: 10, padding: "14px 16px", margin: "12px 0", lineHeight: 1.45,
     }}>
+      {lead ? (
+        <div style={{
+          fontFamily: "monospace", fontSize: 13.5, fontWeight: 700,
+          color: "var(--text-primary)", marginBottom: 4, wordBreak: "break-all",
+        }}>{lead}</div>
+      ) : null}
       <div style={{ fontWeight: 700, marginBottom: detail || children ? 6 : 0 }}>{title}</div>
       {detail ? <div style={{ fontSize: 14, color: "var(--text-secondary)" }}>{detail}</div> : null}
       {children}
@@ -359,8 +377,11 @@ export default function TicketListPage({ variant = "queue" }) {
         </div>
       ))}
 
+      {/* lead = WHICH ticket, in monospace above the sentence so it can be matched
+          against the sale numbers in the rows below at a glance. Kept out of the
+          server's sentence so neither language has to be re-worded to carry it. */}
       {refusal ? (
-        <Panel tone="red" title={refusal.title} detail={refusal.detail}>
+        <Panel tone="red" lead={refusal.saleNumber} title={refusal.title} detail={refusal.detail}>
           <button
             onClick={() => { setRefusal(null); refetch(); }}
             style={{ marginTop: 10, padding: "8px 14px", borderRadius: 8, border: "1px solid var(--border-hover)", background: "var(--bg-elevated)", color: "var(--text-primary)", fontWeight: 600, cursor: "pointer" }}
