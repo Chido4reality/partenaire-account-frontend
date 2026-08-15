@@ -13,7 +13,7 @@
 // ONLINE_ONLY_RX in utils/pendingSync.js). Offline degrades VISIBLY — the action
 // is disabled with a sentence — rather than queueing a money event that would
 // replay against a ticket someone else has already settled.
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "../utils/api";
 import { useAuthStore, useLangStore, useSettingsStore } from "../store";
@@ -22,6 +22,7 @@ import { useNetworkStatus } from "../utils/useNetworkStatus";
 import { useTicketSummary, ticketSummaryKey, ticketNavVisible } from "../utils/useTicketSummary";
 import { useMyPermissions } from "../utils/useMyPermissions";
 import { t } from "../utils/i18n";
+import { refusalFromError, departedTickets, departureSentence } from "../utils/ticketDepartures";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 
 const VARIANTS = {
@@ -72,6 +73,10 @@ export const qtyText = (q) => {
   const n = Number(q) || 0;
   return Number.isInteger(n) ? String(n) : String(Number(n.toFixed(3)));
 };
+
+// The pure rules — refusalFromError / departedTickets / departureSentence — live
+// in utils/ticketDepartures.js so they can be exercised without mounting this
+// page. See the header there.
 
 // "12 min" / "2 h 05" — how long the customer has been standing there. Deliberately
 // coarse: the cashier needs "a while" vs "just now", not a stopwatch.
@@ -159,12 +164,62 @@ export default function TicketListPage({ variant = "queue" }) {
   });
   const tickets = (listResp?.data || []).filter(t => !dismissed.has(t.id));
 
+  // ── MP-TICKET-DEPARTURE-NOTICE ────────────────────────────────────────────
+  // A row that vanishes mid-reach is the quiet failure in a two-cashier shop:
+  // the other till took the payment, this list refetched on window focus, and
+  // the ticket left without a word. The cashier sees the queue shrink and cannot
+  // tell paid from cancelled from "I misread it".
+  //
+  // Detected by DIFFING SNAPSHOTS, not by asking the server what changed — the
+  // fact of departure is free on the client. Only the who and the why come from
+  // the server (recently_settled), because both describe the row after it left
+  // this status and no query filtered on that status can return it.
+  //
+  // A ref, not state: writing the snapshot must not itself cause a render, or
+  // every fetch would re-run this and re-announce.
+  const prevTicketsRef = useRef(null);
+  const ownSettledRef  = useRef(new Set());
+  const [departures, setDeparture] = useState([]);
+
+  useEffect(() => {
+    // Only diff against a real, delivered list. isLoading / isError snapshots
+    // would read as "everything left at once" — the isError-vs-empty trap that
+    // keeps recurring in these list views, in a new costume.
+    if (isLoading || isError || !listResp) return;
+    const next = listResp.data || [];
+    const gone = departedTickets({
+      prev: prevTicketsRef.current,
+      next,
+      settled: listResp.recently_settled,
+      ownIds: ownSettledRef.current,
+      dismissedIds: dismissed,
+    });
+    prevTicketsRef.current = next;
+    // Own settlements are only suppressed once — the id is consumed here so the
+    // set cannot grow for the life of the page.
+    if (ownSettledRef.current.size) {
+      const stillPresent = new Set(next.map(t => t.id));
+      ownSettledRef.current.forEach(id => { if (!stillPresent.has(id)) ownSettledRef.current.delete(id); });
+    }
+    if (gone.length) {
+      // Newest first, capped: a cashier returning after an hour should see what
+      // just happened, not a wall. Capped rather than auto-expiring, because an
+      // explanation that disappears by itself recreates the exact complaint this
+      // fixes — see the note on the dismiss button.
+      setDeparture(prev => [...gone, ...prev.filter(p => !gone.some(g => g.id === p.id))].slice(0, 3));
+    }
+  }, [listResp, isLoading, isError, dismissed]);
+
   const settle = useMutation({
     // EVERY mutation sends the version the row was RENDERED with. Not a re-read,
     // not the latest — the token the person actually looked at.
     mutationFn: ({ id, version }) => api.post(`/sales/tickets/${id}/${V.verb}`, { version }),
-    onSuccess: (res) => {
+    onSuccess: (res, vars) => {
       setRefusal(null);
+      // This ticket is about to leave the list because THIS user settled it.
+      // Recorded before the invalidate so the refetch that follows does not
+      // announce the cashier's own payment back at them.
+      if (vars?.id) ownSettledRef.current.add(vars.id);
       // Only a PAYMENT produces a receipt. A release moves goods, not money —
       // printing a second "payment" document at handover would tell the customer
       // they paid twice.
@@ -186,20 +241,10 @@ export default function TicketListPage({ variant = "queue" }) {
     },
     onError: (err, vars) => {
       const b = err?.response?.data || {};
-      // The server already composed the sentence, bilingually, from the ticket's
-      // REAL current status (STATUS_EN/STATUS_FR in lib/saleTickets.js). Rendering
-      // it verbatim means one wording to maintain and the cashier learns the
-      // ticket was collected or cancelled under them — not that "something went
-      // wrong". Composing a client-side message here would be a second source of
-      // truth that drifts.
-      setRefusal({
-        saleId: vars?.id,
-        code: b.code || "error",
-        title: (en ? b.message_en : b.message_fr) || b.message || (en ? "That did not work." : "Cela n'a pas fonctionné."),
-        detail: b.current_status
-          ? (en ? `Current state: ${b.current_status}.` : `État actuel : ${b.current_status}.`)
-          : null,
-      });
+      // Mapping lives in refusalFromError (top of file) so it can be exercised
+      // without mounting the page — the panel is a div; the mapping is the part
+      // that can actually be wrong.
+      setRefusal({ ...refusalFromError(err, en), saleId: vars?.id });
       // A voided ticket cannot be released and never will be, so the row is
       // given an exit rather than left to be pressed again forever.
       if (b.code === "sale_voided" && vars?.id) {
@@ -272,6 +317,47 @@ export default function TicketListPage({ variant = "queue" }) {
       </div>
 
       {!isOnline ? <Panel tone="red" title={t("offline_online_only", lang)} /> : null}
+
+      {/* ── WHAT LEFT THE LIST ──────────────────────────────────────────────
+          Neutral tone, not amber/red: nothing has gone wrong. A colleague did
+          their job; this is the shop working. Colouring it as a warning would
+          teach cashiers that a normal payment looks like an error.
+
+          NOT A TOAST, and not auto-expiring. A toast is exactly the thing that
+          leaves someone staring at a list that changed for no visible reason —
+          and an explanation that removes itself after a few seconds recreates
+          the same complaint in miniature for anyone who looked away. It stays
+          until the cashier clears it, capped at 3 so it cannot become a wall. */}
+      {departures.map(d => (
+        <div key={d.id} style={{
+          display: "flex", alignItems: "flex-start", gap: 12,
+          border: "1px solid var(--border)", background: "var(--bg-card)",
+          color: "var(--text-primary)", borderRadius: 10,
+          padding: "10px 12px", margin: "8px 0", lineHeight: 1.45,
+        }}>
+          <span aria-hidden="true" style={{ fontSize: 15, lineHeight: 1.4 }}>↩</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14 }}>{departureSentence(d, en)}</div>
+            {/* The amount and customer are the cashier's own memory aids — this
+                is how they recognise the ticket they were reaching for. */}
+            {(d.customer_name || d.total_amount != null) ? (
+              <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 2 }}>
+                {[d.customer_name, d.total_amount != null ? fmt(d.total_amount) : null]
+                  .filter(Boolean).join(" · ")}
+              </div>
+            ) : null}
+          </div>
+          <button
+            onClick={() => setDeparture(prev => prev.filter(p => p.id !== d.id))}
+            aria-label={en ? "Dismiss" : "Fermer"}
+            style={{
+              flexShrink: 0, border: "1px solid var(--border-hover)", background: "var(--bg-elevated)",
+              color: "var(--text-secondary)", borderRadius: 8, padding: "4px 10px",
+              fontSize: 12, fontWeight: 600, cursor: "pointer",
+            }}
+          >{en ? "OK" : "OK"}</button>
+        </div>
+      ))}
 
       {refusal ? (
         <Panel tone="red" title={refusal.title} detail={refusal.detail}>
