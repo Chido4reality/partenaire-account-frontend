@@ -115,37 +115,22 @@ export default function TicketListPage({ variant = "queue" }) {
   // shape eventType="sale" expects — so this is a render, not a new receipt.
   const [paidReceipt, setPaidReceipt] = useState(null);
 
-  // ── A VOIDED TICKET NEEDS AN EXIT ─────────────────────────────────────────
-  // The seventh-instance guard refuses to release a voided ticket, correctly —
-  // but the row then sat in the pickup list forever with no way to clear it.
-  // Dismissing is CLIENT-SIDE and deliberately so: there is no transition to
-  // make, because a voided ticket has already reached its end state, and
-  // inventing a server-side "dismissed" flag would add a lifecycle to a record
-  // whose lifecycle is the point of this design.
+  // ── THE CLIENT-SIDE DISMISS IS GONE ───────────────────────────────────────
+  // It existed because a voided ticket sat in these lists forever with no way to
+  // clear it: voiding never touches status, so the row stayed 'pending_payment'
+  // and the only exit on offer was a sessionStorage hide.
   //
-  // It must NOT just vanish, either — Peter's complaint about the 409 was
-  // exactly that. So it stays until the storekeeper clears it himself, and the
-  // owner sees it regardless in the oversight tab's ticket list, which now
-  // includes voided tickets and marks them.
+  // That was two ways for a row to disappear, and the second one LIED. It hid
+  // the row for one cashier, in one browser session, while the server still
+  // counted the ticket — so the nav badge kept claiming a queue one longer than
+  // the list, every other till still saw the row, and the mode-switch guard in
+  // routes/locations.js still refused to let the location leave cashier mode.
+  // Two mechanisms, one of which quietly disagreed with the truth, is worse than
+  // either alone.
   //
-  // sessionStorage, not localStorage: dismissing is "I have dealt with this
-  // now", not a permanent preference, and a fresh shift should see it again if
-  // it is somehow still there.
-  const [dismissed, setDismissed] = useState(() => {
-    try { return new Set(JSON.parse(sessionStorage.getItem("mp-ticket-dismissed") || "[]")); }
-    catch { return new Set(); }
-  });
-  const dismiss = (id) => {
-    setDismissed(prev => {
-      const next = new Set(prev); next.add(id);
-      try { sessionStorage.setItem("mp-ticket-dismissed", JSON.stringify([...next])); } catch { /* private mode */ }
-      return next;
-    });
-    setRefusal(null);
-  };
-  // Ids this session has been told are voided, so the row can offer the exit
-  // without re-asking the server.
-  const [voidedIds, setVoidedIds] = useState(() => new Set());
+  // Fixed at the source instead: the list, the badge and the mode guard all
+  // exclude voided rows now, and cancel is permitted on a voided ticket so it
+  // can actually reach a terminal state rather than being papered over.
 
   const { summary } = useTicketSummary(locationId, { onError: () => {} });
   const { perms } = useMyPermissions({ enabled: !!locationId, retry: 1 });
@@ -162,7 +147,8 @@ export default function TicketListPage({ variant = "queue" }) {
     refetchInterval: 60000,
     retry: 1,
   });
-  const tickets = (listResp?.data || []).filter(t => !dismissed.has(t.id));
+  // No client-side filtering any more: what the server returns IS the queue.
+  const tickets = listResp?.data || [];
 
   // ── MP-TICKET-DEPARTURE-NOTICE ────────────────────────────────────────────
   // A row that vanishes mid-reach is the quiet failure in a two-cashier shop:
@@ -178,7 +164,11 @@ export default function TicketListPage({ variant = "queue" }) {
   // A ref, not state: writing the snapshot must not itself cause a render, or
   // every fetch would re-run this and re-announce.
   const prevTicketsRef = useRef(null);
-  const ownSettledRef  = useRef(new Set());
+  // Ids whose departure this user has ALREADY been told about — by settling the
+  // ticket themselves (receipt + state change they initiated) or by a refusal
+  // panel that named it. Announcing "VNT-0021 is no longer in this list" on top
+  // of either would be telling them something they just read.
+  const explainedRef = useRef(new Set());
   const [departures, setDeparture] = useState([]);
 
   useEffect(() => {
@@ -191,24 +181,23 @@ export default function TicketListPage({ variant = "queue" }) {
       prev: prevTicketsRef.current,
       next,
       settled: listResp.recently_settled,
-      ownIds: ownSettledRef.current,
-      dismissedIds: dismissed,
+      ownIds: explainedRef.current,
     });
     prevTicketsRef.current = next;
-    // Own settlements are only suppressed once — the id is consumed here so the
-    // set cannot grow for the life of the page.
-    if (ownSettledRef.current.size) {
+    // Consumed once — the id is dropped as soon as the row is actually gone, so
+    // the set cannot grow for the life of the page.
+    if (explainedRef.current.size) {
       const stillPresent = new Set(next.map(t => t.id));
-      ownSettledRef.current.forEach(id => { if (!stillPresent.has(id)) ownSettledRef.current.delete(id); });
+      explainedRef.current.forEach(id => { if (!stillPresent.has(id)) explainedRef.current.delete(id); });
     }
     if (gone.length) {
       // Newest first, capped: a cashier returning after an hour should see what
       // just happened, not a wall. Capped rather than auto-expiring, because an
       // explanation that disappears by itself recreates the exact complaint this
-      // fixes — see the note on the dismiss button.
+      // fixes.
       setDeparture(prev => [...gone, ...prev.filter(p => !gone.some(g => g.id === p.id))].slice(0, 3));
     }
-  }, [listResp, isLoading, isError, dismissed]);
+  }, [listResp, isLoading, isError]);
 
   const settle = useMutation({
     // EVERY mutation sends the version the row was RENDERED with. Not a re-read,
@@ -219,7 +208,7 @@ export default function TicketListPage({ variant = "queue" }) {
       // This ticket is about to leave the list because THIS user settled it.
       // Recorded before the invalidate so the refetch that follows does not
       // announce the cashier's own payment back at them.
-      if (vars?.id) ownSettledRef.current.add(vars.id);
+      if (vars?.id) explainedRef.current.add(vars.id);
       // Only a PAYMENT produces a receipt. A release moves goods, not money —
       // printing a second "payment" document at handover would tell the customer
       // they paid twice.
@@ -254,11 +243,12 @@ export default function TicketListPage({ variant = "queue" }) {
         saleId: vars?.id,
         saleNumber: pressed?.sale_number || null,
       }));
-      // A voided ticket cannot be released and never will be, so the row is
-      // given an exit rather than left to be pressed again forever.
-      if (b.code === "sale_voided" && vars?.id) {
-        setVoidedIds(prev => new Set(prev).add(vars.id));
-      }
+      // The refusal panel has just named this ticket and said what happened to
+      // it. The refetch below will drop the row (a voided ticket is no longer
+      // listed, and a paid one has left this status), so suppress the departure
+      // notice for it — otherwise the cashier reads the explanation and then,
+      // half a second later, "VNT-0021 is no longer in this list" underneath it.
+      if (vars?.id) explainedRef.current.add(vars.id);
       // Whatever the row was showing is now known to be stale.
       qc.invalidateQueries({ queryKey: listKey });
       qc.invalidateQueries({ queryKey: ticketSummaryKey(locationId) });
@@ -432,20 +422,11 @@ export default function TicketListPage({ variant = "queue" }) {
               .reduce((s, l) => s + (Number(l.unit_price) || 0) * (Number(l.quantity) || 1), 0);
             const settles = Math.min(dueNow, debtPortion);
 
-            // Once the server has told us this ticket is voided, the only
-            // honest control is the way out — offering "Hand over" again would
-            // be offering an action that is guaranteed to refuse.
-            const isVoided = voidedIds.has(tk.id);
-            const actionBtn = isVoided ? (
-              <button
-                onClick={() => dismiss(tk.id)}
-                style={{
-                  padding: "10px 18px", borderRadius: 8, fontWeight: 700, whiteSpace: "nowrap",
-                  border: "1px solid var(--border-hover)", background: "var(--bg-elevated)",
-                  color: "var(--text-primary)", cursor: "pointer",
-                }}
-              >{en ? "Dismiss" : "Retirer"}</button>
-            ) : (
+            // No voided branch here any more. A voided ticket is filtered out of
+            // this list by the server, so the row cannot be on screen to need an
+            // exit; if one is voided between fetch and press, the refusal names
+            // it and the refetch removes it.
+            const actionBtn = (
               <button
                 disabled={!isOnline || busy}
                 onClick={() => settle.mutate({ id: tk.id, version: tk.version })}
