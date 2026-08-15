@@ -16,9 +16,10 @@
 // and put where the boss will see it. In a quiet shop with one person on, that
 // is simply what the day looked like, and the wording says exactly that.
 import { Fragment, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
+import { refusalFromError } from "../utils/ticketDepartures";
 
 const METHODS = [
   { key: "cash",          en: "Cash",   fr: "Espèces" },
@@ -55,6 +56,42 @@ export default function CashierOversightTab({ from, to, locationId, lang }) {
   const fmt = useCurrency();
   const [openId, setOpenId] = useState(null);
   const [page, setPage] = useState(0);
+  const qc = useQueryClient();
+
+  // ── CANCELLING A TICKET ───────────────────────────────────────────────────
+  // This is the ONLY surface in the app that can cancel one. POST
+  // /sales/tickets/:id/cancel has existed since Phase 1b and had NO caller, so
+  // the mode-switch refusal in routes/locations.js has been telling owners to
+  // "settle or cancel them first" while offering only one of the two — an owner
+  // whose customer walked out had no exit at all, and would only find that out
+  // at the moment he needed it.
+  //
+  // Here rather than in the cashier queue because the permission gate is
+  // owner/manager-or-raiser, /reports is already ["owner","manager"], and this
+  // list is the one place a voided or abandoned ticket is visible at all.
+  //
+  // { ticket, reason, error } — ticket is the row being cancelled.
+  const [cancelling, setCancelling] = useState(null);
+
+  const cancelTicket = useMutation({
+    // The version the OWNER looked at, not a re-read: same compare-and-set
+    // contract as pay and release.
+    mutationFn: ({ id, version, reason }) =>
+      api.post(`/sales/tickets/${id}/cancel`, { version, reason }),
+    onSuccess: () => {
+      setCancelling(null);
+      qc.invalidateQueries({ queryKey: ["cashier-oversight"] });
+      // The queue list and the nav badge both count pending tickets, and this
+      // ticket has just stopped being one.
+      qc.invalidateQueries({ queryKey: ["tickets"] });
+      qc.invalidateQueries({ queryKey: ["ticket-summary"] });
+    },
+    // The server composed the sentence — a stale version, an illegal status, a
+    // missing reason and a permission refusal all come back bilingual and are
+    // rendered verbatim. Same mapper the cashier queue uses, so there is one
+    // wording to maintain.
+    onError: (err) => setCancelling(c => c && ({ ...c, error: refusalFromError(err, en) })),
+  });
 
   const { data: resp, isLoading, isError, refetch } = useQuery({
     queryKey: ["cashier-oversight", from, to, locationId || ""],
@@ -299,6 +336,7 @@ export default function CashierOversightTab({ from, to, locationId, lang }) {
                   <th>{en ? "Raised by" : "Créé par"}</th>
                   <th>{en ? "Paid by" : "Encaissé par"}</th>
                   <th>{en ? "Handed over by" : "Remis par"}</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
@@ -343,10 +381,35 @@ export default function CashierOversightTab({ from, to, locationId, lang }) {
                         <td>{t.raised_by_name || "—"}<div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{when(t.raised_at)}</div></td>
                         <td>{t.paid_by_name || "—"}<div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{when(t.paid_at)}</div></td>
                         <td>{t.released_by_name || "—"}<div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{when(t.released_at)}</div></td>
+                        {/* ONLY a pending ticket can be cancelled — TRANSITIONS.cancel
+                            is pending_payment -> cancelled, so offering it on a paid or
+                            released row would be offering an action guaranteed to
+                            refuse. A VOIDED pending ticket keeps the button on purpose:
+                            it is precisely the row that has no other way out. */}
+                        <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                          {t.status === "pending_payment" ? (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setCancelling({ ticket: t, reason: "", error: null }); }}
+                              style={{
+                                border: "1px solid rgba(239,68,68,0.5)", background: "rgba(239,68,68,0.10)",
+                                color: "#f87171", borderRadius: 7, padding: "5px 10px",
+                                fontSize: 12, fontWeight: 700, cursor: "pointer",
+                              }}
+                            >{en ? "Cancel ticket" : "Annuler le ticket"}</button>
+                          ) : t.cancel_reason ? (
+                            // The caption, read back. A cancelled ticket moved no stock,
+                            // no money and no debt, so this sentence is the ONLY record
+                            // that it existed and why it ended.
+                            <div style={{ fontSize: 11.5, color: "var(--text-secondary)", maxWidth: 220, whiteSpace: "normal", textAlign: "left" }}>
+                              <span style={{ fontStyle: "italic" }}>“{t.cancel_reason}”</span>
+                              {t.cancelled_by_name ? <div>{en ? "by " : "par "}{t.cancelled_by_name} · {when(t.cancelled_at)}</div> : null}
+                            </div>
+                          ) : null}
+                        </td>
                       </tr>
                       {open && (
                         <tr>
-                          <td colSpan={6} style={{ background: "var(--bg-surface)" }}>
+                          <td colSpan={7} style={{ background: "var(--bg-surface)" }}>
                             {detailLoading || !detail ? (
                               <div style={{ color: "var(--text-secondary)", padding: 8 }}>…</div>
                             ) : (
@@ -416,6 +479,81 @@ export default function CashierOversightTab({ from, to, locationId, lang }) {
             </div>
           )}
         </Card>
+      )}
+
+      {/* ── CONFIRM + REASON ────────────────────────────────────────────────
+          A confirm step because cancelling is irreversible and the row is one
+          click from a table of fifty. A REQUIRED free-text reason because this
+          is the one ending that leaves no trace anywhere else — no stock
+          movement, no payment row, no debt, no drawer line — so the caption is
+          the only evidence the ticket existed and why it ended.
+
+          Free text, never a dropdown: "customer walked out", "wrong items
+          scanned" and "duplicate of 0042" are three different facts, and an
+          enum collapses them into one token that explains none of them. The
+          server enforces it too (reason_required) — the check below is a
+          courtesy to the person typing, not the guarantee. */}
+      {cancelling && (
+        <div
+          style={{ position: "fixed", inset: 0, pointerEvents: "auto", zIndex: 3500, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+          onClick={() => { if (!cancelTicket.isPending) setCancelling(null); }}
+        >
+          <div onClick={e => e.stopPropagation()} style={{
+            background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16,
+            padding: 24, maxWidth: 460, width: "100%", maxHeight: "90vh", overflowY: "auto",
+            display: "flex", flexDirection: "column",
+          }}>
+            <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>
+              {en ? "Cancel this ticket?" : "Annuler ce ticket ?"}
+            </div>
+            {/* Name it. The button was one row among fifty. */}
+            <div style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 14, marginBottom: 2 }}>
+              {cancelling.ticket.sale_number}
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 14 }}>
+              {fmt(cancelling.ticket.amount)}
+              {cancelling.ticket.raised_by_name ? ` · ${en ? "raised by" : "créé par"} ${cancelling.ticket.raised_by_name}` : ""}
+              {cancelling.ticket.is_voided ? (en ? " · already voided" : " · déjà annulé (void)") : ""}
+            </div>
+
+            <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 14, lineHeight: 1.45 }}>
+              {en ? "Nothing is reversed — no stock, no money, no debt. The ticket simply ends, and your reason is the only record of it."
+                  : "Rien n'est inversé — ni stock, ni argent, ni dette. Le ticket se termine, et votre motif en est la seule trace."}
+            </div>
+
+            <div className="form-group">
+              <label className="label">{en ? "Why? *" : "Pourquoi ? *"}</label>
+              <textarea className="input" rows={3} autoFocus
+                value={cancelling.reason}
+                onChange={e => setCancelling(c => ({ ...c, reason: e.target.value, error: null }))}
+                placeholder={en ? "e.g. customer left without paying" : "ex. le client est parti sans payer"} />
+            </div>
+
+            {cancelling.error ? (
+              <div style={{ background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12.5, color: "#f87171" }}>
+                <div style={{ fontWeight: 700 }}>{cancelling.error.title}</div>
+                {cancelling.error.detail ? <div style={{ marginTop: 2 }}>{cancelling.error.detail}</div> : null}
+              </div>
+            ) : null}
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-secondary" style={{ flex: 1 }}
+                disabled={cancelTicket.isPending}
+                onClick={() => setCancelling(null)}>
+                {en ? "Keep it" : "Garder"}
+              </button>
+              <button className="btn btn-danger" style={{ flex: 2 }}
+                disabled={cancelling.reason.trim().length < 4 || cancelTicket.isPending}
+                onClick={() => cancelTicket.mutate({
+                  id: cancelling.ticket.id,
+                  version: cancelling.ticket.version,
+                  reason: cancelling.reason.trim(),
+                })}>
+                {cancelTicket.isPending ? "…" : (en ? "Cancel the ticket" : "Annuler le ticket")}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
