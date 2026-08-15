@@ -418,6 +418,10 @@ export default function TicketListPage({ variant = "queue" }) {
             const dueNow   = Number(tk.paid_amount) || 0;
             const onAcct   = Math.max(0, totalAmt - dueNow);
             const isCredit = variant === "queue" && onAcct > 0;
+            // A FULL-credit ticket: goods leave, no money is taken. Distinct from
+            // isCredit, which is also true of a partial payment — there the cashier
+            // DOES collect something and the row must keep saying so.
+            const collectNothing = variant === "queue" && dueNow === 0;
             // A repayment and new credit can BOTH be in play, and then the same
             // figure means two different things — the debt being settled and the
             // cash being handed over. Each part names its job, exactly as the POS
@@ -453,7 +457,15 @@ export default function TicketListPage({ variant = "queue" }) {
                 }}
               >{busy ? "…"
                 : variant === "pickup" ? t("release_goods", lang)
-                : dueNow === 0        ? (en ? "Confirm" : "Confirmer")
+                // ⚠️ NAME THE ABSENCE. This used to read "Confirm", which names no
+                // object at all while every neighbouring row says "Collect 5 000".
+                // The button is the same size, fill and position in both cases, so
+                // a cashier under time pressure pattern-matches the coloured button
+                // rather than reading it — and the one row where NOTHING should be
+                // collected looked identical to the rows where money must change
+                // hands. The risk was never refusing to press; it was pressing while
+                // believing money had been taken.
+                : collectNothing      ? (en ? "Collect nothing — on account" : "Rien à encaisser — sur compte")
                 : (en ? `Collect ${fmt(dueNow)}` : `Encaisser ${fmt(dueNow)}`)}</button>
             );
 
@@ -583,14 +595,38 @@ export default function TicketListPage({ variant = "queue" }) {
                 display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap",
               }}>
                 {heading}
+                {/* ── WHICH NUMBER IS THE BIG ONE ───────────────────────────
+                    On a FULL-CREDIT ticket nothing is collected, so dueNow is 0 —
+                    and rendering that at 17px bold made the least useful number on
+                    the row the most prominent one, with the figure that actually
+                    matters (the goods going on account) demoted to small grey text.
+                    A cashier scanning the queue reads the big number.
+                    So when there is nothing to collect the emphasis swaps: the
+                    on-account amount becomes the headline and the zero is stated in
+                    words underneath, because "0" alone reads as unknown-or-free
+                    rather than as "collect nothing". A partial-payment ticket is
+                    unchanged — there, dueNow IS the number the cashier acts on. */}
                 <div style={{ textAlign: "right", minWidth: 130 }}>
-                  <div style={{ fontWeight: 700, fontSize: 17 }}>{fmt(dueNow)}</div>
+                  {collectNothing ? (
+                    <>
+                      <div style={{ fontWeight: 700, fontSize: 17 }}>{fmt(onAcct)}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
+                        {en ? "goods on account" : "marchandise sur compte"}
+                        {tk.due_date ? ` · ${tk.due_date}` : ""}
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2, fontWeight: 600 }}>
+                        {en ? "nothing to collect" : "rien à encaisser"}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontWeight: 700, fontSize: 17 }}>{fmt(dueNow)}</div>
+                  )}
                   {debtPortion > 0 && (
                     <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
                       {en ? `${fmt(settles)} settles debt` : `${fmt(settles)} règle la dette`}
                     </div>
                   )}
-                  {isCredit && (
+                  {isCredit && !collectNothing && (
                     <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
                       {en ? `${fmt(onAcct)} goods on account` : `${fmt(onAcct)} marchandise sur compte`}
                       {tk.due_date ? ` · ${tk.due_date}` : ""}
