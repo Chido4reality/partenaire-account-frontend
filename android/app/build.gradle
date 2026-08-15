@@ -37,8 +37,8 @@ android {
         // duplicates). versionName is the human-facing semver visible
         // in About / Play Store. Bump versionCode by +1 every release;
         // bump versionName per semver rules.
-        versionCode 108
-        versionName "2.3.0"
+        versionCode 109
+        versionName "2.3.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -109,4 +109,140 @@ try {
     }
 } catch(Exception e) {
     logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}
+
+// ── MP-PUSH-CONFIG-ASSERT ─────────────────────────────────────────────────────
+// WHY THIS EXISTS. On 2026-08-15 a debug APK was built with the google-services
+// plugin gated off (to allow an applicationIdSuffix). The build SUCCEEDED. The APK
+// installed, launched, and let the user sign in. Then it killed the process, and
+// kept killing it on every launch, because:
+//
+//   no google-services plugin  ->  no google_app_id resource
+//   no google_app_id           ->  FirebaseInitProvider cannot init a default app
+//   PushNotificationsPlugin.register() calls FirebaseMessaging.getInstance()
+//     SYNCHRONOUSLY on its first line -> IllegalStateException
+//   Capacitor Bridge.java catches it and does `throw new RuntimeException(ex)`
+//     from inside a Runnable posted to a Handler -> uncaught -> process death
+//
+// Nothing upstream of the artefact showed a problem: gradle was green, the merged
+// manifest was correct, and an artefact check confirmed the config was ABSENT —
+// which was read as "push disabled" rather than "push fatal". Shipping the code
+// that needs a config while removing the config is not disabling a feature; it
+// arms a crash.
+//
+// ⚠️ THIS ASSERTS ON THE PACKAGED ARTEFACT, DELIBERATELY. Not on source, not on a
+// gradle property, not on the presence of google-services.json, and not on whether
+// the plugin was applied. Every one of those was fine in the build that shipped the
+// crash. The only check that could not have passed is one that opens the .apk/.aab
+// that is actually about to be installed and looks at what is really inside it.
+//
+// It reads two things out of the shipped file:
+//   1. classes*.dex  -> does this artefact CONTAIN the push plugin?
+//   2. resources.arsc -> does this artefact CONTAIN google_app_id?
+// Push present + config absent = fail the build. Anything else passes, including
+// an artefact with no push plugin at all (so a future build that genuinely drops
+// push is not blocked by this).
+//
+// Verified by deliberately breaking it: with google-services.json moved aside the
+// build FAILS here; restored, it passes. A checker that has never been seen to
+// fire is not a checker.
+
+/** True if `needle` appears in `bytes` as UTF-8/ASCII or as UTF-16LE. */
+def mpBytesContain = { byte[] bytes, String needle ->
+    // ISO-8859-1 is byte-preserving, so this is a byte search, not a text search.
+    def hay = new String(bytes, "ISO-8859-1")
+    if (hay.contains(needle)) return true
+    def utf16le = new StringBuilder()
+    needle.each { ch -> utf16le.append(ch).append(' ') }
+    return hay.contains(utf16le.toString())
+}
+
+def mpAssertPushConfig = { File artefact ->
+    if (artefact == null || !artefact.isFile()) return
+    def name = artefact.name
+    if (!(name.endsWith('.apk') || name.endsWith('.aab'))) return
+
+    def zip = new java.util.zip.ZipFile(artefact)
+    try {
+        boolean hasPushCode = false
+        boolean hasFirebaseConfig = false
+
+        for (entry in zip.entries()) {
+            def en = entry.name
+            // Dex lives at the root in an APK and under base/dex/ in an AAB.
+            def isDex = en.endsWith('.dex')
+            // resources.arsc in an APK; an AAB keeps resources in protobuf
+            // (resources.pb) plus the raw values, so scan both shapes.
+            def isRes = en.endsWith('resources.arsc') || en.endsWith('resources.pb')
+            if (!isDex && !isRes) continue
+
+            def bytes = zip.getInputStream(entry).bytes
+            if (isDex && !hasPushCode) {
+                hasPushCode = mpBytesContain(bytes, 'PushNotificationsPlugin')
+            }
+            if (isRes && !hasFirebaseConfig) {
+                hasFirebaseConfig = mpBytesContain(bytes, 'google_app_id')
+            }
+            if (hasPushCode && hasFirebaseConfig) break
+        }
+
+        if (hasPushCode && !hasFirebaseConfig) {
+            throw new GradleException(
+                "\n" +
+                "╔══════════════════════════════════════════════════════════════════════╗\n" +
+                "║  MP-PUSH-CONFIG-ASSERT — THIS ARTEFACT WOULD CRASH ON EVERY LAUNCH   ║\n" +
+                "╚══════════════════════════════════════════════════════════════════════╝\n" +
+                "  ${artefact.name}\n" +
+                "  ${artefact.absolutePath}\n\n" +
+                "  It CONTAINS the Capacitor push plugin but has NO google_app_id\n" +
+                "  resource, so there is no default FirebaseApp at runtime.\n\n" +
+                "  PushNotificationsPlugin.register() calls FirebaseMessaging.getInstance()\n" +
+                "  synchronously; with no default app that throws IllegalStateException,\n" +
+                "  and Capacitor's Bridge rethrows it as a RuntimeException from a posted\n" +
+                "  Runnable — which kills the process. It will die right after the user\n" +
+                "  grants the notification permission, then on every launch after that.\n" +
+                "  No JS try/catch or timeout can intercept it.\n\n" +
+                "  This is almost always caused by the google-services plugin not being\n" +
+                "  applied (missing/empty android/app/google-services.json, or an\n" +
+                "  applicationId with no matching client in it).\n\n" +
+                "  FIX: make the config real — do not remove the plugin to dodge the\n" +
+                "  'No matching client found' error. If you need a suffixed applicationId,\n" +
+                "  register that package as an ADDITIONAL client in the Firebase console.\n" +
+                "  If you genuinely want a push-free build, remove @capacitor/push-notifications\n" +
+                "  so the plugin's code is not in the artefact either.\n"
+            )
+        }
+
+        logger.lifecycle("MP-PUSH-CONFIG-ASSERT: ${artefact.name} OK " +
+            "(push plugin ${hasPushCode ? 'present' : 'absent'}, google_app_id ${hasFirebaseConfig ? 'present' : 'absent'})")
+    } finally {
+        zip.close()
+    }
+}
+
+// Hook the packaging tasks themselves so the check runs the moment the artefact is
+// written, for every variant, whether it was produced by assemble* or bundle*.
+// Matched on type NAME rather than by importing AGP internals, which move between
+// versions — a build that silently stopped being checked would be the worst outcome.
+tasks.configureEach { t ->
+    def cn = t.getClass().getName()
+    if (cn.contains('PackageAndroidArtifact') || cn.contains('PackageApplication')
+        || cn.contains('FinalizeBundleTask')) {
+        t.doLast {
+            def checked = 0
+            t.outputs.files.each { f ->
+                if (f.isDirectory()) {
+                    f.eachFileRecurse { c ->
+                        if (c.name.endsWith('.apk') || c.name.endsWith('.aab')) { mpAssertPushConfig(c); checked++ }
+                    }
+                } else if (f.name.endsWith('.apk') || f.name.endsWith('.aab')) {
+                    mpAssertPushConfig(f); checked++
+                }
+            }
+            if (checked == 0) {
+                logger.warn("MP-PUSH-CONFIG-ASSERT: ${t.name} produced no .apk/.aab to check — " +
+                    "if this is a packaging task, the assertion is no longer wired up. Fix it.")
+            }
+        }
+    }
 }

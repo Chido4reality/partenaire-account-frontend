@@ -69,10 +69,29 @@ import RevealPinModal from "./RevealPinModal";
 // AND below the visible area with no way to scroll. The flex column
 // keeps the action footer pinned to the modal's bottom edge so Cancel
 // and Confirm stay reachable even after a long scroll.
+//
+// MP-ROOT-OVERLAY-POINTER-EVENTS: pointerEvents "auto" is LOAD-BEARING, not
+// decoration. Any Radix modal layer anywhere in the app — every vaul Drawer
+// takes modal=true by default — sets `document.body.style.pointerEvents =
+// "none"` and hands `auto` back ONLY to its own portal branch
+// (@radix-ui/react-dismissable-layer index.mjs:73, :104). pointer-events
+// inherits, so a fixed overlay mounted outside that branch paints perfectly
+// and then swallows every tap. That is exactly how the POS cart's open-shift
+// shortcut shipped broken: visible, correct z-index, completely dead.
+//
+// Re-declaring auto here is immunity by construction. It does not depend on
+// the opening surface remembering to close itself first, so it survives the
+// next sheet, the next overlay and the next person.
+//
+// It is a SEATBELT, not the primary fix. Radix's FocusScope still traps focus
+// inside the open layer, so an autoFocus in here (OpenShiftModal focuses the
+// opening-float input) still gets yanked back. Surfaces that host a drawer
+// must STILL dismiss it before opening a root modal — see POSPage's
+// anyRootOverlay effect. This just means forgetting is no longer fatal.
 function ModalShell({ children, onClose, busy }) {
   return (
     <div
-      style={{ position: "fixed", inset: 0, zIndex: 3500, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+      style={{ position: "fixed", inset: 0, pointerEvents: "auto", zIndex: 3500, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
       onClick={() => { if (!busy) onClose(); }}
     >
       <div onClick={e => e.stopPropagation()}

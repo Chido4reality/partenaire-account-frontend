@@ -51,6 +51,24 @@ const PAY_METHODS = [
 
 const isMobile = () => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
 
+// MP-ROOT-OVERLAY-POINTER-EVENTS: spread this into EVERY root-level overlay
+// backdrop on this page. `pointerEvents: "auto"` is load-bearing, not tidiness.
+//
+// MobileCartSheet's vaul Drawer.Root takes modal=true by default, so Radix sets
+// `document.body.style.pointerEvents = "none"` and hands `auto` back only to its
+// own portal branch (@radix-ui/react-dismissable-layer index.mjs:73, :104).
+// pointer-events inherits. An overlay mounted out here at the page root — which
+// is where they all correctly live — therefore inherits `none` while the cart
+// sheet is open: it paints above the sheet and then swallows every tap. That is
+// precisely how the open-shift shortcut shipped broken.
+//
+// The anyRootOverlay effect below dismisses the sheet first and remains the
+// primary behaviour (Radix's FocusScope still traps focus, which this cannot
+// undo). This constant is the seatbelt for the day someone adds a ninth overlay
+// and forgets the list — and, being spread at every call site, it is what a
+// copy-pasted neighbour drags along automatically.
+const ROOT_OVERLAY = { position: "fixed", inset: 0, pointerEvents: "auto" };
+
 function fuzzyMatch(str, pattern) {
   if (!str || !pattern) return false;
   const s = str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -346,13 +364,46 @@ export default function POSPage() {
   // backdrop and gives the modal the entire viewport. resetCart()
   // already returns POSPage to a fresh state on sale success, so this
   // also gives the cleanest "transaction done" finish.
+  //
+  // MP-OPEN-SHIFT-SHORTCUT-INERT-FIX: showOpenShift MUST be in this list.
+  // It is not a cosmetic "modal on top of sheet" concern like the others —
+  // omitting it makes OpenShiftModal completely non-interactive. MobileCartSheet's
+  // Drawer.Root defaults to modal=true, so Radix sets `document.body.style
+  // .pointerEvents = "none"` and hands `pointer-events: auto` back ONLY to its own
+  // portal branch. OpenShiftModal is mounted at POSPage root (below), OUTSIDE that
+  // branch, so it inherits none: it paints above the sheet at z:3500 and then
+  // swallows every tap. Closing the sheet first restores pointer-events document-wide.
+  //
+  // DO NOT "fix" a recurrence by moving OpenShiftModal inside cartPaneInner /
+  // the sheet. Being at the root is correct — the desktop right-pane renders the
+  // same cartPaneInner with no portal at all, and nesting it would make the modal a
+  // child of a drag-to-dismiss sheet. The bug was never its position; it was that a
+  // seventh root-level overlay got added without registering here.
+  //
+  // ONE list, not two. This used to be a condition AND a matching deps array —
+  // two hand-maintained copies of the same eight names. That is a second way to
+  // get this wrong, and a worse one: add to the condition, forget the deps, and
+  // the effect keeps a stale closure and fires only when some OTHER overlay
+  // happens to change. Intermittent hides better than broken. Deriving one
+  // boolean makes the two impossible to disagree.
+  //
+  // ADDING A NEW ROOT-LEVEL OVERLAY? Add its state here and nowhere else.
+  //
+  // creditLimitModal and cancelTarget were found missing while auditing this
+  // list — the eighth and ninth overlays, unregistered, exactly the failure the
+  // open-shift bug was. creditLimitModal is the live one: it is raised by the
+  // CREDIT_LIMIT_EXCEEDED 400 off the sale mutation, which is fired from the
+  // payment panel INSIDE the cart sheet, so the sheet is always open behind it.
+  // cancelTarget is reached from the resume picker, which already collapses the
+  // sheet, so it was latent rather than broken. Both registered now.
+  const anyRootOverlay = [
+    showReceipt, showHold, showResume, debtReceiptEvent,
+    blockModal, oversellModal, validateModal, showOpenShift,
+    creditLimitModal, cancelTarget,
+  ].some(Boolean);
   useEffect(() => {
-    if (showReceipt || showHold || showResume || debtReceiptEvent
-        || blockModal || oversellModal || validateModal) {
-      setSheetOpen(false);
-    }
-  }, [showReceipt, showHold, showResume, debtReceiptEvent,
-      blockModal, oversellModal, validateModal]);
+    if (anyRootOverlay) setSheetOpen(false);
+  }, [anyRootOverlay]);
 
   // MP-POS-CART-PERSIST: restore + auto-save draft cart so navigating
   // away (e.g. accidentally tapping a sidebar link) never loses Nora's
@@ -3420,7 +3471,7 @@ export default function POSPage() {
       )}
       {/* ── BUG 2: HARD BLOCK — product not stocked at this location ── */}
       {blockModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000, padding: 16 }}>
+        <div style={{ ...ROOT_OVERLAY, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000, padding: 16 }}>
           <div style={{ background: "var(--bg-card)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 14, width: "100%", maxWidth: 460, padding: 22 }}>
             <div style={{ fontSize: 30, marginBottom: 8 }}>⛔</div>
             <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 8 }}>
@@ -3451,7 +3502,7 @@ export default function POSPage() {
           shape so the UX feels consistent with the other hard-block
           modals (z:3000, full-width row of numbers, single CTA). */}
       {creditLimitModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000, padding: 16 }}>
+        <div style={{ ...ROOT_OVERLAY, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000, padding: 16 }}>
           <div style={{ background: "var(--bg-card)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 14, width: "100%", maxWidth: 460, padding: 22 }}>
             <div style={{ fontSize: 30, marginBottom: 8 }}>🚫</div>
             <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>
@@ -3499,7 +3550,7 @@ export default function POSPage() {
                 badges with informational guidance (transfer /
                 partial-fulfill / substitution are deferred). ── */}
       {validateModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000, padding: 16 }}>
+        <div style={{ ...ROOT_OVERLAY, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000, padding: 16 }}>
           <div style={{ background: "var(--bg-card)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 14, width: "100%", maxWidth: 520, padding: 22 }}>
             <div style={{ fontSize: 30, marginBottom: 8 }}>{validateModal.errorCode ? "⛔" : "⚠️"}</div>
             <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 8 }}>
@@ -3588,7 +3639,7 @@ export default function POSPage() {
 
       {/* ── BUG 3: WARN + ALLOW — overselling ── */}
       {oversellModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000, padding: 16 }}>
+        <div style={{ ...ROOT_OVERLAY, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000, padding: 16 }}>
           {/* MP-OVERSELL-MODAL-SCROLL-FIX (build 19): bounded flex column so a
               long finished-items list can never push the confirm button below
               the viewport on short phones (Samsung). The header (title +
@@ -3674,7 +3725,7 @@ export default function POSPage() {
 
       {/* ── HOLD SALE — label/notes prompt ───────────────────────────── */}
       {showHold && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div style={{ ...ROOT_OVERLAY, zIndex: 300, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, maxWidth: 400, width: "100%" }}>
             <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>⏸ {lang === "en" ? "Hold this sale" : "Mettre en attente"}</div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
@@ -3707,7 +3758,7 @@ export default function POSPage() {
 
       {/* ── RESUME — active holds picker ─────────────────────────────── */}
       {showResume && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div style={{ ...ROOT_OVERLAY, zIndex: 300, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 22, maxWidth: 460, width: "100%", maxHeight: "82vh", display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
               <div style={{ fontWeight: 800, fontSize: 17 }}>⏸ {lang === "en" ? "Held sales" : "Ventes en attente"}</div>
@@ -3757,7 +3808,7 @@ export default function POSPage() {
 
       {/* ── CANCEL HOLD — confirm + reason ───────────────────────────── */}
       {cancelTarget && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 350, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div style={{ ...ROOT_OVERLAY, zIndex: 350, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ background: "var(--bg-elevated)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 14, padding: 22, maxWidth: 380, width: "100%" }}>
             <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 6 }}>
               {lang === "en" ? "Cancel held sale?" : "Annuler la mise en attente ?"}
@@ -3879,7 +3930,7 @@ function HoldTicket({ hold, org, lang, cashierName, onClose }) {
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 360, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+    <div style={{ ...ROOT_OVERLAY, zIndex: 360, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, maxWidth: 380, width: "100%" }}>
         <div style={{ textAlign: "center", marginBottom: 16 }}>
           <div style={{ fontSize: 36, marginBottom: 6 }}>⏸</div>

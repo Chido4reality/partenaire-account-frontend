@@ -229,8 +229,22 @@ export default function ReportsPage() {
     rows.push(["", "Sub-total product sales", "", "", ps.total]);
     dc.items.forEach(d => rows.push(["debt_collection", `Recouvrement — ${d.customer_name}${d.sale_number ? ` (${d.sale_number})` : ""}`, "", "", d.amount]));
     rows.push(["", "Sub-total debt collections", "", "", dc.total]);
-    rf.items.forEach(r => rows.push(["refund", `${r.ret_ref || ""} ${r.customer_name || ""} ${r.items_summary || ""}`.trim(), "", "", -r.refund_amount]));
-    if (rf.total > 0) rows.push(["", "Sub-total refunds", "", "", -rf.total]);
+    // MP-VOID-NOT-A-REFUND: two sections, each adding up to its own subtotal.
+    // A void reversal is LISTED but NOT deducted — the cancelled sale's cash was
+    // never counted in ARGENT REÇU, so reversing it must not reduce NET CASH.
+    // Partition on is_void_triggered (the arithmetic flag the server uses),
+    // never on `kind` — kind is the display label and the two can disagree.
+    const rfReal = rf.items.filter(r => !r.is_void_triggered);
+    const rfVoid = rf.items.filter(r =>  r.is_void_triggered);
+    const sumRefunds = (list) => list.reduce((s, r) => s + (Number(r.refund_amount) || 0), 0);
+    // Prefer the server's totals so screen, CSV and NET CASH cannot drift apart;
+    // fall back to the local sum for responses predating those fields.
+    const rfRealTotal = rf.real_total         ?? sumRefunds(rfReal);
+    const rfVoidTotal = rf.void_refunds_total ?? sumRefunds(rfVoid);
+    rfReal.forEach(r => rows.push(["refund", `${r.ret_ref || ""} ${r.customer_name || ""} ${r.items_summary || ""}`.trim(), "", "", -r.refund_amount]));
+    if (rfRealTotal > 0) rows.push(["", "Sub-total refunds", "", "", -rfRealTotal]);
+    rfVoid.forEach(r => rows.push(["void_reversal", `${r.ret_ref || ""} ${r.customer_name || ""} ${r.items_summary || ""}`.trim(), "", "", -r.refund_amount]));
+    if (rfVoidTotal > 0) rows.push(["", "Sub-total void reversals (NOT deducted from net cash)", "", "", -rfVoidTotal]);
     ex.items.forEach(e => rows.push(["expense", `${e.category ? e.category + " — " : ""}${e.description}`, "", "", -e.amount]));
     if (ex.total > 0) rows.push(["", "Sub-total expenses", "", "", -ex.total]);
     rows.push(["", "ARGENT REÇU", "", "", tot.argent_recu]);
@@ -1293,6 +1307,16 @@ export default function ReportsPage() {
             const rf  = ledger.refunds          || { total: 0, items: [] };
             const ex  = ledger.expenses         || { total: 0, items: [] };
             const dr  = ledger.drawer || null;
+            // MP-VOID-NOT-A-REFUND: split the refunds block in two. `rfReal` is
+            // money that actually left the drawer and IS deducted from NET CASH;
+            // `rfVoid` is cancelled sales, listed but NOT deducted because their
+            // cash was never counted as received in the first place. Partition on
+            // is_void_triggered (the server's arithmetic flag), never on `kind`.
+            const rfReal      = rf.items.filter(r => !r.is_void_triggered);
+            const rfVoid      = rf.items.filter(r =>  r.is_void_triggered);
+            const sumRefunds  = (list) => list.reduce((s, r) => s + (Number(r.refund_amount) || 0), 0);
+            const rfRealTotal = rf.real_total         ?? sumRefunds(rfReal);
+            const rfVoidTotal = rf.void_refunds_total ?? sumRefunds(rfVoid);
             const tot = ledger.totals || { argent_recu: 0, net_cash_real: 0 };
 
             const SectionHeader = ({ icon, title, count, color }) => (
@@ -1622,27 +1646,28 @@ export default function ReportsPage() {
                     narrow by primary category (Refunds / Exchanges /
                     Voids). Old responses (kind unset) fall under
                     "Refunds" so legacy data isn't dropped. */}
-                {rf.total > 0 && (() => {
+                {rfReal.length > 0 && (() => {
                   const filterMatch = (kind) => {
                     if (refundFilter === "all") return true;
-                    if (refundFilter === "voids")     return kind === "void_refund";
                     if (refundFilter === "exchanges") return kind === "exchange_same" || kind === "exchange_diff";
                     if (refundFilter === "refunds")   return kind === "refund_full" || kind === "refund_partial" || !kind;
                     return true;
                   };
-                  const filteredItems = rf.items.filter(r => filterMatch(r.kind));
+                  // MP-VOID-NOT-A-REFUND: this section is the money that actually
+                  // leaves — cancelled sales moved to their own section below, so
+                  // the "Voids" chip went with them.
+                  const filteredItems = rfReal.filter(r => filterMatch(r.kind));
                   const filteredTotal = filteredItems.reduce((s, r) => s + (Number(r.refund_amount) || 0), 0);
                   const chips = [
                     { id: "all",       label: lang === "en" ? "All"       : "Tous"    },
                     { id: "refunds",   label: lang === "en" ? "Refunds"   : "Remboursements" },
                     { id: "exchanges", label: lang === "en" ? "Exchanges" : "Échanges" },
-                    { id: "voids",     label: lang === "en" ? "Voids"     : "Annulations" },
                   ];
                   return (
                     <>
                       <SectionHeader icon="↩"
                         title={lang === "en" ? "Refunds" : "Remboursements"}
-                        count={rf.items.length} color="var(--text-primary)" />
+                        count={rfReal.length} color="var(--text-primary)" />
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "4px 0 10px" }}>
                         {chips.map(c => {
                           const active = refundFilter === c.id;
@@ -1732,10 +1757,77 @@ export default function ReportsPage() {
                         label={refundFilter === "all"
                           ? (lang === "en" ? "refunds" : "remboursements")
                           : (lang === "en" ? `refunds (${chips.find(c=>c.id===refundFilter)?.label.toLowerCase()})` : `remboursements (${chips.find(c=>c.id===refundFilter)?.label.toLowerCase()})`)}
-                        value={-filteredTotal} color="#f87171" />
+                        value={-(refundFilter === "all" ? rfRealTotal : filteredTotal)} color="#f87171" />
                     </>
                   );
                 })()}
+
+                {/* ── CANCELLED SALES — listed, NOT deducted ──────────────────
+                    MP-VOID-NOT-A-REFUND. void_sale writes its own pa_returns row
+                    stamped return_type='refund'. Its cash never counted towards
+                    ARGENT REÇU, so reversing it must not reduce NET CASH either —
+                    it is shown here so the money stays visible and the ledger
+                    still adds up: refunds + cancelled = every row listed above.
+                    Rows keep their OWN kind label: a genuine refund taken on a
+                    sale that was cancelled afterwards belongs in this section
+                    (its money is excluded) but still reads "Full refund". */}
+                {rfVoid.length > 0 && (
+                  <>
+                    <SectionHeader icon="🚫"
+                      title={lang === "en" ? "Cancelled sales — not deducted" : "Ventes annulées — non déduit"}
+                      count={rfVoid.length} color="#fbbf24" />
+                    <div style={{ fontSize: 11.5, color: "var(--text-muted)", lineHeight: 1.5, marginBottom: 8, paddingLeft: 2 }}>
+                      ⓘ {lang === "en"
+                        ? "Cancelled receipts — the sale's cash was never counted, so reversing it doesn't reduce net cash."
+                        : "Reçus annulés — l'encaissement de la vente n'a jamais été compté, donc son remboursement ne réduit pas le net."}
+                    </div>
+                    {rfVoid.map((r, i) => {
+                      const tStr = r.created_at
+                        ? new Date(r.created_at).toLocaleTimeString(lang === "en" ? "en-GB" : "fr-FR",
+                            { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })
+                        : "";
+                      return (
+                        <div key={i} style={{ padding: "10px 0", borderBottom: "1px solid var(--border)", opacity: 0.85 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
+                            <div style={{ fontSize: 12 }}>
+                              <span style={{ fontFamily: "monospace", color: "var(--text-muted)" }}>{shortRetRef(r.ret_ref)}</span>
+                              <span style={{ marginLeft: 8, fontWeight: 700, color: "#fbbf24" }}>
+                                {refundKindLabel(r.kind, lang)}
+                                {r.has_credit_split ? (lang === "en" ? " · with credit split" : " · split crédit") : ""}
+                              </span>
+                            </div>
+                            <div style={{ color: "var(--text-muted)", fontWeight: 700, fontSize: 13 }}>
+                              ({fmt(r.refund_amount)})
+                            </div>
+                          </div>
+                          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                            {r.customer_name && <strong style={{ color: "var(--text-primary)" }}>{r.customer_name}</strong>}
+                            {r.customer_name && r.sale_number && " — "}
+                            {r.sale_number && <span style={{ fontFamily: "monospace" }}>{r.sale_number}</span>}
+                          </div>
+                          {r.items_summary && (
+                            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{r.items_summary}</div>
+                          )}
+                          {r.reason && (
+                            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, fontStyle: "italic" }}>
+                              {lang === "en" ? "Reason" : "Motif"}: {r.reason}
+                            </div>
+                          )}
+                          {(r.processed_by || tStr) && (
+                            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                              {r.processed_by && (lang === "en" ? `Cashier ${r.processed_by}` : `Caissier ${r.processed_by}`)}
+                              {r.processed_by && tStr && " · "}
+                              {tStr}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    <Subtotal
+                      label={lang === "en" ? "cancelled sales (not deducted)" : "ventes annulées (non déduit)"}
+                      value={rfVoidTotal} color="var(--text-muted)" />
+                  </>
+                )}
 
                 {/* ── EXPENSES (only if > 0) ─────────────────── */}
                 {ex.total > 0 && (
