@@ -669,6 +669,56 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
           <strong style={{ fontSize: 18, color: "var(--brand-light)" }}>{fmt(expected)}</strong>
         </div>
 
+      {/* ── MP-CASHIER-PHASE-1b: HOW THE BOSS KNOWS ────────────────────
+          Two directions on the same number — what the salespeople SENT to
+          the till and what the cashier actually TOOK. Its own conditional,
+          NOT nested in the non-cash section below: it used to live inside
+          `momoSale > 0 || bankSale > 0 || creditGivenShift > 0`, so an
+          ALL-CASH shift hid the entire cashier-workflow reconciliation —
+          two unrelated facts sharing one guard, and the commoner shift is
+          the one that lost it. Counts and order values, never merged into
+          the drawer buckets: anything that looks like a cash bucket gets
+          added to one by whoever reads it next.
+          Hidden only when the till never used the workflow. */}
+        {cw && cw.available && (cw.sent_count > 0 || cw.collected_count > 0 || cw.waiting_now_count > 0) && (
+          <>
+            <div style={{ height: 1, background: "var(--border)", margin: "8px 0" }} />
+            <div style={{ fontWeight: 700, fontSize: 12, color: "var(--text-secondary)", marginBottom: 4 }}>
+              {fr ? "Circuit caissier" : "Cashier workflow"}
+            </div>
+            <Row label={fr ? "Envoyé à la caisse" : "Sent to the till"}
+                 value={`${cw.sent_count} · ${fmt(cw.sent_value)}`} />
+            <Row label={fr ? "Encaissé dans ce poste" : "Collected in this shift"}
+                 value={`${cw.collected_count} · ${fmt(cw.collected_value)}`} />
+            {cw.raised_earlier_count > 0 && (
+              <Row label={fr ? "  dont créé dans un poste précédent" : "  of which raised in an earlier shift"}
+                   value={`${cw.raised_earlier_count} · ${fmt(cw.raised_earlier_value)}`} />
+            )}
+            {cw.raised_unknown_count > 0 && (
+              <Row label={fr ? "  dont créé avant le suivi par poste" : "  of which raised before shift tracking"}
+                   value={`${cw.raised_unknown_count} · ${fmt(cw.raised_unknown_value)}`} />
+            )}
+            {cw.sent_not_collected_count > 0 && (
+              <Row label={fr ? "Envoyé, pas encore encaissé" : "Sent, not yet collected"}
+                   value={`${cw.sent_not_collected_count} · ${fmt(cw.sent_not_collected_value)}`} />
+            )}
+            {/* The one shape the workflow cannot PREVENT, so it is measured.
+                Flagged, not accused: one person raising and paying their own
+                ticket is sometimes simply a quiet shop. */}
+            {cw.self_served_count > 0 && (
+              <Row label={fr ? "⚠ Auto-encaissé (même personne)" : "⚠ Self-served (same person)"}
+                   value={`${cw.self_served_count} · ${fmt(cw.self_served_value)}`} />
+            )}
+            <Row label={fr ? "En attente à cette boutique (maintenant)" : "Still waiting at this shop (now)"}
+                 value={`${cw.waiting_now_count} · ${fmt(cw.waiting_now_value)}`} />
+            <div style={{ fontSize: 11.5, color: "var(--text-muted)", lineHeight: 1.5, marginTop: 4 }}>
+              {fr
+                ? "« En attente » concerne la boutique, pas ce poste : un ticket non payé n'appartient à aucun poste. L'argent est enregistré dans le poste qui l'a ENCAISSÉ — un ticket créé dans un poste et payé dans un autre apparaît « envoyé » ici et « encaissé » là-bas. Ces deux chiffres ne sont pas censés correspondre."
+                : "“Still waiting” is a shop figure, not a shift one — an unpaid ticket belongs to no shift. Money is recorded in the shift that COLLECTED it, so a ticket raised in one shift and paid in another is “sent” here and “collected” there. These two figures are not meant to match."}
+            </div>
+          </>
+        )}
+
         {/* MP-DRAWER-CLARITY (b): "Not in the drawer" — SALE-only non-cash + credit,
             with a tie line naming the gap. Non-cash DEBT collections are covered by
             the day-level Debt-collected breakdown, not here (one consistent sales story). */}
@@ -682,44 +732,6 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
                 order values, not cash, and anything that looks like a cash
                 bucket gets added to one by whoever reads it next.
                 Hidden entirely when the till never used the workflow. */}
-            {cw && cw.available && (cw.sent_count > 0 || cw.collected_count > 0 || cw.waiting_now_count > 0) && (
-              <>
-                <div style={{ height: 1, background: "var(--border)", margin: "8px 0" }} />
-                <div style={{ fontWeight: 700, fontSize: 12, color: "var(--text-secondary)", marginBottom: 4 }}>
-                  {fr ? "Circuit caissier" : "Cashier workflow"}
-                </div>
-                <Row label={fr ? "Envoyé à la caisse" : "Sent to the till"}
-                     value={`${cw.sent_count} · ${fmt(cw.sent_value)}`} />
-                <Row label={fr ? "Encaissé dans ce poste" : "Collected in this shift"}
-                     value={`${cw.collected_count} · ${fmt(cw.collected_value)}`} />
-                {cw.raised_earlier_count > 0 && (
-                  <Row label={fr ? "  dont créé dans un poste précédent" : "  of which raised in an earlier shift"}
-                       value={`${cw.raised_earlier_count} · ${fmt(cw.raised_earlier_value)}`} />
-                )}
-                {cw.raised_unknown_count > 0 && (
-                  <Row label={fr ? "  dont créé avant le suivi par poste" : "  of which raised before shift tracking"}
-                       value={`${cw.raised_unknown_count} · ${fmt(cw.raised_unknown_value)}`} />
-                )}
-                {cw.sent_not_collected_count > 0 && (
-                  <Row label={fr ? "Envoyé, pas encore encaissé" : "Sent, not yet collected"}
-                       value={`${cw.sent_not_collected_count} · ${fmt(cw.sent_not_collected_value)}`} />
-                )}
-                {/* The one shape the workflow cannot PREVENT, so it is measured.
-                    Flagged, not accused: one person raising and paying their own
-                    ticket is sometimes simply a quiet shop. */}
-                {cw.self_served_count > 0 && (
-                  <Row label={fr ? "⚠ Auto-encaissé (même personne)" : "⚠ Self-served (same person)"}
-                       value={`${cw.self_served_count} · ${fmt(cw.self_served_value)}`} />
-                )}
-                <Row label={fr ? "En attente à cette boutique (maintenant)" : "Still waiting at this shop (now)"}
-                     value={`${cw.waiting_now_count} · ${fmt(cw.waiting_now_value)}`} />
-                <div style={{ fontSize: 11.5, color: "var(--text-muted)", lineHeight: 1.5, marginTop: 4 }}>
-                  {fr
-                    ? "« En attente » concerne la boutique, pas ce poste : un ticket non payé n'appartient à aucun poste. L'argent est enregistré dans le poste qui l'a ENCAISSÉ — un ticket créé dans un poste et payé dans un autre apparaît « envoyé » ici et « encaissé » là-bas. Ces deux chiffres ne sont pas censés correspondre."
-                    : "“Still waiting” is a shop figure, not a shift one — an unpaid ticket belongs to no shift. Money is recorded in the shift that COLLECTED it, so a ticket raised in one shift and paid in another is “sent” here and “collected” there. These two figures are not meant to match."}
-                </div>
-              </>
-            )}
 
             <div style={{ fontWeight: 700, fontSize: 12, color: "var(--text-secondary)", marginBottom: 4 }}>
               {fr ? "Pas dans la caisse (ventes non-espèces)" : "Not in the drawer (non-cash sales)"}
