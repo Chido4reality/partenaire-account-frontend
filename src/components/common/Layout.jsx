@@ -32,6 +32,8 @@ import { explainAnomaly, severityCue } from "../../utils/anomalyExplain";
 import { normalizeScannedSaleRef } from "../../utils/receiptCodeStyle";
 import { hasSeenOnboardingLocally, reconcileOnboardingSeen } from "../../utils/onboarding";
 import { useStockCheckSummary } from "../../utils/useStockCheckSummary";
+import { useTicketSummary, ticketNavVisible } from "../../utils/useTicketSummary"; // MP-CASHIER-PHASE-1b
+import { useMyPermissions } from "../../utils/useMyPermissions";                   // MP-CASHIER-PHASE-1b
 import toast from "react-hot-toast";
 
 import { SUPPORT_PHONE } from "../../utils/support";
@@ -90,6 +92,14 @@ const NAV = [
   // requireRole). NOTE: also registered in NavDrawer.jsx SECTIONS (mobile) + App.jsx.
   { to: "/restock",      en: "Restock", fr: "Réapprovisionner", icon: "🛒", roles: ["owner","manager"], section: "restock", badge: "restock" },
   { to: "/goods-buffer", en: "Goods Buffer", fr: "Zone tampon", icon: "📦", roles: ["owner","manager","cashier","warehouse","accountant"], section: "sales", badge: "goodsBuffer" }, // MP-GOODS-BUFFER
+  // ── MP-CASHIER-PHASE-1b ───────────────────────────────────────────────────
+  // NEITHER of these exists in direct mode. `gate:` is resolved in the visibleNav
+  // filter below through ticketNavVisible, which checks sales_mode BEFORE it
+  // reads a permission flag — that ordering IS carry-forward 4. roles[] here is
+  // only the coarse "could plausibly hold this job" filter; the real gate is the
+  // gate. Also registered in NavDrawer.jsx SECTIONS (mobile) + App.jsx routes.
+  { to: "/cashier", en: "Cashier", fr: "Caissier", icon: "💵", roles: ["owner","manager","cashier"], section: "sales", badge: "cashier_queue",  gate: "can_receive_payment" },
+  { to: "/pickup",  en: "Pickup",  fr: "Retrait",  icon: "📤", roles: ["owner","manager","cashier","warehouse"], section: "sales", badge: "cashier_pickup", gate: "can_release_goods" },
   // MP-STAFF-ACTIVITY-LEDGER Phase 4: a staff member's OWN activity. Non-owner roles only
   // (the owner has the full Accountant Log), and only when the org opted in (requiresStaffActivity).
   { to: "/my-activity", en: "My Activity", fr: "Mon activité", icon: "📒", roles: ["manager","cashier","warehouse","accountant"], section: "sales", requiresStaffActivity: true },
@@ -693,6 +703,21 @@ export default function Layout() {
   const unread = notifications.filter(n => !n.is_read).length;
   const role = user?.role || "cashier";
 
+  // ── MP-CASHIER-PHASE-1b: the nav gate's inputs ────────────────────────────
+  // Read HERE, above visibleNav, and via a zustand selector rather than the
+  // `const { selectedLocation } = useSettingsStore()` destructure further down:
+  // that one is declared ~200 lines below the visibleNav filter, so referencing
+  // it there is a temporal dead zone — a ReferenceError, not a lint nit. (The
+  // backend shipped exactly that bug this phase and 500'd every sale with it.)
+  const ticketLocId = useSettingsStore(s => s.selectedLocation?.id) || null;
+  const { summary: ticketSummary } = useTicketSummary(ticketLocId, { onError: () => {} });
+  // Only the two ticket nav items consume this; a failed read leaves perms null,
+  // which ticketNavVisible resolves to "hidden" — fail closed.
+  const { perms: myPerms } = useMyPermissions({ enabled: !!ticketLocId, retry: 1 });
+  const ticketMode      = ticketSummary?.mode || "direct";
+  const awaitingPayment = ticketSummary?.awaiting_payment || 0;
+  const awaitingPickup  = ticketSummary?.awaiting_pickup || 0;
+
   // Sprint A: effective plan drives section visibility. Falls back to
   // 'silver' if my-plan hasn't loaded yet (defensive — better to hide
   // sections briefly than flash them then yank them away on load).
@@ -740,6 +765,11 @@ export default function Layout() {
     }
     if (!hasSection(effectivePlan, item.section)) return false;
     if (lite && LITE_HIDDEN_ROUTES.has(item.to)) return false;
+    // MP-CASHIER-PHASE-1b: cashier-mode-only entries. ticketNavVisible returns
+    // false for every direct-mode location without ever reading a permission
+    // flag, so the three active staff with no pa_staff_permissions row are
+    // untouched everywhere the workflow is off.
+    if (item.gate && !ticketNavVisible({ mode: ticketMode, role, perms: myPerms, flag: item.gate })) return false;
     // MP-STAFF-ACTIVITY-LEDGER Phase 4: the staff self-view only appears when the owner opted in.
     if (item.requiresStaffActivity && !(org && org.staff_can_view_own_activity)) return false;
     return true;
@@ -929,6 +959,8 @@ export default function Layout() {
     : item.badge === "dozie_messages" ? (dozieNotif_.message || 0)
     : item.badge === "dozie_disputes" ? (dozieAttn_.disputes || 0)
     : item.badge === "dozie_attention" ? (dozieNotif_.total || 0)
+    : item.badge === "cashier_queue"  ? awaitingPayment   // MP-CASHIER-PHASE-1b
+    : item.badge === "cashier_pickup" ? awaitingPickup    // MP-CASHIER-PHASE-1b
     : item.badge === "stock_check"    ? stockCheckPending
     : item.badge === "restock"        ? restockPending
     : item.badge === "goodsBuffer"    ? goodsBufferPending
@@ -953,9 +985,25 @@ export default function Layout() {
   useEffect(() => {
     const list = _locsResp?.data;
     if (!Array.isArray(list) || list.length === 0) return; // not loaded yet
-    if (selectedLocation && !list.some(l => l.id === selectedLocation.id)) {
-      setLocation(null); // stale/foreign selection → clear it
-    }
+    if (!selectedLocation) return;
+    const fresh = list.find(l => l.id === selectedLocation.id);
+    if (!fresh) { setLocation(null); return; }   // stale/foreign selection → clear it
+    // MP-CASHIER-PHASE-1b: REFRESH the stored object, don't just validate its id.
+    //
+    // This effect used to only CLEAR a selection whose id was missing, so the
+    // persisted row itself (zustand `mp-settings`, survives reloads and logins)
+    // kept whatever fields it had when it was first chosen — FOREVER. A device
+    // that selected this shop while it was in DIRECT mode kept
+    // sales_mode:'direct' after the owner flipped it to cashier, and a device
+    // that chose it before the column existed had no sales_mode at all.
+    //
+    // That matters because POSPage reads selectedLocation.sales_mode as the
+    // INSTANT half of its cashier-mode test — the half that closes the window
+    // where the slow summary query has not answered yet and the terminal button
+    // would otherwise read "Confirm" and complete a real sale. A permanently
+    // stale copy quietly re-opens exactly that window on the devices most likely
+    // to hit it: the ones that have been logged in longest.
+    if (JSON.stringify(fresh) !== JSON.stringify(selectedLocation)) setLocation(fresh);
   }, [_locsResp, selectedLocation, setLocation]);
 
   // MP-PROPLUS-CASHIER-LOCATION: a Pro Plus cashier pinned to a home location is

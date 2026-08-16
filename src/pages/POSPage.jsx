@@ -11,6 +11,8 @@ import { useLangStore, useSettingsStore, useAuthStore, useDraftCartStore } from 
 // why; the backend at sales.js:46-62 is the source of truth either way.
 import api from "../utils/api";
 import { useMyPermissions } from "../utils/useMyPermissions";
+import { useTicketSummary, ticketSummaryKey } from "../utils/useTicketSummary"; // MP-CASHIER-PHASE-1b
+import { printTicketSlipViaBluetooth } from "../utils/btPrint"; // MP-CASHIER-PHASE-1b
 import { useCurrency } from "../utils/useCurrency";
 import { formatMoney, currencySymbol } from "../utils/currency";
 import { t } from "../utils/i18n";
@@ -105,6 +107,74 @@ export default function POSPage() {
   const { selectedLocation, setLocation } = useSettingsStore();
   const { user } = useAuthStore();
   const qc = useQueryClient();
+  // MP-CASHIER-PHASE-1b: the till's mode, from the server, via the shared hook —
+  // same single source the sidebar gate and both badges read. NOT
+  // selectedLocation.sales_mode: that rides the ["locations"] cache, which has
+  // silently drifted twice. Degrades safe — a failed read leaves mode 'direct',
+  // i.e. today's behaviour, which is the right way for this to fail.
+  const { summary: tillSummary, refetch: refetchTillMode } = useTicketSummary(selectedLocation?.id || null, { onError: () => {} });
+  // ── TWO SOURCES, AND THE TERMINAL ACTION FAILS TOWARD THE REVERSIBLE ONE ───
+  // `(tillSummary?.mode || "direct")` alone was wrong for the BUTTON. tillSummary
+  // is undefined until a network round-trip completes, so on every page load and
+  // every location switch there is a window — seconds on a shop's connection —
+  // where a cashier-mode till renders "Confirm" and COMPLETES A REAL SALE instead
+  // of sending it to the queue. Nothing about that is visible: the sale succeeds.
+  //
+  // selectedLocation.sales_mode is available instantly from the locations cache.
+  // It is the weaker source (that cache has drifted before, which is why the nav
+  // gate deliberately does NOT use it) but here the two failure directions are
+  // not symmetric:
+  //   say "direct" wrongly  → an irreversible completed sale, silently
+  //   say "cashier" wrongly → the server answers 400 not_cashier_mode, loudly,
+  //                           and nothing is written
+  // So for the terminal action EITHER source claiming cashier is enough. A gate
+  // fails closed; a money button fails toward the outcome you can undo.
+  const isCashierMode =
+    tillSummary?.mode === "cashier" || selectedLocation?.sales_mode === "cashier";
+  // ── AND WHEN NEITHER SOURCE HAS ANSWERED, DO NOT GUESS ────────────────────
+  // Both sources can be silent at once: a location row persisted before the
+  // sales_mode column existed (zustand keeps it across reloads and logins)
+  // carries no sales_mode, and the summary has not come back yet. In that state
+  // `isCashierMode` is false — which is a GUESS, and the wrong guess completes an
+  // irreversible sale on a till that was supposed to send it to a cashier.
+  //
+  // So there is a third state. Unknown is not "direct": the terminal button is
+  // disabled and says it is checking. It costs a moment on the rare device that
+  // has been logged in since before the column; it removes the last window in
+  // which a wrong render can take money.
+  const tillModeKnown =
+    tillSummary?.mode !== undefined || selectedLocation?.sales_mode !== undefined;
+
+  // Per-shop: does the customer carry a printed slip, or get called by number?
+  // Defaults to 'slip' when the column hasn't loaded — printing a slip nobody
+  // needed is harmless; failing to print one the shop relies on is not.
+  const handoff = selectedLocation?.ticket_handoff || "slip";
+
+  // MP-CASHIER-PHASE-1b: the last raised ticket, kept SO THE SLIP CAN BE
+  // REPRINTED. By the time printing runs the ticket already exists in the
+  // cashier's queue, so a printer that is off, out of paper or out of range must
+  // never read as a failed sale — it is a failed slip, and the way out is to
+  // print it again, not to re-ring the cart.
+  const [lastSlip, setLastSlip] = useState(null); // { payload, printed:boolean, error:string|null }
+
+  // Print (or reprint) the order slip. NEVER throws to the caller: the ticket is
+  // already raised, so every outcome here is recorded in state and shown as a
+  // banner the salesperson can act on, not as an exception that looks like the
+  // sale failed.
+  const printSlip = async (payload) => {
+    try {
+      await printTicketSlipViaBluetooth(payload);
+      setLastSlip({ payload, printed: true, error: null });
+    } catch (e) {
+      const code = e && e.code;
+      const why = code === "NO_DEVICE"
+        ? (lang === "en" ? "No printer selected." : "Aucune imprimante selectionnee.")
+        : code === "NOT_NATIVE"
+          ? (lang === "en" ? "Printing needs the Android app." : "L'impression necessite l'application Android.")
+          : (lang === "en" ? "The printer did not respond." : "L'imprimante n'a pas repondu.");
+      setLastSlip({ payload, printed: false, error: why });
+    }
+  };
   // MP-PROPLUS-CASHIER-LOCATION: when set, this cashier is pinned to a home
   // location (Pro Plus). Layout already force-overwrites selectedLocation to it;
   // here we LOCK the picker so it can't be changed on-device. Backend also
@@ -162,6 +232,22 @@ export default function POSPage() {
   const [payMethod, setPayMethod]         = useState("cash");
   const [notes, setNotes]                 = useState("");
   const [showPayment, setShowPayment]     = useState(false);
+
+  // RE-ASK AT THE MOMENT OF DECISION. The summary is cached (30s stale, 60s
+  // poll), so after an owner flips a till to cashier every OTHER device can hold
+  // a "direct" answer for up to a minute — and the settings-page invalidation
+  // only reaches the owner's own device. That window ends at a button that takes
+  // money, so the mode is refetched when the payment panel opens: one request,
+  // at the one moment the answer decides something irreversible.
+  //
+  // ⚠️ MUST STAY BELOW the showPayment declaration above. A dependency array is
+  // evaluated DURING RENDER, so placing this effect higher reads showPayment in
+  // its temporal dead zone and throws "Cannot access 'showPayment' before
+  // initialization" — which does not break the cashier path, it breaks the whole
+  // POS, on every till.
+  useEffect(() => {
+    if (showPayment && selectedLocation?.id) refetchTillMode?.();
+  }, [showPayment, selectedLocation?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
   // MP-DISCOUNT: sale-level discount (line discounts live on each cart item).
   const [saleDiscType, setSaleDiscType]     = useState("");   // "" | "amount" | "percent"
   const [saleDiscValue, setSaleDiscValue]   = useState("");
@@ -1638,6 +1724,34 @@ export default function POSPage() {
       // SW intercept is now a no-op (public/sw-offline-sales.js
       // header comment explains why); requests go straight to the
       // network and real failures land in onError below.
+      // ── MP-CASHIER-PHASE-1b: SAME payload, SAME approval refs, one endpoint ──
+      // "Send to Cashier" is the salesperson's TERMINAL action, so it is the same
+      // single bundled prompt as today at a different trigger — deliberately NOT
+      // a rebuilt cascade. Reusing salePayload verbatim is what guarantees that:
+      // bundled_approval_token / bundled_approval_id ride the /ticket call exactly
+      // as they ride /sales, and the server's approval_required response is handled
+      // by the one onError branch below, unchanged.
+      //
+      // The payment fields are dropped, not zeroed. The salesperson makes no
+      // payment choice in cashier mode — the cashier does, later, at /pay — and
+      // omitting the keys is the shape proven end-to-end against staging. Sending
+      // pay_mode here would hand the phantom-paid guard an intent nobody expressed.
+      if (isCashierMode) {
+        // TERMS TRAVEL WITH THE TICKET. paid_amount / pay_mode / due_date are the
+        // salesperson's decision, made with the customer in front of them, and they
+        // ride unchanged — the same fields the direct path sends, from the same state.
+        //
+        // An earlier version stripped all three, which was wrong twice over: it made
+        // the till decide credit (a lending decision by the person with the least
+        // context), and derivePayment rejects a CUSTOMER sale with no paid_amount
+        // outright, so a ticket with a customer attached could not be raised at all.
+        // Every ticket in the run that "proved" this path had customer_id null.
+        //
+        // Only the TENDER is left to the cashier: they are the one who takes the
+        // money, so cash-vs-momo-vs-bank is theirs and is set at /pay.
+        const ticketPayload = { ...salePayload, payment_method: "cash" };
+        return await api.post("/sales/ticket", ticketPayload).then(r => r.data);
+      }
       const result = await api.post("/sales", salePayload).then(r => r.data);
       return result;
     },
@@ -1655,6 +1769,53 @@ export default function POSPage() {
         setDebtBanner(null);
         setOnlineCtx(null);
       };
+
+      // MP-CASHIER-PHASE-1b: a raised ticket is NOT a completed sale. No receipt
+      // is printed here — no money has been taken, and a printed receipt for an
+      // unpaid ticket is the one artefact that could put a customer out of the
+      // door with goods nobody has been paid for. The order slip the customer
+      // carries to the cashier is the sale NUMBER, which is minted at raise and
+      // survives unchanged through payment.
+      if (isCashierMode && data?.data?.sale_number) {
+        const sale = data.data;
+        // Snapshot BEFORE resetCart — the slip is built from the cart that was
+        // just sent, and resetCart is about to empty it.
+        const slip = {
+          org: orgSettings, lang,
+          // SAME source the sale receipts use (PaymentEventReceipt keeps the roll
+          // width in localStorage, remembered across receipts) — not an org
+          // column, which does not exist. Reading a non-existent field would have
+          // silently handed an 80mm shop a 58mm slip forever.
+          widthMm: (() => { try { return Number(localStorage.getItem("mp_thermal_width")) === 80 ? 80 : 58; } catch { return 58; } })(),
+          saleNumber: sale.sale_number,
+          raisedByName: user?.full_name || "",
+          customerName: customer?.name || "",
+          // THE LINES, not just how many. Snapshotted here with the rest of the
+          // slip, before resetCart empties the cart. Debt lines are money on the
+          // ticket, not goods, so they are excluded from both the list and the
+          // count — a "3 articles" that included a debt repayment was telling the
+          // customer, and the storekeeper, about an item that does not exist.
+          items: cart
+            .filter(i => i && i.type !== "debt_payment" && i.product_id !== "__DEBT__" && i.product_id && (Number(i.quantity) || 0) > 0)
+            .map(i => ({ name: i.name, quantity: i.quantity, is_damaged: !!i.is_damaged })),
+          itemCount: cart.filter(i => i && i.type !== "debt_payment" && i.product_id !== "__DEBT__" && i.product_id).length,
+          total: Number(sale.total_amount) || total,
+          dueNow: sale.paid_amount != null ? Number(sale.paid_amount) : null,
+          onAccount: Math.max(0, (Number(sale.total_amount) || total) - (Number(sale.paid_amount) || 0)),
+          when: new Date(),
+        };
+        toast.success(`${t("ticket_sent", lang)} · ${sale.sale_number}`, { duration: 3500 });
+        resetCart();
+        qc.invalidateQueries({ queryKey: ticketSummaryKey(selectedLocation?.id || null) });
+        qc.invalidateQueries({ queryKey: ["tickets", "pending_payment", selectedLocation?.id || null] });
+
+        // A shop on the 'called' handoff has no slip to print — the cashier calls
+        // the number. Nothing to do, and nothing to apologise for.
+        if (handoff !== "slip") { setLastSlip(null); return; }
+        setLastSlip({ payload: slip, printed: false, error: null });
+        printSlip(slip);
+        return;
+      }
 
       // (Previous data?.offline branch removed — see fetch comment
       // above. The SW no longer returns the fake offline shape, so
@@ -2368,6 +2529,17 @@ export default function POSPage() {
                     {item.isDebtPayment ? "💰" : "🧾"} {lang === "en" ? "Debt Repayment" : "Remboursement dette"} · DEBT
                   </div>
                 )}
+                {/* MP-CASHIER-PHASE-1b: a debt repayment DOES travel to the cashier.
+                    It said the opposite for one day; the reversal is in the commit.
+                    In this mode the cashier is the only person who touches money, so
+                    a repayment must go through them by definition. */}
+                {isCashierMode && (item.isDebt || item.isDebtPayment) && (
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, lineHeight: 1.4 }}>
+                    {lang === "en"
+                      ? "The cashier will collect this."
+                      : "Le caissier encaissera ce montant."}
+                  </div>
+                )}
                 {/* MP-DAMAGED-GOODS: clear badge so the cashier sees this line is
                     a damaged-goods sale (still tier-priced, discount allowed). */}
                 {item.is_damaged && (
@@ -2493,6 +2665,56 @@ export default function POSPage() {
               <span style={{ fontWeight: 800, fontSize: 20, color: "var(--brand-light)", letterSpacing: "-0.5px" }}>{fmt(total)}</span>
             </div>
 
+            {/* ── MP-CASHIER-PHASE-1b: the till takes no money ──────────────
+                In cashier mode the salesperson never chooses a payment method —
+                the cashier does, later. So the whole payment block collapses to
+                the Order Total already rendered above plus ONE button. Same
+                screen, not a second one: the cart, scanner, customer picker and
+                approval prompts are untouched, only the terminal action changes.
+                Hold stays available below — parking a customer mid-cart is a
+                cart operation, not a payment one, and removing it would quietly
+                take a tool away from the salesperson. */}
+            {/* MP-CASHIER-PHASE-1b: the slip banner. Stays until the next send, so
+                a salesperson who walks away and comes back can still reprint. The
+                ticket is ALREADY in the cashier's queue either way — this banner
+                is about the paper, never about the sale. */}
+            {isCashierMode && lastSlip && (
+              <div style={{
+                border: `1px solid ${lastSlip.printed ? "rgba(16,185,129,0.5)" : "#d9a441"}`,
+                background: lastSlip.printed ? "rgba(16,185,129,0.10)" : "rgba(217,164,65,0.12)",
+                borderRadius: 10, padding: "10px 12px", marginBottom: 10, fontSize: 13, lineHeight: 1.45,
+              }}>
+                <div style={{ fontWeight: 700 }}>
+                  {lastSlip.printed
+                    ? (lang === "en" ? `Slip printed · ${lastSlip.payload.saleNumber}` : `Bon imprime · ${lastSlip.payload.saleNumber}`)
+                    : (lang === "en" ? `Slip NOT printed · ${lastSlip.payload.saleNumber}` : `Bon NON imprime · ${lastSlip.payload.saleNumber}`)}
+                </div>
+                {!lastSlip.printed && (
+                  <div style={{ marginTop: 2 }}>
+                    {lastSlip.error}{" "}
+                    {lang === "en"
+                      ? "The order is already with the cashier — give the customer this number, or the cashier can find it by their name."
+                      : "La commande est deja chez le caissier — donnez ce numero au client, ou le caissier peut la trouver par son nom."}
+                  </div>
+                )}
+                <button
+                  onClick={() => printSlip(lastSlip.payload)}
+                  style={{ marginTop: 8, padding: "7px 14px", borderRadius: 8, border: "1px solid var(--border)", background: "transparent", color: "inherit", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>
+                  🖨 {lang === "en" ? "Reprint slip" : "Reimprimer le bon"}
+                </button>
+              </div>
+            )}
+
+            {/* MP-CASHIER-PHASE-1b: NO SEPARATE PAYMENT UI.
+                A bespoke cashier terms block used to live here and it was a
+                duplicate of the panel below — which has been in production for
+                months, is worded well, and is tested by real use. Every bug the
+                duplicate produced came from being a duplicate: a footer that
+                pushed its own buttons off screen, a missing "amount to collect"
+                field the real panel always had, Full Credit vanishing behind a
+                special case, and a breakdown that contradicted its own button.
+                None of them exist in one panel computing both.
+                Cashier mode changes exactly ONE thing: the last button. */}
             {!showPayment ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <RestrictedAction block>
@@ -2555,7 +2777,7 @@ export default function POSPage() {
                             : `Le montant ne peut pas dépasser le montant dû (${formatMoney(total, orgSettings.currency)}).`}
                         </div>
                       )}
-                      {payMethod === "cash" && tenderChange > 0 && (
+                      {!isCashierMode && payMethod === "cash" && tenderChange > 0 && (
                         <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "rgba(16,185,129,0.10)", border: "1px solid rgba(16,185,129,0.30)", borderRadius: 8, fontSize: 13, color: "#34d399", fontWeight: 700 }}>
                           <span>{lang === "en" ? "Change" : "Monnaie"}</span>
                           <span>{formatMoney(tenderChange, orgSettings.currency)}</span>
@@ -2598,7 +2820,8 @@ export default function POSPage() {
                         : `Le montant ne peut pas dépasser le montant dû (${formatMoney(total, orgSettings.currency)}).`}
                     </div>
                   )}
-                  {payMode === "partial" && !isDebtOnlyCart && payMethod === "cash" && tenderChange > 0 && (
+                  {/* Change is the tender's business, and the tender is the cashier's. */}
+                  {!isCashierMode && payMode === "partial" && !isDebtOnlyCart && payMethod === "cash" && tenderChange > 0 && (
                     <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "rgba(16,185,129,0.10)", border: "1px solid rgba(16,185,129,0.30)", borderRadius: 8, fontSize: 13, color: "#34d399", fontWeight: 700, marginBottom: 8 }}>
                       <span>{lang === "en" ? "Change" : "Monnaie"}</span>
                       <span>{formatMoney(tenderChange, orgSettings.currency)}</span>
@@ -2607,6 +2830,12 @@ export default function POSPage() {
                   {(payMode === "partial" || payMode === "credit") && !isDebtOnlyCart && (
                     <input className="input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={{ marginBottom: 8 }} title={t("due_date", lang)} />
                   )}
+                  {/* THE TENDER IS THE CASHIER'S. /pay takes payment_method from
+                      whoever collects and overwrites whatever the ticket carries,
+                      so offering the choice here would be a control that looks
+                      like a decision and isn't one. It is the ONLY thing this
+                      panel suppresses in cashier mode. */}
+                  {!isCashierMode && (
                   <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
                     {PAY_METHODS.map(m => (
                       <button key={m.key} onClick={() => setPayMethod(m.key)} style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: `1.5px solid ${payMethod === m.key ? "var(--brand)" : "var(--border)"}`, background: payMethod === m.key ? "rgba(251,197,3,0.12)" : "transparent", color: payMethod === m.key ? "var(--brand-light)" : "var(--text-secondary)", cursor: "pointer", fontSize: 10, fontWeight: 700, transition: "all 0.15s" }}>
@@ -2615,6 +2844,7 @@ export default function POSPage() {
                       </button>
                     ))}
                   </div>
+                  )}
                   <div style={{ background: "var(--bg-card)", borderRadius: 10, padding: "10px 12px", marginBottom: 10, fontSize: 12 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
                       <span style={{ color: "var(--text-muted)" }}>Total</span><strong>{formatMoney(total, orgSettings.currency)}</strong>
@@ -2669,10 +2899,19 @@ export default function POSPage() {
                   <PayButton
                     saleMutation={saleMutation}
                     onClick={attemptCheckout}
-                    disabled={!shiftIsOpen || (!hasDebt && payMode === "partial" && !paidAmt) || ((payMode === "credit" || payMode === "partial") && !customer) || (!isDebtOnlyCart && !!customer && !payModeChosen)}
+                    disabled={!tillModeKnown || !shiftIsOpen || (!hasDebt && payMode === "partial" && !paidAmt) || ((payMode === "credit" || payMode === "partial") && !customer) || (!isDebtOnlyCart && !!customer && !payModeChosen)}
                     title={!shiftIsOpen ? noShiftHint(lang) : ""}
-                    label={lang === "en" ? "✓ Confirm" : "✓ Valider"}
-                    successLabel={lang === "en" ? "✓ Sold!" : "✓ Vendu !"}
+                    // THE ONE THING CASHIER MODE CHANGES. Same panel, same payload,
+                    // same validation — only where it goes. The endpoint swap lives
+                    // in saleMutation, which posts to /sales/ticket in cashier mode.
+                    label={!tillModeKnown
+                      ? (lang === "en" ? "Checking till…" : "Vérification caisse…")
+                      : isCashierMode
+                        ? `${t("send_to_cashier", lang)} →`
+                        : (lang === "en" ? "✓ Confirm" : "✓ Valider")}
+                    successLabel={isCashierMode
+                      ? (lang === "en" ? "✓ Sent!" : "✓ Envoyé !")
+                      : (lang === "en" ? "✓ Sold!" : "✓ Vendu !")}
                     errorLabel={lang === "en" ? "✕ Failed" : "✕ Échec"}
                     onSuccessTimeout={() => setSheetOpen(false)}
                     className="btn btn-success"

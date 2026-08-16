@@ -156,6 +156,13 @@ export default function OperationsDashboardPage() {
     queryFn:  () => api.get(`/dashboard/overview?from=${from}&to=${to}${locId ? `&location_id=${locId}` : ""}`).then(r => r.data?.data || null),
     staleTime: 30000,
   });
+  // MP-CASHIER-OVERSIGHT: only show the "sent, not yet collected" column where
+  // there is something to show — a direct-only shop should not gain a column of
+  // dashes. Declared HERE, beside the query it reads, and not lower down: a
+  // reference above its own const is a temporal dead zone and has already taken
+  // this app's POS down once.
+  const anySentNotCollected = ((overview.data && overview.data.cashiers) || [])
+    .some(c => Number(c && c.sent_not_collected) > 0);
   const locationsQ = useOfflineCachedQuery({
     queryKey: ["locations"],
     queryFn: () => api.get("/locations").then(r => r.data),
@@ -346,6 +353,15 @@ export default function OperationsDashboardPage() {
                   <th style={thStickyLeft}>{en ? "Cashier" : "Caissier"}</th>
                   <th style={thStyle}>{en ? "Shifts" : "Postes"}</th>
                   <th style={thStyleRight}>{en ? "Total sales" : "Ventes totales"}</th>
+                  {/* MP-CASHIER-OVERSIGHT: RAISED, never SOLD. Raising a ticket is
+                      not selling — a person is credited with a sale when the money
+                      is collected, and until then appears only as the person who
+                      raised it. Deliberately its own column with its own name so
+                      nobody can read it as sales. Hidden entirely where the cashier
+                      workflow is not in use. */}
+                  {anySentNotCollected && (
+                    <th style={thStyleRight}>{en ? "Sent, not yet collected" : "Envoyé, non encaissé"}</th>
+                  )}
                   <th style={thStyleRight}>{en ? "Cash (valid)" : "Espèces (valides)"}</th>
                   <th style={thStyleRight}>{momoLabelShort(fmt.currency, en)}</th>
                   <th style={thStyleRight}>{en ? "Credit given" : "Crédit accordé"}</th>
@@ -373,6 +389,13 @@ export default function OperationsDashboardPage() {
                     </td>
                     <td style={tdStyle}>{c.shifts_opened}</td>
                     <td style={tdStyleRight}>{fmt(c.total_sales)}</td>
+                    {anySentNotCollected && (
+                      <td style={{ ...tdStyleRight, color: Number(c.sent_not_collected) > 0 ? "var(--warning)" : "var(--text-muted)" }}>
+                        {Number(c.sent_not_collected) > 0
+                          ? `${fmt(c.sent_not_collected)} (${c.sent_not_collected_count})`
+                          : "—"}
+                      </td>
+                    )}
                     <td style={tdStyleRight}><strong>{fmt(c.cash_valid != null ? c.cash_valid : c.cash_collected)}</strong></td>
                     <td style={tdStyleRight}>{fmt(c.momo_collected || 0)}</td>
                     {/* MP-CREDIT-DRILLDOWN: tap Credit given → who received it + who gave it + items. */}

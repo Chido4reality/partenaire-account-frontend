@@ -6,7 +6,7 @@
 // failure throws an Error carrying a stable .code so the UI can message it and
 // fall back to the system print dialog.
 import { registerPlugin, Capacitor } from "@capacitor/core";
-import { buildSaleEscposBase64 } from "./escpos";
+import { buildSaleEscposBase64, buildTicketSlipEscposBase64 } from "./escpos";
 
 const BT = registerPlugin("BluetoothPrinter");
 const SAVED_KEY = "mp_bt_printer";
@@ -43,5 +43,25 @@ export async function printSaleViaBluetooth(saleOpts, deviceId) {
   try { await BT.requestPermissions(); } catch { /* native re-checks */ }
   const data = buildSaleEscposBase64(saleOpts);
   await BT.print({ address: dev.id, data }); // rejects with .code on CONNECT_FAILED / BT_OFF / PERM_DENIED
+  return { ok: true };
+}
+
+// MP-CASHIER-PHASE-1b — print the customer's order slip.
+//
+// Deliberately the SAME transport: different bytes through the same BT.print.
+// BluetoothPrinterPlugin is pure Java and came through the Capacitor freeze
+// untouched; a new print type is a JS concern and it stays one.
+//
+// Throws the same coded errors as printSaleViaBluetooth, and the caller MUST
+// treat a throw as "the slip did not print", never as "the ticket failed" — by
+// the time this runs the ticket is already raised and sitting in the cashier's
+// queue. Losing the slip is an inconvenience; losing the ticket would be a sale.
+export async function printTicketSlipViaBluetooth(slipOpts, deviceId) {
+  if (!isBtPrintSupported()) throw notNative();
+  const dev = deviceId ? { id: deviceId } : getSavedPrinter();
+  if (!dev || !dev.id) { const e = new Error("No Bluetooth printer selected"); e.code = "NO_DEVICE"; throw e; }
+  try { await BT.requestPermissions(); } catch { /* native re-checks */ }
+  const data = buildTicketSlipEscposBase64(slipOpts);
+  await BT.print({ address: dev.id, data });
   return { ok: true };
 }

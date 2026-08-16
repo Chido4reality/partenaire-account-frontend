@@ -402,6 +402,66 @@ export default function SettingsPage() {
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
 
+  // ── MP-CASHIER-PHASE-1b: SALES WORKFLOW ────────────────────────────────────
+  // Flipping a shop to cashier mode is the moment the feature meets real people,
+  // so the refusal path matters more than the happy one. The server 409s with
+  // tickets_outstanding + pending_count when switching BACK to direct would
+  // strand tickets; we hold that in state and re-send with confirm:true only
+  // after the owner has read a sentence naming the count. Never an auto-retry.
+  const [modeConfirm, setModeConfirm] = useState(null); // { loc, pending, message }
+
+  // The two ORG-level workflow settings are saved by TARGETED patch, not through
+  // the shopForm dirty-tracking Save. That Save exists because a full-object write
+  // could silently revert a control flag someone else changed; a one-field PATCH
+  // has nothing to revert, and routing these through the other tab's Save button
+  // would mean the Sales Workflow tab had a control whose effect appeared
+  // somewhere else.
+  const orgWorkflow = shopResp?.data || {};
+  const [uncollectedHours, setUncollectedHours] = useState("");
+  useEffect(() => {
+    if (shopResp?.data?.uncollected_alert_hours != null) setUncollectedHours(String(shopResp.data.uncollected_alert_hours));
+  }, [shopResp?.data?.uncollected_alert_hours]);
+
+  const orgWorkflowMutation = useMutation({
+    mutationFn: (delta) => api.patch("/settings", delta),
+    onSuccess: () => { toast.success(lang === "en" ? "✓ Saved" : "✓ Enregistré"); qc.invalidateQueries(["org-settings"]); },
+    onError: (err) => toast.error(err.response?.data?.message || "Error"),
+  });
+  const saveOrgWorkflow = (delta) => orgWorkflowMutation.mutate(delta);
+
+  const locWorkflowMutation = useMutation({
+    mutationFn: ({ loc, delta }) => api.patch(`/locations/${loc.id}/ticket-settings`, delta),
+    onSuccess: () => { toast.success(lang === "en" ? "✓ Saved" : "✓ Enregistré"); qc.invalidateQueries(["locations"]); },
+    onError: (err) => {
+      const d = err.response?.data || {};
+      toast.error((lang === "en" ? d.message_en : d.message_fr) || d.message || "Error");
+    },
+  });
+  const saveLocWorkflow = (loc, delta) => locWorkflowMutation.mutate({ loc, delta });
+  const salesModeMutation = useMutation({
+    mutationFn: ({ loc, mode, confirm }) =>
+      api.patch(`/locations/${loc.id}/sales-mode`, { sales_mode: mode, ...(confirm ? { confirm: true } : {}) }),
+    onSuccess: (_r, vars) => {
+      setModeConfirm(null);
+      toast.success(vars.mode === "cashier"
+        ? (lang === "en" ? `${vars.loc.name}: cashier workflow ON` : `${vars.loc.name} : circuit caissier ACTIVÉ`)
+        : (lang === "en" ? `${vars.loc.name}: direct selling` : `${vars.loc.name} : vente directe`));
+      qc.invalidateQueries(["locations"]);
+      // The nav gate and both badges read this key; without it the sidebar keeps
+      // the old mode until the 60s poll comes round.
+      qc.invalidateQueries({ queryKey: ["ticket-summary"] });
+    },
+    onError: (err, vars) => {
+      const b = err?.response?.data || {};
+      if (b.code === "tickets_outstanding") {
+        setModeConfirm({ loc: vars.loc, pending: b.pending_count || 0,
+          message: (lang === "en" ? b.message_en : b.message_fr) || b.message });
+        return; // state, not a toast — this needs a decision, not a notification
+      }
+      toast.error((lang === "en" ? b.message_en : b.message_fr) || b.message || "Error");
+    },
+  });
+
   // ── STAFF MUTATIONS ────────────────────────────────────────────────────────
   // Whether the HR-lite enrichment applies (Pro Plus + owner). Basic
   // create/edit always runs via /auth/users for every plan/role.
@@ -698,6 +758,10 @@ export default function SettingsPage() {
   const TABS = [
     { key: "locations", en: "Warehouses & Shops", fr: "Magasins & Boutiques" },
     { key: "staff",     en: "Staff",              fr: "Personnel" },
+    // MP-CASHIER-PHASE-1b: owner-only. The switch that changes how money is taken
+    // in a shop, so it sits beside Staff — the two are used together and the block
+    // says so at the point of flipping.
+    { key: "workflow",  en: "Sales Workflow",     fr: "Circuit de vente",    ownerOnly: true },
     { key: "shop",      en: "Shop Settings",      fr: "Paramètres boutique", ownerOnly: true },
     { key: "account",   en: "Account",            fr: "Compte" },
     // MP-LITE-MODE-PHASE-1: owner-only Mode tab. In Lite, Partenaire
@@ -770,6 +834,196 @@ export default function SettingsPage() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* ══ SALES WORKFLOW TAB (MP-CASHIER-PHASE-1b) ═══════════════════════════ */}
+      {tab === "workflow" && (
+        <div>
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontWeight: 600, fontSize: 15 }}>{lang === "en" ? "Sales Workflow" : "Circuit de vente"}</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+              {lang === "en"
+                ? "How each shop completes a sale. Direct: the salesperson takes the money. Cashier: the salesperson sends the order to a cashier, who takes payment, then a storekeeper hands the goods over."
+                : "Comment chaque boutique finalise une vente. Directe : le vendeur encaisse. Caissier : le vendeur envoie la commande au caissier, qui encaisse, puis le magasinier remet la marchandise."}
+            </div>
+          </div>
+
+          {/* THE LOCKOUT WARNING, at the point of flipping and not in a help page.
+              can_receive_payment and can_release_goods default FALSE, so the instant
+              a shop flips, nobody there can take payment or release goods except the
+              owner and managers. Saying this after the fact is saying it too late. */}
+          <div style={{ border: "1px solid #d9a441", background: "rgba(217,164,65,0.10)", borderRadius: 10, padding: "12px 14px", marginBottom: 16, lineHeight: 1.5, fontSize: 13 }}>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>
+              {lang === "en" ? "Before you switch a shop to Cashier" : "Avant de passer une boutique en mode Caissier"}
+            </div>
+            {lang === "en"
+              ? "Staff need permission to take payment or release goods. Nobody except you and your managers can do either until you grant it. Set this in Staff → Permissions first."
+              : "Le personnel a besoin d'une autorisation pour encaisser ou remettre la marchandise. Personne, sauf vous et vos gérants, ne pourra le faire tant que vous ne l'accordez pas. Réglez cela dans Personnel → Autorisations d'abord."}
+          </div>
+
+          {modeConfirm && (
+            <div style={{ border: "1px solid #c94f4f", background: "rgba(201,79,79,0.10)", borderRadius: 10, padding: "14px 16px", marginBottom: 16, lineHeight: 1.5 }}>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                {lang === "en" ? "Tickets are still waiting" : "Des tickets attendent encore"}
+              </div>
+              <div style={{ fontSize: 13 }}>{modeConfirm.message}</div>
+              <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                <button className="btn btn-secondary btn-sm" onClick={() => setModeConfirm(null)}>
+                  {lang === "en" ? "Leave it on Cashier" : "Laisser en mode Caissier"}
+                </button>
+                <button className="btn btn-sm" style={{ background: "#c94f4f", color: "#fff", border: "none" }}
+                  disabled={salesModeMutation.isPending}
+                  onClick={() => salesModeMutation.mutate({ loc: modeConfirm.loc, mode: "direct", confirm: true })}>
+                  {lang === "en"
+                    ? `Switch anyway — strand ${modeConfirm.pending}`
+                    : `Basculer quand même — abandonner ${modeConfirm.pending}`}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Shops only. Nothing is sold at a warehouse, so a selling workflow there
+              is meaningless — the server rejects it too, since a filtered list is a
+              convenience and not a gate. */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {locations.filter(l => l.type !== "warehouse").map(loc => {
+              const isCashier = loc.sales_mode === "cashier";
+              const busy = salesModeMutation.isPending && salesModeMutation.variables?.loc?.id === loc.id;
+              return (
+                <div key={loc.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: "16px 20px", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(16,185,129,0.15)", color: "#34d399", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 16, flexShrink: 0 }}>
+                    {loc.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 160 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{loc.name}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                      {isCashier
+                        ? (lang === "en" ? "Salesperson sends to a cashier" : "Le vendeur envoie au caissier")
+                        : (lang === "en" ? "Salesperson completes the sale" : "Le vendeur finalise la vente")}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {["direct", "cashier"].map(m => (
+                      <button key={m} disabled={busy}
+                        onClick={() => { if (loc.sales_mode !== m) salesModeMutation.mutate({ loc, mode: m }); }}
+                        style={{
+                          padding: "7px 14px", borderRadius: 8, fontSize: 13, fontWeight: 700,
+                          cursor: busy ? "wait" : (loc.sales_mode === m ? "default" : "pointer"),
+                          border: loc.sales_mode === m ? "1.5px solid #34d399" : "1px solid var(--border)",
+                          background: loc.sales_mode === m ? "rgba(16,185,129,0.15)" : "transparent",
+                          color: loc.sales_mode === m ? "#34d399" : "var(--text-muted)",
+                        }}>
+                        {m === "direct" ? (lang === "en" ? "Direct" : "Directe") : (lang === "en" ? "Cashier" : "Caissier")}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ── THE FOUR SETTINGS ────────────────────────────────────────────
+              Every default is today's behaviour, so switching a shop to cashier
+              mode requires touching NONE of these. That is the property that
+              matters; the controls are just how you depart from it. */}
+          <div style={{ marginTop: 28 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.4, marginBottom: 10 }}>
+              {lang === "en" ? "WORKFLOW OPTIONS" : "OPTIONS DU CIRCUIT"}
+            </div>
+
+            {/* Org-wide: how long before uncollected goods alert the owner. */}
+            <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px", marginBottom: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>
+                {lang === "en" ? "Alert me about uncollected goods after" : "M'alerter pour la marchandise non retirée après"}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2, marginBottom: 8 }}>
+                {lang === "en"
+                  ? "Paid goods that have not been handed over are still on your shelf while the system counts them as sold. This is the only notification the cashier workflow sends."
+                  : "La marchandise payée mais non remise est encore en rayon alors que le système la compte comme vendue. C'est la seule notification envoyée par le circuit caissier."}
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input className="input" type="number" min={1} max={168} style={{ width: 110 }}
+                  value={uncollectedHours}
+                  onChange={e => setUncollectedHours(e.target.value)} />
+                <span style={{ fontSize: 13 }}>{lang === "en" ? "hours" : "heures"}</span>
+                <button className="btn btn-secondary btn-sm"
+                  onClick={() => saveOrgWorkflow({ uncollected_alert_hours: Number(uncollectedHours) || 24 })}>
+                  {lang === "en" ? "Save" : "Enregistrer"}
+                </button>
+              </div>
+            </div>
+
+            {/* Org-wide: what a newly added shop starts as. */}
+            <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px", marginBottom: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>
+                {lang === "en" ? "New shops start as" : "Les nouvelles boutiques démarrent en"}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2, marginBottom: 8 }}>
+                {lang === "en"
+                  ? "Only affects shops you add from now on. Existing shops keep whatever they are set to above."
+                  : "N'affecte que les boutiques ajoutées à partir de maintenant. Les boutiques existantes gardent leur réglage ci-dessus."}
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {["direct", "cashier"].map(m => (
+                  <button key={m} onClick={() => saveOrgWorkflow({ default_sales_mode: m })}
+                    style={{ padding: "7px 14px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer",
+                      border: (orgWorkflow.default_sales_mode || "direct") === m ? "1.5px solid #34d399" : "1px solid var(--border)",
+                      background: (orgWorkflow.default_sales_mode || "direct") === m ? "rgba(16,185,129,0.15)" : "transparent",
+                      color: (orgWorkflow.default_sales_mode || "direct") === m ? "#34d399" : "var(--text-muted)" }}>
+                    {m === "direct" ? (lang === "en" ? "Direct" : "Directe") : (lang === "en" ? "Cashier" : "Caissier")}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Per-shop: slip vs called, and offline ticketing. Only meaningful
+                where the workflow is actually on, so the list is cashier shops. */}
+            {locations.filter(l => l.type !== "warehouse" && l.sales_mode === "cashier").map(loc => (
+              <div key={loc.id} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px", marginBottom: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{loc.name}</div>
+
+                <div style={{ fontSize: 13, fontWeight: 600 }}>
+                  {lang === "en" ? "How the customer reaches the cashier" : "Comment le client rejoint le caissier"}
+                </div>
+                <div style={{ display: "flex", gap: 6, margin: "6px 0 4px" }}>
+                  {[
+                    { v: "slip",   en: "Printed slip", fr: "Bon imprimé" },
+                    { v: "called", en: "Called by number", fr: "Appelé par numéro" },
+                  ].map(o => (
+                    <button key={o.v} onClick={() => saveLocWorkflow(loc, { ticket_handoff: o.v })}
+                      style={{ padding: "7px 14px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer",
+                        border: (loc.ticket_handoff || "slip") === o.v ? "1.5px solid #34d399" : "1px solid var(--border)",
+                        background: (loc.ticket_handoff || "slip") === o.v ? "rgba(16,185,129,0.15)" : "transparent",
+                        color: (loc.ticket_handoff || "slip") === o.v ? "#34d399" : "var(--text-muted)" }}>
+                      {lang === "en" ? o.en : o.fr}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>
+                  {lang === "en"
+                    ? "A slip prints automatically when the salesperson sends the order. If the printer fails they can reprint it, and the cashier can still find the order by the customer's name."
+                    : "Un bon s'imprime automatiquement quand le vendeur envoie la commande. Si l'imprimante échoue, il peut le réimprimer, et le caissier peut retrouver la commande par le nom du client."}
+                </div>
+
+                <label style={{ display: "flex", gap: 8, alignItems: "flex-start", cursor: "pointer" }}>
+                  <input type="checkbox" style={{ marginTop: 3 }}
+                    checked={!!loc.ticket_offline_enabled}
+                    onChange={e => saveLocWorkflow(loc, { ticket_offline_enabled: e.target.checked })} />
+                  <span>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>
+                      {lang === "en" ? "Allow raising orders offline" : "Autoriser les commandes hors ligne"}
+                    </span>
+                    <span style={{ display: "block", fontSize: 12, color: "var(--text-muted)" }}>
+                      {lang === "en"
+                        ? "Not available yet. Taking payment and handing over already need a connection; raising offline would print a number the till has not accepted."
+                        : "Pas encore disponible. Encaisser et remettre nécessitent déjà une connexion ; créer hors ligne imprimerait un numéro que la caisse n'a pas accepté."}
+                    </span>
+                  </span>
+                </label>
+              </div>
+            ))}
           </div>
         </div>
       )}

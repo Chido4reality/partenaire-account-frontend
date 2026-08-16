@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import HelpButton from "../components/common/HelpButton";
+import CashierOversightTab from "../components/CashierOversightTab"; // MP-CASHIER-OVERSIGHT
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useLangStore, useAuthStore, useSettingsStore } from "../store";
@@ -456,6 +457,13 @@ export default function ReportsPage() {
     { key: "products",    en: "Top Products",    fr: "Meilleurs produits" },
     { key: "debts",       en: "Debt Report",     fr: "Rapport crédits" },
     { key: "returns",     en: "Returns",         fr: "Retours" },
+    // MP-CASHIER-OVERSIGHT: shown only where the workflow is actually in use.
+    // A tab that is permanently empty for a direct-only shop is noise, and the
+    // whole placement argument was that an oversight surface nobody opens is
+    // worse than a section inside one they already use.
+    ...(ledgerLocations.some(l => l && l.sales_mode === "cashier")
+        ? [{ key: "cashier", en: "Cashier workflow", fr: "Circuit caissier" }]
+        : []),
   ];
 
   const DateFilter = () => (
@@ -1259,6 +1267,13 @@ export default function ReportsPage() {
           </div>
         </div>
       )}
+      {tab === "cashier" && (
+        <div>
+          <DateFilter />
+          <CashierOversightTab from={from} to={to} locationId={repLoc || null} lang={lang} />
+        </div>
+      )}
+
       {tab === "ledger" && (
         <div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>

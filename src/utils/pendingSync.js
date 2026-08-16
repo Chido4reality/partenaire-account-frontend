@@ -204,7 +204,24 @@ async function recoverStranded() {
 // rows. They are now online-only, so any such op already sitting in the queue
 // (e.g. the malformed OFFLINE-… refund from before this change) must be DROPPED,
 // never POSTed. The shim has no LIKE, so we scan + delete by id.
-const ONLINE_ONLY_RX = /^\/returns\/(return|exchange|void)\//i;
+//
+// MP-CASHIER-PHASE-1b: the ticket endpoints join them, and this is a CORRECTION.
+// routes/saleTickets.js on the server has always claimed "pay and release are
+// excluded from the offline queue (see ONLINE_ONLY_RX in the client's
+// pendingSync)" — that was not true. The pattern matched /returns/ only, so a
+// queued pay or release would have synced later, which is precisely the offline
+// hazard the phase deferred, arriving anyway through a comment nobody checked.
+//
+// Why they can never be queued: a ticket transition is a compare-and-set on
+// (status, version). A replay minutes or hours later carries a version the row
+// has long left behind, so at BEST it 409s — and at worst it settles a ticket a
+// second person already paid, released or cancelled in the meantime. Payment is
+// also the moment stock moves and the damaged pile is consumed, so a stale replay
+// is a stock event, not just a status flip. Raising a ticket (POST /sales/ticket)
+// is matched too: it mints a sale number that goes on a customer's order slip,
+// and a slip printed from a queued write nobody has accepted yet is a promise the
+// shop may not be able to keep.
+const ONLINE_ONLY_RX = /^\/(returns\/(return|exchange|void)|sales\/tickets?)\b/i;
 async function purgeOnlineOnlyOps() {
   try {
     const all = await query(`SELECT * FROM pending_sync`, []);
