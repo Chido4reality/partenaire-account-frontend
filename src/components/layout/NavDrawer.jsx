@@ -41,7 +41,7 @@ const SECTIONS = [
   // stock-check fixes above (the desktop sidebar maps visibleNav flat, so web
   // would have shown them and only phones would have lost them). They inherit
   // Layout's NAV gate, which hides them entirely outside cashier mode.
-  { en: "DAILY WORK", fr: "TRAVAIL QUOTIDIEN", routes: ["/assistant", "/", "/pos", "/cashier", "/pickup", "/online-cart", "/shifts", "/refunds", "/my-requests", "/team-approvals", "/pending-sync"] },
+  { en: "DAILY WORK", fr: "TRAVAIL QUOTIDIEN", routes: ["/assistant", "/", "/pos", "/cashier", "/pickup", "/expense-payouts", "/online-cart", "/shifts", "/refunds", "/my-requests", "/team-approvals", "/pending-sync"] },
   // MP-DOZIE-SELLER-DRAWER-FIX: the migrated Dozie seller routes were added to
   // Layout's NAV (section:"inventory") but never to this mobile SECTIONS map, so
   // the drawer dropped them on phones — same omission pattern as the Pro Plus /

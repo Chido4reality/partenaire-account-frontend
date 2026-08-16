@@ -100,6 +100,19 @@ const NAV = [
   // gate. Also registered in NavDrawer.jsx SECTIONS (mobile) + App.jsx routes.
   { to: "/cashier", en: "Cashier", fr: "Caissier", icon: "💵", roles: ["owner","manager","cashier"], section: "sales", badge: "cashier_queue",  gate: "can_receive_payment" },
   { to: "/pickup",  en: "Pickup",  fr: "Retrait",  icon: "📤", roles: ["owner","manager","cashier","warehouse"], section: "sales", badge: "cashier_pickup", gate: "can_release_goods" },
+  // MP-EXPENSE-TICKETS: the third cashier entry, and its OWN badge on purpose.
+  // Q12 made the sidebar count the entire notification design — no per-payment
+  // push, because ~100 sales a day gets notifications switched off inside a
+  // week. One combined badge would say "something needs attention" without
+  // saying which, so the cashier opens a screen and hunts; three counts say
+  // "two payments waiting, nothing to hand over, one payout" at a glance.
+  //
+  // ⚠️ That argument only holds while these stay CONDITIONAL. The sidebar is
+  // already ~20 items, and if this ever appears for someone who cannot pay
+  // expenses, or at a direct-mode till, it stops being a signal and becomes
+  // clutter. `gate` is what keeps that true — ticketNavVisible checks
+  // sales_mode BEFORE it reads any flag, so both halves fail closed.
+  { to: "/expense-payouts", en: "Payouts", fr: "Paiements", icon: "💸", roles: ["owner","manager","cashier"], section: "sales", badge: "cashier_payout", gate: "can_pay_expenses" },
   // MP-STAFF-ACTIVITY-LEDGER Phase 4: a staff member's OWN activity. Non-owner roles only
   // (the owner has the full Accountant Log), and only when the org opted in (requiresStaffActivity).
   { to: "/my-activity", en: "My Activity", fr: "Mon activité", icon: "📒", roles: ["manager","cashier","warehouse","accountant"], section: "sales", requiresStaffActivity: true },
@@ -717,6 +730,11 @@ export default function Layout() {
   const ticketMode      = ticketSummary?.mode || "direct";
   const awaitingPayment = ticketSummary?.awaiting_payment || 0;
   const awaitingPickup  = ticketSummary?.awaiting_pickup || 0;
+  // MP-EXPENSE-TICKETS: expenses raised and waiting for a cashier to hand the
+  // money over. Its own number, never folded into the other two — money out is
+  // not money in, and a combined count would tell the cashier nothing about
+  // which queue to open.
+  const awaitingPayout  = ticketSummary?.awaiting_payout || 0;
 
   // Sprint A: effective plan drives section visibility. Falls back to
   // 'silver' if my-plan hasn't loaded yet (defensive — better to hide
@@ -961,6 +979,7 @@ export default function Layout() {
     : item.badge === "dozie_attention" ? (dozieNotif_.total || 0)
     : item.badge === "cashier_queue"  ? awaitingPayment   // MP-CASHIER-PHASE-1b
     : item.badge === "cashier_pickup" ? awaitingPickup    // MP-CASHIER-PHASE-1b
+    : item.badge === "cashier_payout" ? awaitingPayout    // MP-EXPENSE-TICKETS
     : item.badge === "stock_check"    ? stockCheckPending
     : item.badge === "restock"        ? restockPending
     : item.badge === "goodsBuffer"    ? goodsBufferPending

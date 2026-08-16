@@ -33,6 +33,7 @@ import StockCheckPage from "./pages/StockCheckPage"; // MP-STOCK-CHECK
 import RestockPage from "./pages/RestockPage"; // MP-RESTOCK
 import GoodsBufferPage from "./pages/GoodsBufferPage"; // MP-GOODS-BUFFER
 import TicketListPage from "./pages/TicketListPage"; // MP-CASHIER-PHASE-1b
+import ExpensePayoutPage from "./pages/ExpensePayoutPage"; // MP-EXPENSE-TICKETS
 import MyActivityPage from "./pages/MyActivityPage"; // MP-STAFF-ACTIVITY-LEDGER Phase 4
 import PendingSyncPage from "./pages/PendingSyncPage"; // MP-PENDING-SYNC-SCREEN
 import AssistantPage from "./pages/AssistantPage"; // Pro Plus Feature 1 — AI Assistant chat UI
@@ -126,6 +127,9 @@ const ROUTE_ACCESS = {
   // cashier workflow — which is the honest answer, not a 404.
   "/cashier":      ["owner", "manager", "cashier"],
   "/pickup":       ["owner", "manager", "cashier", "warehouse"],
+  // MP-EXPENSE-TICKETS: role is the coarse filter only. The real gate is
+  // ticketNavVisible on can_pay_expenses, which also refuses outside cashier mode.
+  "/expense-payouts": ["owner", "manager", "cashier"],
   // MP-STAFF-ACTIVITY-LEDGER Phase 4: a staff member's OWN activity. Any role may reach the
   // route; the page 403-guards when the org setting is off, and the nav entry only shows when on.
   "/my-activity":  ["owner", "manager", "cashier", "warehouse", "accountant"],
@@ -577,6 +581,10 @@ export default function App() {
                 workflow is operational and the server gates it by sales_mode. */}
             <Route path="cashier" element={<RoleGuard path="/cashier"><TicketListPage variant="queue" /></RoleGuard>} />
             <Route path="pickup"  element={<RoleGuard path="/pickup"><TicketListPage variant="pickup" /></RoleGuard>} />
+            {/* MP-EXPENSE-TICKETS: the sale queue with the sign reversed. Its own
+                page, not a third variant of TicketListPage — different table,
+                different lifecycle, and a tender picker the sale side has no use for. */}
+            <Route path="expense-payouts" element={<RoleGuard path="/expense-payouts"><ExpensePayoutPage /></RoleGuard>} />
             <Route path="my-activity" element={<RoleGuard path="/my-activity"><MyActivityPage /></RoleGuard>} />
             {/* MP-REFUNDS-STAFF-ACCESS: no PlanGuard — refunds are
                 operational and must work on every plan tier. */}

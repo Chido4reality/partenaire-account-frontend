@@ -1414,6 +1414,10 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
         // save that happened to be about something else.
         can_receive_payment: !!perms.can_receive_payment,
         can_release_goods: !!perms.can_release_goods,
+        // MP-EXPENSE-TICKETS: same round-trip rule — sent on every save so an
+        // untouched grant saves as itself instead of being cleared by a save
+        // that was about something else entirely.
+        can_pay_expenses: !!perms.can_pay_expenses,
       };
       PERM_ACTIONS.forEach((a) => {
         const v = perms[a.key];
@@ -2032,6 +2036,14 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                       { key: "can_release_goods", en: "Can hand over goods", fr: "Peut remettre la marchandise",
                         hen: "Sees the Pickup list and marks paid orders as collected.",
                         hfr: "Voit la liste Retrait et marque les commandes payées comme retirées." },
+                      // MP-EXPENSE-TICKETS: a SEPARATE trust. Taking money in and
+                      // paying money out are different jobs, and a cashier who
+                      // receives payments all day is not automatically the person
+                      // a shop wants handing cash to a supplier. Granting it is
+                      // the owner's decision, which is the point of the feature.
+                      { key: "can_pay_expenses", en: "Can pay expenses out", fr: "Peut payer les dépenses",
+                        hen: "Sees the Payouts queue and hands money to suppliers. Separate from taking payment.",
+                        hfr: "Voit la file Paiements et remet l'argent aux fournisseurs. Distinct de l'encaissement." },
                     ].map((f) => (
                       <label key={f.key} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "6px 0", cursor: "pointer" }}>
                         <input type="checkbox" checked={!!perms[f.key]} style={{ marginTop: 3 }}
