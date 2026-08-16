@@ -221,7 +221,19 @@ async function recoverStranded() {
 // is matched too: it mints a sale number that goes on a customer's order slip,
 // and a slip printed from a queued write nobody has accepted yet is a promise the
 // shop may not be able to keep.
-const ONLINE_ONLY_RX = /^\/(returns\/(return|exchange|void)|sales\/tickets?)\b/i;
+//
+// MP-EXPENSE-TICKETS: the expense payout and cancel join them, for the same
+// reason — both are a compare-and-set on (status, version), and a replay hours
+// later either 409s or, worse, pays a supplier a second time after a colleague
+// already did. A double payout is money physically out of the drawer twice,
+// which is strictly worse than the double-collect this rule was written for.
+//
+// ⚠️ RAISING an expense is DELIBERATELY STILL QUEUEABLE. It moves no money, it
+// mints no number that goes on a customer's document, and it carries local_id
+// so a replay dedupes. A salesperson standing in a stockroom with no signal
+// must still be able to record that the delivery driver wants paying — the
+// whole point of the ticket is that raising it is safe.
+const ONLINE_ONLY_RX = /^\/(returns\/(return|exchange|void)|sales\/tickets?|expenditures\/[^/]+\/(payout|cancel))\b/i;
 async function purgeOnlineOnlyOps() {
   try {
     const all = await query(`SELECT * FROM pending_sync`, []);
