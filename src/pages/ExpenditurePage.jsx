@@ -7,6 +7,7 @@ import { useLangStore, useAuthStore } from "../store";
 import api, { formatDate } from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
 import { useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
+import { useTicketSummary } from "../utils/useTicketSummary"; // MP-EXPENSE-TICKETS
 // MP-MY-PERMISSIONS-ONE-SHAPE: shared hook — never re-implement the ["my-permissions"]
 // query locally, a mismatched queryFn shape reads as DENIED.
 import { useMyPermissions } from "../utils/useMyPermissions";
@@ -78,7 +79,19 @@ export default function ExpenditurePage() {
   // server-side and surface via the interceptor's localized toast.
   // Frontend disables submit only when there's no shift at the
   // currently selected location — the common case.
-  const { hasShift: shiftIsOpen } = useActiveShift();
+  const { hasShift: shiftIsOpen, locId: expLocId } = useActiveShift();
+  // ── MP-EXPENSE-TICKETS: THE SHIFT GATE IS NOW MODE-DEPENDENT ───────────────
+  // In CASHIER mode raising an expense moves no money — it sends a payout to the
+  // till — so it must NOT need an open shift. Requiring one is what blocked Ada:
+  // she is a cashier at a cashier-mode shop with no shift of her own, and the
+  // whole point of the ticket is that she can raise it at 07:00 before the till
+  // opens. The server stopped requiring a shift here; this button did not, so
+  // the client was enforcing a rule the backend had already dropped.
+  // In DIRECT mode nothing changes: the expense IS the drawer event.
+  const { summary: expSummary } = useTicketSummary(expLocId, { onError: () => {} });
+  const expTicketMode = expSummary?.mode === "cashier";
+  const needsShift = !expTicketMode;
+  const shiftBlocked = needsShift && !shiftIsOpen;
   const fmt = useCurrency();
 
   const [showAdd, setShowAdd] = useState(false);
@@ -111,7 +124,26 @@ export default function ExpenditurePage() {
         setForm({ location_id: "", category_id: "", amount: "", description: "", exp_date: new Date().toISOString().split("T")[0] });
         return;
       }
-      toast.success(lang === "en" ? "Expense recorded!" : "Depense enregistree!");
+      // ── MP-EXPENSE-TICKETS: SAY WHERE IT WENT ────────────────────────────
+      // In cashier mode this did NOT record an expense — it sent a payout to the
+      // till. The row then vanishes from this screen, correctly, because this
+      // screen lists money that has actually left the drawer. Peter typed 1 000
+      // into a form, got "Expense recorded!", and watched it disappear; he read
+      // that as a bug and he was right to. The old wording was a lie in the new
+      // mode and the silence afterwards was worse than the wording.
+      //
+      // Deliberately says WHERE it is, not just what happened: "waiting at the
+      // till" is actionable — someone can go and look — where "sent" is not.
+      const sentToTill = res?.data?.data?.status === "pending_payout";
+      if (sentToTill) {
+        toast.success(
+          lang === "en"
+            ? "Sent to the till — waiting for the cashier to pay it out."
+            : "Envoyé à la caisse — en attente du paiement par le caissier.",
+          { icon: "💸", duration: 5000 });
+      } else {
+        toast.success(lang === "en" ? "Expense recorded!" : "Depense enregistree!");
+      }
       setShowAdd(false);
       setForm({ location_id: "", category_id: "", amount: "", description: "", exp_date: new Date().toISOString().split("T")[0] });
       qc.invalidateQueries(["expenditures"]);
@@ -139,8 +171,8 @@ export default function ExpenditurePage() {
           </div>
         </div>
         <button className="btn btn-primary" onClick={() => setShowAdd(true)}
-          disabled={!shiftIsOpen}
-          title={!shiftIsOpen ? noShiftHint(lang) : ""}>
+          disabled={shiftBlocked}
+          title={shiftBlocked ? noShiftHint(lang) : ""}>
           + {lang === "en" ? "New Expense" : "Nouvelle depense"}
         </button>
       </div>
@@ -160,8 +192,8 @@ export default function ExpenditurePage() {
           <div style={{ fontSize: 28, marginBottom: 12, opacity: 0.4 }}>[ ]</div>
           <div style={{ fontWeight: 600, marginBottom: 6 }}>{lang === "en" ? "No expenses for this date" : "Aucune depense pour cette date"}</div>
           <button className="btn btn-primary" onClick={() => setShowAdd(true)} style={{ marginTop: 12 }}
-            disabled={!shiftIsOpen}
-            title={!shiftIsOpen ? noShiftHint(lang) : ""}>
+            disabled={shiftBlocked}
+            title={shiftBlocked ? noShiftHint(lang) : ""}>
             + {lang === "en" ? "Add expense" : "Ajouter une depense"}
           </button>
         </div>
@@ -252,7 +284,7 @@ export default function ExpenditurePage() {
               <label className="label">{lang === "en" ? "Date" : "Date"}</label>
               <input className="input" type="date" value={form.exp_date} onChange={e => setF("exp_date", e.target.value)} />
             </div>
-            {!shiftIsOpen && (
+            {shiftBlocked && (
               <div style={{ background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.35)", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: "#fbbf24", fontWeight: 600, textAlign: "center" }}>
                 {noShiftHint(lang)}
               </div>
