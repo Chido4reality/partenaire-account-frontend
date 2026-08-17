@@ -88,9 +88,23 @@ export default function ExpenditurePage() {
   // opens. The server stopped requiring a shift here; this button did not, so
   // the client was enforcing a rule the backend had already dropped.
   // In DIRECT mode nothing changes: the expense IS the drawer event.
-  const { summary: expSummary } = useTicketSummary(expLocId, { onError: () => {} });
+  //
+  // ⚠️ THREE STATES, NOT TWO. `expSummary` is undefined until the request lands
+  // and stays undefined if it fails, so `mode === "cashier"` reads FALSE during
+  // both — and a false there re-imposes the shift requirement on a cashier-mode
+  // till. That is the isCashierMode race, one screen over, with the same nasty
+  // asymmetry: guessing "direct" DISABLES a legitimate action and the person
+  // cannot tell whether they lack permission, lack a shift, or hit a bug.
+  //
+  // So while the mode is UNKNOWN we do not block. Safe, because the server is
+  // the real gate and fails CLOSED — in direct mode POST /expenditures still
+  // calls resolveOpenShift and returns noOpenShiftBody(), a clear bilingual
+  // refusal. A wrong guess here costs a round trip and an explanation; the other
+  // way round it costs a greyed-out button nobody can explain.
+  const { summary: expSummary, isLoading: expModeLoading } = useTicketSummary(expLocId, { onError: () => {} });
+  const expModeKnown = !!expSummary && !expModeLoading;
   const expTicketMode = expSummary?.mode === "cashier";
-  const needsShift = !expTicketMode;
+  const needsShift = expModeKnown && !expTicketMode;
   const shiftBlocked = needsShift && !shiftIsOpen;
   const fmt = useCurrency();
 
@@ -186,6 +200,27 @@ export default function ExpenditurePage() {
   const locations = locData?.data || [];
   const totalToday = expenses.reduce((s, e) => s + (+e.amount || 0), 0);
   const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  // ── WHY SAVE IS OFF, IN WORDS ─────────────────────────────────────────────
+  // Peter had description, amount, location and date filled and could not tell
+  // what was missing. Every other disabled affordance in this feature names its
+  // reason — "Choose the terms above", "Remove the debt line", "Collect at least
+  // 5 000" — and this one was silent, which is the defect regardless of which
+  // condition was firing underneath.
+  //
+  // ONE source for the disable AND the message, so they can never disagree: the
+  // button is off exactly when this returns a sentence. A boolean beside a
+  // separately-computed title is how a control ends up dimmed for a reason it
+  // does not state.
+  const saveBlockedReason = (() => {
+    if (!form.description) return lang === "en" ? "Add a description first." : "Ajoutez d'abord une description.";
+    if (!form.amount)      return lang === "en" ? "Enter the amount." : "Saisissez le montant.";
+    if (!form.location_id) return lang === "en" ? "Choose which shop this is for." : "Choisissez la boutique concernée.";
+    if (shiftBlocked)      return lang === "en"
+      ? "A till must be open — at this shop an expense is paid straight from the drawer."
+      : "Une caisse doit être ouverte — ici, une dépense est payée directement depuis la caisse.";
+    return null;
+  })();
 
   return (
     <div style={{ padding: 24, maxWidth: 900, margin: "0 auto" }}>
@@ -330,12 +365,35 @@ export default function ExpenditurePage() {
               <label className="label">{lang === "en" ? `Amount (${fmt.symbol})` : `Montant (${fmt.symbol})`} *</label>
               <input className="input" type="number" value={form.amount} onChange={e => setF("amount", e.target.value)} placeholder="0" />
             </div>
+            {/* ── AN EMPTY CHOOSER READS AS BROKEN ──────────────────────────
+                Category is OPTIONAL — no asterisk, and the server normalises ""
+                to NULL — but an org with no categories yet got a dropdown whose
+                only entry was "Select category", which looks like a control that
+                failed to load rather than a list that is genuinely empty. Peter
+                read it exactly that way.
+                Say the true thing instead, and say that it does not matter. */}
             <div className="form-group">
-              <label className="label">{lang === "en" ? "Category" : "Categorie"}</label>
-              <select className="input" value={form.category_id} onChange={e => setF("category_id", e.target.value)}>
-                <option value="">{lang === "en" ? "Select category" : "Choisir categorie"}</option>
-                {categories.map(c => <option key={c.id} value={c.id}>{categoryLabel(c.name, lang)}</option>)}
-              </select>
+              <label className="label">
+                {lang === "en" ? "Category" : "Categorie"}
+                <span style={{ fontWeight: 400, color: "var(--text-muted)", textTransform: "none", letterSpacing: 0 }}>
+                  {" "}{lang === "en" ? "(optional)" : "(facultatif)"}
+                </span>
+              </label>
+              {categories.length === 0 ? (
+                <div style={{
+                  border: "1px dashed var(--border)", borderRadius: 8, padding: "10px 12px",
+                  fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.45,
+                }}>
+                  {lang === "en"
+                    ? "No categories set up yet — you can save without one. Add them in Settings when you want expenses grouped."
+                    : "Aucune catégorie pour l'instant — vous pouvez enregistrer sans. Ajoutez-en dans Paramètres si vous voulez regrouper les dépenses."}
+                </div>
+              ) : (
+                <select className="input" value={form.category_id} onChange={e => setF("category_id", e.target.value)}>
+                  <option value="">{lang === "en" ? "Select category" : "Choisir categorie"}</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{categoryLabel(c.name, lang)}</option>)}
+                </select>
+              )}
             </div>
             <div className="form-group">
               <label className="label">{lang === "en" ? "Location" : "Emplacement"} *</label>
@@ -365,13 +423,20 @@ export default function ExpenditurePage() {
                   : "Dans cette boutique, une dépense est payée directement depuis la caisse : elle doit donc être enregistrée dans une caisse ouverte. Demandez à la personne en caisse de l'ouvrir, ou enregistrez-la là-bas."}
               </div>
             )}
+            {/* On screen, not only in a title attribute — this is a phone app and
+                a tooltip nobody can hover is the same as no explanation at all. */}
+            {saveBlockedReason && !addMutation.isPending ? (
+              <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginBottom: 8 }}>
+                {saveBlockedReason}
+              </div>
+            ) : null}
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowAdd(false)}>
                 {lang === "en" ? "Cancel" : "Annuler"}
               </button>
               <button className="btn btn-primary" style={{ flex: 2 }}
-                disabled={!shiftIsOpen || !form.description || !form.amount || !form.location_id || addMutation.isPending}
-                title={!shiftIsOpen ? noShiftHint(lang) : ""}
+                disabled={!!saveBlockedReason || addMutation.isPending}
+                title={saveBlockedReason || ""}
                 onClick={() => addMutation.mutate()}>
                 {addMutation.isPending ? "..." : (lang === "en" ? "Save expense" : "Enregistrer")}
               </button>
