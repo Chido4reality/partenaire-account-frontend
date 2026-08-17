@@ -104,6 +104,32 @@ export default function ExpenditurePage() {
     refetchInterval: 30000
   });
 
+  // ── MP-EXPENSE-TICKETS: WHAT I RAISED, AND WHERE IT WENT ──────────────────
+  // Raising something and never learning its fate is the same defect as a queue
+  // shrinking silently, and worse here because it is money: Ada tells the driver
+  // "it's coming" and then has no way to find out whether it came. The main list
+  // shows only PAID expenses, correctly — this screen is money that has left the
+  // drawer — so without this her payout is invisible the moment she raises it.
+  //
+  // READ-ONLY, deliberately. She raised it, she can see it, she cannot act on
+  // it. That is the separation working, not being undermined — paying it out is
+  // the cashier's job and needs can_pay_expenses.
+  //
+  // No date filter: a payout raised on Tuesday and still unpaid on Thursday is
+  // exactly the one she needs to see, and filtering it by today would hide the
+  // ones that have been waiting longest.
+  //
+  // The server scopes non-owner/manager to their OWN rows, so for Ada this list
+  // IS hers. For a boss it is the shop's, which is the right reading of the same
+  // heading from where he sits.
+  const { data: pendingData } = useOfflineCachedQuery({
+    queryKey: ["expenditures", "pending_payout"],
+    queryFn: () => api.get(`/expenditures?status=pending_payout&limit=50`).then(r => r.data),
+    refetchInterval: 30000
+  });
+  const pendingPayouts = pendingData?.data || [];
+  const pendingTotal = pendingPayouts.reduce((t, e) => t + (Number(e.amount) || 0), 0);
+
   const { data: catData } = useOfflineCachedQuery({
     queryKey: ["exp-categories"],
     queryFn: () => api.get("/expenditures/categories").then(r => r.data)
@@ -176,6 +202,44 @@ export default function ExpenditurePage() {
           + {lang === "en" ? "New Expense" : "Nouvelle depense"}
         </button>
       </div>
+
+      {/* ── WAITING AT THE TILL — read-only ────────────────────────────────
+          Only when there is something waiting: an empty panel on every expense
+          screen in a direct-mode shop would be noise, and this must not become
+          furniture. Neutral card, not amber — nothing has gone wrong, the money
+          is simply with the cashier. */}
+      {pendingPayouts.length > 0 && (
+        <div style={{
+          border: "1px solid var(--border)", background: "var(--bg-card)",
+          borderRadius: 10, padding: "12px 14px", marginBottom: 16,
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>
+              💸 {lang === "en" ? `Waiting at the till (${pendingPayouts.length})` : `En attente à la caisse (${pendingPayouts.length})`}
+            </div>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>{fmt(pendingTotal)}</div>
+          </div>
+          <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginBottom: 8, lineHeight: 1.45 }}>
+            {lang === "en"
+              ? "Sent to the cashier. No money has left the drawer yet, so these are not counted in today's total."
+              : "Envoyé au caissier. Aucun argent n'est encore sorti de la caisse : ces montants ne sont pas comptés dans le total du jour."}
+          </div>
+          {pendingPayouts.map(e => (
+            <div key={e.id} style={{
+              display: "flex", justifyContent: "space-between", alignItems: "baseline",
+              gap: 10, padding: "5px 0", borderTop: "1px solid var(--border)", fontSize: 13.5,
+            }}>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                {e.description}
+                {e.pa_expenditure_categories?.name ? (
+                  <span style={{ color: "var(--text-secondary)" }}> · {e.pa_expenditure_categories.name}</span>
+                ) : null}
+              </span>
+              <span style={{ fontWeight: 700, whiteSpace: "nowrap" }}>{fmt(e.amount)}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Date filter */}
       <div style={{ display: "flex", gap: 8, marginBottom: 20, alignItems: "center" }}>
@@ -284,9 +348,21 @@ export default function ExpenditurePage() {
               <label className="label">{lang === "en" ? "Date" : "Date"}</label>
               <input className="input" type="date" value={form.exp_date} onChange={e => setF("exp_date", e.target.value)} />
             </div>
+            {/* ── MP-EXPENSE-TICKETS: SAY WHY, NOT JUST NO ──────────────────────
+                This only fires in DIRECT mode now, where an expense IS the drawer
+                event and so genuinely needs an open till. But the people most likely
+                to hit it are the ones who never open a till — a storekeeper paying a
+                delivery driver — and to them a greyed-out button with a generic
+                "no shift" hint reads as the feature being broken. State the actual
+                reason and the actual way forward. */}
             {shiftBlocked && (
-              <div style={{ background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.35)", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: "#fbbf24", fontWeight: 600, textAlign: "center" }}>
-                {noShiftHint(lang)}
+              <div style={{ background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.35)", borderRadius: 8, padding: "10px 12px", marginBottom: 12, fontSize: 12.5, color: "var(--text-primary)", lineHeight: 1.5 }}>
+                <div style={{ fontWeight: 700, marginBottom: 3 }}>
+                  {lang === "en" ? "A till must be open to record this." : "Une caisse doit être ouverte pour enregistrer ceci."}
+                </div>
+                {lang === "en"
+                  ? "At this shop an expense is paid straight from the drawer, so it has to land in an open till. Ask whoever is on the till to open it, or record it there."
+                  : "Dans cette boutique, une dépense est payée directement depuis la caisse : elle doit donc être enregistrée dans une caisse ouverte. Demandez à la personne en caisse de l'ouvrir, ou enregistrez-la là-bas."}
               </div>
             )}
             <div style={{ display: "flex", gap: 8 }}>

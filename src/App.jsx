@@ -110,7 +110,13 @@ const ROUTE_ACCESS = {
   "/customers":    ["owner", "manager", "cashier"],
   "/credits":      ["owner", "manager"],
   "/transfers":    ["owner", "manager", "warehouse", "cashier"],
-  "/expenditures": ["owner", "manager", "cashier"],
+  // MP-EXPENSE-TICKETS: warehouse added. A storekeeper taking a delivery and
+  // needing the driver paid is exactly what this feature is for, and being
+  // unable to ASK is absurd. A SAFE WIDENING, not a grant: the route role
+  // decides ELIGIBILITY, expense_policy decides PERMISSION, and those must not
+  // be the same gate. Paul's warehouse user is expense_policy 'block', so the
+  // policy still refuses and nothing changes for him unless he chooses otherwise.
+  "/expenditures": ["owner", "manager", "cashier", "warehouse"],
   "/reports":      ["owner", "manager"],
   // MP-OWNER-OPERATIONS-DASHBOARD-V1: owner statement view (multi-day
   // signals, anomalies, debt aging). Owner + manager only.

@@ -120,7 +120,7 @@ const NAV = [
   // (boss errands, drawer outflows, personal). Backend filters
   // GET /expenditures by recorded_by=req.user.id for cashier role
   // so they only see their own history (not org-wide).
-  { to: "/expenditures", en: "Expenses",   fr: "Dépenses",        icon: "💸", roles: ["owner","manager","cashier"],            section: "cashflow" },
+  { to: "/expenditures", en: "Expenses",   fr: "Dépenses",        icon: "💸", roles: ["owner","manager","cashier","warehouse"],            section: "cashflow" },
   { to: "/reports",      en: "Reports",    fr: "Rapports",        icon: "📋", roles: ["owner","manager"],                       section: "reports" },
   // MP-OWNER-OPERATIONS-DASHBOARD-V1: multi-day deep view sidecar
   // to the existing Dashboard at "/". Owner + manager only; reuses
@@ -723,7 +723,20 @@ export default function Layout() {
   // it there is a temporal dead zone — a ReferenceError, not a lint nit. (The
   // backend shipped exactly that bug this phase and 500'd every sale with it.)
   const ticketLocId = useSettingsStore(s => s.selectedLocation?.id) || null;
-  const { summary: ticketSummary } = useTicketSummary(ticketLocId, { onError: () => {} });
+  const { summary: ticketSummary, isError: ticketSummaryDown } = useTicketSummary(ticketLocId, { onError: () => {} });
+  // ── MP-EXPENSE-TICKETS: SAY WHEN THE TILL IS UNREACHABLE ──────────────────
+  // When this query fails, mode falls back to 'direct' and all three cashier
+  // entries disappear. That fail-safe is right — showing a queue we cannot
+  // confirm exists is worse — but it is SILENT, and the cashier's queue simply
+  // is not there any more with nothing said.
+  //
+  // It self-heals: refetchInterval keeps polling in the error state (verified in
+  // query-core, #updateRefetchInterval schedules regardless of error). But the
+  // tick is skipped while the tab is unfocused, so someone who looks away for
+  // five minutes comes back to a queue that is missing and then, a moment later,
+  // present again. That is exactly the "row vanished under me" complaint one
+  // floor up, and it gets the same answer: say what happened.
+  const tillUnreachable = ticketSummaryDown && !!ticketLocId;
   // Only the two ticket nav items consume this; a failed read leaves perms null,
   // which ticketNavVisible resolves to "hidden" — fail closed.
   const { perms: myPerms } = useMyPermissions({ enabled: !!ticketLocId, retry: 1 });
@@ -755,6 +768,20 @@ export default function Layout() {
   // MP-TRIAL-EXPIRY-RESTRICTION: a slim, persistent read-only banner shown on
   // every screen when the org is restricted. Views still work; creating/modifying
   // revenue actions is blocked (server-enforced) — tap to upgrade.
+  // The line itself. Slim, neutral-amber, and only when a till location is
+  // actually selected — a shop with no location chosen has no queue to lose.
+  const tillBanner = tillUnreachable ? (
+    <div role="status" style={{
+      background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.35)",
+      color: "var(--text-primary)", borderRadius: 10, padding: "8px 12px",
+      margin: "0 0 10px", fontSize: 12.5, lineHeight: 1.45,
+    }}>
+      {lang === "en"
+        ? "Can't reach the till right now, so the Cashier, Pickup and Payouts screens are hidden. Nothing is lost — they come back on their own."
+        : "Impossible de joindre la caisse pour l'instant : les écrans Caissier, Retrait et Paiements sont masqués. Rien n'est perdu — ils reviendront d'eux-mêmes."}
+    </div>
+  ) : null;
+
   const restrictedBanner = isRestricted ? (
     <div role="status" onClick={() => navigate("/request-activation")}
       style={{ cursor: "pointer", background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.4)",
@@ -1558,6 +1585,7 @@ export default function Layout() {
         </div>
 
         <main style={{ flex: 1, overflowY: "auto", background: "var(--bg-base)" }}>
+          {tillBanner}
           {restrictedBlock ? <RestrictedLock lang={lang} hasPending={hasPendingRequest} onRequest={() => navigate("/request-activation")} /> : <>{restrictedBanner}<Outlet /></>}
         </main>
 
@@ -1766,6 +1794,7 @@ export default function Layout() {
       </aside>
 
       <main style={{ flex: 1, overflowY: "auto", background: "var(--bg-base)" }}>
+        {tillBanner}
         {restrictedBlock ? <RestrictedLock lang={lang} hasPending={hasPendingRequest} onRequest={() => navigate("/request-activation")} /> : <>{restrictedBanner}<Outlet /></>}
       </main>
 
