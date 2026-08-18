@@ -1888,11 +1888,35 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                         </div>
                       )}
                       {a.key === "expense_policy" && !blocked && (
-                        <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 12.5, color: "var(--text-muted)", flex: 1 }}>{en ? "Max expense amount" : "Dépense max"} ({fmt.symbol})</span>
-                          <input type="number" min="0" className="input" style={{ width: 130 }}
-                            value={perms.max_expense_amount ?? ""} placeholder={en ? "no limit" : "sans limite"}
-                            onChange={(e) => setCap("max_expense_amount", e.target.value)} />
+                        /* ⚠️ BLANK AND 0 MEAN OPPOSITE THINGS AND THE CONTROL DID NOT SAY SO.
+                           Blank = no limit; 0 = refuse every expense. The input offers 0 as
+                           an in-range value (min="0", and the spinner stops there) while the
+                           only hint that blank means unlimited is a PLACEHOLDER — grey text
+                           that vanishes the moment you type, and which many people read as
+                           "what to enter" rather than "what empty means".
+                           Two of Paul's staff carry caps of 0 and 2 and have never recorded
+                           an expense. Someone typing 0 to express "no limit" is the obvious
+                           reading of this control, so the control is what changes. */
+                        <div style={{ marginTop: 6 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 12.5, color: "var(--text-muted)", flex: 1 }}>{en ? "Max expense amount" : "Dépense max"} ({fmt.symbol})</span>
+                            <input type="number" min="0" className="input" style={{ width: 130 }}
+                              value={perms.max_expense_amount ?? ""} placeholder={en ? "no limit" : "sans limite"}
+                              onChange={(e) => setCap("max_expense_amount", e.target.value)} />
+                          </div>
+                          <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 3 }}>
+                            {en ? "Leave BLANK for no limit. 0 refuses every expense."
+                                : "Laissez VIDE pour aucune limite. 0 refuse toute dépense."}
+                          </div>
+                          {/* allow + 0 is a contradiction: the policy says yes and the cap says
+                              never. Warned at the point of setting it, not discovered later by
+                              a member of staff who cannot record anything. */}
+                          {Number(perms.max_expense_amount) === 0 && perms.max_expense_amount !== "" && perms.max_expense_amount !== null && (
+                            <div style={{ marginTop: 4, fontSize: 11.5, fontWeight: 600, color: "var(--warning)", lineHeight: 1.45 }}>
+                              ⚠ {en ? "A limit of 0 blocks EVERY expense for this person, even though you have allowed them. Leave it blank if you meant no limit."
+                                    : "Une limite de 0 bloque TOUTE dépense pour cette personne, même si vous l'avez autorisée. Laissez vide si vous vouliez dire aucune limite."}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
