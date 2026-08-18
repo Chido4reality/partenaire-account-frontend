@@ -25,6 +25,7 @@ import { useNetworkStatus } from "../utils/useNetworkStatus";
 import { useTicketSummary, ticketSummaryKey, ticketNavVisible } from "../utils/useTicketSummary";
 import { useMyPermissions } from "../utils/useMyPermissions";
 import { refusalFromError, departedTickets, departureSentence } from "../utils/ticketDepartures";
+import { useActiveShift } from "../components/common/ShiftWidgets"; // MP-EXPENSE-TICKETS
 
 const METHODS = [
   { key: "cash",         en: "Cash",   fr: "Espèces" },
@@ -55,6 +56,17 @@ export default function ExpensePayoutPage() {
   const [method, setMethod] = useState("cash");
 
   const { summary } = useTicketSummary(locationId, { onError: () => {} });
+  // ── PAYING OUT NEEDS AN OPEN TILL ─────────────────────────────────────────
+  // This is the money event: it stamps shift_id and moves cash_expenses, so it
+  // has to land in a drawer. The server enforces it (resolveOpenShift →
+  // noOpenShiftBody); without this the page would show three rows, three live
+  // buttons, and a 400 per tap — "payment failed" for a reason nobody names,
+  // which is the defect we keep re-shipping.
+  //
+  // Note it does NOT hide the list. "3 waiting — open your till" and "Nothing to
+  // pay out" are opposite statements and only one is true; a cashier who cannot
+  // act still needs to know the work exists.
+  const { hasShift } = useActiveShift();
   const { perms } = useMyPermissions({ enabled: !!locationId, retry: 1 });
   const mode = summary?.mode || "direct";
   const allowed = ticketNavVisible({ mode, role, perms, flag: "can_pay_expenses" });
@@ -62,8 +74,13 @@ export default function ExpensePayoutPage() {
   const listKey = ["expense-payouts", locationId];
   const { data: listResp, isLoading, isError, refetch } = useQuery({
     queryKey: listKey,
+    // scope=till, EXPLICITLY. Without it the endpoint scopes a non-owner to her
+    // own rows — right for the expense screen, catastrophic here: this queue
+    // exists to show what OTHER people raised, so it came back empty while its
+    // own badge said 3. The server gates scope=till on can_pay_expenses, the
+    // same capability that lets her pay, so seeing and doing cannot disagree.
     queryFn: () => api.get(
-      `/expenditures?status=pending_payout&limit=100` +
+      `/expenditures?status=pending_payout&scope=till&limit=100` +
       (locationId ? `&location_id=${encodeURIComponent(locationId)}` : "")
     ).then(r => r.data),
     enabled: !!locationId && allowed,
@@ -157,6 +174,66 @@ export default function ExpensePayoutPage() {
   }
 
   const total = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  // ONE expression for the disable AND the sentence, same rule as the expense
+  // modal — a boolean beside a separately-worded title is how a control ends up
+  // dimmed for a reason it does not state.
+  const payBlockedReason =
+      !isOnline ? (en ? "You are offline — paying out cannot wait in the sync queue."
+                      : "Vous êtes hors ligne — un paiement ne peut pas attendre dans la file de synchronisation.")
+    : !hasShift ? (en ? "Open your till before paying anything out."
+                      : "Ouvrez votre caisse avant de payer quoi que ce soit.")
+    : null;
+
+  // Rendered in TWO branches — with a till open, and with the 'open your till'
+  // banner above it — so the list a cashier sees is literally the same markup
+  // either way. Two copies would drift, and the copy nobody is looking at is
+  // the one that rots.
+  const rowsMarkup = (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
+          {rows.map(r => {
+            const busy = payout.isPending && payout.variables?.id === r.id;
+            const cat = r.pa_expenditure_categories?.name || r.pa_expenditure_categories?.name_en || r.category || null;
+            return (
+              <div key={r.id} style={{
+                border: "1px solid var(--border)", background: "var(--bg-card)", borderRadius: 10,
+                padding: 14, display: "flex", alignItems: "center", justifyContent: "space-between",
+                gap: 14, flexWrap: "wrap",
+              }}>
+                <div style={{ minWidth: 200, flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15 }}>{r.description}</div>
+                  <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 2 }}>
+                    {[cat, r.recorded_by_name, waitedFor(r.created_at, en)].filter(Boolean).join(" · ")}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right", minWidth: 110 }}>
+                  <div style={{ fontWeight: 700, fontSize: 17 }}>{fmt(r.amount)}</div>
+                  <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                    {en ? "not yet paid" : "pas encore payé"}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={() => setCancelling({ expense: r, reason: "", error: null })}
+                    disabled={busy}
+                    style={{ padding: "10px 14px", borderRadius: 8, fontWeight: 700, whiteSpace: "nowrap", border: "1px solid rgba(239,68,68,0.5)", background: "rgba(239,68,68,0.10)", color: "#f87171", cursor: "pointer" }}
+                  >{en ? "Cancel" : "Annuler"}</button>
+                  <button
+                    disabled={!!payBlockedReason || busy}
+                    onClick={() => payout.mutate({ id: r.id, version: r.version })}
+                    title={payBlockedReason || ""}
+                    style={{
+                      padding: "10px 18px", borderRadius: 8, border: "none", fontWeight: 700, whiteSpace: "nowrap",
+                      background: (payBlockedReason || busy) ? "var(--bg-elevated)" : "var(--brand)",
+                      color: (payBlockedReason || busy) ? "var(--text-muted)" : "var(--on-brand)",
+                      cursor: (payBlockedReason || busy) ? "not-allowed" : "pointer",
+                    }}
+                  >{busy ? "…" : (en ? `Pay out ${fmt(r.amount)}` : `Payer ${fmt(r.amount)}`)}</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+  );
 
   return (
     <div style={{ padding: 16, maxWidth: 760, margin: "0 auto" }}>
@@ -229,51 +306,17 @@ export default function ExpensePayoutPage() {
         <div style={{ padding: 24, color: "var(--text-secondary)" }}>…</div>
       ) : rows.length === 0 ? (
         <Panel title={en ? "Nothing to pay out." : "Rien à payer."} />
+      ) : payBlockedReason && !hasShift ? (
+        <>
+          <Panel tone="amber"
+            title={en ? `${rows.length} waiting — open your till to pay them.`
+                      : `${rows.length} en attente — ouvrez votre caisse pour les payer.`}
+            detail={en ? "They are listed below so you can see what is owed. Nothing has left the drawer."
+                       : "Elles sont listées ci-dessous pour que vous voyiez ce qui est dû. Rien n'est sorti de la caisse."} />
+          {rowsMarkup}
+        </>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
-          {rows.map(r => {
-            const busy = payout.isPending && payout.variables?.id === r.id;
-            const cat = r.pa_expenditure_categories?.name || r.pa_expenditure_categories?.name_en || r.category || null;
-            return (
-              <div key={r.id} style={{
-                border: "1px solid var(--border)", background: "var(--bg-card)", borderRadius: 10,
-                padding: 14, display: "flex", alignItems: "center", justifyContent: "space-between",
-                gap: 14, flexWrap: "wrap",
-              }}>
-                <div style={{ minWidth: 200, flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 15 }}>{r.description}</div>
-                  <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 2 }}>
-                    {[cat, r.recorded_by_name, waitedFor(r.created_at, en)].filter(Boolean).join(" · ")}
-                  </div>
-                </div>
-                <div style={{ textAlign: "right", minWidth: 110 }}>
-                  <div style={{ fontWeight: 700, fontSize: 17 }}>{fmt(r.amount)}</div>
-                  <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                    {en ? "not yet paid" : "pas encore payé"}
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button
-                    onClick={() => setCancelling({ expense: r, reason: "", error: null })}
-                    disabled={busy}
-                    style={{ padding: "10px 14px", borderRadius: 8, fontWeight: 700, whiteSpace: "nowrap", border: "1px solid rgba(239,68,68,0.5)", background: "rgba(239,68,68,0.10)", color: "#f87171", cursor: "pointer" }}
-                  >{en ? "Cancel" : "Annuler"}</button>
-                  <button
-                    disabled={!isOnline || busy}
-                    onClick={() => payout.mutate({ id: r.id, version: r.version })}
-                    title={!isOnline ? (en ? "You are offline" : "Vous êtes hors ligne") : ""}
-                    style={{
-                      padding: "10px 18px", borderRadius: 8, border: "none", fontWeight: 700, whiteSpace: "nowrap",
-                      background: (!isOnline || busy) ? "var(--bg-elevated)" : "var(--brand)",
-                      color: (!isOnline || busy) ? "var(--text-muted)" : "var(--on-brand)",
-                      cursor: (!isOnline || busy) ? "not-allowed" : "pointer",
-                    }}
-                  >{busy ? "…" : (en ? `Pay out ${fmt(r.amount)}` : `Payer ${fmt(r.amount)}`)}</button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        {rowsMarkup}
       )}
 
       {/* CANCEL — required reason. This is the one ending that leaves no trace in
