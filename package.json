@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "vite",
+    "mount-check": "node scripts/mount-check.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "cap:sync": "vite build && npx cap sync android",

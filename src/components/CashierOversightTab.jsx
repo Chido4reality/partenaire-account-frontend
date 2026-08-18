@@ -36,6 +36,12 @@ const when = (iso) => {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
+const EXP_STATUS = {
+  pending_payout: { en: "Waiting at the till", fr: "En attente à la caisse", tone: "warning" },
+  paid:           { en: "Paid out",            fr: "Payé",                  tone: "ok" },
+  cancelled:      { en: "Cancelled",           fr: "Annulé",                tone: "danger" },
+};
+
 const STATUS = {
   pending_payment: { en: "Waiting to pay", fr: "En attente", tone: "warning" },
   paid:            { en: "Paid",           fr: "Payé",       tone: "ok" },
@@ -102,6 +108,9 @@ export default function CashierOversightTab({ from, to, locationId, lang }) {
     enabled: !!from && !!to,
   });
   const d = resp?.data || null;
+  // Shorthand, and a total that is always an object so the section cannot
+  // crash on an older server response that predates expense_totals.
+  const ET = (d && d.expense_totals) || { paid_count: 0, paid_total: 0, pending_count: 0, pending_total: 0, cancelled_count: 0, cancelled_total: 0, self_paid_count: 0, self_paid_total: 0 };
 
   // The tapped ticket's full detail. By-id, so a still-pending ticket opens
   // fine — status filtering a by-id lookup would make a ticket unreadable
@@ -315,6 +324,98 @@ export default function CashierOversightTab({ from, to, locationId, lang }) {
       </Card>
 
       {/* ── THE TICKET LIST ──────────────────────────────────────────── */}
+      {/* ── MP-EXPENSE-TICKETS: MONEY OUT, ITS OWN SECTION ────────────────────
+          NOT folded into the per-cashier or per-salesperson rows. Those are money
+          IN and tie to the drawer's positive side; putting payouts in the same
+          rows invites the next reader to add the two together, which is exactly
+          the arithmetic the shift-report workflow block was kept out of the
+          drawer buckets to prevent.
+          And the per-cashier scoreboard already mis-signs one lifecycle
+          (dashboard_cashier_sales counts unpaid tickets against the salesperson),
+          so extending a surface that is already wrong in this dimension would
+          compound it. */}
+      {(d.expenses || []).length > 0 && (
+        <Card
+          title={en ? "Expenses — money out" : "Dépenses — argent sortant"}
+          sub={en ? "Paid-out expenses tie to ‘cash expenses’ in the drawer: same rows, same shift. Waiting and cancelled ones have moved no money and are in neither."
+                  : "Les dépenses payées correspondent aux « dépenses espèces » de la caisse : mêmes lignes, même poste. Celles en attente ou annulées n’ont déplacé aucun argent et ne figurent dans aucun des deux."}
+          right={<span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+            {en ? "Paid out" : "Payé"} −{fmt(ET.paid_total)}
+            {ET.pending_count > 0 ? ` · ${en ? "waiting" : "en attente"} ${fmt(ET.pending_total)}` : ""}
+          </span>}
+        >
+          {/* The three states carry OPPOSITE meanings for the drawer, so they are
+              counted apart and never summed into one "expenses" figure. */}
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 10, fontSize: 13 }}>
+            <span><strong style={{ color: "#f87171" }}>−{fmt(ET.paid_total)}</strong> {en ? `paid out (${ET.paid_count})` : `payé (${ET.paid_count})`}</span>
+            <span style={{ color: "var(--text-secondary)" }}>{fmt(ET.pending_total)} {en ? `waiting (${ET.pending_count})` : `en attente (${ET.pending_count})`}</span>
+            <span style={{ color: "var(--text-secondary)" }}>{fmt(ET.cancelled_total)} {en ? `cancelled (${ET.cancelled_count})` : `annulé (${ET.cancelled_count})`}</span>
+            {ET.self_paid_count > 0 && (
+              <span style={{ color: "var(--warning)", fontWeight: 600 }}>
+                ⚠ {en ? `self-paid ${ET.self_paid_count}` : `auto-payé ${ET.self_paid_count}`} · {fmt(ET.self_paid_total)}
+              </span>
+            )}
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table className="table" style={{ minWidth: 720 }}>
+              <thead>
+                <tr>
+                  <th>{en ? "What" : "Quoi"}</th>
+                  <th>{en ? "State" : "État"}</th>
+                  <th style={{ textAlign: "right" }}>{en ? "Amount" : "Montant"}</th>
+                  <th>{en ? "Raised by" : "Créé par"}</th>
+                  <th>{en ? "Paid out by" : "Payé par"}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(d.expenses || []).map(e => {
+                  const st = EXP_STATUS[e.status] || { en: e.status, fr: e.status, tone: "muted" };
+                  return (
+                    <tr key={e.id}>
+                      <td style={{ fontWeight: 600 }}>
+                        {e.description}
+                        {e.category ? <span style={{ color: "var(--text-secondary)", fontWeight: 400 }}> · {e.category}</span> : null}
+                        {/* The caption is the ONLY record a cancelled expense leaves —
+                            it moved no stock, no money and no debt — so it is read
+                            back here rather than being write-only. */}
+                        {e.cancel_reason ? (
+                          <div style={{ fontSize: 11.5, color: "var(--text-secondary)", fontStyle: "italic" }}>“{e.cancel_reason}”</div>
+                        ) : null}
+                      </td>
+                      <td style={{ fontWeight: 600, fontSize: 12,
+                        color: st.tone === "danger" ? "#f87171" : st.tone === "warning" ? "var(--warning)" : st.tone === "ok" ? "#34d399" : "var(--text-secondary)" }}>
+                        {en ? st.en : st.fr}
+                        {e.self_paid ? (
+                          <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: "var(--text-primary)",
+                            background: "rgba(245,158,11,0.18)", border: "1px solid rgba(245,158,11,0.5)",
+                            borderRadius: 5, padding: "1px 6px", whiteSpace: "nowrap" }}>
+                            {en ? "self-paid" : "auto-payé"}
+                          </span>
+                        ) : null}
+                      </td>
+                      {/* Signed. Only a PAID row has left the drawer, so only a paid
+                          row is shown as a minus — a pending payout rendered with a
+                          minus is a figure someone will subtract. */}
+                      <td style={{ textAlign: "right", fontWeight: 700, color: e.status === "paid" ? "#f87171" : "var(--text-secondary)" }}>
+                        {e.status === "paid" ? "−" : ""}{fmt(e.amount)}
+                      </td>
+                      <td>{e.raised_by_name || "—"}<div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{when(e.raised_at)}</div></td>
+                      {/* "—" and not the raiser: nobody has paid it, and inventing an
+                          actor here is how a record starts lying. */}
+                      <td>{e.paid_by_name || "—"}
+                        <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+                          {e.paid_at ? when(e.paid_at) : ""}{e.payment_method ? ` · ${e.payment_method}` : ""}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
       {d.tickets.length > 0 && (
         <Card
           title={en ? "Every ticket" : "Tous les tickets"}
