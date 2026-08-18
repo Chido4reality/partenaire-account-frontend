@@ -315,9 +315,7 @@ export default function ExpensePayoutPage() {
                        : "Elles sont listées ci-dessous pour que vous voyiez ce qui est dû. Rien n'est sorti de la caisse."} />
           {rowsMarkup}
         </>
-      ) : (
-        {rowsMarkup}
-      )}
+      ) : rowsMarkup}
 
       {/* CANCEL — required reason. This is the one ending that leaves no trace in
           stock, money or debt, so the caption is the only record that the expense
