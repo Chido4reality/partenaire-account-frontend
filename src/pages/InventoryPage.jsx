@@ -378,7 +378,26 @@ export default function InventoryPage() {
   const filtered = stock.filter(s => !isPhantomStockRow(s));
   const filteredProducts = search ? products.filter(p => fuzzyMatch(p.name, search) || (p.barcode && p.barcode.includes(search)) || (p.sku && p.sku.toLowerCase().includes(search.toLowerCase()))) : products;
 
+  // ── MP-STOCK-VALUE-PARTS ──────────────────────────────────────────────────
+  // This is stock ON HAND: what is physically sitting in a location right now.
+  // Every other consumer computes the same thing — the admin portal's
+  // stock_value and the AI assistant, which already SAYS so ("Stock value on
+  // hand" / "Valeur du stock disponible"). So the number is not changing; the
+  // Inventory page was simply the one place that never said which question it
+  // answers, and that silence is what made Paul's arithmetic fail.
+  //
+  // A dispatch writes the OUT leg at once and the IN leg only on receipt, so
+  // between the two the goods are in NEITHER location and this total drops with
+  // nothing to explain it. Named beside the total, never folded into it — the
+  // same rule as "sent, not collected" on the cashier screen.
   const totalStockValue = isOwner ? stock.reduce((sum, s) => sum + (+s.quantity * +(s.pa_products?.cost_price || 0)), 0) : 0;
+  const { data: inTransitResp } = useOfflineCachedQuery({
+    queryKey: ["in-transit-value"],
+    queryFn: () => api.get("/transfers/in-transit-value").then(r => r.data),
+    enabled: isOwner,          // the endpoint is owner/manager only; do not 403 a cashier
+    refetchInterval: 60000,
+  });
+  const inTransit = inTransitResp?.data || null;
 
   const invalidateAll = () => {
     qc.invalidateQueries(["stock"]);
@@ -1178,7 +1197,28 @@ export default function InventoryPage() {
           </div>
           <div style={{ display: "flex", gap: 16, marginTop: 4, flexWrap: "wrap", alignItems: "center" }}>
             {alerts.length > 0 && <div style={{ fontSize: 12, color: "#fbbf24" }}>⚠️ {alerts.length} {lang === "en" ? "items below minimum" : "articles sous le minimum"}</div>}
-            {isOwner && <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{lang === "en" ? "Stock value:" : "Valeur stock:"} <strong style={{ color: "var(--brand-light)" }}>{fmt(totalStockValue)}</strong></div>}
+            {isOwner && (
+              <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                {lang === "en" ? "Stock value on hand:" : "Valeur du stock en boutique :"}{" "}
+                <strong style={{ color: "var(--brand-light)" }}>{fmt(totalStockValue)}</strong>
+                {inTransit && inTransit.total > 0 ? (
+                  <>
+                    {" · "}
+                    <span title={lang === "en"
+                        ? "Dispatched but not yet received. These goods are yours but are counted at neither location until the receiving shop confirms them."
+                        : "Expédié mais pas encore reçu. Ces marchandises sont à vous mais ne sont comptées dans aucune boutique tant que le site destinataire ne les a pas confirmées."}>
+                      {lang === "en" ? "in transit:" : "en route :"}{" "}
+                      <strong style={{ color: "#fbbf24" }}>{fmt(inTransit.total)}</strong>
+                      <span style={{ color: "var(--text-muted)" }}>
+                        {" "}({inTransit.transfer_count} {lang === "en"
+                          ? (inTransit.transfer_count === 1 ? "transfer" : "transfers")
+                          : (inTransit.transfer_count === 1 ? "transfert" : "transferts")})
+                      </span>
+                    </span>
+                  </>
+                ) : null}
+              </div>
+            )}}
             {/* Sprint A: inventory cap usage badge. Hidden on plans with
                 unlimited inventory (Trial/Gold/Premium). */}
             {planCaps.inventory_cap != null && (
