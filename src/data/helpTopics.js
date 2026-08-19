@@ -573,6 +573,186 @@ Nobody by default. The boss must allow it per staff member. The system records w
 **Good to know:** voided sales are excluded from totals. Damaged goods count as revenue but are tracked separately so they don't distort margin.`,
     },
   },
+  // ── HELD UNTIL CASHIER MODE SHIPS ─────────────────────────────────────────
+  // ⚠️ held: true keeps these OUT of the Help list and out of search. The July
+  // rule is that every topic maps to a flow that is SHIPPED AND DEVICE-VERIFIED
+  // — it is why scrap-out and the stale scan were left out. Cashier mode is not
+  // verified end to end yet, so these are written now (while the detail is
+  // fresh) and released on the day the feature is.
+  //
+  // TO RELEASE: delete the `held: true` line from each, and follow
+  // scripts/cashier-mode-switch.md — which also covers the `shift` topic, whose
+  // drawer formula becomes wrong on the same day.
+  {
+    id: "cashier-workflow", section: "sales", icon: "💵", held: true,
+    title: { fr: "Le circuit caissier", en: "The cashier workflow" },
+    body: {
+      fr: `### À quoi ça sert ?
+À séparer **qui vend** de **qui tient l'argent**. Le vendeur prépare la commande, le caissier encaisse, le magasinier remet la marchandise. Une seule personne ne fait plus les trois.
+
+### Comment ça marche
+1. Le vendeur prépare le panier et appuie sur **Envoyer à la caisse**. Le client reçoit un **bon de commande** qui dit clairement que **rien n'est encore payé**.
+2. Le ticket apparaît dans **Caissier**. Le caissier encaisse et imprime le reçu.
+3. Le ticket passe dans **Retrait**. Le magasinier remet la marchandise.
+
+### Ce qui ne bouge pas tant que ce n'est pas payé
+**Créer un ticket ne déplace rien** : pas de stock, pas d'argent, aucun chiffre dans les rapports. Tout se produit au moment de l'encaissement.
+
+### Et si deux personnes appuient en même temps ?
+L'application refuse la seconde et **dit pourquoi**, en nommant le ticket. Elle ne prend jamais deux fois le même paiement.
+
+### « En attente » ne concerne pas votre poste
+Un ticket non payé n'appartient à **aucun poste de caisse**. L'argent est enregistré dans le poste qui l'a **encaissé** : un ticket créé lundi et payé mardi est « envoyé » lundi et « encaissé » mardi. Ces deux chiffres ne sont pas censés correspondre.`,
+      en: `### What is it for?
+To separate **who sells** from **who holds the money**. The salesperson prepares the order, the cashier takes payment, the storekeeper hands the goods over. One person no longer does all three.
+
+### How it works
+1. The salesperson builds the cart and presses **Send to cashier**. The customer gets an **order slip** stating clearly that **nothing has been paid yet**.
+2. The ticket appears in **Cashier**. The cashier takes payment and prints the receipt.
+3. The ticket moves to **Pickup**. The storekeeper hands the goods over.
+
+### Nothing moves until it is paid
+**Raising a ticket moves nothing** — no stock, no money, no figure in any report. Everything happens at the moment of payment.
+
+### What if two people press at the same time?
+The app refuses the second and **says why**, naming the ticket. It never takes the same payment twice.
+
+### "Still waiting" is not about your shift
+An unpaid ticket belongs to **no shift**. Money is recorded in the shift that **collected** it: a ticket raised Monday and paid Tuesday is "sent" on Monday and "collected" on Tuesday. Those two figures are not meant to match.`,
+    },
+  },
+  {
+    id: "expense-tickets", section: "cashflow", icon: "💸", held: true,
+    title: { fr: "Les dépenses via la caisse", en: "Expenses through the till" },
+    body: {
+      fr: `### Le même circuit, dans l'autre sens
+Les ventes font **entrer** l'argent, les dépenses le font **sortir** — et les deux passent par la caisse. Le vendeur ou le magasinier **demande**, le caissier **paie**.
+
+### Comment ça marche
+1. N'importe quel employé autorisé enregistre la dépense. Elle part **à la caisse** : rien n'est encore payé.
+2. Elle apparaît dans **Paiements**. Le caissier choisit le mode (espèces, MoMo, virement) et paie.
+3. Elle compte alors dans les dépenses du jour et dans la caisse.
+
+### Créer une dépense ne sort aucun argent
+Tant que le caissier n'a pas payé, la dépense **n'apparaît dans aucun total** et ne touche pas le tiroir. C'est voulu : elle n'est pas encore sortie.
+
+### Pas besoin d'une caisse ouverte pour demander
+Demander un paiement ne nécessite **pas** de poste ouvert — un vendeur peut enregistrer le livreur à 7h, avant l'ouverture de la caisse. **Payer**, en revanche, exige une caisse ouverte : c'est là que l'argent sort.
+
+### Annuler
+Une dépense non payée peut être **annulée**, avec un **motif obligatoire**. Une annulation ne renverse rien — rien n'a bougé — donc ce motif est la **seule trace** qu'elle a existé. Écrivez-le pour quelqu'un qui lira dans six semaines.`,
+      en: `### The same flow, in reverse
+Sales bring money **in**, expenses take it **out** — and both go through the till. Any authorised staff member **asks**, the cashier **pays**.
+
+### How it works
+1. Whoever needs the money records the expense. It goes **to the till**: nothing is paid yet.
+2. It appears in **Payouts**. The cashier picks how it is paid (cash, MoMo, bank) and pays it.
+3. Only then does it count in the day's expenses and in the drawer.
+
+### Raising an expense takes no money out
+Until the cashier pays it, the expense appears in **no total** and does not touch the drawer. That is deliberate: it has not left yet.
+
+### You do not need an open till to ask
+Asking does **not** need an open shift — a salesperson can record the delivery driver at 7am, before the till opens. **Paying** does need one: that is when the money leaves.
+
+### Cancelling
+An unpaid expense can be **cancelled**, with a **required reason**. Cancelling reverses nothing — nothing moved — so that reason is the **only record** the expense ever existed. Write it for someone reading in six weeks.`,
+    },
+  },
+  {
+    id: "cashier-oversight", section: "reports", icon: "🛡️", held: true,
+    title: { fr: "Surveiller la caisse", en: "Watching the till" },
+    body: {
+      fr: `### À quoi sert cet onglet ?
+Le circuit caissier partage une vente entre trois personnes. Cela rend le vol plus difficile, mais pas plus **visible** — cet onglet (Rapports → Caisse) rassemble les morceaux.
+
+### Deux chiffres qui ne doivent PAS correspondre
+- **Par caissier** — calculé sur le **paiement**. Correspond au tiroir.
+- **Par vendeur** — calculé sur le **ticket**. Ne correspond pas au tiroir, et ce n'est pas une erreur : un ticket créé lundi et payé mardi apparaît des deux côtés, à des jours différents.
+
+### « Auto-encaissé »
+La même personne a créé **et** encaissé le ticket. Dans une petite boutique avec une seule personne présente, c'est simplement la réalité de la journée. C'est **signalé, pas accusé** — le circuit ne peut pas l'empêcher, alors il le mesure.
+
+### Les dépenses
+Section séparée, jamais mélangée aux encaissements : l'argent qui sort n'est pas de l'argent qui entre. Seules les dépenses **payées** correspondent aux « dépenses espèces » du tiroir. Celles en attente ou annulées n'ont déplacé aucun argent.`,
+      en: `### What is this tab for?
+The cashier workflow splits one sale across three people. That makes theft harder to do, but no easier to **see** — this tab (Reports → Till) reassembles the pieces.
+
+### Two figures that should NOT match
+- **Per cashier** — anchored on the **payment**. Ties to the drawer.
+- **Per salesperson** — anchored on the **ticket**. Does not tie to the drawer, and that is not an error: a ticket raised Monday and paid Tuesday appears on both sides, on different days.
+
+### "Self-served"
+The same person raised **and** paid the ticket. In a quiet shop with one person on, that is simply what the day looked like. It is **flagged, not accused** — the workflow cannot prevent it, so it measures it.
+
+### Expenses
+A separate section, never mixed into the takings: money out is not money in. Only **paid** expenses tie to "cash expenses" in the drawer. Waiting and cancelled ones have moved no money.`,
+    },
+  },
+  {
+    id: "stock-value", section: "inventory", icon: "💰",
+    title: { fr: "La valeur du stock", en: "Stock value" },
+    body: {
+      fr: `### Que compte ce chiffre ?
+La **valeur du stock en boutique** : ce qui est physiquement présent dans vos sites, en ce moment, au prix d'achat.
+
+Pour chaque article : **quantité × prix d'achat**. Additionné sur tout votre stock.
+
+### « Avant + marchandises reçues = après » — pourquoi ça ne tombe pas toujours juste
+C'est le calcul naturel, et il est juste sur le principe. Mais **deux choses font bouger le chiffre sans qu'aucune marchandise ne soit vendue ni reçue.** Si vos comptes ne tombent pas, c'est presque toujours l'une des deux.
+
+### 1. Les marchandises en route
+Quand un site expédie un transfert, le stock **sort tout de suite** du site d'origine. Il n'entre au site destinataire **qu'à la confirmation de réception**. Entre les deux, la marchandise est sur la route : elle est bien à vous, mais elle n'est comptée **dans aucun site**.
+
+C'est pour cela que l'écran Inventaire affiche, à côté du total, une ligne **« en route »** avec le nombre de transferts concernés. Le total plus la ligne « en route » = tout ce que vous possédez.
+
+Pour la faire rentrer : le site destinataire confirme la réception.
+
+### 2. Le prix d'achat a changé
+Si vous modifiez le **prix d'achat** d'un produit, la valeur de **tout le stock existant** de ce produit change immédiatement — sans qu'un seul article ne bouge.
+
+Exemple : 192 unités en stock, prix d'achat passé de 900 à 850 → la valeur baisse de **9 600** et rien n'a été vendu.
+
+Deux relevés à quelques minutes d'intervalle peuvent donc différer sans aucune vente entre les deux.
+
+### Ce que le chiffre ne compte pas
+- Les marchandises **en route** (voir ci-dessus — affichées à part)
+- Le **prix de vente** : c'est une valeur au prix d'achat, pas votre chiffre d'affaires potentiel
+- Les articles **sans prix d'achat renseigné** comptent pour zéro — renseignez-le pour que le total soit juste
+
+### Qui voit ce chiffre ?
+Le **patron** uniquement.`,
+      en: `### What does this number count?
+The **value of stock on hand**: what is physically in your locations right now, at cost price.
+
+For each item: **quantity × cost price**. Added up across all your stock.
+
+### "Before + goods received = after" — why that does not always land
+That is the natural sum, and the thinking is right. But **two things move the figure without anything being sold or received.** If your arithmetic does not come out, it is almost always one of these.
+
+### 1. Goods in transit
+When a location dispatches a transfer, the stock **leaves the sending site immediately**. It only arrives at the receiving site **when someone confirms receipt**. In between, the goods are on the road: they are yours, but they are counted at **neither location**.
+
+That is why the Inventory screen shows an **"in transit"** figure beside the total, with the number of transfers. The total plus the in-transit line is everything you own.
+
+To bring it in: the receiving site confirms the delivery.
+
+### 2. The cost price changed
+If you edit a product's **cost price**, the value of **all existing stock** of that product changes at once — without a single item moving.
+
+Example: 192 units held, cost price changed from 900 to 850 → the value drops by **9,600** and nothing was sold.
+
+So two readings minutes apart can differ with no sale between them.
+
+### What the number does not include
+- Goods **in transit** (see above — shown separately)
+- The **selling price**: this is a value at cost, not what your stock could earn
+- Items with **no cost price set** count as zero — fill it in so the total is right
+
+### Who sees it?
+The **owner** only.`,
+    },
+  },
   {
     id: "offline", section: "sales", icon: "📶",
     title: { fr: "Le mode hors ligne", en: "Offline mode" },
@@ -583,6 +763,15 @@ Oui. On peut vendre normalement sans connexion. Les ventes sont gardées dans le
 ### Quand la connexion revient ?
 Les ventes se synchronisent automatiquement. **Chaque vente ne part qu'une seule fois** — jamais de doublon, jamais de perte.
 
+### ⚠️ Ce qui ne peut PAS attendre la connexion
+Vendre fonctionne hors ligne. Certaines actions, non — et elles sont **désactivées** avec une explication plutôt que mises en file :
+
+- **Retour, échange, annulation d'une vente**
+- **Encaisser ou remettre un ticket** (mode caissier)
+- **Payer une dépense** (mode caissier)
+
+Ce n'est pas une limite technique, c'est une protection. Ces actions dépendent de l'état **actuel** du ticket ou de la vente. Rejouée une heure plus tard, la même demande pourrait rembourser deux fois, ou payer un fournisseur une seconde fois après qu'un collègue l'a déjà fait. Mieux vaut un bouton grisé qui dit pourquoi.
+
 ### La file de synchronisation
 S'il y a un problème, l'écran « Synchronisation en attente » montre ce qui bloque, avec un bouton **Réessayer**. Si une vente reste bloquée, cliquer sur Réessayer.`,
       en: `### Does the app work without internet?
@@ -590,6 +779,15 @@ Yes. You can sell normally with no connection. Sales are kept on the phone.
 
 ### What happens when the connection comes back?
 Sales sync automatically. **Each sale syncs exactly once** — never duplicated, never lost.
+
+### ⚠️ What canNOT wait for the connection
+Selling works offline. Some actions do not — and they are **disabled with an explanation** rather than queued:
+
+- **Return, exchange, void a sale**
+- **Take payment or hand over a ticket** (cashier mode)
+- **Pay an expense out** (cashier mode)
+
+This is a protection, not a technical limit. These actions depend on the **current** state of the ticket or sale. Replayed an hour later, the same request could refund twice, or pay a supplier a second time after a colleague already did. A greyed-out button that says why is the better outcome.
 
 ### The sync queue
 If something goes wrong, the "Pending sync" screen shows what's stuck, with a **Retry** button. If a sale is stuck, just tap Retry.`,

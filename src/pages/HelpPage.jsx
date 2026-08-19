@@ -9,7 +9,15 @@ import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import { openWhatsApp } from "../utils/whatsapp";
 import api from "../utils/api";
 import { SUPPORT_PHONE, SUPPORT_TEL, SUPPORT_EMAIL } from "../utils/support";
-import { HELP_TOPICS } from "../data/helpTopics";
+import { HELP_TOPICS as ALL_HELP_TOPICS } from "../data/helpTopics";
+
+// ── THE JULY GATE, ENFORCED HERE ──────────────────────────────────────────
+// Every topic must map to a flow that is SHIPPED AND DEVICE-VERIFIED. Topics
+// for a feature that is written but not yet verified carry `held: true` and
+// are filtered out of the list, the search and the deep-link lookup alike —
+// a held topic reachable by URL would be the same defect as an unheld one.
+// Release by deleting the flag; see scripts/cashier-mode-switch.md.
+const HELP_TOPICS = ALL_HELP_TOPICS.filter(t => !t.held);
 
 // ONE support line for both countries — see utils/support.js. The previous
 // per-country table (cm / ng) and supportForCountry() are gone rather than left as
