@@ -299,24 +299,44 @@ Yes. There's a "Voids" panel in Operations and a dashboard tile: how many, what 
 À attraper les erreurs de comptage au moment où la marchandise bouge. On vérifie le stock à la réception ou au transfert — en complément d'un comptage complet, pas à sa place.
 
 ### « Surveiller un produit »
-Le patron marque un produit à surveiller (bouton **« Surveiller un produit »**, en haut à droite). Ensuite, **chaque fois que ce produit est réceptionné ou transféré**, l'application crée automatiquement une tâche de comptage en attente. Quelqu'un doit alors le compter physiquement. Utile pour les produits qui bougent lentement, ou ceux dont on veut être sûr.
+Le patron marque un produit à surveiller (bouton **« ➕ Surveiller un produit »**, en haut à droite). Ensuite, **chaque fois que ce produit est réceptionné ou transféré**, l'application crée une tâche de comptage.
 
 ### Compter : « attendu » vs « en stock maintenant »
-Quand on compte, l'écran montre **deux nombres, clairement étiquetés** : le stock **« attendu »** (figé au moment où la tâche a été créée) et le stock **« en ce moment »** (en direct). C'est volontaire : entre la création de la tâche et le comptage, une vente a pu changer le stock réel. Les deux nombres sont affichés honnêtement pour qu'on sache exactement ce qu'on compare, puis on saisit la quantité réellement comptée.
+L'écran montre **deux nombres, clairement étiquetés** : le stock **« attendu »** (figé au moment où la tâche a été créée) et le stock **« en stock maintenant »** (en direct). Comptez ce que vous avez réellement en main.
+
+### ⚠️ Un écart ne peut plus être clos comme « fait »
+C'est le changement le plus important. Si votre comptage trouve une **différence**, elle est **conservée pour être résolue** — on ne peut plus la faire disparaître en cliquant « Fait ». « Fait » ne sert qu'à un comptage qui **correspond**.
+
+### Les tâches anciennes : Recompter ou Retirer
+Une tâche qui a trop vieilli est marquée **🕗 ancienne**. Son « attendu » date d'avant que le stock ne bouge, donc le compter maintenant comparerait deux moments différents. L'application le **refuse** au lieu d'écraser silencieusement le chiffre, et propose les deux seules sorties honnêtes :
+- **Recompter** — reprend le comptage sur le stock actuel
+- **Retirer de la liste** — abandonne la tâche sans rien changer au stock
+
+C'est la même chose si le stock a bougé pendant que vous comptiez.
 
 ### Les onglets
 - **À compter** — les tâches en attente
-- **Écarts (Mismatches)** — les différences constatées (trace permanente, jamais supprimée)
+- **Écarts** — les différences constatées (trace permanente, jamais supprimée)
 - **Résolus** — terminés
-- **Endommagés** — la pile des marchandises abîmées (voir « Vendre des marchandises endommagées »)`,
+- **Endommagé** — la pile des marchandises abîmées (voir « Vendre des marchandises endommagées »)`,
       en: `### What is Stock Check for?
 To catch miscounts at the moment goods move. It checks stock at receive or transfer time — complementing a full count, not replacing it.
 
 ### "Watch a product"
-The boss marks a product to watch (the **"Watch a product"** button, top right). After that, **every time that product is received or transferred**, the app automatically creates a pending count task. Someone must physically count it. Useful for slow-moving products, or anything you want to be sure about.
+The boss marks a product to watch (the **"➕ Watch a product"** button, top right). After that, **every time that product is received or transferred**, the app creates a counting task.
 
 ### Counting: "expected" vs "in stock now"
-When you count, the screen shows **two numbers, clearly labelled**: the **"expected"** stock (frozen when the task was created) and the **"in stock now"** live number. This is deliberate — between the task being created and the count, a sale may have changed the real stock. Both are shown honestly so you know exactly what you're comparing, then you enter the quantity you actually counted.
+The screen shows **two numbers, clearly labelled**: the **"expected"** stock (frozen when the task was created) and the **"in stock now"** live number. Count what you actually have in your hands.
+
+### ⚠️ A difference can no longer be closed as done
+This is the most important change. If your count finds a **difference**, it is **kept for you to resolve** — it can no longer be made to disappear by pressing "Done". "Done" is only for a count that **matches**.
+
+### Old tasks: Recount or Remove
+A task that has aged is marked **🕗 legacy**. Its "expected" figure predates the stock moving, so counting against it now would compare two different moments. The app **refuses** instead of silently overwriting the number, and offers the only two honest ways out:
+- **Recount** — start the count again against today's stock
+- **Remove from list** — drop the task, changing no stock
+
+The same applies if the stock moved while you were counting.
 
 ### The tabs
 - **To count** — pending tasks
@@ -401,13 +421,26 @@ No. The log is protected: it cannot be edited or deleted. That's what makes it u
 
 ### Ce que le patron peut contrôler
 - Vendre à crédit · Remise (avec un % maximum) · Annuler une vente · Remboursement
-- Modifier la dette · Supprimer un client · Dépense · Changer le stock à la main
-- Transférer des marchandises · Vendre quand c'est fini · Enregistrer la date de vente
-- Voir l'activité des autres · Approbation au-dessus d'un montant
+- Modifier la dette · Supprimer un client · Dépense (avec un montant maximum) · Changer le stock à la main
+- Transférer des marchandises · Annuler un transfert · Vendre quand c'est fini · Enregistrer la date de vente
+- Corriger le fond de caisse · Corriger une dépense · Voir l'activité des autres · Approbation au-dessus d'un montant
+
+### ⚠️ Un employé non configuré ne peut presque RIEN faire
+C'est la question la plus fréquente : **« pourquoi mon employé n'arrive pas à faire ça ? »**
+
+Tant que vous n'avez pas ouvert **Journal du Comptable → Permissions** pour cet employé et **enregistré** ses réglages, il n'a **aucune ligne de permissions** — et l'application refuse par sécurité. Il pourra vendre normalement, mais **pas** enregistrer une dépense, faire une remise, vendre à crédit, ni la plupart des actions ci-dessus.
+
+**Configurer un nouvel employé est une étape à faire, pas un réglage facultatif.** Après l'avoir créé, ouvrez ses permissions et enregistrez-les — même si vous ne changez rien.
+
+### Les montants maximum : vide n'est pas 0
+- **Vide** = **aucune limite**. C'est ce qu'il faut laisser si vous ne voulez pas de plafond.
+- **0** = **tout est refusé**, même une dépense de 1 FCFA.
+
+Ce sont des sens opposés. Si un employé « autorisé » se voit refuser chaque dépense, regardez d'abord son montant maximum : il est probablement à 0 alors qu'on voulait dire « pas de limite ». L'application vous prévient maintenant quand vous enregistrez 0.
 
 ### Points importants
-- Par défaut, un employé sans réglage est **autorisé** pour la plupart des actions — sauf **« Vendre quand c'est fini »** et **« Enregistrer la date de vente »**, **bloqués par défaut**.
 - Certaines permissions s'appliquent à **tout le monde, y compris le patron** — notamment le crédit, le transfert et la vente en rupture.
+- Les permissions valent pour **toute la boutique** (toutes les succursales), pas par site.
 - Toutes les permissions sont vérifiées **sur le serveur**. Impossible de les contourner.`,
       en: `### Where do I set them?
 **Accountant Log → Permissions**, staff member by staff member.
@@ -418,14 +451,27 @@ No. The log is protected: it cannot be edited or deleted. That's what makes it u
 - **Blocked** — they cannot at all
 
 ### What the boss can control
-- Sell on credit · Discount (with an optional maximum %) · Void a sale · Refund
-- Adjust debt · Delete customer · Expense · Change stock by hand
-- Transfer goods · Sell when finished · Record sold date
-- See other staff's activity · Approval above an amount
+- Sell on credit · Discount (with a maximum %) · Void a sale · Refund
+- Adjust debt · Delete customer · Expense (with a maximum amount) · Change stock by hand
+- Transfer goods · Cancel a transfer · Sell when finished · Record sold date
+- Correct the opening float · Correct an expense · See other staff's activity · Approval above an amount
+
+### ⚠️ An unconfigured staff member can do almost NOTHING
+This is the most common question: **"why can't my staff member do this?"**
+
+Until you open **Accountant Log → Permissions** for that person and **save** their settings, they have **no permissions record at all** — and the app refuses, to be safe. They can still sell normally, but they can **not** record an expense, give a discount, sell on credit, or most of the actions above.
+
+**Setting up a new staff member is a step, not an optional refinement.** After you create them, open their permissions and save — even if you change nothing.
+
+### Maximum amounts: blank is not 0
+- **Blank** = **no limit**. Leave it blank if you do not want a ceiling.
+- **0** = **everything is refused**, even a 1 FCFA expense.
+
+Those are opposite meanings. If someone who is "allowed" has every expense refused, check their maximum amount first — it is probably 0 when "no limit" was meant. The app now warns you when you save a 0.
 
 ### Important points
-- By default, a staff member with no setting is **allowed** for most actions — except **"Sell when finished"** and **"Record sold date"**, which are **blocked by default**.
 - Some permissions bind **everyone, including the owner** — notably credit, transfer and selling when finished.
+- Permissions apply to the **whole shop** (every branch), not per location.
 - All permissions are enforced **on the server**. They cannot be bypassed.`,
     },
   },
