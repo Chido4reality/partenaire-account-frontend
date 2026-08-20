@@ -218,27 +218,47 @@ When goods arrive, you **receive** them into a shop or warehouse. Stock goes up.
     title: { fr: "Transférer entre boutiques", en: "Transfer between branches" },
     body: {
       fr: `### Comment transférer ?
-1. La boutique/magasin d'origine **envoie** (dispatch)
-2. La boutique de destination **réceptionne** (confirm)
+1. Choisissez la **destination** — elle est **obligatoire**. Un transfert sans destination ne peut pas être créé : la marchandise partirait sans que personne ne puisse la réceptionner.
+2. La boutique/magasin d'origine **envoie** (dispatch)
+3. La boutique de destination **réceptionne** (confirm)
 
-Le stock est déduit d'un côté et ajouté de l'autre. Les deux côtés sont toujours équilibrés. **On ne peut jamais réceptionner plus que ce qui a été envoyé.**
+### ⚠️ Entre l'envoi et la réception, la marchandise n'est comptée nulle part
+Les deux côtés s'équilibrent **une fois la réception confirmée** — pas avant.
+
+Au moment de l'envoi, le stock **sort tout de suite** du site d'origine. Il n'entre au site destinataire **qu'à la confirmation**. Entre les deux, la marchandise est sur la route : elle est bien à vous, mais elle n'est comptée **dans aucun site**.
+
+C'est pour cela que la **valeur du stock** baisse au moment de l'envoi et remonte à la réception, sans qu'aucune vente n'ait eu lieu. L'écran Inventaire affiche le montant **« en route »** à côté du total (voir « La valeur du stock »).
+
+Pour la faire rentrer : le site destinataire confirme la réception.
+
+**On ne peut jamais réceptionner plus que ce qui a été envoyé.**
 
 ### Qui peut transférer ?
-Par défaut : le patron, le gérant et le magasinier. **Le caissier peut réceptionner** (pour que la marchandise ne reste jamais bloquée quand le patron est absent). Le patron peut accorder à un caissier le droit de transférer — mais seulement depuis sa propre boutique.
+Par défaut : le patron, le gérant et le magasinier. **Le caissier peut réceptionner** (pour que la marchandise ne reste jamais bloquée quand le patron est absent). Le patron peut accorder à un caissier le droit de transférer.
 
 ### Ajuster le stock à la main
-Si le stock physique ne correspond pas, on peut le corriger. C'est une action sensible : le patron peut la bloquer pour un employé. La bloquer n'empêche pas le magasinier de réceptionner et transférer.`,
+Si le stock physique ne correspond pas, on peut le corriger. C'est une action sensible : le patron peut la bloquer pour un employé. La bloquer n'empêche pas le magasinier de réceptionner ni d'envoyer.`,
       en: `### How do I transfer?
-1. The source shop/warehouse **dispatches**
-2. The destination shop **confirms receipt**
+1. Choose the **destination** — it is **required**. A transfer cannot be created without one: the goods would leave with nobody able to receive them.
+2. The source shop/warehouse **dispatches**
+3. The destination shop **confirms receipt**
 
-Stock is deducted from one side and added to the other. Both sides always balance. **You can never receive more than was sent.**
+### ⚠️ Between dispatch and receipt, the goods are counted nowhere
+Both sides balance **once the destination confirms** — not before.
+
+At dispatch the stock **leaves the sending site immediately**. It arrives at the receiving site **only on confirmation**. In between, the goods are on the road: they are yours, but they are counted at **neither location**.
+
+That is why **stock value** falls at dispatch and rises again at receipt with no sale taking place. The Inventory screen shows the **"in transit"** amount beside the total (see "Stock value").
+
+To bring it in: the receiving site confirms the delivery.
+
+**You can never receive more than was sent.**
 
 ### Who can transfer?
-By default: owner, manager, warehouse. **A cashier can receive** — so goods are never stuck when the boss is away. The boss can grant a cashier the right to transfer — but only from their own shop.
+By default: owner, manager, warehouse. **A cashier can receive** — so goods are never stuck when the boss is away. The boss can grant a cashier the right to transfer.
 
 ### Adjusting stock by hand
-If physical stock doesn't match, it can be corrected. This is a sensitive action: the boss can block it for a staff member. Blocking it does NOT stop a warehouse keeper from receiving and transferring.`,
+If physical stock doesn't match, it can be corrected. This is a sensitive action: the boss can block it for a staff member. Blocking it does NOT stop a warehouse keeper from receiving or dispatching.`,
     },
   },
   {
@@ -276,6 +296,13 @@ Le client rapporte un produit et récupère son argent (totalement ou partiellem
 ### Échange
 Le client échange un produit contre un autre.
 
+### Combien peut-on retourner ?
+Seulement ce qui reste à retourner : **quantité vendue moins ce qui a déjà été retourné**.
+
+Si un client a acheté 10 pièces et en a déjà rendu 4, le maximum est 6. L'application refuse au-delà et affiche le maximum autorisé — c'est ce qui empêche de rembourser deux fois la même pièce.
+
+Une quantité partielle est normale : tapez le nombre voulu, ou décochez l'article pour ne pas le retourner du tout.
+
 ### Le patron voit-il les annulations ?
 Oui. Il y a un panneau « Annulations » dans Opérations et une tuile sur le tableau de bord : combien, quelle valeur, par qui, quand. Un caissier ne peut pas le voir.`,
       en: `### Void a sale
@@ -286,6 +313,13 @@ The customer brings a product back and gets their money (fully or partly).
 
 ### Exchange
 The customer swaps one product for another.
+
+### How much can be returned?
+Only what is still returnable: **quantity sold minus what has already been returned**.
+
+If a customer bought 10 and has already brought back 4, the most you can return is 6. The app refuses more than that and shows the maximum — this is what stops the same item being refunded twice.
+
+A partial quantity is normal: type the number you want, or untick the item to leave it out entirely.
 
 ### Does the boss see voids?
 Yes. There's a "Voids" panel in Operations and a dashboard tile: how many, what value, by whom, when. A cashier cannot see it.`,
@@ -558,7 +592,17 @@ Nobody by default. The boss must allow it per staff member. The system records w
 
 **Export CSV** disponible.
 
-**À savoir :** les ventes annulées sont exclues des totaux. Les marchandises endommagées sont comptées comme recette mais suivies séparément pour ne pas fausser la marge.`,
+### Ventes annulées : exclues des totaux, mais listées à part
+Une vente annulée ne compte **pas** dans votre chiffre d'affaires ni dans votre bénéfice.
+
+Mais dans le **Grand livre du jour**, elle apparaît quand même, dans sa propre section : **« Ventes annulées — non déduit »**, entre parenthèses. Ce n'est pas une contradiction :
+
+- l'argent rendu au client est bien sorti du tiroir, donc la ligne doit être **visible** ;
+- mais l'encaissement d'origine a déjà été retiré des totaux, donc la retirer **une seconde fois** ferait un double comptage.
+
+Elle est donc **montrée sans être déduite**. Un remboursement ordinaire, lui, est bien déduit — les deux sont sur des lignes séparées pour cette raison.
+
+**À savoir :** les marchandises endommagées sont comptées comme recette mais suivies séparément pour ne pas fausser la marge.`,
       en: `### What reports are there?
 - **Daily Summary** — sales, cash collected, cost, profit, margin, expenses, debts collected
 - **Sales Detail** — every sale, tap to see the items
@@ -570,7 +614,17 @@ Nobody by default. The boss must allow it per staff member. The system records w
 
 **CSV export** available.
 
-**Good to know:** voided sales are excluded from totals. Damaged goods count as revenue but are tracked separately so they don't distort margin.`,
+### Voided sales: out of the totals, but listed separately
+A voided sale does **not** count towards your revenue or your profit.
+
+But in the **Daily Ledger** it still appears, in its own section: **"Cancelled sales — not deducted"**, shown in brackets. That is not a contradiction:
+
+- the money handed back really did leave the drawer, so the line has to be **visible**;
+- but the original takings were already removed from the totals, so subtracting it a **second** time would double-count it.
+
+So it is **shown without being deducted**. An ordinary refund IS deducted — the two sit on separate lines for exactly this reason.
+
+**Good to know:** damaged goods count as revenue but are tracked separately so they don't distort margin.`,
     },
   },
   // ── HELD UNTIL CASHIER MODE SHIPS ─────────────────────────────────────────

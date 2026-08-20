@@ -43,7 +43,7 @@ raised there become payouts instead of drawer events.
 ⚠️ **Nothing is retroactive.** Sales and expenses recorded before the flip stay as
 they were. There is no migration and none is wanted.
 
-## 3 · Fix the `shift` help topic — it becomes WRONG today
+## 3 · Fix the `shift` AND `sale` help topics — they become WRONG today
 
 `src/data/helpTopics.js`, topic id `shift`. It states:
 
@@ -56,6 +56,14 @@ expect a raised expense to be in the figure and it will not be.
 
 This is the one that will be missed: it is not a missing topic, it is a correct
 topic that quietly stops being true.
+
+**`sale`** has the same problem in a different place. Step 5 reads *"Tap Confirm
+Payment"* — at a cashier till that button is **Send to cashier**, and the sale is
+not finished when the salesperson lets go of it. Either qualify the step or point
+at `cashier-workflow`.
+
+Both are correct today. Both stop being true the moment step 2 runs, which is why
+they sit here rather than in a backlog.
 
 ## 4 · Release the held help topics
 

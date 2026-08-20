@@ -79,6 +79,25 @@ be cleaned first.
 price resolution, which cashier mode rewired. Inspecting the code tells you the
 guard exists; only driving it tells you the guard fires and the cart survives.
 
+### ⚠️ These five are also HELP CLAIMS — the topic and the test are one promise
+
+The `approvals` help topic states three things in three sentences:
+
+| topic says | proves it |
+|---|---|
+| "one single popup listing **all** the actions together" | item 1 |
+| "After approval, do the prices change? **No**." | item 4 |
+| "Can the same order be sold twice? **No**." | item 3 |
+
+So the help and this pass are **the same claim written in two places**. If item 3
+regresses, that sentence becomes false in the help on the same day — a written
+guarantee the app no longer keeps, which is worse than an omission because the
+reader stops checking.
+
+`approvals` is therefore **BLOCKED ON THIS RESULT**, not "correct". Do not mark
+the help audit closed on it until these pass. And when a topic states a
+guarantee, list it against the test that proves it, so the two move together.
+
 ### Setup (once)
 
 | | |
