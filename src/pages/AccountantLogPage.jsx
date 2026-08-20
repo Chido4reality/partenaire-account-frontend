@@ -1182,6 +1182,17 @@ const PERM_ACTIONS = [
 ];
 const permDefault = (a) => a.defaultPolicy || "allow";
 
+// ── MP-CAP-ZERO-WARNING ──────────────────────────────────────────────────────
+// Every cap input below is `min="0"` with a "no limit" PLACEHOLDER, so BLANK and 0
+// look like the same answer and mean opposite things: blank = no ceiling, 0 = the
+// tightest ceiling there is. One shared predicate so the three warnings can never
+// drift apart on WHEN they fire — only on WHAT they say, which is the whole point:
+//   discount 0 → REFUSED (403)                      staffPermissions.js:71
+//   credit   0 → routed to approval, NOT refused    staffPermissions.js:156
+//   expense  0 → REFUSED (403)                      staffPermissions.js:76
+// Number("") and Number(null) are both 0, which is why emptiness is excluded first.
+const capIsZero = (v) => v !== "" && v !== null && v !== undefined && Number(v) === 0;
+
 // ── MP-STAFF-ACTIVITY-LEDGER (Phase 2) ───────────────────────────────────────
 // One typed timeline of how goods + money moved — filterable by staff, activity type,
 // and a from–to date range. Backed by the ADDITIVE pa_staff_ledger RPC (sales + transfers
@@ -1870,21 +1881,61 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                       )}
                       {/* Caps tied to discount / expense */}
                       {a.key === "discount_policy" && !blocked && (
-                        <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 12.5, color: "var(--text-muted)", flex: 1 }}>{en ? "Max discount %" : "Remise max %"}</span>
-                          <input type="number" min="0" max="100" className="input" style={{ width: 110 }}
-                            value={perms.max_discount_pct ?? ""} placeholder={en ? "no limit" : "sans limite"}
-                            onChange={(e) => setCap("max_discount_pct", e.target.value)} />
+                        /* 0 REFUSES. staffPermissions.js:71 returns a 403 permission_limit,
+                           and it runs AFTER the policy check without consulting it — so a cap
+                           of 0 overrides the segment above for both "Allowed" AND "Needs
+                           approval": the request is refused outright rather than sent to the
+                           owner, who is left waiting for an approval that will never arrive.
+                           Live on prod today (Bepanda Shop: discount "approve", cap 0), which
+                           is why the warning names the approval case explicitly. */
+                        <div style={{ marginTop: 6 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 12.5, color: "var(--text-muted)", flex: 1 }}>{en ? "Max discount %" : "Remise max %"}</span>
+                            <input type="number" min="0" max="100" className="input" style={{ width: 110 }}
+                              value={perms.max_discount_pct ?? ""} placeholder={en ? "no limit" : "sans limite"}
+                              onChange={(e) => setCap("max_discount_pct", e.target.value)} />
+                          </div>
+                          <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 3 }}>
+                            {en ? "Leave BLANK for no limit. 0 refuses every discount."
+                                : "Laissez VIDE pour aucune limite. 0 refuse toute remise."}
+                          </div>
+                          {capIsZero(perms.max_discount_pct) && (
+                            <div style={{ marginTop: 4, fontSize: 11.5, fontWeight: 600, color: "var(--warning)", lineHeight: 1.45 }}>
+                              ⚠ {en ? "A limit of 0% refuses EVERY discount for this person — including the ones you set to need approval, which never reach you to approve. Leave it blank if you meant no limit."
+                                    : "Une limite de 0 % refuse TOUTE remise pour cette personne — y compris celles que vous avez mises en « approbation », qui ne vous parviennent jamais. Laissez vide si vous vouliez dire aucune limite."}
+                            </div>
+                          )}
                         </div>
                       )}
                       {/* MP-CREDIT-PERMISSION: per-sale credit ceiling (blank = no limit).
                           A credit above it needs the boss even when the policy is Allowed. */}
                       {a.key === "credit_policy" && !blocked && (
-                        <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 12.5, color: "var(--text-muted)", flex: 1 }}>{en ? "Max credit amount" : "Crédit max"} ({fmt.symbol})</span>
-                          <input type="number" min="0" className="input" style={{ width: 130 }}
-                            value={perms.max_credit_amount ?? ""} placeholder={en ? "no limit" : "sans limite"}
-                            onChange={(e) => setCap("max_credit_amount", e.target.value)} />
+                        /* ⚠️ THIS CAP DOES NOT BEHAVE LIKE THE OTHER TWO, AND THE WORDING HAS
+                           TO SAY SO. Over the discount or expense cap the action is REFUSED.
+                           Over this one, decideCredit returns "approve" (staffPermissions.js:156)
+                           — the sale still goes through, it just needs the boss first. So 0 here
+                           does not stop credit, it sends EVERY credit sale for approval.
+                           Copying the neighbouring warning would describe a refusal that never
+                           happens: a control lying about itself, which is the same class of
+                           defect one layer up. The way to actually stop credit is the Blocked
+                           segment above, so the warning points at it by name. */
+                        <div style={{ marginTop: 6 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 12.5, color: "var(--text-muted)", flex: 1 }}>{en ? "Max credit amount" : "Crédit max"} ({fmt.symbol})</span>
+                            <input type="number" min="0" className="input" style={{ width: 130 }}
+                              value={perms.max_credit_amount ?? ""} placeholder={en ? "no limit" : "sans limite"}
+                              onChange={(e) => setCap("max_credit_amount", e.target.value)} />
+                          </div>
+                          <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 3 }}>
+                            {en ? "Leave BLANK for no limit. Above this the sale is not refused — it comes to you for approval first."
+                                : "Laissez VIDE pour aucune limite. Au-dessus, la vente n'est pas refusée — elle vous est d'abord soumise pour approbation."}
+                          </div>
+                          {capIsZero(perms.max_credit_amount) && (
+                            <div style={{ marginTop: 4, fontSize: 11.5, fontWeight: 600, color: "var(--warning)", lineHeight: 1.45 }}>
+                              ⚠ {en ? "A limit of 0 does not stop credit — it sends EVERY credit sale to you for approval, including the smallest. Leave it blank if you meant no limit, or choose Blocked above to stop credit altogether."
+                                    : "Une limite de 0 n'empêche pas le crédit — elle vous envoie TOUTE vente à crédit pour approbation, même la plus petite. Laissez vide si vous vouliez dire aucune limite, ou choisissez Bloqué ci-dessus pour interdire le crédit."}
+                            </div>
+                          )}
                         </div>
                       )}
                       {a.key === "expense_policy" && !blocked && (
@@ -1911,10 +1962,10 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                           {/* allow + 0 is a contradiction: the policy says yes and the cap says
                               never. Warned at the point of setting it, not discovered later by
                               a member of staff who cannot record anything. */}
-                          {Number(perms.max_expense_amount) === 0 && perms.max_expense_amount !== "" && perms.max_expense_amount !== null && (
+                          {capIsZero(perms.max_expense_amount) && (
                             <div style={{ marginTop: 4, fontSize: 11.5, fontWeight: 600, color: "var(--warning)", lineHeight: 1.45 }}>
-                              ⚠ {en ? "A limit of 0 blocks EVERY expense for this person, even though you have allowed them. Leave it blank if you meant no limit."
-                                    : "Une limite de 0 bloque TOUTE dépense pour cette personne, même si vous l'avez autorisée. Laissez vide si vous vouliez dire aucune limite."}
+                              ⚠ {en ? "A limit of 0 refuses EVERY expense for this person — including the ones you set to need approval, which never reach you to approve. Leave it blank if you meant no limit."
+                                    : "Une limite de 0 refuse TOUTE dépense pour cette personne — y compris celles que vous avez mises en « approbation », qui ne vous parviennent jamais. Laissez vide si vous vouliez dire aucune limite."}
                             </div>
                           )}
                         </div>
