@@ -40,6 +40,7 @@ import AssistantPage from "./pages/AssistantPage"; // Pro Plus Feature 1 — AI 
 import AttendancePage from "./pages/AttendancePage"; // Staff Maintenance Phase 3 — shared-device PIN attendance
 import AssetsPage from "./pages/AssetsPage"; // Pro Plus Feature 3 — Asset ledger
 import AccountantLogPage from "./pages/AccountantLogPage"; // Accountant Log Phase 1 — owner-only staff oversight
+import ThresholdReviewPage from "./pages/ThresholdReviewPage"; // MP-THRESHOLD-REVIEW — one-time activation screen
 import MyRequestsPage from "./pages/MyRequestsPage"; // staffer-facing approval queue (non-owner)
 import TeamApprovalsPage from "./pages/TeamApprovalsPage"; // MP-MANAGER-DELEGATION deputy inbox
 import FiltersPage from "./pages/FiltersPage"; // MP-FILTERS — what/who/when clarity screen
@@ -164,6 +165,10 @@ const ROUTE_ACCESS = {
   // Accountant Log Phase 1 — OWNER ONLY oversight surface (Pro Plus handled
   // in-page + nav locked deep-link; server enforces owner + pro_plus 403).
   "/accountant-log": ["owner"],
+  // MP-THRESHOLD-REVIEW — turning on a safeguard the owner configured himself.
+  // OWNER ONLY: it is an activation decision about his own staff, and the server
+  // gates it identically (ownerAccountantLog).
+  "/threshold-review": ["owner"],
   // My Requests — staffer's own approval queue. Any NON-OWNER staffer.
   "/my-requests": ["manager", "cashier", "warehouse", "accountant"],
   // MP-MANAGER-DELEGATION — a delegated manager's deputy inbox (approve/reject team
@@ -606,6 +611,7 @@ export default function App() {
             {/* Asset ledger — owner-only (RoleGuard); Pro Plus gating + upsell in-page. */}
             <Route path="assets"       element={<RoleGuard path="/assets"><AssetsPage /></RoleGuard>} />
             <Route path="accountant-log" element={<RoleGuard path="/accountant-log"><AccountantLogPage /></RoleGuard>} />
+            <Route path="threshold-review" element={<RoleGuard path="/threshold-review"><ThresholdReviewPage /></RoleGuard>} />
             <Route path="my-requests" element={<RoleGuard path="/my-requests"><MyRequestsPage /></RoleGuard>} />
             <Route path="team-approvals" element={<RoleGuard path="/team-approvals"><TeamApprovalsPage /></RoleGuard>} />
             <Route path="filters"     element={<RoleGuard path="/filters"><PlanGuard path="/filters"><FiltersPage /></PlanGuard></RoleGuard>} />

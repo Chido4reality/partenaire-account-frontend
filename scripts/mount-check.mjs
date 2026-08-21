@@ -74,6 +74,8 @@ const STUBS = {
     export const noShiftHint = () => "Open your shift";
   `,
   "PaymentEventReceipt": `export default function PaymentEventReceipt(){ return null; }`,
+  "react-router-dom": `export const useNavigate = () => () => {}; export const useSearchParams = () => [new URLSearchParams(), () => {}];`,
+  "react-hot-toast": `const t = () => {}; t.success = () => {}; t.error = () => {}; export default t;`,
 };
 
 // stdin entry + resolveDir: no temp file to leave behind in src/.
@@ -83,6 +85,7 @@ await build({
       export { default as ExpensePayoutPage } from "./pages/ExpensePayoutPage";
       export { default as TicketListPage } from "./pages/TicketListPage";
       export { default as CashierOversightTab } from "./components/CashierOversightTab";
+      export { default as ThresholdReviewPage } from "./pages/ThresholdReviewPage";
     `,
     resolveDir: SRC, loader: "jsx", sourcefile: "mount-entry.jsx",
   },
@@ -148,6 +151,29 @@ const OVERSIGHT = { data: {
 
 const OV_PROPS = { from: "2026-08-01", to: "2026-08-18", locationId: "loc-1", lang: "en" };
 
+// MP-THRESHOLD-REVIEW fixture. COPIED VERBATIM from a real pa_threshold_review()
+// call on staging, not written from memory — four oversight fixtures were wrong
+// the last time I typed one out from recollection.
+// ⚠️ The numerics are STRINGS: PostgREST returns numeric as text, so a component
+// doing arithmetic on them has to coerce. A fixture using JS numbers would hide
+// exactly that bug.
+// ⚠️ "Scope Probe" is the row that matters most: a staff member with NO sales, so
+// half_under and biggest are NULL. Without this case the screen would happily
+// render "half of their sales are under null" and nobody would notice.
+const TR_ROWS = [
+  { user_id: "u-k", full_name: "Kusi", role: "cashier", is_active: true,
+    threshold: "5000", confirmed_at: null, sales_90d: 9, half_under: "6000",
+    biggest: "15000", would_gate: 5, pct_gated: "55.6" },
+  { user_id: "u-a", full_name: "Ada", role: "cashier", is_active: true,
+    threshold: "200000", confirmed_at: null, sales_90d: 4, half_under: "11000",
+    biggest: "36000", would_gate: 0, pct_gated: "0.0" },
+  { user_id: "u-s", full_name: "Scope Probe", role: "warehouse", is_active: false,
+    threshold: "100", confirmed_at: null, sales_90d: 0, half_under: null,
+    biggest: null, would_gate: 0, pct_gated: "0" },
+];
+const TR_MIXED = { success: true, data: TR_ROWS, needs_review: true };
+const TR_EMPTY = { success: true, data: [], needs_review: false };
+
 const CASES = [
   ["Payouts · 3 rows, NO till open", M.ExpensePayoutPage, {}, { queries: { "expense-payouts": THREE_PAYOUTS }, hasShift: false }],
   ["Payouts · 3 rows, till open",    M.ExpensePayoutPage, {}, { queries: { "expense-payouts": THREE_PAYOUTS }, hasShift: true }],
@@ -174,6 +200,12 @@ const CASES = [
   ["Oversight · full data (FR)",     M.CashierOversightTab, { ...OV_PROPS, lang: "fr" }, { queries: { "cashier-oversight": OVERSIGHT }, role: "owner", lang: "fr" }],
   ["Oversight · loading",            M.CashierOversightTab, OV_PROPS,                { isLoading: true, role: "owner" }],
   ["Oversight · fetch failed",       M.CashierOversightTab, OV_PROPS,                { isError: true, role: "owner" }],
+
+  ["Threshold · mixed + no-sales row", M.ThresholdReviewPage, {}, { queries: { "threshold-review": TR_MIXED }, role: "owner" }],
+  ["Threshold · mixed (FR)",           M.ThresholdReviewPage, {}, { queries: { "threshold-review": TR_MIXED }, role: "owner", lang: "fr" }],
+  ["Threshold · nothing set",          M.ThresholdReviewPage, {}, { queries: { "threshold-review": TR_EMPTY }, role: "owner" }],
+  ["Threshold · loading",              M.ThresholdReviewPage, {}, { isLoading: true, role: "owner" }],
+  ["Threshold · fetch failed",         M.ThresholdReviewPage, {}, { isError: true, role: "owner" }],
 ];
 
 // A React warning is a failure here. "Each child in a list needs a key" is how a
@@ -192,6 +224,13 @@ for (const [name, Comp, props, state] of CASES) {
     const html = renderToString(React.createElement(Comp, props));
     if (!html || html.length < 20) { bad++; realWarn(`  EMPTY  ${name} — ${html.length} chars`); continue; }
     if (warned.length) { bad++; realWarn(`  WARN   ${name}\n           ${warned[0].split("\n")[0]}`); continue; }
+    // DUMP="<substring>" prints the rendered HTML for matching cases. A clean
+    // render proves the component did not throw; it proves nothing about what it
+    // SAYS. Reading the output is how you catch "half of their sales are under
+    // null" — valid HTML, no warning, and wrong.
+    if (process.env.DUMP && name.includes(process.env.DUMP)) {
+      realWarn(`\n----- ${name} -----\n${html.replace(/></g, ">\n<")}\n-----\n`);
+    }
     realWarn(`  ok     ${name}  (${html.length})`);
   } catch (e) {
     bad++;
