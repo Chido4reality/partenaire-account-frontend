@@ -29,6 +29,24 @@
 // tests nothing while looking like it does: the green-suite-with-a-hole in a new
 // costume. Same rule as SQL bodies — go to the source of truth
 // (backend/src/lib/cashierOversight.js) and copy the shape it actually returns.
+//
+// ⚠️ useEffect DOES NOT RUN UNDER renderToString. On 2026-08-22 three
+// ApprovalDetailView scenarios passed green while rendering "Couldn't load the
+// full detail" — that component fetches its payload on mount, so SSR renders its
+// permanent not-loaded state and the stubbed `api` never gets called. Three ticks
+// against an empty state, in the harness built to catch exactly this.
+// The tell was CHARACTER COUNT: 290 / 290 / 303, when two of them were supposed
+// to differ substantially. If several scenarios come out near-identical in size,
+// they are probably all rendering the same fallback.
+// So: anything a component FETCHES on mount, or holds in internal useState that a
+// parent cannot set, is UNREACHABLE here. Do not write a scenario for it — pull
+// the pure part out (buildReasons, bundleSentence) and assert on that, as the
+// TEXT CHECKS block at the bottom does.
+//
+// ⚠️ AND FINALLY: PROVE THE CHECK CAN FAIL. Revert to the broken behaviour and
+// confirm it goes red. That step is what turned 10 green assertions into 5 real
+// ones when the silent-drop fallback was put back — the other 5 would have passed
+// either way and were measuring nothing.
 import { build } from "esbuild";
 import { renderToString } from "react-dom/server";
 import React from "react";
