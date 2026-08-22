@@ -106,7 +106,12 @@ const oversellLine = (it, en) => {
 };
 
 // ── WHY: one plain line per reason. tone drives the colour cue. ──────────────────
-function buildReasons(row, en, fmt, lk) {
+// Exported for the mount harness. The component fetches its detail in a
+// useEffect, which does NOT run under renderToString — so mounting it renders
+// the "couldn't load" state and proves nothing about the reason lines. That is
+// not a hypothetical: three scenarios passed green against exactly that empty
+// state before this was exported. Assert on the builder instead.
+export function buildReasons(row, en, fmt, lk) {
   const p = (row && row.payload && typeof row.payload === "object") ? row.payload : {};
   const out = [];
 
@@ -139,6 +144,24 @@ function buildReasons(row, en, fmt, lk) {
         else out.push({ tone: "warn", text: en ? "Selling an out-of-stock item" : "Vente d'un article en rupture" });
       } else if (a.type === "sold_date") {
         out.push({ tone: "info", text: `${en ? "Back-dated sale" : "Vente antidatée"}: ${fmtDate(a.sold_date, en)}` });
+      } else if (a.type === "high_value") {
+        // MP-THRESHOLD-REVIEW. Gross, and the wording says so: the boss set the
+        // threshold against sale size, and a discounted sale still counts at its
+        // full value, which is the whole point of measuring before the discount.
+        out.push({ tone: "warn", text: en
+          ? `Large sale: ${fmt(num(a.gross))} before any discount — over the amount you asked to approve`
+          : `Grosse vente : ${fmt(num(a.gross))} avant remise — au-dessus du montant que vous souhaitez approuver` });
+      } else if (a.type) {
+        // ⚠️ NO SILENT DROP. Every branch above is an if/else chain with no
+        // fallback, so a reason type this build does not recognise used to vanish
+        // — the boss would receive a request listing every reason EXCEPT the one
+        // that caused it. That is not hypothetical: it is exactly what would have
+        // happened to high_value, and it is invisible to whoever writes the
+        // backend because their own build always knows the type. An APK in the
+        // field is an older build by definition, so this WILL happen again.
+        out.push({ tone: "warn", text: en
+          ? `Needs your approval (${a.type}) — update the app to see the full reason`
+          : `Nécessite votre approbation (${a.type}) — mettez l'application à jour pour voir le détail` });
       }
     }
     return out;

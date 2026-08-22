@@ -60,6 +60,9 @@ const STUBS = {
     export const useAuthStore = (sel) => sel({ user: { role: globalThis.__S.role || "cashier", id: "u1", name: "Ada" }, org: { name: "Shop" } });
     export const useLangStore = (sel) => sel({ lang: globalThis.__S.lang || "en" });
     export const useSettingsStore = (sel) => sel({ selectedLocation: { id: "loc-1", name: "Bepanda" } });
+    const draft = { cart: [], setCart(){}, clear(){}, held: [], hydrate(){} };
+    export const useDraftCartStore = (sel) => (typeof sel === "function" ? sel(draft) : draft);
+    useDraftCartStore.getState = () => draft;
   `,
   "useCurrency": `const f = (n) => String(n ?? 0) + " FCFA"; f.symbol = "FCFA"; f.currency = "XAF"; export const useCurrency = () => f;`,
   "useNetworkStatus": `export const useNetworkStatus = () => ({ isOnline: globalThis.__S.isOnline !== false });`,
@@ -72,6 +75,8 @@ const STUBS = {
   "ShiftWidgets": `
     export const useActiveShift = () => ({ hasShift: !!globalThis.__S.hasShift, locId: "loc-1" });
     export const noShiftHint = () => "Open your shift";
+    export function ActiveShiftIndicator(){ return null; }
+    export function OpenShiftModal(){ return null; }
   `,
   "PaymentEventReceipt": `export default function PaymentEventReceipt(){ return null; }`,
   "react-router-dom": `export const useNavigate = () => () => {}; export const useSearchParams = () => [new URLSearchParams(), () => {}];`,
@@ -86,11 +91,18 @@ await build({
       export { default as TicketListPage } from "./pages/TicketListPage";
       export { default as CashierOversightTab } from "./components/CashierOversightTab";
       export { default as ThresholdReviewPage } from "./pages/ThresholdReviewPage";
+      export { buildReasons } from "./components/common/ApprovalDetailView";
+      export { bundleSentence, bundleReasonLine } from "./utils/approvalReasons";
     `,
     resolveDir: SRC, loader: "jsx", sourcefile: "mount-entry.jsx",
   },
   bundle: true, format: "esm", outfile: OUT, jsx: "automatic",
   external: ["react", "react/jsx-runtime"], logLevel: "silent",
+  platform: "node",
+  // Some transitive deps (reached via POSPage) are CommonJS and call require()
+  // at runtime. esbuild's ESM output stubs that with a thrower — "Dynamic require
+  // of react is not supported" — so hand it a real one.
+  banner: { js: `import { createRequire as __cr } from "module"; const require = __cr(import.meta.url);` },
   plugins: [{
     name: "stubs",
     setup(b) {
@@ -174,6 +186,27 @@ const TR_ROWS = [
 const TR_MIXED = { success: true, data: TR_ROWS, needs_review: true };
 const TR_EMPTY = { success: true, data: [], needs_review: false };
 
+// Bundle payloads. actions[] shape copied from sales.js neededActions.push() —
+// the same fixture rule as the oversight block above.
+const mkBundle = (actions) => ({
+  id: "ap1", action_type: "bundled_sale", status: "pending",
+  requested_by_name: "Kusi", amount: null, created_at: new Date().toISOString(),
+  target_ref: actions.map((a) => a.type).join("+"),
+  payload: { actions, signature: "sig", sale_request: {} },
+});
+// The real staging response for a 15,200 sale discounted to 4,200 — proof that
+// the gross gate still fires AND that both reasons reach the boss.
+const BUNDLE_HV = mkBundle([
+  { type: "discount", effective_pct: 72, total_discount: 11000 },
+  { type: "high_value", gross: 15200 },
+]);
+// ⚠️ A type this build does not recognise. Every one of the three display sites
+// used to drop it silently. This case exists to fail if that ever comes back.
+const BUNDLE_UNKNOWN = mkBundle([
+  { type: "high_value", gross: 15200 },
+  { type: "some_future_reason", detail: "whatever" },
+]);
+
 const CASES = [
   ["Payouts · 3 rows, NO till open", M.ExpensePayoutPage, {}, { queries: { "expense-payouts": THREE_PAYOUTS }, hasShift: false }],
   ["Payouts · 3 rows, till open",    M.ExpensePayoutPage, {}, { queries: { "expense-payouts": THREE_PAYOUTS }, hasShift: true }],
@@ -206,6 +239,7 @@ const CASES = [
   ["Threshold · nothing set",          M.ThresholdReviewPage, {}, { queries: { "threshold-review": TR_EMPTY }, role: "owner" }],
   ["Threshold · loading",              M.ThresholdReviewPage, {}, { isLoading: true, role: "owner" }],
   ["Threshold · fetch failed",         M.ThresholdReviewPage, {}, { isError: true, role: "owner" }],
+
 ];
 
 // A React warning is a failure here. "Each child in a list needs a key" is how a
@@ -238,6 +272,61 @@ for (const [name, Comp, props, state] of CASES) {
   }
 }
 console.error = realWarn;
+
+// ── TEXT CHECKS — the two POS display sites ─────────────────────────────────
+// These branches are driven by POSPage's internal `approvalBundle` state, which
+// SSR cannot set: mounting the page would render it without ever reaching them,
+// and a scenario that cannot fail is the hole this harness exists to close. The
+// phrasing was extracted to utils/approvalReasons precisely so it can be checked
+// here — as an ASSERTION on content, not a clean-render tick.
+const money = (n) => String(n ?? 0) + " FCFA";
+const CHECKS = [
+  ["POS sentence · high_value names the gross",
+    () => M.bundleSentence({ type: "high_value", gross: 15200 }, "en", money),
+    (s) => s.includes("15200") && /before any discount/i.test(s)],
+  ["POS sentence · high_value (FR)",
+    () => M.bundleSentence({ type: "high_value", gross: 15200 }, "fr", money),
+    (s) => s.includes("15200") && /avant remise/i.test(s)],
+  // THE TRAP. An unrecognised type must never yield "" — it was filtered out and
+  // the boss received a request describing everything except why it was raised.
+  ["POS sentence · unknown type is NOT dropped",
+    () => M.bundleSentence({ type: "some_future_reason" }, "en", money),
+    (s) => s.length > 0 && s.includes("some_future_reason")],
+  ["POS sentence · missing type is NOT dropped",
+    () => M.bundleSentence({}, "en", money),
+    (s) => s.length > 0 && /unknown/i.test(s)],
+  ["POS modal · high_value line names the gross",
+    () => M.bundleReasonLine({ type: "high_value", gross: 15200 }, "en", money),
+    (s) => s.includes("15200") && /before any discount/i.test(s)],
+  ["POS modal · unknown type is NOT dropped",
+    () => M.bundleReasonLine({ type: "some_future_reason" }, "en", money),
+    (s) => s.length > 0 && s.includes("some_future_reason")],
+
+  // Display site 3 — the BOSS's view. The surface where a dropped reason means he
+  // approves something nobody told him about.
+  ["Boss detail · high_value + discount both listed",
+    () => M.buildReasons(BUNDLE_HV, true, money, {}).map((r) => r.text).join(" | "),
+    (s) => /15200/.test(s) && /before any discount/i.test(s) && /Discount/i.test(s)],
+  ["Boss detail · high_value (FR)",
+    () => M.buildReasons(BUNDLE_HV, false, money, {}).map((r) => r.text).join(" | "),
+    (s) => /15200/.test(s) && /avant remise/i.test(s)],
+  ["Boss detail · unknown type is NOT dropped",
+    () => M.buildReasons(BUNDLE_UNKNOWN, true, money, {}).map((r) => r.text).join(" | "),
+    (s) => s.includes("some_future_reason")],
+  ["Boss detail · every action yields a line",
+    () => String(M.buildReasons(BUNDLE_UNKNOWN, true, money, {}).length),
+    (s) => s === "2"],
+];
+let textBad = 0;
+for (const [name, run, ok] of CHECKS) {
+  let out;
+  try { out = String(run() ?? ""); } catch (e) { textBad++; realWarn(`  CRASH  ${name} — ${e.message}`); continue; }
+  if (!ok(out)) { textBad++; realWarn(`  FAIL   ${name}\n           got: ${JSON.stringify(out)}`); continue; }
+  realWarn(`  ok     ${name}`);
+  if (process.env.DUMP && name.includes(process.env.DUMP)) realWarn(`           ${out}`);
+}
+
 try { rmSync(OUT, { force: true }); } catch { /* best effort */ }
-console.log(`\n  ${CASES.length - bad}/${CASES.length} rendered clean`);
-process.exit(bad ? 1 : 0);
+const total = CASES.length + CHECKS.length;
+console.log(`\n  ${total - bad - textBad}/${total} passed  (${CASES.length - bad}/${CASES.length} rendered, ${CHECKS.length - textBad}/${CHECKS.length} text)`);
+process.exit(bad || textBad ? 1 : 0);

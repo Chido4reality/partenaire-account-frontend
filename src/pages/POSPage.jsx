@@ -14,6 +14,7 @@ import { useMyPermissions } from "../utils/useMyPermissions";
 import { useTicketSummary, ticketSummaryKey } from "../utils/useTicketSummary"; // MP-CASHIER-PHASE-1b
 import { printTicketSlipViaBluetooth } from "../utils/btPrint"; // MP-CASHIER-PHASE-1b
 import { useCurrency } from "../utils/useCurrency";
+import { bundleSentence, bundleReasonLine } from "../utils/approvalReasons"; // MP-APPROVAL-BUNDLE
 import { formatMoney, currencySymbol } from "../utils/currency";
 import { t } from "../utils/i18n";
 import { cacheData, getCachedData } from "../utils/offlineStore";
@@ -1249,21 +1250,12 @@ export default function POSPage() {
     setApprovalBundle(null);
     if (!bundle) return;
     const who = String(user?.full_name || "").trim() || (lang === "en" ? "A cashier" : "Un caissier");
-    const parts = (bundle.actions || []).map(a => {
-      if (a.type === "below_cost") return lang === "en"
-        ? `sell "${a.name}" for ${fmt(a.attempted_price)} (below the ${fmt(a.min_price)} floor)`
-        : `vendre "${a.name}" à ${fmt(a.attempted_price)} (sous le plancher de ${fmt(a.min_price)})`;
-      if (a.type === "discount") return lang === "en"
-        ? `give a total discount of ${fmt(a.total_discount)}` : `accorder une remise totale de ${fmt(a.total_discount)}`;
-      if (a.type === "credit") return lang === "en"
-        ? `sell ${fmt(a.balance_due)} on credit` : `vendre ${fmt(a.balance_due)} à crédit`;
-      if (a.type === "oversell") return lang === "en"
-        ? `sell more than the stock shows (${(a.items || []).map(it => it.name).filter(Boolean).join(", ")})`
-        : `vendre plus que le stock affiché (${(a.items || []).map(it => it.name).filter(Boolean).join(", ")})`;
-      if (a.type === "sold_date") return lang === "en"
-        ? `record this sale as actually sold on ${a.sold_date}` : `enregistrer cette vente comme ayant eu lieu le ${a.sold_date}`;
-      return "";
-    }).filter(Boolean);
+    // MP-APPROVAL-BUNDLE: phrasing lives in utils/approvalReasons so the three
+    // places that turn payload.actions into words cannot drift, and so the
+    // unknown-type fallback exists in ONE place. This used to `return ""` for an
+    // unrecognised type into a .filter(Boolean) — the boss got a request listing
+    // every reason except the one that caused it.
+    const parts = (bundle.actions || []).map(a => bundleSentence(a, lang, fmt)).filter(Boolean);
     requestApproval({
       actionType:  "bundled_sale",
       targetTable: "pa_sales",
@@ -2964,11 +2956,19 @@ export default function POSPage() {
                   ))}
                 </div>
               ))}
-              {approvalBundle.actions.filter(a => a.type === "sold_date").map((a, i) => (
-                <div key={`sd${i}`} style={{ fontSize: 13.5, lineHeight: 1.5, marginTop: 6 }}>
-                  {lang === "en" ? `Sold-date note: this sale will show as actually sold on ${a.sold_date}.` : `Note de date de vente : cette vente indiquera avoir eu lieu le ${a.sold_date}.`}
-                </div>
-              ))}
+              {/* Everything the two rich components above don't already render:
+                  sold_date, credit is handled above, high_value, AND any type this
+                  build does not know. Routed through bundleReasonLine so an
+                  unrecognised reason is NAMED rather than silently omitted — this
+                  block used to be one filter per known type, so a new type showed
+                  the cashier an approval box listing no reason at all. */}
+              {approvalBundle.actions
+                .filter(a => !["below_cost", "discount", "credit", "oversell"].includes(a.type))
+                .map((a, i) => (
+                  <div key={`r${i}`} style={{ fontSize: 13.5, lineHeight: 1.5, marginTop: 6 }}>
+                    {bundleReasonLine(a, lang, fmt)}
+                  </div>
+                ))}
               <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.5 }}>
                 {lang === "en" ? "Choose how to get the owner's approval:" : "Choisissez comment obtenir l'approbation :"}
               </div>
