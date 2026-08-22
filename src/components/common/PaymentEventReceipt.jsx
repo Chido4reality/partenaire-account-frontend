@@ -153,6 +153,23 @@ function nowLocale(lang) {
 // Compose the WhatsApp + print plain-text bodies (the on-screen
 // modal renders JSX directly; the two outbound surfaces share
 // this builder so they can't drift).
+// ── MP-PAYMENT-BREAKDOWN: the "act on this now" marker ───────────────────────
+// buildBodyLines returns strings, and the only emphasis the format had was
+// `*bold*`. A refund's cash portion needs more than bold: it is the one line on
+// the screen that corresponds to money physically leaving the drawer.
+//
+// A prefix rather than a restructure to objects, because bodyLines has TWO
+// consumers (the print HTML and the on-screen map) and changing the element type
+// would mean changing every push in this file. Both consumers strip it below.
+//
+// ⚠️ Chosen to FAIL LOUDLY. If a third consumer is ever added and forgets to
+// strip it, the reader sees a stray "!! " in front of the line — visible and
+// harmless. A zero-width or control-character sentinel would fail silently,
+// which is the wrong direction for a line about handing over cash.
+const ACTION = "!!";
+const isActionLine = (l) => typeof l === "string" && l.startsWith(ACTION);
+const stripAction = (l) => (isActionLine(l) ? l.slice(ACTION.length) : l);
+
 function buildBodyLines(eventType, data, lang, org) {
   const en = lang === "en";
   const sym = currencySymbol(org?.currency);
@@ -386,10 +403,18 @@ function buildBodyLines(eventType, data, lang, org) {
       const credit = Number(data.credit_portion || 0);
       const cash = Number(data.cash_portion || 0);
       if (credit > 0 && cash > 0) {
+        // MP-PAYMENT-BREAKDOWN: these two halves are NOT equivalent and used to
+        // be rendered as one muted sentence. Cancelling the debt is bookkeeping;
+        // handing over the cash is a physical act the staff member must perform
+        // right now. Split into two lines, and mark the cash one as the
+        // instruction it is.
         lines.push("");
         lines.push(en
-          ? `↳ ${fmtAmt(credit)} F applied to your account balance, ${fmtAmt(cash)} F returned as cash.`
-          : `↳ ${fmtAmt(credit)} F imputé sur votre solde client, ${fmtAmt(cash)} F restitué en espèces.`);
+          ? `↳ ${fmtAmt(credit)} F applied to your account balance.`
+          : `↳ ${fmtAmt(credit)} F imputé sur votre solde client.`);
+        lines.push(`${ACTION}${en
+          ? `Hand back ${fmtAmt(cash)} ${sym} in cash`
+          : `Remettre ${fmtAmt(cash)} ${sym} en espèces`}`);
       } else if (credit > 0) {
         lines.push(en
           ? `↳ ${fmtAmt(credit)} F applied to your account balance.`
@@ -846,6 +871,10 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
       const linesHtml = bodyLines
         .map((l) => l === "─────────────────────" ? `<hr class="sep"/>`
           : l === "" ? `<br/>`
+          // MP-PAYMENT-BREAKDOWN: strip the ACTION marker here too. Print is a
+          // thermal receipt with no colour, so the emphasis becomes bold + a
+          // cash glyph — but the marker must never reach paper either way.
+          : isActionLine(l) ? `<div><strong>&#128181; ${esc(stripAction(l))}</strong></div>`
           : `<div>${esc(l).replace(/\*([^*]+)\*/g, "<strong>$1</strong>")}</div>`)
         .join("");
       bodyHtml = `
@@ -953,6 +982,22 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
                   return <div key={idx} style={{ borderTop: "1px dashed var(--border)", margin: "6px 0" }} />;
                 }
                 if (l === "") return <div key={idx} style={{ height: 6 }} />;
+                // MP-PAYMENT-BREAKDOWN: an ACTION line is the instruction the
+                // staff member has to carry out with real money, so it is not
+                // just bold — it is set apart in warning colour so it cannot be
+                // read as another bookkeeping line.
+                if (isActionLine(l)) {
+                  return (
+                    <div key={idx} style={{
+                      fontSize: 13, fontWeight: 800, color: "#f87171",
+                      background: "rgba(248,113,113,0.10)",
+                      border: "1px solid rgba(248,113,113,0.35)",
+                      borderRadius: 6, padding: "6px 8px", margin: "6px 0",
+                    }}>
+                      💵 {stripAction(l)}
+                    </div>
+                  );
+                }
                 const isBold = /^\*[^*]+\*$/.test(l);
                 const clean = l.replace(/^\*|\*$/g, "");
                 return (

@@ -111,6 +111,7 @@ await build({
       export { default as ThresholdReviewPage } from "./pages/ThresholdReviewPage";
       export { buildReasons } from "./components/common/ApprovalDetailView";
       export { bundleSentence, bundleReasonLine } from "./utils/approvalReasons";
+      export { paymentParts, paymentBreakdownLine, hasSplitPayment } from "./utils/paymentBreakdown";
     `,
     resolveDir: SRC, loader: "jsx", sourcefile: "mount-entry.jsx",
   },
@@ -334,6 +335,35 @@ const CHECKS = [
   ["Boss detail · every action yields a line",
     () => String(M.buildReasons(BUNDLE_UNKNOWN, true, money, {}).length),
     (s) => s === "2"],
+
+  // ── MP-PAYMENT-BREAKDOWN ───────────────────────────────────────────────────
+  // Numbers are the REAL VNT-20260822-0003 that Peter hit: 9,550 total, 5,000
+  // paid, 4,550 credit. The refund correctly returns only the 5,000 — the bug
+  // was that no screen said so.
+  ["Breakdown · split sale names all three figures",
+    () => M.paymentBreakdownLine({ total_amount: 9550, paid_amount: 5000 }, "en", money),
+    (s) => /9550/.test(s) && /5000/.test(s) && /4550/.test(s)],
+  ["Breakdown · credit is DERIVED, not read from balance_due",
+    // A stale/contradictory balance_due must not be able to make the three
+    // numbers disagree with each other.
+    () => M.paymentBreakdownLine({ total_amount: 9550, paid_amount: 5000, balance_due: 999 }, "en", money),
+    (s) => /4550/.test(s) && !/999/.test(s)],
+  ["Breakdown · FR labels",
+    () => M.paymentBreakdownLine({ total_amount: 9550, paid_amount: 5000 }, "fr", money),
+    (s) => /Payé/.test(s) && /Crédit/.test(s)],
+  // Fully paid must stay silent — a "Credit 0" line on every sale is the noise
+  // that makes the real case get skipped.
+  ["Breakdown · fully paid returns null",
+    () => String(M.paymentBreakdownLine({ total_amount: 9550, paid_amount: 9550 }, "en", money)),
+    (s) => s === "null"],
+  ["Breakdown · full credit (paid 0) still shows",
+    () => M.paymentBreakdownLine({ total_amount: 9550, paid_amount: 0 }, "en", money),
+    (s) => /9550/.test(s)],
+  ["Breakdown · missing paid_amount does not invent a split",
+    // undefined -> 0 would claim the whole sale is on credit. A sale row that
+    // simply lacks the field must not be described as unpaid.
+    () => String(M.hasSplitPayment({ total_amount: 9550 })),
+    (s) => s === "true"],
 ];
 let textBad = 0;
 for (const [name, run, ok] of CHECKS) {

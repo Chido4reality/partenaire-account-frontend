@@ -14,6 +14,7 @@ import useOwnerApproval from "../../hooks/useOwnerApproval";
 import { isPendingApproval, keepWorkingToast } from "../../utils/approval";
 import { useNetworkStatus } from "../../utils/useNetworkStatus";
 import RestrictedAction from "./RestrictedAction";
+import { paymentParts } from "../../utils/paymentBreakdown"; // MP-PAYMENT-BREAKDOWN
 
 /**
  * VoidReturnModal — handles void, refund, exchange
@@ -29,6 +30,8 @@ import RestrictedAction from "./RestrictedAction";
 export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess }) {
   const qc = useQueryClient();
   const fmt = useCurrency();
+  // MP-PAYMENT-BREAKDOWN: null on a fully-paid sale, so the header stays as it was.
+  const payParts = paymentParts(sale, lang);
   const { selectedLocation } = useSettingsStore();
   const { user, impersonating, impersonation } = useAuthStore();
   // MP-VOID-OPTION-REGATE: the Void choice is shown ONLY for the roles the
@@ -520,10 +523,36 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
         <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>
           {sale.sale_number} · {fmt(total)}
           {sale.pa_customers?.name && ` · ${sale.pa_customers.name}`}
+          {/* MP-PAYMENT-BREAKDOWN: this header used to be the ONLY money on the
+              screen, and on a split sale it shows the one figure the worker must
+              NOT hand over. VNT-20260822-0003 was 9,550 total but only 5,000 was
+              ever collected; the refund correctly returns 5,000 cash and cancels
+              4,550 of debt, and nothing here said so. Shown only when paid <
+              total — on a fully-paid sale the plain total above is the whole
+              truth and a "Credit 0" line would just be noise. */}
           {sale.channel === "online" && sale.dozie_order_ref && (
             <> · <span style={{ fontFamily: "monospace" }}>{sale.dozie_order_ref}</span></>
           )}
         </div>
+        {payParts && (
+          <div style={{
+            fontSize: 12.5, marginBottom: 8, padding: "7px 9px", borderRadius: 8,
+            background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.35)",
+            lineHeight: 1.5,
+          }}>
+            <span style={{ color: "var(--text-muted)" }}>{payParts.labels.total} </span>
+            <strong>{fmt(payParts.total)}</strong>
+            <span style={{ color: "var(--text-muted)" }}> · {payParts.labels.paid} </span>
+            <strong style={{ color: "#fbbf24" }}>{fmt(payParts.paid)}</strong>
+            <span style={{ color: "var(--text-muted)" }}> · {payParts.labels.credit} </span>
+            <strong style={{ color: "#f87171" }}>{fmt(payParts.credit)}</strong>
+            <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 3 }}>
+              {lang === "en"
+                ? "Only what was actually paid can come back as cash — the credit part cancels the debt instead."
+                : "Seul ce qui a été réellement payé peut être rendu en espèces — la part à crédit annule la dette."}
+            </div>
+          </div>
+        )}
         {/* MP-OPS-MONEY-EXPLAINABLE: the receipt's issued time (pa_sales.created_at). */}
         {(sale.created_at || sale.sale_date) && (
           <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginBottom: sale.sold_date_note ? 8 : 20 }}>

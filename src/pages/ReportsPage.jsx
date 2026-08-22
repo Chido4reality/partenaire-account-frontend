@@ -1732,10 +1732,18 @@ export default function ReportsPage() {
                                 )}
                               </div>
                             )}
+                            {/* MP-PAYMENT-BREAKDOWN: the two halves of a split refund are not
+                                equivalent — the credit part cancels debt, the cash part left
+                                the drawer. Rendered as one muted sentence they read as a
+                                single bookkeeping note. */}
                             {r.has_credit_split && (
                               <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3, paddingLeft: 12 }}>
-                                ↳ {fmt(r.credit_portion)} {lang === "en" ? "to credit account" : "au compte crédit"},
-                                {" "}{fmt(r.cash_portion)} {lang === "en" ? "cash out" : "en espèces"}
+                                ↳ {fmt(r.credit_portion)} {lang === "en" ? "to credit account" : "au compte crédit"}
+                                {Number(r.cash_portion) > 0 && (
+                                  <> · <strong style={{ color: "#f87171" }}>
+                                    {fmt(r.cash_portion)} {lang === "en" ? "cash out" : "en espèces"}
+                                  </strong></>
+                                )}
                               </div>
                             )}
                             {r.reason && (
