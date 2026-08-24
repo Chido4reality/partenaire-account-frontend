@@ -10,7 +10,8 @@
     "cap:sync": "vite build && npx cap sync android",
     "cap:open:android": "npx cap open android",
     "cap:run:android": "vite build && npx cap sync android && npx cap run android",
-    "offline-gate-check": "node scripts/offline-gate-check.mjs"
+    "offline-gate-check": "node scripts/offline-gate-check.mjs",
+    "ping-timeout-check": "node scripts/ping-timeout-check.mjs 8000 healthy && node scripts/ping-timeout-check.mjs 20000 degraded"
   },
   "dependencies": {
     "@capacitor/android": "^6.1.2",

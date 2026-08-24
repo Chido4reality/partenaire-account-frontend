@@ -64,7 +64,25 @@ let _webListenersWired = false;
 const _subs = new Set();                                   // onNetworkChange web subscribers
 const HEALTH_URL = (import.meta.env.VITE_API_URL || '/api') + '/health';
 let _healthTimer = null;
-const PING_TIMEOUT_MS    = 6000;
+// ── MP-PING-TIMEOUT (2026-08-24) ─────────────────────────────────────────────
+// Raised 6000 -> 12000. MP-PEAK-MTN-RESILIENCE lifted every OTHER ceiling for
+// slow-but-alive links (auth 30s, reads 20s, offline-eligible writes 45s) and
+// left this one at the old blanket 6s. So the probe that DECIDES whether the
+// link is healthy was stricter than any request it was deciding on: an 8s round
+// trip — well inside the 20s read ceiling, and a link whose requests would all
+// have succeeded — aborted here and set degraded, because isDegradedNow() trips
+// on a SINGLE consecutive failure.
+//
+// That was cheap when degraded only meant "queue this write optimistically".
+// Since MP-OFFLINE-GATE it also means a gated cart is REFUSED at ring-up, so a
+// merely-slow link now costs the cashier a sale rather than a spinner.
+//
+// 12s keeps a comfortable margin under the 20s read ceiling (a link too slow for
+// a 12s HEAD is one whose reads are about to fail anyway, which is exactly when
+// degraded SHOULD be true) and still surfaces a genuinely dead link inside the
+// 3-failure / ~36s offline threshold.
+// Verified with scripts/ping-timeout-check.mjs against a real delayed server.
+const PING_TIMEOUT_MS    = 12000;
 const PING_INTERVAL_MS   = 10000;
 const OFFLINE_FAIL_THRESHOLD = 3; // consecutive ping fails required to
                                    // override navigator-says-online
