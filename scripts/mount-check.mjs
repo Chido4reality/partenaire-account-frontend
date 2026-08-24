@@ -112,6 +112,7 @@ await build({
       export { buildReasons } from "./components/common/ApprovalDetailView";
       export { bundleSentence, bundleReasonLine } from "./utils/approvalReasons";
       export { paymentParts, paymentBreakdownLine, hasSplitPayment } from "./utils/paymentBreakdown";
+      export { gateReasons, needsServerDecision, offlineRefusalMessage } from "./utils/saleGateCheck";
     `,
     resolveDir: SRC, loader: "jsx", sourcefile: "mount-entry.jsx",
   },
@@ -202,6 +203,10 @@ const TR_ROWS = [
     threshold: "100", confirmed_at: null, sales_90d: 0, half_under: null,
     biggest: null, would_gate: 0, pct_gated: "0" },
 ];
+// MP-OFFLINE-GATE fixture — Joseph's actual item-13 cart: 2,100 total.
+// He tendered 1,998, leaving 102 on credit, and the app reported it completed.
+const JOSEPH_CART = [{ quantity: 2, unit_price: 1050, min_price: 0 }];
+
 const TR_MIXED = { success: true, data: TR_ROWS, needs_review: true };
 const TR_EMPTY = { success: true, data: [], needs_review: false };
 
@@ -364,6 +369,50 @@ const CHECKS = [
     // simply lacks the field must not be described as unpaid.
     () => String(M.hasSplitPayment({ total_amount: 9550 })),
     (s) => s === "true"],
+
+  // ── MP-OFFLINE-GATE ────────────────────────────────────────────────────────
+  // Joseph's real cart from item 13: 2,100 total, 1,998 tendered, 102 on credit.
+  // Under degraded routing this was queued and reported as completed.
+  ["Gate · Joseph's cart (2100 total, 1998 paid) is gated",
+    () => M.gateReasons(JOSEPH_CART, { paidAmount: 1998 }).join(","),
+    (s) => s.includes("credit")],
+  // The case that must NOT regress: an ordinary paid-in-full sale still queues
+  // offline. If this ever gates, offline trade stops for the whole shop.
+  ["Gate · ordinary paid-in-full cart is NOT gated",
+    () => String(M.needsServerDecision(JOSEPH_CART, { paidAmount: 2100 })),
+    (s) => s === "false"],
+  // perms === null is the state after an offline reload (no persister). It must
+  // gate a gate-relevant cart, and must NOT gate an ordinary one.
+  ["Gate · null perms still gates an unpaid cart",
+    () => String(M.needsServerDecision(JOSEPH_CART, { paidAmount: 1998, perms: null })),
+    (s) => s === "true"],
+  ["Gate · null perms does NOT gate an ordinary cart",
+    () => String(M.needsServerDecision(JOSEPH_CART, { paidAmount: 2100, perms: null })),
+    (s) => s === "false"],
+  ["Gate · below-min price is gated",
+    () => M.gateReasons([{ quantity: 1, unit_price: 400, min_price: 500 }], { paidAmount: 400 }).join(","),
+    (s) => s.includes("below_cost")],
+  ["Gate · oversell is gated",
+    () => M.gateReasons([{ quantity: 9, unit_price: 100, available: 3 }], { paidAmount: 900 }).join(","),
+    (s) => s.includes("oversell")],
+  ["Gate · unknown stock is not treated as oversell",
+    // available == null means "cannot tell" — it must not manufacture a gate on
+    // every line, which would stop offline selling entirely.
+    () => String(M.needsServerDecision([{ quantity: 9, unit_price: 100 }], { paidAmount: 900 })),
+    (s) => s === "false"],
+  // A CONFIRMED threshold gates; a dormant one must not, or we refuse sales the
+  // server would happily accept.
+  ["Gate · confirmed high-value threshold gates",
+    () => M.gateReasons(JOSEPH_CART, { paidAmount: 2100,
+      perms: { approve_above_amount: 2000, approve_above_confirmed_at: "2026-08-21T00:00:00Z" } }).join(","),
+    (s) => s.includes("high_value")],
+  ["Gate · UNCONFIRMED threshold does NOT gate",
+    () => String(M.needsServerDecision(JOSEPH_CART, { paidAmount: 2100,
+      perms: { approve_above_amount: 2000, approve_above_confirmed_at: null } })),
+    (s) => s === "false"],
+  ["Gate · refusal names the reason and is not a network message",
+    () => M.offlineRefusalMessage(["credit"], "en"),
+    (s) => /not paid in full/i.test(s) && /no connection/i.test(s) && !/error/i.test(s)],
 ];
 let textBad = 0;
 for (const [name, run, ok] of CHECKS) {

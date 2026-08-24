@@ -495,6 +495,27 @@ export default function Layout() {
   // window so the POS can ring sales. Without this invalidation the
   // seed kept serving even after the real shift row landed.
   useEffect(() => onSyncEvent((e) => {
+    // ── MP-OFFLINE-GATE (option 4) ────────────────────────────────────────────
+    // A queued SALE the server refused on replay. This is not a sync detail: the
+    // goods left the shop and the sale does not exist. It used to appear only as
+    // a badge and a row in /pending-sync — places nobody mid-queue is looking,
+    // possibly hours later. Sits at the top of this handler because it is the
+    // most consequential event the channel carries.
+    //
+    // A long, non-dismissing-by-timeout toast rather than a modal: a modal that
+    // steals focus mid-transaction is its own hazard at a live till, and the row
+    // stays in /pending-sync either way. Loud, not blocking.
+    if (e.type === 'sale_rejected') {
+      const en = useLangStore.getState().lang === 'en';
+      toast.error(
+        (en
+          ? 'A sale you rang up while offline was REFUSED by the server and has not been recorded. Check Pending sync — the goods may already have gone.'
+          : "Une vente enregistrée hors ligne a été REFUSÉE par le serveur et n'est pas enregistrée. Vérifiez « En attente de synchro » — la marchandise est peut-être déjà partie.")
+        + (e.message ? `\n${e.message}` : ''),
+        { id: `sale-rejected-${e.localId || 'x'}`, duration: 30000 }
+      );
+      return;
+    }
     // MP-OFFLINE-COLLECT-NEVER-DROP: surface a synced debt collection that needed a
     // shift fallback — never a silent success. 'needs_review' = recorded with no shift
     // (cash preserved, flagged); 'historical'/'current' = correctly re-attributed.

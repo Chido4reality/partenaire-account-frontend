@@ -233,6 +233,12 @@ async function recoverStranded() {
 // so a replay dedupes. A salesperson standing in a stockroom with no signal
 // must still be able to record that the delivery driver wants paying — the
 // whole point of the ticket is that raising it is safe.
+// MP-OFFLINE-GATE: a plain sale endpoint, i.e. POST /sales — NOT /sales/ticket
+// or /sales/tickets/*, which ONLINE_ONLY_RX already keeps out of the queue
+// entirely. Mirrors the matcher ConflictModal declares locally; kept in step
+// with it deliberately, since both answer "is this queued row a sale?".
+const isSaleEp = (ep) => /^\/sales(\/|$)/.test(ep || "") && !/^\/sales\/tickets?(\/|$)/.test(ep || "");
+
 const ONLINE_ONLY_RX = /^\/(returns\/(return|exchange|void)|sales\/tickets?|expenditures\/[^/]+\/(payout|cancel))\b/i;
 async function purgeOnlineOnlyOps() {
   try {
@@ -446,6 +452,21 @@ async function attempt(row) {
       `UPDATE pending_sync SET status = ?, last_error = ? WHERE id = ?`,
       ['failed_permanent', JSON.stringify({ status: res.status, body }), row.id]
     );
+    // MP-OFFLINE-GATE (option 4): a SALE the server refused on replay is not a
+    // sync-status detail — it is money and stock that left the shop for a sale
+    // that does not exist. It used to surface only as a badge and a row in a
+    // page nobody mid-queue is looking at, possibly hours later with the
+    // customer long gone. Emit it so the POS can put it in front of someone.
+    // Every other endpoint keeps the quiet path.
+    if (isSaleEp(row.endpoint)) {
+      emitSyncEvent({
+        type: 'sale_rejected',
+        endpoint: row.endpoint,
+        localId: row.local_id,
+        status: res.status,
+        message: (body && (body.message_en || body.message || body.error)) || null,
+      });
+    }
     notify();
     return;
   }

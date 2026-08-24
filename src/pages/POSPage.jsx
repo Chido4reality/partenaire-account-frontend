@@ -15,6 +15,7 @@ import { useTicketSummary, ticketSummaryKey } from "../utils/useTicketSummary"; 
 import { printTicketSlipViaBluetooth } from "../utils/btPrint"; // MP-CASHIER-PHASE-1b
 import { useCurrency } from "../utils/useCurrency";
 import { bundleSentence, bundleReasonLine } from "../utils/approvalReasons"; // MP-APPROVAL-BUNDLE
+import { gateReasons, offlineRefusalMessage } from "../utils/saleGateCheck";  // MP-OFFLINE-GATE
 import { formatMoney, currencySymbol } from "../utils/currency";
 import { t } from "../utils/i18n";
 import { cacheData, getCachedData } from "../utils/offlineStore";
@@ -1744,7 +1745,22 @@ export default function POSPage() {
         const ticketPayload = { ...salePayload, payment_method: "cash" };
         return await api.post("/sales/ticket", ticketPayload).then(r => r.data);
       }
-      const result = await api.post("/sales", salePayload).then(r => r.data);
+      // MP-OFFLINE-GATE: tell the adapter whether this cart needs a decision only
+      // the server can make. Coarse on purpose — it says WHETHER, never WHAT, so
+      // it can never become a second copy of the server's rules. Over-reporting
+      // costs one online round-trip; under-reporting costs a false sale.
+      // `perms` may be null (no react-query persister, so null after an offline
+      // reload) — gateReasons handles that by leaning on cart facts, which need
+      // no permissions at all.
+      const _reasons = gateReasons(cart, {
+        paidAmount: salePayload.paid_amount,
+        saleDiscountValue: salePayload.discount_value,
+        perms: myPerms,
+      });
+      const result = await api.post("/sales", salePayload, {
+        requiresServerDecision: _reasons.length > 0,
+        gateReasons: _reasons,
+      }).then(r => r.data);
       return result;
     },
     onSuccess: (data) => {
@@ -1983,6 +1999,15 @@ export default function POSPage() {
     onError: (err) => {
       // MP-PHANTOM-PAID-FIX: the client-side pay-mode guard already toasted; abort quietly.
       if (err.payModeGuard) return;
+      // ── MP-OFFLINE-GATE: refused at ring-up, deliberately, and it must READ as
+      // a refusal rather than a network hiccup. The cart is left intact so the
+      // cashier can take full payment instead and complete the sale immediately;
+      // clearing it here would lose the order they just built.
+      if (err.isOfflineGateRefusal) {
+        toast.error(offlineRefusalMessage(err.gateReasons || [], lang), { duration: 9000 });
+        setShowPayment(true);
+        return;
+      }
       const d = err.response?.data;
       // MP-PHANTOM-PAID-FIX: backend rejected a customer full-pay with no/contradictory
       // pay_mode (the resubmit hole). Steer the cashier to pick the real mode.

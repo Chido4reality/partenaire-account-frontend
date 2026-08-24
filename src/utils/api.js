@@ -242,7 +242,41 @@ api.defaults.adapter = async function offlineAwareAdapter(config) {
     // 45s on a spinner before the response interceptor catches and
     // enqueues anyway." See network.js's MP-DEGRADED-ROUTING
     // comment for the threshold rationale.
-    if (!net.connected || net.degraded) {
+    // ── MP-OFFLINE-GATE (Peter, 2026-08-24) — routing depends on the CART ─────
+    // The shortcut above is right for an ordinary sale and wrong for one the
+    // server would refuse. A gated cart that is queued comes back as an
+    // optimistic success: the till says completed, the receipt prints, the goods
+    // go, and the sale 403s on replay. Reproduced with a blocked cashier's credit
+    // sale (item 13, 2026-08-22).
+    //
+    // The caller sets requiresServerDecision on the request config when the cart
+    // needs a decision only the server can make (utils/saleGateCheck). Then:
+    //
+    //   degraded but CONNECTED → do not take the shortcut. Fall through to the
+    //     real network and accept the spinner. Most "degraded" states are not
+    //     actually offline, so this usually just gets a real answer, and the cost
+    //     is paid only by the small minority of carts that need one.
+    //
+    //   genuinely NOT connected → REFUSE here (Option 2). Nothing should ever
+    //     show "completed" for a sale that isn't. The alternative considered and
+    //     rejected was queueing it labelled provisional.
+    //
+    // Ungated writes are untouched in both cases, which is the overwhelming
+    // majority of trade and the whole reason offline mode exists.
+    const _gated = config.requiresServerDecision === true;
+    if (_gated && !net.connected) {
+      mpDiag(`WRITE ${_diagPath}\nDETECT connected=false degraded=${net.degraded}\n=> REFUSED (cart needs a server decision, no network)`);
+      const err = new Error("offline_gate_refused");
+      err.code = "offline_gate_refused";
+      err.isOfflineGateRefusal = true;
+      err.gateReasons = Array.isArray(config.gateReasons) ? config.gateReasons : [];
+      throw err;
+    }
+    if (_gated && net.degraded && net.connected) {
+      // Skip the shortcut; the request proceeds to the real adapter below. If the
+      // network genuinely fails, the response interceptor's own gate handles it.
+      mpDiag(`WRITE ${_diagPath}\nDETECT connected=true degraded=true\n=> BYPASSING degraded shortcut (cart needs a server decision)`);
+    } else if (!net.connected || net.degraded) {
       const payload = typeof config.data === "string" ? safeJson(config.data) : (config.data || {});
       const localId = payload.local_id || genLocalId();
       payload.local_id = localId;
@@ -350,6 +384,19 @@ api.interceptors.response.use(res => {
   if (isOfflineEligible(cfg.method, cfg.url)) {
     const isNetworkErr = !err.response;
     const is5xx = err.response && err.response.status >= 500;
+    // MP-OFFLINE-GATE: the SECOND enqueue path, and it would undo the first.
+    // A gated cart that bypassed the degraded shortcut above, then genuinely
+    // failed on the network, must NOT be salvaged into the queue here — that
+    // would hand back the same optimistic success by the back door. Refuse with
+    // the same shape the pre-flight uses so the caller has one thing to catch.
+    if ((isNetworkErr || is5xx) && cfg.requiresServerDecision === true) {
+      const gErr = new Error("offline_gate_refused");
+      gErr.code = "offline_gate_refused";
+      gErr.isOfflineGateRefusal = true;
+      gErr.gateReasons = Array.isArray(cfg.gateReasons) ? cfg.gateReasons : [];
+      mpDiag(`RESP ${(cfg.method || "").toUpperCase()} ${(cfg.url || "").replace(BASE_URL, "")}\nnetwork/5xx on a gated cart\n=> REFUSED, not queued`);
+      return Promise.reject(gErr);
+    }
     if (isNetworkErr || is5xx) {
       try {
         const payload = typeof cfg.data === "string" ? safeJson(cfg.data) : (cfg.data || {});

@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "cap:sync": "vite build && npx cap sync android",
     "cap:open:android": "npx cap open android",
-    "cap:run:android": "vite build && npx cap sync android && npx cap run android"
+    "cap:run:android": "vite build && npx cap sync android && npx cap run android",
+    "offline-gate-check": "node scripts/offline-gate-check.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^6.1.2",
