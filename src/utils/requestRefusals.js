@@ -75,6 +75,41 @@ export function clearRefusal(approvalId) {
   if (map[approvalId]) { delete map[approvalId]; writeAll(map); }
 }
 
+// ── THE SERVER'S COPY, WHICH WINS ───────────────────────────────────────────
+// The executor now records the refusal in pa_action_approvals.execution_error, so
+// it follows the cashier to a second device — which is the real case: the heavy
+// users are named, single-location cashiers on more than one handset (Wisdom 337
+// sales/14d, Kosi 271, Kingsley 213), not the shared shop logins, which are idle.
+//
+// Returns the same shape recordRefusal stores, so both paths render identically.
+// Returns null for anything that is not one of our refusal blobs — execution_error
+// predates this and carries plain error strings for genuinely 'failed' rows, and a
+// raw string must never be mistaken for a refusal.
+export function parseServerRefusal(executionError) {
+  if (!executionError || typeof executionError !== "string") return null;
+  let v = null;
+  try { v = JSON.parse(executionError); } catch { return null; }  // legacy plain text
+  if (!v || v.kind !== "refusal") return null;
+  return {
+    at: Date.parse(v.at) || Date.now(),
+    code: v.code || null,
+    actions: Array.isArray(v.actions) ? v.actions : [],
+    items: Array.isArray(v.items) ? v.items : [],
+    message_en: v.message_en || null,
+    message_fr: v.message_fr || null,
+    source: "server",
+  };
+}
+
+// Server first, local only when the server has none — so a refusal raised on
+// another device wins, and anything already stored locally before this shipped
+// still renders instead of vanishing.
+export function resolveRefusal(row, localMap) {
+  return parseServerRefusal(row && row.execution_error)
+    || (localMap && localMap[row && row.id])
+    || null;
+}
+
 // ── IS THIS A REFUSAL, OR IS THE NETWORK DOWN? ──────────────────────────────
 // These must never look the same. A refusal states what changed and offers the
 // two exits; an outage says try again. Conflating them teaches the cashier to

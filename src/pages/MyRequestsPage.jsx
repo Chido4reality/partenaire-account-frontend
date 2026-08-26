@@ -11,6 +11,7 @@ import { useLangStore } from "../store";
 // MP-SCOPED-GRANT: a refused completion is a STATE on the request, not a toast.
 import {
   getRefusals, recordRefusal, clearRefusal, isRefusal, refusalSentences,
+  resolveRefusal, parseServerRefusal,
 } from "../utils/requestRefusals";
 import { useCurrency } from "../utils/useCurrency";
 import api from "../utils/api";
@@ -217,7 +218,9 @@ export default function MyRequestsPage() {
           </div>
         )}
         {requests.map((r, i) => {
-          const refusal = refusals[r.id] || null;
+          // Server value WINS; the local copy is the fallback for a refusal
+          // raised before this shipped, or one the stamp failed to persist.
+          const refusal = resolveRefusal(r, refusals);
           // MP-SCOPED-GRANT: a refused row is NOT "Approved" to the cashier —
           // presenting it as approved with a Complete button is what sent Wisdom
           // back to the same dead tap. It reads as its own status.
@@ -248,7 +251,10 @@ export default function MyRequestsPage() {
               {r.status === "rejected" && r.decision_note && (
                 <div style={{ fontSize: 12.5, color: "#fca5a5", marginTop: 4 }}>{en ? "Reason:" : "Raison :"} {r.decision_note}</div>
               )}
-              {r.status === "failed" && r.execution_error && (
+              {/* Pre-existing: 'failed' rows print execution_error verbatim. That
+                  column now also carries our refusal JSON, which must never be
+                  shown raw to a cashier — so print it only when it is NOT ours. */}
+              {r.status === "failed" && r.execution_error && !parseServerRefusal(r.execution_error) && (
                 <div style={{ fontSize: 12.5, color: "#fca5a5", marginTop: 4 }}>{r.execution_error}</div>
               )}
               {/* MP-DISCOUNT-HYBRID-APPROVAL: a discount isn't finalized here — the
