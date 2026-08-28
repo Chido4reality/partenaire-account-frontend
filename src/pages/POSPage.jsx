@@ -396,10 +396,21 @@ export default function POSPage() {
   // payment panel INSIDE the cart sheet, so the sheet is always open behind it.
   // cancelTarget is reached from the resume picker, which already collapses the
   // sheet, so it was latent rather than broken. Both registered now.
+  //
+  // approvalBundle was the ELEVENTH, and it was the worst of them: it is raised
+  // at the `approval_required` branch of the same sale mutation's onError as
+  // creditLimitModal — identical trigger, identical "sheet is always open behind
+  // it" — and it is the ONLY entry point for below-cost / discount / credit /
+  // oversell requests since MP-APPROVAL-BUNDLE folded all four into one popup.
+  // Unregistered here AND rendering without ROOT_OVERLAY, it inherited
+  // pointer-events:none from the sheet and swallowed every tap. That is exactly
+  // Paul's original complaint ("nothing happens when I send for approval") and it
+  // survived the regression pass of 2026-08-18 as a known FAIL with no root cause.
+  // Registering the twin of a modal you just fixed is not optional.
   const anyRootOverlay = [
     showReceipt, showHold, showResume, debtReceiptEvent,
     blockModal, oversellModal, validateModal, showOpenShift,
-    creditLimitModal, cancelTarget,
+    creditLimitModal, cancelTarget, approvalBundle,
   ].some(Boolean);
   useEffect(() => {
     if (anyRootOverlay) setSheetOpen(false);
@@ -2931,8 +2942,14 @@ export default function POSPage() {
           (below-cost / discount / credit / oversell, any combination) — the
           cashier builds the WHOLE order with no interruptions, sees everything
           at once here, and the owner accepts/denies ONCE. No cascading. ── */}
+      {/* ROOT_OVERLAY, not a raw literal: the spread carries pointerEvents:"auto",
+          which is the seatbelt for the sheet's inherited pointer-events:none. This
+          was the one root modal in the file rendering without it — see the
+          anyRootOverlay note above. zIndex raised 320 → 3000 for parity with every
+          other hard-block modal (blockModal, creditLimitModal, validateModal,
+          oversellModal); at 320 it could also paint UNDER the cart sheet. */}
       {approvalBundle && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 320, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div style={{ ...ROOT_OVERLAY, zIndex: 3000, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, maxWidth: 440, width: "100%", maxHeight: "88vh", overflowY: "auto" }}>
             <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 6 }}>
               🔐 {lang === "en" ? "This sale needs the owner's approval" : "Cette vente nécessite l'approbation du patron"}
