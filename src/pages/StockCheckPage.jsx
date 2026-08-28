@@ -1231,7 +1231,7 @@ function ResolveVarianceModal({ row, en, busy, recounting, onCancel, onResolve, 
               <>
                 <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
                   <button className="btn btn-primary" style={{ flex: 1.5, fontWeight: 700 }} disabled={busy || recounting} onClick={onRecount}>
-                    {recounting ? "…" : (en ? "↻ Recount now" : "↻ Recompter")}
+                    {recounting ? "…" : (en ? "↻ Use today's stock" : "↻ Utiliser le stock du jour")}
                   </button>
                   <button className="btn" style={{ flex: 1.5, background: "#3f3f46", color: "#e4e4e7", fontWeight: 600 }}
                     disabled={busy || recounting}
@@ -1240,7 +1240,7 @@ function ResolveVarianceModal({ row, en, busy, recounting, onCancel, onResolve, 
                   </button>
                 </div>
                 <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.5 }}>
-                  {en ? "Recount sends it back to “To count” measured against today's stock. Remove closes it without a count — that needs a reason and is counted for 30 days."
+                  {en ? "This re-measures against today's stock and sends it back to “To count” — your walk of the shelf is not wasted. Remove closes it without a count — that needs a reason and is counted for 30 days."
                       : "Recompter le renvoie dans « À compter », mesuré sur le stock d'aujourd'hui. Retirer le ferme sans comptage — il faut une raison, et c'est compté pendant 30 jours."}
                 </div>
               </>
