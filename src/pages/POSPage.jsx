@@ -407,10 +407,18 @@ export default function POSPage() {
   // Paul's original complaint ("nothing happens when I send for approval") and it
   // survived the regression pass of 2026-08-18 as a known FAIL with no root cause.
   // Registering the twin of a modal you just fixed is not optional.
+  //
+  // showDebtModal is the TWELFTH, found by sweeping the file for the same shape
+  // rather than waiting for it to be reported. It is the "🧾 Open Invoices"
+  // collect-debt picker, opened automatically when a customer with open invoices
+  // is selected and from the customer chip's "Collect" button — both reachable
+  // with the sheet up. Raw literal, zIndex 200, unregistered: the same three
+  // faults as approvalBundle. It is a MONEY path (debt collection), so it is
+  // fixed and verified on its own, not as a ride-along on the approval fix.
   const anyRootOverlay = [
     showReceipt, showHold, showResume, debtReceiptEvent,
     blockModal, oversellModal, validateModal, showOpenShift,
-    creditLimitModal, cancelTarget, approvalBundle,
+    creditLimitModal, cancelTarget, approvalBundle, showDebtModal,
   ].some(Boolean);
   useEffect(() => {
     if (anyRootOverlay) setSheetOpen(false);
@@ -3012,8 +3020,12 @@ export default function POSPage() {
         </div>
       )}
       {/* ── DEBT MODAL ─────────────────────────────────────── */}
+      {/* ROOT_OVERLAY + z:3000, same treatment as approvalBundle. At z:200 this
+          sat UNDER the Vaul cart sheet (overlay 1700 / content 1701) — see the
+          sheetOpen comment above, which states the rule this broke: root modals
+          live at 3000+ precisely so the portal cannot cover them. */}
       {showDebtModal && debtInvoices.length > 0 && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div style={{ ...ROOT_OVERLAY, zIndex: 3000, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, maxWidth: 440, width: "100%", boxShadow: "0 24px 60px rgba(0,0,0,0.6)" }}>
             <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>🧾 {lang === "en" ? "Open Invoices" : "Factures impayées"}</div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
