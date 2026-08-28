@@ -37,8 +37,13 @@ android {
         // duplicates). versionName is the human-facing semver visible
         // in About / Play Store. Bump versionCode by +1 every release;
         // bump versionName per semver rules.
-        versionCode 109
-        versionName "2.3.1"
+        // Bumped for the launch-gate release. vc109 artefacts already exist
+        // (StenamoBusiness-2.3.1-vc109.apk, Stenamo-open-shift-fix-vc109.apk), and
+        // whether any of them reached the Play Console cannot be determined from
+        // this repo — so 109 is treated as SPENT. Skipping a number costs nothing;
+        // colliding costs a rejected upload.
+        versionCode 110
+        versionName "2.3.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
