@@ -10,7 +10,8 @@
     "cap:open:android": "npx cap open android",
     "cap:run:android": "vite build && npx cap sync android && npx cap run android",
     "mount-check": "node scripts/mount-check.mjs",
-    "damaged-check": "node scripts/receipt-damaged-check.mjs"
+    "damaged-check": "node scripts/receipt-damaged-check.mjs",
+    "export-check": "node scripts/report-export-check.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^6.1.2",
