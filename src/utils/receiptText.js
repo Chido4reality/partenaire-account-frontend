@@ -17,6 +17,10 @@
 // reuse the per-event data extraction in this file; the renderer hook
 // would diverge at the ascii barcode line and at the output sink.
 
+// MP-DAMAGED-GOODS: the marker, the legend and the "any damaged?" test live in
+// ONE place so the three receipt surfaces cannot drift apart on wording.
+import { dmgShort, damagedLegend, hasDamaged } from "./damagedLabel";
+
 const WIDTH = 35;
 
 const fmtAmt = (n) => (Number(n) || 0).toLocaleString();
@@ -165,14 +169,19 @@ function bodySale(L, data, lang) {
     if (i.type === "debt_payment") {
       L.push(itemLine(`💰 ${i.name || "Debt"}`, "", i.unit_price));
     } else {
-      // MP-DAMAGED-GOODS: every other receipt surface (on-screen, A4/thermal
-      // print, Bluetooth ESC/POS — all via factureReceipt.js's dmgName / this
-      // file's own dmg()) labels a damaged-clearance line; this WhatsApp
-      // monospace body was the one surface missing it.
-      const nm = i.is_damaged ? `${i.name} (${en ? "DMG" : "ABÎMÉ"})` : i.name;
-      L.push(itemLine(nm, i.quantity, (Number(i.quantity) || 0) * (Number(i.unit_price) || 0)));
+      // MP-DAMAGED-GOODS: the marker is a PREFIX, not a suffix. itemLine fits
+      // the name to 15 chars, so the old " (DMG)" suffix was truncated away for
+      // any name over 9 characters — i.e. every real product. See
+      // utils/damagedLabel for the measurements. The prefix occupies the first
+      // column, which truncation cannot reach. The legend below gives it meaning.
+      L.push(itemLine(dmgShort(i.name, i.is_damaged), i.quantity,
+        (Number(i.quantity) || 0) * (Number(i.unit_price) || 0)));
     }
   });
+  // The key for the "*" prefix, printed only when a damaged line is present.
+  // A marker with no legend is unreadable — that would swap an invisible label
+  // for an unintelligible one, which is not a fix.
+  if (hasDamaged(items)) L.push(damagedLegend(en));
   const total = items.reduce((s, i) =>
     s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0);
   const paid    = Number(data.paid_amount ?? total) || 0;
