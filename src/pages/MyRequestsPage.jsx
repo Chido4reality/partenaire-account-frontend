@@ -4,9 +4,15 @@
 // FINALIZE — only then does it execute, produce the receipt, and register to the
 // report. Pending / Rejected items are read-only.
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useLangStore } from "../store";
+// MP-SCOPED-GRANT: a refused completion is a STATE on the request, not a toast.
+import {
+  getRefusals, recordRefusal, clearRefusal, isRefusal, refusalSentences,
+  resolveRefusal, parseServerRefusal,
+} from "../utils/requestRefusals";
 import { useCurrency } from "../utils/useCurrency";
 import api from "../utils/api";
 import { useMyRequests } from "../utils/useMyRequests"; // MP-CORRECTIONS-GUARDRAIL
@@ -54,6 +60,11 @@ export default function MyRequestsPage() {
   const [receiptEvent, setReceiptEvent] = useState(null);
   const [finalizingId, setFinalizingId] = useState(null);
   const [cancelFor, setCancelFor] = useState(null); // request row pending a cancel confirm
+  const navigate = useNavigate();
+  // MP-SCOPED-GRANT: refusals live in localStorage (see utils/requestRefusals.js
+  // for why), mirrored into state so the row re-renders the moment one lands.
+  const [refusals, setRefusals] = useState(() => getRefusals());
+  const [resendingId, setResendingId] = useState(null);
 
   // MP-CORRECTIONS-GUARDRAIL: shared hook — the nav badge reads the same key, and one
   // key with two unwrap shapes is a bug this codebase has already shipped twice.
@@ -70,7 +81,10 @@ export default function MyRequestsPage() {
 
   const finalizeMut = useMutation({
     mutationFn: (id) => api.post(`/staff/approvals/${id}/finalize`).then((r) => r.data),
-    onSuccess: (data) => {
+    onSuccess: (data, id) => {
+      // A completion that succeeds retires any earlier refusal on the same row.
+      clearRefusal(id);
+      setRefusals(getRefusals());
       if (data?.receipt && data.receipt.data) {
         setReceiptEvent({ eventType: data.receipt.eventType, data: data.receipt.data });
       } else if (data?.note === "already_completed") {
@@ -82,15 +96,60 @@ export default function MyRequestsPage() {
       qc.invalidateQueries({ queryKey: ["my-requests"] });
       qc.invalidateQueries({ queryKey: ["my-requests-approved-count"] });
     },
-    onError: (e) => {
+    onError: (e, id) => {
       const d = e?.response?.data || {};
-      // Bilingual, never a silent dead tap. The server sends message_en/message_fr.
+      // ── MP-SCOPED-GRANT: refusal vs outage. These must NOT look the same. ──
+      // A refusal is a deliberate server answer (resend:true / a known refusal
+      // code): it becomes a persistent state on the row, with the numbers and two
+      // exits. An outage has no response body at all and just says try again —
+      // telling a cashier to "try again" on a genuine refusal is a loop with no
+      // way out, and dressing an outage up as a refusal is a lie about the stock.
+      if (isRefusal(e)) {
+        recordRefusal(id, d);
+        setRefusals(getRefusals());
+        qc.invalidateQueries({ queryKey: ["my-requests"] });
+        return; // no toast — the state on the row IS the message
+      }
       const msg = (en ? (d.message_en || d.message) : (d.message_fr || d.message))
-        || (en ? "Could not complete the action." : "Impossible de finaliser.");
+        || (en ? "Could not complete — check your connection and try again."
+               : "Échec — vérifiez votre connexion et réessayez.");
       toast.error(msg);
       qc.invalidateQueries({ queryKey: ["my-requests"] });
     },
     onSettled: () => setFinalizingId(null),
+  });
+
+  // ── RE-SEND: ONE new bundle covering every reason that applies NOW ──────────
+  // Posts the original cart back through /sales/bundled-approval-request, which
+  // re-evaluates EVERY gate against live data and parks a single fresh request —
+  // so a sale that failed on stock and now also breaches the ceiling goes to the
+  // boss as ONE approval, not two.
+  //
+  // 🔴 NO SECOND PIN. There is deliberately no owner-PIN path anywhere in this
+  // flow. Prompting again here is the cascading-approval trap (approve → approve
+  // → dead sale) that this whole redesign exists to remove.
+  const resendMut = useMutation({
+    mutationFn: async (row) => {
+      const saleReq = row?.payload?.sale_request;
+      if (!saleReq) throw new Error("no_sale_request");
+      const fresh = await api.post("/sales/bundled-approval-request", saleReq).then((r) => r.data);
+      // Retire the old approval so the cashier is never holding two live requests
+      // for one order. Best-effort: the new request is what matters.
+      await api.post(`/staff/approvals/${row.id}/cancel`).catch(() => {});
+      return fresh;
+    },
+    onSuccess: (_data, row) => {
+      clearRefusal(row.id);
+      setRefusals(getRefusals());
+      toast.success(en ? "Sent to the boss again" : "Renvoyé au patron");
+      qc.invalidateQueries({ queryKey: ["my-requests"] });
+      qc.invalidateQueries({ queryKey: ["my-requests-approved-count"] });
+    },
+    onError: () => {
+      toast.error(en ? "Could not send it again — check your connection."
+                     : "Impossible de renvoyer — vérifiez votre connexion.");
+    },
+    onSettled: () => setResendingId(null),
   });
 
   const finalize = (id) => { setFinalizingId(id); finalizeMut.mutate(id); };
@@ -98,7 +157,9 @@ export default function MyRequestsPage() {
   // MP-APPROVAL-CANCEL: drop a pending/approved request without recording a sale.
   const cancelMut = useMutation({
     mutationFn: (id) => api.post(`/staff/approvals/${id}/cancel`).then((r) => r.data),
-    onSuccess: () => {
+    onSuccess: (_d, id) => {
+      clearRefusal(id);
+      setRefusals(getRefusals());
       toast.success(en ? "Request cancelled — no sale recorded" : "Demande annulée — aucune vente");
       setCancelFor(null);
       qc.invalidateQueries({ queryKey: ["my-requests"] });
@@ -157,8 +218,17 @@ export default function MyRequestsPage() {
           </div>
         )}
         {requests.map((r, i) => {
-          const st = STATUS[r.status] || STATUS.pending;
-          const isApproved = r.status === "approved";
+          // Server value WINS; the local copy is the fallback for a refusal
+          // raised before this shipped, or one the stamp failed to persist.
+          const refusal = resolveRefusal(r, refusals);
+          // MP-SCOPED-GRANT: a refused row is NOT "Approved" to the cashier —
+          // presenting it as approved with a Complete button is what sent Wisdom
+          // back to the same dead tap. It reads as its own status.
+          const st = refusal
+            ? { en: "Not completed", fr: "Non finalisée",
+                bg: "rgba(245,158,11,0.18)", fg: "#fbbf24" }
+            : (STATUS[r.status] || STATUS.pending);
+          const isApproved = r.status === "approved" && !refusal;
           return (
             <div key={r.id} style={{ padding: "12px 14px", borderTop: i === 0 ? "none" : "1px solid var(--border)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -181,7 +251,10 @@ export default function MyRequestsPage() {
               {r.status === "rejected" && r.decision_note && (
                 <div style={{ fontSize: 12.5, color: "#fca5a5", marginTop: 4 }}>{en ? "Reason:" : "Raison :"} {r.decision_note}</div>
               )}
-              {r.status === "failed" && r.execution_error && (
+              {/* Pre-existing: 'failed' rows print execution_error verbatim. That
+                  column now also carries our refusal JSON, which must never be
+                  shown raw to a cashier — so print it only when it is NOT ours. */}
+              {r.status === "failed" && r.execution_error && !parseServerRefusal(r.execution_error) && (
                 <div style={{ fontSize: 12.5, color: "#fca5a5", marginTop: 4 }}>{r.execution_error}</div>
               )}
               {/* MP-DISCOUNT-HYBRID-APPROVAL: a discount isn't finalized here — the
@@ -200,9 +273,47 @@ export default function MyRequestsPage() {
                   {finalizingId === r.id ? "..." : (en ? "✓ Complete & print receipt" : "✓ Finaliser et imprimer le reçu")}
                 </button>
               )}
+              {/* ── MP-SCOPED-GRANT: THE REFUSAL STATE ────────────────────────
+                  Persistent (localStorage), survives closing the app, and says
+                  what changed in numbers rather than naming an error code.
+                  One sentence PER reason — a sale can fail the stock gate AND
+                  the ceiling at once, and "something changed" tells Wisdom
+                  nothing he can act on. */}
+              {refusal && (
+                <div style={{ marginTop: 10, padding: "11px 13px", borderRadius: 10,
+                  background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.45)" }}>
+                  <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fbbf24" }}>
+                    {en ? "Not completed — something changed" : "Non finalisée — quelque chose a changé"}
+                  </div>
+                  {refusalSentences(refusal, en).map((s, k) => (
+                    <div key={k} style={{ fontSize: 13, color: "var(--text-secondary)",
+                      marginTop: 5, lineHeight: 1.5 }}>• {s}</div>
+                  ))}
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 7, lineHeight: 1.45 }}>
+                    {en
+                      ? "Nothing was sold and no stock moved. Send it to the boss again, or change the order."
+                      : "Rien n'a été vendu et le stock n'a pas bougé. Renvoyez la demande au patron, ou modifiez la commande."}
+                  </div>
+                  {/* EXACTLY TWO EXITS. No owner-PIN prompt here, by design. */}
+                  <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                    <button className="btn btn-primary" style={{ flex: 1 }}
+                      disabled={resendingId === r.id}
+                      onClick={() => { setResendingId(r.id); resendMut.mutate(r); }}>
+                      {resendingId === r.id ? "..." : (en ? "Send again to the boss" : "Renvoyer au patron")}
+                    </button>
+                    <button className="btn btn-secondary" style={{ flex: 1 }}
+                      onClick={() => navigate("/pos")}>
+                      {en ? "Change the order" : "Modifier la commande"}
+                    </button>
+                  </div>
+                </div>
+              )}
               {/* MP-APPROVAL-CANCEL: a pending/approved request the cashier no
-                  longer needs can be cancelled — no sale is recorded. */}
-              {(r.status === "pending" || r.status === "approved") && (
+                  longer needs can be cancelled — no sale is recorded.
+                  Hidden while a refusal is showing: that block owns the exits,
+                  and a third button next to them is the ambiguity the brief
+                  rules out. Abandoning is reachable via "Change the order". */}
+              {!refusal && (r.status === "pending" || r.status === "approved") && (
                 <button className="btn btn-secondary" style={{ width: "100%", marginTop: 8 }}
                   disabled={cancelMut.isPending}
                   onClick={() => setCancelFor(r)}>
