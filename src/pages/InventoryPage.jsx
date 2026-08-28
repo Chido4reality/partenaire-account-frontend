@@ -7,6 +7,8 @@ import ClearButton from "../components/common/ClearButton";
 import { unitLabel } from "../utils/units";
 import React, { useState, useEffect, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+// F-D: mirrors the live CHECK constraint pairing each sub-reason to its branch.
+import { ADJUST_BRANCHES, subsFor, label as rLabel, canSubmitAdjust } from "../utils/adjustReasons";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
@@ -2651,6 +2653,14 @@ function AdjustModal({ product, role, requestApproval, lang, onClose, onSuccess 
   const [alertEnabled, setAlertEnabled] = useState(product.alert_enabled !== false);
   const [isActive, setIsActive] = useState(product.pa_products?.is_active !== false);
   const [reason, setReason] = useState("");
+  // F-D: the two taps. Confirm is unreachable until BOTH are made.
+  const [adjustReason, setAdjustReason] = useState("");
+  const [adjustSubReason, setAdjustSubReason] = useState("");
+  // The number the screen DREW. Sent as expected_quantity so the server can
+  // refuse if anything moved that (product, location) since — an absolute SET
+  // would otherwise silently discard the sale that happened in between.
+  const shownQuantity = useRef(product.quantity);
+  const [staleRefusal, setStaleRefusal] = useState(null);
   const [loading, setLoading] = useState(false);
   const qc = useQueryClient();
 
@@ -2704,6 +2714,16 @@ function AdjustModal({ product, role, requestApproval, lang, onClose, onSuccess 
   };
 
   const handleSubmit = async () => {
+    // Belt and braces: the disabled button is a UI affordance, not a guarantee.
+    // The server keeps required:false during the deploy window, so for now this
+    // is the second of only two barriers — worth having independently of the
+    // button's state.
+    if (!canSubmitAdjust(adjustReason, adjustSubReason)) {
+      toast.error(lang === "en"
+        ? "Choose why this number is changing."
+        : "Choisissez pourquoi ce nombre change.");
+      return;
+    }
     setLoading(true);
     try {
       const headers = {};
@@ -2726,7 +2746,11 @@ function AdjustModal({ product, role, requestApproval, lang, onClose, onSuccess 
         headers["Approval-Token"] = token;
       }
       const res = await api.patch("/stock/adjust",
-        { product_id: product.product_id, location_id: product.location_id, new_quantity: +qty, min_quantity: +minQty, alert_enabled: alertEnabled, reason },
+        { product_id: product.product_id, location_id: product.location_id, new_quantity: +qty,
+          min_quantity: +minQty, alert_enabled: alertEnabled, reason,
+          // F-D: the two taps, plus the number this screen actually drew.
+          adjust_reason: adjustReason, adjust_sub_reason: adjustSubReason,
+          expected_quantity: shownQuantity.current },
         { headers });
       // Non-blocking model: PARKED for owner approval → nothing adjusted. Don't
       // run the is_active write or show "adjusted"; toast + close, keep working.
@@ -2751,6 +2775,18 @@ function AdjustModal({ product, role, requestApproval, lang, onClose, onSuccess 
     } catch (err) {
       // MP-OWNER-PIN-APPROVAL: PIN modal closed → silent.
       if (err?.code === "cancelled") { setLoading(false); return; }
+      // ── F-D STALE-GUARD REFUSAL ──────────────────────────────────────────
+      // Something moved this (product, location) while the modal was open. An
+      // absolute SET would have silently discarded it. This is a STATE inside the
+      // modal, not a toast — a toast is how five separate causes stayed hidden
+      // during the refusal-state work, and this is Paul's daily tool.
+      const d = err.response?.data || {};
+      if (err.response?.status === 409 && d.code === "stock_changed_since_you_looked") {
+        setStaleRefusal({ expected: d.expected, actual: d.actual,
+          message: lang === "en" ? (d.message_en || d.message) : (d.message_fr || d.message) });
+        setLoading(false);
+        return;
+      }
       toast.error(err.response?.data?.message || "Error");
     } finally { setLoading(false); }
   };
@@ -2760,6 +2796,34 @@ function AdjustModal({ product, role, requestApproval, lang, onClose, onSuccess 
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 6 }}>{lang === "en" ? "Adjust Stock" : "Ajuster le stock"}</div>
         <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20 }}>{product.pa_products?.name} — {product.pa_locations?.name}</div>
+        {/* F-D: the stale-guard refusal. Two exits, both obvious; nothing was
+            written, and the screen says so before anything else. */}
+        {staleRefusal && (
+          <div style={{ marginBottom: 16, padding: "12px 14px", borderRadius: 10,
+            background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.45)" }}>
+            <div style={{ fontWeight: 700, fontSize: 14, color: "#fbbf24" }}>
+              {lang === "en" ? "Not saved — the stock changed" : "Non enregistré — le stock a changé"}
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 5, lineHeight: 1.5 }}>
+              {staleRefusal.message}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>
+              {lang === "en"
+                ? "Nothing was changed. Use the new number, or close and look again."
+                : "Rien n'a été modifié. Utilisez le nouveau nombre, ou fermez et regardez à nouveau."}
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <button className="btn btn-primary" style={{ flex: 1 }}
+                onClick={() => { shownQuantity.current = staleRefusal.actual;
+                                 setQty(staleRefusal.actual); setStaleRefusal(null); }}>
+                {lang === "en" ? `Use ${staleRefusal.actual}` : `Utiliser ${staleRefusal.actual}`}
+              </button>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onClose}>
+                {lang === "en" ? "Close" : "Fermer"}
+              </button>
+            </div>
+          </div>
+        )}
         <div style={{ background: "var(--bg-elevated)", borderRadius: 10, padding: "12px 16px", marginBottom: 16, display: "flex", justifyContent: "space-between" }}>
           <span style={{ color: "var(--text-muted)", fontSize: 13 }}>Current</span>
           <strong>{product.quantity} {unitLabel(product.pa_products?.unit)}</strong>
@@ -2777,9 +2841,77 @@ function AdjustModal({ product, role, requestApproval, lang, onClose, onSuccess 
             </div>
           </div>
         </div>
+        {/* ── F-D: WHY is this number changing? ──────────────────────────────
+            This replaced an OPTIONAL free-text box that was skipped 89% of the
+            time — 426 of 478 adjusts on prod carry an empty note, 31,444 gross
+            units moved with no record. Making a field required without making it
+            EASY just relocates the skipping, so: two taps, no typing, and the
+            fastest route through this modal is the complete one. */}
         <div className="form-group">
-          <label className="label">{lang === "en" ? "Reason" : "Raison"}</label>
-          <input className="input" value={reason} onChange={e => setReason(e.target.value)} placeholder={lang === "en" ? "e.g. Stock count, damaged..." : "Ex: Inventaire, endommagé..."} />
+          <label className="label">
+            {lang === "en" ? "Why is this number changing?" : "Pourquoi ce nombre change-t-il ?"}
+          </label>
+
+          {/* TAP 1 — the branch. Large targets; the hint is what tells them apart. */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {ADJUST_BRANCHES.map((b) => {
+              const on = adjustReason === b.value;
+              return (
+                <button key={b.value} type="button"
+                  onClick={() => { setAdjustReason(b.value); setAdjustSubReason(""); }}
+                  style={{
+                    textAlign: "left", padding: "11px 13px", borderRadius: 10, cursor: "pointer",
+                    border: on ? "2px solid var(--brand)" : "1px solid var(--border)",
+                    background: on ? "rgba(16,185,129,0.10)" : "var(--bg-elevated)",
+                  }}>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>
+                    {on ? "● " : "○ "}{rLabel(b, lang === "en")}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 2, lineHeight: 1.4 }}>
+                    {lang === "en" ? b.hintEn : b.hintFr}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* TAP 2 — which one. Only the chosen branch's list is offered, so a
+              cross-branch pairing is unreachable in the UI as well as in the DB. */}
+          {adjustReason && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6 }}>
+                {lang === "en" ? "Which one?" : "Lequel ?"}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {subsFor(adjustReason).map((sr) => {
+                  const on = adjustSubReason === sr.value;
+                  return (
+                    <button key={sr.value} type="button"
+                      onClick={() => setAdjustSubReason(sr.value)}
+                      style={{
+                        padding: "8px 11px", borderRadius: 8, fontSize: 12.5, cursor: "pointer",
+                        fontWeight: on ? 700 : 500,
+                        border: on ? "2px solid var(--brand)" : "1px solid var(--border)",
+                        background: on ? "rgba(16,185,129,0.14)" : "var(--bg-elevated)",
+                        color: on ? "var(--brand-light)" : "var(--text-secondary)",
+                      }}>
+                      {rLabel(sr, lang === "en")}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Free text stays OPTIONAL and last — it must never be the thing standing
+            between the owner and a finished adjust. */}
+        <div className="form-group">
+          <label className="label">
+            {lang === "en" ? "Note (optional)" : "Note (facultatif)"}
+          </label>
+          <input className="input" value={reason} onChange={e => setReason(e.target.value)}
+            placeholder={lang === "en" ? "Anything worth remembering later" : "Quelque chose à retenir plus tard"} />
         </div>
 
         {/* Alert & Active toggles */}
@@ -2803,7 +2935,17 @@ function AdjustModal({ product, role, requestApproval, lang, onClose, onSuccess 
 
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onClose}>{lang === "en" ? "Cancel" : "Annuler"}</button>
-          <button className="btn btn-primary" style={{ flex: 2 }} disabled={loading} onClick={handleSubmit}>{loading ? "..." : (lang === "en" ? "✓ Save" : "✓ Enregistrer")}</button>
+          {/* F-D: Save is UNREACHABLE until both taps are made. This is the whole
+              mechanism — an optional field gets skipped 89% of the time, so the
+              fastest path through the modal has to be a complete one. */}
+          <button className="btn btn-primary" style={{ flex: 2 }}
+            disabled={loading || !canSubmitAdjust(adjustReason, adjustSubReason)}
+            title={!canSubmitAdjust(adjustReason, adjustSubReason)
+              ? (lang === "en" ? "Choose why this number is changing" : "Choisissez pourquoi ce nombre change")
+              : undefined}
+            onClick={handleSubmit}>
+            {loading ? "..." : (lang === "en" ? "✓ Save" : "✓ Enregistrer")}
+          </button>
         </div>
       </div>
     </div>
