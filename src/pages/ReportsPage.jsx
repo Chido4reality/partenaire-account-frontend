@@ -17,6 +17,11 @@ import { buildLedgerTextV2 as buildLedgerTextUtil, buildWeeklyText as buildWeekl
 import CollapsibleBlock from "../components/common/CollapsibleBlock";
 import CreditGivenModal from "../components/common/CreditGivenModal"; // MP-CREDIT-DRILLDOWN
 import { SHOP_TZ } from "../utils/shopTime"; // MP-REPORT-TZ: render times in the shop's zone, not the viewer's
+// MP-REPORT-EXPORTS: ONE csv serialiser + the pure row builders, so the three
+// exporters on this page cannot disagree about escaping again.
+import {
+  toCsv, buildDailySummaryRows, buildSalesDetailRows, isDebtItem, itemAmount,
+} from "../utils/reportExports";
 
 // MP-DEBT-LINE-FULL-VISIBILITY: pa_sale_items can now hold debt-payment
 // rows (line_type='debt_payment', product_id=NULL). Helpers to keep
@@ -27,12 +32,14 @@ import { SHOP_TZ } from "../utils/shopTime"; // MP-REPORT-TZ: render times in th
 //   itemAmount(i)       — line total (qty * unit_price; works for both)
 // Product aggregations (top-products, revenue-by-product) should SKIP
 // debt rows since they have no product_id and no SKU to group by.
-const isDebtItem  = (i) => i?.line_type === "debt_payment" || (i && i.product_id === null);
+// isDebtItem / itemAmount now live in utils/reportExports beside the row
+// builders that use them — ONE definition, so the screen and the export cannot
+// drift apart about what a debt line is. itemLabel/itemUnit stay here: they are
+// display-only and depend on `lang` / unitLabel.
 const itemLabel   = (i, lang) => isDebtItem(i)
   ? (lang === "en" ? "💰 Debt Repayment" : "💰 Remboursement dette")
   : (i?.pa_products?.name || "?");
 const itemUnit    = (i) => isDebtItem(i) ? "—" : unitLabel(i?.pa_products?.unit || "pce");
-const itemAmount  = (i) => (Number(i?.quantity) || 0) * (Number(i?.unit_price) || 0);
 // MP-DAMAGED-GOODS-REPORT-VISIBILITY: /reports/sales-detail now selects
 // is_damaged on each line — surface it here too (WhatsApp text + the inline
 // report row), matching PaymentEventReceipt's own "(DAMAGED GOODS)" wording.
@@ -255,7 +262,9 @@ export default function ReportsPage() {
       if (dr.actual != null) rows.push(["drawer", "Actual cash", "", "", dr.actual]);
       if (dr.variance != null) rows.push(["drawer", "Variance", "", "", dr.variance]);
     }
-    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    // Consolidated onto the shared serialiser — this one was already correct,
+    // and that was the problem: three implementations meant two were wrong.
+    const csv = toCsv(rows);
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     a.download = `ledger-${ledger.date}.csv`; a.click();
@@ -381,9 +390,7 @@ export default function ReportsPage() {
       toast(lang === "en" ? "No report data in this range" : "Aucune donnée dans cette période");
       return;
     }
-    const headers = ["Date","Sales","Cash Collected","Credit Given","Cost","Gross Profit","Margin%","Expenses","Net Profit","Transactions"];
-    const rows = daily.map(d => [d.sale_date, d.gross_sales, d.cash_collected, d.credit_given, d.total_cost, d.gross_profit, d.profit_margin_pct, d.total_expenditure, d.net_profit, d.sale_count]);
-    const csv = [headers, ...rows].map(r => r.join(",")).join("\n");
+    const csv = toCsv(buildDailySummaryRows(daily));
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url; a.download = "report_" + from + "_" + to + ".csv"; a.click();
@@ -418,22 +425,7 @@ export default function ReportsPage() {
       toast(lang === "en" ? "No sales in this range" : "Aucune vente dans cette période");
       return;
     }
-    const rows = [["Sale#", "Date", "Customer", "Product / Line Type", "Qty", "Unit Price", "Line Total", "Payment Status"]];
-    all.forEach(sale => {
-      (sale.pa_sale_items || []).forEach(item => {
-        rows.push([
-          sale.sale_number,
-          sale.sale_date,
-          sale.pa_customers?.name || "Walk-in",
-          isDebtItem(item) ? "Debt Repayment" : (item.pa_products?.name || ""),
-          item.quantity,
-          item.unit_price,
-          itemAmount(item).toFixed(0),
-          sale.payment_status
-        ]);
-      });
-    });
-    const csv = rows.map(r => r.join(",")).join("\n");
+    const csv = toCsv(buildSalesDetailRows(all));
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url; a.download = "sales_detail_" + from + "_" + to + ".csv"; a.click();

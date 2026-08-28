@@ -1,0 +1,249 @@
+// ── MOUNT CHECK — does it RENDER, not just parse ────────────────────────────
+//   npm run mount-check
+//
+// WHY THIS EXISTS. On 2026-08-18 this shipped to a user's screen:
+//
+//     ) : (
+//       {rowsMarkup}     <-- a JS expression context, so this is an OBJECT
+//     )}                     LITERAL with a shorthand property
+//
+// `cond ? a : ({x})` is valid JavaScript. esbuild passed it, vite built it, the
+// bundle deployed, and the page was dead for anyone with a till open. A parse
+// check answers "is this JavaScript". Only a mount answers "does this render".
+//
+// ⚠️ EVERY STATE, NOT THE HAPPY ONE. The object-literal crash lived in exactly
+// one branch — till open — and the other branch rendered fine, which is why one
+// user saw a dead page and another saw a 403. A harness that only renders the
+// common case would have passed it.
+//
+// ⚠️ FIXTURES ARE READ FROM THE SERVER'S RETURN STATEMENT, NEVER FROM MEMORY.
+// The oversight fixture below was wrong FOUR times running on the branch this
+// came from — cashiers vs per_cashier, drawer:null vs an always-present object,
+// methods vs by_method, cashier_id vs user_id — every one written from a
+// recollection of code read hours earlier. A fixture that does not match reality
+// tests nothing while looking like it does.
+//   → It was wrong a FIFTH time when this file was ported to main (2026-08-28):
+//     `cancelled_count` was absent, and CashierOversightTab.jsx:256 renders
+//     `{s.cancelled_count || "—"}`. Both oversight data scenarios would have
+//     ticked green with that column showing its fallback. The whole shape was
+//     re-diffed field-by-field against backend/src/lib/cashierOversight.js:334
+//     before this file was committed. Do that again if you touch it.
+//
+// ⚠️ useEffect DOES NOT RUN UNDER renderToString. Anything a component FETCHES
+// on mount, or holds in internal useState that a parent cannot set, is
+// UNREACHABLE here. Three ApprovalDetailView scenarios once passed green while
+// rendering "Couldn't load the full detail". The tell was CHARACTER COUNT:
+// 290 / 290 / 303 when two were supposed to differ substantially. If several
+// scenarios come out near-identical in size, they are probably all rendering the
+// same fallback.
+//
+// 🔴 WHAT THIS HARNESS CANNOT DO — READ BEFORE TRUSTING A GREEN RUN.
+// It proves CRASH-SAFETY, not correctness. Concretely: it did not and could not
+// have caught the 2026-08-28 launch blocker, where POSPage's approval popup
+// rendered fine but was pointer-dead under the cart sheet. That bug lived in
+// `anyRootOverlay` registration and a z-index — neither observable from an SSR
+// string — and its modal is driven by internal `approvalBundle` state SSR cannot
+// set. A green mount-check is not a substitute for driving the app on a device.
+//
+// ⚠️ AND FINALLY: PROVE THE CHECK CAN FAIL. Revert to the broken behaviour and
+// confirm it goes red. A scenario that cannot fail is measuring nothing.
+//
+// ── PORTED TO main, 2026-08-28 ──────────────────────────────────────────────
+// This originally covered 5 components in 28 cases plus 10 text assertions.
+// Three of its targets — ExpensePayoutPage, ThresholdReviewPage and
+// utils/approvalReasons — exist only on feat/expense-tickets, and
+// ApprovalDetailView does not export buildReasons on main. So 13 render cases
+// and ALL 10 text checks were dropped: they would have been `MISSING` ticks, and
+// a harness that reports MISSING as anything other than a failure is worse than
+// no harness. What remains is 15 cases over the two components main actually
+// has. Restore the rest in the same commit that merges those branches.
+import { build } from "esbuild";
+import { renderToString } from "react-dom/server";
+import React from "react";
+import { rmSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const SRC  = resolve(HERE, "../src");
+// Must sit inside the project so `react` resolves from it.
+const OUT  = resolve(HERE, "__mounted.mjs");
+
+globalThis.__S = {};   // the scenario being rendered; mutated between renders
+
+// Stubs keyed by the tail of the import path. Deliberately dumb — the point is
+// to exercise OUR render logic, not react-query or axios.
+const STUBS = {
+  "@tanstack/react-query": `
+    export const useQuery = (o) => {
+      const s = globalThis.__S, key = JSON.stringify(o.queryKey), hit = s.queries || {};
+      for (const k of Object.keys(hit)) if (key.includes(k)) return { data: hit[k], isLoading: !!s.isLoading, isError: !!s.isError, refetch(){} };
+      return { data: undefined, isLoading: !!s.isLoading, isError: !!s.isError, refetch(){} };
+    };
+    export const useMutation = () => ({ mutate(){}, isPending: false, variables: undefined });
+    export const useQueryClient = () => ({ invalidateQueries(){} });
+  `,
+  "api": `export default { get: async () => ({ data: {} }), post: async () => ({ data: {} }) };`,
+  "store": `
+    export const useAuthStore = (sel) => sel({ user: { role: globalThis.__S.role || "cashier", id: "u1", name: "Ada" }, org: { name: "Shop" } });
+    export const useLangStore = (sel) => sel({ lang: globalThis.__S.lang || "en" });
+    export const useSettingsStore = (sel) => sel({ selectedLocation: { id: "loc-1", name: "Bepanda" } });
+    const draft = { cart: [], setCart(){}, clear(){}, held: [], hydrate(){} };
+    export const useDraftCartStore = (sel) => (typeof sel === "function" ? sel(draft) : draft);
+    useDraftCartStore.getState = () => draft;
+  `,
+  "useCurrency": `const f = (n) => String(n ?? 0) + " FCFA"; f.symbol = "FCFA"; f.currency = "XAF"; export const useCurrency = () => f;`,
+  "useNetworkStatus": `export const useNetworkStatus = () => ({ isOnline: globalThis.__S.isOnline !== false });`,
+  "useTicketSummary": `
+    export const ticketSummaryKey = (l) => ["ticket-summary", l];
+    export const useTicketSummary = () => ({ summary: globalThis.__S.summary ?? { mode: "cashier" } });
+    export const ticketNavVisible = () => globalThis.__S.allowed !== false;
+  `,
+  "useMyPermissions": `export const useMyPermissions = () => ({ perms: { can_receive_payment: true, can_release_goods: true, can_pay_expenses: true } });`,
+  "ShiftWidgets": `
+    export const useActiveShift = () => ({ hasShift: !!globalThis.__S.hasShift, locId: "loc-1" });
+    export const noShiftHint = () => "Open your shift";
+    export function ActiveShiftIndicator(){ return null; }
+    export function OpenShiftModal(){ return null; }
+  `,
+  "PaymentEventReceipt": `export default function PaymentEventReceipt(){ return null; }`,
+  "react-router-dom": `export const useNavigate = () => () => {}; export const useSearchParams = () => [new URLSearchParams(), () => {}];`,
+  "react-hot-toast": `const t = () => {}; t.success = () => {}; t.error = () => {}; export default t;`,
+};
+
+// stdin entry + resolveDir: no temp file to leave behind in src/.
+await build({
+  stdin: {
+    contents: `
+      export { default as TicketListPage } from "./pages/TicketListPage";
+      export { default as CashierOversightTab } from "./components/CashierOversightTab";
+    `,
+    resolveDir: SRC, loader: "jsx", sourcefile: "mount-entry.jsx",
+  },
+  bundle: true, format: "esm", outfile: OUT, jsx: "automatic",
+  external: ["react", "react/jsx-runtime"], logLevel: "silent",
+  platform: "node",
+  // Some transitive deps are CommonJS and call require() at runtime. esbuild's
+  // ESM output stubs that with a thrower — "Dynamic require of react is not
+  // supported" — so hand it a real one.
+  banner: { js: `import { createRequire as __cr } from "module"; const require = __cr(import.meta.url);` },
+  plugins: [{
+    name: "stubs",
+    setup(b) {
+      b.onResolve({ filter: /.*/ }, (a) => {
+        for (const k of Object.keys(STUBS)) if (a.path === k || a.path.endsWith("/" + k)) return { path: k, namespace: "stub" };
+        return null;
+      });
+      b.onLoad({ filter: /.*/, namespace: "stub" }, (a) => ({ contents: STUBS[a.path], loader: "js" }));
+    },
+  }],
+});
+
+const M = await import("file:///" + OUT.replace(/\\/g, "/"));
+
+const ticket = (id, n, extra = {}) => ({
+  id, sale_number: n, total_amount: 1500, paid_amount: 1500, version: 0,
+  created_at: new Date().toISOString(), pa_customers: { name: "Awa" },
+  pa_sale_ticket_items: [{ id: "l1", product_id: "p1", quantity: 2, unit_price: 750, pa_products: { name: "Rice" } }],
+  pa_sale_items:        [{ id: "l1", product_id: "p1", quantity: 2, unit_price: 750, pa_products: { name: "Rice" } }],
+  ...extra,
+});
+
+const THREE_TICKETS = { data: [ticket("a", "VNT-1"), ticket("b", "VNT-2"), ticket("c", "VNT-3")] };
+const CREDIT_TICKET = { data: [ticket("d", "VNT-4", { paid_amount: 0, total_amount: 12000 })] };
+
+// Shape re-diffed field-by-field against backend/src/lib/cashierOversight.js
+// (return at :334, row builders at :158 / :197 / :270 / :298, drawer at :232).
+// Every key the server emits is present, including ones no component reads yet —
+// a fixture that is a subset of reality is how a column ends up silently
+// rendering its fallback in every scenario.
+const OVERSIGHT = { data: {
+  range: { from: "2026-08-01", to: "2026-08-18", location_id: "loc-1" },
+  per_cashier: [{ user_id: "u1", name: "Ada", collected_total: 9000, ticket_count: 3,
+                  by_method: { cash: 9000, mobile_money: 0, bank: 0, other: 0 },
+                  debt_collected: 0, self_served_count: 1, self_served_value: 500 }],
+  per_cashier_totals: { collected_total: 9000, ticket_count: 3,
+                        by_method: { cash: 9000, mobile_money: 0, bank: 0, other: 0 }, self_served_count: 1, self_served_value: 500 },
+  // ⚠️ cancelled_count IS RENDERED (CashierOversightTab.jsx:256). It was missing
+  // from the fixture this file was ported from, so both data scenarios would have
+  // ticked green with that column showing "—".
+  per_salesperson: [{ user_id: "u2", name: "Boss", sent_count: 3, sent_total: 9000,
+                      uncollected_total: 1500, uncollected_count: 1,
+                      cancelled_count: 1, voided_count: 1 }],
+  per_salesperson_totals: { sent_total: 9000, sent_count: 3, uncollected_total: 1500, uncollected_count: 1 },
+  tickets: [
+    { id: "a", sale_number: "VNT-1", status: "paid", amount: 1500, raised_by: "u2", raised_by_name: "Boss", paid_by: "u1", paid_by_name: "Ada", released_by: null, released_by_name: null, raised_at: new Date().toISOString(), paid_at: new Date().toISOString(), released_at: null, self_served: false, is_voided: false, version: 0, cancelled_at: null, cancelled_by_name: null, cancel_reason: null },
+    { id: "b", sale_number: "VNT-2", status: "pending_payment", amount: 2000, raised_by: "u2", raised_by_name: "Boss", paid_by: null, paid_by_name: null, released_by: null, released_by_name: null, raised_at: new Date().toISOString(), paid_at: null, released_at: null, self_served: false, is_voided: true, version: 0, cancelled_at: null, cancelled_by_name: null, cancel_reason: null },
+    { id: "c", sale_number: "VNT-3", status: "cancelled", amount: 900, raised_by: "u2", raised_by_name: "Boss", paid_by: null, paid_by_name: null, released_by: null, released_by_name: null, raised_at: new Date().toISOString(), paid_at: null, released_at: null, self_served: false, is_voided: false, version: 1, cancel_reason: "customer left", cancelled_by_name: "Boss", cancelled_at: new Date().toISOString() },
+  ],
+  ticket_count: 3, truncated: false,
+  expenses: [
+    { id: "e1", description: "electric", category: "utilities", amount: 5000, status: "paid", raised_by: "u2", raised_by_name: "Boss", paid_by_name: "Ada", payment_method: "cash", raised_at: new Date().toISOString(), paid_at: new Date().toISOString(), cancelled_at: null, cancel_reason: null, self_paid: false },
+    { id: "e2", description: "water", category: "utilities", amount: 2500, status: "pending_payout", raised_by: "u2", raised_by_name: "Boss", paid_by_name: null, payment_method: null, raised_at: new Date().toISOString(), paid_at: null, cancelled_at: null, cancel_reason: null, self_paid: false },
+    { id: "e3", description: "food", category: null, amount: 500, status: "cancelled", raised_by: "u1", raised_by_name: "Ada", paid_by_name: null, payment_method: null, raised_at: new Date().toISOString(), paid_at: null, cancelled_at: new Date().toISOString(), cancel_reason: "duplicate", self_paid: false },
+  ],
+  expense_totals: { paid_count: 1, paid_total: 5000, pending_count: 1, pending_total: 2500,
+                    cancelled_count: 1, cancelled_total: 500, self_paid_count: 0, self_paid_total: 0 },
+  drawer: { available: true,
+    shifts: [{ shift_id: "s1", cashier_id: "u1", cashier_name: "Ada", shift_date: "2026-08-18", opening_float: 1000,
+               cash_sales_received: 9000, cash_refunds: 0, cash_expenses: 5000, expected_drawer: 5000,
+               actual_cash: 5000, variance: 0, status: "closed", counted: true }],
+    totals: { expected: 5000, actual: 5000, variance: 0, expected_open: 0, counted_shifts: 1, open_shifts: 0 } },
+  notes: { anchor_en: "a", anchor_fr: "a", self_served_en: "b", self_served_fr: "b" },
+} };
+
+const OV_PROPS = { from: "2026-08-01", to: "2026-08-18", locationId: "loc-1", lang: "en" };
+
+const CASES = [
+  ["Queue · 3 tickets",              M.TicketListPage, { variant: "queue" },  { queries: { tickets: THREE_TICKETS } }],
+  ["Queue · FULL-CREDIT ticket",     M.TicketListPage, { variant: "queue" },  { queries: { tickets: CREDIT_TICKET } }],
+  ["Queue · empty",                  M.TicketListPage, { variant: "queue" },  { queries: { tickets: { data: [] } } }],
+  ["Queue · loading",                M.TicketListPage, { variant: "queue" },  { isLoading: true }],
+  ["Queue · fetch failed",           M.TicketListPage, { variant: "queue" },  { isError: true }],
+  ["Queue · offline",                M.TicketListPage, { variant: "queue" },  { queries: { tickets: THREE_TICKETS }, isOnline: false }],
+  ["Queue · not allowed",            M.TicketListPage, { variant: "queue" },  { allowed: false }],
+  ["Queue · direct mode",            M.TicketListPage, { variant: "queue" },  { allowed: false, summary: { mode: "direct" } }],
+  ["Pickup · 3 tickets",             M.TicketListPage, { variant: "pickup" }, { queries: { tickets: THREE_TICKETS } }],
+  ["Pickup · empty",                 M.TicketListPage, { variant: "pickup" }, { queries: { tickets: { data: [] } } }],
+  ["Pickup · fetch failed",          M.TicketListPage, { variant: "pickup" }, { isError: true }],
+
+  ["Oversight · full data",          M.CashierOversightTab, OV_PROPS,                    { queries: { "cashier-oversight": OVERSIGHT }, role: "owner" }],
+  ["Oversight · full data (FR)",     M.CashierOversightTab, { ...OV_PROPS, lang: "fr" }, { queries: { "cashier-oversight": OVERSIGHT }, role: "owner", lang: "fr" }],
+  ["Oversight · loading",            M.CashierOversightTab, OV_PROPS,                    { isLoading: true, role: "owner" }],
+  ["Oversight · fetch failed",       M.CashierOversightTab, OV_PROPS,                    { isError: true, role: "owner" }],
+];
+
+// A React warning is a failure here. "Each child in a list needs a key" is how a
+// fixture/component mismatch announces itself, and it is the only warning this
+// harness has ever produced — it meant the fixture was wrong, both times.
+let warned = [];
+const realWarn = console.error;
+console.error = (...a) => { warned.push(String(a[0])); };
+
+let bad = 0;
+for (const [name, Comp, props, state] of CASES) {
+  globalThis.__S = state;
+  warned = [];
+  if (typeof Comp !== "function") { bad++; realWarn(`  MISSING ${name}`); continue; }
+  try {
+    const html = renderToString(React.createElement(Comp, props));
+    if (!html || html.length < 20) { bad++; realWarn(`  EMPTY  ${name} — ${html.length} chars`); continue; }
+    if (warned.length) { bad++; realWarn(`  WARN   ${name}\n           ${warned[0].split("\n")[0]}`); continue; }
+    // DUMP="<substring>" prints the rendered HTML for matching cases. A clean
+    // render proves the component did not throw; it proves nothing about what it
+    // SAYS. Reading the output is how you catch "half of their sales are under
+    // null" — valid HTML, no warning, and wrong.
+    if (process.env.DUMP && name.includes(process.env.DUMP)) {
+      realWarn(`\n----- ${name} -----\n${html.replace(/></g, ">\n<")}\n-----\n`);
+    }
+    realWarn(`  ok     ${name}  (${html.length})`);
+  } catch (e) {
+    bad++;
+    realWarn(`  CRASH  ${name}\n           ${String(e.message).split("\n")[0]}`);
+  }
+}
+console.error = realWarn;
+
+try { rmSync(OUT, { force: true }); } catch { /* best effort */ }
+console.log(`\n  ${CASES.length - bad}/${CASES.length} rendered`);
+process.exit(bad ? 1 : 0);

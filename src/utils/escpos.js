@@ -12,6 +12,7 @@
 // accents.)
 
 import { advertLines, showDownloadQr, downloadQrCaptionLines, PLAY_STORE_URL } from "./receiptExtras";
+import { dmgShort } from "./damagedLabel"; // MP-DAMAGED-GOODS: one marker, all surfaces
 
 const ESC = 0x1b, GS = 0x1d, LF = 0x0a;
 
@@ -305,8 +306,12 @@ export function buildTicketSlipEscposBytes({
     for (const g of goods) {
       const q = Number(g.quantity) || 0;
       const qty = Number.isInteger(q) ? String(q) : String(Number(q.toFixed(3)));
+      // MP-DAMAGED-GOODS: same "*" prefix as every other surface, so the marker
+      // reads identically whichever paper the customer ends up holding. The
+      // spelled-out word is KEPT here — doc.wrapped() wraps rather than
+      // truncates, so unlike the WhatsApp body there is room for both.
       const dmg = g.is_damaged ? (en ? " [DAMAGED]" : " [ABIME]") : "";
-      doc.wrapped(`${qty} x ${g.name || g.product_name}${dmg}`);
+      doc.wrapped(`${qty} x ${dmgShort(g.name || g.product_name, g.is_damaged)}${dmg}`);
     }
     doc.rule();
   } else {

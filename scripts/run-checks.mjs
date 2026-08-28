@@ -1,0 +1,36 @@
+// ── RELEASE CHECKS — run them ALL, then report ──────────────────────────────
+//   npm test
+//
+// ⚠️ NO `&&` CHAINING, DELIBERATELY. The backend's `npm test` was
+// `check-pagination && test-derivePayment`, and check-pagination has been red on
+// a pre-existing finding for weeks — so test-derivePayment had not run in all
+// that time. Nobody removed it; the shell simply stopped reaching it. A red gate
+// that also HIDES the checks behind it is worse than a red gate, because the
+// hidden ones look like they are passing.
+//
+// So: every check runs, every result is printed, and the exit code is the OR of
+// the failures. One red check can never conceal another.
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(HERE, "..");
+
+const CHECKS = [
+  ["mount-check",   "scripts/mount-check.mjs",           "15 render scenarios — does it MOUNT, not just parse"],
+  ["damaged-check", "scripts/receipt-damaged-check.mjs", "regression #10 — the damaged marker on all 3 receipt surfaces"],
+  ["export-check",  "scripts/report-export-check.mjs",   "regression #7 — CSV round-trips through a real spreadsheet parser"],
+];
+
+const results = [];
+for (const [name, script, why] of CHECKS) {
+  const r = spawnSync(process.execPath, [script], { cwd: ROOT, stdio: "inherit" });
+  results.push([name, r.status === 0, why]);
+}
+
+const failed = results.filter(([, ok]) => !ok);
+console.log("\n── release checks ─────────────────────────────────────────────");
+for (const [name, ok, why] of results) console.log(`  ${ok ? "PASS" : "FAIL"}  ${name.padEnd(15)} ${why}`);
+console.log(`  ${results.length - failed.length}/${results.length} suites passed\n`);
+process.exit(failed.length ? 1 : 0);

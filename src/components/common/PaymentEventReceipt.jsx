@@ -32,6 +32,7 @@ import { buildFactureInner, buildThermalReceipt } from "../../utils/factureRecei
 import { advertLines, PLAY_STORE_URL, showDownloadQr, downloadQrCaptionLines } from "../../utils/receiptExtras";
 import { currencySymbol } from "../../utils/currency";
 import { momoLabel } from "../../utils/paymentLabels";
+import { dmgName as dmgNameOf } from "../../utils/damagedLabel"; // MP-DAMAGED-GOODS: pure, so it can be asserted
 import toast from "react-hot-toast";
 // MP-BT-THERMAL: direct Bluetooth (Classic SPP) ESC/POS printing.
 import { isBtPrintSupported, getSavedPrinter, saveSavedPrinter, listPairedPrinters, printSaleViaBluetooth } from "../../utils/btPrint";
@@ -501,9 +502,12 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
   // MP-DAMAGED-GOODS: append a damaged marker to an item name for the printed
   // factures (thermal, A4) and history views, so a damaged-goods sale is
   // unmistakable on paper too. Server stamps is_damaged on the sale line.
-  const dmgName = (i) => (i && i.is_damaged)
-    ? `${i.name} (${en ? "DAMAGED GOODS" : "MARCHANDISE ENDOMMAGÉE"})`
-    : (i ? i.name : "");
+  //
+  // The wording moved to utils/damagedLabel so it can be ASSERTED — regression
+  // item #10 had no automated check precisely because this was a local const
+  // closed over the component's `en`, and nothing outside a render could reach
+  // it. Kept as a thin closure so the three call sites below are unchanged.
+  const dmgName = (i) => dmgNameOf(i, en);
 
   // ESC closes — mirrors the inline ReceiptModal's behaviour
   // (MP-RECEIPT-MODAL-MOBILE-FIX) so phones aren't trapped on a
