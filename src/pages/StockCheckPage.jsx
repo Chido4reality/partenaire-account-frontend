@@ -289,6 +289,39 @@ export default function StockCheckPage() {
     },
   });
 
+  // ── AUTO RE-BASELINE ON OPEN ────────────────────────────────────────────────
+  // Paul's complaint: the system flags a product, staff sell some before he gets
+  // to it, and his count is then refused for being measured against a stale
+  // figure. The guard is right; he just had no way forward except a button he
+  // could only see AFTER being refused.
+  //
+  // Opening the count screen now moves the baseline to live stock, so the number
+  // he is shown is current at the moment he starts. It does NOT weaken the guard —
+  // it narrows the window to the actual counting period (median 7m06s for this
+  // org) instead of the days the check sat in the queue.
+  //
+  // Silent by design: this is a correction to what he is about to be shown, not an
+  // event. A toast here would fire on every open and teach him to ignore toasts.
+  const refreshBaselineMut = useMutation({
+    mutationFn: (id) => api.post(`/stock-checks/${id}/refresh-baseline`).then(r => r.data),
+    onSuccess: (res) => {
+      // Only refetch when something actually moved — the endpoint no-ops otherwise.
+      if (res && res.unchanged !== true) {
+        setResolveFor((cur) => (cur && res.data && cur.id === res.data.id ? res.data : cur));
+        invalidateAll();
+      }
+    },
+    // A failure here must never block counting: he sees the old figure and the
+    // guard still protects the write.
+    onError: () => {},
+  });
+  // One entry point for "open the count screen", so the re-baseline cannot be
+  // skipped by a second caller added later.
+  const openCount = (row) => {
+    setResolveFor(row);
+    if (row && row.status === "pending") refreshBaselineMut.mutate(row.id);
+  };
+
   const resolveMut = useMutation({
     mutationFn: ({ id, counted_qty, resolution }) =>
       api.post(`/stock-checks/${id}/verify`, { counted_qty, resolution }).then(r => r.data),
@@ -711,7 +744,7 @@ export default function StockCheckPage() {
                 </div>
                 {r.status === "pending" && (
                   <div style={{ display: "flex", gap: 8, alignSelf: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                    <button onClick={() => setResolveFor(r)} className="btn btn-success" style={{ fontWeight: 700, whiteSpace: "nowrap" }}>
+                    <button onClick={() => openCount(r)} className="btn btn-success" style={{ fontWeight: 700, whiteSpace: "nowrap" }}>
                       {en ? "Resolve count" : "Résoudre"}
                     </button>
                     {isOwner && (
@@ -792,7 +825,7 @@ export default function StockCheckPage() {
                     </div>
                   </div>
                   <div style={{ alignSelf: "center", display: "flex", flexDirection: "column", gap: 6, alignItems: "stretch" }}>
-                    <button onClick={() => setResolveFor(r)} className="btn btn-primary" style={{ fontWeight: 700, whiteSpace: "nowrap" }}>
+                    <button onClick={() => openCount(r)} className="btn btn-primary" style={{ fontWeight: 700, whiteSpace: "nowrap" }}>
                       🔍 {en ? "Count it" : "Compter"}
                     </button>
                     {/* MP-STALE-OUT-OF-QUEUE: the action that actually silences a slow
