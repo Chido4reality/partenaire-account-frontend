@@ -1863,6 +1863,7 @@
               <option value="other">Other</option>
             </select>
             <input id="mm-sp-amount" type="number" min="1" step="1" placeholder="Amount" />
+            <select id="mm-sp-currency"><option value="XAF">FCFA</option><option value="NGN">₦ NGN</option></select>
             <input id="mm-sp-date" type="date" />
             <select id="mm-sp-member"><option value="">Whole team</option></select>
             <input id="mm-sp-note" type="text" placeholder="Note (optional)" maxlength="140" />
@@ -2433,10 +2434,6 @@
       values.forEach((v, i) => { if (cards[i]) { cards[i].textContent = v; cards[i].classList.remove('muted'); } });
     }
 
-    // null means "no conversions yet", which must read as "—". Rendering it as
-    // 0 would claim the marketer acquires customers for free; Infinity would be
-    // worse. Both are lies about the only number this tab exists to compare.
-    function fmtCPC(v) { return v == null ? '—' : fmtFCFA(v); }
 
     function convRate(s) {
       return s.signups > 0
@@ -2498,8 +2495,8 @@
                 '<td class="mm-num">' + (m.stats.still_in_trial || 0) + '</td>' +
                 '<td class="mm-num">' + (m.stats.paying_customers || 0) + '</td>' +
                 '<td class="mm-num">' + fmtMoneyMap(m.stats.revenue_by_currency) + '</td>' +
-                '<td class="mm-num">' + fmtFCFA(m.expenditure || 0) + '</td>' +
-                '<td class="mm-num">' + fmtCPC(m.cost_per_paying_customer) + '</td>' +
+                '<td class="mm-num">' + fmtMoneyMap(m.expenditure_by_currency) + '</td>' +
+                '<td class="mm-num">' + fmtCostMap(m.cost_by_currency) + '</td>' +
                 '<td><button class="btn btn-sm" data-mm-toggle="' + m.id + '" data-status="' + m.status + '">' +
                   (removed ? 'Restore' : 'Remove') + '</button></td>' +
                 '</tr>';
@@ -2519,7 +2516,7 @@
         spendEl.innerHTML =
           '<div style="display:flex; justify-content:space-between; align-items:baseline; margin:12px 0 6px">' +
             '<div class="mm-muted" style="font-size:12px">' + rows.length + ' entr' + (rows.length === 1 ? 'y' : 'ies') + '</div>' +
-            '<div style="font-weight:700">Total ' + fmtFCFA(spend.total || 0) + '</div>' +
+            '<div style="font-weight:700">Total ' + fmtMoneyMap(spend.total_by_currency) + '</div>' +
           '</div>' +
           (rows.length
             ? '<table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>For</th><th>Note</th>' +
@@ -2532,7 +2529,7 @@
                       ? escapeHtml(nameById[e.team_member_id] || 'Member')
                       : '<span class="mm-muted">Whole team</span>') + '</td>' +
                   '<td class="mm-muted">' + escapeHtml(e.note || '') + '</td>' +
-                  '<td class="mm-num">' + fmtFCFA(e.amount) + '</td>' +
+                  '<td class="mm-num">' + fmtCur(e.amount, e.currency) + '</td>' +
                   '<td><button class="btn btn-sm btn-danger" data-mm-delspend="' + e.id + '">Delete</button></td>' +
                 '</tr>';
               }).join('') + '</tbody></table>'
@@ -2553,8 +2550,8 @@
           (tot.marketers || 0).toLocaleString('fr-CM'),
           (tot.signups || 0).toLocaleString('fr-CM'),
           (tot.paying_customers || 0).toLocaleString('fr-CM'),
-          fmtFCFA(tot.expenditure_total || 0),
-          fmtCPC(tot.cost_per_paying_customer)
+          fmtMoneyMap(tot.expenditure_by_currency, ' · '),
+          fmtCostMap(tot.cost_by_currency, ' · ')
         ]);
         if (!views.length) {
           host.innerHTML = '<div class="activity-empty">No marketers yet. Add one from Admin team with the role “marketer”.</div>';
@@ -2563,24 +2560,45 @@
         // Colour each marketer against the group median rather than a fixed
         // threshold: comparing marketers to each other is the entire point of
         // this tab, and a hardcoded "good" number would be arbitrary.
-        const cpcs = views.map(function (v) { return v.cost_per_paying_customer; })
-                          .filter(function (v) { return v != null; })
-                          .sort(function (a, b) { return a - b; });
+        // Median PER CURRENCY. Ranking a Douala cost-per-customer against a
+        // Lagos one was never meaningful, so there is deliberately no single
+        // league table — each currency is compared only against itself.
+        const byCur = {};
+        views.forEach(function (v) {
+          Object.keys(v.cost_by_currency || {}).forEach(function (k) {
+            const c = v.cost_by_currency[k].cost;
+            if (c == null) return;
+            (byCur[k] = byCur[k] || []).push(c);
+          });
+        });
+        const medians = {};
+        Object.keys(byCur).forEach(function (k) {
+          const arr = byCur[k].sort(function (a, b) { return a - b; });
+          if (arr.length < 2) return;             // nothing to compare against
+          const mid = Math.floor(arr.length / 2);
+          medians[k] = arr.length % 2 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
+        });
         // True median: for an EVEN count take the mean of the two middle
         // values. Using cpcs[floor(n/2)] alone picks the upper-middle, so with
         // two marketers the dearer one also satisfies `v <= median` and the tab
         // paints everybody green — exactly the comparison it exists to make.
         // Below two marketers there is nothing to compare against, so no
         // colour is applied rather than declaring a lone marketer "good".
-        let median = null;
-        if (cpcs.length >= 2) {
-          const mid = Math.floor(cpcs.length / 2);
-          median = cpcs.length % 2 ? cpcs[mid] : (cpcs[mid - 1] + cpcs[mid]) / 2;
-        }
-        function cpcCell(v) {
-          if (v == null) return '<span class="mm-muted">—</span>';
-          if (median == null) return fmtFCFA(v);
-          return '<span class="' + (v <= median ? 'mm-cpc-good' : 'mm-cpc-warn') + '">' + fmtFCFA(v) + '</span>';
+        // One cell, one line per currency, each coloured against its OWN median.
+        function cpcCell(map) {
+          const keys = Object.keys(map || {}).filter(function (k) {
+            const e = map[k]; return Number(e.spend) || Number(e.conversions);
+          });
+          if (!keys.length) return '<span class="mm-muted">—</span>';
+          keys.sort();
+          return keys.map(function (k) {
+            const e = map[k];
+            if (e.cost == null) return '<span class="mm-muted">— ' + escapeHtml(k) + '</span>';
+            const med = medians[k];
+            const txt = fmtCur(e.cost, k);
+            if (med == null) return txt;
+            return '<span class="' + (e.cost <= med ? 'mm-cpc-good' : 'mm-cpc-warn') + '">' + txt + '</span>';
+          }).join('<br>');
         }
 
         host.innerHTML =
@@ -2600,8 +2618,8 @@
                 '<td class="mm-num">' + t.paying_customers + '</td>' +
                 '<td class="mm-num">' + convRate(t) + '</td>' +
                 '<td class="mm-num">' + fmtMoneyMap(t.revenue_by_currency) + '</td>' +
-                '<td class="mm-num">' + fmtFCFA(v.expenditure_total) + '</td>' +
-                '<td class="mm-num">' + cpcCell(v.cost_per_paying_customer) + '</td>' +
+                '<td class="mm-num">' + fmtMoneyMap(v.expenditure_by_currency) + '</td>' +
+                '<td class="mm-num">' + cpcCell(v.cost_by_currency) + '</td>' +
               '</tr>';
             const members = v.team.map(function (m) {
               return '<tr class="mk-member">' +
@@ -2611,8 +2629,8 @@
                 '<td class="mm-num">' + m.stats.paying_customers + '</td>' +
                 '<td class="mm-num">' + convRate(m.stats) + '</td>' +
                 '<td class="mm-num">' + fmtMoneyMap(m.stats.revenue_by_currency) + '</td>' +
-                '<td class="mm-num">' + fmtFCFA(m.expenditure) + '</td>' +
-                '<td class="mm-num">' + cpcCell(m.cost_per_paying_customer) + '</td>' +
+                '<td class="mm-num">' + fmtMoneyMap(m.expenditure_by_currency) + '</td>' +
+                '<td class="mm-num">' + cpcCell(m.cost_by_currency) + '</td>' +
               '</tr>';
             }).join('');
             return leader + members;
@@ -2647,6 +2665,7 @@
         try {
           await apiAdmin('POST', '/admin/marketing/expenditures', {
             category: $('mm-sp-category').value, amount, spent_on: spentOn,
+            currency: $('mm-sp-currency') ? $('mm-sp-currency').value : 'XAF',
             team_member_id: $('mm-sp-member').value || null,
             note: $('mm-sp-note').value.trim() || null
           });
@@ -2766,6 +2785,22 @@
     // Render a { CURRENCY: amount } map. Never sums across currencies: with two
     // present it shows both, stacked, because there is no exchange rate here and
     // one blended figure would be the sum of two different units.
+    // Render { CUR: {spend, conversions, cost} }. cost === null means "not yet
+    // computable" — spend exists in this currency but nothing has converted in
+    // it, or vice versa. Shown as an em dash WITH the spend still visible,
+    // because hiding it would understate what the marketer has cost.
+    function fmtCostMap(map, sep) {
+      const keys = Object.keys(map || {}).filter(function (k) {
+        const e = map[k]; return Number(e.spend) || Number(e.conversions);
+      });
+      if (!keys.length) return '—';
+      keys.sort();
+      return keys.map(function (k) {
+        const e = map[k];
+        return e.cost == null ? ('— ' + k) : fmtCur(e.cost, k);
+      }).join(sep === undefined ? '<br>' : sep);
+    }
+
     // sep defaults to a <br> for TABLE CELLS (innerHTML). Stat cards are written
     // with textContent, where a <br> would be shown to the user as the literal
     // characters "<br>" — so those pass a plain-text separator instead.
