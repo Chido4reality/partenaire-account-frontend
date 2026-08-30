@@ -2540,12 +2540,126 @@
       }
     }
 
+    // ── ADMIN-SIDE SPEND ENTRY (master_admin, from the oversight tab) ────────
+    // Peter records a marketer's spend without impersonating them. The API
+    // books it to the marketer while recording HIM as recorded_by, so the audit
+    // trail keeps "logged by an admin" distinct from "logged by the marketer".
+    let _mkSpendMarketer = null;
+    let _mkViews = [];
+
+    function mkSpendRows(rows, marketerName) {
+      if (!rows.length) return '<div class="activity-empty">Nothing recorded for ' + escapeHtml(marketerName) + ' yet.</div>';
+      return '<table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>For</th>' +
+        '<th class="mm-num">Amount</th><th></th></tr></thead><tbody>' +
+        rows.map(function (e) {
+          return '<tr>' +
+            '<td>' + escapeHtml(e.spent_on) + '</td>' +
+            '<td style="text-transform:capitalize">' + escapeHtml(e.category) + '</td>' +
+            '<td>' + (e.team_member_id
+                ? escapeHtml((_mkSpendMarketer.team.find(function (t) { return t.id === e.team_member_id; }) || {}).name || 'Member')
+                : '<span class="mm-muted">Whole team</span>') + '</td>' +
+            '<td class="mm-num">' + fmtCur(e.amount, e.currency) + '</td>' +
+            '<td><button class="btn btn-sm btn-danger" data-mk-delspend="' + escapeHtml(e.id) + '">Delete</button></td>' +
+          '</tr>';
+        }).join('') + '</tbody></table>';
+    }
+
+    async function mkRefreshSpend() {
+      const host = $('mk-sp-list');
+      if (!host || !_mkSpendMarketer) return;
+      try {
+        const r = await apiAdmin('GET', '/admin/marketing/oversight/expenditures?marketer_id=' + _mkSpendMarketer.id);
+        host.innerHTML =
+          '<div style="display:flex;justify-content:space-between;align-items:baseline;margin:10px 0 6px">' +
+            '<div class="mm-muted" style="font-size:12px">' + (r.data || []).length + ' entries</div>' +
+            '<div style="font-weight:700">Total ' + fmtMoneyMap(r.total_by_currency) + '</div>' +
+          '</div>' + mkSpendRows(r.data || [], _mkSpendMarketer.name);
+      } catch (e) {
+        host.innerHTML = '<div class="activity-empty">Could not load: ' + escapeHtml(e.message || 'error') + '</div>';
+      }
+    }
+
+    function openMarketerSpend(view) {
+      _mkSpendMarketer = {
+        id: view.marketer.id,
+        name: view.marketer.full_name || view.marketer.email,
+        team: view.team || [],
+      };
+      const members = (view.team || []).filter(function (m) { return m.status === 'active'; });
+      openModal({
+        title: 'Spend for ' + _mkSpendMarketer.name,
+        sub: 'Recorded against this marketer, with you kept as the admin who logged it.',
+        wide: true,
+        content:
+          '<div class="mm-inline-form">' +
+            '<select id="mk-sp-category">' +
+              '<option value="salary">Salary</option><option value="flyers">Flyers</option>' +
+              '<option value="transport">Transport</option><option value="food">Food</option>' +
+              '<option value="other">Other</option>' +
+            '</select>' +
+            '<input id="mk-sp-amount" type="number" min="1" step="1" placeholder="Amount" />' +
+            '<select id="mk-sp-currency"><option value="XAF">FCFA</option><option value="NGN">₦ NGN</option></select>' +
+            '<input id="mk-sp-date" type="date" />' +
+            '<select id="mk-sp-member"><option value="">Whole team</option>' +
+              members.map(function (m) {
+                return '<option value="' + escapeHtml(m.id) + '">' + escapeHtml(m.name) + '</option>';
+              }).join('') +
+            '</select>' +
+            '<input id="mk-sp-note" type="text" placeholder="Note (optional)" maxlength="140" />' +
+            '<button class="btn btn-primary" id="mk-sp-add">Record</button>' +
+          '</div>' +
+          '<div id="mk-sp-list"><div class="activity-empty">Loading…</div></div>',
+        secondary: { label: 'Close' },
+      });
+
+      const add = $('mk-sp-add');
+      if (add) add.addEventListener('click', async function () {
+        const amount = Number($('mk-sp-amount').value);
+        const spentOn = $('mk-sp-date').value;
+        if (!(amount > 0)) { showToast('Enter an amount greater than zero.', 'danger'); return; }
+        if (!spentOn) { showToast('Pick the date the money was spent.', 'danger'); return; }
+        try {
+          await apiAdmin('POST', '/admin/marketing/oversight/expenditures', {
+            marketer_id: _mkSpendMarketer.id,
+            category: $('mk-sp-category').value,
+            amount,
+            currency: $('mk-sp-currency').value,
+            spent_on: spentOn,
+            team_member_id: $('mk-sp-member').value || null,
+            note: $('mk-sp-note').value.trim() || null,
+          });
+          $('mk-sp-amount').value = ''; $('mk-sp-note').value = '';
+          showToast('Recorded for ' + _mkSpendMarketer.name + '.', 'success');
+          mkRefreshSpend();
+          loadMarketers();   // the oversight row's spend + cost must move too
+        } catch (e) { showToast(e.message || 'Could not record', 'danger'); }
+      });
+
+      const list = $('mk-sp-list');
+      if (list) list.addEventListener('click', async function (e) {
+        const del = e.target.closest('[data-mk-delspend]');
+        if (!del) return;
+        try {
+          await apiAdmin('DELETE', '/admin/marketing/oversight/expenditures/' + del.getAttribute('data-mk-delspend'));
+          showToast('Entry removed.', 'success');
+          mkRefreshSpend();
+          loadMarketers();
+        } catch (err) { showToast(err.message || 'Could not remove', 'danger'); }
+      });
+
+      mkRefreshSpend();
+    }
+
     async function loadMarketers() {
       const host = $('mk-table');
       try {
         const inc = $('mk-include-inactive').checked ? '?include_inactive=1' : '';
         const res = await apiAdmin('GET', '/admin/marketing/oversight' + inc);
         const views = res.data || [], tot = res.totals || {};
+        // Logging on a marketer's behalf is master_admin only — the API refuses
+        // anyone else, so hiding the button just avoids offering a dead control.
+        const canLogSpend = ((currentAdmin && currentAdmin.role) || '').toLowerCase() === 'master_admin';
+        _mkViews = views;
         mmStat('mk-strip', [
           (tot.marketers || 0).toLocaleString('fr-CM'),
           (tot.signups || 0).toLocaleString('fr-CM'),
@@ -2605,7 +2719,8 @@
           '<table class="data-table"><thead><tr>' +
           '<th>Marketer</th><th class="mm-num">Signups</th><th class="mm-num">In trial</th>' +
           '<th class="mm-num">Paying</th><th class="mm-num">Conv. rate</th><th class="mm-num">Revenue</th>' +
-          '<th class="mm-num">Spend</th><th class="mm-num">Cost / customer</th></tr></thead><tbody>' +
+          '<th class="mm-num">Spend</th><th class="mm-num">Cost / customer</th>' +
+          (canLogSpend ? '<th></th>' : '') + '</tr></thead><tbody>' +
           views.map(function (v) {
             const t = v.team_total;
             const leader =
@@ -2620,6 +2735,9 @@
                 '<td class="mm-num">' + fmtMoneyMap(t.revenue_by_currency) + '</td>' +
                 '<td class="mm-num">' + fmtMoneyMap(v.expenditure_by_currency) + '</td>' +
                 '<td class="mm-num">' + cpcCell(v.cost_by_currency) + '</td>' +
+                '<td class="ta-right">' + (canLogSpend
+                  ? '<button class="btn btn-sm" data-mk-spend="' + escapeHtml(v.marketer.id) + '">Log spend</button>'
+                  : '') + '</td>' +
               '</tr>';
             const members = v.team.map(function (m) {
               return '<tr class="mk-member">' +
@@ -2631,6 +2749,7 @@
                 '<td class="mm-num">' + fmtMoneyMap(m.stats.revenue_by_currency) + '</td>' +
                 '<td class="mm-num">' + fmtMoneyMap(m.expenditure_by_currency) + '</td>' +
                 '<td class="mm-num">' + cpcCell(m.cost_by_currency) + '</td>' +
+                (canLogSpend ? '<td></td>' : '') +
               '</tr>';
             }).join('');
             return leader + members;
@@ -2645,6 +2764,14 @@
       on('mm-refresh', 'click', loadMyMarketing);
       on('mk-refresh', 'click', loadMarketers);
       on('mk-include-inactive', 'change', loadMarketers);
+
+      // Delegated so it survives every re-render of the oversight table.
+      on('route-marketers', 'click', function (e) {
+        const btn = e.target.closest('[data-mk-spend]');
+        if (!btn) return;
+        const v = _mkViews.find(function (x) { return x.marketer.id === btn.getAttribute('data-mk-spend'); });
+        if (v) openMarketerSpend(v);
+      });
 
       on('mm-tm-add', 'click', async function () {
         const name = $('mm-tm-name').value.trim();
