@@ -7736,7 +7736,34 @@
   <script>
     (function () {
       // ── Service worker ──────────────────────────────────────
-      if ('serviceWorker' in navigator) {
+      // NATIVE (Stenamo Admin Capacitor wrap): do NOT register, and actively
+      // tear down anything a previous visit left behind.
+      //
+      // sw-admin.js serves navigations CACHE-FIRST from a precached '/', so
+      // inside a long-lived WebView it can pin the app to an old portal build —
+      // the same class of failure that made a live browser show a stale page on
+      // 2026-08-30. The wrap loads partenairedozieadmin.com remotely precisely
+      // so portal updates land without a new APK; a caching SW would defeat that.
+      //
+      // main.jsx does this for the POS app but EXPLICITLY leaves the admin SW
+      // alone ("The admin SW (/sw-admin.js, /admin.html scope) is left alone"),
+      // so this page has to guard itself — it inherits nothing.
+      //
+      // Offline costs nothing here: every screen in this portal is a live API
+      // call, so a cached shell only ever produces a chrome with no data.
+      var _isNativeAdmin = !!(window.Capacitor && window.Capacitor.isNativePlatform
+        && window.Capacitor.isNativePlatform());
+      if (_isNativeAdmin && 'serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations()
+          .then(function (regs) { regs.forEach(function (r) { r.unregister().catch(function () {}); }); })
+          .catch(function () {});
+        if (typeof caches !== 'undefined' && caches.keys) {
+          caches.keys().then(function (keys) {
+            keys.forEach(function (k) { caches.delete(k).catch(function () {}); });
+          }).catch(function () {});
+        }
+      }
+      if (!_isNativeAdmin && 'serviceWorker' in navigator) {
         // Scope:/admin.html so this SW only controls the admin shell;
         // the MP service worker registered from index.html keeps its
         // own scope. Browsers honour `scope` when the SW file is served
