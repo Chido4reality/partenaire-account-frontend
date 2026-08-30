@@ -12,6 +12,7 @@
     "mount-check": "node scripts/mount-check.mjs",
     "damaged-check": "node scripts/receipt-damaged-check.mjs",
     "export-check": "node scripts/report-export-check.mjs",
+    "sync:admin": "node scripts/sync-admin-copy.mjs",
     "test": "node scripts/run-checks.mjs"
   },
   "dependencies": {

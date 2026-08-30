@@ -2962,10 +2962,15 @@
       if (isMarketer) {
         document.querySelectorAll('.sb-link').forEach(function (a) {
           const r = a.getAttribute('data-route');
-          a.style.display = (r === 'my-marketing' || r === 'settings') ? '' : 'none';
+          a.style.display = (r === 'my-marketing') ? '' : 'none';
         });
+        // Every section header hidden except Marketing. Settings used to be
+        // left visible, which also kept the "Shared" header on screen with a
+        // single item under it. A marketer sees their screen and nothing else:
+        // sign-out is a footer button and the forced first-login password
+        // change is a modal, so neither depends on a nav entry.
         document.querySelectorAll('.sb-section').forEach(function (el) {
-          el.style.display = (el.id === 'sb-section-marketing' || el.id === 'sb-section-shared') ? '' : 'none';
+          el.style.display = (el.id === 'sb-section-marketing') ? '' : 'none';
         });
         const sbSearch = $('sb-search');
         if (sbSearch) sbSearch.style.display = 'none';   // search hits /admin/search → 403
@@ -2984,7 +2989,7 @@
       // has no dashboard — landing them on one would 403 on first paint, so
       // their home is their own screen, and any other hash falls back to it.
       const wanted = parseHashRoute();
-      const allowedForMarketer = wanted === 'my-marketing' || wanted === 'settings';
+      const allowedForMarketer = wanted === 'my-marketing';
       if (isMarketer && !allowedForMarketer) {
         // No fromHash: let it rewrite the URL too, so a bookmarked #businesses
         // does not sit in the address bar showing the wrong section.

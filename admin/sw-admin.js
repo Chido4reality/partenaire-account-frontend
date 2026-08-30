@@ -21,7 +21,7 @@
 // v1.1 (separate work item) will add the push event handler that
 // fires on pa_admin_notifications-driven push events.
 
-const VERSION = 'admin-pwa-v1';
+const VERSION = 'admin-pwa-v2';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const API_CACHE = `${VERSION}-api`;

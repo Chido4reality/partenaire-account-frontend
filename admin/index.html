@@ -477,6 +477,43 @@
     }
 
     /* Plan + status badges */
+    /* ── Marketing screens ─────────────────────────────────────────────── */
+    .mm-inline-form {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      margin: 14px 0 4px; padding-bottom: 14px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .mm-inline-form input, .mm-inline-form select {
+      padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+      background: var(--bg-primary); color: var(--text-primary); font-size: 13px;
+    }
+    .mm-inline-form input[type="text"] { min-width: 160px; }
+    .mm-inline-form input[type="number"] { width: 120px; }
+    .mm-check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); }
+    .mm-code {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-weight: 700; letter-spacing: .04em;
+      background: var(--bg-tertiary); border: 1px solid var(--border-subtle);
+      padding: 4px 10px; border-radius: 8px;
+    }
+    .mm-code.off { opacity: .5; text-decoration: line-through; }
+    .mm-muted { color: var(--text-secondary); }
+    .mm-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    /* Leader row vs member row in the oversight table. The indent + rail is the
+       only thing distinguishing a member from a marketer, so it has to read at
+       a glance rather than relying on font size alone. */
+    .mk-leader td { font-weight: 650; }
+    .mk-member td:first-child {
+      padding-left: 30px; position: relative; color: var(--text-secondary);
+    }
+    .mk-member td:first-child::before {
+      content: ""; position: absolute; left: 16px; top: 0; bottom: 0;
+      border-left: 2px solid var(--border-subtle);
+    }
+    .mk-member td { background: var(--bg-secondary); }
+    .mm-cpc-good { color: var(--ok, #16a34a); font-weight: 700; }
+    .mm-cpc-warn { color: var(--warn, #d97706); font-weight: 700; }
     .badge-plan { padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; }
     .badge-plan.trial   { background: var(--plan-trial-bg);   color: var(--plan-trial-text); }
     .badge-plan.lite    { background: var(--plan-silver-bg);  color: var(--plan-silver-text); }
@@ -496,6 +533,8 @@
     .pill.rejected  { background: rgba(239,68,68,0.15);   color: var(--danger); }
     .pill.suspended { background: rgba(148,163,184,0.15); color: var(--text-muted); }
     .pill.expired   { background: rgba(239,68,68,0.15);   color: var(--danger); }
+    /* MP-ORG-SOFT-DELETE: deleted org — reads as gone, not merely paused. */
+    .pill.deactivated { background: rgba(239,68,68,0.22); color: var(--danger); text-decoration: line-through; }
     .pill.open       { background: rgba(245,158,11,0.15); color: var(--warning); }
     .pill.escalated  { background: rgba(239,68,68,0.18);  color: var(--danger); }
     .pill.resolved   { background: rgba(16,185,129,0.15); color: var(--success); }
@@ -889,7 +928,7 @@
         <a class="sb-link" data-route="dashboard"><span class="sb-link-icon">🏠</span><span class="sb-link-label">Dashboard</span></a>
         <a class="sb-link" data-route="live"><span class="sb-link-icon">📡</span><span class="sb-link-label">Live Traffic</span></a>
 
-        <div class="sb-section">Mon Partenaire</div>
+        <div class="sb-section">Stenamo Business</div>
         <a class="sb-link" data-route="businesses"><span class="sb-link-icon">🏪</span><span class="sb-link-label">Businesses</span></a>
         <a class="sb-link" data-route="subscriptions"><span class="sb-link-icon">💳</span><span class="sb-link-label">Subscriptions</span></a>
         <a class="sb-link" data-route="subscription-discounts" id="sb-link-subdiscounts"><span class="sb-link-icon">🏷️</span><span class="sb-link-label">Plan discounts</span></a>
@@ -902,7 +941,7 @@
         <!-- <a class="sb-link" data-route="subscription-requests"><span class="sb-link-icon">✉️</span><span class="sb-link-label">Sub. requests</span></a> -->
         <a class="sb-link" data-route="mp-finance"><span class="sb-link-icon">📊</span><span class="sb-link-label">MP Finance</span></a>
 
-        <div class="sb-section">Partenaire Dozie</div>
+        <div class="sb-section">Stenamo Market</div>
         <a class="sb-link" data-route="marketplace-users"><span class="sb-link-icon">👥</span><span class="sb-link-label">Marketplace users</span></a>
         <a class="sb-link" data-route="verifications"><span class="sb-link-icon">✅</span><span class="sb-link-label">Verifications</span></a>
         <a class="sb-link" data-route="dozie-subscriptions"><span class="sb-link-icon">🎟️</span><span class="sb-link-label">Dozie subscriptions</span></a>
@@ -911,7 +950,11 @@
         <a class="sb-link" data-route="marketplace-finance"><span class="sb-link-icon">💰</span><span class="sb-link-label">Marketplace finance</span></a>
         <a class="sb-link" data-route="sell-restrictions"><span class="sb-link-icon">🚦</span><span class="sb-link-label">Sell restrictions</span></a>
 
-        <div class="sb-section">Shared</div>
+        <div class="sb-section" id="sb-section-marketing">Marketing</div>
+        <a class="sb-link" data-route="my-marketing" id="sb-link-mymarketing"><span class="sb-link-icon">⭐</span><span class="sb-link-label">My marketing</span></a>
+        <a class="sb-link" data-route="marketers" id="sb-link-marketers"><span class="sb-link-icon">📈</span><span class="sb-link-label">Marketers</span></a>
+
+        <div class="sb-section" id="sb-section-shared">Shared</div>
         <a class="sb-link" data-route="broadcasts"><span class="sb-link-icon">📣</span><span class="sb-link-label">Broadcasts</span></a>
         <a class="sb-link" data-route="admin-team"><span class="sb-link-icon">👤</span><span class="sb-link-label">Admin team</span></a>
         <a class="sb-link" data-route="audit-log"><span class="sb-link-icon">📋</span><span class="sb-link-label">Audit log</span></a>
@@ -931,7 +974,7 @@
         <div class="page-head">
           <div>
             <div class="page-title">Dashboard</div>
-            <div class="page-sub">Live snapshot across Mon Partenaire and Partenaire Dozie.</div>
+            <div class="page-sub">Live snapshot across Stenamo Business and Stenamo Market.</div>
           </div>
           <button class="btn" id="dashboard-refresh">Refresh</button>
         </div>
@@ -954,7 +997,7 @@
         <div class="page-head">
           <div>
             <div class="page-title">Live Traffic</div>
-            <div class="page-sub">Logged-in users online now + a live activity feed across Mon Partenaire and Partenaire Dozie. Auto-refreshes every 7s.</div>
+            <div class="page-sub">Logged-in users online now + a live activity feed across Stenamo Business and Stenamo Market. Auto-refreshes every 7s.</div>
           </div>
           <div style="display:flex;gap:10px;align-items:center">
             <span class="page-sub" id="live-updated"></span>
@@ -980,7 +1023,7 @@
         <div class="page-head">
           <div>
             <div class="page-title">Businesses</div>
-            <div class="page-sub">Mon Partenaire orgs — plans, status, owner controls.</div>
+            <div class="page-sub">Stenamo Business orgs — plans, status, owner controls.</div>
           </div>
           <div style="display:flex; gap:8px">
             <button class="btn" id="biz-refresh">Refresh</button>
@@ -1009,12 +1052,20 @@
             <option value="active">Active</option>
             <option value="trial">Trial</option>
             <option value="suspended">Suspended</option>
+            <option value="deactivated">Deactivated (deleted)</option>
           </select>
           <select id="biz-country">
             <option value="">All countries</option>
             <option value="Cameroun">🇨🇲 Cameroun</option>
             <option value="Nigeria">🇳🇬 Nigeria</option>
           </select>
+          <!-- MP-ORG-SOFT-DELETE: deleted orgs are hidden by default; this reveals
+               them alongside the live ones. Picking "Deactivated" above shows them
+               on their own instead. -->
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-muted);cursor:pointer">
+            <input type="checkbox" id="biz-show-deactivated" />
+            Show deactivated
+          </label>
         </div>
 
         <div class="table-wrap">
@@ -1111,7 +1162,7 @@
         <div class="page-head">
           <div>
             <div class="page-title">MP Finance</div>
-            <div class="page-sub">Revenue, MRR, ARPU, and trends for the Mon Partenaire subscription business.</div>
+            <div class="page-sub">Revenue, MRR, ARPU, and trends for the Stenamo Business subscription business.</div>
           </div>
           <button class="btn" id="finance-refresh">Refresh</button>
         </div>
@@ -1156,7 +1207,7 @@
         <div class="page-head">
           <div>
             <div class="page-title">Marketplace users</div>
-            <div class="page-sub">Partenaire Dozie buyers and sellers.</div>
+            <div class="page-sub">Stenamo Market buyers and sellers.</div>
           </div>
           <button class="btn" id="dz-users-refresh">Refresh</button>
         </div>
@@ -1322,7 +1373,7 @@
         <div class="page-head">
           <div>
             <div class="page-title">Sell restrictions</div>
-            <div class="page-sub">Allowlist of which categories and towns may sell on Partenaire Dozie. Turn one OFF and sellers in that category / town can no longer publish. Master admin only.</div>
+            <div class="page-sub">Allowlist of which categories and towns may sell on Stenamo Market. Turn one OFF and sellers in that category / town can no longer publish. Master admin only.</div>
           </div>
           <button class="btn" id="sr-refresh-btn">Refresh</button>
         </div>
@@ -1668,14 +1719,14 @@
         <div class="page-head">
           <div>
             <div class="page-title">Audit log</div>
-            <div class="page-sub">Unified history of admin actions across Mon Partenaire and Partenaire Dozie.</div>
+            <div class="page-sub">Unified history of admin actions across Stenamo Business and Stenamo Market.</div>
           </div>
           <button class="btn" id="al-export-btn">Export CSV</button>
         </div>
         <div class="card" id="al-filter-card" style="margin-bottom:16px">
           <div class="al-filter-grid">
             <div class="field"><label>Source</label>
-              <select id="al-source"><option value="both">Both</option><option value="pa">Mon Partenaire</option><option value="ptn">Partenaire Dozie (legacy)</option></select>
+              <select id="al-source"><option value="both">Both</option><option value="pa">Stenamo Business</option><option value="ptn">Stenamo Market (legacy)</option></select>
             </div>
             <div class="field"><label>Admin</label>
               <input type="text" id="al-admin-email" placeholder="email@example.com" />
@@ -1754,6 +1805,93 @@
             </tr></thead>
             <tbody id="cr-tbody"><tr><td colspan="4" class="muted ta-center" style="padding:20px">Loading…</td></tr></tbody>
           </table>
+        </div>
+      </section>
+
+      <!-- MY MARKETING (marketer's own screen) -->
+      <section class="route" id="route-my-marketing">
+        <div class="page-head">
+          <div>
+            <div class="page-title">My marketing</div>
+            <div class="page-sub" id="mm-sub">Your codes, your team, and what your work has brought in.</div>
+          </div>
+          <button class="btn" id="mm-refresh">Refresh</button>
+        </div>
+
+        <div class="stat-strip" id="mm-strip">
+          <div class="stat-card"><div class="stat-label">Signups</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">Still in trial</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">Paying customers</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">Revenue attributed</div><div class="stat-value muted">…</div></div>
+        </div>
+
+        <div class="card">
+          <div class="settings-card-title">Your codes</div>
+          <div class="settings-card-sub">Share these when signing a business up — attribution is captured at signup.</div>
+          <div id="mm-codes"><div class="activity-empty">Loading…</div></div>
+        </div>
+
+        <div class="card">
+          <div class="settings-card-title">My team</div>
+          <div class="settings-card-sub">
+            Team members are names for attribution only — they have no login and no account.
+            Each one gets their own code so you can see who brought in what.
+          </div>
+          <div class="mm-inline-form">
+            <input id="mm-tm-name" type="text" placeholder="Team member name" maxlength="80" />
+            <input id="mm-tm-phone" type="text" placeholder="Phone (optional)" maxlength="30" />
+            <button class="btn btn-primary" id="mm-tm-add">Add member</button>
+          </div>
+          <div id="mm-team"><div class="activity-empty">Loading…</div></div>
+        </div>
+
+        <div class="card">
+          <div class="settings-card-title">Spending</div>
+          <div class="settings-card-sub">What you have spent doing this work. Kept separate from the revenue above.</div>
+          <div class="mm-inline-form">
+            <select id="mm-sp-category">
+              <option value="salary">Salary</option>
+              <option value="flyers">Flyers</option>
+              <option value="transport">Transport</option>
+              <option value="food">Food</option>
+              <option value="other">Other</option>
+            </select>
+            <input id="mm-sp-amount" type="number" min="1" step="1" placeholder="Amount" />
+            <input id="mm-sp-date" type="date" />
+            <select id="mm-sp-member"><option value="">Whole team</option></select>
+            <input id="mm-sp-note" type="text" placeholder="Note (optional)" maxlength="140" />
+            <button class="btn btn-primary" id="mm-sp-add">Record</button>
+          </div>
+          <div id="mm-spend"><div class="activity-empty">Loading…</div></div>
+        </div>
+      </section>
+
+      <!-- MARKETERS (oversight — master_admin | admin) -->
+      <section class="route" id="route-marketers">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Marketers</div>
+            <div class="page-sub">
+              Every marketer side by side. Cost per paying customer is spend divided by
+              customers who actually paid — the number that says who is worth the money.
+            </div>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center">
+            <label class="mm-check"><input type="checkbox" id="mk-include-inactive" /> Show deactivated</label>
+            <button class="btn" id="mk-refresh">Refresh</button>
+          </div>
+        </div>
+
+        <div class="stat-strip" id="mk-strip">
+          <div class="stat-card"><div class="stat-label">Marketers</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">Signups</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">Paying customers</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">Total spend</div><div class="stat-value muted">…</div></div>
+          <div class="stat-card"><div class="stat-label">Cost per paying customer</div><div class="stat-value muted">…</div></div>
+        </div>
+
+        <div class="card">
+          <div id="mk-table"><div class="activity-empty">Loading…</div></div>
         </div>
       </section>
 
@@ -2201,7 +2339,8 @@
       'dashboard', 'live', 'businesses', 'subscriptions', 'subscription-requests', 'mp-finance',
       'marketplace-users', 'verifications', 'dozie-subscriptions', 'orders', 'disputes', 'marketplace-finance',
       'sell-restrictions', 'subscription-discounts', 'promo-codes', 'loyalty-grants',
-      'broadcasts', 'admin-team', 'audit-log', 'admin-activity', 'cart-reconcile', 'settings'
+      'broadcasts', 'admin-team', 'audit-log', 'admin-activity', 'cart-reconcile', 'settings',
+      'my-marketing', 'marketers'
     ]);
 
     function parseHashRoute() {
@@ -2246,6 +2385,8 @@
       if (route === 'audit-log')           { loadAuditLogActions(); loadAuditLog(); }
       if (route === 'admin-activity')      { loadAdminActivityAdmins(); loadAdminActivity(); }
       if (route === 'cart-reconcile')      loadCartReconcile();
+      if (route === 'my-marketing')        loadMyMarketing();
+      if (route === 'marketers')           loadMarketers();
       // Render placeholders lazily on first visit (cheap; idempotent).
       if (ROUTE_PLACEHOLDERS[route]) renderPlaceholder(route);
       // Stop auto-refresh when navigating away from sections that use it.
@@ -2273,6 +2414,263 @@
           '<div class="placeholder-text">' + cfg.text + '</div>' +
         '</div>';
       host.dataset.rendered = '1';
+    }
+
+    // ────────────────────── MARKETING ──────────────────────
+    // Both screens render one shape produced by buildMarketerView server-side,
+    // so a number a marketer sees and the same number on Peter's oversight tab
+    // are computed once and cannot drift apart.
+    let mmData = null;
+
+    function mmStat(stripId, values) {
+      const cards = document.querySelectorAll('#' + stripId + ' .stat-card .stat-value');
+      values.forEach((v, i) => { if (cards[i]) { cards[i].textContent = v; cards[i].classList.remove('muted'); } });
+    }
+
+    // null means "no conversions yet", which must read as "—". Rendering it as
+    // 0 would claim the marketer acquires customers for free; Infinity would be
+    // worse. Both are lies about the only number this tab exists to compare.
+    function fmtCPC(v) { return v == null ? '—' : fmtFCFA(v); }
+
+    function convRate(s) {
+      return s.signups > 0
+        ? (Math.round((s.paying_customers / s.signups) * 1000) / 10) + '%'
+        : '<span class="mm-muted">—</span>';
+    }
+
+    async function loadMyMarketing() {
+      const codesEl = $('mm-codes'), teamEl = $('mm-team'), spendEl = $('mm-spend');
+      try {
+        const [me, spend] = await Promise.all([
+          apiAdmin('GET', '/admin/marketing/me'),
+          apiAdmin('GET', '/admin/marketing/expenditures')
+        ]);
+        mmData = me.data;
+        const t = mmData.team_total;
+        mmStat('mm-strip', [
+          (t.signups || 0).toLocaleString('fr-CM'),
+          (t.still_in_trial || 0).toLocaleString('fr-CM'),
+          (t.paying_customers || 0).toLocaleString('fr-CM'),
+          fmtFCFA(t.revenue_attributed || 0)
+        ]);
+        $('mm-sub').textContent = mmData.team.length
+          ? 'Your own numbers, plus ' + mmData.team.length + ' team member' + (mmData.team.length === 1 ? '' : 's') + '.'
+          : 'Your codes and what your work has brought in.';
+
+        const own = mmData.own_codes || [];
+        codesEl.innerHTML = own.length
+          ? '<div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:10px">' +
+            own.map(function (c) {
+              return '<span class="mm-code' + (c.is_active ? '' : ' off') + '">' + escapeHtml(c.code) + '</span>';
+            }).join('') + '</div>' +
+            '<div class="mm-muted" style="margin-top:10px; font-size:12px">Signups ' +
+            (mmData.own.signups || 0) + ' · paying ' + (mmData.own.paying_customers || 0) +
+            ' · ' + fmtFCFA(mmData.own.revenue_attributed || 0) + '</div>'
+          : '<div class="activity-empty">No code yet — an administrator will create yours.</div>';
+
+        if (!mmData.team.length) {
+          teamEl.innerHTML = '<div class="activity-empty">No team members yet. Add one above if you have people working under you.</div>';
+        } else {
+          teamEl.innerHTML =
+            '<table class="data-table"><thead><tr>' +
+            '<th>Member</th><th>Code</th><th class="mm-num">Signups</th><th class="mm-num">In trial</th>' +
+            '<th class="mm-num">Paying</th><th class="mm-num">Revenue</th><th class="mm-num">Spend</th>' +
+            '<th class="mm-num">Cost / customer</th><th></th></tr></thead><tbody>' +
+            mmData.team.map(function (m) {
+              const codes = (m.codes || []).map(function (c) {
+                return '<span class="mm-code' + (c.is_active ? '' : ' off') + '">' + escapeHtml(c.code) + '</span>';
+              }).join(' ');
+              const removed = m.status === 'removed';
+              return '<tr' + (removed ? ' style="opacity:.55"' : '') + '>' +
+                '<td>' + escapeHtml(m.name) +
+                  (m.phone ? ' <span class="mm-muted">· ' + escapeHtml(m.phone) + '</span>' : '') +
+                  (removed ? ' <span class="badge">removed</span>' : '') + '</td>' +
+                '<td>' + (codes || '<button class="btn btn-sm" data-mm-newcode="' + m.id + '">Create code</button>') + '</td>' +
+                '<td class="mm-num">' + (m.stats.signups || 0) + '</td>' +
+                '<td class="mm-num">' + (m.stats.still_in_trial || 0) + '</td>' +
+                '<td class="mm-num">' + (m.stats.paying_customers || 0) + '</td>' +
+                '<td class="mm-num">' + fmtFCFA(m.stats.revenue_attributed || 0) + '</td>' +
+                '<td class="mm-num">' + fmtFCFA(m.expenditure || 0) + '</td>' +
+                '<td class="mm-num">' + fmtCPC(m.cost_per_paying_customer) + '</td>' +
+                '<td><button class="btn btn-sm" data-mm-toggle="' + m.id + '" data-status="' + m.status + '">' +
+                  (removed ? 'Restore' : 'Remove') + '</button></td>' +
+                '</tr>';
+            }).join('') + '</tbody></table>';
+        }
+
+        const sel = $('mm-sp-member');
+        const keep = sel.value;
+        sel.innerHTML = '<option value="">Whole team</option>' +
+          mmData.team.filter(function (m) { return m.status === 'active'; })
+            .map(function (m) { return '<option value="' + m.id + '">' + escapeHtml(m.name) + '</option>'; }).join('');
+        sel.value = keep;
+
+        const rows = spend.data || [];
+        const nameById = {};
+        mmData.team.forEach(function (m) { nameById[m.id] = m.name; });
+        spendEl.innerHTML =
+          '<div style="display:flex; justify-content:space-between; align-items:baseline; margin:12px 0 6px">' +
+            '<div class="mm-muted" style="font-size:12px">' + rows.length + ' entr' + (rows.length === 1 ? 'y' : 'ies') + '</div>' +
+            '<div style="font-weight:700">Total ' + fmtFCFA(spend.total || 0) + '</div>' +
+          '</div>' +
+          (rows.length
+            ? '<table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>For</th><th>Note</th>' +
+              '<th class="mm-num">Amount</th><th></th></tr></thead><tbody>' +
+              rows.map(function (e) {
+                return '<tr>' +
+                  '<td>' + escapeHtml(e.spent_on) + '</td>' +
+                  '<td style="text-transform:capitalize">' + escapeHtml(e.category) + '</td>' +
+                  '<td>' + (e.team_member_id
+                      ? escapeHtml(nameById[e.team_member_id] || 'Member')
+                      : '<span class="mm-muted">Whole team</span>') + '</td>' +
+                  '<td class="mm-muted">' + escapeHtml(e.note || '') + '</td>' +
+                  '<td class="mm-num">' + fmtFCFA(e.amount) + '</td>' +
+                  '<td><button class="btn btn-sm btn-danger" data-mm-delspend="' + e.id + '">Delete</button></td>' +
+                '</tr>';
+              }).join('') + '</tbody></table>'
+            : '<div class="activity-empty">Nothing recorded yet.</div>');
+      } catch (err) {
+        const msg = '<div class="activity-empty">Could not load: ' + escapeHtml(err.message || 'error') + '</div>';
+        codesEl.innerHTML = msg; teamEl.innerHTML = msg; spendEl.innerHTML = msg;
+      }
+    }
+
+    async function loadMarketers() {
+      const host = $('mk-table');
+      try {
+        const inc = $('mk-include-inactive').checked ? '?include_inactive=1' : '';
+        const res = await apiAdmin('GET', '/admin/marketing/oversight' + inc);
+        const views = res.data || [], tot = res.totals || {};
+        mmStat('mk-strip', [
+          (tot.marketers || 0).toLocaleString('fr-CM'),
+          (tot.signups || 0).toLocaleString('fr-CM'),
+          (tot.paying_customers || 0).toLocaleString('fr-CM'),
+          fmtFCFA(tot.expenditure_total || 0),
+          fmtCPC(tot.cost_per_paying_customer)
+        ]);
+        if (!views.length) {
+          host.innerHTML = '<div class="activity-empty">No marketers yet. Add one from Admin team with the role “marketer”.</div>';
+          return;
+        }
+        // Colour each marketer against the group median rather than a fixed
+        // threshold: comparing marketers to each other is the entire point of
+        // this tab, and a hardcoded "good" number would be arbitrary.
+        const cpcs = views.map(function (v) { return v.cost_per_paying_customer; })
+                          .filter(function (v) { return v != null; })
+                          .sort(function (a, b) { return a - b; });
+        // True median: for an EVEN count take the mean of the two middle
+        // values. Using cpcs[floor(n/2)] alone picks the upper-middle, so with
+        // two marketers the dearer one also satisfies `v <= median` and the tab
+        // paints everybody green — exactly the comparison it exists to make.
+        // Below two marketers there is nothing to compare against, so no
+        // colour is applied rather than declaring a lone marketer "good".
+        let median = null;
+        if (cpcs.length >= 2) {
+          const mid = Math.floor(cpcs.length / 2);
+          median = cpcs.length % 2 ? cpcs[mid] : (cpcs[mid - 1] + cpcs[mid]) / 2;
+        }
+        function cpcCell(v) {
+          if (v == null) return '<span class="mm-muted">—</span>';
+          if (median == null) return fmtFCFA(v);
+          return '<span class="' + (v <= median ? 'mm-cpc-good' : 'mm-cpc-warn') + '">' + fmtFCFA(v) + '</span>';
+        }
+
+        host.innerHTML =
+          '<table class="data-table"><thead><tr>' +
+          '<th>Marketer</th><th class="mm-num">Signups</th><th class="mm-num">In trial</th>' +
+          '<th class="mm-num">Paying</th><th class="mm-num">Conv. rate</th><th class="mm-num">Revenue</th>' +
+          '<th class="mm-num">Spend</th><th class="mm-num">Cost / customer</th></tr></thead><tbody>' +
+          views.map(function (v) {
+            const t = v.team_total;
+            const leader =
+              '<tr class="mk-leader">' +
+                '<td>' + escapeHtml(v.marketer.full_name || v.marketer.email) +
+                  (v.marketer.is_active === false ? ' <span class="badge">deactivated</span>' : '') +
+                  (v.team.length ? ' <span class="mm-muted">· ' + v.team.length + ' in team</span>' : '') + '</td>' +
+                '<td class="mm-num">' + t.signups + '</td>' +
+                '<td class="mm-num">' + t.still_in_trial + '</td>' +
+                '<td class="mm-num">' + t.paying_customers + '</td>' +
+                '<td class="mm-num">' + convRate(t) + '</td>' +
+                '<td class="mm-num">' + fmtFCFA(t.revenue_attributed) + '</td>' +
+                '<td class="mm-num">' + fmtFCFA(v.expenditure_total) + '</td>' +
+                '<td class="mm-num">' + cpcCell(v.cost_per_paying_customer) + '</td>' +
+              '</tr>';
+            const members = v.team.map(function (m) {
+              return '<tr class="mk-member">' +
+                '<td>' + escapeHtml(m.name) + (m.status === 'removed' ? ' <span class="badge">removed</span>' : '') + '</td>' +
+                '<td class="mm-num">' + m.stats.signups + '</td>' +
+                '<td class="mm-num">' + m.stats.still_in_trial + '</td>' +
+                '<td class="mm-num">' + m.stats.paying_customers + '</td>' +
+                '<td class="mm-num">' + convRate(m.stats) + '</td>' +
+                '<td class="mm-num">' + fmtFCFA(m.stats.revenue_attributed) + '</td>' +
+                '<td class="mm-num">' + fmtFCFA(m.expenditure) + '</td>' +
+                '<td class="mm-num">' + cpcCell(m.cost_per_paying_customer) + '</td>' +
+              '</tr>';
+            }).join('');
+            return leader + members;
+          }).join('') + '</tbody></table>';
+      } catch (err) {
+        host.innerHTML = '<div class="activity-empty">Could not load: ' + escapeHtml(err.message || 'error') + '</div>';
+      }
+    }
+
+    function wireMarketing() {
+      const on = function (id, evt, fn) { const el = $(id); if (el) el.addEventListener(evt, fn); };
+      on('mm-refresh', 'click', loadMyMarketing);
+      on('mk-refresh', 'click', loadMarketers);
+      on('mk-include-inactive', 'change', loadMarketers);
+
+      on('mm-tm-add', 'click', async function () {
+        const name = $('mm-tm-name').value.trim();
+        if (!name) { showToast('Enter a name for the team member.', 'danger'); return; }
+        try {
+          await apiAdmin('POST', '/admin/marketing/team', { name, phone: $('mm-tm-phone').value.trim() || null });
+          $('mm-tm-name').value = ''; $('mm-tm-phone').value = '';
+          showToast('Team member added.', 'success');
+          loadMyMarketing();
+        } catch (err) { showToast(err.message || 'Could not add member', 'danger'); }
+      });
+
+      on('mm-sp-add', 'click', async function () {
+        const amount = Number($('mm-sp-amount').value);
+        const spentOn = $('mm-sp-date').value;
+        if (!(amount > 0)) { showToast('Enter an amount greater than zero.', 'danger'); return; }
+        if (!spentOn) { showToast('Pick the date the money was spent.', 'danger'); return; }
+        try {
+          await apiAdmin('POST', '/admin/marketing/expenditures', {
+            category: $('mm-sp-category').value, amount, spent_on: spentOn,
+            team_member_id: $('mm-sp-member').value || null,
+            note: $('mm-sp-note').value.trim() || null
+          });
+          $('mm-sp-amount').value = ''; $('mm-sp-note').value = '';
+          showToast('Recorded.', 'success');
+          loadMyMarketing();
+        } catch (err) { showToast(err.message || 'Could not record', 'danger'); }
+      });
+
+      on('route-my-marketing', 'click', async function (e) {
+        const del = e.target.closest('[data-mm-delspend]');
+        const tog = e.target.closest('[data-mm-toggle]');
+        const nc  = e.target.closest('[data-mm-newcode]');
+        try {
+          if (del) {
+            await apiAdmin('DELETE', '/admin/marketing/expenditures/' + del.getAttribute('data-mm-delspend'));
+            showToast('Entry removed.', 'success'); loadMyMarketing();
+          } else if (tog) {
+            const next = tog.getAttribute('data-status') === 'removed' ? 'active' : 'removed';
+            await apiAdmin('PATCH', '/admin/marketing/team/' + tog.getAttribute('data-mm-toggle'), { status: next });
+            showToast(next === 'removed'
+              ? 'Member removed — their history stays, and their code stops taking new signups.'
+              : 'Member restored.', 'success');
+            loadMyMarketing();
+          } else if (nc) {
+            const code = prompt('Code for this team member (3–20 letters/numbers):');
+            if (!code) return;
+            await apiAdmin('POST', '/admin/marketing/codes', { code, team_member_id: nc.getAttribute('data-mm-newcode') });
+            showToast('Code created.', 'success'); loadMyMarketing();
+          }
+        } catch (err) { showToast(err.message || 'Action failed', 'danger'); }
+      });
     }
 
     // ────────────────────── LIVE TRAFFIC ──────────────────────
@@ -2556,10 +2954,49 @@
       const sdLink = $('sb-link-subdiscounts');
       if (sdLink) sdLink.style.display = (role === 'staff') ? 'none' : '';
 
+      // PHASE 1 — marketer. The server refuses every non-marketing admin route
+      // for this role (lib/adminRoleScope.js), so hiding links here is purely
+      // so the portal reads as THEIR tool rather than a wall of dead links it
+      // would 403 on. The security boundary is the server's, not this code's.
+      const isMarketer = role === 'marketer';
+      if (isMarketer) {
+        document.querySelectorAll('.sb-link').forEach(function (a) {
+          const r = a.getAttribute('data-route');
+          a.style.display = (r === 'my-marketing') ? '' : 'none';
+        });
+        // Every section header hidden except Marketing. Settings used to be
+        // left visible, which also kept the "Shared" header on screen with a
+        // single item under it. A marketer sees their screen and nothing else:
+        // sign-out is a footer button and the forced first-login password
+        // change is a modal, so neither depends on a nav entry.
+        document.querySelectorAll('.sb-section').forEach(function (el) {
+          el.style.display = (el.id === 'sb-section-marketing') ? '' : 'none';
+        });
+        const sbSearch = $('sb-search');
+        if (sbSearch) sbSearch.style.display = 'none';   // search hits /admin/search → 403
+        roleEl.textContent = 'Marketer';
+      } else {
+        // Oversight is for the people who pay the marketers, not the marketers.
+        const mkLink = $('sb-link-marketers');
+        if (mkLink) mkLink.style.display = (role === 'staff') ? 'none' : '';
+        const myLink = $('sb-link-mymarketing');
+        if (myLink) myLink.style.display = 'none';       // non-marketers have no own screen
+      }
+
       $('login-screen').style.display = 'none';
       $('app-shell').classList.add('active');
-      // Pick up the hash on first paint so refresh-on-section works.
-      navigateTo(parseHashRoute(), { fromHash: true });
+      // Pick up the hash on first paint so refresh-on-section works. A marketer
+      // has no dashboard — landing them on one would 403 on first paint, so
+      // their home is their own screen, and any other hash falls back to it.
+      const wanted = parseHashRoute();
+      const allowedForMarketer = wanted === 'my-marketing';
+      if (isMarketer && !allowedForMarketer) {
+        // No fromHash: let it rewrite the URL too, so a bookmarked #businesses
+        // does not sit in the address bar showing the wrong section.
+        navigateTo('my-marketing');
+      } else {
+        navigateTo(wanted, { fromHash: true });
+      }
       // Phase D: notification bell polling + forced-password gate.
       startNotifPolling();
       enforceForcedPasswordChange(admin);
@@ -2680,7 +3117,10 @@
         }
         if (opts.primary) {
           const b = document.createElement('button');
-          b.type = 'button'; b.className = 'btn btn-primary';
+          // `danger: true` styles a destructive confirm (org delete) in red.
+          // Additive — every existing caller omits it and still gets btn-primary.
+          b.type = 'button';
+          b.className = 'btn ' + (opts.primary.danger ? 'btn-danger' : 'btn-primary');
           b.textContent = opts.primary.label || 'OK';
           b.addEventListener('click', () => {
             if (opts.primary.onClick) opts.primary.onClick(closeModal);
@@ -2709,7 +3149,7 @@
 
     // ────────────────────── BUSINESSES ──────────────────────
     let _bizCache = [];
-    let _bizFilter = { search: '', plan: '', status: '', country: '' };
+    let _bizFilter = { search: '', plan: '', status: '', country: '', includeDeactivated: false };
     let _bizSearchTimer = null;
 
     function planBadgeHtml(plan) {
@@ -2726,7 +3166,7 @@
     }
     function statusPillHtml(s) {
       const v = String(s || '').toLowerCase();
-      const cls = ['active','trial','pending','suspended','expired','approved','rejected','processing','open','escalated','resolved'].includes(v) ? v : '';
+      const cls = ['active','trial','pending','suspended','expired','approved','rejected','processing','open','escalated','resolved','deactivated'].includes(v) ? v : '';
       return '<span class="pill ' + cls + '">' + escapeHtml(v || '—') + '</span>';
     }
     function fmtDate(iso) {
@@ -2744,6 +3184,9 @@
         if (_bizFilter.plan)    q.set('plan', _bizFilter.plan);
         if (_bizFilter.status)  q.set('status', _bizFilter.status);
         if (_bizFilter.country) q.set('country', _bizFilter.country);
+        // MP-ORG-SOFT-DELETE: only meaningful when no explicit status is chosen —
+        // ?status=deactivated already targets them directly.
+        if (_bizFilter.includeDeactivated && !_bizFilter.status) q.set('include_deactivated', 'true');
         const path = '/admin/businesses' + (q.toString() ? '?' + q.toString() : '');
         const res = await apiAdmin('GET', path);
         _bizCache = (res && res.data) || [];
@@ -2797,7 +3240,8 @@
         const safeName = escapeHtml(o.name || '');
         const safeMp   = escapeHtml(o.mp_id || '—');
         const isSuspended = (o.status || '').toLowerCase() === 'suspended';
-        return '<tr>' +
+        const isDeactivated = (o.status || '').toLowerCase() === 'deactivated';
+        return '<tr' + (isDeactivated ? ' style="opacity:.55"' : '') + '>' +
           '<td class="mono">' + safeMp + '</td>' +
           '<td>' + safeName +
             (o.owner_name ? '<div style="font-size:11px;color:var(--text-muted)">' + escapeHtml(o.owner_name) + '</div>' : '') +
@@ -2811,7 +3255,7 @@
           '<td>' + fmtDate(o.joined_at) + '</td>' +
           '<td>' + fmtDate(o.last_active_at) + '</td>' +
           '<td style="text-align:right">' +
-            '<button class="row-actions-trigger" data-biz-row="' + id + '" data-is-suspended="' + (isSuspended ? '1' : '0') + '" aria-label="Open actions">⋯</button>' +
+            '<button class="row-actions-trigger" data-biz-row="' + id + '" data-is-suspended="' + (isSuspended ? '1' : '0') + '" data-is-deactivated="' + (isDeactivated ? '1' : '0') + '" aria-label="Open actions">⋯</button>' +
           '</td>' +
         '</tr>';
       }).join('');
@@ -2822,6 +3266,7 @@
           e.stopPropagation();
           const id = btn.getAttribute('data-biz-row');
           const isSuspended = btn.getAttribute('data-is-suspended') === '1';
+          const isDeactivated = btn.getAttribute('data-is-deactivated') === '1';
           openRowActionMenu(btn, [
             { action: 'details',         label: 'View details' },
             { action: 'plan',            label: 'Change plan' },
@@ -2838,7 +3283,16 @@
             { action: 'csv-inventory',   label: 'Export inventory CSV' },
             { action: 'csv-credits',     label: 'Export credits CSV' },
             { action: 'csv-staff',       label: 'Export staff CSV' },
-            { action: 'csv-customers',   label: 'Export customers CSV' }
+            { action: 'csv-customers',   label: 'Export customers CSV' },
+            // MP-ORG-SOFT-DELETE: destructive, so it sits last, behind its own
+            // separator, and only for full-CRUD admins (the backend also gates it).
+            // An already-deleted org offers Restore in its place.
+            ...(adminCanMutate() ? [
+              { separator: true },
+              isDeactivated
+                ? { action: 'restore',    label: '♻️ Restore business' }
+                : { action: 'deactivate', label: '🗑 Delete business' }
+            ] : [])
           ], (action) => handleBizAction(action, id));
         });
       });
@@ -2953,6 +3407,8 @@
         case 'extend-sub':   return openExtendSubscription(biz);
         case 'reset':        return openForceReset(biz);
         case 'impersonate':  return openImpersonate(biz);
+        case 'deactivate':   return openBizDeactivate(biz);
+        case 'restore':      return openBizRestore(biz);
         case 'csv-sales':
         case 'csv-inventory':
         case 'csv-credits':
@@ -3067,6 +3523,71 @@
           try {
             await apiAdmin('PATCH', '/admin/businesses/' + biz.id + '/status', { status: next, notes: $('bs-notes').value });
             showToast('Status updated', 'success'); close(); loadBusinesses();
+          } catch (e) { showToast(e.message, 'danger'); }
+        }}
+      });
+    }
+
+    // ── MP-ORG-SOFT-DELETE ──────────────────────────────────────────────────
+    // "Delete" is a SOFT delete: subscription_status -> 'deactivated'. A true hard
+    // delete is impossible by design (pa_audit_log's append-only trigger aborts any
+    // cascade that reaches it), so the modal says plainly what does and does not
+    // happen — an admin who expects the data to be gone would otherwise be misled.
+    //
+    // The confirm step requires typing the MP-ID. This is the only destructive
+    // action in the portal that cannot be undone by simply clicking again, and the
+    // row menu sits one slip away from "Export customers CSV".
+    function openBizDeactivate(biz) {
+      const mp = biz.mp_id || '';
+      const html =
+        '<div style="border:1px solid var(--danger);background:rgba(239,68,68,0.08);border-radius:8px;padding:12px;margin-bottom:14px">' +
+          '<div style="font-weight:600;color:var(--danger);margin-bottom:6px">This removes the business from the platform</div>' +
+          '<ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.6;color:var(--text-muted)">' +
+            '<li>Nobody in this business can log in again — the owner included.</li>' +
+            '<li>It disappears from the default business list.</li>' +
+            '<li>Its sales, stock and audit history are <strong>kept, not erased</strong>.</li>' +
+            '<li>You can undo this with <strong>Restore business</strong>.</li>' +
+          '</ul>' +
+        '</div>' +
+        '<div class="field"><label>Type <strong>' + escapeHtml(mp || 'the MP-ID') + '</strong> to confirm</label>' +
+        '<input id="bd-confirm" autocomplete="off" placeholder="' + escapeHtml(mp) + '" /></div>' +
+        '<div class="field"><label>Reason (recorded in the audit log)</label>' +
+        '<textarea id="bd-notes" placeholder="e.g. dead trial, owner asked to close"></textarea></div>';
+      openModal({
+        title: 'Delete ' + biz.name + '?',
+        sub: mp, content: html,
+        secondary: { label: 'Cancel' },
+        primary: { label: 'Delete business', danger: true, onClick: async (close) => {
+          const typed = ($('bd-confirm').value || '').trim();
+          if (mp && typed !== mp) { showToast('Type ' + mp + ' to confirm', 'danger'); return; }
+          try {
+            await apiAdmin('POST', '/admin/businesses/' + biz.id + '/deactivate', { notes: $('bd-notes').value });
+            showToast('Business deleted (deactivated)', 'success'); close(); loadBusinesses();
+          } catch (e) { showToast(e.message, 'danger'); }
+        }}
+      });
+    }
+
+    // Undo a soft delete. Reuses the existing status endpoint — status='active'.
+    // NOTE: this restores the STATUS only. Plan entitlement is recomputed from
+    // trial_ends_at / plan_expires_at, so an org whose trial had already lapsed
+    // comes back restricted rather than magically paid-up.
+    function openBizRestore(biz) {
+      const html =
+        '<p style="font-size:13px;color:var(--text-muted);line-height:1.6">' +
+        'This puts <strong>' + escapeHtml(biz.name) + '</strong> back into the active list and lets its users log in again.<br><br>' +
+        'Its status becomes <strong>active</strong>. If its trial or plan had already expired, it will still be restricted until a payment — restoring does not grant a plan.' +
+        '</p>' +
+        '<div class="field"><label>Notes (recorded in audit log)</label>' +
+        '<textarea id="br-notes" placeholder="Reason for restoring"></textarea></div>';
+      openModal({
+        title: 'Restore ' + biz.name,
+        sub: biz.mp_id, content: html,
+        secondary: { label: 'Cancel' },
+        primary: { label: 'Restore', onClick: async (close) => {
+          try {
+            await apiAdmin('PATCH', '/admin/businesses/' + biz.id + '/status', { status: 'active', notes: $('br-notes').value });
+            showToast('Business restored', 'success'); close(); loadBusinesses();
           } catch (e) { showToast(e.message, 'danger'); }
         }}
       });
@@ -3958,7 +4479,7 @@
           '<div class="card" style="margin-top:12px;background:var(--bg-tertiary)">' +
             '<div class="settings-card-sub">Featured Seller (Marketplace)</div>' +
             '<div style="font-style:italic;color:var(--text-muted);font-size:13px">' +
-              'This business has no linked Partenaire Dozie seller, so it can’t be featured on the marketplace.' +
+              'This business has no linked Stenamo Market seller, so it can’t be featured on the marketplace.' +
             '</div>' +
           '</div>';
       }
@@ -4066,7 +4587,7 @@
           extras += `<button class="btn" style="margin-top:8px" data-mp-jump="${escapeHtml(mp.mp_id || '')}">Open in Businesses →</button>`;
         }
       } else if (status === 'no_mp_account') {
-        extras = `<div class="settings-card-sub" style="margin-top:6px">This seller has no linked Mon Partenaire account — they registered for Dozie only.</div>`;
+        extras = `<div class="settings-card-sub" style="margin-top:6px">This seller has no linked Stenamo Business account — they registered for Dozie only.</div>`;
       }
       const card = `
         <div class="card" style="background:var(--bg-tertiary);margin-top:12px">
@@ -4162,7 +4683,7 @@
     function openDzImpersonate(u) {
       openModal({
         title: 'View as user', sub: (u.name || u.phone) + ' · ' + (u.role || '—'),
-        content: '<p style="font-size:13px;margin:0 0 8px">Opens Partenaire Dozie in a new tab as <strong>' + escapeHtml(u.name || u.phone) + '</strong>. Your admin session stays intact. The impersonation token is valid for 1 hour and is logged to the audit trail.</p>',
+        content: '<p style="font-size:13px;margin:0 0 8px">Opens Stenamo Market in a new tab as <strong>' + escapeHtml(u.name || u.phone) + '</strong>. Your admin session stays intact. The impersonation token is valid for 1 hour and is logged to the audit trail.</p>',
         secondary: { label: 'Cancel' },
         primary: { label: 'Open as user', onClick: async (close) => {
           try {
@@ -4500,12 +5021,12 @@
       // dzWaLink produces %0A for the embedded newlines automatically.
       const buyerMsg =
         'Bonjour ' + (buyer.name || '') + ', concernant votre litige #' + idShort +
-        ' sur Partenaire Dozie. Nous examinons votre demande. ' +
-        'Référence commande: ' + (d.order_ref || '') + '. Équipe Partenaire Dozie.';
+        ' sur Stenamo Market. Nous examinons votre demande. ' +
+        'Référence commande: ' + (d.order_ref || '') + '. Équipe Stenamo Market.';
       const sellerMsg =
         'Bonjour ' + (seller.name || '') + ', concernant le litige #' + idShort +
         ' sur votre commande ' + (d.order_ref || '') +
-        '. Veuillez soumettre votre réponse dans les 48h. Équipe Partenaire Dozie.';
+        '. Veuillez soumettre votre réponse dans les 48h. Équipe Stenamo Market.';
       const buyerWa  = dzWaLink(buyer.phone,  buyerMsg);
       const sellerWa = dzWaLink(seller.phone, sellerMsg);
       const isResolved = d.status === 'resolved';
@@ -4815,7 +5336,7 @@
     const SEARCH_GROUPS = [
       {
         key:   'mon_partenaire',
-        title: 'Mon Partenaire',
+        title: 'Stenamo Business',
         kinds: [
           { key: 'businesses', heading: 'Businesses',  label: b => (b.name || '—') + (b.mp_id ? ' · ' + b.mp_id : ''),
             sub:   b => 'Business · ' + (b.plan || '—') + ' · ' + (b.status || '—') },
@@ -4829,7 +5350,7 @@
       },
       {
         key:   'partenaire_dozie',
-        title: 'Partenaire Dozie',
+        title: 'Stenamo Market',
         kinds: [
           { key: 'users',      heading: 'Users',       label: u => (u.name || '—') + (u.phone ? ' · ' + u.phone : ''),
             sub:   u => 'Dozie ' + (u.role || 'user') + (u.city ? ' · ' + u.city : '') },
@@ -5769,8 +6290,8 @@
             <textarea id="bc-body" maxlength="500" placeholder="What do you want them to know?">${escapeHtml(b.body || '')}</textarea></div>
           <div class="field"><label>Audience app</label>
             <select id="bc-app">
-              <option value="mon_partenaire"${isMP   ? ' selected' : ''}>Mon Partenaire</option>
-              <option value="partenaire_dozie"${isDz ? ' selected' : ''}>Partenaire Dozie</option>
+              <option value="mon_partenaire"${isMP   ? ' selected' : ''}>Stenamo Business</option>
+              <option value="partenaire_dozie"${isDz ? ' selected' : ''}>Stenamo Market</option>
               <option value="both"${isBoth ? ' selected' : ''}>Both</option>
             </select>
           </div>
@@ -5990,7 +6511,7 @@
     }
 
     function rolePill(role) {
-      const map = { master_admin: 'pill-critical', admin: 'pill-info', staff: 'pill-muted' };
+      const map = { master_admin: 'pill-critical', admin: 'pill-info', staff: 'pill-muted', marketer: 'pill-success' };
       return `<span class="pill ${map[role] || 'pill-muted'}">${escapeHtml(role || '—')}</span>`;
     }
 
@@ -6035,6 +6556,7 @@
             <select id="at-role">
               <option value="admin">Admin — full CRUD, cannot manage admins</option>
               <option value="staff">Staff — read-only</option>
+              <option value="marketer">Marketer — their own marketing screen only</option>
             </select>
           </div>
           <div class="field"><label>Notes (optional)</label>
@@ -6105,6 +6627,7 @@
                 <select id="at-role-edit">
                   <option value="admin"${(data.admin?.role || a.role) === 'admin' ? ' selected' : ''}>Admin</option>
                   <option value="staff"${(data.admin?.role || a.role) === 'staff' ? ' selected' : ''}>Staff</option>
+                  <option value="marketer"${(data.admin?.role || a.role) === 'marketer' ? ' selected' : ''}>Marketer</option>
                 </select>
                 <button class="btn" id="at-role-save" style="margin-top:8px">Save role</button>
               </div>` : ''}
@@ -6683,6 +7206,7 @@
       document.querySelectorAll('.theme-option').forEach(btn =>
         btn.addEventListener('click', () => setTheme(btn.getAttribute('data-theme-choice'))));
       $('dashboard-refresh').addEventListener('click', loadDashboard);
+      wireMarketing();   // PHASE 1 — marketer screen + oversight tab
 
       // BUSINESSES
       $('biz-refresh').addEventListener('click', loadBusinesses);
@@ -6704,6 +7228,11 @@
       });
       $('biz-country').addEventListener('change', (e) => {
         _bizFilter.country = e.target.value;
+        loadBusinesses();
+      });
+      // MP-ORG-SOFT-DELETE: reveal soft-deleted orgs alongside the live list.
+      $('biz-show-deactivated').addEventListener('change', (e) => {
+        _bizFilter.includeDeactivated = !!e.target.checked;
         loadBusinesses();
       });
 
@@ -6937,12 +7466,14 @@
     (function () {
       // ── Service worker ──────────────────────────────────────
       if ('serviceWorker' in navigator) {
-        // MP-ADMIN-OWN-DOMAIN: this copy is served at the ROOT of the
-        // dedicated admin domain (partenairedozieadmin.com), so the SW is
-        // scoped to '/' (was '/admin.html' on the shared host). The root SW
-        // (admin/sw-admin.js) precaches '/' as the shell.
+        // Scope:/admin.html so this SW only controls the admin shell;
+        // the MP service worker registered from index.html keeps its
+        // own scope. Browsers honour `scope` when the SW file is served
+        // at root (or with a Service-Worker-Allowed header). The
+        // backend serves both from /public so the script path doubles
+        // as the scope ceiling — we set scope explicitly anyway.
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw-admin.js', { scope: '/' })
+          navigator.serviceWorker.register('/sw-admin.js', { scope: '/admin.html' })
             .catch(err => console.warn('[admin SW] register failed:', err));
         });
       }

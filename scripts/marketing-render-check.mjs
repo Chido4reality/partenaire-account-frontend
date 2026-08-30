@@ -285,8 +285,8 @@ ctx.enforceForcedPasswordChange = () => {};
 ctx.showApp({ id: "m1", full_name: "Rig Marketer", email: "m@rig.test", role: "marketer" });
 check("a marketer LANDS on my-marketing, not dashboard", landedOn === "my-marketing", String(landedOn));
 const shown = navLinks.filter((l) => l.style.display !== "none").map((l) => l._route).sort();
-check("…and sees ONLY my-marketing + settings in the nav",
-  JSON.stringify(shown) === JSON.stringify(["my-marketing", "settings"]), shown.join(",") || "(none)");
+check("…and sees ONLY my-marketing in the nav — not even Settings",
+  JSON.stringify(shown) === JSON.stringify(["my-marketing"]), shown.join(",") || "(none)");
 check("…and the sidebar labels them Marketer",
   getEl("sb-admin-role").textContent === "Marketer", getEl("sb-admin-role").textContent);
 

@@ -22,11 +22,14 @@ const CHECKS = [
   ["damaged-check", "scripts/receipt-damaged-check.mjs", "regression #10 — the damaged marker on all 3 receipt surfaces"],
   ["export-check",  "scripts/report-export-check.mjs",   "regression #7 — CSV round-trips through a real spreadsheet parser"],
   ["marketing",     "scripts/marketing-render-check.mjs","admin.html marketing screens RENDER against the real inline script"],
+  ["admin-sync",    "scripts/sync-admin-copy.mjs --check","admin/index.html is a generated copy, not a drifting duplicate"],
+  ["deployed",      "scripts/deployed-admin-check.mjs",  "the LIVE hosts actually serve the marketer UI (needs network)"],
 ];
 
 const results = [];
 for (const [name, script, why] of CHECKS) {
-  const r = spawnSync(process.execPath, [script], { cwd: ROOT, stdio: "inherit" });
+  // split so an entry may carry argv (e.g. "…/sync-admin-copy.mjs --check")
+  const r = spawnSync(process.execPath, script.split(/\s+/), { cwd: ROOT, stdio: "inherit" });
   results.push([name, r.status === 0, why]);
 }
 
