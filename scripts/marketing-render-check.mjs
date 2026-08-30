@@ -331,5 +331,33 @@ check("…good/warn colouring still applied within a currency",
 check("…and a Lagos figure is never compared against a Douala one",
   !/mm-cpc-(good|warn)[^<]*>—/.test(mk));
 
+
+// ── admin-side spend button (master_admin only) ─────────────────────────────
+// The API refuses anyone but master_admin, so the button must not be offered
+// to an ordinary admin - a visible control that always 403s is worse than none.
+ctx.apiAdmin = async () => OVERSIGHT;
+ctx.showApp({ id: "a1", full_name: "Peter", email: "p@x", role: "master_admin" });
+await ctx.loadMarketers();
+const mkMaster = getEl("mk-table").innerHTML;
+check("master_admin sees a Log spend button per marketer",
+  (mkMaster.match(/data-mk-spend=/g) || []).length === OVERSIGHT.data.length,
+  (mkMaster.match(/data-mk-spend=/g) || []).length + " buttons");
+ctx.showApp({ id: "a2", full_name: "Staffer", email: "s@x", role: "admin" });
+await ctx.loadMarketers();
+const mkAdmin = getEl("mk-table").innerHTML;
+check("an ordinary admin IS offered the button (they may log spend)", /data-mk-spend=/.test(mkAdmin));
+check("…and the column count matches master_admin's",
+  (mkAdmin.match(/<th/g) || []).length === (mkMaster.match(/<th/g) || []).length,
+  (mkAdmin.match(/<th/g) || []).length + " vs " + (mkMaster.match(/<th/g) || []).length);
+const SPEND_ROW = [{ id: "e9", spent_on: "2026-08-01", category: "food", amount: 100, currency: "XAF", team_member_id: null }];
+check("…but an admin gets NO delete control on a spend record",
+  !/data-mk-delspend/.test(ctx.mkSpendRows(SPEND_ROW, "X")),
+  /data-mk-delspend/.test(ctx.mkSpendRows(SPEND_ROW, "X")) ? "delete offered" : "withheld");
+ctx.showApp({ id: "a1", full_name: "Peter", email: "p@x", role: "master_admin" });
+await ctx.loadMarketers();
+check("…while master_admin does get it",
+  /data-mk-delspend/.test(ctx.mkSpendRows(SPEND_ROW, "X")));
+check("openMarketerSpend is defined", typeof ctx.openMarketerSpend === "function", typeof ctx.openMarketerSpend);
+
 console.log(`\n  ${fails === 0 ? "ALL" : fails + " FAILED of"} marketing render checks\n`);
 process.exit(fails === 0 ? 0 : 1);
