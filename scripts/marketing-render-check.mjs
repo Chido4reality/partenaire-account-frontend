@@ -125,18 +125,18 @@ const ME = {
   data: {
     marketer: { id: "m1", full_name: "Aisha Bello", email: "a@x.test", is_active: true },
     own_codes: [{ id: "c1", code: "AISHA10", is_active: true }],
-    own: { signups: 12, paying_customers: 4, revenue_attributed: 240000, still_in_trial: 5, lapsed: 3 },
+    own: { signups: 12, paying_customers: 4, revenue_by_currency: { XAF: 240000 }, still_in_trial: 5, lapsed: 3 },
     team: [
       { id: "t1", name: "John Doe", phone: "677000111", status: "active",
         codes: [{ id: "c2", code: "JOHN10", is_active: true }],
-        stats: { signups: 8, paying_customers: 2, revenue_attributed: 90000, still_in_trial: 4, lapsed: 2 },
+        stats: { signups: 8, paying_customers: 2, revenue_by_currency: { XAF: 90000, NGN: 15000 }, still_in_trial: 4, lapsed: 2 },
         expenditure: 30000, cost_per_paying_customer: 15000 },
       // the divide-by-zero case: spend, no conversions
       { id: "t2", name: "Grace N", phone: null, status: "active", codes: [],
-        stats: { signups: 3, paying_customers: 0, revenue_attributed: 0, still_in_trial: 3, lapsed: 0 },
+        stats: { signups: 3, paying_customers: 0, revenue_by_currency: {}, still_in_trial: 3, lapsed: 0 },
         expenditure: 12000, cost_per_paying_customer: null },
     ],
-    team_total: { signups: 23, paying_customers: 6, revenue_attributed: 330000, still_in_trial: 12, lapsed: 5 },
+    team_total: { signups: 23, paying_customers: 6, revenue_by_currency: { XAF: 330000, NGN: 15000 }, still_in_trial: 12, lapsed: 5 },
     expenditure_total: 42000,
     cost_per_paying_customer: 7000,
   },
@@ -168,7 +168,8 @@ check("cost-per-customer of null renders as an em dash, NOT 0 or Infinity",
   teamHtml.includes("—") && !teamHtml.includes("Infinity") && !teamHtml.includes("NaN"));
 check("stat strip took the TEAM TOTAL signups (23), not just own (12)",
   strips["mm-strip"][0].textContent === "23", strips["mm-strip"][0].textContent);
-check("stat strip revenue is formatted money", /FCFA/.test(strips["mm-strip"][3].textContent),
+check("stat strip revenue shows BOTH currencies, never blended, and NO literal <br>",
+  !/<br>/.test(strips["mm-strip"][3].textContent) && /FCFA/.test(strips["mm-strip"][3].textContent) && /₦/.test(strips["mm-strip"][3].textContent) && !/345000|330015/.test(strips["mm-strip"][3].textContent),
   strips["mm-strip"][3].textContent);
 check("spend rows render with the member NAME, not a raw uuid",
   spendHtml.includes("John Doe") && !spendHtml.includes("t1\""), "");
@@ -190,10 +191,10 @@ const OVERSIGHT = {
     ME.data,
     { marketer: { id: "m2", full_name: "Bruno K", email: "b@x.test", is_active: false },
       own_codes: [], own: {}, team: [],
-      team_total: { signups: 4, paying_customers: 1, revenue_attributed: 50000, still_in_trial: 2, lapsed: 1 },
+      team_total: { signups: 4, paying_customers: 1, revenue_by_currency: { NGN: 50000 }, still_in_trial: 2, lapsed: 1 },
       expenditure_total: 90000, cost_per_paying_customer: 90000 },
   ],
-  totals: { marketers: 2, signups: 27, paying_customers: 7, revenue_attributed: 380000,
+  totals: { marketers: 2, signups: 27, paying_customers: 7, revenue_by_currency: { XAF: 330000, NGN: 65000 },
             expenditure_total: 132000, cost_per_paying_customer: 18857.14 },
 };
 ctx.apiAdmin = async (m, p) => {

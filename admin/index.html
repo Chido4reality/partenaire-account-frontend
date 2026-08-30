@@ -2457,7 +2457,7 @@
           (t.signups || 0).toLocaleString('fr-CM'),
           (t.still_in_trial || 0).toLocaleString('fr-CM'),
           (t.paying_customers || 0).toLocaleString('fr-CM'),
-          fmtFCFA(t.revenue_attributed || 0)
+          fmtMoneyMap(t.revenue_by_currency, ' · ')
         ]);
         $('mm-sub').textContent = mmData.team.length
           ? 'Your own numbers, plus ' + mmData.team.length + ' team member' + (mmData.team.length === 1 ? '' : 's') + '.'
@@ -2471,7 +2471,7 @@
             }).join('') + '</div>' +
             '<div class="mm-muted" style="margin-top:10px; font-size:12px">Signups ' +
             (mmData.own.signups || 0) + ' · paying ' + (mmData.own.paying_customers || 0) +
-            ' · ' + fmtFCFA(mmData.own.revenue_attributed || 0) + '</div>'
+            ' · ' + fmtMoneyMap(mmData.own.revenue_by_currency) + '</div>'
           : '<div class="activity-empty">No code assigned to you yet. An administrator '
             + 'creates a promo code and assigns it to your account from the Promo codes '
             + 'screen; until then this page will show zero.</div>';
@@ -2497,7 +2497,7 @@
                 '<td class="mm-num">' + (m.stats.signups || 0) + '</td>' +
                 '<td class="mm-num">' + (m.stats.still_in_trial || 0) + '</td>' +
                 '<td class="mm-num">' + (m.stats.paying_customers || 0) + '</td>' +
-                '<td class="mm-num">' + fmtFCFA(m.stats.revenue_attributed || 0) + '</td>' +
+                '<td class="mm-num">' + fmtMoneyMap(m.stats.revenue_by_currency) + '</td>' +
                 '<td class="mm-num">' + fmtFCFA(m.expenditure || 0) + '</td>' +
                 '<td class="mm-num">' + fmtCPC(m.cost_per_paying_customer) + '</td>' +
                 '<td><button class="btn btn-sm" data-mm-toggle="' + m.id + '" data-status="' + m.status + '">' +
@@ -2599,7 +2599,7 @@
                 '<td class="mm-num">' + t.still_in_trial + '</td>' +
                 '<td class="mm-num">' + t.paying_customers + '</td>' +
                 '<td class="mm-num">' + convRate(t) + '</td>' +
-                '<td class="mm-num">' + fmtFCFA(t.revenue_attributed) + '</td>' +
+                '<td class="mm-num">' + fmtMoneyMap(t.revenue_by_currency) + '</td>' +
                 '<td class="mm-num">' + fmtFCFA(v.expenditure_total) + '</td>' +
                 '<td class="mm-num">' + cpcCell(v.cost_per_paying_customer) + '</td>' +
               '</tr>';
@@ -2610,7 +2610,7 @@
                 '<td class="mm-num">' + m.stats.still_in_trial + '</td>' +
                 '<td class="mm-num">' + m.stats.paying_customers + '</td>' +
                 '<td class="mm-num">' + convRate(m.stats) + '</td>' +
-                '<td class="mm-num">' + fmtFCFA(m.stats.revenue_attributed) + '</td>' +
+                '<td class="mm-num">' + fmtMoneyMap(m.stats.revenue_by_currency) + '</td>' +
                 '<td class="mm-num">' + fmtFCFA(m.expenditure) + '</td>' +
                 '<td class="mm-num">' + cpcCell(m.cost_per_paying_customer) + '</td>' +
               '</tr>';
@@ -2751,6 +2751,29 @@
     function fmtFCFA(n) {
       if (n == null || isNaN(n)) return '—';
       return new Intl.NumberFormat('fr-CM').format(Math.round(n)) + ' FCFA';
+    }
+
+    // Currency-aware money. fmtFCFA hardcodes " FCFA", which silently
+    // MISLABELS Nigerian revenue as CFA francs — a number that is not merely
+    // unformatted but wrong about what it denominates.
+    const CUR_LABEL = { XAF: 'FCFA', NGN: '₦' };
+    function fmtCur(n, currency) {
+      if (n == null || isNaN(n)) return '—';
+      const cur = currency || 'XAF';
+      const num = new Intl.NumberFormat(cur === 'NGN' ? 'en-NG' : 'fr-CM').format(Math.round(n));
+      return cur === 'NGN' ? (CUR_LABEL.NGN + num) : (num + ' ' + (CUR_LABEL[cur] || escapeHtml(cur)));
+    }
+    // Render a { CURRENCY: amount } map. Never sums across currencies: with two
+    // present it shows both, stacked, because there is no exchange rate here and
+    // one blended figure would be the sum of two different units.
+    // sep defaults to a <br> for TABLE CELLS (innerHTML). Stat cards are written
+    // with textContent, where a <br> would be shown to the user as the literal
+    // characters "<br>" — so those pass a plain-text separator instead.
+    function fmtMoneyMap(map, sep) {
+      const keys = Object.keys(map || {}).filter(function (k) { return Number(map[k]); });
+      if (!keys.length) return '—';
+      keys.sort();
+      return keys.map(function (k) { return fmtCur(map[k], k); }).join(sep === undefined ? '<br>' : sep);
     }
 
     function fmtRelative(iso) {
@@ -6010,7 +6033,7 @@
         }
         if (!_pcCodes.length) { tb.innerHTML = '<tr><td colspan="10" class="muted ta-center" style="padding:20px">No promo codes yet.' + (_pcCanWrite ? ' Click “+ New code”.' : '') + '</td></tr>'; return; }
         tb.innerHTML = _pcCodes.map(function (c) {
-          const st = c.stats || { signups: 0, paid_subscriptions: 0, commission_owed: 0, commission_paid: 0 };
+          const st = c.stats || { signups: 0, paid_subscriptions: 0, commission_owed_by_currency: {}, commission_paid_by_currency: {} };
           const statusPills = (c.is_active
             ? '<span class="badge" style="background:rgba(16,185,129,0.15);color:#34d399">Active</span>'
             : '<span class="badge" style="background:rgba(148,163,184,0.15);color:#94a3b8">Off</span>')
@@ -6028,8 +6051,8 @@
             + '<td class="ta-right">' + (Number(c.commission_percent) || 0) + '%<div class="muted" style="font-size:11px">' + pcModeLabel(c) + '</div></td>'
             + '<td class="ta-right">' + (st.signups || 0) + '</td>'
             + '<td class="ta-right">' + (st.paid_subscriptions || 0) + '</td>'
-            + '<td class="ta-right">' + pcMoney(st.commission_owed) + '</td>'
-            + '<td class="ta-right">' + pcMoney(st.commission_paid) + '</td>'
+            + '<td class="ta-right">' + fmtMoneyMap(st.commission_owed_by_currency) + '</td>'
+            + '<td class="ta-right">' + fmtMoneyMap(st.commission_paid_by_currency) + '</td>'
             + '<td>' + statusPills + '</td>'
             + '<td class="ta-right"><button class="btn btn-sm" data-pc-action="payout" data-pc-id="' + escapeHtml(c.id) + '">Payout</button> ' + writeBtns + '</td>'
             + '</tr>';
@@ -6080,9 +6103,9 @@
         m.innerHTML =
             tile('Signups', (s.signups || 0), 'redemptions — not payable')
           + tile('Paid subs', (s.paid_subscriptions || 0), 'approved payments')
-          + tile('Gross revenue', pcMoney(s.gross_revenue), 'attributed')
-          + tile('Commission owed', pcMoney(s.commission_owed))
-          + tile('Commission paid', pcMoney(s.commission_paid));
+          + tile('Gross revenue', fmtMoneyMap(s.gross_by_currency), 'attributed')
+          + tile('Commission owed', fmtMoneyMap(s.commission_owed_by_currency))
+          + tile('Commission paid', fmtMoneyMap(s.commission_paid_by_currency));
         const rows = (coms.data || []);
         if (!rows.length) { cb.innerHTML = '<tr><td colspan="5" class="muted ta-center" style="padding:16px">No commissions in this range.</td></tr>'; return; }
         cb.innerHTML = rows.map(function (r) {
