@@ -115,7 +115,7 @@ try {
   process.exit(1);
 }
 
-for (const fn of ["loadMyMarketing", "loadMarketers", "wireMarketing", "fmtCPC", "convRate", "mmStat"]) {
+for (const fn of ["loadMyMarketing", "loadMarketers", "wireMarketing", "fmtCostMap", "fmtMoneyMap", "fmtCur", "convRate", "mmStat"]) {
   check(`${fn} is defined`, typeof ctx[fn] === "function", typeof ctx[fn]);
 }
 
@@ -130,22 +130,24 @@ const ME = {
       { id: "t1", name: "John Doe", phone: "677000111", status: "active",
         codes: [{ id: "c2", code: "JOHN10", is_active: true }],
         stats: { signups: 8, paying_customers: 2, revenue_by_currency: { XAF: 90000, NGN: 15000 }, still_in_trial: 4, lapsed: 2 },
-        expenditure: 30000, cost_per_paying_customer: 15000 },
+        expenditure_by_currency: { XAF: 30000, NGN: 9000 },
+        cost_by_currency: { XAF: {spend:30000,conversions:2,cost:15000}, NGN: {spend:9000,conversions:0,cost:null} } },
       // the divide-by-zero case: spend, no conversions
       { id: "t2", name: "Grace N", phone: null, status: "active", codes: [],
         stats: { signups: 3, paying_customers: 0, revenue_by_currency: {}, still_in_trial: 3, lapsed: 0 },
-        expenditure: 12000, cost_per_paying_customer: null },
+        expenditure_by_currency: { XAF: 12000 },
+        cost_by_currency: { XAF: {spend:12000,conversions:0,cost:null} } },
     ],
     team_total: { signups: 23, paying_customers: 6, revenue_by_currency: { XAF: 330000, NGN: 15000 }, still_in_trial: 12, lapsed: 5 },
-    expenditure_total: 42000,
-    cost_per_paying_customer: 7000,
+    expenditure_by_currency: { XAF: 42000, NGN: 9000 },
+    cost_by_currency: { XAF: {spend:42000,conversions:6,cost:7000}, NGN: {spend:9000,conversions:0,cost:null} },
   },
 };
 const SPEND = {
-  success: true, total: 42000,
+  success: true, total_by_currency: { XAF: 42000 },
   data: [
-    { id: "e1", category: "transport", amount: 30000, spent_on: "2026-08-10", note: "bus", team_member_id: "t1" },
-    { id: "e2", category: "flyers", amount: 12000, spent_on: "2026-08-12", note: null, team_member_id: null },
+    { id: "e1", category: "transport", amount: 30000, currency: 'XAF', spent_on: "2026-08-10", note: "bus", team_member_id: "t1" },
+    { id: "e2", category: "flyers", amount: 12000, currency: 'NGN', spent_on: "2026-08-12", note: null, team_member_id: null },
   ],
 };
 ctx.apiAdmin = async (method, path) => {
@@ -192,10 +194,12 @@ const OVERSIGHT = {
     { marketer: { id: "m2", full_name: "Bruno K", email: "b@x.test", is_active: false },
       own_codes: [], own: {}, team: [],
       team_total: { signups: 4, paying_customers: 1, revenue_by_currency: { NGN: 50000 }, still_in_trial: 2, lapsed: 1 },
-      expenditure_total: 90000, cost_per_paying_customer: 90000 },
+      expenditure_by_currency: { XAF: 90000 },
+      cost_by_currency: { XAF: {spend:90000,conversions:1,cost:90000} } },
   ],
   totals: { marketers: 2, signups: 27, paying_customers: 7, revenue_by_currency: { XAF: 330000, NGN: 65000 },
-            expenditure_total: 132000, cost_per_paying_customer: 18857.14 },
+            expenditure_by_currency: { XAF: 132000, NGN: 9000 },
+            cost_by_currency: { XAF: {spend:132000,conversions:7,cost:18857.14}, NGN: {spend:9000,conversions:0,cost:null} } },
 };
 ctx.apiAdmin = async (m, p) => {
   if (p.startsWith("/admin/marketing/oversight")) return OVERSIGHT;
@@ -221,7 +225,8 @@ ctx.apiAdmin = async () => ({
   success: true,
   data: [OVERSIGHT.data[1]],
   totals: { marketers: 1, signups: 4, paying_customers: 1, revenue_attributed: 50000,
-            expenditure_total: 90000, cost_per_paying_customer: 90000 },
+            expenditure_by_currency: { XAF: 90000 },
+      cost_by_currency: { XAF: {spend:90000,conversions:1,cost:90000} } },
 });
 await ctx.loadMarketers();
 const solo = getEl("mk-table").innerHTML;
@@ -300,6 +305,31 @@ check("master_admin still sees the Marketers oversight link",
 check("…and does NOT see the marketer-only My marketing link",
   navLinks.find((l) => l._route === "my-marketing").style.display === "none");
 
+
+
+// ── per-currency cost rendering ─────────────────────────────────────────────
+// The member table must show each currency's cost separately, and the
+// "not yet computable" case (spend in a currency with no conversions in it)
+// must read as an em dash beside its currency — never 0, never Infinity, and
+// never a number produced by dividing across currencies.
+const ws = function (x) { return String(x).replace(/[   ]/g, " "); };
+check("member spend renders BOTH currencies",
+  /30 000 FCFA/.test(ws(teamHtml)) && /₦9,000/.test(ws(teamHtml)),
+  teamHtml.includes("39000") ? "BLENDED 39000" : "separate");
+check("…a currency with spend but no conversions renders '— NGN', not 0",
+  /— NGN/.test(teamHtml) && !/₦0\b/.test(teamHtml));
+check("…and no blended spend total appears (30000+9000)", !ws(teamHtml).includes("39 000"));
+check("an expenditure row is labelled in ITS OWN currency",
+  /₦12,000/.test(ws(spendHtml)) && /30 000 FCFA/.test(ws(spendHtml)),
+  ws(spendHtml).includes("42 000") ? "BLENDED" : "per-row");
+
+// Oversight: colouring compares within a currency, never across.
+check("oversight cost cell shows per-currency lines",
+  /FCFA/.test(mk) && /—\s*NGN/.test(mk), "");
+check("…good/warn colouring still applied within a currency",
+  mk.includes("mm-cpc-good") || mk.includes("mm-cpc-warn"));
+check("…and a Lagos figure is never compared against a Douala one",
+  !/mm-cpc-(good|warn)[^<]*>—/.test(mk));
 
 console.log(`\n  ${fails === 0 ? "ALL" : fails + " FAILED of"} marketing render checks\n`);
 process.exit(fails === 0 ? 0 : 1);
