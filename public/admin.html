@@ -496,6 +496,8 @@
     .pill.rejected  { background: rgba(239,68,68,0.15);   color: var(--danger); }
     .pill.suspended { background: rgba(148,163,184,0.15); color: var(--text-muted); }
     .pill.expired   { background: rgba(239,68,68,0.15);   color: var(--danger); }
+    /* MP-ORG-SOFT-DELETE: deleted org — reads as gone, not merely paused. */
+    .pill.deactivated { background: rgba(239,68,68,0.22); color: var(--danger); text-decoration: line-through; }
     .pill.open       { background: rgba(245,158,11,0.15); color: var(--warning); }
     .pill.escalated  { background: rgba(239,68,68,0.18);  color: var(--danger); }
     .pill.resolved   { background: rgba(16,185,129,0.15); color: var(--success); }
@@ -1009,12 +1011,20 @@
             <option value="active">Active</option>
             <option value="trial">Trial</option>
             <option value="suspended">Suspended</option>
+            <option value="deactivated">Deactivated (deleted)</option>
           </select>
           <select id="biz-country">
             <option value="">All countries</option>
             <option value="Cameroun">🇨🇲 Cameroun</option>
             <option value="Nigeria">🇳🇬 Nigeria</option>
           </select>
+          <!-- MP-ORG-SOFT-DELETE: deleted orgs are hidden by default; this reveals
+               them alongside the live ones. Picking "Deactivated" above shows them
+               on their own instead. -->
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-muted);cursor:pointer">
+            <input type="checkbox" id="biz-show-deactivated" />
+            Show deactivated
+          </label>
         </div>
 
         <div class="table-wrap">
@@ -2680,7 +2690,10 @@
         }
         if (opts.primary) {
           const b = document.createElement('button');
-          b.type = 'button'; b.className = 'btn btn-primary';
+          // `danger: true` styles a destructive confirm (org delete) in red.
+          // Additive — every existing caller omits it and still gets btn-primary.
+          b.type = 'button';
+          b.className = 'btn ' + (opts.primary.danger ? 'btn-danger' : 'btn-primary');
           b.textContent = opts.primary.label || 'OK';
           b.addEventListener('click', () => {
             if (opts.primary.onClick) opts.primary.onClick(closeModal);
@@ -2709,7 +2722,7 @@
 
     // ────────────────────── BUSINESSES ──────────────────────
     let _bizCache = [];
-    let _bizFilter = { search: '', plan: '', status: '', country: '' };
+    let _bizFilter = { search: '', plan: '', status: '', country: '', includeDeactivated: false };
     let _bizSearchTimer = null;
 
     function planBadgeHtml(plan) {
@@ -2726,7 +2739,7 @@
     }
     function statusPillHtml(s) {
       const v = String(s || '').toLowerCase();
-      const cls = ['active','trial','pending','suspended','expired','approved','rejected','processing','open','escalated','resolved'].includes(v) ? v : '';
+      const cls = ['active','trial','pending','suspended','expired','approved','rejected','processing','open','escalated','resolved','deactivated'].includes(v) ? v : '';
       return '<span class="pill ' + cls + '">' + escapeHtml(v || '—') + '</span>';
     }
     function fmtDate(iso) {
@@ -2744,6 +2757,9 @@
         if (_bizFilter.plan)    q.set('plan', _bizFilter.plan);
         if (_bizFilter.status)  q.set('status', _bizFilter.status);
         if (_bizFilter.country) q.set('country', _bizFilter.country);
+        // MP-ORG-SOFT-DELETE: only meaningful when no explicit status is chosen —
+        // ?status=deactivated already targets them directly.
+        if (_bizFilter.includeDeactivated && !_bizFilter.status) q.set('include_deactivated', 'true');
         const path = '/admin/businesses' + (q.toString() ? '?' + q.toString() : '');
         const res = await apiAdmin('GET', path);
         _bizCache = (res && res.data) || [];
@@ -2797,7 +2813,8 @@
         const safeName = escapeHtml(o.name || '');
         const safeMp   = escapeHtml(o.mp_id || '—');
         const isSuspended = (o.status || '').toLowerCase() === 'suspended';
-        return '<tr>' +
+        const isDeactivated = (o.status || '').toLowerCase() === 'deactivated';
+        return '<tr' + (isDeactivated ? ' style="opacity:.55"' : '') + '>' +
           '<td class="mono">' + safeMp + '</td>' +
           '<td>' + safeName +
             (o.owner_name ? '<div style="font-size:11px;color:var(--text-muted)">' + escapeHtml(o.owner_name) + '</div>' : '') +
@@ -2811,7 +2828,7 @@
           '<td>' + fmtDate(o.joined_at) + '</td>' +
           '<td>' + fmtDate(o.last_active_at) + '</td>' +
           '<td style="text-align:right">' +
-            '<button class="row-actions-trigger" data-biz-row="' + id + '" data-is-suspended="' + (isSuspended ? '1' : '0') + '" aria-label="Open actions">⋯</button>' +
+            '<button class="row-actions-trigger" data-biz-row="' + id + '" data-is-suspended="' + (isSuspended ? '1' : '0') + '" data-is-deactivated="' + (isDeactivated ? '1' : '0') + '" aria-label="Open actions">⋯</button>' +
           '</td>' +
         '</tr>';
       }).join('');
@@ -2822,6 +2839,7 @@
           e.stopPropagation();
           const id = btn.getAttribute('data-biz-row');
           const isSuspended = btn.getAttribute('data-is-suspended') === '1';
+          const isDeactivated = btn.getAttribute('data-is-deactivated') === '1';
           openRowActionMenu(btn, [
             { action: 'details',         label: 'View details' },
             { action: 'plan',            label: 'Change plan' },
@@ -2838,7 +2856,16 @@
             { action: 'csv-inventory',   label: 'Export inventory CSV' },
             { action: 'csv-credits',     label: 'Export credits CSV' },
             { action: 'csv-staff',       label: 'Export staff CSV' },
-            { action: 'csv-customers',   label: 'Export customers CSV' }
+            { action: 'csv-customers',   label: 'Export customers CSV' },
+            // MP-ORG-SOFT-DELETE: destructive, so it sits last, behind its own
+            // separator, and only for full-CRUD admins (the backend also gates it).
+            // An already-deleted org offers Restore in its place.
+            ...(adminCanMutate() ? [
+              { separator: true },
+              isDeactivated
+                ? { action: 'restore',    label: '♻️ Restore business' }
+                : { action: 'deactivate', label: '🗑 Delete business' }
+            ] : [])
           ], (action) => handleBizAction(action, id));
         });
       });
@@ -2953,6 +2980,8 @@
         case 'extend-sub':   return openExtendSubscription(biz);
         case 'reset':        return openForceReset(biz);
         case 'impersonate':  return openImpersonate(biz);
+        case 'deactivate':   return openBizDeactivate(biz);
+        case 'restore':      return openBizRestore(biz);
         case 'csv-sales':
         case 'csv-inventory':
         case 'csv-credits':
@@ -3067,6 +3096,71 @@
           try {
             await apiAdmin('PATCH', '/admin/businesses/' + biz.id + '/status', { status: next, notes: $('bs-notes').value });
             showToast('Status updated', 'success'); close(); loadBusinesses();
+          } catch (e) { showToast(e.message, 'danger'); }
+        }}
+      });
+    }
+
+    // ── MP-ORG-SOFT-DELETE ──────────────────────────────────────────────────
+    // "Delete" is a SOFT delete: subscription_status -> 'deactivated'. A true hard
+    // delete is impossible by design (pa_audit_log's append-only trigger aborts any
+    // cascade that reaches it), so the modal says plainly what does and does not
+    // happen — an admin who expects the data to be gone would otherwise be misled.
+    //
+    // The confirm step requires typing the MP-ID. This is the only destructive
+    // action in the portal that cannot be undone by simply clicking again, and the
+    // row menu sits one slip away from "Export customers CSV".
+    function openBizDeactivate(biz) {
+      const mp = biz.mp_id || '';
+      const html =
+        '<div style="border:1px solid var(--danger);background:rgba(239,68,68,0.08);border-radius:8px;padding:12px;margin-bottom:14px">' +
+          '<div style="font-weight:600;color:var(--danger);margin-bottom:6px">This removes the business from the platform</div>' +
+          '<ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.6;color:var(--text-muted)">' +
+            '<li>Nobody in this business can log in again — the owner included.</li>' +
+            '<li>It disappears from the default business list.</li>' +
+            '<li>Its sales, stock and audit history are <strong>kept, not erased</strong>.</li>' +
+            '<li>You can undo this with <strong>Restore business</strong>.</li>' +
+          '</ul>' +
+        '</div>' +
+        '<div class="field"><label>Type <strong>' + escapeHtml(mp || 'the MP-ID') + '</strong> to confirm</label>' +
+        '<input id="bd-confirm" autocomplete="off" placeholder="' + escapeHtml(mp) + '" /></div>' +
+        '<div class="field"><label>Reason (recorded in the audit log)</label>' +
+        '<textarea id="bd-notes" placeholder="e.g. dead trial, owner asked to close"></textarea></div>';
+      openModal({
+        title: 'Delete ' + biz.name + '?',
+        sub: mp, content: html,
+        secondary: { label: 'Cancel' },
+        primary: { label: 'Delete business', danger: true, onClick: async (close) => {
+          const typed = ($('bd-confirm').value || '').trim();
+          if (mp && typed !== mp) { showToast('Type ' + mp + ' to confirm', 'danger'); return; }
+          try {
+            await apiAdmin('POST', '/admin/businesses/' + biz.id + '/deactivate', { notes: $('bd-notes').value });
+            showToast('Business deleted (deactivated)', 'success'); close(); loadBusinesses();
+          } catch (e) { showToast(e.message, 'danger'); }
+        }}
+      });
+    }
+
+    // Undo a soft delete. Reuses the existing status endpoint — status='active'.
+    // NOTE: this restores the STATUS only. Plan entitlement is recomputed from
+    // trial_ends_at / plan_expires_at, so an org whose trial had already lapsed
+    // comes back restricted rather than magically paid-up.
+    function openBizRestore(biz) {
+      const html =
+        '<p style="font-size:13px;color:var(--text-muted);line-height:1.6">' +
+        'This puts <strong>' + escapeHtml(biz.name) + '</strong> back into the active list and lets its users log in again.<br><br>' +
+        'Its status becomes <strong>active</strong>. If its trial or plan had already expired, it will still be restricted until a payment — restoring does not grant a plan.' +
+        '</p>' +
+        '<div class="field"><label>Notes (recorded in audit log)</label>' +
+        '<textarea id="br-notes" placeholder="Reason for restoring"></textarea></div>';
+      openModal({
+        title: 'Restore ' + biz.name,
+        sub: biz.mp_id, content: html,
+        secondary: { label: 'Cancel' },
+        primary: { label: 'Restore', onClick: async (close) => {
+          try {
+            await apiAdmin('PATCH', '/admin/businesses/' + biz.id + '/status', { status: 'active', notes: $('br-notes').value });
+            showToast('Business restored', 'success'); close(); loadBusinesses();
           } catch (e) { showToast(e.message, 'danger'); }
         }}
       });
@@ -6704,6 +6798,11 @@
       });
       $('biz-country').addEventListener('change', (e) => {
         _bizFilter.country = e.target.value;
+        loadBusinesses();
+      });
+      // MP-ORG-SOFT-DELETE: reveal soft-deleted orgs alongside the live list.
+      $('biz-show-deactivated').addEventListener('change', (e) => {
+        _bizFilter.includeDeactivated = !!e.target.checked;
         loadBusinesses();
       });
 
