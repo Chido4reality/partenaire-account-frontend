@@ -1,0 +1,240 @@
+// PHASE 1 — marketing screen render check.
+//
+// admin.html is a static page with no build step and no test harness, so the
+// only honest way to prove the new screens WORK (rather than merely parse) is
+// to evaluate the REAL inline script out of public/admin.html against a minimal
+// DOM shim and drive the two loaders with stubbed API responses.
+//
+// This is deliberately the artefact, not a copy: the script text is read from
+// public/admin.html at run time. If someone edits the page and breaks
+// loadMyMarketing, this fails — a copy-pasted fixture would not.
+//
+// It catches what `node --check` cannot: TDZ, typo'd identifiers, wrong field
+// names against the API shape, and the divide-by-zero rendering of
+// cost-per-paying-customer.
+//
+// No new dependency: the shim is ~80 lines of hand-rolled DOM.
+
+import { readFileSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import vm from "node:vm";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(HERE, "..");
+const html = readFileSync(resolve(ROOT, "public/admin.html"), "utf8");
+
+let fails = 0;
+function check(label, ok, detail = "") {
+  if (!ok) fails++;
+  console.log(`  ${ok ? "pass" : "FAIL"}  ${label}${detail !== "" ? `  [${detail}]` : ""}`);
+}
+
+// ── minimal DOM shim ────────────────────────────────────────────────────────
+function makeEl(id = "") {
+  const el = {
+    id, _html: "", textContent: "", value: "", checked: false, dataset: {},
+    style: {}, classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+    children: [],
+    get innerHTML() { return this._html; },
+    set innerHTML(v) { this._html = String(v); },
+    addEventListener() {}, removeEventListener() {},
+    getAttribute() { return null; }, setAttribute() {},
+    closest() { return null; }, focus() {}, querySelectorAll() { return []; },
+    appendChild(c) { this.children.push(c); return c; }, remove() {},
+  };
+  return el;
+}
+const els = new Map();
+const getEl = (id) => {
+  if (!els.has(id)) els.set(id, makeEl(id));
+  return els.get(id);
+};
+// Stat cards: four/five per strip, matching the markup.
+function statCards(n) { return Array.from({ length: n }, () => makeEl()); }
+const strips = { "mm-strip": statCards(4), "mk-strip": statCards(5) };
+
+const document = {
+  getElementById: getEl,
+  querySelector: () => null,
+  querySelectorAll: (sel) => {
+    const m = /^#([a-z-]+) \.stat-card \.stat-value$/.exec(sel);
+    if (m && strips[m[1]]) return strips[m[1]];
+    return [];
+  },
+  addEventListener() {}, createElement: () => makeEl(),
+  body: makeEl("body"), documentElement: makeEl("html"),
+};
+const localStorage = { getItem: () => "tok", setItem() {}, removeItem() {} };
+const sandbox = {
+  document, localStorage, console,
+  window: { matchMedia: () => ({ matches: false, addEventListener() {} }), addEventListener() {}, location: { hash: "" } },
+  location: { hash: "", href: "http://x/admin.html", origin: "http://x", hostname: "admin.test", protocol: "http:", pathname: "/admin.html", search: "" },
+  navigator: { userAgent: "node", language: "en" },
+  setTimeout, clearTimeout, setInterval, clearInterval, Intl, Date, Math, JSON,
+  fetch: async () => ({ ok: true, status: 200, text: async () => "{}", json: async () => ({}) }),
+  prompt: () => null, alert: () => {}, confirm: () => true,
+  // Enough of the browser globals the page touches at load. Each is a no-op:
+  // this rig exercises the marketing loaders, not the widgets that use them.
+  MutationObserver: class { observe() {} disconnect() {} },
+  IntersectionObserver: class { observe() {} disconnect() {} unobserve() {} },
+  ResizeObserver: class { observe() {} disconnect() {} unobserve() {} },
+  requestAnimationFrame: (fn) => setTimeout(fn, 0),
+  URL, URLSearchParams, Blob: class {}, FormData: class {},
+  AbortController: globalThis.AbortController, Promise, Error, RegExp,
+  encodeURIComponent, decodeURIComponent, isNaN, parseInt, parseFloat, Number, String, Boolean, Array, Object,
+};
+sandbox.globalThis = sandbox;
+sandbox.window.localStorage = localStorage;
+
+// ── evaluate the real inline script ─────────────────────────────────────────
+const blocks = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+let script = blocks.reduce((a, b) => (b.length > a.length ? b : a), "");
+// admin.html wraps everything in `(function () { 'use strict'; ... })();`, so
+// its functions are private to that closure and unreachable from the rig.
+// Unwrap the outer IIFE so top-level declarations land on the vm context. This
+// is still the SHIPPED text — only the closure boundary is removed, nothing is
+// rewritten — so a real break inside loadMyMarketing still fails this check.
+{
+  const t = script.trim();
+  const open = t.indexOf("(function () {");
+  const close = t.lastIndexOf("})();");
+  if (open === 0 && close > 0) script = t.slice("(function () {".length, close);
+}
+console.log("\n── marketing render check ───────────────────────────────────\n");
+check("found the admin inline script", script.length > 100000, `${script.length} chars`);
+
+const ctx = vm.createContext(sandbox);
+try {
+  new vm.Script(script, { filename: "admin.html:inline" }).runInContext(ctx);
+  check("the real inline script EVALUATES (not just parses)", true);
+} catch (err) {
+  check("the real inline script EVALUATES (not just parses)", false, err.message);
+  console.log(`\n  ${fails} FAILED of marketing render checks\n`);
+  process.exit(1);
+}
+
+for (const fn of ["loadMyMarketing", "loadMarketers", "wireMarketing", "fmtCPC", "convRate", "mmStat"]) {
+  check(`${fn} is defined`, typeof ctx[fn] === "function", typeof ctx[fn]);
+}
+
+// ── drive the marketer screen with a realistic payload ──────────────────────
+const ME = {
+  success: true,
+  data: {
+    marketer: { id: "m1", full_name: "Aisha Bello", email: "a@x.test", is_active: true },
+    own_codes: [{ id: "c1", code: "AISHA10", is_active: true }],
+    own: { signups: 12, paying_customers: 4, revenue_attributed: 240000, still_in_trial: 5, lapsed: 3 },
+    team: [
+      { id: "t1", name: "John Doe", phone: "677000111", status: "active",
+        codes: [{ id: "c2", code: "JOHN10", is_active: true }],
+        stats: { signups: 8, paying_customers: 2, revenue_attributed: 90000, still_in_trial: 4, lapsed: 2 },
+        expenditure: 30000, cost_per_paying_customer: 15000 },
+      // the divide-by-zero case: spend, no conversions
+      { id: "t2", name: "Grace N", phone: null, status: "active", codes: [],
+        stats: { signups: 3, paying_customers: 0, revenue_attributed: 0, still_in_trial: 3, lapsed: 0 },
+        expenditure: 12000, cost_per_paying_customer: null },
+    ],
+    team_total: { signups: 23, paying_customers: 6, revenue_attributed: 330000, still_in_trial: 12, lapsed: 5 },
+    expenditure_total: 42000,
+    cost_per_paying_customer: 7000,
+  },
+};
+const SPEND = {
+  success: true, total: 42000,
+  data: [
+    { id: "e1", category: "transport", amount: 30000, spent_on: "2026-08-10", note: "bus", team_member_id: "t1" },
+    { id: "e2", category: "flyers", amount: 12000, spent_on: "2026-08-12", note: null, team_member_id: null },
+  ],
+};
+ctx.apiAdmin = async (method, path) => {
+  if (path.startsWith("/admin/marketing/me")) return ME;
+  if (path.startsWith("/admin/marketing/expenditures")) return SPEND;
+  throw new Error("unexpected path " + path);
+};
+ctx.showToast = () => {};
+
+await ctx.loadMyMarketing();
+const teamHtml = getEl("mm-team").innerHTML;
+const spendHtml = getEl("mm-spend").innerHTML;
+const codesHtml = getEl("mm-codes").innerHTML;
+
+check("own code renders", codesHtml.includes("AISHA10"), codesHtml.slice(0, 40));
+check("team member names render", teamHtml.includes("John Doe") && teamHtml.includes("Grace N"));
+check("a member's code renders", teamHtml.includes("JOHN10"));
+check("a member with NO code gets a Create-code button", teamHtml.includes("data-mm-newcode=\"t2\""));
+check("cost-per-customer of null renders as an em dash, NOT 0 or Infinity",
+  teamHtml.includes("—") && !teamHtml.includes("Infinity") && !teamHtml.includes("NaN"));
+check("stat strip took the TEAM TOTAL signups (23), not just own (12)",
+  strips["mm-strip"][0].textContent === "23", strips["mm-strip"][0].textContent);
+check("stat strip revenue is formatted money", /FCFA/.test(strips["mm-strip"][3].textContent),
+  strips["mm-strip"][3].textContent);
+check("spend rows render with the member NAME, not a raw uuid",
+  spendHtml.includes("John Doe") && !spendHtml.includes("t1\""), "");
+check("an unattributed expense reads 'Whole team'", spendHtml.includes("Whole team"));
+check("spend total renders", spendHtml.includes("42") && /FCFA/.test(spendHtml));
+
+// XSS: a hostile team-member name must not become live markup.
+ME.data.team[0].name = '<img src=x onerror="alert(1)">';
+await ctx.loadMyMarketing();
+const xss = getEl("mm-team").innerHTML;
+check("a hostile member name is escaped, not injected",
+  !xss.includes("<img src=x") && xss.includes("&lt;img"), xss.includes("<img src=x") ? "INJECTED" : "escaped");
+ME.data.team[0].name = "John Doe";
+
+// ── drive the oversight tab ─────────────────────────────────────────────────
+const OVERSIGHT = {
+  success: true,
+  data: [
+    ME.data,
+    { marketer: { id: "m2", full_name: "Bruno K", email: "b@x.test", is_active: false },
+      own_codes: [], own: {}, team: [],
+      team_total: { signups: 4, paying_customers: 1, revenue_attributed: 50000, still_in_trial: 2, lapsed: 1 },
+      expenditure_total: 90000, cost_per_paying_customer: 90000 },
+  ],
+  totals: { marketers: 2, signups: 27, paying_customers: 7, revenue_attributed: 380000,
+            expenditure_total: 132000, cost_per_paying_customer: 18857.14 },
+};
+ctx.apiAdmin = async (m, p) => {
+  if (p.startsWith("/admin/marketing/oversight")) return OVERSIGHT;
+  throw new Error("unexpected path " + p);
+};
+await ctx.loadMarketers();
+const mk = getEl("mk-table").innerHTML;
+check("oversight lists both marketers", mk.includes("Aisha Bello") && mk.includes("Bruno K"));
+check("a deactivated marketer is badged, not hidden", mk.includes("deactivated"));
+check("team members drill down as their own indented rows",
+  mk.includes("mk-member") && mk.includes("John Doe"));
+check("conversion rate is a percentage", /\d+(\.\d+)?%/.test(mk), (mk.match(/\d+(\.\d+)?%/) || [])[0]);
+check("the cheaper marketer is flagged good, the dearer one warn",
+  mk.includes("mm-cpc-good") && mk.includes("mm-cpc-warn"));
+check("oversight strip shows cost per paying customer", /FCFA/.test(strips["mk-strip"][4].textContent),
+  strips["mk-strip"][4].textContent);
+
+// A LONE marketer has nothing to compare against, so must get no colour at
+// all. This is the other half of the median fix and would otherwise go
+// unproven: the even-count case above passes either way if colouring is
+// applied unconditionally.
+ctx.apiAdmin = async () => ({
+  success: true,
+  data: [OVERSIGHT.data[1]],
+  totals: { marketers: 1, signups: 4, paying_customers: 1, revenue_attributed: 50000,
+            expenditure_total: 90000, cost_per_paying_customer: 90000 },
+});
+await ctx.loadMarketers();
+const solo = getEl("mk-table").innerHTML;
+check("a single marketer is neither flagged good nor warn (nothing to compare)",
+  !solo.includes("mm-cpc-good") && !solo.includes("mm-cpc-warn"),
+  solo.includes("mm-cpc-good") ? "flagged good" : solo.includes("mm-cpc-warn") ? "flagged warn" : "neutral");
+check("…but their cost per customer still shows", /90\s?000/.test(solo.replace(/ /g, " ")));
+
+// empty state must not crash or divide by zero
+ctx.apiAdmin = async () => ({ success: true, data: [], totals: { marketers: 0, signups: 0, paying_customers: 0, revenue_attributed: 0, expenditure_total: 0, cost_per_paying_customer: null } });
+await ctx.loadMarketers();
+check("empty oversight renders an empty state, not a crash",
+  getEl("mk-table").innerHTML.includes("No marketers yet"));
+check("…and cost-per-customer with zero everything is '—'", strips["mk-strip"][4].textContent === "—",
+  strips["mk-strip"][4].textContent);
+
+console.log(`\n  ${fails === 0 ? "ALL" : fails + " FAILED of"} marketing render checks\n`);
+process.exit(fails === 0 ? 0 : 1);
