@@ -1581,6 +1581,12 @@
                 <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="pc-active" checked /> Enabled</label></div>
               <div class="field"><label>Reserved (house code)</label>
                 <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="pc-reserved" /> Earns no commission</label></div>
+              <div class="field" style="grid-column:1/-1"><label>Marketer (optional)</label>
+                <select id="pc-marketer"><option value="">— none (influencer code) —</option></select>
+                <div class="mm-muted" style="font-size:11px;margin-top:4px">
+                  Assigning a marketer makes this code's signups and revenue appear on
+                  their own marketing screen. Leave as none for influencer codes.
+                </div></div>
               <div class="field" style="grid-column:1/-1"><label>Notes</label>
                 <input type="text" id="pc-notes" placeholder="Internal note (optional)" /></div>
             </div>
@@ -2466,7 +2472,9 @@
             '<div class="mm-muted" style="margin-top:10px; font-size:12px">Signups ' +
             (mmData.own.signups || 0) + ' · paying ' + (mmData.own.paying_customers || 0) +
             ' · ' + fmtFCFA(mmData.own.revenue_attributed || 0) + '</div>'
-          : '<div class="activity-empty">No code yet — an administrator will create yours.</div>';
+          : '<div class="activity-empty">No code assigned to you yet. An administrator '
+            + 'creates a promo code and assigns it to your account from the Promo codes '
+            + 'screen; until then this page will show zero.</div>';
 
         if (!mmData.team.length) {
           teamEl.innerHTML = '<div class="activity-empty">No team members yet. Add one above if you have people working under you.</div>';
@@ -5840,6 +5848,7 @@
     // ════════════════════════════════════════════════════════════════
     let _pcCodes = [];
     let _pcEditId = null;
+    let _pcMarketers = null;   // picker source; null means the fetch FAILED, [] means none exist
     let _pcBound = false;
     let _pcPayoutId = null;
     let _pcCanWrite = false;
@@ -5906,6 +5915,14 @@
       $('pc-active').checked   = code ? !!code.is_active : true;
       $('pc-reserved').checked = code ? !!code.is_reserved : false;
       $('pc-notes').value     = code ? (code.notes || '') : '';
+      // A team member's code is owned via the composite FK (team_member_id,
+      // marketer_id) and is managed from the marketer's own screen — the server
+      // refuses reassignment here, so don't offer it.
+      const mkSel = $('pc-marketer');
+      if (mkSel) {
+        mkSel.value = code ? (code.marketer_id || '') : '';
+        mkSel.disabled = !!(code && code.team_member_id);
+      }
       $('pc-form-card').hidden = false;
     }
 
@@ -5925,6 +5942,7 @@
         is_active:         $('pc-active').checked,
         is_reserved:       $('pc-reserved').checked,
         notes:             $('pc-notes').value.trim() || null,
+        marketer_id:       $('pc-marketer') ? ($('pc-marketer').value || null) : null,
       };
       if (!/^[A-Za-z0-9]{3,20}$/.test(body.code)) { showToast('Code must be 3–20 letters and numbers only', 'danger'); return; }
       if (!body.influencer_name) { showToast('Influencer name is required', 'danger'); return; }
@@ -5951,6 +5969,18 @@
       catch (e) { showToast(e.message, 'danger'); }
     }
 
+    // Ownership badge. Shown on the codes table so it is obvious at a glance
+    // which codes feed a marketer's screen and which are plain influencer codes
+    // — the distinction that was invisible before, and the reason two codes sat
+    // unattributed.
+    function pcOwner(c) {
+      if (!c.marketer_id) return '';
+      const m = (_pcMarketers || []).find(function (x) { return x.id === c.marketer_id; });
+      const who = m ? (m.full_name || m.email) : 'marketer';
+      return '<div style="font-size:11px;margin-top:2px"><span class="pill pill-success">'
+        + escapeHtml(who) + (c.team_member_id ? ' · team' : '') + '</span></div>';
+    }
+
     async function loadPromoCodes() {
       pcBind();
       const role = ((currentAdmin && currentAdmin.role) || '').toLowerCase();
@@ -5959,8 +5989,25 @@
       const tb = $('pc-tbody');
       tb.innerHTML = '<tr><td colspan="10" class="muted ta-center" style="padding:20px">Loading…</td></tr>';
       try {
-        const r = await apiAdmin('GET', '/admin/promo-codes');
+        const [r, mk] = await Promise.all([
+          apiAdmin('GET', '/admin/promo-codes'),
+          // Non-fatal: if the picker source fails the screen still works, it just
+          // cannot offer an assignment. isError must not look like "no marketers".
+          apiAdmin('GET', '/admin/promo-codes/marketers').catch(function () { return null; })
+        ]);
         _pcCodes = (r && r.data) || [];
+        _pcMarketers = mk && mk.data ? mk.data : null;
+        const sel = $('pc-marketer');
+        if (sel) {
+          sel.innerHTML = '<option value="">— none (influencer code) —</option>' +
+            (_pcMarketers || []).map(function (m) {
+              return '<option value="' + escapeHtml(m.id) + '">' +
+                escapeHtml(m.full_name || m.email) + '</option>';
+            }).join('');
+          if (_pcMarketers === null) {
+            sel.innerHTML += '<option value="" disabled>(could not load marketers)</option>';
+          }
+        }
         if (!_pcCodes.length) { tb.innerHTML = '<tr><td colspan="10" class="muted ta-center" style="padding:20px">No promo codes yet.' + (_pcCanWrite ? ' Click “+ New code”.' : '') + '</td></tr>'; return; }
         tb.innerHTML = _pcCodes.map(function (c) {
           const st = c.stats || { signups: 0, paid_subscriptions: 0, commission_owed: 0, commission_paid: 0 };
@@ -5976,7 +6023,7 @@
             : '';
           return '<tr>'
             + '<td><strong>' + escapeHtml(c.code) + '</strong></td>'
-            + '<td>' + escapeHtml(c.influencer_name || '—') + handle + '</td>'
+            + '<td>' + escapeHtml(c.influencer_name || '—') + handle + pcOwner(c) + '</td>'
             + '<td>' + pcDisc(c) + '</td>'
             + '<td class="ta-right">' + (Number(c.commission_percent) || 0) + '%<div class="muted" style="font-size:11px">' + pcModeLabel(c) + '</div></td>'
             + '<td class="ta-right">' + (st.signups || 0) + '</td>'
