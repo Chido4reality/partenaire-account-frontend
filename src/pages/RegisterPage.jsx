@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAuthStore, useLangStore } from "../store";
 import api from "../utils/api";
@@ -25,6 +25,41 @@ const CATS = [
   { value: "other",            en: "Other",                      fr: "Autre" },
 ];
 
+// MP-REFERRAL-LINK: a marketer shares /register?code=KARO234 rather than asking
+// people to type a code. Mirrors the server's REASON_MSG so a rejection names
+// its actual cause instead of a generic "not applied".
+//
+// The code is NOT validated before submit, deliberately: /api/promo/validate is
+// behind authenticate (it reads req.user.org_id), and adding a public variant
+// would hand anyone a code-probing oracle — promoRedemption.js guards that on
+// purpose ("no endpoint ever lists pa_promo_codes to an org-user"). So validity
+// is only knowable when the server resolves it at registration.
+// Pure so it can be tested directly. A referral code arrives from a URL a
+// stranger may have edited, so it is clamped to the DB's own alphabet
+// (^[A-Za-z0-9]{3,20}$) before it is ever put in the DOM or sent onward.
+export function referralCodeFromQuery(searchParams) {
+  const raw = (searchParams && (searchParams.get("code") || searchParams.get("ref"))) || "";
+  const clean = String(raw).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 20);
+  return clean.length >= 3 ? clean : "";
+}
+
+const PROMO_REASON = {
+  not_found:        { en: "We couldn't find that code. Check the link, or ask whoever shared it.",
+                      fr: "Code introuvable. Vérifiez le lien ou demandez à la personne qui l'a partagé." },
+  expired:          { en: "That code has expired.", fr: "Ce code a expiré." },
+  inactive:         { en: "That code is no longer active.", fr: "Ce code n'est plus actif." },
+  not_started:      { en: "That code isn't active yet.", fr: "Ce code n'est pas encore actif." },
+  already_redeemed: { en: "Your shop has already used a promo code — only one per shop.",
+                      fr: "Votre boutique a déjà utilisé un code promo — un seul par boutique." },
+  bad_format:       { en: "That code contains invalid characters.",
+                      fr: "Ce code contient des caractères invalides." },
+};
+function promoReasonText(reason, lang) {
+  const m = PROMO_REASON[reason];
+  if (m) return lang === "en" ? m.en : m.fr;
+  return lang === "en" ? "That code could not be applied." : "Ce code n'a pas pu être appliqué.";
+}
+
 export default function RegisterPage() {
   // MP-NIGERIA: `country` drives currency (NGN/XAF), city default, and phone format.
   // Defaults to Cameroun so an unchanged CM signup is byte-identical to before.
@@ -42,6 +77,16 @@ export default function RegisterPage() {
   // field for the 409 PHONE_ALREADY_REGISTERED response. Cleared
   // when the user edits the phone input.
   const [phoneError, setPhoneError] = useState("");
+  // MP-REFERRAL-LINK state. `linked` means the code arrived by URL, so the field
+  // is locked against accidental edits — with a Change affordance, because a bad
+  // link must never be a trap the visitor cannot escape.
+  const [searchParams] = useSearchParams();
+  // Derived during render, NOT in a useEffect: an effect would leave the first
+  // paint showing an empty, unlocked field, and would be invisible to any
+  // server-rendered test. useSearchParams is available during render.
+  const linkedCode = referralCodeFromQuery(searchParams);
+  const [promoUnlocked, setPromoUnlocked] = useState(false);
+  const promoLinked = !!linkedCode && !promoUnlocked;
   const { login } = useAuthStore();
   const { lang } = useLangStore();
   const navigate = useNavigate();
@@ -55,15 +100,29 @@ export default function RegisterPage() {
     setPhoneError("");
     setLoading(true);
     try {
-      const res = await api.post("/auth/register", form);
+      // The linked code lives in linkedCode, not form.promo_code, so build the
+      // payload explicitly — sending `form` alone would drop it silently and
+      // the marketer would lose the attribution the link exists to create.
+      const effectivePromo = promoLinked ? linkedCode : form.promo_code;
+      const res = await api.post("/auth/register", { ...form, promo_code: effectivePromo });
       login(res.data.user, res.data.org, res.data.token);
       toast.success(lang === "en" ? "Account created!" : "Compte créé!");
       // MP-PROMO: confirm a valid signup code was captured; a bad code never
       // blocks signup, so just nudge them to add it at checkout instead.
       if (res.data?.promo?.applied) {
         toast.success(lang === "en" ? `🎟️ Promo code ${res.data.promo.code} applied` : `🎟️ Code promo ${res.data.promo.code} appliqué`);
-      } else if (form.promo_code && form.promo_code.trim()) {
-        toast(lang === "en" ? "Promo code not applied — you can add it at checkout." : "Code promo non appliqué — ajoutez-le au paiement.");
+      } else if (effectivePromo && effectivePromo.trim()) {
+        // Never silent, and never blocking. A visitor who followed a link never
+        // typed the code, so saying nothing would leave BOTH them and the
+        // marketer believing attribution happened. Name the actual reason, and
+        // point at the recovery that genuinely exists: the owner can still bind
+        // a code afterwards via POST /api/promo/redeem from Settings.
+        const why = promoReasonText(res.data?.promo?.reason, lang);
+        toast.error(
+          (lang === "en" ? `Code ${effectivePromo} was not applied. ` : `Le code ${effectivePromo} n'a pas été appliqué. `) +
+          why + (lang === "en" ? " You can still add a code from Settings." : " Vous pouvez encore l'ajouter dans Paramètres."),
+          { duration: 9000 }
+        );
       }
       navigate("/");
     } catch (err) {
@@ -155,10 +214,33 @@ export default function RegisterPage() {
               <label className="label">
                 {lang === "en" ? "Promo code (optional)" : "Code promo (optionnel)"}
               </label>
-              <input className="input" type="text" value={form.promo_code}
+              <input className="input" type="text" value={promoLinked ? linkedCode : form.promo_code}
                 onChange={e => set("promo_code", e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
                 maxLength={20} placeholder={lang === "en" ? "e.g. TOLU20" : "ex : TOLU20"}
-                style={{ textTransform: "uppercase" }} />
+                readOnly={promoLinked} data-testid="promo-input"
+                style={{ textTransform: "uppercase", ...(promoLinked ? { opacity: 0.75, cursor: "not-allowed" } : {}) }} />
+              {promoLinked && (
+                /* "will be applied", NOT "applied" — the code has not been resolved
+                   yet, and claiming success before the server answers would be a
+                   claim we cannot back. */
+                <div data-testid="promo-banner"
+                  style={{ marginTop: 6, padding: "6px 10px", borderRadius: 8, fontSize: 12,
+                           background: "rgba(16,185,129,0.12)", color: "#059669",
+                           display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <span>
+                    {lang === "en"
+                      ? `Referral code ${linkedCode} — will be applied when you create your account.`
+                      : `Code de parrainage ${linkedCode} — sera appliqué à la création de votre compte.`}
+                  </span>
+                  <button type="button" data-testid="promo-change"
+                    onClick={() => { set("promo_code", linkedCode); setPromoUnlocked(true); }}
+                    style={{ background: "none", border: "none", padding: 0, cursor: "pointer",
+                             color: "inherit", textDecoration: "underline", fontSize: 12 }}>
+                    {lang === "en" ? "Change" : "Modifier"}
+                  </button>
+                </div>
+              )}
+
               <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 4, lineHeight: 1.4 }}>
                 {lang === "en"
                   ? "From an influencer? Enter their code to get a discount on your subscription."

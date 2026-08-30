@@ -23,6 +23,7 @@ const CHECKS = [
   ["export-check",  "scripts/report-export-check.mjs",   "regression #7 — CSV round-trips through a real spreadsheet parser"],
   ["marketing",     "scripts/marketing-render-check.mjs","admin.html marketing screens RENDER against the real inline script"],
   ["admin-sync",    "scripts/sync-admin-copy.mjs --check","admin/index.html is a generated copy, not a drifting duplicate"],
+  ["referral",      "scripts/referral-render-check.mjs", "the /register?code= link prefills, locks and never claims success early"],
   ["deployed",      "scripts/deployed-admin-check.mjs",  "the LIVE hosts actually serve the marketer UI (needs network)"],
 ];
 

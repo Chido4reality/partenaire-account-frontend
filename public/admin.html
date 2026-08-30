@@ -2464,7 +2464,9 @@
         codesEl.innerHTML = own.length
           ? '<div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:10px">' +
             own.map(function (c) {
-              return '<span class="mm-code' + (c.is_active ? '' : ' off') + '">' + escapeHtml(c.code) + '</span>';
+              return '<span class="mm-code' + (c.is_active ? '' : ' off') + '">' + escapeHtml(c.code) +
+                (c.is_active ? '<button class="btn btn-sm" data-mm-copy="' + escapeHtml(c.code) +
+                  '" title="Copy a sign-up link with this code">Copy link</button>' : '') + '</span>';
             }).join('') + '</div>' +
             '<div class="mm-muted" style="margin-top:10px; font-size:12px">Signups ' +
             (mmData.own.signups || 0) + ' · paying ' + (mmData.own.paying_customers || 0) +
@@ -2483,7 +2485,9 @@
             '<th class="mm-num">Cost / customer</th><th></th></tr></thead><tbody>' +
             mmData.team.map(function (m) {
               const codes = (m.codes || []).map(function (c) {
-                return '<span class="mm-code' + (c.is_active ? '' : ' off') + '">' + escapeHtml(c.code) + '</span>';
+                return '<span class="mm-code' + (c.is_active ? '' : ' off') + '">' + escapeHtml(c.code) +
+                  (c.is_active ? '<button class="btn btn-sm" data-mm-copy="' + escapeHtml(c.code) +
+                    '" title="Copy a sign-up link with this code">Copy link</button>' : '') + '</span>';
               }).join(' ');
               const removed = m.status === 'removed';
               return '<tr' + (removed ? ' style="opacity:.55"' : '') + '>' +
@@ -2537,6 +2541,33 @@
       } catch (err) {
         const msg = '<div class="activity-empty">Could not load: ' + escapeHtml(err.message || 'error') + '</div>';
         codesEl.innerHTML = msg; teamEl.innerHTML = msg; spendEl.innerHTML = msg;
+      }
+    }
+
+    // MP-REFERRAL-LINK: marketers share a link, not a code to be typed. The
+    // registration page reads ?code= and prefills it.
+    const SIGNUP_ORIGIN = 'https://pos.partenairedozie.com';
+    function referralLink(code) {
+      return SIGNUP_ORIGIN + '/register?code=' + encodeURIComponent(code);
+    }
+    async function copyReferralLink(code) {
+      const url = referralLink(code);
+      try {
+        // navigator.clipboard needs a secure context and can be absent in a
+        // WebView; fall back to a hidden textarea rather than failing silently.
+        if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(url);
+        else {
+          const ta = document.createElement('textarea');
+          ta.value = url; ta.setAttribute('readonly', '');
+          ta.style.position = 'absolute'; ta.style.left = '-9999px';
+          document.body.appendChild(ta); ta.select();
+          document.execCommand('copy'); document.body.removeChild(ta);
+        }
+        showToast('Link copied — ' + url, 'success');
+      } catch (e) {
+        // Never leave them thinking it copied when it did not: show the URL so
+        // it can be copied by hand.
+        showToast('Could not copy automatically. Link: ' + url, 'danger');
       }
     }
 
@@ -2812,6 +2843,8 @@
         const del = e.target.closest('[data-mm-delspend]');
         const tog = e.target.closest('[data-mm-toggle]');
         const nc  = e.target.closest('[data-mm-newcode]');
+        const cp  = e.target.closest('[data-mm-copy]');
+        if (cp) { copyReferralLink(cp.getAttribute('data-mm-copy')); return; }
         try {
           if (del) {
             await apiAdmin('DELETE', '/admin/marketing/expenditures/' + del.getAttribute('data-mm-delspend'));
