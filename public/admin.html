@@ -2546,6 +2546,7 @@
     // trail keeps "logged by an admin" distinct from "logged by the marketer".
     let _mkSpendMarketer = null;
     let _mkViews = [];
+    let _mkCanDeleteSpend = false;   // delete is master_admin only
 
     function mkSpendRows(rows, marketerName) {
       if (!rows.length) return '<div class="activity-empty">Nothing recorded for ' + escapeHtml(marketerName) + ' yet.</div>';
@@ -2559,7 +2560,9 @@
                 ? escapeHtml((_mkSpendMarketer.team.find(function (t) { return t.id === e.team_member_id; }) || {}).name || 'Member')
                 : '<span class="mm-muted">Whole team</span>') + '</td>' +
             '<td class="mm-num">' + fmtCur(e.amount, e.currency) + '</td>' +
-            '<td><button class="btn btn-sm btn-danger" data-mk-delspend="' + escapeHtml(e.id) + '">Delete</button></td>' +
+            '<td>' + (_mkCanDeleteSpend
+                ? '<button class="btn btn-sm btn-danger" data-mk-delspend="' + escapeHtml(e.id) + '">Delete</button>'
+                : '<span class="mm-muted" title="Only the master admin can remove a spend record">—</span>') + '</td>' +
           '</tr>';
         }).join('') + '</tbody></table>';
     }
@@ -2656,9 +2659,12 @@
         const inc = $('mk-include-inactive').checked ? '?include_inactive=1' : '';
         const res = await apiAdmin('GET', '/admin/marketing/oversight' + inc);
         const views = res.data || [], tot = res.totals || {};
-        // Logging on a marketer's behalf is master_admin only — the API refuses
-        // anyone else, so hiding the button just avoids offering a dead control.
-        const canLogSpend = ((currentAdmin && currentAdmin.role) || '').toLowerCase() === 'master_admin';
+        // Adding/editing spend is master_admin OR admin; DELETING is
+        // master_admin only. The API enforces both — these flags only avoid
+        // offering a control that would 403.
+        const _role = ((currentAdmin && currentAdmin.role) || '').toLowerCase();
+        const canLogSpend = _role === 'master_admin' || _role === 'admin';
+        _mkCanDeleteSpend = _role === 'master_admin';
         _mkViews = views;
         mmStat('mk-strip', [
           (tot.marketers || 0).toLocaleString('fr-CM'),
