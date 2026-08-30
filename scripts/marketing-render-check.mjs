@@ -110,6 +110,7 @@ try {
   check("the real inline script EVALUATES (not just parses)", true);
 } catch (err) {
   check("the real inline script EVALUATES (not just parses)", false, err.message);
+
   console.log(`\n  ${fails} FAILED of marketing render checks\n`);
   process.exit(1);
 }
@@ -235,6 +236,69 @@ check("empty oversight renders an empty state, not a crash",
   getEl("mk-table").innerHTML.includes("No marketers yet"));
 check("…and cost-per-customer with zero everything is '—'", strips["mk-strip"][4].textContent === "—",
   strips["mk-strip"][4].textContent);
+
+
+// ── the Add-admin role dropdown (Peter's bug) ───────────────────────────────
+// The role existed and was gated server-side, but the modal offered only Admin
+// and Staff, so a marketer could not be CREATED through the UI at all.
+// Asserted against the RAW page source: these <option>s live inside a template
+// literal that only executes when the modal is opened.
+const addAt = html.indexOf('id="at-role"');
+const addModal = html.slice(addAt, addAt + 600);
+check("Add-admin dropdown offers Marketer", /<option value="marketer"/.test(addModal),
+  (addModal.match(/<option value="[a-z_]+"/g) || []).join(" "));
+
+const editAt = html.indexOf('id="at-role-edit"');
+const editSel = html.slice(editAt, editAt + 700);
+check("Change-role dropdown offers Marketer", /<option value="marketer"/.test(editSel),
+  (editSel.match(/<option value="[a-z_]+"/g) || []).join(" "));
+// Without this option a marketer's row rendered as the FIRST option (Admin),
+// so one click of "Save role" silently PROMOTED them to full admin.
+check("…and it is pre-selected when the admin IS a marketer",
+  editSel.includes("=== 'marketer'") || editSel.includes('=== "marketer"'));
+check("rolePill has a marketer style (not a bare fallback)", /marketer: 'pill-/.test(html));
+
+// ── a marketer must LAND on their own screen and see nothing else ───────────
+const navLinks = ["dashboard", "businesses", "my-marketing", "marketers", "settings", "admin-team"]
+  .map((r) => {
+    const e = makeEl();
+    e._route = r;
+    e.getAttribute = (k) => (k === "data-route" ? r : null);
+    return e;
+  });
+document.querySelectorAll = (sel) => {
+  const m = /^#([a-z-]+) \.stat-card \.stat-value$/.exec(sel);
+  if (m && strips[m[1]]) return strips[m[1]];
+  if (sel === ".sb-link") return navLinks;
+  return [];
+};
+// showApp() hides the marketer-only / oversight links BY ID, while the marketer
+// branch sweeps .sb-link. Point both at the same objects or the rig tests a
+// different element than the code touches.
+els.set("sb-link-mymarketing", navLinks.find((l) => l._route === "my-marketing"));
+els.set("sb-link-marketers",   navLinks.find((l) => l._route === "marketers"));
+let landedOn = null;
+ctx.navigateTo = (route) => { landedOn = route; };
+ctx.startNotifPolling = () => {};
+ctx.enforceForcedPasswordChange = () => {};
+
+ctx.showApp({ id: "m1", full_name: "Rig Marketer", email: "m@rig.test", role: "marketer" });
+check("a marketer LANDS on my-marketing, not dashboard", landedOn === "my-marketing", String(landedOn));
+const shown = navLinks.filter((l) => l.style.display !== "none").map((l) => l._route).sort();
+check("…and sees ONLY my-marketing + settings in the nav",
+  JSON.stringify(shown) === JSON.stringify(["my-marketing", "settings"]), shown.join(",") || "(none)");
+check("…and the sidebar labels them Marketer",
+  getEl("sb-admin-role").textContent === "Marketer", getEl("sb-admin-role").textContent);
+
+// A master_admin must be unaffected by any of this.
+navLinks.forEach((l) => { l.style.display = ""; });
+landedOn = null;
+ctx.showApp({ id: "a1", full_name: "Peter", email: "p@rig.test", role: "master_admin" });
+check("master_admin still sees the Marketers oversight link",
+  navLinks.find((l) => l._route === "marketers").style.display !== "none");
+check("…and does NOT see the marketer-only My marketing link",
+  navLinks.find((l) => l._route === "my-marketing").style.display === "none");
+
 
 console.log(`\n  ${fails === 0 ? "ALL" : fails + " FAILED of"} marketing render checks\n`);
 process.exit(fails === 0 ? 0 : 1);

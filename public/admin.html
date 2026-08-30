@@ -6506,7 +6506,7 @@
     }
 
     function rolePill(role) {
-      const map = { master_admin: 'pill-critical', admin: 'pill-info', staff: 'pill-muted' };
+      const map = { master_admin: 'pill-critical', admin: 'pill-info', staff: 'pill-muted', marketer: 'pill-success' };
       return `<span class="pill ${map[role] || 'pill-muted'}">${escapeHtml(role || '—')}</span>`;
     }
 
@@ -6551,6 +6551,7 @@
             <select id="at-role">
               <option value="admin">Admin — full CRUD, cannot manage admins</option>
               <option value="staff">Staff — read-only</option>
+              <option value="marketer">Marketer — their own marketing screen only</option>
             </select>
           </div>
           <div class="field"><label>Notes (optional)</label>
@@ -6621,6 +6622,7 @@
                 <select id="at-role-edit">
                   <option value="admin"${(data.admin?.role || a.role) === 'admin' ? ' selected' : ''}>Admin</option>
                   <option value="staff"${(data.admin?.role || a.role) === 'staff' ? ' selected' : ''}>Staff</option>
+                  <option value="marketer"${(data.admin?.role || a.role) === 'marketer' ? ' selected' : ''}>Marketer</option>
                 </select>
                 <button class="btn" id="at-role-save" style="margin-top:8px">Save role</button>
               </div>` : ''}
