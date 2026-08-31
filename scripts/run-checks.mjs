@@ -25,6 +25,7 @@ const CHECKS = [
   ["admin-sync",    "scripts/sync-admin-copy.mjs --check","admin/index.html is a generated copy, not a drifting duplicate"],
   ["referral",      "scripts/referral-render-check.mjs", "the /register?code= link prefills, locks and never claims success early"],
   ["sw-guard",      "scripts/admin-sw-guard-check.mjs",  "the Capacitor wrap never installs a service worker (no stale shell)"],
+  ["marketer-i18n", "scripts/marketer-i18n-check.mjs",   "every marketer string has a French entry — a miss FAILS instead of rendering English"],
   ["deployed",      "scripts/deployed-admin-check.mjs",  "the LIVE hosts actually serve the marketer UI (needs network)"],
 ];
 
