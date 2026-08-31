@@ -187,7 +187,14 @@
 
     /* ───────────────── APP SHELL ───────────────── */
     #app-shell { display: none; }
-    #app-shell.active { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; }
+    #app-shell.active {
+      display: grid;
+      grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+      min-height: 100vh;
+    }
+    /* Belt and braces for the same trap: a grid ITEM also defaults to
+       min-width:auto, so main must be told it may shrink. */
+    main { min-width: 0; }
 
     /* ───────────────── SIDEBAR ───────────────── */
     .sidebar {
@@ -869,12 +876,58 @@
     .delta.flat { background: var(--bg-tertiary);    color: var(--text-muted); }
 
     /* ───────────────── RESPONSIVE ───────────────── */
+    /* The topbar and scrim exist in the DOM at every width; the media query
+       is what reveals them, so nothing has to be created or destroyed when
+       the window is resized across the breakpoint. */
+    .mobile-topbar { display: none; }
+    .nav-scrim { display: none; }
+
     @media (max-width: 900px) {
-      #app-shell.active { grid-template-columns: 1fr; }
+      #app-shell.active { grid-template-columns: minmax(0, 1fr); }
+
+      /* Previously the sidebar just went `position: static`, which stacked all
+         24 nav links ABOVE the content — so every page on a phone opened with
+         a screenful of navigation to scroll past before reaching anything.
+         Off-canvas instead: out of the flow until asked for. */
       .sidebar {
-        position: static; height: auto;
-        border-right: none; border-bottom: 1px solid var(--border);
+        position: fixed; top: 0; left: 0; bottom: 0;
+        width: min(var(--sidebar-w), 86vw);
+        height: 100vh; overflow-y: auto;
+        border-right: 1px solid var(--border); border-bottom: none;
+        transform: translateX(-100%);
+        transition: transform 0.22s ease;
+        z-index: 1200;
       }
+      .sidebar.open { transform: translateX(0); }
+      /* Someone navigating by keyboard must not be able to tab into a drawer
+         that is off-screen; visibility is what removes it from the tab order,
+         and it is deferred so the slide-out animation still plays. */
+      .sidebar:not(.open) { visibility: hidden; transition: transform 0.22s ease, visibility 0s linear 0.22s; }
+      .sidebar.open { visibility: visible; transition: transform 0.22s ease; }
+
+      .nav-scrim {
+        display: block; position: fixed; inset: 0;
+        background: rgba(0,0,0,0.5); z-index: 1100;
+        opacity: 0; pointer-events: none; transition: opacity 0.22s ease;
+      }
+      .nav-scrim.open { opacity: 1; pointer-events: auto; }
+
+      .mobile-topbar {
+        display: flex; align-items: center; gap: 12px;
+        position: sticky; top: 0; z-index: 900;
+        margin: -20px -20px 16px; padding: 10px 14px;
+        background: var(--bg-secondary);
+        border-bottom: 1px solid var(--border);
+      }
+      .mt-burger {
+        display: flex; align-items: center; justify-content: center;
+        width: 40px; height: 40px; flex: 0 0 40px;
+        background: transparent; border: 1px solid var(--border);
+        border-radius: 10px; cursor: pointer;
+        color: var(--text-primary); font-size: 18px; line-height: 1;
+      }
+      .mt-title { font-weight: 700; font-size: 15px; }
+
       main { padding: 20px; }
     }
   </style>
@@ -906,7 +959,8 @@
 
   <!-- ───────────────── APP SHELL ───────────────── -->
   <div id="app-shell">
-    <aside class="sidebar">
+    <div class="nav-scrim" id="nav-scrim"></div>
+    <aside class="sidebar" id="sidebar">
       <div class="sb-brand">
         <div class="sb-brand-logo">PARTENAIRE<span class="sparkle">✦</span></div>
         <div class="sb-brand-tag">Admin portal</div>
@@ -982,6 +1036,14 @@
     </aside>
 
     <main>
+      <!-- Shown only below 900px. Lives here rather than inside each route:
+           there are 24 .page-head blocks and duplicating a control into all of
+           them is how they drift apart. -->
+      <div class="mobile-topbar">
+        <button type="button" class="mt-burger" id="nav-burger"
+                aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false">☰</button>
+        <div class="mt-title" id="mt-title">Admin portal</div>
+      </div>
       <!-- DASHBOARD -->
       <section class="route" id="route-dashboard">
         <div class="page-head">
@@ -2368,6 +2430,46 @@
       return VALID_ROUTES.has(h) ? h : 'dashboard';
     }
 
+    // ────────────────────── MOBILE NAV DRAWER ──────────────────────
+    // Below 900px the sidebar is off-canvas. Critically this is the SAME
+    // <aside> and the SAME .sb-link nodes as the desktop nav — moved by CSS,
+    // not a second list built for mobile. That matters for more than tidiness:
+    // showApp hides links per role (a marketer sees only My marketing), and a
+    // duplicated nav would need that same filtering applied a second time, in
+    // a second place, forever. A missed one leaks a route into the drawer.
+    function setNavDrawer(open) {
+      const sb = $('sidebar'), scrim = $('nav-scrim'), burger = $('nav-burger');
+      if (!sb || !scrim) return;
+      sb.classList.toggle('open', open);
+      scrim.classList.toggle('open', open);
+      if (burger) burger.setAttribute('aria-expanded', open ? 'true' : 'false');
+      // Stop the page behind the drawer from scrolling under it.
+      document.body.style.overflow = open ? 'hidden' : '';
+    }
+    const closeNavDrawer = () => setNavDrawer(false);
+
+    function setupMobileNav() {
+      const burger = $('nav-burger'), scrim = $('nav-scrim'), sb = $('sidebar');
+      if (!burger || !scrim || !sb) return;
+      burger.addEventListener('click', function () {
+        setNavDrawer(!sb.classList.contains('open'));
+      });
+      scrim.addEventListener('click', closeNavDrawer);
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') closeNavDrawer();
+      });
+      // Tapping a destination should take you there, not leave the drawer
+      // sitting over the page you just asked for.
+      sb.addEventListener('click', function (e) {
+        if (e.target && e.target.closest && e.target.closest('.sb-link')) closeNavDrawer();
+      });
+      // Crossing the breakpoint with the drawer open would otherwise leave the
+      // body scroll-locked on a desktop layout that has no drawer to close.
+      window.addEventListener('resize', function () {
+        if (window.innerWidth > 900) closeNavDrawer();
+      });
+    }
+
     // ────────────────────── HORIZONTAL TABLE SCROLL ──────────────────────
     // 16 .data-table have up to 10 columns and no scroll container, so on a
     // phone the right-hand columns were unreachable. Wrapping them in the
@@ -2419,6 +2521,15 @@
       document.querySelectorAll('.sb-link').forEach(a => {
         a.classList.toggle('active', a.getAttribute('data-route') === route);
       });
+      // A route can also change from a hash edit, a browser Back, or code
+      // (marketers get redirected on boot) — not only from tapping a link, so
+      // the drawer is closed here rather than only in the click handler.
+      closeNavDrawer();
+      // Name the section in the mobile bar. Read from the active link so the
+      // label never has to be repeated in a second lookup table.
+      const mtTitle = $('mt-title');
+      const activeLink = document.querySelector('.sb-link.active .sb-link-label');
+      if (mtTitle) mtTitle.textContent = activeLink ? activeLink.textContent : 'Admin portal';
       // Per-route side effects
       if (route === 'dashboard')          loadDashboard();
       if (route === 'live')               loadLive();
@@ -3416,6 +3527,7 @@
       $('login-screen').style.display = 'none';
       $('app-shell').classList.add('active');
       startTableObserver();
+      setupMobileNav();
       // Pick up the hash on first paint so refresh-on-section works. A marketer
       // has no dashboard — landing them on one would 403 on first paint, so
       // their home is their own screen, and any other hash falls back to it.
