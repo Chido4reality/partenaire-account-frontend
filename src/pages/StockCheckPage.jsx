@@ -16,6 +16,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "../utils/api";
 import { useLangStore, useAuthStore } from "../store";
+import { useMyPermissions } from "../utils/useMyPermissions"; // MP-STOCKCHECK-DELEGATION
 import { useCurrency } from "../utils/useCurrency";
 import toast from "react-hot-toast";
 import { unitLabel } from "../utils/units";
@@ -151,6 +152,18 @@ export default function StockCheckPage() {
   const navigate = useNavigate();
   const role = useAuthStore(s => s.user?.role);
   const isOwner = role === "owner";
+  // MP-STOCKCHECK-DELEGATION: a manager may resolve/recount a mismatch only with the
+  // explicit grant. Read through the SHARED hook, never a fresh useQuery on the same
+  // key — two shapes on one key is what hid the Cancel button on TransfersPage for a
+  // manager who genuinely held can_cancel_transfers.
+  //
+  // The server is authoritative; this only decides whether the button is drawn.
+  // The hook returns { perms, ...query } — NOT the perms object itself. Reading
+  // it directly yields undefined, which `=== true` turns into "not granted": no
+  // button, no error, nothing to debug. Destructure.
+  const { perms: myPerms } = useMyPermissions({ enabled: role === "manager" });
+  const canResolveChecks = isOwner
+    || (role === "manager" && myPerms?.can_resolve_stock_checks === true);
   // MP-DAMAGED-GOODS: owner/manager may write off sellable stock into a damaged pile.
   const canWriteoff = role === "owner" || role === "manager";
   const [tab, setTab] = useState("pending");           // pending | mismatch | resolved | damaged
@@ -755,8 +768,9 @@ export default function StockCheckPage() {
                     )}
                   </div>
                 )}
-                {/* Part B: owner resolves a mismatch (reason + corrected qty → stock fix). */}
-                {isMismatch && isOwner && (
+                {/* Part B: the owner — or a manager granted can_resolve_stock_checks —
+                    resolves a mismatch (reason + corrected qty → stock fix). */}
+                {isMismatch && canResolveChecks && (
                   <div style={{ alignSelf: "center" }}>
                     <button onClick={() => setVarResolveFor(r)} className="btn btn-primary" style={{ fontWeight: 700, whiteSpace: "nowrap" }}>
                       🛠 {en ? "Resolve" : "Résoudre"}

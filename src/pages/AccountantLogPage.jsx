@@ -1409,6 +1409,9 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
         branch_scope: perms.branch_scope === "all" ? "all" : "own",
         can_manage_staff: !!perms.can_manage_staff,
         can_cancel_transfers: !!perms.can_cancel_transfers, // MP-TRANSFER-GOVERNANCE
+        // MP-STOCKCHECK-DELEGATION: same rule as the flags around it — sent every
+        // save, or a save about something else would silently clear the grant.
+        can_resolve_stock_checks: !!perms.can_resolve_stock_checks,
         // MP-CASHIER-PHASE-1b: sent on every save like the flags above, so an
         // untouched grant round-trips as itself rather than being cleared by a
         // save that happened to be about something else.
@@ -2127,8 +2130,31 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                           : "Annule un transfert en attente ou en transit non reçu, rendant le stock à la source. Chaque annulation est enregistrée. Si « seul le propriétaire peut annuler un transfert du propriétaire » est activé (Paramètres), il ne peut pas toucher les vôtres."}
                     </div>
 
+                    {/* MP-STOCKCHECK-DELEGATION: let a manager close out a stock-check
+                        mismatch. He can already COUNT (that route has no role gate), and a
+                        difference is forced to 'mismatch' by the arithmetic — so without
+                        this he creates variances he cannot clear and still sees. */}
+                    <div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 12, marginBottom: 5 }}>{en ? "Resolve stock-check mismatches:" : "Résoudre les écarts de vérification :"}</div>
+                    <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>
+                      {[
+                        { val: false, en: "No", fr: "Non" },
+                        { val: true,  en: "Can resolve & recount", fr: "Peut résoudre & recompter" },
+                      ].map((o) => (
+                        <button key={String(o.val)} onClick={() => setPerms((p) => ({ ...(p || {}), can_resolve_stock_checks: o.val }))}
+                          style={{ flex: 1, padding: "7px 4px", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
+                            background: !!perms.can_resolve_stock_checks === o.val ? (o.val ? "rgba(16,185,129,0.9)" : "rgba(239,68,68,0.9)") : "var(--bg-elevated)",
+                            color: !!perms.can_resolve_stock_checks === o.val ? (o.val ? "#06281d" : "#fff") : "var(--text-muted)" }}>
+                          {en ? o.en : o.fr}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: "var(--text-muted)", marginTop: 4 }}>
+                      {en ? "Closes a counted difference with a reason, and can send one back for a recount. Resolving as \"the stock record was wrong\" corrects stock, exactly as it does for you. He still cannot DELETE a pending check — only you can remove a flag."
+                          : "Clôture un écart compté avec un motif, et peut demander un recomptage. Résoudre par « le stock était faux » corrige le stock, comme pour vous. Il ne peut toujours pas SUPPRIMER une vérification en attente — vous seul pouvez retirer un signalement."}
+                    </div>
+
                     <button className="btn btn-secondary" style={{ width: "100%", marginTop: 10 }}
-                      onClick={() => setPerms((p) => ({ ...(p || {}), can_approve: [], branch_scope: "own", can_manage_staff: false, can_cancel_transfers: false }))}>
+                      onClick={() => setPerms((p) => ({ ...(p || {}), can_approve: [], branch_scope: "own", can_manage_staff: false, can_cancel_transfers: false, can_resolve_stock_checks: false }))}>
                       {en ? "↺ Remove all delegation" : "↺ Retirer toute délégation"}
                     </button>
                   </div>
