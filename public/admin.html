@@ -452,7 +452,13 @@
       background: var(--bg-secondary);
       border: 1px solid var(--border-subtle);
       border-radius: var(--radius);
-      overflow: hidden;
+      /* Was `overflow: hidden`, which CLIPPED the right-hand columns on a
+         narrow screen and gave no scrollbar — the data was simply gone with
+         nothing on screen to suggest it. Scroll on x, keep clipping on y so
+         the rounded corners and the sticky header still work. */
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
     }
     table.data {
       width: 100%; border-collapse: collapse; font-size: 13px;
@@ -704,6 +710,11 @@
 
     /* ───────────────── PHASE D ───────────────── */
     /* Generic data-table — used by broadcasts, admin-team, audit-log. */
+    /* Wrapper injected by wrapTables() — see the observer below. */
+    .table-scroll {
+      overflow-x: auto; overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
+    }
     .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     .data-table thead { background: var(--bg-tertiary); }
     .data-table th {
@@ -748,7 +759,9 @@
        fixed against the bell button. Mirrors the row-action portal pattern. */
     .notif-dropdown {
       position: fixed; z-index: 1000;
-      width: 360px; max-height: 60vh; overflow: hidden;
+      /* 360px is wider than the viewport on the narrowest phones we support,
+         so the panel ran off the right edge. */
+      width: min(360px, calc(100vw - 24px)); max-height: 60vh; overflow: hidden;
       background: var(--bg-secondary); border: 1px solid var(--border);
       border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,0.35);
       display: flex; flex-direction: column;
@@ -2355,6 +2368,43 @@
       return VALID_ROUTES.has(h) ? h : 'dashboard';
     }
 
+    // ────────────────────── HORIZONTAL TABLE SCROLL ──────────────────────
+    // 16 .data-table have up to 10 columns and no scroll container, so on a
+    // phone the right-hand columns were unreachable. Wrapping them in the
+    // markup would miss the ones that matter most: several are built by
+    // innerHTML inside async loaders, long after the route renders. One
+    // observer catches every table the moment it lands, whoever created it.
+    //
+    // min-width is set from the COLUMN COUNT rather than as a flat floor: a
+    // flat floor would force a pointless scrollbar onto narrow 3-column
+    // tables, which is its own annoyance.
+    function wrapTables(root) {
+      const scope = root || document;
+      scope.querySelectorAll('table.data-table:not([data-scroll-wrapped])').forEach(function (tb) {
+        tb.setAttribute('data-scroll-wrapped', '1');
+        const cols = tb.querySelectorAll('thead th').length;
+        if (cols > 3) tb.style.minWidth = (cols * 112) + 'px';
+        const parent = tb.parentElement;
+        if (!parent || parent.classList.contains('table-scroll')) return;
+        const wrap = document.createElement('div');
+        wrap.className = 'table-scroll';
+        parent.insertBefore(wrap, tb);
+        wrap.appendChild(tb);
+      });
+    }
+
+    // The observer re-fires on the wrapper insertion above, but those tables
+    // already carry data-scroll-wrapped so the selector matches nothing and it
+    // settles immediately — no loop.
+    function startTableObserver() {
+      const host = $('app-shell') || document.body;
+      if (!host || !window.MutationObserver) return;
+      new MutationObserver(function () { wrapTables(host); }).observe(host, {
+        childList: true, subtree: true,
+      });
+      wrapTables(host);
+    }
+
     function navigateTo(route, opts) {
       opts = opts || {};
       if (!VALID_ROUTES.has(route)) route = 'dashboard';
@@ -3365,6 +3415,7 @@
 
       $('login-screen').style.display = 'none';
       $('app-shell').classList.add('active');
+      startTableObserver();
       // Pick up the hash on first paint so refresh-on-section works. A marketer
       // has no dashboard — landing them on one would 403 on first paint, so
       // their home is their own screen, and any other hash falls back to it.
@@ -5695,7 +5746,14 @@
       const rect = input.getBoundingClientRect();
       const dd = document.createElement('div');
       dd.className = 'row-actions-menu-portal';
-      dd.style.cssText = 'position:fixed;top:' + (rect.bottom + 4) + 'px;left:' + rect.left + 'px;width:' + Math.max(rect.width, 360) + 'px;max-width:520px;max-height:60vh;overflow-y:auto;padding:0';
+      // Clamp to the viewport: the old form pinned left to the input and took
+      // a 360px floor, so on a narrow screen the panel started near the right
+      // edge and ran off it. Width is capped first, then left is pulled back
+      // far enough that the whole panel stays on screen.
+      const ddW = Math.min(Math.max(rect.width, 360), 520, window.innerWidth - 16);
+      const ddL = Math.max(8, Math.min(rect.left, window.innerWidth - ddW - 8));
+      dd.style.cssText = 'position:fixed;top:' + (rect.bottom + 4) + 'px;left:' + ddL
+        + 'px;width:' + ddW + 'px;max-height:60vh;overflow-y:auto;padding:0';
       dd.innerHTML = html;
       document.body.appendChild(dd);
       _searchDropdown = dd;
