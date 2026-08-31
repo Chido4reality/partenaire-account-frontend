@@ -686,7 +686,13 @@
     .section-tabs {
       display: flex; gap: 4px; border-bottom: 1px solid var(--border-subtle);
       margin-bottom: 14px;
+      overflow-x: auto; -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
     }
+    .section-tabs::-webkit-scrollbar { display: none; }
+    /* Without this the tabs shrink into unreadable slivers instead of
+       scrolling — a flex item's default min-width is what lets it be squashed. */
+    .section-tab { flex: 0 0 auto; }
     .section-tab {
       padding: 9px 14px; background: transparent; border: none;
       color: var(--text-secondary); font-size: 13px; font-weight: 500;
@@ -709,7 +715,7 @@
       display: grid; grid-template-columns: 2fr 1fr; gap: 16px;
       margin: 20px 0;
     }
-    @media (max-width: 900px) { .charts-row { grid-template-columns: 1fr; } }
+    @media (max-width: 900px) { .charts-row { grid-template-columns: minmax(0, 1fr); } }
     .chart-card { padding: 18px 20px; }
     .chart-card-title { font-size: 14px; font-weight: 700; margin-bottom: 12px; }
     .chart-empty { text-align: center; color: var(--text-muted); font-size: 13px; padding: 40px 0; }
@@ -751,7 +757,7 @@
       display: grid; grid-template-columns: 1fr 1.5fr 1.5fr 1fr 1fr auto;
       gap: 12px; align-items: end;
     }
-    @media (max-width: 1100px) { .al-filter-grid { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 1100px) { .al-filter-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
     .al-filter-actions { display: flex; gap: 8px; align-items: flex-end; }
     .al-scroll-foot { padding: 14px; text-align: center; border-top: 1px solid var(--border-subtle); }
 
@@ -2525,11 +2531,20 @@
       // (marketers get redirected on boot) — not only from tapping a link, so
       // the drawer is closed here rather than only in the click handler.
       closeNavDrawer();
-      // Name the section in the mobile bar. Read from the active link so the
-      // label never has to be repeated in a second lookup table.
+      // Name the section in the mobile bar. Prefer the active nav link's label,
+      // so the wording never has to be repeated in a second lookup table.
+      // Not every route HAS a link though — subscription-requests is a retired
+      // nav entry still reachable by hash — so fall back to the route's own
+      // page title before the generic app name, or the bar just says
+      // "Admin portal" and the one place telling you where you are goes blank.
       const mtTitle = $('mt-title');
-      const activeLink = document.querySelector('.sb-link.active .sb-link-label');
-      if (mtTitle) mtTitle.textContent = activeLink ? activeLink.textContent : 'Admin portal';
+      if (mtTitle) {
+        const activeLink = document.querySelector('.sb-link.active .sb-link-label');
+        const routeTitle = document.querySelector('#route-' + route + ' .page-title');
+        mtTitle.textContent = (activeLink && activeLink.textContent)
+          || (routeTitle && routeTitle.textContent)
+          || 'Admin portal';
+      }
       // Per-route side effects
       if (route === 'dashboard')          loadDashboard();
       if (route === 'live')               loadLive();

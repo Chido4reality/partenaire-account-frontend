@@ -77,8 +77,18 @@ for (const wire of ["nav-burger", "nav-scrim", "aria-expanded", "aria-controls=\
   check(`drawer is wired: ${wire}`, html.includes(wire));
 }
 check("Escape closes the drawer", /e\.key === 'Escape'\) closeNavDrawer/.test(html));
+// Scope to navigateTo's actual body rather than a character-distance window:
+// a proximity check fails the moment someone adds a comment near it, which
+// makes the gate look broken when the code is fine.
+const navFn = (() => {
+  const start = html.indexOf("function navigateTo(route, opts) {");
+  const end = html.indexOf(String.fromCharCode(10) + "    function ", start + 10);
+  return start < 0 ? "" : html.slice(start, end > 0 ? end : start + 4000);
+})();
 check("a route change closes it (hash edit / Back / redirect, not just a tap)",
-  /closeNavDrawer\(\);[\s\S]{0,400}mt-title/.test(html));
+  navFn.includes("closeNavDrawer()"), navFn ? "found in navigateTo" : "navigateTo not located");
+check("…and the mobile title is set there too, with a fallback for link-less routes",
+  navFn.includes("mt-title") && navFn.includes("page-title"));
 
 // ── 3. run the REAL wrapTables() over a real DOM ───────────────────────────
 const blocks = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
