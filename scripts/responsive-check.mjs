@@ -63,11 +63,14 @@ check("the mobile grid column may shrink as well",
 // ── 2. the drawer is the SAME nav, not a copy ──────────────────────────────
 const asideCount = (html.match(/<aside class="sidebar"/g) || []).length;
 check("exactly ONE sidebar element exists", asideCount === 1, `${asideCount} found`);
-const navLists = (html.match(/class="sb-link"/g) || []).length;
+// Count LIVE links only: one .sb-link sits inside an HTML comment, so the raw
+// occurrence count (24) overstates what the DOM actually holds (23).
+const liveHtml = html.replace(/<!--[\s\S]*?-->/g, "");
+const navLists = (liveHtml.match(/class="sb-link"/g) || []).length;
 const bodyHtml = html.slice(html.indexOf("<body>"));
 const drawerDupe = /id="mobile-nav"|class="mobile-nav-list"|sb-link-mobile/.test(bodyHtml);
 check("no duplicated mobile nav list (role scoping would need doing twice)",
-  !drawerDupe, `${navLists} sb-link nodes, all in the one sidebar`);
+  !drawerDupe, `${navLists} live sb-link nodes, all in the one sidebar`);
 check("the drawer toggles the same #sidebar element",
   /\$\('sidebar'\)/.test(html) && /sb\.classList\.toggle\('open'/.test(html));
 for (const wire of ["nav-burger", "nav-scrim", "aria-expanded", "aria-controls=\"sidebar\""]) {
