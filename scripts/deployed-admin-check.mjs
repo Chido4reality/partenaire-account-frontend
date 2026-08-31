@@ -31,7 +31,9 @@ const MARKERS = [
   ["sb-link-mymarketing",           "the My marketing nav link"],
   ["route-my-marketing",            "the marketing screen section"],
   ['value="marketer"',              "Marketer option in the role dropdowns"],
-  ["roleEl.textContent = 'Marketer'", "the sidebar badge saying Marketer, not ADMIN"],
+  // Wrapped in the translator since the French pass — pin the call, not the
+  // bare literal, or this fails the moment a string becomes translatable.
+  ["roleEl.textContent = i18n('Marketer')", "the sidebar badge saying Marketer, not ADMIN"],
   ["loadMyMarketing",               "the marketing screen loader"],
 ];
 
@@ -66,7 +68,7 @@ for (const [name, url] of HOSTS) {
     continue;
   }
   bodies[name] = body;
-  console.log(`  served ${body.length} bytes`);
+  console.log(`  served ${body.length} chars`);
   for (const [marker, why] of MARKERS) {
     check(`${name}: serves ${why}`, body.includes(marker), body.includes(marker) ? "" : `missing "${marker}"`);
   }
