@@ -130,8 +130,17 @@ export default function MyRequestsPage() {
   // → dead sale) that this whole redesign exists to remove.
   const resendMut = useMutation({
     mutationFn: async (row) => {
+      // MP-APPROVAL-AGED-OUT: an aged-out grant can be ANY action type, not just
+      // a cart. This used to read payload.sale_request unconditionally and throw
+      // "no_sale_request" for a void/refund/expense — surfaced to the cashier as
+      // "check your connection", which is both untrue and unactionable.
       const saleReq = row?.payload?.sale_request;
-      if (!saleReq) throw new Error("no_sale_request");
+      if (row?.action_type !== "bundled_sale" || !saleReq) {
+        // The server clones the request and retires the original in one call.
+        return api.post(`/staff/approvals/${row.id}/resend`).then((r) => r.data);
+      }
+      // A cart goes back through the sales endpoint so stock and price are
+      // re-checked and the new bundle covers whatever is true NOW.
       const fresh = await api.post("/sales/bundled-approval-request", saleReq).then((r) => r.data);
       // Retire the old approval so the cashier is never holding two live requests
       // for one order. Best-effort: the new request is what matters.
@@ -283,16 +292,22 @@ export default function MyRequestsPage() {
                 <div style={{ marginTop: 10, padding: "11px 13px", borderRadius: 10,
                   background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.45)" }}>
                   <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fbbf24" }}>
-                    {en ? "Not completed — something changed" : "Non finalisée — quelque chose a changé"}
+                    {refusal.code === "approval_aged_out"
+                      ? (en ? "Not completed — the approval expired" : "Non finalisée — l'accord a expiré")
+                      : (en ? "Not completed — something changed" : "Non finalisée — quelque chose a changé")}
                   </div>
                   {refusalSentences(refusal, en).map((s, k) => (
                     <div key={k} style={{ fontSize: 13, color: "var(--text-secondary)",
                       marginTop: 5, lineHeight: 1.5 }}>• {s}</div>
                   ))}
                   <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 7, lineHeight: 1.45 }}>
-                    {en
-                      ? "Nothing was sold and no stock moved. Send it to the boss again, or change the order."
-                      : "Rien n'a été vendu et le stock n'a pas bougé. Renvoyez la demande au patron, ou modifiez la commande."}
+                    {refusal.code === "approval_aged_out"
+                      ? (en
+                        ? "Nothing was done and no stock moved. Sending it again asks the boss to confirm — you do not need to start over."
+                        : "Rien n'a été fait et le stock n'a pas bougé. Renvoyer la demande redemande l'accord du patron — inutile de recommencer.")
+                      : (en
+                        ? "Nothing was sold and no stock moved. Send it to the boss again, or change the order."
+                        : "Rien n'a été vendu et le stock n'a pas bougé. Renvoyez la demande au patron, ou modifiez la commande.")}
                   </div>
                   {/* EXACTLY TWO EXITS. No owner-PIN prompt here, by design. */}
                   <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
@@ -301,10 +316,12 @@ export default function MyRequestsPage() {
                       onClick={() => { setResendingId(r.id); resendMut.mutate(r); }}>
                       {resendingId === r.id ? "..." : (en ? "Send again to the boss" : "Renvoyer au patron")}
                     </button>
-                    <button className="btn btn-secondary" style={{ flex: 1 }}
-                      onClick={() => navigate("/pos")}>
-                      {en ? "Change the order" : "Modifier la commande"}
-                    </button>
+                    {["bundled_sale", "discount", "credit_sale", "oversell"].includes(r.action_type) && (
+                      <button className="btn btn-secondary" style={{ flex: 1 }}
+                        onClick={() => navigate("/pos")}>
+                        {en ? "Change the order" : "Modifier la commande"}
+                      </button>
+                    )}
                   </div>
                 </div>
               )}

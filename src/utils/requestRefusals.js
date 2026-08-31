@@ -106,8 +106,29 @@ export function parseServerRefusal(executionError) {
 // still renders instead of vanishing.
 export function resolveRefusal(row, localMap) {
   return parseServerRefusal(row && row.execution_error)
+    || agedOutRefusal(row)
     || (localMap && localMap[row && row.id])
     || null;
+}
+
+// ── MP-APPROVAL-AGED-OUT ────────────────────────────────────────────────────
+// The server flags a stale grant on the LIST (grant_aged_out), before the
+// cashier has tried anything. Without this the row would still read "Approved"
+// with a Complete button, and the only way to discover it is dead would be to
+// press it at the counter with a customer waiting — which is the exact failure
+// the scoped-grant refusal was built to remove.
+//
+// `grant_aged_out` is computed server-side on purpose: duplicating the TTL here
+// would drift the moment either side moved.
+export function agedOutRefusal(row) {
+  if (!row || row.grant_aged_out !== true) return null;
+  return {
+    at: Date.parse(row.decided_at) || Date.now(),
+    code: "approval_aged_out",
+    actions: [], items: [],
+    message_en: null, message_fr: null,   // wording comes from refusalSentences
+    source: "aged_out",
+  };
 }
 
 // ── IS THIS A REFUSAL, OR IS THE NETWORK DOWN? ──────────────────────────────
@@ -123,6 +144,7 @@ const REFUSAL_CODES = new Set([
   "approval_ceiling_exceeded",
   "price_below_floor_now",
   "approval_no_longer_covers",
+  "approval_aged_out",   // MP-APPROVAL-AGED-OUT
 ]);
 
 export function isRefusal(err) {
@@ -143,6 +165,15 @@ export function refusalSentences(refusal, en) {
   const out = [];
   const actions = (refusal && refusal.actions) || [];
   const q = (s) => (en ? `"${s}"` : `« ${s} »`);
+
+  // MP-APPROVAL-AGED-OUT: carries no actions[] — nothing about the ORDER
+  // changed, the approval simply got old — so it is answered from the code
+  // rather than falling through to the generic "something changed".
+  if (refusal && refusal.code === "approval_aged_out") {
+    return [en
+      ? "The boss approved this a while ago and the approval has gone stale. Send it again to get a fresh one."
+      : "Le patron a approuvé ceci il y a un moment et l'accord n'est plus valable. Renvoyez la demande pour en obtenir un nouveau."];
+  }
 
   for (const a of actions) {
     if (!a || !a.type) continue;
