@@ -1,52 +1,44 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
+import { getNetworkStatus, onNetworkChange } from './network';
 
-// MP-CUSTOM-API-DOMAIN: point the connectivity probe at the SAME host the app calls
-// (custom domain), so a future Frankfurt DNS flip on api.partenairedozie.com moves the
-// health check with it. Falls back to the configured API base, then the custom domain.
-const HEALTH_URL = ((import.meta.env.VITE_API_URL || "https://api.partenairedozie.com/api").replace(/\/+$/, "")) + "/health";
-
+// MP-ONE-HEALTH-SIGNAL: this hook used to run its OWN health poll — a HEAD
+// /health every 3 seconds with a 2.5s abort. That was 20 requests/minute for as
+// long as VoidReturnModal or TicketListPage was mounted, i.e. exactly while a
+// cashier is mid-void on a bad link and the real request needs the bandwidth.
+//
+// It was also a SECOND, independent notion of "online", with its own URL and its
+// own threshold, and its result never fed `degraded` in network.js. So the app
+// could believe it was online here while the write path had already decided the
+// link was degraded, or the reverse. One signal, one source of truth.
+//
+// Now it reads the shared status from utils/network.js: one read on mount, then
+// event-driven updates via onNetworkChange (Capacitor Network events on native,
+// the navigator/ping path on web). No timer of its own.
+//
+// API is unchanged on purpose — consumers still destructure { isOnline } — so
+// this is a transport swap, not a behaviour change at the call sites.
 export function useNetworkStatus() {
   const [isOnline, setIsOnline] = useState(true);
 
-  const checkRealConnection = useCallback(async () => {
-    try {
-      const controller = new AbortController();
-      const tid = setTimeout(() => controller.abort(), 2500);
-      const res = await fetch(HEALTH_URL, {
-        method: 'HEAD', cache: 'no-store', signal: controller.signal
-      });
-      clearTimeout(tid);
-      return res.ok;
-    } catch {
-      return false;
-    }
-  }, []);
-
   useEffect(() => {
-    const goOnline = async () => {
-      const real = await checkRealConnection();
-      setIsOnline(real);
-    };
-    const goOffline = () => setIsOnline(false);
+    let alive = true;
 
-    window.addEventListener('online', goOnline);
-    window.addEventListener('offline', goOffline);
+    // Seed from the shared status rather than assuming online, so a screen
+    // opened while already offline renders its blocked state on first paint.
+    getNetworkStatus()
+      .then((s) => { if (alive) setIsOnline(!!s.connected); })
+      .catch(() => { /* shared status unavailable: leave the optimistic default */ });
 
-    // Check every 3 seconds for faster detection
-    const interval = setInterval(async () => {
-      const real = await checkRealConnection();
-      setIsOnline(real);
-    }, 3000);
-
-    // Initial check
-    checkRealConnection().then(setIsOnline);
+    const unsub = onNetworkChange((s) => { if (alive) setIsOnline(!!s.connected); });
 
     return () => {
-      window.removeEventListener('online', goOnline);
-      window.removeEventListener('offline', goOffline);
-      clearInterval(interval);
+      alive = false;
+      // onNetworkChange returns its unsubscribe; guard in case that ever changes.
+      if (typeof unsub === 'function') unsub();
     };
-  }, [checkRealConnection]);
+  }, []);
 
   return { isOnline };
 }
+
+export default useNetworkStatus;
