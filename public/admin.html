@@ -944,7 +944,7 @@
   <div id="login-screen" class="auth-screen">
     <form class="auth-card" id="login-form" method="post" action="javascript:void(0)" autocomplete="on" novalidate>
       <div class="auth-brand">
-        <div class="auth-brand-logo">PARTENAIRE<span class="sparkle">✦</span></div>
+        <div class="auth-brand-logo">STENAMO ADMIN<span class="sparkle">✦</span></div>
         <div class="auth-brand-tag">Admin portal</div>
       </div>
       <div class="auth-field">
@@ -968,7 +968,7 @@
     <div class="nav-scrim" id="nav-scrim"></div>
     <aside class="sidebar" id="sidebar">
       <div class="sb-brand">
-        <div class="sb-brand-logo">PARTENAIRE<span class="sparkle">✦</span></div>
+        <div class="sb-brand-logo">STENAMO ADMIN<span class="sparkle">✦</span></div>
         <div class="sb-brand-tag">Admin portal</div>
       </div>
 
@@ -995,7 +995,7 @@
       </template>
 
       <input class="sb-search" id="sb-search" type="search" autocomplete="off"
-             placeholder="Search businesses, sales (VNT), Dozie orders (QOF)…" />
+             placeholder="Search businesses, sales (VNT), Stenamo Market orders (QOF)…" />
 
       <nav class="sb-nav" id="sb-nav">
         <a class="sb-link" data-route="dashboard"><span class="sb-link-icon">🏠</span><span class="sb-link-label">Dashboard</span></a>
@@ -1017,7 +1017,7 @@
         <div class="sb-section">Stenamo Market</div>
         <a class="sb-link" data-route="marketplace-users"><span class="sb-link-icon">👥</span><span class="sb-link-label">Marketplace users</span></a>
         <a class="sb-link" data-route="verifications"><span class="sb-link-icon">✅</span><span class="sb-link-label">Verifications</span></a>
-        <a class="sb-link" data-route="dozie-subscriptions"><span class="sb-link-icon">🎟️</span><span class="sb-link-label">Dozie subscriptions</span></a>
+        <a class="sb-link" data-route="dozie-subscriptions"><span class="sb-link-icon">🎟️</span><span class="sb-link-label">Stenamo Market subscriptions</span></a>
         <a class="sb-link" data-route="orders"><span class="sb-link-icon">🛒</span><span class="sb-link-label">Orders</span></a>
         <a class="sb-link" data-route="disputes"><span class="sb-link-icon">⚖️</span><span class="sb-link-label">Disputes</span></a>
         <a class="sb-link" data-route="marketplace-finance"><span class="sb-link-icon">💰</span><span class="sb-link-label">Marketplace finance</span></a>
@@ -1088,13 +1088,13 @@
 
         <div class="card">
           <div class="settings-card-title">🟢 Online now — <span id="live-online-count">0</span></div>
-          <div class="settings-card-sub">Logged-in users (MP owners/cashiers + Dozie buyers/sellers) active in the last 5 minutes.</div>
+          <div class="settings-card-sub">Logged-in users (MP owners/cashiers + Stenamo Market buyers/sellers) active in the last 5 minutes.</div>
           <div class="activity-list" id="live-online-list"><div class="activity-empty">Loading…</div></div>
         </div>
 
         <div class="card">
           <div class="settings-card-title">Activity feed</div>
-          <div class="settings-card-sub">Recent logins, signups, MP sales and Dozie orders — newest first (last 24h).</div>
+          <div class="settings-card-sub">Recent logins, signups, MP sales and Stenamo Market orders — newest first (last 24h).</div>
           <div class="activity-list" id="live-feed-list"><div class="activity-empty">Loading…</div></div>
         </div>
       </section>
@@ -1354,7 +1354,7 @@
         <div class="page-head">
           <div>
             <div class="page-title">Orders</div>
-            <div class="page-sub">Dozie marketplace orders, escrow, and refunds.</div>
+            <div class="page-sub">Stenamo Market orders, escrow, and refunds.</div>
           </div>
           <button class="btn" id="dz-orders-refresh">Refresh</button>
         </div>
@@ -1420,8 +1420,8 @@
       <section class="route" id="route-dozie-subscriptions">
         <div class="page-head">
           <div>
-            <div class="page-title">Dozie subscriptions</div>
-            <div class="page-sub">Standalone Dozie subs — free tier + 3 000 FCFA / month paid tier. MP-linked sellers are tracked under Businesses.</div>
+            <div class="page-title">Stenamo Market subscriptions</div>
+            <div class="page-sub">Standalone Stenamo Market subs — free tier + 3 000 FCFA / month paid tier. MP-linked sellers are tracked under Businesses.</div>
           </div>
           <button class="btn" id="ds-export-btn">Export payments CSV</button>
         </div>
@@ -1465,8 +1465,8 @@
           <div id="sr-categories" style="margin-top:8px">…</div>
         </div>
         <div class="settings-card" style="margin-top:16px">
-          <div class="settings-card-title">Cities (location catalog + Dozie sell rules)</div>
-          <div class="settings-card-sub">Per-country canonical city list — one source for the shop-location dropdown AND Dozie selling. <b>In dropdown</b> = selectable as a shop location. <b>Can sell</b> = Dozie selling allowed there (default-allow). <b>Lite plan</b> = available to Lite-tier Dozie sellers (Pro/Pro+ get all).</div>
+          <div class="settings-card-title">Cities (location catalog + Stenamo Market sell rules)</div>
+          <div class="settings-card-sub">Per-country canonical city list — one source for the shop-location dropdown AND Stenamo Market selling. <b>In dropdown</b> = selectable as a shop location. <b>Can sell</b> = Stenamo Market selling allowed there (default-allow). <b>Lite plan</b> = available to Lite-tier Stenamo Market sellers (Pro/Pro+ get all).</div>
           <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
             <select id="sr-town-country" style="min-width:140px">
               <option value="Cameroun">Cameroun</option>
@@ -1504,13 +1504,13 @@
         <div class="page-head">
           <div>
             <div class="page-title">Marketplace finance</div>
-            <div class="page-sub">Marketplace activity — GMV, escrow, and Dozie seller engagement.</div>
+            <div class="page-sub">Marketplace activity — GMV, escrow, and Stenamo Market seller engagement.</div>
           </div>
           <button class="btn" id="dz-fin-refresh">Refresh</button>
         </div>
         <div class="stat-strip" id="dz-fin-strip">
           <div class="stat-card">
-            <div class="stat-label">Active Dozie sellers</div>
+            <div class="stat-label">Active Stenamo Market sellers</div>
             <div class="stat-value muted">…</div>
             <div class="stat-sub muted" id="dz-fin-sub-sellers">—</div>
           </div>
@@ -1546,7 +1546,7 @@
         <div class="page-head">
           <div>
             <div class="page-title">Broadcasts</div>
-            <div class="page-sub">Send targeted announcements to MP or Dozie users. Push dispatch lands in a later phase.</div>
+            <div class="page-sub">Send targeted announcements to MP or Stenamo Market users. Push dispatch lands in a later phase.</div>
           </div>
           <button class="btn btn-primary" id="bc-new-btn">+ New broadcast</button>
         </div>
@@ -1888,7 +1888,7 @@
         <div class="card" style="padding:0;overflow:hidden">
           <table class="data-table" id="cr-table">
             <thead><tr>
-              <th>Dozie ref</th><th>Entry total</th><th>Cart started</th><th>Candidate sales (≤10 min)</th>
+              <th>Stenamo Market ref</th><th>Entry total</th><th>Cart started</th><th>Candidate sales (≤10 min)</th>
             </tr></thead>
             <tbody id="cr-tbody"><tr><td colspan="4" class="muted ta-center" style="padding:20px">Loading…</td></tr></tbody>
           </table>
@@ -3315,7 +3315,7 @@
 
     const STAT_CARDS = [
       { key: 'totalBusinesses',       label: 'Total businesses',          fmt: 'num' },
-      { key: 'totalDozieUsers',       label: 'Dozie users',               fmt: 'num',  zeroAsDash: true },
+      { key: 'totalDozieUsers',       label: 'Stenamo Market users',               fmt: 'num',  zeroAsDash: true },
       { key: 'pendingMPPayments',     label: 'Pending MP payments',       fmt: 'num' },
       { key: 'pendingVerifications',  label: 'Pending verifications',     fmt: 'num',  zeroAsDash: true },
       { key: 'openDisputes',          label: 'Open disputes',             fmt: 'num',  zeroAsDash: true },
@@ -5145,7 +5145,7 @@
           extras += `<button class="btn" style="margin-top:8px" data-mp-jump="${escapeHtml(mp.mp_id || '')}">Open in Businesses →</button>`;
         }
       } else if (status === 'no_mp_account') {
-        extras = `<div class="settings-card-sub" style="margin-top:6px">This seller has no linked Stenamo Book account — they registered for Dozie only.</div>`;
+        extras = `<div class="settings-card-sub" style="margin-top:6px">This seller has no linked Stenamo Book account — they registered for Stenamo Market only.</div>`;
       }
       const card = `
         <div class="card" style="background:var(--bg-tertiary);margin-top:12px">
@@ -5791,7 +5791,7 @@
         // Card 3: Escrow held now + MP-sub-attributed MTD revenue context.
         set(3, fmtFCFA(s.escrow_held_now));
         $('dz-fin-sub-escrow').textContent =
-          `MP-sub revenue from Dozie sellers (MTD): ${fmtFCFA(s.dozie_seller_mp_revenue_mtd)}`;
+          `MP-sub revenue from Stenamo Market sellers (MTD): ${fmtFCFA(s.dozie_seller_mp_revenue_mtd)}`;
 
         if (!window.Chart) {
           await new Promise((resolve) => { const t = () => window.Chart ? resolve() : setTimeout(t, 100); t(); });
@@ -5918,11 +5918,11 @@
         title: 'Stenamo Market',
         kinds: [
           { key: 'users',      heading: 'Users',       label: u => (u.name || '—') + (u.phone ? ' · ' + u.phone : ''),
-            sub:   u => 'Dozie ' + (u.role || 'user') + (u.city ? ' · ' + u.city : '') },
+            sub:   u => 'Stenamo Market ' + (u.role || 'user') + (u.city ? ' · ' + u.city : '') },
           { key: 'orders',     heading: 'Orders',      label: o => o.order_ref || '—',
-            sub:   o => 'Dozie order · ' + (o.status || '—') },
+            sub:   o => 'Stenamo Market order · ' + (o.status || '—') },
           { key: 'listings',   heading: 'Listings',    label: l => l.name || '—',
-            sub:   l => 'Dozie listing · ' + (l.category || '—') }
+            sub:   l => 'Stenamo Market listing · ' + (l.category || '—') }
         ]
       }
     ];
@@ -6053,7 +6053,7 @@
           : 'none capped';
         renderDsTable(rows);
       } catch (e) {
-        showToast('Dozie subs load failed: ' + e.message, 'danger');
+        showToast('Stenamo Market subs load failed: ' + e.message, 'danger');
       }
     }
 
@@ -6836,7 +6836,7 @@
       }
       const audienceLabel = (b) => {
         const app = b.audience_app === 'mon_partenaire' ? 'MP'
-                  : b.audience_app === 'partenaire_dozie' ? 'Dozie' : 'MP + Dozie';
+                  : b.audience_app === 'partenaire_dozie' ? 'Stenamo Market' : 'MP + Stenamo Market';
         const filter = b.audience_filter || {};
         const bits = [];
         if (Array.isArray(filter.plan) && filter.plan.length) bits.push(filter.plan.join('/'));
@@ -6915,7 +6915,7 @@
             </select>
           </div>
           <div id="bc-dz-filters" class="field">
-            <label>Dozie role</label>
+            <label>Stenamo Market role</label>
             <select id="bc-role">
               <option value="">Both buyers + sellers</option>
               <option value="buyer"${filter.dozie_role === 'buyer'  ? ' selected' : ''}>Buyer</option>
