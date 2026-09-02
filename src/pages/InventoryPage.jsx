@@ -376,8 +376,22 @@ export default function InventoryPage() {
   // and create the (product, location) row on first real movement).
   const isPhantomStockRow = (s) =>
     (Number(s.quantity) || 0) === 0 && !s.last_moved_at && !s.last_movement_type;
+  // MP-ZERO-STOCK-INVISIBLE (Paul): hiding every phantom row made a product whose
+  // rows are ALL phantom vanish from Inventory completely — it read as "this
+  // product does not exist" while Rapid Entry / POS search (GET /products, which
+  // joins stock rather than being driven by it) still showed it at quantity 0.
+  // An owner reads "doesn't exist" as deleted, not as out-of-stock, and re-creates
+  // a duplicate instead of restocking.
+  //
+  // "Don't list it where it doesn't live" only means anything if it lives
+  // somewhere, so a phantom row is dropped ONLY when the backend says the product
+  // has a real row elsewhere (lives_elsewhere). A product that lives nowhere keeps
+  // its rows and shows honestly at 0. `=== true` is deliberate: against a backend
+  // that predates the field it reads undefined, nothing is hidden, and a product
+  // can never disappear — the safe direction for a frontend-first deploy.
+  const isHiddenPlacement = (s) => isPhantomStockRow(s) && s.lives_elsewhere === true;
   // Backend handles search globally; drop only phantom placements for display.
-  const filtered = stock.filter(s => !isPhantomStockRow(s));
+  const filtered = stock.filter(s => !isHiddenPlacement(s));
   const filteredProducts = search ? products.filter(p => fuzzyMatch(p.name, search) || (p.barcode && p.barcode.includes(search)) || (p.sku && p.sku.toLowerCase().includes(search.toLowerCase()))) : products;
 
   const totalStockValue = isOwner ? stock.reduce((sum, s) => sum + (+s.quantity * +(s.pa_products?.cost_price || 0)), 0) : 0;

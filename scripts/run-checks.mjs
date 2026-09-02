@@ -28,6 +28,9 @@ const CHECKS = [
   ["marketer-i18n", "scripts/marketer-i18n-check.mjs",   "every marketer string has a French entry — a miss FAILS instead of rendering English"],
   ["responsive",    "scripts/responsive-check.mjs",      "wide tables scroll instead of clipping; the drawer reuses the ONE nav"],
   ["deployed",      "scripts/deployed-admin-check.mjs",  "the LIVE hosts actually serve the marketer UI (needs network)"],
+  // MP-ZERO-STOCK-INVISIBLE: InventoryPage had no render coverage at all, so a
+  // product that vanished from the Stock tab looked identical to a green suite.
+  ["zero-stock",    "scripts/inventory-zero-stock-check.mjs", "a zero-stock product lists at quantity 0 instead of reading as 'does not exist'"],
 ];
 
 const results = [];
