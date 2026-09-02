@@ -3,8 +3,8 @@
 // and ESC/POS via escpos.js).
 
 // Exact advert copy — DO NOT alter the wording.
-export const ADVERT_EN = "Powered by Stenamo Business — run your shop smarter. Free on Play Store.";
-export const ADVERT_FR = "Propulsé par Stenamo Business — gérez votre boutique. Gratuit sur Play Store.";
+export const ADVERT_EN = "Powered by Stenamo Book — run your shop smarter. Free on Play Store.";
+export const ADVERT_FR = "Propulsé par Stenamo Book — gérez votre boutique. Gratuit sur Play Store.";
 
 // Whether the org's advert should be French-then-English (Cameroun) vs English
 // only (Nigeria / unknown). Gate PRIMARILY on currency — a controlled 3-letter
@@ -34,8 +34,8 @@ export function advertLines(org) {
 // MP-RECEIPT-DOWNLOAD-QR — a small "scan to download the app" QR in the advert
 // footer. EXACT Play Store URL (encoded as-is in the QR).
 export const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.partenaire.monpartenaire";
-const DL_CAPTION_EN = "Scan to download Stenamo Business";
-const DL_CAPTION_FR = "Scannez pour télécharger Stenamo Business";
+const DL_CAPTION_EN = "Scan to download Stenamo Book";
+const DL_CAPTION_FR = "Scannez pour télécharger Stenamo Book";
 
 // Whether the app-download QR block should print — ONLY when the advert is on
 // (it is part of the advert). Same toggle as advertLines().

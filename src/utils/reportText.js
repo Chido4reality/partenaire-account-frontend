@@ -103,7 +103,7 @@ export function buildLedgerText(ledger, lang) {
   }
 
   L.push("");
-  L.push("— Stenamo Business POS");
+  L.push("— Stenamo Book POS");
   return L.join("\n");
 }
 
@@ -299,7 +299,7 @@ export function buildLedgerTextV2(ledger, lang) {
   }
 
   L.push("");
-  L.push("— Stenamo Business POS");
+  L.push("— Stenamo Book POS");
   return L.join("\n");
 }
 

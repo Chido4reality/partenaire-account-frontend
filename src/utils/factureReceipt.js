@@ -338,7 +338,7 @@ export function buildThermalReceipt({
        </div>`
     : "";
 
-  // MP-RECEIPT-ADVERT: text-only "Powered by Stenamo Business" at the very bottom,
+  // MP-RECEIPT-ADVERT: text-only "Powered by Stenamo Book" at the very bottom,
   // language by org country; wraps within the roll width. Omitted when toggled off.
   const adverts = advertLines(org);
   // MP-RECEIPT-DOWNLOAD-QR: small app-download QR + caption, part of the advert

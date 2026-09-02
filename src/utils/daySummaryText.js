@@ -14,7 +14,7 @@ export function buildDaySummaryText(content, { lang, fmt, shopName, dateLabel })
     things_to_check, has_daily,
   } = content || {};
 
-  const L = [`📊 ${shopName || "Stenamo Business"} — ${dateLabel}`];
+  const L = [`📊 ${shopName || "Stenamo Book"} — ${dateLabel}`];
   if (Number(sale_count) > 0) {
     L.push(`${en ? "Sales" : "Ventes"}: ${fmt(sales)} (${sale_count})`);
     L.push(`${en ? "Margin" : "Marge"}: ${margin_pct}%`);

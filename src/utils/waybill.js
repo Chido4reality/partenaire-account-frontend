@@ -146,7 +146,7 @@ export async function openWaybill({ org = {}, lang = "fr", transfer = {}, fromNa
   // ── Footer ──────────────────────────────────────────────────────────────────
   doc.setFont("helvetica", "italic").setFontSize(8).setTextColor(120);
   const footParts = [org.name, tel, addr].filter(Boolean);
-  const foot = footParts.join(" · ") || "Stenamo Business";
+  const foot = footParts.join(" · ") || "Stenamo Book";
   doc.text(foot, PAGE_W / 2, PAGE_H - 12, { align: "center", maxWidth: CW });
 
   // ── Deliver ─────────────────────────────────────────────────────────────────
