@@ -1001,7 +1001,7 @@
         <a class="sb-link" data-route="dashboard"><span class="sb-link-icon">🏠</span><span class="sb-link-label">Dashboard</span></a>
         <a class="sb-link" data-route="live"><span class="sb-link-icon">📡</span><span class="sb-link-label">Live Traffic</span></a>
 
-        <div class="sb-section">Stenamo Business</div>
+        <div class="sb-section">Stenamo Book</div>
         <a class="sb-link" data-route="businesses"><span class="sb-link-icon">🏪</span><span class="sb-link-label">Businesses</span></a>
         <a class="sb-link" data-route="subscriptions"><span class="sb-link-icon">💳</span><span class="sb-link-label">Subscriptions</span></a>
         <a class="sb-link" data-route="subscription-discounts" id="sb-link-subdiscounts"><span class="sb-link-icon">🏷️</span><span class="sb-link-label">Plan discounts</span></a>
@@ -1055,7 +1055,7 @@
         <div class="page-head">
           <div>
             <div class="page-title">Dashboard</div>
-            <div class="page-sub">Live snapshot across Stenamo Business and Stenamo Market.</div>
+            <div class="page-sub">Live snapshot across Stenamo Book and Stenamo Market.</div>
           </div>
           <button class="btn" id="dashboard-refresh">Refresh</button>
         </div>
@@ -1078,7 +1078,7 @@
         <div class="page-head">
           <div>
             <div class="page-title">Live Traffic</div>
-            <div class="page-sub">Logged-in users online now + a live activity feed across Stenamo Business and Stenamo Market. Auto-refreshes every 7s.</div>
+            <div class="page-sub">Logged-in users online now + a live activity feed across Stenamo Book and Stenamo Market. Auto-refreshes every 7s.</div>
           </div>
           <div style="display:flex;gap:10px;align-items:center">
             <span class="page-sub" id="live-updated"></span>
@@ -1104,7 +1104,7 @@
         <div class="page-head">
           <div>
             <div class="page-title">Businesses</div>
-            <div class="page-sub">Stenamo Business orgs — plans, status, owner controls.</div>
+            <div class="page-sub">Stenamo Book orgs — plans, status, owner controls.</div>
           </div>
           <div style="display:flex; gap:8px">
             <button class="btn" id="biz-refresh">Refresh</button>
@@ -1243,7 +1243,7 @@
         <div class="page-head">
           <div>
             <div class="page-title">MP Finance</div>
-            <div class="page-sub">Revenue, MRR, ARPU, and trends for the Stenamo Business subscription business.</div>
+            <div class="page-sub">Revenue, MRR, ARPU, and trends for the Stenamo Book subscription business.</div>
           </div>
           <button class="btn" id="finance-refresh">Refresh</button>
         </div>
@@ -1806,14 +1806,14 @@
         <div class="page-head">
           <div>
             <div class="page-title">Audit log</div>
-            <div class="page-sub">Unified history of admin actions across Stenamo Business and Stenamo Market.</div>
+            <div class="page-sub">Unified history of admin actions across Stenamo Book and Stenamo Market.</div>
           </div>
           <button class="btn" id="al-export-btn">Export CSV</button>
         </div>
         <div class="card" id="al-filter-card" style="margin-bottom:16px">
           <div class="al-filter-grid">
             <div class="field"><label>Source</label>
-              <select id="al-source"><option value="both">Both</option><option value="pa">Stenamo Business</option><option value="ptn">Stenamo Market (legacy)</option></select>
+              <select id="al-source"><option value="both">Both</option><option value="pa">Stenamo Book</option><option value="ptn">Stenamo Market (legacy)</option></select>
             </div>
             <div class="field"><label>Admin</label>
               <input type="text" id="al-admin-email" placeholder="email@example.com" />
@@ -5145,7 +5145,7 @@
           extras += `<button class="btn" style="margin-top:8px" data-mp-jump="${escapeHtml(mp.mp_id || '')}">Open in Businesses →</button>`;
         }
       } else if (status === 'no_mp_account') {
-        extras = `<div class="settings-card-sub" style="margin-top:6px">This seller has no linked Stenamo Business account — they registered for Dozie only.</div>`;
+        extras = `<div class="settings-card-sub" style="margin-top:6px">This seller has no linked Stenamo Book account — they registered for Dozie only.</div>`;
       }
       const card = `
         <div class="card" style="background:var(--bg-tertiary);margin-top:12px">
@@ -5901,7 +5901,7 @@
     const SEARCH_GROUPS = [
       {
         key:   'mon_partenaire',
-        title: 'Stenamo Business',
+        title: 'Stenamo Book',
         kinds: [
           { key: 'businesses', heading: 'Businesses',  label: b => (b.name || '—') + (b.mp_id ? ' · ' + b.mp_id : ''),
             sub:   b => 'Business · ' + (b.plan || '—') + ' · ' + (b.status || '—') },
@@ -6894,7 +6894,7 @@
             <textarea id="bc-body" maxlength="500" placeholder="What do you want them to know?">${escapeHtml(b.body || '')}</textarea></div>
           <div class="field"><label>Audience app</label>
             <select id="bc-app">
-              <option value="mon_partenaire"${isMP   ? ' selected' : ''}>Stenamo Business</option>
+              <option value="mon_partenaire"${isMP   ? ' selected' : ''}>Stenamo Book</option>
               <option value="partenaire_dozie"${isDz ? ' selected' : ''}>Stenamo Market</option>
               <option value="both"${isBoth ? ' selected' : ''}>Both</option>
             </select>
