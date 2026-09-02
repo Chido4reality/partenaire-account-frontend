@@ -1,7 +1,7 @@
 {
-  "name": "Partenaire Admin",
-  "short_name": "P. Admin",
-  "description": "Admin portal for the Partenaire ecosystem (verifier, finance, master-admin).",
+  "name": "Stenamo Admin",
+  "short_name": "Stenamo Admin",
+  "description": "Admin portal for the Stenamo ecosystem (verifier, finance, master-admin).",
   "start_url": "/admin.html",
   "scope": "/admin.html",
   "display": "standalone",
