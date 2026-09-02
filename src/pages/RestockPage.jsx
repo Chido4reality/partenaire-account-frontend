@@ -606,8 +606,8 @@ function SendModal({ en, orgName, promoFooter, items, supplier, onClose, onSent 
     // Reuses the SAME app-download URL as the receipt download-QR footer.
     const promo = promoFooter
       ? "\n\n" + (en
-          ? `Sent with Stenamo Business 📲 — the app I use to run my shop. Get it: ${PLAY_STORE_URL}`
-          : `Envoyé via Stenamo Business 📲 — l'appli que j'utilise pour gérer ma boutique. Téléchargez : ${PLAY_STORE_URL}`)
+          ? `Sent with Stenamo Book 📲 — the app I use to run my shop. Get it: ${PLAY_STORE_URL}`
+          : `Envoyé via Stenamo Book 📲 — l'appli que j'utilise pour gérer ma boutique. Téléchargez : ${PLAY_STORE_URL}`)
       : "";
     return `${header}\n${body}${note.trim() ? `\n\n${note.trim()}` : ""}${promo}`;
   }, [validRows, orgName, note, en, promoFooter]);

@@ -66,13 +66,13 @@ const NAV = [
   { to: "/barcodes",     en: "Labels",     fr: "Étiquettes",      icon: "🏷️", roles: ["owner","manager","warehouse"],          section: "labels" },
   { to: "/inventory",    en: "Inventory",  fr: "Inventaire",      icon: "📦", roles: ["owner","manager","warehouse"],          section: "inventory" },
   // MP-DOZIE-SELLER-MIGRATION Phase 1 — manage Dozie marketplace listings from MP.
-  { to: "/dozie-listings", en: "Dozie Listings", fr: "Annonces Dozie", icon: "🛒", roles: ["owner","manager"], section: "inventory" },
+  { to: "/dozie-listings", en: "Stenamo Market Listings", fr: "Annonces Stenamo Market", icon: "🛒", roles: ["owner","manager"], section: "inventory" },
   // MP-DOZIE-SELLER-MIGRATION Phase 2 — incoming Dozie orders in MP (+ pending badge).
-  { to: "/dozie-orders", en: "Dozie Orders", fr: "Commandes Dozie", icon: "📦", roles: ["owner","manager"], section: "inventory", badge: "dozie_orders" },
+  { to: "/dozie-orders", en: "Stenamo Market Orders", fr: "Commandes Stenamo Market", icon: "📦", roles: ["owner","manager"], section: "inventory", badge: "dozie_orders" },
   // MP-DOZIE-SELLER-MIGRATION Phase 3 — Dozie buyer chat in MP (+ unread badge).
-  { to: "/dozie-messages", en: "Dozie Messages", fr: "Messages Dozie", icon: "💬", roles: ["owner","manager"], section: "inventory", badge: "dozie_messages" },
+  { to: "/dozie-messages", en: "Stenamo Market Messages", fr: "Messages Stenamo Market", icon: "💬", roles: ["owner","manager"], section: "inventory", badge: "dozie_messages" },
   // MP-DOZIE-SELLER-MIGRATION Phase 5 — buyer disputes in MP (+ open badge).
-  { to: "/dozie-disputes", en: "Dozie Disputes", fr: "Litiges Dozie", icon: "⚠️", roles: ["owner","manager"], section: "inventory", badge: "dozie_disputes" },
+  { to: "/dozie-disputes", en: "Stenamo Market Disputes", fr: "Litiges Stenamo Market", icon: "⚠️", roles: ["owner","manager"], section: "inventory", badge: "dozie_disputes" },
   // MP-CASHIER-ROLE-GATING: cashier needs Customers for the
   // Encaisser-dette flow + on-the-fly customer creation during
   // sales. Backend collect-debt route already cashier-eligible.
@@ -1309,8 +1309,8 @@ export default function Layout() {
       }
       if (res.link_to) navigate(res.link_to);
       else toast(lang === "en"
-        ? `${res.ref} — ${res.type === "sale" ? "Sale" : "Dozie order"} · ${Number(res.total).toLocaleString()} ${fmt.symbol} · ${res.status}`
-        : `${res.ref} — ${res.type === "sale" ? "Vente" : "Commande Dozie"} · ${Number(res.total).toLocaleString()} ${fmt.symbol} · ${res.status}`,
+        ? `${res.ref} — ${res.type === "sale" ? "Sale" : "Stenamo Market order"} · ${Number(res.total).toLocaleString()} ${fmt.symbol} · ${res.status}`
+        : `${res.ref} — ${res.type === "sale" ? "Vente" : "Commande Stenamo Market"} · ${Number(res.total).toLocaleString()} ${fmt.symbol} · ${res.status}`,
         { duration: 4000 });
     };
 
@@ -1410,7 +1410,7 @@ export default function Layout() {
                     {res.type === "sale" ? (lang === "en" ? "MP Sale" : "Vente MP")
                       : res.type === "transfer" ? (lang === "en" ? "Transfer" : "Transfert")
                       : res.type === "buffer" ? (lang === "en" ? "Goods" : "Marchandises")
-                      : "Dozie"}
+                      : "Stenamo Market"}
                   </span>
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
@@ -1508,14 +1508,14 @@ export default function Layout() {
             }}
           >
             ☰
-            {/* MP SIDEBAR NOTIFICATION SIGNAL — Dozie total-unread badge on the
+            {/* MP SIDEBAR NOTIFICATION SIGNAL — Stenamo Market total-unread badge on the
                 hamburger so a seller sees the signal with the drawer closed. */}
             {(dozieNotif_.total || 0) > 0 && (
               <span style={{ position: "absolute", top: -5, right: -5, background: "#ef4444", color: "#fff", borderRadius: 10, minWidth: 16, height: 16, padding: "0 4px", fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1, boxSizing: "border-box" }}>{dozieNotif_.total > 99 ? "99+" : dozieNotif_.total}</span>
             )}
           </button>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 800, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Stenamo Business</div>
+            <div style={{ fontWeight: 800, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Stenamo Book</div>
             <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {org?.name}<ModeBadge />
             </div>
@@ -1583,7 +1583,7 @@ export default function Layout() {
         <div style={{ padding: "16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", minHeight: 60 }}>
           {!collapsed && (
             <div>
-              <div style={{ fontWeight: 800, fontSize: 14 }}>Stenamo Business</div>
+              <div style={{ fontWeight: 800, fontSize: 14 }}>Stenamo Book</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1 }}>
                 {org?.name}<ModeBadge />
               </div>

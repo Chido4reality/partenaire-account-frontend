@@ -71,7 +71,7 @@ export default function MyDozieMessagesPage() {
         <div style={{ fontSize: 40, marginBottom: 12 }}>💬</div>
         <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 8 }}>{en ? "Stenamo Market not activated" : "Stenamo Market non activé"}</div>
         <div style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 18 }}>
-          {en ? "Activate your Dozie seller profile in Settings to chat with buyers here." : "Activez votre profil vendeur Dozie dans Paramètres pour discuter avec les acheteurs ici."}
+          {en ? "Activate your Stenamo Market seller profile in Settings to chat with buyers here." : "Activez votre profil vendeur Stenamo Market dans Paramètres pour discuter avec les acheteurs ici."}
         </div>
         <Link to="/settings" className="btn btn-primary">{en ? "Go to Settings" : "Aller aux Paramètres"}</Link>
       </div>
@@ -120,9 +120,9 @@ export default function MyDozieMessagesPage() {
   // ── Conversation list ──
   return wrap(
     <div>
-      <div style={{ fontWeight: 800, fontSize: 20, marginBottom: 4 }}>{en ? "Dozie Messages" : "Messages Dozie"}</div>
+      <div style={{ fontWeight: 800, fontSize: 20, marginBottom: 4 }}>{en ? "Stenamo Market Messages" : "Messages Stenamo Market"}</div>
       <div style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 14 }}>
-        {en ? "Chat with your Stenamo Market buyers. They see your replies in the Dozie app." : "Discutez avec vos acheteurs Stenamo Market. Ils voient vos réponses dans l’app Dozie."}
+        {en ? "Chat with your Stenamo Market buyers. They see your replies in the Stenamo Market app." : "Discutez avec vos acheteurs Stenamo Market. Ils voient vos réponses dans l’app Stenamo Market."}
       </div>
       {convLoading && <div style={{ color: "var(--text-muted)" }}>{en ? "Loading…" : "Chargement…"}</div>}
       {!convLoading && !conversations.length && <div style={{ color: "var(--text-muted)" }}>{en ? "No conversations yet." : "Aucune conversation."}</div>}

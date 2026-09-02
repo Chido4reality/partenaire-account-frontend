@@ -5,8 +5,8 @@
          would show as "Stenamo Busi…". The full name lives in the PWA manifest
          `name` and in the Play Store listing. Matches short_name in
          vite.config.js for the same reason. -->
-    <string name="app_name">Stenamo</string>
-    <string name="title_activity_main">Stenamo Business</string>
+    <string name="app_name">Stenamo Book</string>
+    <string name="title_activity_main">Stenamo Book</string>
     <!-- ⚠️ DO NOT RENAME THE TWO BELOW. com.partenaire.monpartenaire is the
          PERMANENT package identity: it is the Play Store URL, the FileProvider
          authority, and the deep-link scheme. It survives every rebrand and is

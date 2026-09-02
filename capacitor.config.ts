@@ -21,7 +21,7 @@ import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId:    'com.partenaire.monpartenaire',
-  appName:  'Stenamo Business',
+  appName:  'Stenamo Book',
   webDir:   'dist',
 
   // androidScheme:'https' lets the Android WebView treat

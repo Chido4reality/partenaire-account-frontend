@@ -1228,7 +1228,7 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {/* FU.4 — Migrate Dozie Duplicates entry point. Auto-checks on
+      {/* FU.4 — Migrate Stenamo Market Duplicates entry point. Auto-checks on
           page mount; renders a prominent banner only when the seller
           is MP-linked AND has at least one standalone ptn_product
           (i.e., genuine duplicates to merge). Hidden otherwise so
@@ -1243,8 +1243,8 @@ export default function InventoryPage() {
           <div style={{ background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.4)", borderRadius: 12, padding: "12px 16px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <div style={{ fontSize: 13, color: "var(--brand-light)", flex: 1, minWidth: 0 }}>
               🔗 <strong>{lang === "en"
-                ? `You have ${count} standalone Dozie product${count === 1 ? "" : "s"} that may duplicate your MP inventory.`
-                : `Vous avez ${count} produit${count === 1 ? "" : "s"} Dozie autonome${count === 1 ? "" : "s"} qui pourrai${count === 1 ? "t" : "ent"} être un doublon.`}</strong>
+                ? `You have ${count} standalone Stenamo Market product${count === 1 ? "" : "s"} that may duplicate your MP inventory.`
+                : `Vous avez ${count} produit${count === 1 ? "" : "s"} Stenamo Market autonome${count === 1 ? "" : "s"} qui pourrai${count === 1 ? "t" : "ent"} être un doublon.`}</strong>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
                 {lang === "en"
                   ? `${matched} match${matched === 1 ? "" : "es"} found in MP inventory.`
@@ -1448,12 +1448,12 @@ export default function InventoryPage() {
                             <RestrictedAction><button className="btn btn-secondary btn-sm" onClick={() => { setSelectedStockRow(s); setShowAdjust(true); }}>{lang === "en" ? "Adjust" : "Ajuster"}</button></RestrictedAction>
                             {isOwner && <button className="btn btn-secondary btn-sm" onClick={() => { setEditProduct({ ...p, id: s.product_id }); setShowEditProduct(true); }} style={{ color: "var(--brand-light)" }}>✏️</button>}
                             {/* MP-DOZIE-INVENTORY-PUBLISH-UI: per-product
-                                Dozie publish action. Renders only on the
+                                Stenamo Market publish action. Renders only on the
                                 first stock-row for each product_id so we
                                 don't repeat the button across location
                                 rows. Owner+manager only (gated upstream
                                 via canAdjustStock OR explicit isOwner). */}
-                            {/* MP-LITE-MODE-PHASE-1: Sell-on-Dozie button hidden in Lite. */}
+                            {/* MP-LITE-MODE-PHASE-1: Sell-on-Stenamo Market button hidden in Lite. */}
                             {!lite && dozieFirst && (isOwner || user?.role === "manager") && (
                               <button
                                 className="btn btn-secondary btn-sm"
@@ -1465,9 +1465,9 @@ export default function InventoryPage() {
                                 })}
                                 title={dozieListing
                                   ? (dozieListing.is_visible
-                                      ? (lang === "en" ? "🟢 Live on Dozie — click to edit" : "🟢 En ligne sur Dozie — cliquer pour modifier")
-                                      : (lang === "en" ? "⏸ Paused on Dozie — click to edit" : "⏸ En pause sur Dozie — cliquer pour modifier"))
-                                  : (lang === "en" ? "Publish to Dozie marketplace" : "Publier sur Dozie")}
+                                      ? (lang === "en" ? "🟢 Live on Stenamo Market — click to edit" : "🟢 En ligne sur Stenamo Market — cliquer pour modifier")
+                                      : (lang === "en" ? "⏸ Paused on Stenamo Market — click to edit" : "⏸ En pause sur Stenamo Market — cliquer pour modifier"))
+                                  : (lang === "en" ? "Publish to Stenamo Market" : "Publier sur Stenamo Market")}
                                 style={{
                                   color: dozieListing
                                     ? (dozieListing.is_visible ? "#34d399" : "#fbbf24")
@@ -1931,7 +1931,7 @@ export default function InventoryPage() {
               </div>
             </div>
 
-            {/* MP-INVENTORY-DOZIE-CONTROLS — Sell-on-Dozie toggle + price.
+            {/* MP-INVENTORY-DOZIE-CONTROLS — Sell-on-Stenamo Market toggle + price.
                 Saves via the existing PATCH /products/:id/expose-on-dozie.
                 Toggle OFF still sends the price so it is preserved for a
                 later toggle-on (matches pa_dozie_seller_listings semantics).
@@ -1940,11 +1940,11 @@ export default function InventoryPage() {
             <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 14 }}>
               <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
                 <input type="checkbox" checked={dozieEnabled} onChange={e => setDozieEnabled(e.target.checked)} />
-                🛒 {lang === "en" ? "Sell on Dozie" : "Vendre sur Dozie"}
+                🛒 {lang === "en" ? "Sell on Stenamo Market" : "Vendre sur Stenamo Market"}
               </label>
               {dozieEnabled && (
                 <div className="form-group" style={{ marginTop: 12, marginBottom: 0, maxWidth: 220 }}>
-                  <label className="label">{lang === "en" ? "Dozie price (XAF)" : "Prix Dozie (XAF)"}</label>
+                  <label className="label">{lang === "en" ? "Stenamo Market price (XAF)" : "Prix Stenamo Market (XAF)"}</label>
                   <input className="input" type="number" min="0" step="1" value={doziePrice}
                     onChange={e => setDoziePrice(e.target.value)} />
                 </div>
@@ -1958,17 +1958,17 @@ export default function InventoryPage() {
                       is_visible: dozieEnabled,
                       dozie_price: doziePrice != null && doziePrice !== "" ? Number(doziePrice) : null
                     });
-                    toast.success(lang === "en" ? "✓ Dozie settings saved" : "✓ Réglages Dozie enregistrés");
+                    toast.success(lang === "en" ? "✓ Stenamo Market settings saved" : "✓ Réglages Stenamo Market enregistrés");
                     invalidateAll();
                   } catch (err) {
                     // 403 upgrade_required → global paywall interceptor.
                     if (err.response?.status !== 403) toast.error(err.response?.data?.message || "Error");
                   } finally { setDozieSaving(false); }
                 }}>
-                {dozieSaving ? "..." : (lang === "en" ? "Save Dozie settings" : "Enregistrer Dozie")}
+                {dozieSaving ? "..." : (lang === "en" ? "Save Stenamo Market settings" : "Enregistrer Stenamo Market")}
               </button>
             </div>
-            )}{/* end MP-LITE-MODE-PHASE-1 Sell-on-Dozie section */}
+            )}{/* end MP-LITE-MODE-PHASE-1 Sell-on-Stenamo Market section */}
 
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setShowEditProduct(false); setEditProduct(null); }}>{lang === "en" ? "Cancel" : "Annuler"}</button>
@@ -2325,18 +2325,18 @@ export default function InventoryPage() {
           <div className="modal" style={{ maxWidth: 720, maxHeight: "88vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
               <div>
-                <div style={{ fontWeight: 700, fontSize: 17 }}>🔗 {lang === "en" ? "Migrate Dozie duplicates" : "Fusionner les doublons Dozie"}</div>
+                <div style={{ fontWeight: 700, fontSize: 17 }}>🔗 {lang === "en" ? "Migrate Stenamo Market duplicates" : "Fusionner les doublons Stenamo Market"}</div>
                 <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
                   {migrateData.seller
-                    ? (lang === "en" ? "Link your standalone Dozie products to matching MP products so they share photos + real stock." : "Reliez vos produits Dozie autonomes à des produits MP correspondants.")
-                    : (lang === "en" ? "You need an MP-linked Dozie seller account to use this tool." : "Vous devez avoir un compte vendeur Dozie lié à MP pour utiliser cet outil.")}
+                    ? (lang === "en" ? "Link your standalone Stenamo Market products to matching MP products so they share photos + real stock." : "Reliez vos produits Stenamo Market autonomes à des produits MP correspondants.")
+                    : (lang === "en" ? "You need an MP-linked Stenamo Market seller account to use this tool." : "Vous devez avoir un compte vendeur Stenamo Market lié à MP pour utiliser cet outil.")}
                 </div>
               </div>
               <button onClick={() => !migrateApplying && setShowMigrate(false)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 20 }}>✕</button>
             </div>
             {migrateData.pairs.length === 0 ? (
               <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>
-                ✓ {lang === "en" ? "No standalone Dozie products to migrate." : "Aucun doublon à fusionner."}
+                ✓ {lang === "en" ? "No standalone Stenamo Market products to migrate." : "Aucun doublon à fusionner."}
               </div>
             ) : (
               <>
@@ -2352,7 +2352,7 @@ export default function InventoryPage() {
                             style={{ marginTop: 4 }} />
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                              {lang === "en" ? "Dozie:" : "Dozie :"} <strong style={{ color: "var(--text-primary)" }}>{pair.ptn.name}</strong>
+                              {lang === "en" ? "Stenamo Market:" : "Stenamo Market :"} <strong style={{ color: "var(--text-primary)" }}>{pair.ptn.name}</strong>
                               <span style={{ color: "var(--text-muted)" }}> · stock {pair.ptn.stock || 0}{pair.ptn.photo_url ? " · 📷" : ""}</span>
                             </div>
                             {pair.match ? (
@@ -2367,7 +2367,7 @@ export default function InventoryPage() {
                             )}
                             {pair.match && sel.selected && (
                               <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center", fontSize: 12 }}>
-                                <label>Dozie price:</label>
+                                <label>Stenamo Market price:</label>
                                 <input className="input" style={{ width: 100, padding: "4px 8px" }} type="number"
                                   value={sel.dozie_price || ""}
                                   onChange={(e) => setMigrateSel(s => ({ ...s, [pair.ptn.id]: { ...s[pair.ptn.id], dozie_price: e.target.value } }))} />
@@ -2386,8 +2386,8 @@ export default function InventoryPage() {
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12 }}>
                   💡 {lang === "en"
-                    ? "By default, retired Dozie products are soft-deleted (published=false). Tick \"Delete permanently\" only if you're sure."
-                    : "Par défaut, les produits Dozie retirés sont masqués (published=false). Cochez \"Supprimer définitivement\" uniquement si vous êtes sûr."}
+                    ? "By default, retired Stenamo Market products are soft-deleted (published=false). Tick \"Delete permanently\" only if you're sure."
+                    : "Par défaut, les produits Stenamo Market retirés sont masqués (published=false). Cochez \"Supprimer définitivement\" uniquement si vous êtes sûr."}
                 </div>
                 <div style={{ display: "flex", gap: 10 }}>
                   <button className="btn btn-secondary" style={{ flex: 1 }} disabled={migrateApplying} onClick={() => setShowMigrate(false)}>
@@ -2478,7 +2478,7 @@ export default function InventoryPage() {
         );
       })()}
 
-      {/* MP-DOZIE-INVENTORY-PUBLISH-UI: per-product Dozie publish modal.
+      {/* MP-DOZIE-INVENTORY-PUBLISH-UI: per-product Stenamo Market publish modal.
           Mounted once at page level; opens on 🛒 button click in the
           Inventory actions column. */}
       {doziePublishCtx && (

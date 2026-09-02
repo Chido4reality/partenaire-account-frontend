@@ -68,7 +68,7 @@ export default function DoziePublishModal({ productId, productName, defaultPrice
       : api.post("/dozie-listings", { product_id: productId, ...body }).then(r => r.data?.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["dozie-listings"] });
-      toast.success(en ? "✓ Dozie listing saved" : "✓ Annonce Dozie enregistrée");
+      toast.success(en ? "✓ Stenamo Market listing saved" : "✓ Annonce Stenamo Market enregistrée");
       onClose();
     },
     onError: (err) => {
@@ -79,7 +79,7 @@ export default function DoziePublishModal({ productId, productName, defaultPrice
     mutationFn: () => api.delete(`/dozie-listings/${productId}`).then(r => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["dozie-listings"] });
-      toast.success(en ? "✓ Unpublished from Dozie" : "✓ Retiré de Dozie");
+      toast.success(en ? "✓ Unpublished from Stenamo Market" : "✓ Retiré de Stenamo Market");
       onClose();
     },
     onError: (err) => {
@@ -90,7 +90,7 @@ export default function DoziePublishModal({ productId, productName, defaultPrice
   const handleSave = () => {
     const priceNum = Number(doziePrice);
     if (!Number.isFinite(priceNum) || priceNum <= 0) {
-      toast.error(en ? "Dozie price must be greater than 0" : "Le prix Dozie doit être > 0");
+      toast.error(en ? "Stenamo Market price must be greater than 0" : "Le prix Stenamo Market doit être > 0");
       return;
     }
     const body = {
@@ -104,8 +104,8 @@ export default function DoziePublishModal({ productId, productName, defaultPrice
 
   const handleUnpublish = () => {
     if (!confirm(en
-      ? `Unpublish "${productName}" from Dozie marketplace?`
-      : `Retirer "${productName}" du marché Dozie ?`)) return;
+      ? `Unpublish "${productName}" from Stenamo Market?`
+      : `Retirer "${productName}" du Stenamo Market ?`)) return;
     deleteMutation.mutate();
   };
 
@@ -129,7 +129,7 @@ export default function DoziePublishModal({ productId, productName, defaultPrice
       <div onClick={e => e.stopPropagation()}
         style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, maxWidth: 460, width: "100%", maxHeight: "90vh", overflowY: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
-          <div style={{ fontWeight: 800, fontSize: 16 }}>🛒 {en ? "Dozie Marketplace" : "Marché Dozie"}</div>
+          <div style={{ fontWeight: 800, fontSize: 16 }}>🛒 {en ? "Stenamo Market" : "Stenamo Market"}</div>
           <button onClick={onClose} aria-label="close"
             style={{ background: "transparent", border: "none", color: "var(--text-muted)", fontSize: 18, cursor: "pointer" }}>✕</button>
         </div>
@@ -143,8 +143,8 @@ export default function DoziePublishModal({ productId, productName, defaultPrice
         {!existing ? (
           <div style={{ background: "var(--bg-card)", border: "1px dashed var(--border)", borderRadius: 10, padding: 14, marginBottom: 14, fontSize: 13, color: "var(--text-muted)" }}>
             {en
-              ? "Not listed on Dozie marketplace. Set a price and click Publish to expose this product to buyers."
-              : "Non listé sur le marché Dozie. Définissez un prix et cliquez sur Publier pour exposer ce produit aux acheteurs."}
+              ? "Not listed on Stenamo Market. Set a price and click Publish to expose this product to buyers."
+              : "Non listé sur le Stenamo Market. Définissez un prix et cliquez sur Publier pour exposer ce produit aux acheteurs."}
           </div>
         ) : outOfStock && (
           <div style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 12, color: "#f87171" }}>
@@ -156,7 +156,7 @@ export default function DoziePublishModal({ productId, productName, defaultPrice
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
           <div>
-            <label style={labelStyle}>{en ? `Dozie price (${fmt.symbol})` : `Prix Dozie (${fmt.symbol})`} *</label>
+            <label style={labelStyle}>{en ? `Stenamo Market price (${fmt.symbol})` : `Prix Stenamo Market (${fmt.symbol})`} *</label>
             <input type="number" inputMode="numeric" min={0} value={doziePrice}
               onChange={e => setDoziePrice(e.target.value)} style={inputStyle}
               placeholder={String(defaultPrice ?? "")} />

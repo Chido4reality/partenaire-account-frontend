@@ -88,7 +88,7 @@ export default function MyDozieDisputesPage() {
         <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
         <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 8 }}>{en ? "Stenamo Market not activated" : "Stenamo Market non activé"}</div>
         <div style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 18 }}>
-          {en ? "Activate your Dozie seller profile in Settings to handle buyer disputes here." : "Activez votre profil vendeur Dozie dans Paramètres pour gérer les litiges ici."}
+          {en ? "Activate your Stenamo Market seller profile in Settings to handle buyer disputes here." : "Activez votre profil vendeur Stenamo Market dans Paramètres pour gérer les litiges ici."}
         </div>
         <Link to="/settings" className="btn btn-primary">{en ? "Go to Settings" : "Aller aux Paramètres"}</Link>
       </div>
@@ -97,7 +97,7 @@ export default function MyDozieDisputesPage() {
 
   return wrap(
     <div>
-      <div style={{ fontWeight: 800, fontSize: 20, marginBottom: 4 }}>{en ? "Dozie Disputes" : "Litiges Dozie"}</div>
+      <div style={{ fontWeight: 800, fontSize: 20, marginBottom: 4 }}>{en ? "Stenamo Market Disputes" : "Litiges Stenamo Market"}</div>
       <div style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 14 }}>
         {en ? "Respond to buyer disputes. A support admin reviews and decides the outcome — you provide your side." : "Répondez aux litiges des acheteurs. Un admin support décide de l'issue — vous donnez votre version."}
       </div>

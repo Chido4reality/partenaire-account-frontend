@@ -147,8 +147,8 @@ export default function RequestActivationPage() {
       ? `${planName} — ${months} months = ${fmt(total)}`
       : `${planName} (${price}/month)`;
     return isFrenchEnglishOrg(org)
-      ? `Bonjour, je veux payer mon abonnement Stenamo Business.\nBoutique : ${shop}\nID : ${mpId}\nFormule : ${planName} (${price}/mois)\nJe ne peux pas payer en ligne — merci d'activer mon compte.`
-      : `Hello, I want to pay for my Stenamo Business subscription.\nShop: ${shop}\nID: ${mpId}\nPlan: ${planLineEn}\nI can't pay online — please activate my account.`;
+      ? `Bonjour, je veux payer mon abonnement Stenamo Book.\nBoutique : ${shop}\nID : ${mpId}\nFormule : ${planName} (${price}/mois)\nJe ne peux pas payer en ligne — merci d'activer mon compte.`
+      : `Hello, I want to pay for my Stenamo Book subscription.\nShop: ${shop}\nID: ${mpId}\nPlan: ${planLineEn}\nI can't pay online — please activate my account.`;
   };
 
   // FALLBACK — manual offline payment → admin approval (audit trail).

@@ -71,7 +71,7 @@ export default function HelpPage() {
     queryFn: () => api.get("/settings").then(r => r.data),
     staleTime: 300000,
   });
-  const waMsg = en ? "Hello, I need help with Stenamo Business." : "Bonjour, j'ai besoin d'aide avec Stenamo Business.";
+  const waMsg = en ? "Hello, I need help with Stenamo Book." : "Bonjour, j'ai besoin d'aide avec Stenamo Book.";
 
   const topic = openId ? HELP_TOPICS.find(t => t.id === openId) : null;
 
@@ -86,7 +86,7 @@ export default function HelpPage() {
           style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", borderRadius: 10, border: "none", background: "#25D366", color: "#fff", fontWeight: 700, cursor: "pointer" }}>
           💬 WhatsApp
         </button>
-        <a href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(en ? "Help — Stenamo Business" : "Aide — Stenamo Business")}`}
+        <a href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(en ? "Help — Stenamo Book" : "Aide — Stenamo Book")}`}
           style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text)", fontWeight: 700, textDecoration: "none" }}>
           ✉️ {en ? "Email" : "Email"}
         </a>

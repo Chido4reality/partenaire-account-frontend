@@ -59,7 +59,7 @@ export default function MyDozieListingsPage() {
   });
   const unpublishMutation = useMutation({
     mutationFn: (product_id) => api.delete(`/dozie/seller/listings/${product_id}`),
-    onSuccess: () => { toast.success(en ? "Removed from Dozie" : "Retiré de Dozie"); qc.invalidateQueries(["dozie-seller-listings"]); },
+    onSuccess: () => { toast.success(en ? "Removed from Stenamo Market" : "Retiré de Stenamo Market"); qc.invalidateQueries(["dozie-seller-listings"]); },
     onError: (e) => toast.error(e?.response?.data?.message || (en ? "Error" : "Erreur")),
   });
 
@@ -73,8 +73,8 @@ export default function MyDozieListingsPage() {
         <div style={{ fontSize: 40, marginBottom: 12 }}>🛒</div>
         <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 8 }}>{en ? "Stenamo Market not activated" : "Stenamo Market non activé"}</div>
         <div style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 18, lineHeight: 1.6 }}>
-          {en ? "Activate your Dozie seller profile in Settings, then publish products to the wholesale marketplace from here."
-              : "Activez votre profil vendeur Dozie dans Paramètres, puis publiez vos produits sur le marché de gros ici."}
+          {en ? "Activate your Stenamo Market seller profile in Settings, then publish products to the wholesale marketplace from here."
+              : "Activez votre profil vendeur Stenamo Market dans Paramètres, puis publiez vos produits sur le marché de gros ici."}
         </div>
         <Link to="/settings" className="btn btn-primary">{en ? "Go to Settings" : "Aller aux Paramètres"}</Link>
       </div>
@@ -102,7 +102,7 @@ export default function MyDozieListingsPage() {
 
   return wrap(
     <div>
-      <div style={{ fontWeight: 800, fontSize: 20, marginBottom: 4 }}>{en ? "My Dozie Listings" : "Mes annonces Dozie"}</div>
+      <div style={{ fontWeight: 800, fontSize: 20, marginBottom: 4 }}>{en ? "My Stenamo Market Listings" : "Mes annonces Stenamo Market"}</div>
       <div style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 16, lineHeight: 1.55 }}>
         {en ? `Publish your products to the Stenamo Market wholesale marketplace. Buyers see these live. City: ${sellerCity || "—"} (from Shop Settings).`
             : `Publiez vos produits sur le marché de gros Stenamo Market. Les acheteurs les voient en direct. Ville : ${sellerCity || "—"} (depuis Paramètres boutique).`}
@@ -124,12 +124,12 @@ export default function MyDozieListingsPage() {
                   <div style={{ fontWeight: 700, fontSize: 15 }}>{p.name}</div>
                   <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
                     {en ? "Shop price" : "Prix boutique"}: {fmt(p.sell_price)}
-                    {listing && <> · {en ? "Dozie" : "Dozie"}: {fmt(listing.dozie_price)} · {en ? "Stock" : "Stock"}: {live ? (live.stock ?? 0) : 0}</>}
+                    {listing && <> · {en ? "Stenamo Market" : "Stenamo Market"}: {fmt(listing.dozie_price)} · {en ? "Stock" : "Stock"}: {live ? (live.stock ?? 0) : 0}</>}
                   </div>
                   <div style={{ marginTop: 6 }}>
                     {listing
                       ? <span className="badge" style={{ background: isPublished ? "rgba(16,185,129,0.15)" : "rgba(148,163,184,0.18)", color: isPublished ? "#34d399" : "#94a3b8", fontSize: 11, padding: "2px 8px", borderRadius: 10 }}>
-                          {isPublished ? (en ? "● Live on Dozie" : "● En ligne") : (en ? "○ Hidden" : "○ Masqué")}
+                          {isPublished ? (en ? "● Live on Stenamo Market" : "● En ligne") : (en ? "○ Hidden" : "○ Masqué")}
                         </span>
                       : <span className="badge" style={{ background: "rgba(148,163,184,0.12)", color: "var(--text-muted)", fontSize: 11, padding: "2px 8px", borderRadius: 10 }}>{en ? "Not published" : "Non publié"}</span>}
                   </div>
@@ -148,7 +148,7 @@ export default function MyDozieListingsPage() {
                   </button>
                   {listing && (
                     <button className="btn btn-sm" style={{ color: "#f87171" }} disabled={unpublishMutation.isPending}
-                      onClick={() => { if (confirm(en ? `Remove "${p.name}" from Dozie?` : `Retirer "${p.name}" de Dozie ?`)) unpublishMutation.mutate(p.id); }}>
+                      onClick={() => { if (confirm(en ? `Remove "${p.name}" from Stenamo Market?` : `Retirer "${p.name}" de Stenamo Market ?`)) unpublishMutation.mutate(p.id); }}>
                       {en ? "Remove" : "Retirer"}
                     </button>
                   )}
@@ -159,7 +159,7 @@ export default function MyDozieListingsPage() {
               {isEditing && (
                 <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border)", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
                   <div>
-                    <div className="label">{en ? "Dozie price" : "Prix Dozie"}</div>
+                    <div className="label">{en ? "Stenamo Market price" : "Prix Stenamo Market"}</div>
                     <input className="input" type="number" inputMode="numeric" style={{ width: 140 }}
                       value={editing.dozie_price} onChange={e => setEditing(s => ({ ...s, dozie_price: e.target.value }))} />
                   </div>

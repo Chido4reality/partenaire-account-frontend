@@ -126,7 +126,7 @@ export default function MyDozieOrdersPage() {
         <div style={{ fontSize: 40, marginBottom: 12 }}>📦</div>
         <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 8 }}>{en ? "Stenamo Market not activated" : "Stenamo Market non activé"}</div>
         <div style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 18 }}>
-          {en ? "Activate your Dozie seller profile in Settings to receive marketplace orders here." : "Activez votre profil vendeur Dozie dans Paramètres pour recevoir les commandes ici."}
+          {en ? "Activate your Stenamo Market seller profile in Settings to receive marketplace orders here." : "Activez votre profil vendeur Stenamo Market dans Paramètres pour recevoir les commandes ici."}
         </div>
         <Link to="/settings" className="btn btn-primary">{en ? "Go to Settings" : "Aller aux Paramètres"}</Link>
       </div>
@@ -142,7 +142,7 @@ export default function MyDozieOrdersPage() {
 
   return wrap(
     <div>
-      <div style={{ fontWeight: 800, fontSize: 20, marginBottom: 4 }}>{en ? "My Dozie Orders" : "Mes commandes Dozie"}</div>
+      <div style={{ fontWeight: 800, fontSize: 20, marginBottom: 4 }}>{en ? "My Stenamo Market Orders" : "Mes commandes Stenamo Market"}</div>
       <div style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 14 }}>
         {en ? "Incoming wholesale orders from Stenamo Market. Payment is handled at your shop (at-shop)." : "Commandes de gros reçues via Stenamo Market. Le paiement se fait à la boutique."}
       </div>

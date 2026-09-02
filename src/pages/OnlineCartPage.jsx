@@ -132,7 +132,7 @@ function MappingModal({ entry, lang, busy, onConfirm, onClose, confirmLabel }) {
       <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 14, width: "100%", maxWidth: 640, maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
         <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>{lang === "en" ? "Map Dozie items to products" : "Associer les articles Dozie aux produits"}</div>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>{lang === "en" ? "Map Stenamo Market items to products" : "Associer les articles Stenamo Market aux produits"}</div>
             <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{entry?.dozie_order_ref} · {entry?.buyer_name || "—"}</div>
           </div>
           <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 18 }}>✕</button>

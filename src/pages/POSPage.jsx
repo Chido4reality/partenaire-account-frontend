@@ -897,7 +897,7 @@ export default function POSPage() {
           ref: fromOnline.slice(0, 8),
           session: fromSession
         });
-        toast.success(lang === "en" ? "Cart prefilled from Dozie order" : "Panier pré-rempli (Dozie)");
+        toast.success(lang === "en" ? "Cart prefilled from Stenamo Market order" : "Panier pré-rempli (Stenamo Market)");
       } catch (e) {
         toast.error(e?.response?.data?.message || (lang === "en" ? "Could not load order" : "Échec du chargement"));
       } finally {
@@ -2517,8 +2517,8 @@ export default function POSPage() {
               <span style={{ fontSize: 14 }}>📥</span>
               <span style={{ fontSize: 11, color: "var(--brand-light)", fontWeight: 600, flex: 1, minWidth: 0 }}>
                 {lang === "en"
-                  ? `Prefilled from Dozie order ${onlineCtx.ref} — sale links back on checkout`
-                  : `Pré-rempli depuis Dozie ${onlineCtx.ref} — la vente sera liée`}
+                  ? `Prefilled from Stenamo Market order ${onlineCtx.ref} — sale links back on checkout`
+                  : `Pré-rempli depuis Stenamo Market ${onlineCtx.ref} — la vente sera liée`}
               </span>
             </div>
           )}
