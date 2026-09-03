@@ -1300,10 +1300,14 @@
         <div class="card" style="margin-bottom:14px">
           <div class="settings-card-title">Estimated total <span id="exp-base-label">(XAF)</span></div>
           <div class="settings-card-sub" id="exp-estimate-note">Estimate only — converted at the rate you set.</div>
+          <!-- Subscription and support money are NEVER shown as one "income"
+               number: this screen exists to say whether customers are paying,
+               and a donation counted as revenue would answer that wrongly. -->
           <div class="stat-strip" style="margin-top:12px">
             <div class="stat-card"><div class="stat-label">Estimated expenses</div><div class="stat-value" id="exp-tile-expense">…</div></div>
-            <div class="stat-card"><div class="stat-label">Estimated income (gross)</div><div class="stat-value" id="exp-tile-income">…</div></div>
-            <div class="stat-card"><div class="stat-label">Estimated net</div><div class="stat-value" id="exp-tile-net">…</div></div>
+            <div class="stat-card"><div class="stat-label">Subscription income (gross)</div><div class="stat-value" id="exp-tile-income">…</div></div>
+            <div class="stat-card"><div class="stat-label">Other income (support)</div><div class="stat-value" id="exp-tile-other">…</div></div>
+            <div class="stat-card"><div class="stat-label">Estimated net <span style="font-weight:400;opacity:.7">(incl. support)</span></div><div class="stat-value" id="exp-tile-net">…</div></div>
           </div>
         </div>
 
@@ -1316,9 +1320,10 @@
               <thead><tr>
                 <th>Currency</th><th class="num">Own expenses</th><th class="num">Marketing</th>
                 <th class="num">Commissions paid</th><th class="num">Commissions owed</th>
-                <th class="num">Total expenses</th><th class="num">Income (gross)</th>
+                <th class="num">Total expenses</th>
+                <th class="num">Subscription income</th><th class="num">Other income</th>
               </tr></thead>
-              <tbody id="exp-currency-tbody"><tr><td class="empty" colspan="7">Loading…</td></tr></tbody>
+              <tbody id="exp-currency-tbody"><tr><td class="empty" colspan="8">Loading…</td></tr></tbody>
             </table>
           </div>
           <div class="settings-card-sub" style="margin-top:10px" id="exp-fee-note"></div>
@@ -1374,6 +1379,35 @@
             <input class="input" id="exp-new-date" type="date">
             <input class="input" id="exp-new-notes" placeholder="Notes (optional)">
             <button class="btn btn-primary" id="exp-new-save">Add expense</button>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:14px">
+          <div class="settings-card-title">Record money in (non-subscription)</div>
+          <div class="settings-card-sub">Donations, support, grants, refunds — real money in that is NOT a customer paying for the product. Kept separate from subscription revenue everywhere on this screen. Backdatable.</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px">
+            <input class="input" id="inc-new-desc" placeholder="Description (e.g. support from Paul)">
+            <input class="input" id="inc-new-amount" type="number" step="0.01" min="0" placeholder="Amount">
+            <select class="input" id="inc-new-currency">
+              <option value="USD">USD</option><option value="XAF" selected>XAF</option><option value="NGN">NGN</option>
+            </select>
+            <select class="input" id="inc-new-category">
+              <option value="donation">Donation</option>
+              <option value="support" selected>Support</option>
+              <option value="grant">Grant</option>
+              <option value="investment">Investment</option>
+              <option value="refund">Refund</option>
+              <option value="other">Other</option>
+            </select>
+            <input class="input" id="inc-new-date" type="date">
+            <input class="input" id="inc-new-notes" placeholder="Notes (optional)">
+            <button class="btn btn-primary" id="inc-new-save">Record income</button>
+          </div>
+          <div class="table-wrap" style="margin-top:14px">
+            <table class="data">
+              <thead><tr><th>Date</th><th>Description</th><th>Category</th><th class="num">Amount</th><th>Notes</th><th></th></tr></thead>
+              <tbody id="inc-tbody"><tr><td class="empty" colspan="6">Loading…</td></tr></tbody>
+            </table>
           </div>
         </div>
 
@@ -3264,7 +3298,7 @@
     // CURRENCY: the per-currency table is the truth and is never converted. The
     // single estimate tile and the chart are the ONLY converted figures, both
     // labelled as estimates with the rate and its date shown next to them.
-    let expData = null, expTemplates = [], expChart = null;
+    let expData = null, expTemplates = [], expChart = null, expIncomeRows = [];
 
     // USD is the one currency here with meaningful minor units — a Supabase
     // overage is $23.47, not $23. The shared fmtCur() rounds to whole units
@@ -3305,7 +3339,11 @@
     function expRenderEstimate() {
       const r = expRates();
       const exp = expToBase(expData.expense_totals || {});
-      const inc = expToBase(expData.income_totals || {});
+      // TWO separate income figures. There is no combined "income" variable
+      // here on purpose — the only place they are added is the NET line, which
+      // is explicitly labelled as including support money.
+      const inc = expToBase(expData.income_subscription_totals || {});
+      const other = expToBase(expData.income_manual_totals || {});
       const set = function (id, v) {
         const el = $(id);
         if (!el) return;
@@ -3314,7 +3352,8 @@
       };
       set('exp-tile-expense', exp);
       set('exp-tile-income', inc);
-      set('exp-tile-net', (exp == null || inc == null) ? null : inc - exp);
+      set('exp-tile-other', other);
+      set('exp-tile-net', (exp == null || inc == null || other == null) ? null : (inc + other) - exp);
 
       const bits = [];
       if (r.XAF) bits.push('1 USD = ' + r.XAF + ' XAF (set ' + fmtDate(r.xafAt) + ')');
@@ -3328,11 +3367,13 @@
 
     function expRenderCurrencyTable() {
       const b = expData.breakdown || {};
+      const sub = expData.income_subscription_totals || {};
+      const oth = expData.income_manual_totals || {};
       const rows = ['USD', 'XAF', 'NGN'].filter(function (c) {
-        return (Number(expData.expense_totals[c]) || 0) || (Number(expData.income_totals[c]) || 0);
+        return (Number(expData.expense_totals[c]) || 0) || (Number(sub[c]) || 0) || (Number(oth[c]) || 0);
       });
       const tb = $('exp-currency-tbody');
-      if (!rows.length) { tb.innerHTML = '<tr><td class="empty" colspan="7">Nothing recorded yet</td></tr>'; return; }
+      if (!rows.length) { tb.innerHTML = '<tr><td class="empty" colspan="8">Nothing recorded yet</td></tr>'; return; }
       tb.innerHTML = rows.map(function (c) {
         return '<tr>' +
           '<td><strong>' + c + '</strong></td>' +
@@ -3342,7 +3383,9 @@
           // Owed is a liability not yet paid — kept visually distinct from paid.
           '<td class="num"><span class="badge badge-warn">' + fmtExpCur(b.commissions_owed ? b.commissions_owed[c] : 0, c) + '</span></td>' +
           '<td class="num"><strong>' + fmtExpCur(expData.expense_totals[c], c) + '</strong></td>' +
-          '<td class="num">' + fmtExpCur(expData.income_totals[c], c) + '</td>' +
+          // Subscription and other income are separate CELLS, never summed.
+          '<td class="num">' + fmtExpCur(sub[c], c) + '</td>' +
+          '<td class="num"><span class="badge">' + fmtExpCur(oth[c], c) + '</span></td>' +
         '</tr>';
       }).join('');
       const gf = expData.gateway_fees || {};
@@ -3376,13 +3419,51 @@
         type: 'bar',
         data: {
           labels: labels,
+          // Income is stacked as TWO segments so support money can never be
+          // mistaken for traction at a glance: solid green = customers paying,
+          // pale dashed-outline amber = donations/support. Both count toward
+          // the income total (real money offsetting real costs), but they are
+          // legended and coloured distinctly and sit in their own stack, which
+          // is itself separate from the expense stack.
           datasets: [
-            { label: 'Expenses (est. XAF)', data: series.map(function (s) { return conv(s.expense); }), backgroundColor: 'rgba(239,68,68,0.65)' },
-            { label: 'Income (est. XAF)', data: series.map(function (s) { return conv(s.income); }), backgroundColor: 'rgba(16,185,129,0.65)' },
+            { label: 'Expenses (est. XAF)', stack: 'out',
+              data: series.map(function (s) { return conv(s.expense); }),
+              backgroundColor: 'rgba(239,68,68,0.65)' },
+            { label: 'Subscription income (est. XAF)', stack: 'in',
+              data: series.map(function (s) { return conv(s.income_subscription); }),
+              backgroundColor: 'rgba(16,185,129,0.75)' },
+            { label: 'Other income — support/donation (est. XAF)', stack: 'in',
+              data: series.map(function (s) { return conv(s.income_manual); }),
+              backgroundColor: 'rgba(251,191,36,0.55)',
+              borderColor: 'rgba(180,120,10,0.95)', borderWidth: 2, borderDash: [5, 3] },
           ],
         },
-        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } },
+          plugins: { legend: { labels: { boxWidth: 14 } } },
+        },
       });
+    }
+
+    // Non-subscription income list. Every row is badged with its category so a
+    // support entry can never be read as a customer payment.
+    function incRenderList(rows) {
+      const tb = $('inc-tbody');
+      if (!rows.length) { tb.innerHTML = '<tr><td class="empty" colspan="6">No non-subscription income recorded</td></tr>'; return; }
+      tb.innerHTML = rows.map(function (r) {
+        const dim = r.is_active === false ? ' style="opacity:.5"' : '';
+        const voided = r.is_active === false ? ' <span class="badge">voided</span>' : '';
+        return '<tr' + dim + '>' +
+          '<td>' + escapeHtml(String(r.received_date)) + '</td>' +
+          '<td>' + escapeHtml(r.description) + voided + '</td>' +
+          '<td><span class="badge badge-warn">' + escapeHtml(r.category) + '</span></td>' +
+          '<td class="num">' + fmtExpCur(r.amount, r.currency) + '</td>' +
+          '<td>' + escapeHtml(r.notes || '') + '</td>' +
+          '<td><button class="btn btn-sm" data-inc-void="' + r.id + '">' +
+            (r.is_active === false ? 'Restore' : 'Void') + '</button></td>' +
+        '</tr>';
+      }).join('');
     }
 
     function expRenderTemplates() {
@@ -3435,10 +3516,11 @@
         const p = [];
         if ($('exp-from').value) p.push('from=' + $('exp-from').value);
         if ($('exp-to').value) p.push('to=' + $('exp-to').value);
-        const [sum, list, tpls] = await Promise.all([
+        const [sum, list, tpls, inc] = await Promise.all([
           apiAdmin('GET', '/admin/expenses/summary' + (p.length ? '?' + p.join('&') : '')),
           apiAdmin('GET', '/admin/expenses' + expFilterQS()),
           apiAdmin('GET', '/admin/expenses/templates'),
+          apiAdmin('GET', '/admin/expenses/income?include_inactive=true'),
         ]);
         expData = sum.data || {};
         expTemplates = tpls.data || [];
@@ -3453,6 +3535,8 @@
         expRenderChart();
         expRenderTemplates();
         expRenderList(list.data || []);
+        expIncomeRows = inc.data || [];
+        incRenderList(expIncomeRows);
       } catch (e) {
         if (e.status === 403) {
           $('exp-currency-tbody').innerHTML = '<tr><td class="empty" colspan="7">Not permitted for your role.</td></tr>';
@@ -3490,6 +3574,26 @@
         } catch (e) { showToast(e.message || 'Could not add expense', 'danger'); }
       });
 
+      on('inc-new-save', async function () {
+        const body = {
+          description: $('inc-new-desc').value.trim(),
+          amount: $('inc-new-amount').value,
+          currency: $('inc-new-currency').value,
+          category: $('inc-new-category').value,
+          received_date: $('inc-new-date').value,
+          notes: $('inc-new-notes').value.trim() || null,
+        };
+        if (!body.description || !body.amount || !body.received_date) {
+          showToast('Description, amount and date are required', 'danger'); return;
+        }
+        try {
+          await apiAdmin('POST', '/admin/expenses/income', body);
+          $('inc-new-desc').value = ''; $('inc-new-amount').value = ''; $('inc-new-notes').value = '';
+          showToast('Income recorded — kept separate from subscription revenue', 'ok');
+          loadExpenses();
+        } catch (e) { showToast(e.message || 'Could not record income', 'danger'); }
+      });
+
       on('exp-tpl-save', async function () {
         const body = {
           name: $('exp-tpl-name').value.trim(),
@@ -3525,11 +3629,20 @@
       // listeners would be re-bound (and leak) each time.
       const root = $('route-expenses');
       if (root) root.addEventListener('click', async function (ev) {
+        const incVoid = ev.target.getAttribute && ev.target.getAttribute('data-inc-void');
         const editId = ev.target.getAttribute && ev.target.getAttribute('data-exp-edit');
         const tplAmt = ev.target.getAttribute && ev.target.getAttribute('data-exp-tpl-amount');
         const tplTog = ev.target.getAttribute && ev.target.getAttribute('data-exp-tpl-toggle');
         try {
-          if (editId) {
+          if (incVoid) {
+            // Deactivate, never delete: the row leaves every total but stays
+            // readable and can be restored.
+            const cur = (expIncomeRows || []).filter(function (x) { return x.id === incVoid; })[0];
+            const makeActive = cur ? cur.is_active === false : false;
+            await apiAdmin('PATCH', '/admin/expenses/income/' + incVoid, { is_active: makeActive });
+            showToast(makeActive ? 'Restored' : 'Voided — excluded from totals, history kept', 'ok');
+            loadExpenses();
+          } else if (editId) {
             const v = window.prompt('New amount for this expense (this row only — the template is unchanged):');
             if (v === null || v === '') return;
             await apiAdmin('PATCH', '/admin/expenses/' + editId, { amount: Number(v) });

@@ -70,6 +70,11 @@ const sandbox = {
 };
 sandbox.globalThis = sandbox;
 sandbox.window.localStorage = localStorage;
+// Capture the chart config the page actually builds, so the two income series
+// can be asserted on rather than eyeballed in a browser.
+let lastChart = null;
+sandbox.Chart = class { constructor(_ctx, cfg) { lastChart = cfg; } destroy() { lastChart = null; } };
+sandbox.window.Chart = sandbox.Chart;
 
 const blocks = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
 let script = blocks.reduce((a, b) => (b.length > a.length ? b : a), "");
@@ -93,7 +98,7 @@ try {
   process.exit(1);
 }
 
-for (const fn of ["loadExpenses", "wireExpenses", "expToBase", "fmtExpCur", "expRenderCurrencyTable", "expRenderEstimate"]) {
+for (const fn of ["loadExpenses", "wireExpenses", "expToBase", "fmtExpCur", "expRenderCurrencyTable", "expRenderEstimate", "incRenderList"]) {
   check(`${fn} is defined`, typeof ctx[fn] === "function", typeof ctx[fn]);
 }
 
@@ -110,11 +115,15 @@ const SUMMARY = {
       commissions_paid: { USD: 0, XAF: 0, NGN: 0 },
     },
     marketing_per_marketer: [{ marketer_id: "m1", name: "Aisha Bello", totals: { NGN: 20000 } }],
-    income_totals: { USD: 0, XAF: 480000, NGN: 0 },
+    income_subscription_totals: { USD: 0, XAF: 480000, NGN: 0 },
+    income_manual_totals: { USD: 0, XAF: 60000, NGN: 0 },
+    income_manual_by_category: { support: { XAF: 60000 } },
     income_is_gross: true,
     gateway_fees: { available: false, reason: "not stored" },
     fx: {},
-    series: [{ month: "2026-08", expense: { USD: 20, XAF: 0, NGN: 0 }, income: { USD: 0, XAF: 240000, NGN: 0 } }],
+    series: [{ month: "2026-08", expense: { USD: 20, XAF: 0, NGN: 0 },
+               income_subscription: { USD: 0, XAF: 240000, NGN: 0 },
+               income_manual: { USD: 0, XAF: 60000, NGN: 0 } }],
   },
 };
 const LIST = {
@@ -126,6 +135,12 @@ const LIST = {
       source: "manual", template_id: null, period: null, template_amount: null, amount_adjusted: false, notes: null },
   ],
 };
+const INCOME = { success: true, data: [
+  { id: "i1", description: "Support from Paul", amount: 60000, currency: "XAF",
+    received_date: "2026-08-24", category: "support", notes: "EST LE SOLDEUR - not a subscription", is_active: true },
+  { id: "i2", description: "Mis-entry", amount: 999, currency: "XAF",
+    received_date: "2026-08-01", category: "other", notes: null, is_active: false },
+] };
 const TPLS = { success: true, data: [
   { id: "t1", name: "Claude", amount: 20, currency: "USD", anchor_day: 31, start_date: "2026-01-01", is_active: true },
   { id: "t2", name: "Old host", amount: 5, currency: "USD", anchor_day: 1, start_date: "2025-01-01", is_active: false },
@@ -134,6 +149,7 @@ const TPLS = { success: true, data: [
 ctx.apiAdmin = async (method, path) => {
   if (path.startsWith("/admin/expenses/summary")) return SUMMARY;
   if (path.startsWith("/admin/expenses/templates")) return TPLS;
+  if (path.startsWith("/admin/expenses/income")) return INCOME;
   if (path.startsWith("/admin/expenses")) return LIST;
   throw new Error("unexpected path " + path);
 };
@@ -188,6 +204,56 @@ check("marketing spend renders per marketer, by name",
   getEl("exp-marketer-tbody").innerHTML.includes("Aisha Bello"));
 check("...in its own currency, unconverted", /₦/.test(getEl("exp-marketer-tbody").innerHTML));
 
+// ── 3b. THE TWO INCOME STREAMS MUST NEVER MERGE ────────────────────────────
+console.log("\n  income separation (the thing that matters most)");
+const cur2 = getEl("exp-currency-tbody").innerHTML;
+check("subscription income renders in its own cell (480 000)", /480/.test(cur2));
+check("other income renders in its OWN separate cell (60 000)", /60\s?000|60,000/.test(cur2));
+check("no cell shows the BLENDED 540 000", !/540\s?000|540,000/.test(cur2),
+  /540/.test(cur2) ? "BLENDED — support counted as revenue" : "kept apart");
+check("the subscription tile shows ONLY subscription income",
+  /480/.test(getEl("exp-tile-income").textContent), getEl("exp-tile-income").textContent);
+check("a SEPARATE tile carries other income", /60/.test(getEl("exp-tile-other").textContent),
+  getEl("exp-tile-other").textContent);
+check("the subscription tile is NOT the blended figure",
+  !/540/.test(getEl("exp-tile-income").textContent), getEl("exp-tile-income").textContent);
+// Net is the one place both are intentionally combined, and it is labelled so.
+check("net combines both (480k+60k-51.1k) and is the ONLY place they meet",
+  /488|489/.test(getEl("exp-tile-net").textContent.replace(/[\s,]/g, "")),
+  getEl("exp-tile-net").textContent);
+
+const incHtml = getEl("inc-tbody").innerHTML;
+check("the support entry is listed with its category badge",
+  incHtml.includes("Support from Paul") && incHtml.includes("support"));
+check("a voided income row still shows, marked, not deleted",
+  incHtml.includes("Mis-entry") && incHtml.includes("voided") && incHtml.includes("Restore"));
+
+// ── 3c. THE CHART MUST SHOW THEM DISTINGUISHABLY ───────────────────
+console.log("\n  chart");
+check("a chart was built", !!lastChart, lastChart ? "yes" : "none");
+const ds = (lastChart && lastChart.data && lastChart.data.datasets) || [];
+check("THREE datasets: expenses + TWO income series", ds.length === 3, String(ds.length));
+const dSub = ds.filter(function (d) { return /Subscription income/.test(d.label); })[0];
+const dOth = ds.filter(function (d) { return /Other income/.test(d.label); })[0];
+const dExp = ds.filter(function (d) { return /Expenses/.test(d.label); })[0];
+check("subscription income is its own series", !!dSub, dSub && dSub.label);
+check("other income is a SEPARATE series", !!dOth, dOth && dOth.label);
+check("its legend label names it support/donation, not just income",
+  !!dOth && /support|donation/i.test(dOth.label), dOth && dOth.label);
+check("the two income series are VISUALLY distinct (different fill)",
+  !!dSub && !!dOth && dSub.backgroundColor !== dOth.backgroundColor,
+  (dSub && dSub.backgroundColor) + " vs " + (dOth && dOth.backgroundColor));
+check("other income is further marked with a dashed border",
+  !!dOth && Array.isArray(dOth.borderDash) && dOth.borderDash.length > 0);
+check("income stacks together but SEPARATELY from expenses",
+  !!dSub && !!dOth && !!dExp && dSub.stack === dOth.stack && dExp.stack !== dSub.stack,
+  dExp && (dExp.stack + " / " + dSub.stack));
+check("the axes are configured stacked so the two segments sit on one bar",
+  !!lastChart && lastChart.options && lastChart.options.scales &&
+  lastChart.options.scales.y && lastChart.options.scales.y.stacked === true);
+check("support money is NOT folded into the subscription series",
+  !!dSub && Number(dSub.data[0]) === 240000 * 0 + 240000, dSub && String(dSub.data[0]));
+
 // ── 4. hostile input must not become markup ────────────────────────────────
 console.log("\n  safety");
 LIST.data[1].description = '<img src=x onerror="alert(1)">';
@@ -201,15 +267,19 @@ LIST.data[1].description = "Printing";
 SUMMARY.data = {
   generated: 0, expense_totals: { USD: 0, XAF: 0, NGN: 0 },
   breakdown: { own: {}, marketing: {}, commissions_owed: {}, commissions_paid: {} },
-  marketing_per_marketer: [], income_totals: { USD: 0, XAF: 0, NGN: 0 },
+  marketing_per_marketer: [],
+  income_subscription_totals: { USD: 0, XAF: 0, NGN: 0 },
+  income_manual_totals: { USD: 0, XAF: 0, NGN: 0 },
+  income_manual_by_category: {},
   income_is_gross: true, gateway_fees: { available: false }, fx: {}, series: [],
 };
-LIST.data = []; TPLS.data = [];
+LIST.data = []; TPLS.data = []; INCOME.data = [];
 await ctx.loadExpenses();
 check("an empty account renders empty states, not a crash",
   /Nothing recorded yet/.test(getEl("exp-currency-tbody").innerHTML) &&
   /No expenses/.test(getEl("exp-tbody").innerHTML) &&
-  /No recurring costs/.test(getEl("exp-tpl-tbody").innerHTML));
+  /No recurring costs/.test(getEl("exp-tpl-tbody").innerHTML) &&
+  /No non-subscription income/.test(getEl("inc-tbody").innerHTML));
 
 console.log(`\n  ${fails === 0 ? "ALL expense render checks passed" : fails + " FAILED"}\n`);
 process.exit(fails === 0 ? 0 : 1);
