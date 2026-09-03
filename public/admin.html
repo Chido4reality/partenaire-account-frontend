@@ -1013,6 +1013,7 @@
              "Subscriptions" tab above. One place for all pending requests now. -->
         <!-- <a class="sb-link" data-route="subscription-requests"><span class="sb-link-icon">✉️</span><span class="sb-link-label">Sub. requests</span></a> -->
         <a class="sb-link" data-route="mp-finance"><span class="sb-link-icon">📊</span><span class="sb-link-label">MP Finance</span></a>
+        <a class="sb-link" data-route="expenses" id="sb-link-expenses"><span class="sb-link-icon">💸</span><span class="sb-link-label">Expense tracker</span></a>
 
         <div class="sb-section">Stenamo Market</div>
         <a class="sb-link" data-route="marketplace-users"><span class="sb-link-icon">👥</span><span class="sb-link-label">Marketplace users</span></a>
@@ -1278,6 +1279,142 @@
               <tbody id="finance-tbody">
                 <tr><td class="empty" colspan="6">Loading…</td></tr>
               </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- EXPENSE TRACKER — master_admin only. Peter's own P&L for running the
+           platform. NOT pa_expenditures (a shop's costs inside the POS), and
+           NOT pa_marketing_expenditures (read live below, never copied). -->
+      <section class="route" id="route-expenses">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Expense tracker</div>
+            <div class="page-sub">What it costs to run Stenamo Book &amp; Market, against subscription income.</div>
+          </div>
+          <button class="btn" id="exp-refresh">Refresh</button>
+        </div>
+
+        <!-- The ONLY converted figure on this page, and it says so plainly. -->
+        <div class="card" style="margin-bottom:14px">
+          <div class="settings-card-title">Estimated total <span id="exp-base-label">(XAF)</span></div>
+          <div class="settings-card-sub" id="exp-estimate-note">Estimate only — converted at the rate you set.</div>
+          <div class="stat-strip" style="margin-top:12px">
+            <div class="stat-card"><div class="stat-label">Estimated expenses</div><div class="stat-value" id="exp-tile-expense">…</div></div>
+            <div class="stat-card"><div class="stat-label">Estimated income (gross)</div><div class="stat-value" id="exp-tile-income">…</div></div>
+            <div class="stat-card"><div class="stat-label">Estimated net</div><div class="stat-value" id="exp-tile-net">…</div></div>
+          </div>
+        </div>
+
+        <!-- The authoritative numbers. Never converted. -->
+        <div class="card" style="margin-bottom:14px">
+          <div class="settings-card-title">Per-currency totals — the authoritative figures</div>
+          <div class="settings-card-sub">Stored in the currency actually paid. Never converted, never blended.</div>
+          <div class="table-wrap" style="margin-top:12px">
+            <table class="data">
+              <thead><tr>
+                <th>Currency</th><th class="num">Own expenses</th><th class="num">Marketing</th>
+                <th class="num">Commissions paid</th><th class="num">Commissions owed</th>
+                <th class="num">Total expenses</th><th class="num">Income (gross)</th>
+              </tr></thead>
+              <tbody id="exp-currency-tbody"><tr><td class="empty" colspan="7">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <div class="settings-card-sub" style="margin-top:10px" id="exp-fee-note"></div>
+        </div>
+
+        <div class="card chart-card" style="margin-bottom:14px">
+          <div class="chart-card-title">Expenses vs income by month <span id="exp-chart-base" class="settings-card-sub"></span></div>
+          <div class="chart-canvas-host"><canvas id="exp-chart"></canvas></div>
+        </div>
+
+        <div class="charts-row" style="margin-bottom:14px">
+          <div class="card">
+            <div class="settings-card-title">Marketing spend per marketer</div>
+            <div class="settings-card-sub">Read live from the marketing screen — recorded there, never copied here, so the two can never disagree.</div>
+            <div class="table-wrap" style="margin-top:12px">
+              <table class="data">
+                <thead><tr><th>Marketer</th><th class="num">Spend</th></tr></thead>
+                <tbody id="exp-marketer-tbody"><tr><td class="empty" colspan="2">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card">
+            <div class="settings-card-title">Conversion rates you set</div>
+            <div class="settings-card-sub">Typed by hand, used only for the estimate tile and the chart. Nothing is fetched automatically, and no rate is ever written onto a stored expense.</div>
+            <div style="margin-top:12px">
+              <label class="form-label">1 USD = XAF</label>
+              <div style="display:flex;gap:8px">
+                <input class="input" id="exp-fx-xaf" type="number" step="0.01" min="0" placeholder="e.g. 610">
+                <button class="btn" id="exp-fx-xaf-save">Save</button>
+              </div>
+              <div class="settings-card-sub" id="exp-fx-xaf-when">Not set yet</div>
+            </div>
+            <div style="margin-top:12px">
+              <label class="form-label">1 USD = NGN</label>
+              <div style="display:flex;gap:8px">
+                <input class="input" id="exp-fx-ngn" type="number" step="0.01" min="0" placeholder="e.g. 1600">
+                <button class="btn" id="exp-fx-ngn-save">Save</button>
+              </div>
+              <div class="settings-card-sub" id="exp-fx-ngn-when">Not set yet</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:14px">
+          <div class="settings-card-title">Add an expense</div>
+          <div class="settings-card-sub">One-off costs. The date is backdatable — enter past costs freely.</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px">
+            <input class="input" id="exp-new-desc" placeholder="Description">
+            <input class="input" id="exp-new-amount" type="number" step="0.01" min="0" placeholder="Amount">
+            <select class="input" id="exp-new-currency">
+              <option value="USD">USD</option><option value="XAF" selected>XAF</option><option value="NGN">NGN</option>
+            </select>
+            <input class="input" id="exp-new-date" type="date">
+            <input class="input" id="exp-new-notes" placeholder="Notes (optional)">
+            <button class="btn btn-primary" id="exp-new-save">Add expense</button>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:14px">
+          <div class="settings-card-title">Recurring costs</div>
+          <div class="settings-card-sub">Charged on a day of the month. A 29th/30th/31st anchor falls on the last day of a short month. Changing an amount applies to future months only — rows already generated keep what they were created at. Deactivate to stop it; history is always kept.</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:12px">
+            <input class="input" id="exp-tpl-name" placeholder="Name (e.g. Claude)">
+            <input class="input" id="exp-tpl-amount" type="number" step="0.01" min="0" placeholder="Amount">
+            <select class="input" id="exp-tpl-currency">
+              <option value="USD" selected>USD</option><option value="XAF">XAF</option><option value="NGN">NGN</option>
+            </select>
+            <input class="input" id="exp-tpl-day" type="number" min="1" max="31" placeholder="Day (1-31)">
+            <input class="input" id="exp-tpl-start" type="date" title="Nothing is generated before this date">
+            <button class="btn btn-primary" id="exp-tpl-save">Add recurring</button>
+          </div>
+          <div class="table-wrap" style="margin-top:14px">
+            <table class="data">
+              <thead><tr><th>Name</th><th class="num">Amount</th><th>Day</th><th>Since</th><th>Status</th><th></th></tr></thead>
+              <tbody id="exp-tpl-tbody"><tr><td class="empty" colspan="6">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="settings-card-title">All expenses</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+            <input class="input" id="exp-from" type="date" style="max-width:170px">
+            <input class="input" id="exp-to" type="date" style="max-width:170px">
+            <select class="input" id="exp-source" style="max-width:170px">
+              <option value="">All sources</option>
+              <option value="recurring">Recurring</option>
+              <option value="manual">Manual</option>
+            </select>
+            <button class="btn" id="exp-filter-apply">Apply</button>
+            <button class="btn" id="exp-filter-clear">Clear</button>
+          </div>
+          <div class="table-wrap" style="margin-top:12px">
+            <table class="data">
+              <thead><tr><th>Date</th><th>Description</th><th class="num">Amount</th><th>Source</th><th>Notes</th><th></th></tr></thead>
+              <tbody id="exp-tbody"><tr><td class="empty" colspan="6">Loading…</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -2428,7 +2565,7 @@
       'marketplace-users', 'verifications', 'dozie-subscriptions', 'orders', 'disputes', 'marketplace-finance',
       'sell-restrictions', 'subscription-discounts', 'promo-codes', 'loyalty-grants',
       'broadcasts', 'admin-team', 'audit-log', 'admin-activity', 'cart-reconcile', 'settings',
-      'my-marketing', 'marketers'
+      'my-marketing', 'marketers', 'expenses'
     ]);
 
     function parseHashRoute() {
@@ -2570,6 +2707,7 @@
       if (route === 'cart-reconcile')      loadCartReconcile();
       if (route === 'my-marketing')        { applyMarketingLang(); loadMyMarketing(); }
       if (route === 'marketers')           loadMarketers();
+      if (route === 'expenses')            loadExpenses();
       // Render placeholders lazily on first visit (cheap; idempotent).
       if (ROUTE_PLACEHOLDERS[route]) renderPlaceholder(route);
       // Stop auto-refresh when navigating away from sections that use it.
@@ -3117,6 +3255,303 @@
       }
     }
 
+    // ────────────────────── EXPENSE TRACKER (master_admin only) ──────────────────────
+    // Peter's own P&L for operating the platform. The server gates every route
+    // with requireAdminRole('master_admin'); hiding the nav link is cosmetic
+    // only — the security boundary is the API's, exactly as with the marketer
+    // screens. See routes/adminExpenses.js.
+    //
+    // CURRENCY: the per-currency table is the truth and is never converted. The
+    // single estimate tile and the chart are the ONLY converted figures, both
+    // labelled as estimates with the rate and its date shown next to them.
+    let expData = null, expTemplates = [], expChart = null;
+
+    // USD is the one currency here with meaningful minor units — a Supabase
+    // overage is $23.47, not $23. The shared fmtCur() rounds to whole units
+    // (right for XAF/NGN), so USD gets its own formatting rather than changing
+    // a helper five other screens depend on.
+    function fmtExpCur(n, cur) {
+      if (n == null || isNaN(n)) return '—';
+      if (cur === 'USD') return '$' + new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+      return fmtCur(n, cur);
+    }
+
+    function expRates() {
+      const fx = (expData && expData.fx) || {};
+      return {
+        XAF: fx.fx_usd_xaf ? Number(fx.fx_usd_xaf.value) : null,
+        NGN: fx.fx_usd_ngn ? Number(fx.fx_usd_ngn.value) : null,
+        xafAt: fx.fx_usd_xaf ? fx.fx_usd_xaf.updated_at : null,
+        ngnAt: fx.fx_usd_ngn ? fx.fx_usd_ngn.updated_at : null,
+      };
+    }
+
+    // Convert a {USD,XAF,NGN} map into the XAF base for the estimate tile.
+    // Returns null when a rate needed for a NON-ZERO amount is missing — better
+    // to show "set a rate" than a number quietly missing a whole currency.
+    function expToBase(map) {
+      const r = expRates();
+      let total = Number(map.XAF) || 0;
+      const usd = Number(map.USD) || 0;
+      const ngn = Number(map.NGN) || 0;
+      if (usd) { if (!r.XAF) return null; total += usd * r.XAF; }
+      if (ngn) {
+        if (!r.XAF || !r.NGN) return null;
+        total += (ngn / r.NGN) * r.XAF;   // NGN -> USD -> XAF, via the two rates set
+      }
+      return total;
+    }
+
+    function expRenderEstimate() {
+      const r = expRates();
+      const exp = expToBase(expData.expense_totals || {});
+      const inc = expToBase(expData.income_totals || {});
+      const set = function (id, v) {
+        const el = $(id);
+        if (!el) return;
+        el.textContent = v == null ? 'Set a rate' : fmtCur(v, 'XAF');
+        el.classList.toggle('muted', v == null);
+      };
+      set('exp-tile-expense', exp);
+      set('exp-tile-income', inc);
+      set('exp-tile-net', (exp == null || inc == null) ? null : inc - exp);
+
+      const bits = [];
+      if (r.XAF) bits.push('1 USD = ' + r.XAF + ' XAF (set ' + fmtDate(r.xafAt) + ')');
+      if (r.NGN) bits.push('1 USD = ' + r.NGN + ' NGN (set ' + fmtDate(r.ngnAt) + ')');
+      $('exp-estimate-note').innerHTML = bits.length
+        ? 'Estimate only, at the rates you set: ' + escapeHtml(bits.join(' · ')) +
+          '. The per-currency table below is the authoritative figure.'
+        : 'No conversion rate set yet — enter one below to see an estimated total. The per-currency table below is unaffected and always accurate.';
+      $('exp-chart-base').textContent = bits.length ? '— estimated, in XAF' : '— set a rate to see this chart';
+    }
+
+    function expRenderCurrencyTable() {
+      const b = expData.breakdown || {};
+      const rows = ['USD', 'XAF', 'NGN'].filter(function (c) {
+        return (Number(expData.expense_totals[c]) || 0) || (Number(expData.income_totals[c]) || 0);
+      });
+      const tb = $('exp-currency-tbody');
+      if (!rows.length) { tb.innerHTML = '<tr><td class="empty" colspan="7">Nothing recorded yet</td></tr>'; return; }
+      tb.innerHTML = rows.map(function (c) {
+        return '<tr>' +
+          '<td><strong>' + c + '</strong></td>' +
+          '<td class="num">' + fmtExpCur(b.own ? b.own[c] : 0, c) + '</td>' +
+          '<td class="num">' + fmtExpCur(b.marketing ? b.marketing[c] : 0, c) + '</td>' +
+          '<td class="num">' + fmtExpCur(b.commissions_paid ? b.commissions_paid[c] : 0, c) + '</td>' +
+          // Owed is a liability not yet paid — kept visually distinct from paid.
+          '<td class="num"><span class="badge badge-warn">' + fmtExpCur(b.commissions_owed ? b.commissions_owed[c] : 0, c) + '</span></td>' +
+          '<td class="num"><strong>' + fmtExpCur(expData.expense_totals[c], c) + '</strong></td>' +
+          '<td class="num">' + fmtExpCur(expData.income_totals[c], c) + '</td>' +
+        '</tr>';
+      }).join('');
+      const gf = expData.gateway_fees || {};
+      $('exp-fee-note').innerHTML =
+        'Income is <strong>GROSS</strong> — commissions and fees appear on the expense side. ' +
+        (gf.available === false
+          ? 'Flutterwave fees are <strong>not included</strong>: they are not stored anywhere, and are deliberately not estimated.'
+          : '');
+    }
+
+    function expRenderMarketers() {
+      const list = expData.marketing_per_marketer || [];
+      const tb = $('exp-marketer-tbody');
+      if (!list.length) { tb.innerHTML = '<tr><td class="empty" colspan="2">No marketing spend recorded</td></tr>'; return; }
+      tb.innerHTML = list.map(function (m) {
+        const parts = Object.keys(m.totals || {}).sort().map(function (c) { return fmtExpCur(m.totals[c], c); });
+        return '<tr><td>' + escapeHtml(m.name || '—') + '</td><td class="num">' + (parts.join('<br>') || '—') + '</td></tr>';
+      }).join('');
+    }
+
+    function expRenderChart() {
+      if (!window.Chart) return;
+      const host = $('exp-chart');
+      if (!host) return;
+      const series = expData.series || [];
+      if (expChart) { expChart.destroy(); expChart = null; }
+      if (!series.length) return;
+      const labels = series.map(function (s) { return s.month; });
+      const conv = function (m) { const v = expToBase(m); return v == null ? 0 : v; };
+      expChart = new Chart(host.getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [
+            { label: 'Expenses (est. XAF)', data: series.map(function (s) { return conv(s.expense); }), backgroundColor: 'rgba(239,68,68,0.65)' },
+            { label: 'Income (est. XAF)', data: series.map(function (s) { return conv(s.income); }), backgroundColor: 'rgba(16,185,129,0.65)' },
+          ],
+        },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } },
+      });
+    }
+
+    function expRenderTemplates() {
+      const tb = $('exp-tpl-tbody');
+      if (!expTemplates.length) { tb.innerHTML = '<tr><td class="empty" colspan="6">No recurring costs yet</td></tr>'; return; }
+      tb.innerHTML = expTemplates.map(function (t) {
+        return '<tr>' +
+          '<td>' + escapeHtml(t.name) + '</td>' +
+          '<td class="num">' + fmtExpCur(t.amount, t.currency) + '</td>' +
+          '<td>' + t.anchor_day + '</td>' +
+          '<td>' + escapeHtml(String(t.start_date || '')) + '</td>' +
+          '<td>' + (t.is_active ? '<span class="badge badge-ok">Active</span>' : '<span class="badge">Inactive</span>') + '</td>' +
+          '<td><button class="btn btn-sm" data-exp-tpl-amount="' + t.id + '">Change amount</button> ' +
+              '<button class="btn btn-sm" data-exp-tpl-toggle="' + t.id + '">' + (t.is_active ? 'Deactivate' : 'Reactivate') + '</button></td>' +
+        '</tr>';
+      }).join('');
+    }
+
+    function expRenderList(rows) {
+      const tb = $('exp-tbody');
+      if (!rows.length) { tb.innerHTML = '<tr><td class="empty" colspan="6">No expenses for this filter</td></tr>'; return; }
+      tb.innerHTML = rows.map(function (e) {
+        const adjusted = e.amount_adjusted
+          ? ' <span class="badge badge-warn" title="Edited — differs from its template amount of ' +
+            escapeHtml(String(e.template_amount)) + '">adjusted</span>' : '';
+        return '<tr>' +
+          '<td>' + escapeHtml(String(e.expense_date)) + '</td>' +
+          '<td>' + escapeHtml(e.description) + adjusted + '</td>' +
+          '<td class="num">' + fmtExpCur(e.amount, e.currency) + '</td>' +
+          '<td>' + (e.source === 'recurring' ? '<span class="badge">Recurring</span>' : '<span class="badge">Manual</span>') + '</td>' +
+          '<td>' + escapeHtml(e.notes || '') + '</td>' +
+          '<td><button class="btn btn-sm" data-exp-edit="' + e.id + '">Edit amount</button></td>' +
+        '</tr>';
+      }).join('');
+    }
+
+    function expFilterQS() {
+      const p = [];
+      if ($('exp-from').value) p.push('from=' + $('exp-from').value);
+      if ($('exp-to').value) p.push('to=' + $('exp-to').value);
+      if ($('exp-source').value) p.push('source=' + $('exp-source').value);
+      return p.length ? '?' + p.join('&') : '';
+    }
+
+    async function loadExpenses() {
+      try {
+        // The summary call is what materialises any recurring occurrence that
+        // has come due. No cron: it is a pure date check on load, and the
+        // (template, period) unique constraint makes a double load a no-op.
+        const p = [];
+        if ($('exp-from').value) p.push('from=' + $('exp-from').value);
+        if ($('exp-to').value) p.push('to=' + $('exp-to').value);
+        const [sum, list, tpls] = await Promise.all([
+          apiAdmin('GET', '/admin/expenses/summary' + (p.length ? '?' + p.join('&') : '')),
+          apiAdmin('GET', '/admin/expenses' + expFilterQS()),
+          apiAdmin('GET', '/admin/expenses/templates'),
+        ]);
+        expData = sum.data || {};
+        expTemplates = tpls.data || [];
+        const r = expRates();
+        if (r.XAF) $('exp-fx-xaf').value = r.XAF;
+        if (r.NGN) $('exp-fx-ngn').value = r.NGN;
+        $('exp-fx-xaf-when').textContent = r.xafAt ? 'Last updated ' + fmtDate(r.xafAt) : 'Not set yet';
+        $('exp-fx-ngn-when').textContent = r.ngnAt ? 'Last updated ' + fmtDate(r.ngnAt) : 'Not set yet';
+        expRenderEstimate();
+        expRenderCurrencyTable();
+        expRenderMarketers();
+        expRenderChart();
+        expRenderTemplates();
+        expRenderList(list.data || []);
+      } catch (e) {
+        if (e.status === 403) {
+          $('exp-currency-tbody').innerHTML = '<tr><td class="empty" colspan="7">Not permitted for your role.</td></tr>';
+          return;
+        }
+        showToast(e.message || 'Could not load expenses', 'danger');
+      }
+    }
+
+    function wireExpenses() {
+      const on = function (id, fn) { const el = $(id); if (el) el.addEventListener('click', fn); };
+      on('exp-refresh', loadExpenses);
+      on('exp-filter-apply', loadExpenses);
+      on('exp-filter-clear', function () {
+        $('exp-from').value = ''; $('exp-to').value = ''; $('exp-source').value = '';
+        loadExpenses();
+      });
+
+      on('exp-new-save', async function () {
+        const body = {
+          description: $('exp-new-desc').value.trim(),
+          amount: $('exp-new-amount').value,
+          currency: $('exp-new-currency').value,
+          expense_date: $('exp-new-date').value,
+          notes: $('exp-new-notes').value.trim() || null,
+        };
+        if (!body.description || !body.amount || !body.expense_date) {
+          showToast('Description, amount and date are required', 'danger'); return;
+        }
+        try {
+          await apiAdmin('POST', '/admin/expenses', body);
+          $('exp-new-desc').value = ''; $('exp-new-amount').value = ''; $('exp-new-notes').value = '';
+          showToast('Expense added', 'ok');
+          loadExpenses();
+        } catch (e) { showToast(e.message || 'Could not add expense', 'danger'); }
+      });
+
+      on('exp-tpl-save', async function () {
+        const body = {
+          name: $('exp-tpl-name').value.trim(),
+          amount: $('exp-tpl-amount').value,
+          currency: $('exp-tpl-currency').value,
+          anchor_day: $('exp-tpl-day').value,
+          start_date: $('exp-tpl-start').value,
+        };
+        if (!body.name || !body.amount || !body.anchor_day || !body.start_date) {
+          showToast('Name, amount, day and start date are required', 'danger'); return;
+        }
+        try {
+          await apiAdmin('POST', '/admin/expenses/templates', body);
+          $('exp-tpl-name').value = ''; $('exp-tpl-amount').value = ''; $('exp-tpl-day').value = '';
+          showToast('Recurring cost added', 'ok');
+          loadExpenses();
+        } catch (e) { showToast(e.message || 'Could not add recurring cost', 'danger'); }
+      });
+
+      const saveRate = async function (key, inputId) {
+        const v = $(inputId).value;
+        if (!v || Number(v) <= 0) { showToast('Enter a rate greater than zero', 'danger'); return; }
+        try {
+          await apiAdmin('PUT', '/admin/expenses/settings/' + key, { value: Number(v) });
+          showToast('Rate saved', 'ok');
+          loadExpenses();
+        } catch (e) { showToast(e.message || 'Could not save rate', 'danger'); }
+      };
+      on('exp-fx-xaf-save', function () { saveRate('fx_usd_xaf', 'exp-fx-xaf'); });
+      on('exp-fx-ngn-save', function () { saveRate('fx_usd_ngn', 'exp-fx-ngn'); });
+
+      // Delegated: the tables are re-rendered on every load, so per-row
+      // listeners would be re-bound (and leak) each time.
+      const root = $('route-expenses');
+      if (root) root.addEventListener('click', async function (ev) {
+        const editId = ev.target.getAttribute && ev.target.getAttribute('data-exp-edit');
+        const tplAmt = ev.target.getAttribute && ev.target.getAttribute('data-exp-tpl-amount');
+        const tplTog = ev.target.getAttribute && ev.target.getAttribute('data-exp-tpl-toggle');
+        try {
+          if (editId) {
+            const v = window.prompt('New amount for this expense (this row only — the template is unchanged):');
+            if (v === null || v === '') return;
+            await apiAdmin('PATCH', '/admin/expenses/' + editId, { amount: Number(v) });
+            showToast('Expense updated', 'ok');
+            loadExpenses();
+          } else if (tplAmt) {
+            const v = window.prompt('New amount. This applies to FUTURE months only — rows already generated keep their original amount:');
+            if (v === null || v === '') return;
+            await apiAdmin('PATCH', '/admin/expenses/templates/' + tplAmt, { amount: Number(v) });
+            showToast('Template updated — future months only', 'ok');
+            loadExpenses();
+          } else if (tplTog) {
+            const t = expTemplates.filter(function (x) { return x.id === tplTog; })[0];
+            if (!t) return;
+            await apiAdmin('PATCH', '/admin/expenses/templates/' + tplTog, { is_active: !t.is_active });
+            showToast(t.is_active ? 'Deactivated — history kept' : 'Reactivated', 'ok');
+            loadExpenses();
+          }
+        } catch (e) { showToast(e.message || 'Action failed', 'danger'); }
+      });
+    }
+
     function wireMarketing() {
       const on = function (id, evt, fn) { const el = $(id); if (el) el.addEventListener(evt, fn); };
       on('mm-refresh', 'click', loadMyMarketing);
@@ -3504,6 +3939,16 @@
       // Admin activity is master-admin-only (endpoint is requireAdminRole('master_admin')).
       const aaLink = document.querySelector('.sb-link[data-route="admin-activity"]');
       if (aaLink) aaLink.style.display = isMaster ? '' : 'none';
+      // MP-EXPENSE-TRACKER: master-admin-only. This link carries an inline
+      // display style, so visibility MUST be driven through style.display —
+      // the portal has no [hidden] CSS rule, so toggling the `hidden`
+      // attribute would be silently overridden by the inline style (the bug
+      // that made the payout modal's close button unclickable).
+      // Cosmetic only: routes/adminExpenses.js is requireAdminRole('master_admin'),
+      // so role='admin' (Nora, and PAUL — a customer) gets 403 at the API even
+      // by typing #expenses or calling the endpoint directly.
+      const exLink = $('sb-link-expenses');
+      if (exLink) exLink.style.display = isMaster ? '' : 'none';
       // MP-SUBSCRIPTION-DISCOUNT: Plan discounts is full-CRUD admins only
       // (write endpoints are requireAdminRole('master_admin','admin')) — hide
       // for staff admins.
@@ -7811,6 +8256,7 @@
         btn.addEventListener('click', () => setTheme(btn.getAttribute('data-theme-choice'))));
       $('dashboard-refresh').addEventListener('click', loadDashboard);
       wireMarketing();   // PHASE 1 — marketer screen + oversight tab
+      wireExpenses();    // MP-EXPENSE-TRACKER — master_admin only
 
       // BUSINESSES
       $('biz-refresh').addEventListener('click', loadBusinesses);

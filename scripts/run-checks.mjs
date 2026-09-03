@@ -31,6 +31,9 @@ const CHECKS = [
   // MP-ZERO-STOCK-INVISIBLE: InventoryPage had no render coverage at all, so a
   // product that vanished from the Stock tab looked identical to a green suite.
   ["zero-stock",    "scripts/inventory-zero-stock-check.mjs", "a zero-stock product lists at quantity 0 instead of reading as 'does not exist'"],
+  // MP-EXPENSE-TRACKER: admin.html has no build step, so this drives the REAL
+  // inline script — the only way to prove the screen renders rather than parses.
+  ["expenses",      "scripts/expense-render-check.mjs", "the expense screen renders, never converts the authoritative table, and keeps USD cents"],
 ];
 
 const results = [];
