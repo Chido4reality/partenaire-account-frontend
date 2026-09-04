@@ -119,7 +119,9 @@ const SUMMARY = {
     income_manual_totals: { USD: 0, XAF: 60000, NGN: 0 },
     income_manual_by_category: { support: { XAF: 60000 } },
     income_is_gross: true,
-    gateway_fees: { available: false, reason: "not stored" },
+    gateway_fees: { available: false, totals: { USD: 0, XAF: 0, NGN: 0 },
+                    captured_count: 0, uncaptured_count: 2, no_gateway_count: 3,
+                    reason: "not captured yet" },
     fx: {},
     series: [{ month: "2026-08", expense: { USD: 20, XAF: 0, NGN: 0 },
                income_subscription: { USD: 0, XAF: 240000, NGN: 0 },
@@ -170,8 +172,20 @@ check("the estimate tile REFUSES to invent a number without a rate",
 check("...and says so, pointing at the authoritative table",
   /No conversion rate set/.test(getEl("exp-estimate-note").innerHTML));
 check("income is labelled GROSS on screen", /GROSS/.test(getEl("exp-fee-note").innerHTML));
-check("Flutterwave fees are stated as NOT included",
-  /not included/.test(getEl("exp-fee-note").innerHTML) && /not estimated/.test(getEl("exp-fee-note").innerHTML));
+// MP-FLW-FEE-CAPTURE: with nothing captured the line must say so and must NOT
+// print a zero, which would claim the gateway took nothing.
+{
+  const fee = getEl("exp-fee-note").innerHTML;
+  check("with no fee captured, the line says so rather than showing a total",
+    /No gateway fee captured yet/.test(fee));
+  check("...names the earlier payments as UNAVAILABLE, not zero",
+    /unavailable<\/strong>, not zero/.test(fee) && /not estimated/.test(fee), fee.slice(0, 60));
+  check("...and separates cash/momo, which carry no fee at all",
+    /carry no gateway fee at all/.test(fee));
+  const cur = getEl("exp-currency-tbody").innerHTML;
+  check("the gateway-fee CELL is an em dash, never 0, while uncaptured",
+    /<td class="num">—<\/td>/.test(cur), cur.includes(">0 FCFA<") ? "SHOWS ZERO" : "em dash");
+}
 
 // ── 2. RATES SET — one estimate, everything else unchanged ─────────────────
 console.log("\n  with rates set");
@@ -203,6 +217,27 @@ check("an inactive template offers Reactivate, not delete",
 check("marketing spend renders per marketer, by name",
   getEl("exp-marketer-tbody").innerHTML.includes("Aisha Bello"));
 check("...in its own currency, unconverted", /₦/.test(getEl("exp-marketer-tbody").innerHTML));
+
+// ── 3a2. CAPTURED GATEWAY FEES RENDER AS REAL FIGURES ──────────────────
+console.log("\n  gateway fee capture");
+SUMMARY.data.gateway_fees = { available: true, totals: { USD: 0, XAF: 1500, NGN: 0 },
+  captured_count: 1, uncaptured_count: 2, no_gateway_count: 3, reason: "captured" };
+SUMMARY.data.breakdown.gateway_fees = { USD: 0, XAF: 1500, NGN: 0 };
+await ctx.loadExpenses();
+{
+  const fee = getEl("exp-fee-note").innerHTML;
+  check("a captured fee shows as a real amount", /Gateway fees captured/.test(fee) && /1\s?500/.test(fee.replace(/&nbsp;| | /g, " ")), fee.slice(0, 80));
+  check("...alongside the count of payments it came from", /across 1 payment/.test(fee));
+  check("...while STILL flagging the 2 uncaptured as unavailable, not zero",
+    /2<\/strong> earlier Flutterwave payments/.test(fee) && /unavailable<\/strong>, not zero/.test(fee));
+  check("the per-currency table shows the captured fee in its own column",
+    /1\s?500/.test(getEl("exp-currency-tbody").innerHTML.replace(/&nbsp;| | /g, " ")));
+}
+// restore the uncaptured state for the assertions that follow
+SUMMARY.data.gateway_fees = { available: false, totals: { USD: 0, XAF: 0, NGN: 0 },
+  captured_count: 0, uncaptured_count: 2, no_gateway_count: 3, reason: "not captured yet" };
+delete SUMMARY.data.breakdown.gateway_fees;
+await ctx.loadExpenses();
 
 // ── 3b. THE TWO INCOME STREAMS MUST NEVER MERGE ────────────────────────────
 console.log("\n  income separation (the thing that matters most)");

@@ -1320,10 +1320,11 @@
               <thead><tr>
                 <th>Currency</th><th class="num">Own expenses</th><th class="num">Marketing</th>
                 <th class="num">Commissions paid</th><th class="num">Commissions owed</th>
+                <th class="num">Gateway fees</th>
                 <th class="num">Total expenses</th>
                 <th class="num">Subscription income</th><th class="num">Other income</th>
               </tr></thead>
-              <tbody id="exp-currency-tbody"><tr><td class="empty" colspan="8">Loading…</td></tr></tbody>
+              <tbody id="exp-currency-tbody"><tr><td class="empty" colspan="9">Loading…</td></tr></tbody>
             </table>
           </div>
           <div class="settings-card-sub" style="margin-top:10px" id="exp-fee-note"></div>
@@ -3373,7 +3374,7 @@
         return (Number(expData.expense_totals[c]) || 0) || (Number(sub[c]) || 0) || (Number(oth[c]) || 0);
       });
       const tb = $('exp-currency-tbody');
-      if (!rows.length) { tb.innerHTML = '<tr><td class="empty" colspan="8">Nothing recorded yet</td></tr>'; return; }
+      if (!rows.length) { tb.innerHTML = '<tr><td class="empty" colspan="9">Nothing recorded yet</td></tr>'; return; }
       tb.innerHTML = rows.map(function (c) {
         return '<tr>' +
           '<td><strong>' + c + '</strong></td>' +
@@ -3382,18 +3383,40 @@
           '<td class="num">' + fmtExpCur(b.commissions_paid ? b.commissions_paid[c] : 0, c) + '</td>' +
           // Owed is a liability not yet paid — kept visually distinct from paid.
           '<td class="num"><span class="badge badge-warn">' + fmtExpCur(b.commissions_owed ? b.commissions_owed[c] : 0, c) + '</span></td>' +
+          // An uncaptured fee renders as an em dash, never 0 — 0 would claim
+          // the gateway took nothing, which is a different and false statement.
+          '<td class="num">' + ((b.gateway_fees && Number(b.gateway_fees[c]))
+              ? fmtExpCur(b.gateway_fees[c], c)
+              : (expData.gateway_fees && expData.gateway_fees.available ? fmtExpCur(0, c) : '—')) + '</td>' +
           '<td class="num"><strong>' + fmtExpCur(expData.expense_totals[c], c) + '</strong></td>' +
           // Subscription and other income are separate CELLS, never summed.
           '<td class="num">' + fmtExpCur(sub[c], c) + '</td>' +
           '<td class="num"><span class="badge">' + fmtExpCur(oth[c], c) + '</span></td>' +
         '</tr>';
       }).join('');
+      // MP-FLW-FEE-CAPTURE: a captured fee shows as a real figure; an
+      // UNCAPTURED one must never render as 0, which would read as "the gateway
+      // took nothing". The three populations are stated separately, and
+      // cash/mtn_momo are called out as carrying no fee at all rather than
+      // being lumped in with the unrecoverable ones.
       const gf = expData.gateway_fees || {};
-      $('exp-fee-note').innerHTML =
-        'Income is <strong>GROSS</strong> — commissions and fees appear on the expense side. ' +
-        (gf.available === false
-          ? 'Flutterwave fees are <strong>not included</strong>: they are not stored anywhere, and are deliberately not estimated.'
-          : '');
+      const feeBits = ['Income is <strong>GROSS</strong> — commissions and fees appear on the expense side.'];
+      if (gf.available) {
+        feeBits.push('Gateway fees captured: <strong>' + fmtMoneyMap(gf.totals || {}, ' · ') +
+                     '</strong> across ' + gf.captured_count + ' payment' + (gf.captured_count === 1 ? '' : 's') + '.');
+      } else {
+        feeBits.push('No gateway fee captured yet — recorded from the next verified Flutterwave payment onward.');
+      }
+      if (gf.uncaptured_count) {
+        feeBits.push('<strong>' + gf.uncaptured_count + '</strong> earlier Flutterwave payment' +
+          (gf.uncaptured_count === 1 ? '' : 's') +
+          ' predate fee capture: their fee is <strong>unavailable</strong>, not zero, and is deliberately not estimated.');
+      }
+      if (gf.no_gateway_count) {
+        feeBits.push(gf.no_gateway_count + ' cash/mobile-money payment' +
+          (gf.no_gateway_count === 1 ? '' : 's') + ' carry no gateway fee at all.');
+      }
+      $('exp-fee-note').innerHTML = feeBits.join(' ');
     }
 
     function expRenderMarketers() {
