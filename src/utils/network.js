@@ -87,9 +87,50 @@ let _consecutiveFails = 0;
 // back 2xx. Bounded — clamps at 0 so a long-running drain doesn't
 // accumulate negative counts.
 let _writeAttemptFailures = 0;
+let _lastWriteFailureAt = 0;
+
+// MP-DEGRADED-TTL — the write-failure signal EXPIRES.
+//
+// THE DEFECT THIS CLOSES: on native, `degraded` was a one-way latch for the
+// whole app session. recordWriteFailure() set it; only recordWriteSuccess()
+// could clear it; but api.js routes every offline-eligible write straight to
+// the queue while degraded is true, so no write ever reached axios, so no write
+// could ever return 2xx, so the counter could never come down. The ping path
+// that would otherwise drain it (startWebHealthMonitor) is not enabled on
+// native. Net effect: ONE failed write put the app in queue-only mode with the
+// ⚠ stripe until it was force-restarted.
+//
+// The fix is a sliding expiry, not a new mechanism: no timer, no poll, no extra
+// request. Just a timestamp comparison evaluated here, on the existing check.
+// Repeated failures keep pushing the window out; DEGRADED_TTL_MS of quiet after
+// the LAST failure lets the next interactive write try the network again. If the
+// link is still down that write re-arms the signal, costing one first-attempt
+// timeout (8s) per TTL period rather than one per write.
+//
+// 120s is chosen deliberately:
+//   • Long enough not to flap. During a sustained outage the user pays the 8s
+//     first-attempt stall at most once every two minutes; every other write
+//     still queues instantly.
+//   • Short enough that recovery is invisible. When the link comes back Paul is
+//     out of queue-only mode within two minutes — less than the time it takes to
+//     serve one customer — instead of being stuck until he restarts the app.
+//   • Shorter values (15-60s) multiply the 8s stalls during a real outage for
+//     no meaningful gain in recovery time.
+//
+// Scoped to the WRITE signal only. _consecutiveFails belongs to the ping path,
+// which already has a working recovery (a successful ping resets it), so giving
+// it a TTL would paper over a mechanism that is not broken.
+export const DEGRADED_TTL_MS = 120000;
+
+function _writeDegradedActive() {
+  if (_writeAttemptFailures < 1) return false;
+  if (!_lastWriteFailureAt) return true;          // no timestamp yet: fail safe, stay degraded
+  return (Date.now() - _lastWriteFailureAt) < DEGRADED_TTL_MS;
+}
+
 function isDegradedNow() {
   if (typeof navigator !== 'undefined' && !navigator.onLine) return false; // already offline; not "degraded"
-  return _consecutiveFails >= 1 || _writeAttemptFailures >= 1;
+  return _consecutiveFails >= 1 || _writeDegradedActive();
 }
 // Exported so api.js can feed the signal back. recordWriteSuccess
 // clamps at 0 (no negative counts); recordWriteFailure has no upper
@@ -97,6 +138,9 @@ function isDegradedNow() {
 // indicator path too.
 export function recordWriteFailure() {
   _writeAttemptFailures++;
+  // Slide the expiry window forward on EVERY failure, so a run of failures
+  // keeps the signal armed and only genuine quiet retires it.
+  _lastWriteFailureAt = Date.now();
   // Notify subs so the indicator's ⚠ stripe lights up immediately,
   // not at the next 10s poll tick.
   _notifyWebDegradedMaybe();
@@ -104,8 +148,19 @@ export function recordWriteFailure() {
 export function recordWriteSuccess() {
   if (_writeAttemptFailures > 0) {
     _writeAttemptFailures--;
+    // A real success is stronger evidence than an elapsed timer: clear the
+    // window outright once the counter reaches 0 so a stale timestamp can't
+    // keep the signal alive.
+    if (_writeAttemptFailures === 0) _lastWriteFailureAt = 0;
     _notifyWebDegradedMaybe();
   }
+}
+
+// Test seam ONLY — lets the rig age the window without sleeping 120 real
+// seconds. Not called by application code.
+export function __setLastWriteFailureAtForTest(ts) { _lastWriteFailureAt = ts; }
+export function __degradedInternalsForTest() {
+  return { writeFailures: _writeAttemptFailures, lastFailureAt: _lastWriteFailureAt, ttl: DEGRADED_TTL_MS };
 }
 // Snapshot of the degraded signal — used by api.js's adapter pre-flight
 // AND by getNetworkStatus's return shape so consumers see the same.

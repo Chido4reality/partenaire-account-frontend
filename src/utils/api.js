@@ -74,6 +74,44 @@ const OFFLINE_ELIGIBLE = [
   { rx: /^\/stock\/adjust\/?$/,                     method: "PATCH" },
 ];
 
+// MP-FIRST-ATTEMPT-8S: offline-eligible writes whose REPLAY is guaranteed by a
+// DATABASE CONSTRAINT, so a premature 8s timeout can only ever produce one row.
+//
+//   pa_sales             idx_pa_sales_local_id                UNIQUE (local_id)
+//   pa_payments          pa_payments_org_local_id_uidx        UNIQUE (org_id, local_id)
+//   pa_expenditures      pa_expenditures_org_local_id_uidx    UNIQUE (org_id, local_id)
+//   pa_stock_transfers   pa_stock_transfers_org_local_id_uidx UNIQUE (org_id, local_id)
+//   pa_stock_arrivals    pa_stock_arrivals_org_local_id_uidx  UNIQUE (org_id, local_id)
+//   all others below     pa_offline_dedup_pkey                PK (org_id, endpoint, local_id)
+//
+// NOT listed, and staying at 45s deliberately:
+//   /shifts/open and /shifts/:id/close — no local_id, no unique index. A replay
+//     leans on the "already open" 409, which lands the row in failed_permanent
+//     and shows the cashier a ConflictModal. No duplicate data, but not clean
+//     enough to force early. Opens/closes happen twice a day, so 45s is free.
+//   /stock/count — dedup-safe, but it takes a bulk `counts[]` array and is
+//     legitimately slow server-side; 8s would queue a whole count every time.
+const FAST_FIRST_ATTEMPT = [
+  /^\/sales\/?$/,
+  /^\/sales\/[^/]+\/payment\/?$/,
+  /^\/expenditures\/?$/,
+  /^\/transfers\/?$/,
+  /^\/transfers\/[^/]+\/dispatch\/?$/,
+  /^\/transfers\/[^/]+\/confirm-receipt\/?$/,
+  /^\/stock\/arrivals\/?$/,
+  /^\/customers\/[^/]+\/collect-debt\/?$/,
+  /^\/stock-checks\/[^/]+\/resolve\/?$/,
+  /^\/products\/?$/,
+  /^\/products\/[^/]+\/?$/,
+  /^\/stock\/adjust\/?$/,
+];
+
+function isFirstAttemptFast(url) {
+  if (!url) return false;
+  const path = url.replace(BASE_URL, "").split("?")[0];
+  return FAST_FIRST_ATTEMPT.some((rx) => rx.test(path));
+}
+
 function isOfflineEligible(method, url) {
   if (!url) return false;
   const m = (method || "GET").toUpperCase();
@@ -167,7 +205,31 @@ api.interceptors.request.use(config => {
   // UI flips quickly when network drops mid-read). App.jsx fires a
   // warm-up /health ping at launch to prime the container, which
   // covers the dominant "open app, start working" flow.
-  if (isOfflineEligible(config.method, config.url)) config.timeout = 45000;
+  if (isOfflineEligible(config.method, config.url)) {
+    // MP-FIRST-ATTEMPT-8S: the 45s ceiling below was chosen for Render FREE-tier
+    // cold starts. PROD (partenaire-account-api) is on Starter and does not spin
+    // down, so on prod that ceiling buys nothing and costs the cashier a
+    // 45-second dead spinner every time the link is bad-but-alive.
+    //
+    // And it is paid REPEATEDLY, not once: `degraded` is what makes later writes
+    // skip the network, and on NATIVE the only thing that can set it is
+    // recordWriteFailure() — which runs *after* a write has already failed
+    // (startWebHealthMonitor, the other source, returns early when IS_NATIVE).
+    // So the 45s is spent again after every success (recordWriteSuccess clears
+    // the counter) and again after every app restart.
+    //
+    // Cutting the FIRST attempt to 8s loses nothing: it falls through to the
+    // same queue path it already uses at 45s. The queue worker keeps its own
+    // 45s per-attempt ceiling (pendingSync.js ENDPOINT_TIMEOUTS_MS), so
+    // cold-start headroom on REPLAY is untouched.
+    //
+    // 🔴 ONLY where replay is provably safe. Timing out early means we will
+    // sometimes queue a write the server DID commit, so the replay has to
+    // collapse to one row — enforced by a DB constraint, not a client check and
+    // not a bare lookup (which would race). See FAST_FIRST_ATTEMPT above for the
+    // constraint backing each one, and for what is excluded and why.
+    config.timeout = isFirstAttemptFast(config.url) ? 8000 : 45000;
+  }
   // MP-PEAK-MTN-RESILIENCE: the old blanket 6s timeout aborted requests that were
   // slow-but-alive on a congested peak-hour MTN route (Camtel, faster, completed) —
   // surfacing as "network error" and, for login, locking users out. Give auth + all

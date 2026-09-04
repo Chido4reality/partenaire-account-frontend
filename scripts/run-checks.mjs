@@ -26,6 +26,7 @@ const CHECKS = [
   ["referral",      "scripts/referral-render-check.mjs", "the /register?code= link prefills, locks and never claims success early"],
   ["sw-guard",      "scripts/admin-sw-guard-check.mjs",  "the Capacitor wrap never installs a service worker (no stale shell)"],
   ["marketer-i18n", "scripts/marketer-i18n-check.mjs",   "every marketer string has a French entry — a miss FAILS instead of rendering English"],
+  ["write-timeout", "scripts/write-timeout-check.mjs",   "only DB-constraint-safe writes may time out early and queue"],
   ["responsive",    "scripts/responsive-check.mjs",      "wide tables scroll instead of clipping; the drawer reuses the ONE nav"],
   ["deployed",      "scripts/deployed-admin-check.mjs",  "the LIVE hosts actually serve the marketer UI (needs network)"],
   // MP-ZERO-STOCK-INVISIBLE: InventoryPage had no render coverage at all, so a
@@ -34,6 +35,10 @@ const CHECKS = [
   // MP-EXPENSE-TRACKER: admin.html has no build step, so this drives the REAL
   // inline script — the only way to prove the screen renders rather than parses.
   ["expenses",      "scripts/expense-render-check.mjs", "the expense screen renders, never converts the authoritative table, and keeps USD cents"],
+  // MP-DEGRADED-TTL: `degraded` was a one-way latch on native — one failed write
+  // put the app in queue-only mode until restart, because no write could reach
+  // axios to produce the 2xx that was its only exit.
+  ["degraded-ttl",  "scripts/degraded-ttl-check.mjs", "the degraded signal expires after 120s instead of latching for the whole session"],
 ];
 
 const results = [];
