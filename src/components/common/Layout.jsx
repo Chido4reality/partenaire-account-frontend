@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
-import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import { Drawer } from "vaul";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -385,6 +385,154 @@ function RestrictedLock({ lang, hasPending, onRequest }) {
   );
 }
 
+// ── NOTIFICATION PANEL — MUST STAY AT MODULE SCOPE ────────────────────
+// These two used to be ONE component declared INSIDE Layout(). A component
+// declared inside another is a NEW COMPONENT TYPE on every parent render, so
+// React unmounts and rebuilds the subtree instead of updating it. On mobile
+// that subtree is a vaul Drawer, and every remount replays its entry
+// animation. Clearing notifications fires ~3 Layout renders (isLoading ->
+// mutation settles -> refetch lands); measured on a real Capacitor Android
+// WebView that was 3 remounts and 778px of vertical travel — the sheet left
+// the screen and slid back three times. Hoisted: 0 remounts, 0px travel.
+//
+// They are SPLIT IN TWO rather than one component with an early return,
+// because the old version called useRef/useLayoutEffect/useEffect *after*
+// `if (isMobile) return <sheet/>` — a Rules-of-Hooks violation. The remount
+// bug was masking it: a fresh instance every render meant hook order never
+// had to stay stable. Fixing the remount would have unmasked it, so each
+// branch now owns its hooks unconditionally.
+function NotifSheetMobile({ lang, unread, markAllReadMutation, onClose, body }) {
+  return (
+    <Drawer.Root open={true} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <Drawer.Portal>
+        <Drawer.Overlay style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1700 }} />
+        <Drawer.Content
+          style={{
+            position: "fixed", bottom: 0, left: 0, right: 0,
+            maxHeight: "85vh",
+            background: "var(--bg-surface)",
+            borderTopLeftRadius: 20, borderTopRightRadius: 20,
+            borderTop: "1px solid var(--border)",
+            zIndex: 1701,
+            display: "flex", flexDirection: "column",
+            outline: "none",
+          }}
+        >
+          <div style={{ width: 40, height: 4, background: "var(--border-hover)", borderRadius: 2, margin: "10px auto 6px", flexShrink: 0 }} />
+          <div style={{ padding: "8px 16px 10px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexShrink: 0 }}>
+            <Drawer.Title style={{ fontWeight: 700, fontSize: 15, color: "var(--text-primary)" }}>
+              🔔 {lang === "en" ? "Notifications" : "Notifications"}{unread > 0 && ` (${unread})`}
+            </Drawer.Title>
+            {unread > 0 && (
+              <button
+                onClick={() => markAllReadMutation.mutate()}
+                disabled={markAllReadMutation.isLoading}
+                style={{ background: "none", border: "none", color: "var(--brand-light)", cursor: "pointer", fontSize: 13, fontWeight: 600, padding: "4px 8px", whiteSpace: "nowrap" }}
+              >
+                {markAllReadMutation.isLoading
+                  ? (lang === "en" ? "Marking…" : "En cours…")
+                  : (lang === "en" ? "Mark all" : "Tout marquer")}
+              </button>
+            )}
+          </div>
+          <div style={{ flex: 1, overflowY: "auto", paddingBottom: "var(--safe-area-bottom)" }}>
+            {body}
+          </div>
+        </Drawer.Content>
+      </Drawer.Portal>
+    </Drawer.Root>
+  );
+}
+
+function NotifPanelDesktop({ lang, unread, markAllReadMutation, onClose, body }) {
+  const panelRef = useRef(null);
+  useLayoutEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    const trigger = document.getElementById("notif-bell-desktop");
+    if (!trigger) return;
+    const r = trigger.getBoundingClientRect();
+    const GAP = 6, MARGIN = 8;
+    // Horizontal: align to the left edge of the trigger, clamped so the 320px
+    // panel never runs off the right edge on narrow desktops.
+    const left = Math.max(MARGIN, Math.min(r.left, window.innerWidth - 320 - MARGIN));
+    el.style.left = left + "px";
+    // Vertical: the Alerts trigger sits near the BOTTOM of the sidebar, so
+    // opening downward (the old behaviour) ran the panel off-screen and only
+    // ~2 rows were reachable. Open whichever way has more room — in practice
+    // UPWARD: bottom edge just above the trigger, growing up — and cap
+    // max-height to that space so the panel stays inside the viewport with
+    // the list scrolling within.
+    const spaceBelow = window.innerHeight - r.bottom - GAP - MARGIN;
+    const spaceAbove = r.top - GAP - MARGIN;
+    if (spaceBelow >= spaceAbove) {
+      el.style.top    = (r.bottom + GAP) + "px";
+      el.style.bottom = "auto";
+      el.style.maxHeight = Math.max(160, spaceBelow) + "px";
+    } else {
+      el.style.bottom = (window.innerHeight - r.top + GAP) + "px";
+      el.style.top    = "auto";
+      el.style.maxHeight = Math.max(160, spaceAbove) + "px";
+    }
+  });
+
+  // Close on outside-click / Esc / scroll / resize. The click and scroll
+  // handlers use closest() on stable DOM ids.
+  useEffect(() => {
+    const isInsidePanel = (target) =>
+      target && target.closest && target.closest("#notif-panel-pos");
+    const isInsideBell = (target) =>
+      target && target.closest && (target.closest("#notif-bell-desktop") || target.closest("#notif-bell-mobile"));
+    const onMouseDown = (e) => {
+      if (isInsidePanel(e.target)) return;
+      if (isInsideBell(e.target)) return;
+      onClose();
+    };
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    const onScroll = (e) => {
+      if (isInsidePanel(e.target)) return;
+      onClose();
+    };
+    const onResize = () => onClose();
+    document.addEventListener("mousedown", onMouseDown, true);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onResize);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown, true);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [onClose]);
+
+  return (
+    <div id="notif-panel-pos" ref={panelRef}
+      style={{ position: "fixed", top: 0, left: -9999, width: 320, marginBottom: 0, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.4)", overflow: "hidden", zIndex: 1000, display: "flex", flexDirection: "column" }}>
+      <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexShrink: 0 }}>
+        <span style={{ fontWeight: 600, fontSize: 13, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Notifications {unread > 0 && `(${unread})`}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+          {unread > 0 && (
+            <button
+              onClick={() => markAllReadMutation.mutate()}
+              disabled={markAllReadMutation.isLoading}
+              style={{ background: "none", border: "none", color: "var(--brand-light)", cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0, flexShrink: 0, whiteSpace: "nowrap" }}
+            >
+              {markAllReadMutation.isLoading
+                ? (lang === "en" ? "Marking…" : "En cours…")
+                : (lang === "en" ? "Mark all" : "Tout marquer")}
+            </button>
+          )}
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}>✕</button>
+        </div>
+      </div>
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+        {body}
+      </div>
+    </div>
+  );
+}
+
 export default function Layout() {
   const { user, org, logout, impersonating } = useAuthStore();
   const fmt = useCurrency(); // MP-ANOMALY-EXPLAIN: currency for the enriched bell alerts
@@ -459,6 +607,10 @@ export default function Layout() {
   });
   const myPlan = planData?.data;
   const [showNotif, setShowNotif] = useState(false);
+  // Stable identity: NotifPanelDesktop's listener effect depends on onClose, and
+  // an inline arrow would tear down and re-add four document/window listeners on
+  // every Layout render.
+  const closeNotif = useCallback(() => setShowNotif(false), []);
   const [isMobile, setIsMobile]   = useState(window.innerWidth < 768);
   // MP-MOBILE-UI-PHASE-1: drawer state lives at Layout level so the
   // hamburger button (inside the mobile top bar) and the NavDrawer
@@ -1107,149 +1259,12 @@ export default function Layout() {
     })
   );
 
-  const NotifPanel = () => {
-    // ── MOBILE: Vaul bottom sheet ─────────────────────────────────
-    // The previous absolute-positioned panel inherited width:100%
-    // from the bell's ~50px relative wrapper and rendered squeezed.
-    // Bottom sheet escapes the wrapper via portal and gets full
-    // viewport width.
-    if (isMobile) {
-      return (
-        <Drawer.Root open={true} onOpenChange={(o) => { if (!o) setShowNotif(false); }}>
-          <Drawer.Portal>
-            <Drawer.Overlay style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1700 }} />
-            <Drawer.Content
-              style={{
-                position: "fixed", bottom: 0, left: 0, right: 0,
-                maxHeight: "85vh",
-                background: "var(--bg-surface)",
-                borderTopLeftRadius: 20, borderTopRightRadius: 20,
-                borderTop: "1px solid var(--border)",
-                zIndex: 1701,
-                display: "flex", flexDirection: "column",
-                outline: "none",
-              }}
-            >
-              <div style={{ width: 40, height: 4, background: "var(--border-hover)", borderRadius: 2, margin: "10px auto 6px", flexShrink: 0 }} />
-              <div style={{ padding: "8px 16px 10px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexShrink: 0 }}>
-                <Drawer.Title style={{ fontWeight: 700, fontSize: 15, color: "var(--text-primary)" }}>
-                  🔔 {lang === "en" ? "Notifications" : "Notifications"}{unread > 0 && ` (${unread})`}
-                </Drawer.Title>
-                {unread > 0 && (
-                  <button
-                    onClick={() => markAllReadMutation.mutate()}
-                    disabled={markAllReadMutation.isLoading}
-                    style={{ background: "none", border: "none", color: "var(--brand-light)", cursor: "pointer", fontSize: 13, fontWeight: 600, padding: "4px 8px", whiteSpace: "nowrap" }}
-                  >
-                    {markAllReadMutation.isLoading
-                      ? (lang === "en" ? "Marking…" : "En cours…")
-                      : (lang === "en" ? "Mark all" : "Tout marquer")}
-                  </button>
-                )}
-              </div>
-              <div style={{ flex: 1, overflowY: "auto", paddingBottom: "var(--safe-area-bottom)" }}>
-                {renderNotifBody()}
-              </div>
-            </Drawer.Content>
-          </Drawer.Portal>
-        </Drawer.Root>
-      );
-    }
-
-    // ── DESKTOP: existing fixed-position dropdown ─────────────────
-    const panelRef = useRef(null);
-    useLayoutEffect(() => {
-      const el = panelRef.current;
-      if (!el) return;
-      const trigger = document.getElementById("notif-bell-desktop");
-      if (!trigger) return;
-      const r = trigger.getBoundingClientRect();
-      const GAP = 6, MARGIN = 8;
-      // Horizontal: align to the trigger's left, clamped so the 320px
-      // panel never runs off the right edge on narrow desktops.
-      const left = Math.max(MARGIN, Math.min(r.left, window.innerWidth - 320 - MARGIN));
-      el.style.left = left + "px";
-      // Vertical: the Alerts trigger sits near the BOTTOM of the sidebar,
-      // so opening downward (the old behaviour) ran the panel off-screen
-      // and only ~2 rows were reachable. Open whichever way has more room
-      // — in practice UPWARD: bottom edge just above the trigger, growing
-      // up — and cap max-height to that available space so the whole panel
-      // always stays inside the viewport with the list scrolling within.
-      const spaceBelow = window.innerHeight - r.bottom - GAP - MARGIN;
-      const spaceAbove = r.top - GAP - MARGIN;
-      if (spaceBelow >= spaceAbove) {
-        el.style.top    = (r.bottom + GAP) + "px";
-        el.style.bottom = "auto";
-        el.style.maxHeight = Math.max(160, spaceBelow) + "px";
-      } else {
-        el.style.bottom = (window.innerHeight - r.top + GAP) + "px";
-        el.style.top    = "auto";
-        el.style.maxHeight = Math.max(160, spaceAbove) + "px";
-      }
-    });
-
-    // Close on outside-click / Esc / scroll / resize. The click and
-    // scroll handlers use closest() on stable DOM ids so they survive
-    // any unmount/remount of NotifPanel between Layout renders.
-    useEffect(() => {
-      const isInsidePanel = (target) =>
-        target && target.closest && target.closest("#notif-panel-pos");
-      const isInsideBell = (target) =>
-        target && target.closest && (target.closest("#notif-bell-desktop") || target.closest("#notif-bell-mobile"));
-      const onMouseDown = (e) => {
-        if (isInsidePanel(e.target)) return;
-        if (isInsideBell(e.target)) return;
-        setShowNotif(false);
-      };
-      const onKey = (e) => { if (e.key === "Escape") setShowNotif(false); };
-      const onScroll = (e) => {
-        if (isInsidePanel(e.target)) return;
-        setShowNotif(false);
-      };
-      const onResize = () => setShowNotif(false);
-      document.addEventListener("mousedown", onMouseDown, true);
-      document.addEventListener("keydown", onKey);
-      window.addEventListener("scroll", onScroll, true);
-      window.addEventListener("resize", onResize);
-      return () => {
-        document.removeEventListener("mousedown", onMouseDown, true);
-        document.removeEventListener("keydown", onKey);
-        window.removeEventListener("scroll", onScroll, true);
-        window.removeEventListener("resize", onResize);
-      };
-    }, []);
-    return (
-      <div id="notif-panel-pos" ref={panelRef}
-        style={{ position: "fixed", top: 0, left: -9999, width: 320, marginBottom: 0, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.4)", overflow: "hidden", zIndex: 1000, display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexShrink: 0 }}>
-          <span style={{ fontWeight: 600, fontSize: 13, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Notifications {unread > 0 && `(${unread})`}</span>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-            {unread > 0 && (
-              <button
-                onClick={() => markAllReadMutation.mutate()}
-                disabled={markAllReadMutation.isLoading}
-                style={{ background: "none", border: "none", color: "var(--brand-light)", cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0, flexShrink: 0, whiteSpace: "nowrap" }}
-              >
-                {markAllReadMutation.isLoading
-                  ? (lang === "en" ? "Marking…" : "En cours…")
-                  : (lang === "en" ? "Mark all" : "Tout marquer")}
-              </button>
-            )}
-            <button onClick={() => setShowNotif(false)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}>✕</button>
-          </div>
-        </div>
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
-          {renderNotifBody()}
-        </div>
-      </div>
-    );
-  };
 
   // Fix 2: global order search (VNT-* sales + QOF-* Dozie orders,
   // partial refs). Debounced 300ms. Lives in the sidebar / mobile
   // header; the results panel is position:fixed + anchored to the
   // input via getBoundingClientRect because the sidebar is
-  // overflow:hidden (same constraint NotifPanel works around).
+  // overflow:hidden (same constraint NotifPanelDesktop works around).
   const OrderSearchBox = ({ idSuffix }) => {
     const fmt = useCurrency();
     const inputId = "order-search-" + idSuffix;
@@ -1528,7 +1543,9 @@ export default function Layout() {
                 <button id="notif-bell-mobile" onClick={() => setShowNotif(s => !s)} style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px", cursor: "pointer", color: "var(--text-primary)", fontSize: 12 }}>
                   🔔 {unread > 0 && <span style={{ background: "#ef4444", color: "#fff", borderRadius: 10, padding: "0 5px", fontSize: 10, fontWeight: 700, marginLeft: 4 }}>{unread}</span>}
                 </button>
-                {showNotif && <NotifPanel />}
+                {showNotif && (isMobile
+                  ? <NotifSheetMobile lang={lang} unread={unread} markAllReadMutation={markAllReadMutation} onClose={closeNotif} body={renderNotifBody()} />
+                  : <NotifPanelDesktop lang={lang} unread={unread} markAllReadMutation={markAllReadMutation} onClose={closeNotif} body={renderNotifBody()} />)}
               </div>
             )}
           </div>
@@ -1699,7 +1716,9 @@ export default function Layout() {
                 <span>🔔 {lang === "en" ? "Alerts" : "Alertes"}</span>
                 {unread > 0 && <span style={{ background: "#ef4444", color: "#fff", borderRadius: 10, padding: "0 6px", fontSize: 10, fontWeight: 700 }}>{unread}</span>}
               </button>
-              {showNotif && <NotifPanel />}
+              {showNotif && (isMobile
+                ? <NotifSheetMobile lang={lang} unread={unread} markAllReadMutation={markAllReadMutation} onClose={closeNotif} body={renderNotifBody()} />
+                : <NotifPanelDesktop lang={lang} unread={unread} markAllReadMutation={markAllReadMutation} onClose={closeNotif} body={renderNotifBody()} />)}
             </div>
           )}
 
