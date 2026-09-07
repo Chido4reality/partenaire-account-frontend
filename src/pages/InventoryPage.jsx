@@ -5,7 +5,7 @@ import CameraScanner from "../components/common/CameraScanner";
 import ProductSearchBox from "../components/common/ProductSearchBox";
 import ClearButton from "../components/common/ClearButton";
 import { unitLabel } from "../utils/units";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 // F-D: mirrors the live CHECK constraint pairing each sub-reason to its branch.
 import { ADJUST_BRANCHES, subsFor, label as rLabel, canSubmitAdjust } from "../utils/adjustReasons";
@@ -879,6 +879,45 @@ export default function InventoryPage() {
       .catch(() => { /* 403 → paywall via interceptor; keep defaults */ });
     return () => { cancelled = true; };
   }, [showEditProduct, editProduct?.id]);
+
+  // ── MP-ARRIVAL-DUPLICATE-LINES ──────────────────────────────────────────────
+  // Two lines for the same product in one batch put 432 phantom units on prod: the
+  // stock trigger fired per line, the ledger movement collapsed onto one key. The
+  // server now COLLAPSES same-product lines so both writers agree; this is the
+  // matching UI half, so the user is told what will be merged BEFORE they confirm
+  // rather than discovering a summed quantity afterwards.
+  //
+  // Keyed by row INDEX, matching the render, so the warning follows the row the
+  // user is actually looking at. Only rows that are countable server-side
+  // (product_id AND quantity) can be merged, so only those are flagged.
+  const receiveDuplicates = useMemo(() => {
+    const firstSeen = new Map();   // product_id -> 1-based line number of its first row
+    const firstLineOf = {};        // row index    -> line number it duplicates
+    const groups = new Map();      // product_id -> { name, lines[], quantities[] }
+
+    (receiveForm.items || []).forEach((it, idx) => {
+      if (!it.product_id || !it.quantity) return;
+      const line = idx + 1;
+      if (!firstSeen.has(it.product_id)) {
+        firstSeen.set(it.product_id, line);
+        groups.set(it.product_id, {
+          product_id: it.product_id, name: it.product_name || it.product_id,
+          lines: [line], quantities: [Number(it.quantity)],
+        });
+        return;
+      }
+      firstLineOf[idx] = firstSeen.get(it.product_id);
+      const g = groups.get(it.product_id);
+      g.lines.push(line);
+      g.quantities.push(Number(it.quantity));
+    });
+
+    const summary = [...groups.values()]
+      .filter((g) => g.lines.length > 1)
+      .map((g) => ({ ...g, total: g.quantities.reduce((a, b) => a + b, 0) }));
+
+    return { firstLineOf, summary };
+  }, [receiveForm.items]);
 
   // ── RECEIVE GOODS MUTATION ──────────────────────────────────────────────────
   const receiveMutation = useMutation({
@@ -1822,6 +1861,30 @@ export default function InventoryPage() {
               </span>
             </div>
 
+            {/* MP-ARRIVAL-DUPLICATE-LINES: the server COLLAPSES same-product lines
+                (one product = one arrival line = one movement — see
+                backend/src/lib/arrivalLines.js). Say so BEFORE the press, naming the
+                earlier line, so the merge is never a surprise. Warn, never block:
+                a split delivery legitimately arrives as two lines. */}
+            {receiveDuplicates.summary.length > 0 && (
+              <div style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.4)",
+                            borderRadius: 10, padding: "10px 12px", marginBottom: 12, fontSize: 12.5 }}>
+                <div style={{ fontWeight: 700, color: "#f59e0b", marginBottom: 4 }}>
+                  ⚠️ {lang === "en" ? "The same product is on more than one line" : "Le même produit est sur plusieurs lignes"}
+                </div>
+                {receiveDuplicates.summary.map((d) => (
+                  <div key={d.product_id} style={{ color: "var(--text-muted)" }}>
+                    {d.name} — {lang === "en" ? "items" : "articles"} {d.lines.join(", ")}: {d.quantities.join(" + ")} = <b>{d.total}</b>
+                  </div>
+                ))}
+                <div style={{ marginTop: 4, color: "var(--text-muted)" }}>
+                  {lang === "en"
+                    ? "They will be added together into one line. Remove one if that is not what you meant."
+                    : "Elles seront additionnées en une seule ligne. Supprimez-en une si ce n'est pas ce que vous vouliez."}
+                </div>
+              </div>
+            )}
+
             {receiveForm.items.map((item, idx) => (
               <ReceiveItemRow
                 key={idx} idx={idx} item={item} products={products} lang={lang}
@@ -1829,6 +1892,7 @@ export default function InventoryPage() {
                 onChange={(k, v) => setReceiveItem(idx, k, v)}
                 onRemove={receiveForm.items.length > 1 ? () => removeReceiveItem(idx) : null}
                 canSeePrices={canSeePrices}
+                duplicateOf={receiveDuplicates.firstLineOf[idx]}
               />
             ))}
 
@@ -2531,7 +2595,7 @@ function PricingSection({ data, onChange, lang }) {
 }
 
 // ── RECEIVE ITEM ROW COMPONENT ────────────────────────────────────────────────
-function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemove, canSeePrices }) {
+function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemove, canSeePrices, duplicateOf }) {
   const [selected, setSelected] = useState(null);
 
   const pickProduct = (p) => {
@@ -2557,6 +2621,18 @@ function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemov
         </span>
         {onRemove && <button onClick={onRemove} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: 12 }}>✕ Remove</button>}
       </div>
+
+      {/* MP-ARRIVAL-DUPLICATE-LINES: name the EARLIER line, do not block. A split
+          delivery genuinely arrives as two lines of the same product, so this
+          states what will happen rather than refusing it. */}
+      {duplicateOf != null && (
+        <div style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.4)",
+                      borderRadius: 8, padding: "6px 10px", marginBottom: 10, fontSize: 12, color: "#f59e0b" }}>
+          ⚠️ {lang === "en"
+            ? `Same product as item ${duplicateOf}. The quantities will be added together.`
+            : `Même produit que l'article ${duplicateOf}. Les quantités seront additionnées.`}
+        </div>
+      )}
 
       {selected ? (
         <div>
