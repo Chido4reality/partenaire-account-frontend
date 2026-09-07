@@ -365,33 +365,20 @@ export default function InventoryPage() {
     return map;
   })();
 
-  // MP-PHANTOM-STOCK: hide never-placed zero rows so a product only appears at
-  // locations where it actually lives. A PHANTOM row = qty 0 AND never moved
-  // (no last_moved_at AND no last_movement_type) — a placement that never
-  // happened. A row that HAS moved and is now at 0 (real out-of-stock, incl.
-  // negative/oversold) still shows and still flags "Low". Mirrors the backend
-  // isPhantomStockRow (lib/stockPhantom.js). This only hides rows in THIS list;
-  // placing a product at a NEW location still works via Receive Goods / Transfer
-  // / Add-with-initial-stock (all operate on the product catalog, not this list,
-  // and create the (product, location) row on first real movement).
-  const isPhantomStockRow = (s) =>
-    (Number(s.quantity) || 0) === 0 && !s.last_moved_at && !s.last_movement_type;
-  // MP-ZERO-STOCK-INVISIBLE (Paul): hiding every phantom row made a product whose
-  // rows are ALL phantom vanish from Inventory completely — it read as "this
-  // product does not exist" while Rapid Entry / POS search (GET /products, which
-  // joins stock rather than being driven by it) still showed it at quantity 0.
-  // An owner reads "doesn't exist" as deleted, not as out-of-stock, and re-creates
-  // a duplicate instead of restocking.
+  // MP-SHOW-EVERY-PLACEMENT (Paul, 2026-09-07): nothing is hidden from view any
+  // more. A product reading zero is not the same as a product that isn't there,
+  // and omitting it is what made an owner believe the app loses stock: at
+  // Principal Magazine 229 of 517 rows (44%) were invisible, so a warehouse of
+  // 500+ products showed as ~288 and a shelf could not be reconciled against the
+  // screen. A visible zero is information; an omission is a lie by default.
   //
-  // "Don't list it where it doesn't live" only means anything if it lives
-  // somewhere, so a phantom row is dropped ONLY when the backend says the product
-  // has a real row elsewhere (lives_elsewhere). A product that lives nowhere keeps
-  // its rows and shows honestly at 0. `=== true` is deliberate: against a backend
-  // that predates the field it reads undefined, nothing is hidden, and a product
-  // can never disappear — the safe direction for a frontend-first deploy.
-  const isHiddenPlacement = (s) => isPhantomStockRow(s) && s.lives_elsewhere === true;
-  // Backend handles search globally; drop only phantom placements for display.
-  const filtered = stock.filter(s => !isHiddenPlacement(s));
+  // The predicate is DELIBERATELY KEPT at backend stock.js:192 (alerts) and
+  // dashboard.js:1007 (low-stock metric). Those hide nothing from view — they
+  // suppress FALSE SHORTAGES. A never-placed zero row is not a real shortage, and
+  // removing it there would have added +229 bogus alerts at this location alone
+  // (+296 across the org) on the day the alerts tab matters most. Two different
+  // jobs; only the view-hiding one was wrong.
+  const filtered = stock;
   const filteredProducts = search ? products.filter(p => fuzzyMatch(p.name, search) || (p.barcode && p.barcode.includes(search)) || (p.sku && p.sku.toLowerCase().includes(search.toLowerCase()))) : products;
 
   const totalStockValue = isOwner ? stock.reduce((sum, s) => sum + (+s.quantity * +(s.pa_products?.cost_price || 0)), 0) : 0;
