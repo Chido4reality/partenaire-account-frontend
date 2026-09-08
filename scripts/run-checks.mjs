@@ -35,6 +35,11 @@ const CHECKS = [
   // (a mutation's onError, a fetch in useEffect) and neither runs under
   // renderToString — which is why they are module-scope props-only components.
   ["buffer-dup-ui",  "scripts/buffer-duplicate-warning-check.mjs", "the duplicate prompt and the release warning render, in both languages"],
+  // F-C: is the receive screen actually BLIND? The root cause of 1,108 uncounted
+  // lines was a PREFILL (String(it.quantity) into the count input), which is a
+  // rendering fact — invisible to the API gates and to `vite build`, since esbuild
+  // does not evaluate a useState initialiser.
+  ["receive-blind",  "scripts/receive-blind-render-check.mjs", "no sent quantity on the receiver's screen, and no prefill in any input"],
   // MP-ZERO-STOCK-INVISIBLE: InventoryPage had no render coverage at all, so a
   // product that vanished from the Stock tab looked identical to a green suite.
   ["zero-stock",    "scripts/inventory-zero-stock-check.mjs", "a zero-stock product lists at quantity 0 instead of reading as 'does not exist'"],

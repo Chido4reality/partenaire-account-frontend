@@ -10,6 +10,7 @@ import { useLangStore, useAuthStore } from "../store";
 import DateRangeFilter, { inRange, wideRange } from "../components/common/DateRangeFilter";
 import api, { formatDate } from "../utils/api";
 import { useMyPermissions } from "../utils/useMyPermissions";
+import { useReceiveSummary } from "../utils/useReceiveSummary"; // F-C: the override rate
 import RestrictedAction from "../components/common/RestrictedAction";
 import { useSearchParams } from "react-router-dom";
 import TransferDetailModal from "../components/TransferDetailModal"; // MP-STAFF-ACTIVITY-LEDGER Phase 3
@@ -76,7 +77,8 @@ export default function TransfersPage() {
   const confirmFlow = !!settingsData?.data?.transfer_receipt_confirmation_enabled;
   // Part 3: when a second person is NOT required, the dispatcher may self-confirm.
   const requireSecond = settingsData?.data?.transfer_require_second_person !== false;
-  const [adjustFor, setAdjustFor] = useState(null); // the incoming transfer being adjusted
+  const [adjustFor, setAdjustFor] = useState(null); // the incoming transfer being COUNTED (F-C)
+  const [reveal, setReveal] = useState(null);       // F-C: { comparison, variance_lines } — shown AFTER the count
   const { data: incomingData } = useOfflineCachedQuery({
     queryKey: ["transfers-incoming"],
     queryFn: () => api.get("/transfers/incoming").then(r => r.data),
@@ -265,14 +267,22 @@ export default function TransfersPage() {
   // ONE-TAP (no lines) → dest gets sent qty. ADJUST ({lines:[{item_id,received_quantity}]})
   // → dest gets received; any received≠sent becomes a Stock Check variance for the owner.
   const confirmMutation = useMutation({
-    mutationFn: ({ id, lines }) => api.post(`/transfers/${id}/confirm-receipt`, lines ? { lines } : {}),
+    mutationFn: ({ id, lines, override, override_reason }) =>
+      api.post(`/transfers/${id}/confirm-receipt`,
+        override ? { override: true, override_reason } : { lines }),
     onSuccess: (res) => {
       const v = res?.data?.variance_lines || 0;
-      toast.success(v > 0
-        ? (lang === "en" ? `Confirmed — ${v} variance(s) sent to Stock Check` : `Confirmé — ${v} écart(s) envoyé(s) à la Vérification`)
+      // F-C — THE REVEAL. The receiver counted blind; only now do they see what was
+      // sent. Deliberately a STATE, not a toast: a toast is not a state, and the
+      // whole point of counting is the comparison it produces. Five separate causes
+      // hid inside toasts on this codebase in one week.
+      const cmp = Array.isArray(res?.data?.comparison) ? res.data.comparison : [];
+      if (cmp.length) setReveal({ comparison: cmp, variance_lines: v });
+      else toast.success(res?.data?.received_without_count
+        ? (lang === "en" ? "Received without counting — logged" : "Réceptionné sans comptage — enregistré")
         : (lang === "en" ? "Receipt confirmed — stock added" : "Réception confirmée — stock ajouté"));
       setAdjustFor(null);
-      qc.invalidateQueries(["transfers"]); qc.invalidateQueries(["transfers-incoming"]); qc.invalidateQueries(["stock"]); qc.invalidateQueries(["stock-check-summary"]);
+      qc.invalidateQueries(["transfers"]); qc.invalidateQueries(["transfers-incoming"]); qc.invalidateQueries(["stock"]); qc.invalidateQueries(["stock-check-summary"]); qc.invalidateQueries(["transfer-receive-summary"]);
     },
     // MP-TRANSFER-APPROVAL-IN-TRANSIT: surface the server's bilingual reason clearly
     // (e.g. cannot_confirm_own_dispatch / not_your_destination) — never a raw 4xx.
@@ -332,6 +342,20 @@ export default function TransfersPage() {
   // MP-TRANSFER-GOVERNANCE: who may cancel — the OWNER, or a MANAGER the boss granted
   // can_cancel_transfers. (The server is authoritative; this only decides button visibility.)
   const canCancelTransfers = isOwner || (user?.role === "manager" && !!myPerms?.can_cancel_transfers);
+  // F-C: may this person confirm a receipt WITHOUT counting it? Owner always; anyone
+  // else only with the explicit grant. Not manager-only — the stuck-goods case is a
+  // warehouse hand or a shop cashier receiving while the owner travels.
+  //
+  // 🔴 THIS DOUBLES AS THE DEPLOY INTERLOCK, and that is deliberate. An OLD backend's
+  // /my-permissions has a NAMED select that does not contain receive_without_count, so
+  // it comes back undefined, `=== true` is false, and the override button never draws.
+  // The hatch therefore cannot exist before the backend that records it — otherwise,
+  // in the FE-ahead-of-BE window, an override would be silently completed with nothing
+  // logged. Proven by running this build against the old backend, not reasoned.
+  const canReceiveWithoutCount = isOwner || myPerms?.receive_without_count === true;
+  // F-C: the override rate, shared hook so this and the Accountant Log cannot drift.
+  const { data: recvSummaryResp } = useReceiveSummary({ onError: () => {} });
+  const recvSummary = recvSummaryResp?.data || { overrides: 0, receipts: 0, pct: 0, amber: false };
   // Part 4 — the per-org owner-cancel lock, mirrored in the UI. When it's ON, a granted
   // manager may still cancel STAFF transfers but not the OWNER's; the row carries
   // `owner_actor` (dispatcher once in-transit, else creator — computed server-side by the
@@ -736,9 +760,23 @@ export default function TransfersPage() {
           <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 10 }}>
             📥 {lang === "en" ? "Incoming transfers" : "Transferts entrants"}
             <span style={{ fontWeight: 400, fontSize: 12, color: "var(--text-muted)", marginLeft: 8 }}>
-              {lang === "en" ? "confirm what actually arrived" : "confirmez ce qui est réellement arrivé"}
+              {lang === "en" ? "count what actually arrived" : "comptez ce qui est réellement arrivé"}
             </span>
           </div>
+          {/* F-C: the override RATE, where the work happens. Only drawn once an
+              override exists — a permanent "0 of 21" would be noise, and the chip
+              needs to mean something when it appears. Amber is decided SERVER-side
+              so the two surfaces cannot disagree about the threshold. */}
+          {recvSummary.overrides > 0 && (
+            <div style={{ fontSize: 11.5, marginBottom: 10, padding: "6px 10px", borderRadius: 8,
+                          background: recvSummary.amber ? "rgba(245,158,11,0.12)" : "var(--bg-elevated)",
+                          border: `1px solid ${recvSummary.amber ? "rgba(245,158,11,0.45)" : "var(--border)"}`,
+                          color: recvSummary.amber ? "#f59e0b" : "var(--text-muted)" }}>
+              {lang === "en"
+                ? `${recvSummary.overrides} of ${recvSummary.receipts} receipts in the last 30 days were confirmed WITHOUT counting (${recvSummary.pct}%).`
+                : `${recvSummary.overrides} réceptions sur ${recvSummary.receipts} ces 30 derniers jours ont été confirmées SANS comptage (${recvSummary.pct} %).`}
+            </div>
+          )}
           <div style={{ display: "grid", gap: 10 }}>
             {incoming.map(tr => {
               const fromName = locations.find(l => l.id === tr.from_location)?.name || "External";
@@ -760,22 +798,31 @@ export default function TransfersPage() {
                         {lang === "en" ? "You dispatched this — someone at the destination must confirm." : "Vous l'avez envoyé — quelqu'un à destination doit confirmer."}
                       </span>
                     ) : (
+                      // F-C: ONE BUTTON, AND IT OPENS A COUNT.
+                      // "Confirm all correct" is gone. It wrote received_quantity NULL,
+                      // the trigger read that as the full sent quantity, and 1,108 of
+                      // 1,135 lines on Paul's org went through it unexamined —
+                      // TRF-20260810-0003 was 9 lines and 1,048 units in 47 seconds.
+                      // There is no longer a way to agree with a number you have not seen.
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end", flexShrink: 0 }}>
-                        <button className="btn btn-secondary btn-sm" onClick={() => setAdjustFor(tr)}>
-                          {lang === "en" ? "Adjust" : "Ajuster"}
-                        </button>
-                        <button className="btn btn-success btn-sm" disabled={confirmMutation.isPending}
-                          onClick={() => { if (window.confirm(lang === "en" ? "Confirm all items arrived correctly? This adds the stock at the destination." : "Confirmer que tout est bien arrivé ? Cela ajoute le stock à destination.")) confirmMutation.mutate({ id: tr.id }); }}>
-                          ✓ {lang === "en" ? "Confirm all correct" : "Tout est correct"}
+                        <button className="btn btn-primary btn-sm" onClick={() => setAdjustFor(tr)}>
+                          {lang === "en" ? "Count & receive" : "Compter & réceptionner"}
                         </button>
                       </div>
                     )}
                   </div>
+                  {/* F-C: the quantity chips are GONE from the receiver's card.
+                      They printed "{product} x{sent}" for every line, so the answer was
+                      on screen before the question was asked. The server no longer sends
+                      the number to a receiver at all (GET /transfers/incoming strips it),
+                      so this could not render it even if someone re-added the markup —
+                      the blindness is in the payload, not the styling. */}
                   {tr.pa_transfer_items?.length > 0 && (
                     <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
                       {tr.pa_transfer_items.map((item, i) => (
                         <span key={i} style={{ fontSize: 12, padding: "3px 10px", borderRadius: 10, background: "var(--bg-elevated)", color: "var(--text-secondary)" }}>
-                          {item.pa_products?.name} x{item.quantity}
+                          {item.pa_products?.name}
+                          {item.quantity != null ? ` x${item.quantity}` : ""}
                         </span>
                       ))}
                     </div>
@@ -908,10 +955,19 @@ export default function TransfersPage() {
       )}
 
       {adjustFor && (
-        <AdjustReceiptModal
+        <ReceiveCountModal
           transfer={adjustFor} lang={lang} busy={confirmMutation.isPending}
+          canSkipCount={canReceiveWithoutCount}
           onCancel={() => setAdjustFor(null)}
-          onSubmit={(lines) => confirmMutation.mutate({ id: adjustFor.id, lines })} />
+          onSubmit={(lines) => confirmMutation.mutate({ id: adjustFor.id, lines })}
+          onOverride={(reason) => confirmMutation.mutate({ id: adjustFor.id, override: true, override_reason: reason })} />
+      )}
+
+      {/* F-C: the reveal. Separate from the count modal on purpose — the count is
+          closed before this opens, so there is no way to see the sent figures and
+          then go back and "adjust" the answer. */}
+      {reveal && (
+        <ReceiveRevealModal reveal={reveal} lang={lang} onClose={() => setReveal(null)} />
       )}
     </div>
   );
@@ -922,67 +978,196 @@ export default function TransfersPage() {
 // (recorded to the damaged pile at receipt, sellable-as-damaged). Good is pre-filled
 // to the sent qty; damaged defaults 0. Good + damaged can't exceed sent; anything still
 // missing (sent − good − damaged) is a genuine transit variance flagged for the owner.
-function AdjustReceiptModal({ transfer, lang, busy, onCancel, onSubmit }) {
+// ── F-C — THE BLIND COUNT ────────────────────────────────────────────────────
+//
+// This replaces AdjustReceiptModal, which PREFILLED the Good input with the sent
+// quantity and printed "Sent: N" beside every row. That prefill is the root cause
+// of the whole problem: submitting it unchanged wrote received == sent, which is
+// why 49 lines carry a value and only 15 of them differ. The feature was never
+// ignored — it was PRE-ANSWERED.
+//
+// So:
+//   · inputs start EMPTY, never at the sent quantity and never at 0. Empty means
+//     "not answered"; 0 is an answer, and it is the single most valuable number
+//     this screen can capture (nothing arrived).
+//   · the sent quantity is not shown, and is not even in the payload — the server
+//     strips it from GET /transfers/incoming for the receiver.
+//   · every line must be answered before Confirm enables. A partial count would
+//     leave the unanswered lines NULL and the trigger would credit them in full,
+//     which is the original bug returning one line at a time.
+//
+// ⚠️ WHAT THIS DOES NOT ACHIEVE. Blind receiving raises the COST of a rubber
+// stamp; it does not make counting unfakeable. The dispatcher can read the figure
+// down the phone, it is on the dispatch note, and someone determined can still
+// invent a number. The lever that actually bites is the visible override rate.
+export function ReceiveCountModal({ transfer, lang, busy, canSkipCount, onCancel, onSubmit, onOverride }) {
   const en = lang === "en";
   const items = transfer.pa_transfer_items || [];
-  const [recv, setRecv] = useState(() => Object.fromEntries(items.map(it => [it.id, String(it.quantity)])));
-  const [dmg, setDmg]   = useState(() => Object.fromEntries(items.map(it => [it.id, "0"])));
-  const setOne    = (id, v) => setRecv(p => ({ ...p, [id]: v }));
-  const setDmgOne = (id, v) => setDmg(p => ({ ...p, [id]: v }));
-  const good = (it) => Math.max(0, Number(recv[it.id]) || 0);
-  const dam  = (it) => Math.max(0, Number(dmg[it.id]) || 0);
-  const overLine   = (it) => good(it) + dam(it) > Number(it.quantity);
-  const anyOver    = items.some(overLine);
-  const anyDamaged = items.some(it => dam(it) > 0);
-  const anyLost    = items.some(it => (Number(it.quantity) - good(it) - dam(it)) !== 0);
-  const submit = () => {
-    if (anyOver) return;
-    onSubmit(items.map(it => ({ item_id: it.id, received_quantity: good(it), damaged_quantity: dam(it) })));
+  // EMPTY, not prefilled. See above — this single line is the fix.
+  const [good, setGood] = useState(() => Object.fromEntries(items.map(it => [it.id, ""])));
+  const [dmg, setDmg]   = useState(() => Object.fromEntries(items.map(it => [it.id, ""])));
+  const [skip, setSkip] = useState(false);      // the escape hatch panel
+  const [reason, setReason] = useState("");
+
+  const num = (v) => (String(v).trim() === "" ? null : Number(v));
+  const goodOf = (it) => num(good[it.id]);
+  const dmgOf  = (it) => { const d = num(dmg[it.id]); return d == null ? 0 : d; };
+  const answered = (it) => { const g = goodOf(it); return g != null && Number.isFinite(g) && g >= 0; };
+  const allAnswered = items.length > 0 && items.every(answered);
+  const badDamage = items.some(it => { const d = num(dmg[it.id]); return d != null && (!Number.isFinite(d) || d < 0); });
+
+  const REASON_MIN = 10;
+  const reasonOk = reason.trim().length >= REASON_MIN;
+
+  const submitCount = () => {
+    if (!allAnswered || badDamage) return;
+    onSubmit(items.map(it => ({ item_id: it.id, received_quantity: goodOf(it), damaged_quantity: dmgOf(it) })));
   };
+
   return (
     <div className="modal-overlay" onClick={() => !busy && onCancel()}>
       <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
-        <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>{en ? "What actually arrived?" : "Ce qui est réellement arrivé ?"}</div>
-        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
-          {en ? "Per line: how many GOOD units, and how many arrived DAMAGED. Good units go on sale; damaged go to the damaged pile. Anything still missing is flagged as a variance."
-              : "Par ligne : combien d'unités BONNES et combien sont arrivées ABÎMÉES. Les bonnes sont mises en vente ; les abîmées vont au stock abîmé. Tout manquant est signalé comme écart."}
+        <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>
+          {en ? "Count what arrived" : "Comptez ce qui est arrivé"}
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 360, overflowY: "auto" }}>
-          {items.map(it => {
-            const sent = Number(it.quantity);
-            const lost = sent - good(it) - dam(it);
-            const over = overLine(it);
-            return (
-              <div key={it.id} style={{ padding: "8px 10px", background: "var(--bg-elevated)", borderRadius: 8, border: over ? "1px solid #f87171" : "1px solid transparent" }}>
-                <div style={{ fontWeight: 600, fontSize: 13.5 }}>{it.pa_products?.name || "—"}</div>
+        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
+          {en ? "Count the goods in front of you and enter the numbers. You'll see what was sent once you confirm."
+              : "Comptez les marchandises devant vous et saisissez les quantités. Vous verrez ce qui a été envoyé après confirmation."}
+        </div>
+
+        {!skip && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 360, overflowY: "auto" }}>
+            {items.map(it => (
+              <div key={it.id} style={{ padding: "8px 10px", background: "var(--bg-elevated)", borderRadius: 8,
+                                        border: answered(it) ? "1px solid transparent" : "1px solid var(--border)" }}>
+                <div style={{ fontWeight: 600, fontSize: 13.5 }}>
+                  {it.pa_products?.name || "—"}
+                  {it.pa_products?.unit ? <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> · {it.pa_products.unit}</span> : null}
+                </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6, flexWrap: "wrap" }}>
                   <label style={{ fontSize: 11, color: "var(--text-muted)" }}>{en ? "Good" : "Bon"}
-                    <input type="number" min="0" value={recv[it.id]} onChange={e => setOne(it.id, e.target.value)}
-                      style={{ width: 62, marginLeft: 6, textAlign: "right", padding: "5px 7px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)" }} />
+                    <input type="number" min="0" inputMode="numeric" value={good[it.id]}
+                      placeholder="—"
+                      onChange={e => setGood(p => ({ ...p, [it.id]: e.target.value }))}
+                      style={{ width: 68, marginLeft: 6, textAlign: "right", padding: "5px 7px", borderRadius: 8,
+                               border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)" }} />
                   </label>
                   <label style={{ fontSize: 11, color: "var(--text-muted)" }}>{en ? "Damaged" : "Abîmé"}
-                    <input type="number" min="0" value={dmg[it.id]} onChange={e => setDmgOne(it.id, e.target.value)}
-                      style={{ width: 62, marginLeft: 6, textAlign: "right", padding: "5px 7px", borderRadius: 8, border: `1px solid ${dam(it) > 0 ? "#fbbf24" : "var(--border)"}`, background: "var(--bg-card)", color: "var(--text-primary)" }} />
+                    <input type="number" min="0" inputMode="numeric" value={dmg[it.id]}
+                      placeholder="0"
+                      onChange={e => setDmg(p => ({ ...p, [it.id]: e.target.value }))}
+                      style={{ width: 68, marginLeft: 6, textAlign: "right", padding: "5px 7px", borderRadius: 8,
+                               border: `1px solid ${dmgOf(it) > 0 ? "#fbbf24" : "var(--border)"}`, background: "var(--bg-card)", color: "var(--text-primary)" }} />
                   </label>
-                  <span style={{ fontSize: 11, color: over ? "#f87171" : "var(--text-muted)" }}>
-                    {en ? "Sent" : "Envoyé"}: {sent}
-                    {over ? ` · ${en ? "exceeds sent!" : "dépasse l'envoi !"}`
-                          : (lost !== 0 ? ` · ${lost > 0 ? (en ? "missing " : "manquant ") + lost : "+" + (-lost)}` : "")}
-                  </span>
+                  {!answered(it) && (
+                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{en ? "not counted yet" : "pas encore compté"}</span>
+                  )}
                 </div>
               </div>
-            );
-          })}
-        </div>
-        {anyOver && <div style={{ fontSize: 11.5, color: "#f87171", marginTop: 8 }}>{en ? "Good + damaged can't exceed what was sent." : "Bon + abîmé ne peut pas dépasser l'envoi."}</div>}
+            ))}
+          </div>
+        )}
+
+        {!skip && !allAnswered && (
+          <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 8 }}>
+            {en ? `Every line needs a number — ${items.filter(answered).length} of ${items.length} counted.`
+                : `Chaque ligne doit avoir une quantité — ${items.filter(answered).length} sur ${items.length} comptées.`}
+          </div>
+        )}
+
+        {/* THE ESCAPE HATCH. Permission-gated, off by default, and never the default
+            action here either — it is a text link under the primary button, not a
+            peer of it. The reason is the record. */}
+        {skip && (
+          <div style={{ padding: "10px 12px", background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.4)", borderRadius: 10 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
+              ⚠️ {en ? "Receive without counting" : "Réceptionner sans compter"}
+            </div>
+            <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginBottom: 8 }}>
+              {en ? "Stock will be added at the full quantity sent, uncounted. This is logged with your name and shows in the owner's override rate."
+                  : "Le stock sera ajouté à la quantité envoyée, sans comptage. Ceci est enregistré à votre nom et apparaît dans le taux de dérogation du propriétaire."}
+            </div>
+            <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3}
+              placeholder={en ? "Why can't this be counted right now?" : "Pourquoi ne peut-on pas compter maintenant ?"}
+              style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid var(--border)",
+                       background: "var(--bg-card)", color: "var(--text-primary)", fontSize: 13, resize: "vertical" }} />
+            <div style={{ fontSize: 11, color: reasonOk ? "var(--text-muted)" : "#f59e0b", marginTop: 4 }}>
+              {reasonOk ? (en ? "Reason recorded." : "Motif enregistré.")
+                        : (en ? `At least ${REASON_MIN} characters.` : `Au moins ${REASON_MIN} caractères.`)}
+            </div>
+          </div>
+        )}
+
         <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-          <button className="btn btn-secondary" style={{ flex: 1 }} disabled={busy} onClick={onCancel}>{en ? "Cancel" : "Annuler"}</button>
-          <button className="btn btn-primary" style={{ flex: 2 }} disabled={busy || anyOver} onClick={submit}>
-            {busy ? "…" : anyDamaged ? (en ? "Confirm (damage noted)" : "Confirmer (abîmé noté)")
-                        : anyLost ? (en ? "Confirm with variance" : "Confirmer avec écart")
-                        : (en ? "Confirm receipt" : "Confirmer")}
+          <button className="btn btn-secondary" style={{ flex: 1 }} disabled={busy}
+            onClick={() => (skip ? setSkip(false) : onCancel())}>
+            {skip ? (en ? "Back" : "Retour") : (en ? "Cancel" : "Annuler")}
           </button>
+          {skip ? (
+            <button className="btn btn-primary" style={{ flex: 2 }} disabled={busy || !reasonOk}
+              onClick={() => onOverride(reason.trim())}>
+              {busy ? "…" : (en ? "Receive without counting" : "Réceptionner sans compter")}
+            </button>
+          ) : (
+            <button className="btn btn-primary" style={{ flex: 2 }} disabled={busy || !allAnswered || badDamage}
+              onClick={submitCount}>
+              {busy ? "…" : (en ? "Confirm count" : "Confirmer le comptage")}
+            </button>
+          )}
         </div>
+
+        {canSkipCount && !skip && (
+          <button onClick={() => setSkip(true)} disabled={busy}
+            style={{ marginTop: 10, background: "none", border: "none", color: "var(--text-muted)",
+                     fontSize: 11.5, textDecoration: "underline", cursor: "pointer", width: "100%" }}>
+            {en ? "Can't count these right now?" : "Impossible de compter maintenant ?"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// F-C — THE REVEAL, shown only AFTER a count has been submitted. This is the
+// first time the receiver sees what was sent. Rendered as a STATE rather than a
+// toast: the comparison IS the output of counting, and a toast that disappears
+// in four seconds cannot carry a nine-line reconciliation.
+export function ReceiveRevealModal({ reveal, lang, onClose }) {
+  const en = lang === "en";
+  const rows = reveal.comparison || [];
+  const off = rows.filter(r => !r.matches);
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
+        <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>
+          {off.length === 0 ? (en ? "✓ Everything matched" : "✓ Tout correspond")
+                            : (en ? `${off.length} line(s) differ` : `${off.length} ligne(s) diffèrent`)}
+        </div>
+        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
+          {off.length === 0
+            ? (en ? "Your count agrees with what was sent. Stock has been added."
+                  : "Votre comptage correspond à ce qui a été envoyé. Le stock a été ajouté.")
+            : (en ? "Stock was added at YOUR counted quantity. Differences have gone to the owner as a stock check."
+                  : "Le stock a été ajouté selon VOTRE comptage. Les écarts sont transmis au propriétaire comme vérification.")}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 340, overflowY: "auto" }}>
+          {rows.map(r => (
+            <div key={r.item_id} style={{ padding: "8px 10px", borderRadius: 8,
+              background: r.matches ? "var(--bg-elevated)" : "rgba(239,68,68,0.10)",
+              border: r.matches ? "1px solid transparent" : "1px solid rgba(239,68,68,0.35)" }}>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>{r.product || "—"}</div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3 }}>
+                {en ? "Sent" : "Envoyé"} {r.sent} · {en ? "you counted" : "vous avez compté"} {r.good}
+                {r.damaged > 0 ? ` · ${en ? "damaged" : "abîmé"} ${r.damaged}` : ""}
+                {r.lost !== 0 ? ` · ${r.lost > 0 ? (en ? `missing ${r.lost}` : `manquant ${r.lost}`)
+                                                : (en ? `extra ${-r.lost}` : `en trop ${-r.lost}`)}` : ""}
+              </div>
+            </div>
+          ))}
+        </div>
+        <button className="btn btn-primary" style={{ width: "100%", marginTop: 16 }} onClick={onClose}>
+          {en ? "Done" : "Terminé"}
+        </button>
       </div>
     </div>
   );

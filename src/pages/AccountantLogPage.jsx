@@ -21,6 +21,7 @@ import { SHOP_TZ } from "../utils/shopTime"; // MP-REPORT-TZ
 import api from "../utils/api";
 import { formatLastSeen, isRecentlyActive } from "../utils/lastSeen";
 import { useStockCheckSummary, NOT_COUNTED_AMBER_AT } from "../utils/useStockCheckSummary";
+import { useReceiveSummary } from "../utils/useReceiveSummary"; // F-C: the receive-override rate
 import ApprovalDetailView from "../components/common/ApprovalDetailView"; // MP-APPROVAL-DETAIL (all types, on-expand)
 import { explainAnomaly, severityCue, groupLabel, anomalySeverity } from "../utils/anomalyExplain";
 import { momoLabel, momoLabelShort } from "../utils/paymentLabels";
@@ -63,6 +64,13 @@ export default function AccountantLogPage() {
   // that cannot see this page anyway.
   const { data: stockCheckSummary } = useStockCheckSummary({ enabled: entitled, onError: () => {} });
   const notCounted30d = Number(stockCheckSummary?.data?.not_counted_30d) || 0;
+  // F-C: the receive-override rate. Shared hook, same reason as above — one queryFn
+  // per key, so this and the Transfers screen cannot drift apart.
+  const { data: recvSummaryResp } = useReceiveSummary({ enabled: entitled, onError: () => {} });
+  const recvOverrides = Number(recvSummaryResp?.data?.overrides) || 0;
+  const recvReceipts  = Number(recvSummaryResp?.data?.receipts) || 0;
+  const recvPct       = Number(recvSummaryResp?.data?.pct) || 0;
+  const recvAmber     = recvSummaryResp?.data?.amber === true;
 
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ full_name: "", phone: "", password: "" });
@@ -492,6 +500,38 @@ export default function AccountantLogPage() {
             )}
           </div>
           <button onClick={() => navigate("/stock-check")}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 12.5, textDecoration: "underline", whiteSpace: "nowrap" }}>
+            {en ? "View" : "Voir"}
+          </button>
+        </div>
+      )}
+
+      {/* F-C — THE RECEIVE OVERRIDE RATE. Sits beside the not-counted line on
+          purpose: they are the same rider. An escape hatch nobody can see gets
+          abused, and `Done` on stock checks proved it here already.
+
+          A PROPORTION, not a count. Four overrides is unremarkable in a shop that
+          received two hundred times and alarming in one that received five, so the
+          bare number is not just ignorable, it is unreadable. `amber` is decided
+          SERVER-side (>= 20% or >= 5 absolute) so this line and the Transfers
+          screen can never disagree about the threshold. */}
+      {recvOverrides > 0 && (
+        <div className="card" style={{ marginTop: 12, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10,
+          border: recvAmber ? "1px solid rgba(251,191,36,0.35)" : undefined,
+          background: recvAmber ? "rgba(251,191,36,0.07)" : undefined }}>
+          <span style={{ fontSize: 15 }}>{recvAmber ? "⚠️" : "📥"}</span>
+          <div style={{ fontSize: 13.5, color: "var(--text-secondary)", flex: 1 }}>
+            {en
+              ? <><strong style={{ color: recvAmber ? "#fbbf24" : "var(--text-primary)" }}>{recvOverrides} of {recvReceipts}</strong> deliveries were received WITHOUT counting in the last 30 days ({recvPct}%).</>
+              : <><strong style={{ color: recvAmber ? "#fbbf24" : "var(--text-primary)" }}>{recvOverrides} sur {recvReceipts}</strong> réceptions ont été confirmées SANS comptage sur les 30 derniers jours ({recvPct} %).</>}
+            {recvAmber && (
+              <div style={{ fontSize: 12, color: "#fbbf24", marginTop: 2 }}>
+                {en ? "Goods that arrive uncounted can go missing without anyone raising a difference — worth asking why."
+                    : "Des marchandises réceptionnées sans comptage peuvent disparaître sans qu'aucun écart ne soit signalé — à creuser."}
+              </div>
+            )}
+          </div>
+          <button onClick={() => navigate("/transfers")}
             style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 12.5, textDecoration: "underline", whiteSpace: "nowrap" }}>
             {en ? "View" : "Voir"}
           </button>
@@ -1412,6 +1452,7 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
         // MP-STOCKCHECK-DELEGATION: same rule as the flags around it — sent every
         // save, or a save about something else would silently clear the grant.
         can_resolve_stock_checks: !!perms.can_resolve_stock_checks,
+        receive_without_count: !!perms.receive_without_count, // F-C
         // MP-CASHIER-PHASE-1b: sent on every save like the flags above, so an
         // untouched grant round-trips as itself rather than being cleared by a
         // save that happened to be about something else.
@@ -2153,8 +2194,35 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                           : "Clôture un écart compté avec un motif, et peut demander un recomptage. Résoudre par « le stock était faux » corrige le stock, comme pour vous. Il ne peut toujours pas SUPPRIMER une vérification en attente — vous seul pouvez retirer un signalement."}
                     </div>
 
+
+                    {/* F-C: the RECEIVE-WITHOUT-COUNTING escape hatch.
+                        Receiving is now blind-count-first, and a count is mandatory.
+                        This grant is the pressure valve — Paul travels, and if
+                        receiving stops when he is away his staff will invent a
+                        workaround, which is worse than a logged override. It is
+                        deliberately NOT manager-only: the stuck-goods case is a
+                        warehouse hand or a shop cashier. Every use costs a written
+                        reason and shows up in the override rate. */}
+                    <div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 12, marginBottom: 5 }}>{en ? "Receive without counting:" : "Réceptionner sans compter :"}</div>
+                    <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>
+                      {[
+                        { val: false, en: "No", fr: "Non" },
+                        { val: true,  en: "Can skip the count", fr: "Peut ignorer le comptage" },
+                      ].map((o) => (
+                        <button key={String(o.val)} onClick={() => setPerms((p) => ({ ...(p || {}), receive_without_count: o.val }))}
+                          style={{ flex: 1, padding: "7px 4px", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
+                            background: !!perms.receive_without_count === o.val ? (o.val ? "rgba(16,185,129,0.9)" : "rgba(239,68,68,0.9)") : "var(--bg-elevated)",
+                            color: !!perms.receive_without_count === o.val ? (o.val ? "#06281d" : "#fff") : "var(--text-muted)" }}>
+                          {en ? o.en : o.fr}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: "var(--text-muted)", marginTop: 4 }}>
+                      {en ? "Confirms an arrival without counting it, with a written reason (10 characters minimum). Every use is logged with their name and counts towards the override rate you see above. Leave this off unless someone genuinely receives goods while you are away."
+                          : "Confirme une arrivée sans la compter, avec un motif écrit (10 caractères minimum). Chaque utilisation est enregistrée à son nom et compte dans le taux de dérogation affiché ci-dessus. Laissez désactivé sauf si quelqu'un réceptionne réellement en votre absence."}
+                    </div>
                     <button className="btn btn-secondary" style={{ width: "100%", marginTop: 10 }}
-                      onClick={() => setPerms((p) => ({ ...(p || {}), can_approve: [], branch_scope: "own", can_manage_staff: false, can_cancel_transfers: false, can_resolve_stock_checks: false }))}>
+                      onClick={() => setPerms((p) => ({ ...(p || {}), can_approve: [], branch_scope: "own", can_manage_staff: false, can_cancel_transfers: false, can_resolve_stock_checks: false, receive_without_count: false }))}>
                       {en ? "↺ Remove all delegation" : "↺ Retirer toute délégation"}
                     </button>
                   </div>
