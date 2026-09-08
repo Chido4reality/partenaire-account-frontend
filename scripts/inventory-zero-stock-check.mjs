@@ -142,7 +142,24 @@ check("a product that lives nowhere RENDERS instead of vanishing", nowhereHtml.i
 check("...and the screen is not the 'No stock records' empty state",
   !nowhereHtml.includes("No stock records yet"));
 
-// ── 3. the rule the filter exists for: still hidden where it never lived ──────
+// ── 3. THE BEHAVIOUR WE DELIBERATELY DROPPED — 2026-09-07 ────────────────────
+// This case used to assert the OPPOSITE: that a phantom placement stays hidden
+// when the product lives elsewhere. That row-level hiding is what produced the
+// Magasin situation. A product reading zero is not the same as a product that
+// isn't there: a visible zero is information, an omission is a lie by default.
+// So the Inventory list now shows EVERY placement, and InventoryPage.jsx no
+// longer reads `lives_elsewhere` at all.
+//
+// The assertion is INVERTED, not deleted, on purpose. Deleting it would leave
+// the drop undocumented and let hiding creep back in unnoticed; inverted, this
+// case goes RED the moment anything starts filtering the list again.
+//
+// ⚠️ THIS IS THE LIST ONLY. The phantom predicate is still load-bearing on the
+// two AGGREGATIONS — the Alerts tab/badge (GET /stock?low_only=true) and the
+// dashboard's low_stock (GET /dashboard/inventory-health) — where a never-placed
+// zero would be a false shortage. Those live server-side and are covered by
+// backend/scripts/zero-stock-visibility-check.mjs. Do not "simplify" the
+// predicate away because this screen stopped using it.
 const elsewhere = [
   row({ id: "s3", product_id: "p3", location_id: LOC2.id, quantity: 0,
         name: "Fork Oil Seal", loc: LOC2, lives_elsewhere: true }),
@@ -151,9 +168,27 @@ const elsewhere = [
         name: "Trump Horn", loc: LOC, lives_elsewhere: true }),
 ];
 const elsewhereHtml = render(elsewhere);
-check("a phantom placement is STILL hidden when the product lives elsewhere",
-  !elsewhereHtml.includes("Fork Oil Seal"));
-check("...while the location it really lives at still lists it", elsewhereHtml.includes("Trump Horn"));
+check("a phantom placement IS listed, even though the product lives elsewhere",
+  elsewhereHtml.includes("Fork Oil Seal"));
+check("...and the location it really lives at still lists it", elsewhereHtml.includes("Trump Horn"));
+
+// The decisive form of the same claim: `lives_elsewhere` must not change what is
+// rendered. Asserting only "it is visible when true" would still pass if the
+// screen consulted the field and merely inverted it, so drive the SAME phantom
+// row three ways — true, false, and field absent entirely (the pre-985b0b4
+// payload) — and require all three to render identically.
+{
+  const phantom = (extra) => row({ id: "s6", product_id: "p6", location_id: LOC2.id,
+    quantity: 0, name: "Fork Oil Seal", loc: LOC2, ...extra });
+  const asTrue = render([phantom({ lives_elsewhere: true })]);
+  const asFalse = render([phantom({ lives_elsewhere: false })]);
+  const asAbsent = render([phantom({})]);
+  check("visible whether lives_elsewhere is true, false or absent",
+    asTrue.includes("Fork Oil Seal") && asFalse.includes("Fork Oil Seal") && asAbsent.includes("Fork Oil Seal"));
+  check("...and the field changes NOTHING about the render",
+    asTrue === asFalse && asFalse === asAbsent,
+    `${asTrue.length}/${asFalse.length}/${asAbsent.length} chars`);
+}
 
 // ── 4. a genuinely sold-out row is untouched ──────────────────────────────────
 const soldOut = [row({ id: "s5", product_id: "p5", location_id: LOC.id, quantity: 0,
