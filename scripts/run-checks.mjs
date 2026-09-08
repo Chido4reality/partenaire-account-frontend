@@ -29,6 +29,12 @@ const CHECKS = [
   ["write-timeout", "scripts/write-timeout-check.mjs",   "only DB-constraint-safe writes may time out early and queue"],
   ["responsive",    "scripts/responsive-check.mjs",      "wide tables scroll instead of clipping; the drawer reuses the ONE nav"],
   ["deployed",      "scripts/deployed-admin-check.mjs",  "the LIVE hosts actually serve the marketer UI (needs network)"],
+  // F-A: the two duplicate-capture surfaces. The staging rig proves the API
+  // refuses and that release-info returns the sibling; NEITHER proves the screen
+  // says anything. Both surfaces sit behind state a parent sets asynchronously
+  // (a mutation's onError, a fetch in useEffect) and neither runs under
+  // renderToString — which is why they are module-scope props-only components.
+  ["buffer-dup-ui",  "scripts/buffer-duplicate-warning-check.mjs", "the duplicate prompt and the release warning render, in both languages"],
   // MP-ZERO-STOCK-INVISIBLE: InventoryPage had no render coverage at all, so a
   // product that vanished from the Stock tab looked identical to a green suite.
   ["zero-stock",    "scripts/inventory-zero-stock-check.mjs", "a zero-stock product lists at quantity 0 instead of reading as 'does not exist'"],

@@ -98,16 +98,37 @@ export default function GoodsBufferPage() {
     setQty(""); setSupplier(""); setNote("");
   };
 
+  // F-A: a suspected duplicate capture comes back as a 409 that NAMES the earlier
+  // record. It is a question, not an error — toasting errMsg() would reduce
+  // "Kosi captured 800 of these 5 minutes ago" to a red banner nobody can act on.
+  // Holds the refusal AND the exact body, so confirming re-sends it unchanged.
+  const [dupPrompt, setDupPrompt] = useState(null);   // { info, body }
+
   const createMut = useMutation({
     mutationFn: (body) => api.post("/goods-buffer", body).then(r => r.data),
     onSuccess: (r) => {
       const dup = r?.data?.duplicate;
       toast.success(dup ? (en ? "Already registered" : "Déjà enregistré")
                         : (en ? "Registered ✓" : "Enregistré ✓"));
-      resetAdd(); invalidate();
+      setDupPrompt(null); resetAdd(); invalidate();
     },
-    onError: (e) => toast.error(errMsg(e, en)),
+    onError: (e, body) => {
+      const d = e?.response?.data;
+      if (e?.response?.status === 409 && d?.code === "duplicate_capture_suspected") {
+        // Nothing was written. Ask, keeping the form intact so cancelling loses
+        // nothing and confirming re-sends the IDENTICAL body (same local_id — the
+        // refused attempt created no row, so it stays the idempotency key).
+        setDupPrompt({ info: d, body });
+        return;
+      }
+      toast.error(errMsg(e, en));
+    },
   });
+
+  const confirmDuplicate = () => {
+    if (!dupPrompt) return;
+    createMut.mutate({ ...dupPrompt.body, confirm_duplicate: true });
+  };
 
   const submitAdd = () => {
     const q = num(qty);
@@ -298,6 +319,12 @@ export default function GoodsBufferPage() {
         </div>
       )}
 
+      {/* F-A: DUPLICATE CAPTURE PROMPT — see DuplicateCapturePrompt at module scope. */}
+      {dupPrompt && (
+        <DuplicateCapturePrompt
+          info={dupPrompt.info} en={en} busy={createMut.isPending}
+          onCancel={() => setDupPrompt(null)} onConfirm={confirmDuplicate} />
+      )}
       {releaseFor && (
         <ReleaseModal row={releaseFor} en={en} lang={lang} fmt={fmt} locList={locList}
           onClose={() => setReleaseFor(null)} onDone={() => { setReleaseFor(null); invalidate(); }} />
@@ -382,6 +409,86 @@ function PartRow({ part, onChange, onRemove, locList, en, lang }) {
 }
 
 // ── C. RELEASE PANEL (privileged) ───────────────────────────────
+// ── F-A, THE TWO DUPLICATE-CAPTURE SURFACES ──────────────────────────────────
+// Both are declared at MODULE SCOPE and take plain props. That is deliberate on
+// two counts:
+//
+//   1. A component declared inside another component is a new TYPE on every
+//      parent render, which remounts its subtree. That cost 778px of sheet
+//      travel in Layout.jsx and is not being repeated here.
+//   2. Testability. Both of these only ever appear off the back of state a parent
+//      sets asynchronously — a mutation's onError, and a fetch in useEffect —
+//      and NEITHER runs under renderToString. Left inline, the warning would be
+//      unreachable from a render check, which is how five unfireable assertions
+//      have already shipped green in this codebase. As props-only components
+//      they can be rendered directly and their COPY asserted.
+
+// The capture-time question. Deliberately not an error toast: the whole value is
+// in naming the earlier record, and a red banner reduces "Kosi captured 800 of
+// these 5 minutes ago" to something nobody can act on. The confirm button states
+// the claim being made rather than a bare OK, because confirming is what writes
+// the override row.
+export function DuplicateCapturePrompt({ info, en, busy, onCancel, onConfirm }) {
+  if (!info) return null;
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="modal" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
+        <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 10 }}>
+          ⚠️ {en ? "Already captured?" : "Déjà enregistré ?"}
+        </div>
+        <div style={{ fontSize: 14, lineHeight: 1.55, marginBottom: 8 }}>
+          {en ? info.message_en : info.message_fr}
+        </div>
+        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
+          {en
+            ? "Nothing has been saved yet. If this is the same delivery being entered twice, cancel."
+            : "Rien n'a encore été enregistré. S'il s'agit de la même livraison saisie deux fois, annulez."}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onCancel}>
+            {en ? "Cancel" : "Annuler"}
+          </button>
+          <button className="btn btn-primary" style={{ flex: 1.4 }} disabled={busy} onClick={onConfirm}>
+            {busy ? "..." : (en ? "Yes, separate delivery" : "Oui, livraison distincte")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// The release-time second look. Another capture of the same product, quantity and
+// location sits within hours of this one. Shown at pricing because that is the
+// last human checkpoint before the units become stock, and because whoever
+// answered the capture-time prompt may not be the person releasing.
+// Informational by design: it never blocks the release.
+export function DuplicateSiblingWarning({ siblings, en }) {
+  if (!siblings || siblings.length === 0) return null;
+  return (
+    <div style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.4)",
+                  borderRadius: 10, padding: "10px 12px", marginBottom: 12, fontSize: 12.5 }}>
+      <div style={{ fontWeight: 700, color: "#f59e0b", marginBottom: 4 }}>
+        ⚠️ {en ? "The same goods were captured more than once" : "Les mêmes marchandises ont été enregistrées plusieurs fois"}
+      </div>
+      {siblings.map((d) => (
+        <div key={d.buffer_id} style={{ color: "var(--text-muted)" }}>
+          {d.buffer_number ? `${d.buffer_number} — ` : ""}
+          {d.qty_received} {en ? "by" : "par"} {d.actor_name || (en ? "someone" : "quelqu'un")}
+          {d.minutes_apart != null
+            ? (en ? `, ${d.minutes_apart} min apart` : `, à ${d.minutes_apart} min d'intervalle`)
+            : ""}
+          {d.status ? ` · ${d.status}` : ""}
+        </div>
+      ))}
+      <div style={{ marginTop: 4, color: "var(--text-muted)" }}>
+        {en
+          ? "Check this is a separate delivery before releasing — releasing both adds both to stock."
+          : "Vérifiez qu'il s'agit d'une livraison distincte avant de libérer — libérer les deux ajoute les deux au stock."}
+      </div>
+    </div>
+  );
+}
+
 function ReleaseModal({ row, en, lang, fmt, locList, onClose, onDone }) {
   const remaining = num(row.qty_remaining);
   const isNew = !!row.is_new_product;
@@ -397,6 +504,7 @@ function ReleaseModal({ row, en, lang, fmt, locList, onClose, onDone }) {
   const [kit, setKit] = useState(false);
   const [parts, setParts] = useState([]);     // kit parts
   const [loadingInfo, setLoadingInfo] = useState(true);
+  const [siblings, setSiblings] = useState([]);   // F-A: other captures of the same goods
 
   // Prefill: EXISTING product → its current prices (a blank re-save would overwrite the
   // real price). NEW product → generate an SKU + prefill the barcode staff scanned at add.
@@ -415,6 +523,10 @@ function ReleaseModal({ row, en, lang, fmt, locList, onClose, onDone }) {
           setSku(genSku());
           setBarcode(info.buffer_barcode || genBarcode());
         }
+        // F-A, second look: Paul prices every buffer, so this is the last moment a
+        // human sees the capture before its units become stock. The capture-time
+        // prompt can be answered wrongly, or by someone else entirely.
+        setSiblings(Array.isArray(info?.possible_duplicates) ? info.possible_duplicates : []);
         setLoadingInfo(false);
       })
       .catch(() => { if (alive) { if (isNew) { setSku(genSku()); setBarcode(genBarcode()); } setLoadingInfo(false); } });
@@ -475,6 +587,8 @@ function ReleaseModal({ row, en, lang, fmt, locList, onClose, onDone }) {
           {loadingInfo ? <span style={{ color: "var(--text-muted)" }}> · {en ? "loading prices…" : "chargement des prix…"}</span> : null}
         </div>
 
+        {/* F-A, SECOND LOOK — see DuplicateSiblingWarning at module scope. */}
+        <DuplicateSiblingWarning siblings={siblings} en={en} />
         {/* NEW product: SKU + barcode (generated, editable, optional) + merge option */}
         {isNew && (
           <div style={{ marginBottom: 12, padding: 10, border: "1px dashed var(--border)", borderRadius: 8 }}>
