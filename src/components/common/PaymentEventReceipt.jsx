@@ -154,6 +154,40 @@ function nowLocale(lang) {
 // Compose the WhatsApp + print plain-text bodies (the on-screen
 // modal renders JSX directly; the two outbound surfaces share
 // this builder so they can't drift).
+// ── THE RECEIPT'S LINE ITEMS, FROM EITHER SHAPE ─────────────────────────────
+// MODULE SCOPE ON PURPOSE. Both the body-line builder and the component's print
+// handlers need these, and they are separate functions — a local const in one is
+// a ReferenceError in the other, which is exactly the bug this file shipped with
+// between 2026-08-11 (0957ac41) and this commit.
+//
+// Accepts BOTH shapes: `data.items` (the device that rang the sale still has its
+// cart) and `data.pa_sale_items` (a different device holding the server row,
+// where the product name is nested one level down in the embed).
+function normaliseSaleItems(data, en) {
+  if (!data) return [];
+  if (Array.isArray(data.items) && data.items.length) return data.items;
+  const rows = Array.isArray(data.pa_sale_items) ? data.pa_sale_items : [];
+  return rows.map((l) => {
+    // A debt_payment line is money riding on the sale, not goods, and carries no
+    // product to take a name from — so it gets a named one. `type` is what the
+    // renderers switch on to show it as a repayment rather than as an item.
+    const isDebtLine = l.line_type === "debt_payment" || (!l.product_id && !l.line_type);
+    if (isDebtLine) {
+      return { type: "debt_payment", name: en ? "Debt repayment" : "Remboursement de dette",
+               quantity: 1, unit_price: Number(l.unit_price) || 0 };
+    }
+    const p = l.pa_products || {};
+    return {
+      name: (en ? (p.name_en || p.name) : (p.name || p.name_en))
+            || (en ? "Unnamed item" : "Article sans nom"),
+      quantity: Number(l.quantity) || 0,
+      unit_price: Number(l.unit_price) || 0,
+      is_damaged: l.is_damaged === true,
+      product_id: l.product_id,
+    };
+  });
+}
+
 function buildBodyLines(eventType, data, lang, org) {
   const en = lang === "en";
   const sym = currencySymbol(org?.currency);
@@ -189,30 +223,13 @@ function buildBodyLines(eventType, data, lang, org) {
   // existing call sites that pass a cart are byte-for-byte unaffected. It also
   // means any future caller can hand over a raw server sale row and get a
   // correct receipt, which is the shape /pay and GET /sales/:id both return.
-  const saleItems = (() => {
-    if (Array.isArray(data.items) && data.items.length) return data.items;
-    const rows = Array.isArray(data.pa_sale_items) ? data.pa_sale_items : [];
-    return rows.map((l) => {
-      // A debt_payment line is money riding on the sale, not goods, and carries
-      // no product to take a name from — so it gets a named one. `type` is what
-      // the renderers below switch on to show it as a repayment rather than as
-      // an item with a quantity.
-      const isDebtLine = l.line_type === "debt_payment" || (!l.product_id && !l.line_type);
-      if (isDebtLine) {
-        return { type: "debt_payment", name: en ? "Debt repayment" : "Remboursement de dette",
-                 quantity: 1, unit_price: Number(l.unit_price) || 0 };
-      }
-      const p = l.pa_products || {};
-      return {
-        name: (en ? (p.name_en || p.name) : (p.name || p.name_en))
-              || (en ? "Unnamed item" : "Article sans nom"),
-        quantity: Number(l.quantity) || 0,
-        unit_price: Number(l.unit_price) || 0,
-        is_damaged: l.is_damaged === true,
-        product_id: l.product_id,
-      };
-    });
-  })();
+  //
+  // 🔴 MOVED TO MODULE SCOPE (see normaliseSaleItems above). It used to be a
+  // local const here, and `0957ac41` also replaced `data.items || []` with it in
+  // THREE call sites inside PaymentEventReceiptInner — a different function,
+  // where it does not exist. Every print path threw "saleItems is not defined".
+  // One definition, two callers, no copy.
+  const saleItems = normaliseSaleItems(data, en);
 
   if (eventType === "sale") {
     const items = saleItems;
@@ -509,6 +526,25 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
   // it. Kept as a thin closure so the three call sites below are unchanged.
   const dmgName = (i) => dmgNameOf(i, en);
 
+  // THE SAME LINE ITEMS THE MODAL ALREADY RENDERS. One shared normaliser, so the
+  // printed receipt can never disagree with what is on screen — and no extra
+  // fetch, because the data is already in `data`.
+  const saleItems = normaliseSaleItems(data, en);
+
+  // Every print path calls this first. An empty item list means we would print a
+  // sale number and a total with nothing under it — the exact complaint 0957ac41
+  // set out to fix — so refuse with a clear message rather than emitting a
+  // receipt that proves nothing, or throwing into a toast that reads like a
+  // crash ("saleItems is not defined" is what the cashier actually saw).
+  const saleLinesOrWarn = () => {
+    if (eventType !== "sale") return [];          // non-sale receipts have no item list
+    if (saleItems.length) return saleItems;
+    toast.error(en
+      ? "This receipt has no items to print. Reopen the sale and try again."
+      : "Ce reçu n'a aucun article à imprimer. Rouvrez la vente et réessayez.");
+    return null;
+  };
+
   // ESC closes — mirrors the inline ReceiptModal's behaviour
   // (MP-RECEIPT-MODAL-MOBILE-FIX) so phones aren't trapped on a
   // tall receipt with no escape.
@@ -705,7 +741,10 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
       soldDateNoteByName: data.sold_date_note_by_name || null,
     };
   };
-  const printThermal = (widthMm) => openPrint(buildThermalReceipt(saleReceiptOpts(widthMm)));
+  const printThermal = (widthMm) => {
+    if (!saleLinesOrWarn()) return;
+    openPrint(buildThermalReceipt(saleReceiptOpts(widthMm)));
+  };
 
   // ── MP-BT-THERMAL: direct Bluetooth ESC/POS print ─────────────────────────
   const openBtPicker = async () => {
@@ -725,6 +764,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
   };
 
   const doBtPrint = async (deviceId) => {
+    if (!saleLinesOrWarn()) return;          // empty items -> clear message, no crash
     setBtBusy(true);
     try {
       await printSaleViaBluetooth(saleReceiptOpts(thermalWidth), deviceId);
@@ -754,6 +794,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
     // SALE → shared Cameroon FACTURE builder (identical to the Reports → Sales
     // details print). No barcode/QR; amounts space-separated, no decimals.
     if (eventType === "sale") {
+      if (!saleLinesOrWarn()) return;
       const isDebt = (i) => i.type === "debt_payment" || i.isDebt || i.isDebtPayment
         || i.product_id === "__DEBT__" || i.product_id === "__DEBT_PAYMENT__";
       const items = saleItems.map((i) => isDebt(i)

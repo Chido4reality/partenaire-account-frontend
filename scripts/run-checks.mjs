@@ -40,6 +40,11 @@ const CHECKS = [
   // rendering fact — invisible to the API gates and to `vite build`, since esbuild
   // does not evaluate a useState initialiser.
   ["receive-blind",  "scripts/receive-blind-render-check.mjs", "no sent quantity on the receiver's screen, and no prefill in any input"],
+  // MP-RECEIPT-PRINT-SCOPE: 0957ac41 moved the line-item normaliser into
+  // buildBodyLines but kept using it in THREE call sites inside the component,
+  // where it does not exist — every print path threw "saleItems is not defined".
+  // mount-check STUBS this component to null, so nothing could catch it.
+  ["receipt-print", "scripts/receipt-print-paths-check.mjs", "print paths resolve their line items and build a real ESC/POS payload"],
   // MP-ZERO-STOCK-INVISIBLE: InventoryPage had no render coverage at all, so a
   // product that vanished from the Stock tab looked identical to a green suite.
   ["zero-stock",    "scripts/inventory-zero-stock-check.mjs", "a zero-stock product lists at quantity 0 instead of reading as 'does not exist'"],
