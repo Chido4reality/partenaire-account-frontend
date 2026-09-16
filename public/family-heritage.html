@@ -1,0 +1,667 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Family Heritage — owner area</title>
+<!--
+  FAMILY HERITAGE — OWNER AREA (Stage C). Part of the admin portal, served as its
+  own page BECAUSE THE IDENTITY IS DIFFERENT: this area is opened with Peter's own
+  SUPABASE account, never the admin login. An admin session — master_admin
+  included — grants nothing here, and the API refuses it (probe 8). Keeping the
+  two on one screen is exactly how someone comes to believe the admin login is
+  "enough", so they are deliberately separate and the header always names which
+  identity is in use.
+
+  🔴 THE MASTER SWITCH IS NOT HERE. fh_site_settings is never displayed and has no
+  control on this page, at any stage. Publishing the public site is a SQL
+  statement Peter runs himself. If a future edit adds a control for it, that edit
+  is wrong. (The database agrees: fh_app holds no privilege on that table — probe 18.)
+
+  🔴 EVERY ACTION ASKS "WHAT IF IT RUNS TWICE?" Buttons lock while in flight, and
+  the irreversible ones (unlink, revoking a child's override, forcing a password
+  change, suspending, approving) name their consequence in a confirm step first.
+  The server refuses a repeat anyway — approving twice is 409, not a second apply.
+-->
+<style>
+  :root {
+    --bg:#0f1115; --panel:#161a21; --panel-2:#1c2129; --line:#262c36;
+    --text:#e7ecf3; --muted:#9aa6b6; --accent:#c9a227; --accent-2:#e3c76a;
+    --danger:#e5484d; --ok:#3fb950; --warn:#d29922;
+    --radius:12px; --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  a { color:var(--accent-2); }
+  .wrap { max-width:1100px; margin:0 auto; padding:16px; }
+  header.top { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between;
+               padding:14px 16px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); }
+  .brand { display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:.2px; }
+  .brand .mark { font-size:22px; }
+  .identity { font-size:13px; color:var(--muted); }
+  .identity b { color:var(--text); }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px;
+          border:1px solid var(--line); background:var(--panel-2); color:var(--muted); }
+  .pill.owner { color:var(--accent-2); border-color:#5a4a12; background:#241f0d; }
+  .btn { background:var(--panel-2); color:var(--text); border:1px solid var(--line);
+         border-radius:9px; padding:8px 12px; font-size:14px; cursor:pointer; }
+  .btn:hover:not(:disabled) { border-color:#39424f; }
+  .btn:disabled { opacity:.55; cursor:not-allowed; }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:#1a1405; font-weight:600; }
+  .btn.danger { background:#2a1416; border-color:#5b2126; color:#ff9ea1; }
+  .btn.sm { padding:5px 9px; font-size:13px; }
+  .tabs { display:flex; gap:8px; margin:16px 0; flex-wrap:wrap; }
+  .tab { padding:8px 14px; border-radius:9px; border:1px solid var(--line); background:var(--panel);
+         cursor:pointer; color:var(--muted); }
+  .tab[aria-selected="true"] { background:var(--panel-2); color:var(--text); border-color:#3a434f; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:16px; }
+  .card h2 { margin:0 0 4px; font-size:17px; }
+  .card p.sub { margin:0 0 14px; color:var(--muted); font-size:13.5px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:9px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; font-size:12.5px; text-transform:uppercase; letter-spacing:.4px; }
+  .scroller { overflow-x:auto; }
+  label { display:block; font-size:13px; color:var(--muted); margin:10px 0 4px; }
+  input[type=text], input[type=email], input[type=password], textarea, select {
+    width:100%; background:var(--panel-2); border:1px solid var(--line); border-radius:9px;
+    color:var(--text); padding:9px 10px; font-size:14px; font-family:inherit; }
+  textarea { min-height:70px; resize:vertical; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; }
+  .row > * { flex:1 1 220px; }
+  .caps { display:flex; gap:14px; flex-wrap:wrap; margin-top:8px; }
+  .caps label { display:flex; align-items:center; gap:6px; margin:0; color:var(--text); font-size:13.5px; }
+  .muted { color:var(--muted); }
+  .warn { color:var(--warn); }
+  .danger-text { color:#ff9ea1; }
+  .ok-text { color:var(--ok); }
+  .banner { border-radius:var(--radius); padding:12px 14px; margin-bottom:14px; font-size:14px; }
+  .banner.err { background:#2a1416; border:1px solid #5b2126; color:#ffb4b6; }
+  .banner.ok { background:#0f2416; border:1px solid #1d4a2b; color:#9ff0b5; }
+  .modal-back { position:fixed; inset:0; background:rgba(0,0,0,.62); display:flex; align-items:center;
+                justify-content:center; padding:16px; z-index:50; }
+  .modal { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+           max-width:560px; width:100%; padding:18px; }
+  .modal h3 { margin:0 0 8px; font-size:17px; }
+  .modal .consequence { background:var(--panel-2); border:1px solid var(--line); border-left:3px solid var(--warn);
+                        border-radius:8px; padding:10px 12px; margin:10px 0; font-size:14px; }
+  .modal .actions { display:flex; gap:10px; justify-content:flex-end; margin-top:14px; }
+  .once { border:2px solid var(--accent); background:#241f0d; border-radius:var(--radius); padding:14px; }
+  .once .pw { font-family:var(--mono); font-size:20px; letter-spacing:1px; background:#0d0f14;
+              border:1px dashed var(--accent); border-radius:8px; padding:12px; margin:10px 0; word-break:break-all; }
+  .hide { display:none !important; }
+  .stack > * + * { margin-top:10px; }
+  .small { font-size:13px; }
+  @media (max-width:640px) { .wrap { padding:10px; } th, td { padding:7px 5px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand"><span class="mark">🌳</span><span data-i18n="Family Heritage">Family Heritage</span></div>
+    <div class="identity" id="identity">
+      <span data-i18n="Not signed in">Not signed in</span>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn sm" id="lang-toggle" title="Language / Langue">Français</button>
+      <button class="btn sm hide" id="signout" data-i18n="Sign out">Sign out</button>
+    </div>
+  </header>
+
+  <div id="banner-host"></div>
+
+  <!-- ── SIGN IN ─────────────────────────────────────────────────────────── -->
+  <section id="view-signin" class="card">
+    <h2 data-i18n="Sign in with your Family Heritage account">Sign in with your Family Heritage account</h2>
+    <p class="sub" data-i18n="This is your own family account, not your administrator login. An administrator login — including master admin — has no access to the family archive.">This is your own family account, not your administrator login. An administrator login — including master admin — has no access to the family archive.</p>
+    <form id="signin-form" autocomplete="on">
+      <label for="si-email" data-i18n="Email">Email</label>
+      <input id="si-email" type="email" autocomplete="username" required />
+      <label for="si-pass" data-i18n="Password">Password</label>
+      <input id="si-pass" type="password" autocomplete="current-password" required />
+      <div style="margin-top:14px"><button class="btn primary" id="si-btn" type="submit" data-i18n="Sign in">Sign in</button></div>
+    </form>
+  </section>
+
+  <!-- ── OWNER AREA ──────────────────────────────────────────────────────── -->
+  <section id="view-owner" class="hide">
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" data-tab="accounts" aria-selected="true" data-i18n="Accounts">Accounts</button>
+      <button class="tab" role="tab" data-tab="proposals" aria-selected="false" data-i18n="Proposals">Proposals</button>
+      <button class="tab" role="tab" data-tab="people" aria-selected="false" data-i18n="People">People</button>
+    </div>
+
+    <!-- ACCOUNTS -->
+    <div id="tab-accounts">
+      <div class="card">
+        <h2 data-i18n="Family accounts">Family accounts</h2>
+        <p class="sub" data-i18n="You create every account. Nobody can sign themselves up.">You create every account. Nobody can sign themselves up.</p>
+        <div class="scroller"><table id="members-table"><thead><tr>
+          <th data-i18n="Name">Name</th><th data-i18n="Email">Email</th><th data-i18n="Can">Can</th>
+          <th data-i18n="State">State</th><th data-i18n="Actions">Actions</th>
+        </tr></thead><tbody></tbody></table></div>
+      </div>
+
+      <div class="card">
+        <h2 data-i18n="New account">New account</h2>
+        <p class="sub" data-i18n="The password is shown once, on this screen. Write it down before you close it.">The password is shown once, on this screen. Write it down before you close it.</p>
+        <div id="new-account-form">
+          <div class="row">
+            <div><label for="na-person" data-i18n="Person">Person</label><select id="na-person"></select></div>
+            <div><label for="na-email" data-i18n="Email">Email</label><input id="na-email" type="email" /></div>
+            <div><label for="na-name" data-i18n="Display name">Display name</label><input id="na-name" type="text" /></div>
+          </div>
+          <div class="caps" id="na-caps"></div>
+          <div style="margin-top:14px"><button class="btn primary" id="na-btn" data-i18n="Create account">Create account</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PROPOSALS -->
+    <div id="tab-proposals" class="hide">
+      <div class="card">
+        <h2 data-i18n="Proposals waiting for you">Proposals waiting for you</h2>
+        <p class="sub" data-i18n="Approving writes the change to the record. It happens once — approving again is refused.">Approving writes the change to the record. It happens once — approving again is refused.</p>
+        <div id="proposals-host" class="stack"></div>
+      </div>
+    </div>
+
+    <!-- PEOPLE -->
+    <div id="tab-people" class="hide">
+      <div class="card">
+        <h2 data-i18n="People">People</h2>
+        <p class="sub" data-i18n="Names, dates and the details only you can change.">Names, dates and the details only you can change.</p>
+        <label for="pp-search" data-i18n="Search">Search</label>
+        <input id="pp-search" type="text" data-i18n-ph="Type a name" placeholder="Type a name" />
+        <div class="scroller" style="margin-top:12px"><table id="people-table"><thead><tr>
+          <th data-i18n="Name">Name</th><th data-i18n="Born">Born</th><th data-i18n="Child">Child</th>
+          <th data-i18n="Login allowed">Login allowed</th><th data-i18n="Actions">Actions</th>
+        </tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="card hide" id="person-editor-card">
+        <h2 data-i18n="Edit person">Edit person</h2>
+        <div id="person-editor"><p class="muted small" data-i18n="Choose someone from the list.">Choose someone from the list.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="small muted" style="margin:18px 0 40px">
+    <span data-i18n="Family Heritage owner area. Developed by Peter Chidozie Okafor.">Family Heritage owner area. Developed by Peter Chidozie Okafor.</span>
+  </footer>
+</div>
+
+<div id="modal-host"></div>
+
+<script>
+/* ────────────────────────── configuration ──────────────────────────
+   API base is resolved the same way the admin portal does. The Supabase
+   URL and anon key come from the API (GET /fh/config): both are public
+   values, but they differ per environment and must never be pasted into
+   a committed file — that is how Ejima ended up with a production key in
+   source. */
+const API_BASE = (function () {
+  const h = location.hostname;
+  if (h === 'localhost' || h === '127.0.0.1') return 'http://localhost:3001/api';
+  if (h.indexOf('staging') !== -1) return 'https://partenaire-account-server-staging.onrender.com/api';
+  return 'https://partenaire-account-api.onrender.com/api';
+})();
+const SESSION_KEY = 'fh_owner_session';   // sessionStorage: dies with the tab
+let CONFIG = null, SESSION = null, LANG = 'en', MEMBERS = [], PEOPLE = [], SELECTED = null;
+
+/* ────────────────────────── language ────────────────────────────── */
+const FR = {
+  'Family Heritage':'Héritage familial',
+  'Not signed in':'Non connecté',
+  'Sign out':'Se déconnecter',
+  'Sign in with your Family Heritage account':'Connectez-vous avec votre compte Héritage familial',
+  'This is your own family account, not your administrator login. An administrator login — including master admin — has no access to the family archive.':"C'est votre compte familial personnel, pas votre identifiant administrateur. Un identifiant administrateur — y compris master admin — n'a aucun accès aux archives familiales.",
+  'Email':'E-mail', 'Password':'Mot de passe', 'Sign in':'Se connecter',
+  'Accounts':'Comptes', 'Proposals':'Propositions', 'People':'Personnes',
+  'Family accounts':'Comptes de la famille',
+  'You create every account. Nobody can sign themselves up.':"Vous créez chaque compte. Personne ne peut s'inscrire seul.",
+  'Name':'Nom', 'Can':'Droits', 'State':'État', 'Actions':'Actions',
+  'New account':'Nouveau compte',
+  'The password is shown once, on this screen. Write it down before you close it.':"Le mot de passe s'affiche une seule fois, sur cet écran. Notez-le avant de fermer.",
+  'Person':'Personne', 'Display name':'Nom affiché', 'Create account':'Créer le compte',
+  'Proposals waiting for you':'Propositions en attente',
+  'Approving writes the change to the record. It happens once — approving again is refused.':"Approuver écrit la modification dans la fiche. Cela se fait une seule fois — approuver de nouveau est refusé.",
+  'Names, dates and the details only you can change.':'Les noms, les dates et les détails que vous seul pouvez changer.',
+  'Search':'Rechercher', 'Type a name':'Tapez un nom', 'Born':'Naissance', 'Child':'Enfant',
+  'Login allowed':'Connexion autorisée', 'Edit person':'Modifier la personne',
+  'Choose someone from the list.':'Choisissez une personne dans la liste.',
+  'Family Heritage owner area. Developed by Peter Chidozie Okafor.':'Espace propriétaire Héritage familial. Développé par Peter Chidozie Okafor.',
+  'Signed in as':'Connecté en tant que', 'Family account (owner)':'Compte familial (propriétaire)',
+  'View':'Voir', 'Edit':'Modifier', 'Propose':'Proposer', 'Archive':'Archiver',
+  'Suspend':'Suspendre', 'Restore':'Rétablir', 'Unlink':'Délier', 'Force password change':'Forcer le changement de mot de passe',
+  'Active':'Actif', 'Suspended':'Suspendu', 'Unlinked':'Délié', 'Must change password':'Doit changer le mot de passe',
+  'No access — child not allowed':"Aucun accès — enfant non autorisé",
+  'Yes':'Oui', 'No':'Non', 'Approve':'Approuver', 'Reject':'Rejeter', 'Cancel':'Annuler',
+  'Confirm':'Confirmer', 'I understand':'Je comprends', 'Close':'Fermer', 'Copy':'Copier', 'Copied':'Copié',
+  'Account created':'Compte créé',
+  'This password is shown ONCE':'Ce mot de passe est affiché UNE SEULE FOIS',
+  'If you close this without writing it down, it cannot be shown again — you would have to force a new password for this account.':"Si vous fermez sans le noter, il ne pourra plus être affiché — vous devrez forcer un nouveau mot de passe pour ce compte.",
+  'I have written it down':"Je l'ai noté",
+  'Allow a login for this child':'Autoriser une connexion pour cet enfant',
+  'Stop this child’s access':'Mettre fin à l’accès de cet enfant',
+  'Reason (recorded)':'Motif (enregistré)',
+  'A child cannot have an account unless you allow it for that child, one at a time. The reason is recorded with your name and the date.':"Un enfant ne peut pas avoir de compte à moins que vous ne l'autorisiez pour cet enfant, un par un. Le motif est enregistré avec votre nom et la date.",
+  'Turning this off ends that child’s access immediately — any account linked to them stops working at once.':"Désactiver met fin immédiatement à l'accès de cet enfant — tout compte qui lui est lié cesse de fonctionner aussitôt.",
+  'This cannot be undone. The account is closed for good; to give this person access again you must create a new account.':"Ceci est irréversible. Le compte est fermé définitivement ; pour redonner accès à cette personne, vous devrez créer un nouveau compte.",
+  'The person keeps their account but cannot use it until you restore them.':"La personne garde son compte mais ne peut pas l'utiliser tant que vous ne l'avez pas rétabli.",
+  'They will be asked to choose a new password the next time they sign in, and can do nothing else until they do.':"Il lui sera demandé de choisir un nouveau mot de passe à sa prochaine connexion, et elle ne pourra rien faire d'autre avant.",
+  'This writes the proposed change to the record.':'Ceci écrit la modification proposée dans la fiche.',
+  'Proposed by':'Proposé par', 'Proposed':'Proposé', 'Note (optional)':'Note (facultatif)',
+  'Nothing waiting.':'Rien en attente.', 'Working…':'En cours…',
+  'Something went wrong. Please try again.':"Une erreur s'est produite. Veuillez réessayer.",
+  'Save':'Enregistrer', 'Saved':'Enregistré', 'Surname':'Nom de famille', 'Given names':'Prénoms',
+  'Biography':'Biographie', 'Sex':'Sexe', 'male':'masculin', 'female':'féminin', 'unknown':'inconnu',
+  'Is a child':'Est un enfant', 'Verification':'Vérification', 'Allowed':'Autorisé', 'Not allowed':'Non autorisé',
+  'Change':'Modifier', 'Owner-only details':'Détails réservés au propriétaire',
+  'Session ended. Please sign in again.':'Session terminée. Veuillez vous reconnecter.'
+};
+function t(s) { return (LANG === 'fr' && Object.prototype.hasOwnProperty.call(FR, s)) ? FR[s] : s; }
+function applyLang() {
+  document.documentElement.lang = LANG;
+  document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); });
+  document.querySelectorAll('[data-i18n-ph]').forEach(function (el) { el.setAttribute('placeholder', t(el.getAttribute('data-i18n-ph'))); });
+  document.getElementById('lang-toggle').textContent = LANG === 'fr' ? 'English' : 'Français';
+  renderIdentity(); renderMembers(); renderPeople(); renderProposals();
+}
+
+/* ────────────────────────── helpers ─────────────────────────────── */
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+function banner(kind, msg) {
+  $('banner-host').innerHTML = '<div class="banner ' + kind + '">' + esc(msg) + '</div>';
+  if (kind === 'ok') setTimeout(() => { $('banner-host').innerHTML = ''; }, 4000);
+}
+/** Every action button locks while it runs: the simplest answer to "what if it
+    runs twice?". The server refuses repeats as well — this only stops the
+    accidental double click. */
+async function withLock(btn, fn) {
+  if (!btn) return fn();
+  if (btn.disabled) return;
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = t('Working…');
+  try { return await fn(); }
+  finally { btn.disabled = false; btn.textContent = label; }
+}
+async function api(method, path, body) {
+  const r = await fetch(API_BASE + '/fh' + path, {
+    method,
+    headers: Object.assign({ 'content-type': 'application/json' },
+      SESSION ? { authorization: 'Bearer ' + SESSION.access_token } : {}),
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  let data = null; try { data = await r.json(); } catch (_) { /* no body */ }
+  if (r.status === 401) { signOut(t('Session ended. Please sign in again.')); throw new Error('unauthorised'); }
+  if (!r.ok) { const e = new Error((data && data.message) || t('Something went wrong. Please try again.')); e.code = data && data.error; throw e; }
+  return data;
+}
+
+/* ────────────────────────── confirm step ────────────────────────── */
+/** Names what will happen, in the owner's language, before anything irreversible.
+    `acknowledge` adds a checkbox that must be ticked — used where there is no undo. */
+function confirmAction({ title, consequence, confirmLabel, danger, acknowledge, requireReason, extraHtml, onConfirm }) {
+  return new Promise((resolve) => {
+    const host = $('modal-host');
+    host.innerHTML =
+      '<div class="modal-back"><div class="modal" role="dialog" aria-modal="true">' +
+        '<h3>' + esc(title) + '</h3>' +
+        '<div class="consequence">' + esc(consequence) + '</div>' +
+        (extraHtml || '') +
+        (acknowledge ? '<label style="display:flex;gap:8px;align-items:center;color:var(--text)">' +
+            '<input type="checkbox" id="cf-ack" /> <span>' + esc(t('I understand')) + '</span></label>' : '') +
+        '<div class="actions">' +
+          '<button class="btn" id="cf-cancel">' + esc(t('Cancel')) + '</button>' +
+          '<button class="btn ' + (danger ? 'danger' : 'primary') + '" id="cf-ok"' +
+            (acknowledge || requireReason ? ' disabled' : '') + '>' +
+            esc(confirmLabel || t('Confirm')) + '</button>' +
+        '</div>' +
+      '</div></div>';
+    const close = () => { host.innerHTML = ''; resolve(false); };
+    $('cf-cancel').onclick = close;
+    // The confirm button stays disabled until every condition this action asks
+    // for is met: the acknowledgement ticked, and — where the record must say WHY
+    // (the child override) — a reason actually typed. An optional reason box is
+    // one that gets left empty, and then the record cannot explain itself later.
+    const ta = host.querySelector('textarea');
+    const refresh = () => {
+      const ackOk = !acknowledge || ($('cf-ack') && $('cf-ack').checked);
+      const reasonOk = !requireReason || (ta && ta.value.trim().length > 0);
+      $('cf-ok').disabled = !(ackOk && reasonOk);
+    };
+    if (acknowledge) $('cf-ack').onchange = refresh;
+    if (requireReason && ta) ta.oninput = refresh;
+    $('cf-ok').onclick = async () => {
+      await withLock($('cf-ok'), async () => {
+        try { await onConfirm(); host.innerHTML = ''; resolve(true); }
+        catch (err) { banner('err', err.message); host.innerHTML = ''; resolve(false); }
+      });
+    };
+  });
+}
+
+/* ────────────────────────── session ─────────────────────────────── */
+function renderIdentity() {
+  const el = $('identity');
+  if (!SESSION) { el.innerHTML = '<span>' + esc(t('Not signed in')) + '</span>'; return; }
+  el.innerHTML = '<span>' + esc(t('Signed in as')) + ' <b>' + esc(SESSION.email || '') + '</b></span> ' +
+                 '<span class="pill owner">' + esc(t('Family account (owner)')) + '</span>';
+}
+function saveSession(s) {
+  SESSION = s;
+  try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch (_) { /* private mode */ }
+}
+function signOut(msg) {
+  SESSION = null;
+  try { sessionStorage.removeItem(SESSION_KEY); } catch (_) {}
+  $('view-owner').classList.add('hide'); $('view-signin').classList.remove('hide');
+  $('signout').classList.add('hide'); renderIdentity();
+  if (msg) banner('err', msg);
+}
+async function signIn(email, password) {
+  const r = await fetch(CONFIG.supabase_url + '/auth/v1/token?grant_type=password', {
+    method: 'POST',
+    headers: { apikey: CONFIG.anon_key, 'content-type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok || !data || !data.access_token) throw new Error((data && (data.error_description || data.msg)) || 'Sign-in failed');
+  saveSession({ access_token: data.access_token, email });
+  return data;
+}
+async function afterSignIn() {
+  const me = await api('GET', '/whoami');
+  if (!me.is_owner) {
+    signOut(LANG === 'fr'
+      ? "Ce compte n'est pas le compte propriétaire de l'Héritage familial."
+      : 'That account is not the Family Heritage owner account.');
+    return;
+  }
+  $('view-signin').classList.add('hide'); $('view-owner').classList.remove('hide');
+  $('signout').classList.remove('hide'); renderIdentity();
+  await Promise.all([loadMembers(), loadPeople(), loadProposals()]);
+}
+
+/* ────────────────────────── accounts ────────────────────────────── */
+const CAP_KEYS = ['can_view', 'can_edit', 'can_submit', 'can_archive'];
+const CAP_LABEL = { can_view:'View', can_edit:'Edit', can_submit:'Propose', can_archive:'Archive' };
+async function loadMembers() { MEMBERS = (await api('GET', '/owner/members')).members || []; renderMembers(); }
+/** The picker needs BOTH lists, which load concurrently — so it is rebuilt by
+    whichever render runs last, not just by the members one. */
+function renderPersonPicker() {
+  const sel = $('na-person'); if (!sel) return;
+  const linked = new Set(MEMBERS.filter((m) => !m.unlinked).map((m) => m.person_id));
+  const free = PEOPLE.filter((p) => !linked.has(p.id) && !p.archived);
+  const keep = sel.value;
+  sel.innerHTML = free.map((p) => '<option value="' + p.id + '">' + esc(personName(p)) +
+    (p.is_minor ? ' — ' + t('Child') : '') + '</option>').join('');
+  if (keep && free.some((p) => p.id === keep)) sel.value = keep;
+}
+function renderMembers() {
+  const tb = document.querySelector('#members-table tbody'); if (!tb) return;
+  tb.innerHTML = MEMBERS.map((m) => {
+    const caps = CAP_KEYS.filter((k) => m[k]).map((k) => t(CAP_LABEL[k])).join(', ') || '—';
+    // 🔴 A CHILD WITHOUT THE OVERRIDE CANNOT USE THEIR ACCOUNT, even though the
+    // member row is untouched. Measured 2026-09-16 on staging: that login sees
+    // ZERO people and every write is refused. Showing it as "Active" — which
+    // this table did — tells the owner an account works when it does not.
+    const person = PEOPLE.find((p) => p.id === m.person_id);
+    const childBlocked = person && person.is_minor && !person.minor_login_override;
+    const state = m.unlinked ? '<span class="danger-text">' + t('Unlinked') + '</span>'
+      : m.suspended ? '<span class="warn">' + t('Suspended') + '</span>'
+      : childBlocked ? '<span class="warn">' + t('No access — child not allowed') + '</span>'
+      : '<span class="ok-text">' + t('Active') + '</span>';
+    const mustChange = m.must_change_password ? ' <span class="pill">' + t('Must change password') + '</span>' : '';
+    const actions = m.unlinked ? '' :
+      '<button class="btn sm" data-act="' + (m.suspended ? 'unsuspend' : 'suspend') + '" data-id="' + m.id + '">' +
+        (m.suspended ? t('Restore') : t('Suspend')) + '</button> ' +
+      '<button class="btn sm" data-act="force-pw" data-id="' + m.id + '">' + t('Force password change') + '</button> ' +
+      '<button class="btn sm danger" data-act="unlink" data-id="' + m.id + '">' + t('Unlink') + '</button>';
+    return '<tr><td>' + esc(m.display_name) + '</td><td class="small muted">' + esc(m.email || '') + '</td>' +
+           '<td class="small">' + caps + '</td><td class="small">' + state + mustChange + '</td>' +
+           '<td style="white-space:nowrap">' + actions + '</td></tr>';
+  }).join('') || '<tr><td colspan="5" class="muted">—</td></tr>';
+  tb.querySelectorAll('button[data-act]').forEach((b) => { b.onclick = () => memberAction(b); });
+  renderPersonPicker();
+  const capHost = $('na-caps');
+  if (capHost && !capHost.dataset.built) {
+    capHost.innerHTML = CAP_KEYS.map((k) => '<label><input type="checkbox" data-cap="' + k + '"' +
+      (k === 'can_view' ? ' checked' : '') + ' /> ' + t(CAP_LABEL[k]) + '</label>').join('');
+    capHost.dataset.built = '1';
+  }
+}
+async function memberAction(btn) {
+  const m = MEMBERS.find((x) => x.id === btn.dataset.id); if (!m) return;
+  const act = btn.dataset.act;
+  if (act === 'suspend') {
+    await confirmAction({ title: t('Suspend') + ' — ' + m.display_name,
+      consequence: t('The person keeps their account but cannot use it until you restore them.'),
+      confirmLabel: t('Suspend'), danger: true,
+      onConfirm: async () => { await api('POST', '/owner/members/' + m.id + '/suspend'); await loadMembers(); } });
+  } else if (act === 'unsuspend') {
+    await withLock(btn, async () => { await api('POST', '/owner/members/' + m.id + '/unsuspend'); await loadMembers(); });
+  } else if (act === 'force-pw') {
+    await confirmAction({ title: t('Force password change') + ' — ' + m.display_name,
+      consequence: t('They will be asked to choose a new password the next time they sign in, and can do nothing else until they do.'),
+      confirmLabel: t('Confirm'),
+      onConfirm: async () => { await api('PATCH', '/owner/members/' + m.id, { must_change_password: true }); await loadMembers(); } });
+  } else if (act === 'unlink') {
+    await confirmAction({ title: t('Unlink') + ' — ' + m.display_name,
+      consequence: t('This cannot be undone. The account is closed for good; to give this person access again you must create a new account.'),
+      confirmLabel: t('Unlink'), danger: true, acknowledge: true,
+      onConfirm: async () => { await api('POST', '/owner/members/' + m.id + '/unlink'); await loadMembers(); } });
+  }
+}
+/** The temporary password: shown once, and the screen says so. Closing needs an
+    explicit acknowledgement, because there is no second chance to read it. */
+function showPasswordOnce(member, password) {
+  const host = $('modal-host');
+  host.innerHTML =
+    '<div class="modal-back"><div class="modal">' +
+      '<h3>' + esc(t('Account created')) + ' — ' + esc(member.display_name) + '</h3>' +
+      '<div class="once">' +
+        '<div style="font-weight:700;color:var(--accent-2)">⚠ ' + esc(t('This password is shown ONCE')) + '</div>' +
+        '<div class="pw" id="pw-value">' + esc(password) + '</div>' +
+        '<div class="small">' + esc(t('If you close this without writing it down, it cannot be shown again — you would have to force a new password for this account.')) + '</div>' +
+        '<div style="margin-top:10px"><button class="btn sm" id="pw-copy">' + esc(t('Copy')) + '</button></div>' +
+      '</div>' +
+      '<label style="display:flex;gap:8px;align-items:center;color:var(--text);margin-top:12px">' +
+        '<input type="checkbox" id="pw-ack" /> <span>' + esc(t('I have written it down')) + '</span></label>' +
+      '<div class="actions"><button class="btn primary" id="pw-close" disabled>' + esc(t('Close')) + '</button></div>' +
+    '</div></div>';
+  $('pw-copy').onclick = async () => {
+    try { await navigator.clipboard.writeText(password); $('pw-copy').textContent = t('Copied'); } catch (_) { /* manual copy */ }
+  };
+  $('pw-ack').onchange = (e) => { $('pw-close').disabled = !e.target.checked; };
+  $('pw-close').onclick = () => { host.innerHTML = ''; };
+}
+
+/* ────────────────────────── proposals ───────────────────────────── */
+let PROPOSALS = [];
+async function loadProposals() { PROPOSALS = (await api('GET', '/owner/proposals?status=pending')).proposals || []; renderProposals(); }
+function renderProposals() {
+  const host = $('proposals-host'); if (!host) return;
+  if (!PROPOSALS.length) { host.innerHTML = '<p class="muted">' + t('Nothing waiting.') + '</p>'; return; }
+  host.innerHTML = PROPOSALS.map((p) => {
+    const fields = Object.keys(p.payload || {}).map((k) =>
+      '<div class="small"><span class="muted">' + esc(k) + ':</span> ' + esc(String(p.payload[k]).slice(0, 160)) + '</div>').join('');
+    return '<div class="card" style="margin:0">' +
+      '<div class="small muted">' + esc(t('Proposed by')) + ' <b>' + esc(p.submitted_by_name || '—') + '</b> · ' +
+        esc(new Date(p.submitted_at).toLocaleString()) + ' · ' + esc(p.kind) + ' / ' + esc(p.operation) + '</div>' +
+      '<div style="margin:8px 0">' + fields + '</div>' +
+      '<div><button class="btn primary sm" data-p="' + p.id + '" data-act="approve">' + t('Approve') + '</button> ' +
+           '<button class="btn sm" data-p="' + p.id + '" data-act="reject">' + t('Reject') + '</button></div>' +
+    '</div>';
+  }).join('');
+  host.querySelectorAll('button[data-p]').forEach((b) => { b.onclick = () => proposalAction(b); });
+}
+async function proposalAction(btn) {
+  const id = btn.dataset.p;
+  if (btn.dataset.act === 'approve') {
+    await confirmAction({ title: t('Approve'), consequence: t('This writes the proposed change to the record.'),
+      confirmLabel: t('Approve'),
+      onConfirm: async () => { await api('POST', '/owner/proposals/' + id + '/approve'); await Promise.all([loadProposals(), loadPeople()]); } });
+  } else {
+    await confirmAction({ title: t('Reject'), consequence: t('This writes the proposed change to the record.'),
+      confirmLabel: t('Reject'), danger: true,
+      extraHtml: '<label>' + t('Note (optional)') + '</label><textarea id="rj-note"></textarea>',
+      onConfirm: async () => {
+        const note = ($('rj-note') && $('rj-note').value.trim()) || null;
+        await api('POST', '/owner/proposals/' + id + '/reject', note ? { review_note: note } : {});
+        await loadProposals();
+      } });
+  }
+}
+
+/* ────────────────────────── people ──────────────────────────────── */
+function personName(p) {
+  const n = [p.given_names, p.surname].filter(Boolean).join(' ').trim();
+  return n || p.placeholder_label || '—';
+}
+/* Read through the OWNER list, not /persons: the member-facing list carries no
+   override columns, and a page that cannot see the true state of a child's
+   override cannot honestly offer to change it. */
+async function loadPeople() {
+  PEOPLE = (await api('GET', '/owner/persons?limit=500')).persons || [];
+  renderPeople();
+  // The accounts table reads the child-override state off these rows, and the two
+  // lists load concurrently — so redraw it once the people are actually here.
+  renderMembers();
+}
+function renderPeople() {
+  const tb = document.querySelector('#people-table tbody'); if (!tb) return;
+  const q = ($('pp-search') && $('pp-search').value.trim().toLowerCase()) || '';
+  const rows = PEOPLE.filter((p) => !q || personName(p).toLowerCase().indexOf(q) !== -1);
+  tb.innerHTML = rows.map((p) => {
+    const allowed = !p.is_minor ? '<span class="muted">—</span>'
+      : (p.minor_login_override ? '<span class="ok-text">' + t('Allowed') + '</span>'
+                                : '<span class="warn">' + t('Not allowed') + '</span>');
+    return '<tr><td>' + esc(personName(p)) + '</td><td class="small muted">' + esc(p.birth_date || '—') + '</td>' +
+      '<td class="small">' + (p.is_minor ? t('Yes') : t('No')) + '</td><td class="small">' + allowed + '</td>' +
+      '<td style="white-space:nowrap"><button class="btn sm" data-person="' + p.id + '">' + t('Edit') + '</button>' +
+      (p.is_minor ? ' <button class="btn sm" data-minor="' + p.id + '">' + t('Change') + '</button>' : '') + '</td></tr>';
+  }).join('') || '<tr><td colspan="5" class="muted">—</td></tr>';
+  tb.querySelectorAll('button[data-person]').forEach((b) => { b.onclick = () => editPerson(b.dataset.person); });
+  tb.querySelectorAll('button[data-minor]').forEach((b) => { b.onclick = () => minorOverride(b.dataset.minor); });
+  renderPersonPicker();
+}
+function editPerson(id) {
+  const p = PEOPLE.find((x) => x.id === id); if (!p) return; SELECTED = p;
+  $('person-editor-card').classList.remove('hide');
+  $('person-editor').innerHTML =
+    '<div class="row">' +
+      '<div><label>' + t('Given names') + '</label><input id="pe-given" type="text" value="' + esc(p.given_names || '') + '" /></div>' +
+      '<div><label>' + t('Surname') + '</label><input id="pe-surname" type="text" value="' + esc(p.surname || '') + '" /></div>' +
+      '<div><label>' + t('Sex') + '</label><select id="pe-sex">' +
+        ['male','female','unknown'].map((s) => '<option value="' + s + '"' + (p.sex === s ? ' selected' : '') + '>' + t(s) + '</option>').join('') +
+      '</select></div>' +
+    '</div>' +
+    '<label>' + t('Biography') + '</label><textarea id="pe-bio">' + esc(p.biography || '') + '</textarea>' +
+    '<div class="row"><div><label>' + t('Is a child') + '</label><select id="pe-minor">' +
+      '<option value="false"' + (!p.is_minor ? ' selected' : '') + '>' + t('No') + '</option>' +
+      '<option value="true"' + (p.is_minor ? ' selected' : '') + '>' + t('Yes') + '</option></select></div>' +
+      '<div><label>' + t('Verification') + '</label><select id="pe-ver">' +
+        ['unknown','family_testimony','needs_verification','verified','disputed'].map((s) =>
+          '<option value="' + s + '"' + (p.verification_status === s ? ' selected' : '') + '>' + s + '</option>').join('') +
+      '</select></div></div>' +
+    '<div style="margin-top:14px"><button class="btn primary" id="pe-save">' + t('Save') + '</button></div>';
+  $('pe-save').onclick = () => withLock($('pe-save'), async () => {
+    try {
+      await api('PATCH', '/owner/persons/' + p.id, {
+        given_names: $('pe-given').value.trim() || null, surname: $('pe-surname').value.trim() || null,
+        sex: $('pe-sex').value, biography: $('pe-bio').value, is_minor: $('pe-minor').value === 'true',
+        verification_status: $('pe-ver').value,
+      });
+      banner('ok', t('Saved')); await loadPeople();
+    } catch (e) { banner('err', e.message); }
+  });
+}
+/** The child-login override. The child's NAME is in the title, the reason is
+    required in the same step, and turning it OFF says plainly that access ends
+    immediately — because it does (the database checks it on every read and write). */
+async function minorOverride(id) {
+  const p = PEOPLE.find((x) => x.id === id); if (!p) return;
+  const turningOn = !p.minor_login_override;
+  await confirmAction({
+    title: (turningOn ? t('Allow a login for this child') : t('Stop this child’s access')) + ' — ' + personName(p),
+    consequence: turningOn
+      ? t('A child cannot have an account unless you allow it for that child, one at a time. The reason is recorded with your name and the date.')
+      : t('Turning this off ends that child’s access immediately — any account linked to them stops working at once.'),
+    confirmLabel: turningOn ? t('Confirm') : t('Stop this child’s access'),
+    danger: !turningOn, acknowledge: !turningOn, requireReason: true,
+    extraHtml: '<label>' + t('Reason (recorded)') + '</label><textarea id="mo-reason"></textarea>',
+    onConfirm: async () => {
+      const reason = ($('mo-reason') && $('mo-reason').value.trim()) || '';
+      await api('POST', '/owner/persons/' + p.id + '/minor-login-override', { enabled: turningOn, reason: reason || null });
+      await Promise.all([loadPeople(), loadMembers()]);
+    },
+  });
+}
+
+/* ────────────────────────── wiring ──────────────────────────────── */
+$('lang-toggle').onclick = () => {
+  LANG = LANG === 'fr' ? 'en' : 'fr';
+  try { localStorage.setItem('fh_lang', LANG); } catch (_) {}
+  applyLang();
+};
+$('signout').onclick = () => signOut();
+$('signin-form').onsubmit = (e) => {
+  e.preventDefault();
+  withLock($('si-btn'), async () => {
+    try { await signIn($('si-email').value.trim(), $('si-pass').value); $('si-pass').value = ''; await afterSignIn(); }
+    catch (err) { banner('err', err.message); }
+  });
+};
+$('na-btn').onclick = () => withLock($('na-btn'), async () => {
+  const caps = {};
+  document.querySelectorAll('#na-caps input[data-cap]').forEach((c) => { caps[c.dataset.cap] = c.checked; });
+  const body = Object.assign({ person_id: $('na-person').value, email: $('na-email').value.trim(),
+                               display_name: $('na-name').value.trim() }, caps);
+  const person = PEOPLE.find((p) => p.id === body.person_id);
+  const isChild = person && person.is_minor;
+  const go = async () => {
+    try {
+      const out = await api('POST', '/owner/members', body);
+      $('na-email').value = ''; $('na-name').value = '';
+      await Promise.all([loadMembers(), loadPeople()]);
+      showPasswordOnce(out.member, out.temporary_password);
+    } catch (e) { banner('err', e.message); }
+  };
+  if (isChild) {
+    await confirmAction({ title: t('Create account') + ' — ' + personName(person),
+      consequence: t('A child cannot have an account unless you allow it for that child, one at a time. The reason is recorded with your name and the date.'),
+      confirmLabel: t('Create account'), onConfirm: go });
+  } else { await go(); }
+});
+document.querySelectorAll('.tab').forEach((tb) => {
+  tb.onclick = () => {
+    document.querySelectorAll('.tab').forEach((x) => x.setAttribute('aria-selected', String(x === tb)));
+    ['accounts', 'proposals', 'people'].forEach((n) => {
+      $('tab-' + n).classList.toggle('hide', n !== tb.dataset.tab);
+    });
+  };
+});
+$('pp-search').oninput = renderPeople;
+
+(async function start() {
+  try { LANG = localStorage.getItem('fh_lang') === 'fr' ? 'fr' : 'en'; } catch (_) {}
+  applyLang();
+  try {
+    CONFIG = await (await fetch(API_BASE + '/fh/config')).json();
+    if (!CONFIG || !CONFIG.supabase_url || !CONFIG.anon_key) throw new Error('config');
+  } catch (_) {
+    banner('err', LANG === 'fr' ? "Configuration indisponible." : 'Configuration unavailable.');
+    return;
+  }
+  try {
+    const saved = sessionStorage.getItem(SESSION_KEY);
+    if (saved) { SESSION = JSON.parse(saved); await afterSignIn(); }
+  } catch (_) { signOut(); }
+})();
+</script>
+</body>
+</html>
