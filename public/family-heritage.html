@@ -177,7 +177,9 @@
         <input id="pp-search" type="text" data-i18n-ph="Type a name" placeholder="Type a name" />
         <div class="scroller" style="margin-top:12px"><table id="people-table"><thead><tr>
           <th data-i18n="Name">Name</th><th data-i18n="Born">Born</th><th data-i18n="Child">Child</th>
-          <th data-i18n="Login allowed">Login allowed</th><th data-i18n="Actions">Actions</th>
+          <th data-i18n="Login allowed">Login allowed</th>
+          <th data-i18n="On the public site">On the public site</th>
+          <th data-i18n="Actions">Actions</th>
         </tr></thead><tbody></tbody></table></div>
       </div>
       <div class="card hide" id="person-editor-card">
@@ -259,7 +261,30 @@ const FR = {
   'Biography':'Biographie', 'Sex':'Sexe', 'male':'masculin', 'female':'féminin', 'unknown':'inconnu',
   'Is a child':'Est un enfant', 'Verification':'Vérification', 'Allowed':'Autorisé', 'Not allowed':'Non autorisé',
   'Change':'Modifier', 'Owner-only details':'Détails réservés au propriétaire',
-  'Session ended. Please sign in again.':'Session terminée. Veuillez vous reconnecter.'
+  'Session ended. Please sign in again.':'Session terminée. Veuillez vous reconnecter.',
+  // ── the public site ──────────────────────────────────────────────────────
+  'On the public site':'Sur le site public', 'Public site':'Site public',
+  'Currently':'Actuellement',
+  'Public — full page':'Public — page complète',
+  'Public — name only':'Public — nom seulement',
+  'Not public':'Non public',
+  'Never public — child':'Jamais public — enfant',
+  'Name, dates, places and biography are served to anyone.':
+    'Le nom, les dates, les lieux et la biographie sont accessibles à tous.',
+  'Name and position in the family. Dates and biography are withheld.':
+    'Le nom et la place dans la famille. Les dates et la biographie sont retenues.',
+  'Served to nobody. Every person starts here.':
+    'Accessible à personne. Chaque personne commence ainsi.',
+  'This person is recorded as a child. A child is never shown on the public site, whatever is chosen here — and neither are their stories, their timeline or their photographs.':
+    "Cette personne est enregistrée comme un enfant. Un enfant n'est jamais affiché sur le site public, quel que soit le choix fait ici — pas plus que ses récits, sa chronologie ou ses photographies.",
+  'This is the current setting. Nothing will change.':
+    'C’est le réglage actuel. Rien ne changera.',
+  'This stops the public site serving this person from now on. It cannot undo what was already seen, copied or indexed while they were public.':
+    "Cela empêche désormais le site public de diffuser cette personne. Cela n'annule pas ce qui a déjà été vu, copié ou indexé pendant qu'elle était publique.",
+  'This makes the information visible to ANYONE ON THE INTERNET, with no login, as soon as the public site is switched on.':
+    "Cela rend les informations visibles par N'IMPORTE QUI SUR INTERNET, sans connexion, dès que le site public est activé.",
+  'This changes what the public site shows for this person.':
+    'Cela modifie ce que le site public affiche pour cette personne.'
 };
 function t(s) { return (LANG === 'fr' && Object.prototype.hasOwnProperty.call(FR, s)) ? FR[s] : s; }
 function applyLang() {
@@ -542,11 +567,14 @@ function renderPeople() {
                                 : '<span class="warn">' + t('Not allowed') + '</span>');
     return '<tr><td>' + esc(personName(p)) + '</td><td class="small muted">' + esc(p.birth_date || '—') + '</td>' +
       '<td class="small">' + (p.is_minor ? t('Yes') : t('No')) + '</td><td class="small">' + allowed + '</td>' +
+      '<td class="small">' + publicStateLabel(p) + '</td>' +
       '<td style="white-space:nowrap"><button class="btn sm" data-person="' + p.id + '">' + t('Edit') + '</button>' +
+      ' <button class="btn sm" data-publish="' + p.id + '">' + t('Public site') + '</button>' +
       (p.is_minor ? ' <button class="btn sm" data-minor="' + p.id + '">' + t('Change') + '</button>' : '') + '</td></tr>';
   }).join('') || '<tr><td colspan="5" class="muted">—</td></tr>';
   tb.querySelectorAll('button[data-person]').forEach((b) => { b.onclick = () => editPerson(b.dataset.person); });
   tb.querySelectorAll('button[data-minor]').forEach((b) => { b.onclick = () => minorOverride(b.dataset.minor); });
+  tb.querySelectorAll('button[data-publish]').forEach((b) => { b.onclick = () => publishControl(b.dataset.publish); });
   renderPersonPicker();
 }
 function editPerson(id) {
@@ -580,6 +608,97 @@ function editPerson(id) {
     } catch (e) { banner('err', e.message); }
   });
 }
+/* ── the public site ───────────────────────────────────────────────────────
+   🔴 THIS COLUMN EXISTS BECAUSE THE OWNER COULD NOT SEE IT. Until 2026-09-18 the
+   owner API did not return public_visibility at all: the enforcement was correct
+   and the screen was blind, so Peter had no way to know who was published — the
+   third time that shape has appeared here. Everything below reads the SAME field
+   the public views read; there is no second source. */
+const PUBLIC_STATE = {
+  full:    { label: 'Public — full page', hint: 'Name, dates, places and biography are served to anyone.' },
+  limited: { label: 'Public — name only', hint: 'Name and position in the family. Dates and biography are withheld.' },
+  hidden:  { label: 'Not public',         hint: 'Served to nobody. Every person starts here.' },
+};
+function publicStateLabel(p) {
+  const v = PUBLIC_STATE[p.public_visibility] ? p.public_visibility : 'hidden';
+  // A child is never published whatever this says — the database excludes them,
+  // and their stories, timeline and photographs with them. Saying "Public" for a
+  // child would be a label that lies, which is the thing this column is for.
+  if (p.is_minor) {
+    return v === 'hidden'
+      ? '<span class="muted">' + t('Not public') + '</span>'
+      : '<span class="warn">' + t('Never public — child') + '</span>';
+  }
+  return v === 'hidden'
+    ? '<span class="muted">' + t('Not public') + '</span>'
+    : '<span class="ok-text">' + t(PUBLIC_STATE[v].label) + '</span>';
+}
+
+/** Choosing what the public site shows. The consequence is stated for the
+    option actually selected, and it changes as the selection changes — a fixed
+    warning would be read once and stop being read. */
+async function publishControl(id) {
+  const p = PEOPLE.find((x) => x.id === id); if (!p) return;
+  const current = PUBLIC_STATE[p.public_visibility] ? p.public_visibility : 'hidden';
+  const host = $('modal-host');
+  const opts = ['full', 'limited', 'hidden'].map((v) =>
+    '<label style="display:flex;gap:10px;align-items:flex-start;color:var(--text);margin:8px 0">' +
+      '<input type="radio" name="pv" value="' + v + '"' + (v === current ? ' checked' : '') + ' style="margin-top:4px" />' +
+      '<span><b>' + esc(t(PUBLIC_STATE[v].label)) + '</b><br>' +
+      '<span class="small muted">' + esc(t(PUBLIC_STATE[v].hint)) + '</span></span></label>').join('');
+
+  host.innerHTML =
+    '<div class="modal-back"><div class="modal" role="dialog" aria-modal="true">' +
+      '<h3>' + esc(t('Public site')) + ' — ' + esc(personName(p)) + '</h3>' +
+      (p.is_minor
+        ? '<div class="consequence" style="border-left-color:var(--danger)">' +
+          esc(t('This person is recorded as a child. A child is never shown on the public site, whatever is chosen here — and neither are their stories, their timeline or their photographs.')) + '</div>'
+        : '') +
+      '<div class="small muted" style="margin-bottom:6px">' + esc(t('Currently')) + ': <b>' +
+        esc(t(PUBLIC_STATE[current].label)) + '</b></div>' +
+      opts +
+      '<div class="consequence" id="pv-consequence"></div>' +
+      '<label id="pv-ack-row" style="display:none;gap:8px;align-items:center;color:var(--text)">' +
+        '<input type="checkbox" id="pv-ack" /> <span>' + esc(t('I understand')) + '</span></label>' +
+      '<div class="actions">' +
+        '<button class="btn" id="pv-cancel">' + esc(t('Cancel')) + '</button>' +
+        '<button class="btn primary" id="pv-ok" disabled>' + esc(t('Save')) + '</button>' +
+      '</div>' +
+    '</div></div>';
+
+  const chosen = () => (host.querySelector('input[name=pv]:checked') || {}).value || current;
+  const refresh = () => {
+    const v = chosen();
+    const goingPublic = v !== 'hidden' && current === 'hidden';
+    const widening = v === 'full' && current === 'limited';
+    const unpublishing = v === 'hidden' && current !== 'hidden';
+    let text;
+    if (v === current) text = t('This is the current setting. Nothing will change.');
+    else if (unpublishing) text = t('This stops the public site serving this person from now on. It cannot undo what was already seen, copied or indexed while they were public.');
+    else if (goingPublic || widening) text = t('This makes the information visible to ANYONE ON THE INTERNET, with no login, as soon as the public site is switched on.');
+    else text = t('This changes what the public site shows for this person.');
+    $('pv-consequence').textContent = text;
+    // An acknowledgement only where exposure increases. Asking for one on every
+    // change would train Peter to tick it without reading.
+    const needAck = goingPublic || widening;
+    $('pv-ack-row').style.display = needAck ? 'flex' : 'none';
+    if (!needAck) $('pv-ack').checked = false;
+    $('pv-ok').disabled = v === current || (needAck && !$('pv-ack').checked);
+  };
+  host.querySelectorAll('input[name=pv]').forEach((r) => { r.onchange = refresh; });
+  $('pv-ack').onchange = refresh;
+  $('pv-cancel').onclick = () => { host.innerHTML = ''; };
+  $('pv-ok').onclick = () => withLock($('pv-ok'), async () => {
+    try {
+      await api('POST', '/owner/persons/' + p.id + '/publish', { visibility: chosen() });
+      host.innerHTML = '';
+      await loadPeople();
+      banner('ok', t('Saved'));
+    } catch (e) { banner('err', e.message); }
+  });
+  refresh();
+}
+
 /** The child-login override. The child's NAME is in the title, the reason is
     required in the same step, and turning it OFF says plainly that access ends
     immediately — because it does (the database checks it on every read and write). */
