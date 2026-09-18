@@ -1036,16 +1036,14 @@
         <a class="sb-link" data-route="cart-reconcile"><span class="sb-link-icon">🔗</span><span class="sb-link-label">Cart reconcile</span></a>
         <a class="sb-link" data-route="settings"><span class="sb-link-icon">🔐</span><span class="sb-link-label">Settings</span></a>
 
-        <!-- FAMILY HERITAGE: a separate PAGE, not a route in this SPA, and
-             deliberately so. It is opened with Peter's own family (Supabase)
-             account — this admin login grants nothing there, and the API
-             refuses an admin token outright. Keeping it off this page is what
-             stops anyone believing the admin login is "enough" for the family
-             archive. The link carries an href and NO data-route; hiding it is
-             cosmetic (every /api/fh route checks the family session itself). -->
-        <div class="sb-section" id="sb-section-heritage">Family</div>
-        <a class="sb-link" href="family-heritage.html" id="sb-link-heritage"
-           ><span class="sb-link-icon">🌳</span><span class="sb-link-label">Family Heritage</span></a>
+        <!-- FAMILY HERITAGE lived here as a link to a standalone page. It is
+             gone, deliberately: this origin's POS service worker answers every
+             navigation with /index.html unless the path is denylisted, so the
+             page was genuinely deployed and genuinely unreachable — a link that
+             landed on the POS app. Family ACCOUNTS and GOVERNANCE become proper
+             sections in this sidebar instead (Peter, 2026-09-18: control it from
+             the portal, don't open a link); AUTHORING moves to the family site
+             at okaforheritage.com, a different origin with no service worker. -->
       </nav>
 
       <div class="sb-footer">
@@ -4101,14 +4099,6 @@
       // for staff admins.
       const sdLink = $('sb-link-subdiscounts');
       if (sdLink) sdLink.style.display = (role === 'staff') ? 'none' : '';
-      // FAMILY HERITAGE: shown to master admins only, and cosmetic even then —
-      // the page asks for a Supabase family sign-in of its own and every
-      // /api/fh route refuses an admin token, so a non-master who types the
-      // filename reaches a sign-in screen they cannot pass, not the archive.
-      for (const id of ['sb-section-heritage', 'sb-link-heritage']) {
-        const el = $(id);
-        if (el) el.style.display = isMaster ? '' : 'none';
-      }
 
       // PHASE 1 — marketer. The server refuses every non-marketing admin route
       // for this role (lib/adminRoleScope.js), so hiding links here is purely
@@ -8580,15 +8570,9 @@
       // Sidebar nav — single delegated handler so we don't bind 13 times.
       document.querySelectorAll('.sb-link').forEach(a => {
         a.addEventListener('click', (e) => {
-          const r = a.getAttribute('data-route');
-          // preventDefault ONLY for in-page routes. A sidebar link with an href
-          // and no data-route (Family Heritage) is a real navigation to another
-          // page — swallowing its default would make it a dead link that looks
-          // alive. Every existing sidebar link has a data-route, so this changes
-          // nothing for them.
-          if (!r) return;
           e.preventDefault();
-          navigateTo(r);
+          const r = a.getAttribute('data-route');
+          if (r) navigateTo(r);
         });
       });
       window.addEventListener('hashchange', () =>
