@@ -185,6 +185,9 @@
       <div class="card hide" id="person-editor-card">
         <h2 data-i18n="Edit person">Edit person</h2>
         <div id="person-editor"><p class="muted small" data-i18n="Choose someone from the list.">Choose someone from the list.</p></div>
+        <!-- Stage E: what is written ABOUT this person — stories, timeline,
+             work and titles, migrations, and the testimony they gave. -->
+        <div id="person-records"></div>
       </div>
     </div>
   </section>
@@ -284,7 +287,43 @@ const FR = {
   'This makes the information visible to ANYONE ON THE INTERNET, with no login, as soon as the public site is switched on.':
     "Cela rend les informations visibles par N'IMPORTE QUI SUR INTERNET, sans connexion, dès que le site public est activé.",
   'This changes what the public site shows for this person.':
-    'Cela modifie ce que le site public affiche pour cette personne.'
+    'Cela modifie ce que le site public affiche pour cette personne.',
+  // ── Stage E: records about a person ──────────────────────────────────────
+  'Stories':'Récits', 'Timeline':'Chronologie', 'Work and titles':'Travail et titres',
+  'Migrations':'Migrations', 'Testimony given':'Témoignage donné', 'Testimony':'Témoignage',
+  'Add':'Ajouter', 'History':'Historique', 'Archive':'Archiver', 'Restore':'Rétablir',
+  'Untitled':'Sans titre', 'Loading…':'Chargement…',
+  'Nothing recorded yet.':'Rien n’a encore été enregistré.',
+  'Show archived':'Voir les archivés', 'Showing archived':'Archivés affichés',
+  'Nothing archived.':'Rien n’est archivé.',
+  'No history recorded.':'Aucun historique enregistré.',
+  'Written by':'Écrit par', 'Edited by':'Modifié par', '(no longer a member)':'(n’est plus membre)',
+  'A title or name is required.':'Un titre ou un nom est obligatoire.',
+  'Archived':'Archivé', 'Private':'Privé', 'Family only':'Famille seulement', 'Public':'Public',
+  'On the public site':'Sur le site public',
+  'Marked public — not served, because':'Marqué public — non diffusé, car',
+  'it is still a draft':'c’est encore un brouillon',
+  'this person is a child':'cette personne est un enfant',
+  'this person is not published':'cette personne n’est pas publiée',
+  'and':'et',
+  'Put this on the public site':'Mettre ceci sur le site public',
+  'Marked public, this record is served to ANYONE ON THE INTERNET once the person is published and the public site is switched on.':
+    "Marqué public, cet élément est diffusé à N'IMPORTE QUI SUR INTERNET dès que la personne est publiée et que le site public est activé.",
+  'It stops being shown anywhere, including the public site. It is not deleted and you can restore it.':
+    "Il cesse d'être affiché partout, y compris sur le site public. Il n'est pas supprimé et vous pouvez le rétablir.",
+  // field labels
+  'Title':'Titre', 'Subtitle':'Sous-titre', 'Text':'Texte', 'Period':'Période',
+  'From year':'Année de début', 'To year':'Année de fin', 'Draft or published':'Brouillon ou publié',
+  'Who can see it':'Qui peut le voir', 'Order':'Ordre', 'Description':'Description',
+  'Date':'Date', 'How exact is the date':'Précision de la date', 'Place':'Lieu',
+  'Kind of event':'Type d’événement', 'Kind':'Type', 'From':'De', 'To':'À',
+  'Reason':'Motif', 'Account':'Récit', 'Narrator':'Narrateur', 'Recorded on':'Enregistré le',
+  'Language':'Langue', 'What was said':'Ce qui a été dit',
+  // option labels
+  'Draft':'Brouillon', 'Published':'Publié', 'Exact':'Exacte', 'Month':'Mois', 'Year':'Année',
+  'Approximate':'Approximative', 'Unknown':'Inconnue', 'Birth':'Naissance', 'Death':'Décès',
+  'Marriage':'Mariage', 'Migration':'Migration', 'Business':'Entreprise', 'Tradition':'Tradition',
+  'Achievement':'Réalisation', 'Other':'Autre', 'Office':'Fonction', 'Education':'Éducation'
 };
 function t(s) { return (LANG === 'fr' && Object.prototype.hasOwnProperty.call(FR, s)) ? FR[s] : s; }
 function applyLang() {
@@ -607,6 +646,271 @@ function editPerson(id) {
       banner('ok', t('Saved')); await loadPeople();
     } catch (e) { banner('err', e.message); }
   });
+  renderRecords(p);
+}
+
+/* ═══ WHAT IS WRITTEN ABOUT A PERSON (Stage E) ═══════════════════════════════
+   Five kinds of record, one screen. The owner writes on anybody's page; a member
+   writes only on their own, and the API refuses the rest — this surface is the
+   owner's, so it never has to decide that.
+
+   🔴 THE LABELS SAY WHAT IS ACTUALLY SERVED, NOT WHAT THE FLAG SAYS. A record
+   marked public is NOT on the public site unless the person is published too
+   (and, for a story, unless it is published rather than a draft), because the
+   database's views require all of it. Showing "Public" for a row the site will
+   never serve is the "Active" bug again — the flag is not the enforcement. */
+// Field and option names in plain words. The database's values are never shown
+// raw: "members_only" is a column value, "Family only" is what it means.
+const FIELD_LABELS = {
+  title: 'Title', subtitle: 'Subtitle', body: 'Text', period_label: 'Period',
+  year_from: 'From year', year_to: 'To year', status: 'Draft or published',
+  visibility: 'Who can see it', sort_order: 'Order', description: 'Description',
+  event_date: 'Date', date_precision: 'How exact is the date', place: 'Place',
+  category: 'Kind of event', name: 'Name', kind: 'Kind',
+  from_place: 'From', to_place: 'To', reason: 'Reason', account: 'Account',
+  narrator_name: 'Narrator', recorded_on: 'Recorded on', language: 'Language',
+  transcript: 'What was said',
+};
+const OPT_LABELS = {
+  private: 'Private', members_only: 'Family only', public: 'Public',
+  draft: 'Draft', published: 'Published', archived: 'Archived',
+  exact: 'Exact', month: 'Month', year: 'Year', approx: 'Approximate', unknown: 'Unknown',
+  birth: 'Birth', death: 'Death', marriage: 'Marriage', migration: 'Migration',
+  business: 'Business', tradition: 'Tradition', achievement: 'Achievement', other: 'Other',
+  title: 'Title', office: 'Office', education: 'Education',
+};
+const VIS = ['private', 'members_only', 'public'];
+const RECORD_KINDS = {
+  stories: { label: 'Stories', title: (i) => i.title, fields: [
+    { k: 'title', t: 'text', req: true }, { k: 'subtitle', t: 'text' },
+    { k: 'body', t: 'textarea' }, { k: 'period_label', t: 'text' },
+    { k: 'year_from', t: 'number' }, { k: 'year_to', t: 'number' },
+    { k: 'status', t: 'select', opts: ['draft', 'published', 'archived'] },
+    { k: 'visibility', t: 'select', opts: VIS }, { k: 'sort_order', t: 'number' }] },
+  timeline: { label: 'Timeline', title: (i) => i.title, fields: [
+    { k: 'title', t: 'text', req: true }, { k: 'description', t: 'textarea' },
+    { k: 'event_date', t: 'date' },
+    { k: 'date_precision', t: 'select', opts: ['exact', 'month', 'year', 'approx', 'unknown'] },
+    { k: 'year_from', t: 'number' }, { k: 'year_to', t: 'number' }, { k: 'place', t: 'text' },
+    { k: 'category', t: 'select', opts: ['', 'birth', 'death', 'marriage', 'migration', 'business', 'tradition', 'achievement', 'other'] },
+    { k: 'visibility', t: 'select', opts: VIS }] },
+  businesses: { label: 'Work and titles', title: (i) => i.name, fields: [
+    { k: 'name', t: 'text', req: true },
+    { k: 'kind', t: 'select', opts: ['', 'business', 'achievement', 'title', 'office', 'education', 'other'] },
+    { k: 'description', t: 'textarea' }, { k: 'place', t: 'text' },
+    { k: 'year_from', t: 'number' }, { k: 'year_to', t: 'number' },
+    { k: 'visibility', t: 'select', opts: VIS }] },
+  migrations: { label: 'Migrations', title: (i) => [i.from_place || '?', i.to_place || '?'].join(' → '), fields: [
+    { k: 'from_place', t: 'text' }, { k: 'to_place', t: 'text' },
+    { k: 'year_from', t: 'number' }, { k: 'year_to', t: 'number' },
+    { k: 'reason', t: 'text' }, { k: 'account', t: 'textarea' },
+    { k: 'visibility', t: 'select', opts: VIS }] },
+  // Testimony hangs off the NARRATOR: this is testimony this person GAVE, not
+  // testimony about them. The heading says so, because the distinction is the
+  // whole point of keeping it.
+  testimony: { label: 'Testimony given', title: (i) => i.narrator_name || t('Testimony'), fields: [
+    { k: 'narrator_name', t: 'text' }, { k: 'recorded_on', t: 'date' },
+    { k: 'language', t: 'text' }, { k: 'transcript', t: 'textarea' },
+    { k: 'visibility', t: 'select', opts: VIS }] },
+};
+let RECORD_KIND = 'stories';
+let RECORD_ARCHIVED = false;   // the archived view — the only place Restore is reachable
+let RECORDS = [];
+
+/** What the public site will actually do with this row, in plain words. */
+function servedState(kind, item, person) {
+  if (item.archived) return { cls: 'muted', text: t('Archived') };
+  if (item.visibility !== 'public') {
+    return { cls: 'muted', text: item.visibility === 'private' ? t('Private') : t('Family only') };
+  }
+  const why = [];
+  if (kind === 'stories' && item.status !== 'published') why.push(t('it is still a draft'));
+  if (person.is_minor) why.push(t('this person is a child'));
+  else if (!['full', 'limited'].includes(person.public_visibility)) why.push(t('this person is not published'));
+  return why.length
+    ? { cls: 'warn', text: t('Marked public — not served, because') + ' ' + why.join(' ' + t('and') + ' ') }
+    : { cls: 'ok-text', text: t('On the public site') };
+}
+
+function renderRecords(person) {
+  const host = $('person-records');
+  host.innerHTML =
+    '<hr style="border:0;border-top:1px solid var(--line);margin:22px 0" />' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">' +
+      Object.keys(RECORD_KINDS).map((k) =>
+        '<button class="btn sm" data-kind="' + k + '"' +
+        (k === RECORD_KIND ? ' style="border-color:var(--gold-soft);color:var(--text)"' : '') + '>' +
+        esc(t(RECORD_KINDS[k].label)) + '</button>').join('') +
+      '<span style="flex:1"></span>' +
+      // Without this the Restore button could never be reached: the list only
+      // fetches unarchived rows, so an archived record vanished from the screen
+      // and the control for bringing it back was unreachable by construction.
+      '<button class="btn sm" id="rec-archived"' +
+        (RECORD_ARCHIVED ? ' style="border-color:var(--gold-soft);color:var(--text)"' : '') + '>' +
+        esc(RECORD_ARCHIVED ? t('Showing archived') : t('Show archived')) + '</button> ' +
+      '<button class="btn primary sm" id="rec-add">+ ' + esc(t('Add')) + '</button>' +
+    '</div>' +
+    '<div id="rec-form"></div><div id="rec-list" class="stack"></div>';
+  host.querySelectorAll('button[data-kind]').forEach((b) => {
+    b.onclick = () => { RECORD_KIND = b.dataset.kind; renderRecords(person); };
+  });
+  $('rec-add').onclick = () => recordForm(person, null);
+  $('rec-archived').onclick = () => { RECORD_ARCHIVED = !RECORD_ARCHIVED; renderRecords(person); };
+  loadRecords(person);
+}
+
+async function loadRecords(person) {
+  const list = $('rec-list');
+  list.innerHTML = '<p class="small muted">' + esc(t('Loading…')) + '</p>';
+  try {
+    const r = await api('GET', '/' + RECORD_KIND + '?person_id=' + encodeURIComponent(person.id) +
+      (RECORD_ARCHIVED ? '&archived=1' : ''));
+    RECORDS = r.items || [];
+  } catch (e) { list.innerHTML = '<p class="small danger-text">' + esc(e.message) + '</p>'; return; }
+  const spec = RECORD_KINDS[RECORD_KIND];
+  list.innerHTML = RECORDS.length ? RECORDS.map((i) => {
+    const st = servedState(RECORD_KIND, i, person);
+    return '<div class="card" style="margin:0;padding:12px 14px">' +
+      '<div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">' +
+        '<div style="flex:1;min-width:200px">' +
+          '<b>' + esc(spec.title(i) || t('Untitled')) + '</b>' +
+          '<div class="small ' + st.cls + '">' + esc(st.text) + '</div>' +
+        '</div>' +
+        '<div style="white-space:nowrap">' +
+          '<button class="btn sm" data-edit="' + i.id + '">' + esc(t('Edit')) + '</button> ' +
+          '<button class="btn sm" data-history="' + i.id + '">' + esc(t('History')) + '</button> ' +
+          '<button class="btn sm ' + (i.archived ? '' : 'danger') + '" data-arch="' + i.id + '">' +
+            esc(i.archived ? t('Restore') : t('Archive')) + '</button>' +
+        '</div>' +
+      '</div><div data-hist="' + i.id + '"></div></div>';
+  }).join('') : '<p class="small muted">' + esc(RECORD_ARCHIVED ? t('Nothing archived.') : t('Nothing recorded yet.')) + '</p>';
+
+  list.querySelectorAll('button[data-edit]').forEach((b) => {
+    b.onclick = () => recordForm(person, RECORDS.find((x) => x.id === b.dataset.edit));
+  });
+  list.querySelectorAll('button[data-history]').forEach((b) => { b.onclick = () => showHistory(b.dataset.history); });
+  list.querySelectorAll('button[data-arch]').forEach((b) => {
+    b.onclick = () => archiveRecord(person, RECORDS.find((x) => x.id === b.dataset.arch));
+  });
+}
+
+function recordForm(person, item) {
+  const spec = RECORD_KINDS[RECORD_KIND];
+  const val = (f) => (item && item[f.k] !== null && item[f.k] !== undefined ? String(item[f.k]) : '');
+  $('rec-form').innerHTML =
+    '<div class="card" style="margin:0 0 14px;background:var(--panel)">' +
+      '<h3 style="margin:0 0 10px;font-size:16px">' +
+        esc((item ? t('Edit') : t('Add')) + ' — ' + t(spec.label) + ' · ' + personName(person)) + '</h3>' +
+      '<div class="row">' + spec.fields.map((f) => {
+        const id = 'rf-' + f.k;
+        const label = '<label for="' + id + '">' + esc(t(FIELD_LABELS[f.k] || f.k)) + '</label>';
+        if (f.t === 'textarea') return '<div style="flex:1 1 100%">' + label +
+          '<textarea id="' + id + '" style="min-height:110px">' + esc(val(f)) + '</textarea></div>';
+        if (f.t === 'select') return '<div>' + label + '<select id="' + id + '">' +
+          f.opts.map((o) => '<option value="' + esc(o) + '"' + (val(f) === o ? ' selected' : '') + '>' +
+            esc(o === '' ? '—' : t(OPT_LABELS[o] || o)) + '</option>').join('') + '</select></div>';
+        return '<div>' + label + '<input id="' + id + '" type="' + (f.t === 'number' ? 'number' : f.t) +
+          '" value="' + esc(val(f)) + '" /></div>';
+      }).join('') + '</div>' +
+      '<div style="margin-top:12px"><button class="btn primary" id="rf-save">' + esc(t('Save')) + '</button> ' +
+      '<button class="btn" id="rf-cancel">' + esc(t('Cancel')) + '</button></div>' +
+    '</div>';
+  $('rf-cancel').onclick = () => { $('rec-form').innerHTML = ''; };
+  $('rf-save').onclick = () => withLock($('rf-save'), () => saveRecord(person, item, spec));
+}
+
+// NOT NULL in the database AND carrying a default. An explicit null for one of
+// these does not fall back to the default — it violates the constraint, and the
+// API answers "a required detail is missing" for a field the form never asked
+// about. Blank means "leave it to the database", never "set it to nothing".
+// (fh_stories.sort_order and fh_timeline_events.date_precision are the two that
+// actually bit: an empty number input sent null and the insert was refused.)
+const NOT_NULL_WITH_DEFAULT = new Set(['status', 'sort_order', 'date_precision', 'visibility',
+                                       'verification_status']);
+async function saveRecord(person, item, spec) {
+  const body = {};
+  for (const f of spec.fields) {
+    const el = $('rf-' + f.k); if (!el) continue;
+    const raw = el.value;
+    if (raw === '') {
+      // Creating: omit, so the column default applies. Editing: an emptied field
+      // means "clear it" — but only where the column may actually be null.
+      if (item && !NOT_NULL_WITH_DEFAULT.has(f.k)) body[f.k] = null;
+      continue;
+    }
+    if (f.t === 'number') {
+      const n = Number(raw);
+      if (!Number.isFinite(n)) continue;
+      body[f.k] = n;
+    } else {
+      body[f.k] = raw;
+    }
+  }
+  if (spec.fields.some((f) => f.req) && !body[spec.fields.find((f) => f.req).k]) {
+    banner('err', t('A title or name is required.')); return;
+  }
+  // Moving a record to public increases exposure — the same confirm discipline
+  // as publishing a person, and for the same reason.
+  const goingPublic = body.visibility === 'public' && (!item || item.visibility !== 'public');
+  const write = async () => {
+    try {
+      if (item) await api('PATCH', '/' + RECORD_KIND + '/' + item.id, body);
+      else await api('POST', '/' + RECORD_KIND, Object.assign({ person_id: person.id }, body));
+      $('rec-form').innerHTML = '';
+      await loadRecords(person);
+      banner('ok', t('Saved'));
+    } catch (e) { banner('err', e.message); }
+  };
+  if (!goingPublic) return write();
+  await confirmAction({
+    title: t('Put this on the public site') + ' — ' + personName(person),
+    consequence: t('Marked public, this record is served to ANYONE ON THE INTERNET once the person is published and the public site is switched on.'),
+    confirmLabel: t('Save'), acknowledge: true, onConfirm: write,
+  });
+}
+
+async function archiveRecord(person, item) {
+  if (!item) return;
+  if (item.archived) {
+    return withLock(null, async () => {
+      try { await api('POST', '/' + RECORD_KIND + '/' + item.id + '/unarchive'); await loadRecords(person); }
+      catch (e) { banner('err', e.message); }
+    });
+  }
+  await confirmAction({
+    title: t('Archive') + ' — ' + (RECORD_KINDS[RECORD_KIND].title(item) || t('Untitled')),
+    consequence: t('It stops being shown anywhere, including the public site. It is not deleted and you can restore it.'),
+    confirmLabel: t('Archive'), danger: true,
+    onConfirm: async () => { await api('POST', '/' + RECORD_KIND + '/' + item.id + '/archive'); await loadRecords(person); },
+  });
+}
+
+/** Who wrote it and who changed it since — read from the audit trail, which is
+    the same record the database writes on every change, not a guess from
+    timestamps. */
+async function showHistory(id) {
+  const host = document.querySelector('[data-hist="' + id + '"]');
+  if (!host) return;
+  if (host.innerHTML) { host.innerHTML = ''; return; }        // toggle
+  host.innerHTML = '<p class="small muted">' + esc(t('Loading…')) + '</p>';
+  try {
+    const r = await api('GET', '/owner/audit?record_id=' + encodeURIComponent(id));
+    const entries = (r.entries || []).slice().reverse();      // oldest first: written, then edited
+    host.innerHTML = entries.length
+      ? '<div class="small muted" style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px">' +
+          entries.map((e) => {
+            const who = e.by || t('(no longer a member)');
+            const when = new Date(e.at).toLocaleString();
+            if (e.operation === 'insert') return esc(t('Written by') + ' ' + who + ' · ' + when);
+            if (e.operation === 'update') return esc(t('Edited by') + ' ' + who + ' · ' + when) +
+              (e.changed_fields && e.changed_fields.length
+                ? ' <span class="muted">(' + esc(e.changed_fields.map((f) => t(FIELD_LABELS[f] || f)).join(', ')) + ')</span>'
+                : '');
+            return esc(e.operation + ' · ' + who + ' · ' + when);
+          }).join('<br />') +
+        '</div>'
+      : '<p class="small muted">' + esc(t('No history recorded.')) + '</p>';
+  } catch (e) { host.innerHTML = '<p class="small danger-text">' + esc(e.message) + '</p>'; }
 }
 /* ── the public site ───────────────────────────────────────────────────────
    🔴 THIS COLUMN EXISTS BECAUSE THE OWNER COULD NOT SEE IT. Until 2026-09-18 the
