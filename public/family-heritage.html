@@ -1,0 +1,1090 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Family Heritage — owner area</title>
+<!--
+  FAMILY HERITAGE — OWNER AREA (Stage C). Part of the admin portal, served as its
+  own page BECAUSE THE IDENTITY IS DIFFERENT: this area is opened with Peter's own
+  SUPABASE account, never the admin login. An admin session — master_admin
+  included — grants nothing here, and the API refuses it (probe 8). Keeping the
+  two on one screen is exactly how someone comes to believe the admin login is
+  "enough", so they are deliberately separate and the header always names which
+  identity is in use.
+
+  🔴 THE MASTER SWITCH IS NOT HERE. fh_site_settings is never displayed and has no
+  control on this page, at any stage. Publishing the public site is a SQL
+  statement Peter runs himself. If a future edit adds a control for it, that edit
+  is wrong. (The database agrees: fh_app holds no privilege on that table — probe 18.)
+
+  🔴 EVERY ACTION ASKS "WHAT IF IT RUNS TWICE?" Buttons lock while in flight, and
+  the irreversible ones (unlink, revoking a child's override, forcing a password
+  change, suspending, approving) name their consequence in a confirm step first.
+  The server refuses a repeat anyway — approving twice is 409, not a second apply.
+-->
+<style>
+  :root {
+    --bg:#0f1115; --panel:#161a21; --panel-2:#1c2129; --line:#262c36;
+    --text:#e7ecf3; --muted:#9aa6b6; --accent:#c9a227; --accent-2:#e3c76a;
+    --danger:#e5484d; --ok:#3fb950; --warn:#d29922;
+    --radius:12px; --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  a { color:var(--accent-2); }
+  .wrap { max-width:1100px; margin:0 auto; padding:16px; }
+  header.top { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between;
+               padding:14px 16px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); }
+  .brand { display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:.2px; }
+  .brand .mark { font-size:22px; }
+  .identity { font-size:13px; color:var(--muted); }
+  .identity b { color:var(--text); }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px;
+          border:1px solid var(--line); background:var(--panel-2); color:var(--muted); }
+  .pill.owner { color:var(--accent-2); border-color:#5a4a12; background:#241f0d; }
+  .btn { background:var(--panel-2); color:var(--text); border:1px solid var(--line);
+         border-radius:9px; padding:8px 12px; font-size:14px; cursor:pointer; }
+  .btn:hover:not(:disabled) { border-color:#39424f; }
+  .btn:disabled { opacity:.55; cursor:not-allowed; }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:#1a1405; font-weight:600; }
+  .btn.danger { background:#2a1416; border-color:#5b2126; color:#ff9ea1; }
+  .btn.sm { padding:5px 9px; font-size:13px; }
+  .tabs { display:flex; gap:8px; margin:16px 0; flex-wrap:wrap; }
+  .tab { padding:8px 14px; border-radius:9px; border:1px solid var(--line); background:var(--panel);
+         cursor:pointer; color:var(--muted); }
+  .tab[aria-selected="true"] { background:var(--panel-2); color:var(--text); border-color:#3a434f; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:16px; }
+  .card h2 { margin:0 0 4px; font-size:17px; }
+  .card p.sub { margin:0 0 14px; color:var(--muted); font-size:13.5px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:9px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; font-size:12.5px; text-transform:uppercase; letter-spacing:.4px; }
+  .scroller { overflow-x:auto; }
+  label { display:block; font-size:13px; color:var(--muted); margin:10px 0 4px; }
+  input[type=text], input[type=email], input[type=password], textarea, select {
+    width:100%; background:var(--panel-2); border:1px solid var(--line); border-radius:9px;
+    color:var(--text); padding:9px 10px; font-size:14px; font-family:inherit; }
+  textarea { min-height:70px; resize:vertical; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; }
+  .row > * { flex:1 1 220px; }
+  .caps { display:flex; gap:14px; flex-wrap:wrap; margin-top:8px; }
+  .caps label { display:flex; align-items:center; gap:6px; margin:0; color:var(--text); font-size:13.5px; }
+  .muted { color:var(--muted); }
+  .warn { color:var(--warn); }
+  .danger-text { color:#ff9ea1; }
+  .ok-text { color:var(--ok); }
+  .banner { border-radius:var(--radius); padding:12px 14px; margin-bottom:14px; font-size:14px; }
+  .banner.err { background:#2a1416; border:1px solid #5b2126; color:#ffb4b6; }
+  .banner.ok { background:#0f2416; border:1px solid #1d4a2b; color:#9ff0b5; }
+  .modal-back { position:fixed; inset:0; background:rgba(0,0,0,.62); display:flex; align-items:center;
+                justify-content:center; padding:16px; z-index:50; }
+  .modal { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+           max-width:560px; width:100%; padding:18px; }
+  .modal h3 { margin:0 0 8px; font-size:17px; }
+  .modal .consequence { background:var(--panel-2); border:1px solid var(--line); border-left:3px solid var(--warn);
+                        border-radius:8px; padding:10px 12px; margin:10px 0; font-size:14px; }
+  .modal .actions { display:flex; gap:10px; justify-content:flex-end; margin-top:14px; }
+  .once { border:2px solid var(--accent); background:#241f0d; border-radius:var(--radius); padding:14px; }
+  .once .pw { font-family:var(--mono); font-size:20px; letter-spacing:1px; background:#0d0f14;
+              border:1px dashed var(--accent); border-radius:8px; padding:12px; margin:10px 0; word-break:break-all; }
+  .hide { display:none !important; }
+  .stack > * + * { margin-top:10px; }
+  .small { font-size:13px; }
+  @media (max-width:640px) { .wrap { padding:10px; } th, td { padding:7px 5px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand"><span class="mark">🌳</span><span data-i18n="Family Heritage">Family Heritage</span></div>
+    <div class="identity" id="identity">
+      <span data-i18n="Not signed in">Not signed in</span>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn sm" id="lang-toggle" title="Language / Langue">Français</button>
+      <button class="btn sm hide" id="signout" data-i18n="Sign out">Sign out</button>
+    </div>
+  </header>
+
+  <div id="banner-host"></div>
+
+  <!-- ── SIGN IN ─────────────────────────────────────────────────────────── -->
+  <section id="view-signin" class="card">
+    <h2 data-i18n="Sign in with your Family Heritage account">Sign in with your Family Heritage account</h2>
+    <p class="sub" data-i18n="This is your own family account, not your administrator login. An administrator login — including master admin — has no access to the family archive.">This is your own family account, not your administrator login. An administrator login — including master admin — has no access to the family archive.</p>
+    <form id="signin-form" autocomplete="on">
+      <label for="si-email" data-i18n="Email">Email</label>
+      <input id="si-email" type="email" autocomplete="username" required />
+      <label for="si-pass" data-i18n="Password">Password</label>
+      <input id="si-pass" type="password" autocomplete="current-password" required />
+      <div style="margin-top:14px"><button class="btn primary" id="si-btn" type="submit" data-i18n="Sign in">Sign in</button></div>
+    </form>
+  </section>
+
+  <!-- ── OWNER AREA ──────────────────────────────────────────────────────── -->
+  <section id="view-owner" class="hide">
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" data-tab="accounts" aria-selected="true" data-i18n="Accounts">Accounts</button>
+      <button class="tab" role="tab" data-tab="proposals" aria-selected="false" data-i18n="Proposals">Proposals</button>
+      <button class="tab" role="tab" data-tab="people" aria-selected="false" data-i18n="People">People</button>
+    </div>
+
+    <!-- ACCOUNTS -->
+    <div id="tab-accounts">
+      <div class="card">
+        <h2 data-i18n="Family accounts">Family accounts</h2>
+        <p class="sub" data-i18n="You create every account. Nobody can sign themselves up.">You create every account. Nobody can sign themselves up.</p>
+        <div class="scroller"><table id="members-table"><thead><tr>
+          <th data-i18n="Name">Name</th><th data-i18n="Email">Email</th><th data-i18n="Can">Can</th>
+          <th data-i18n="State">State</th><th data-i18n="Actions">Actions</th>
+        </tr></thead><tbody></tbody></table></div>
+      </div>
+
+      <div class="card">
+        <h2 data-i18n="New account">New account</h2>
+        <p class="sub" data-i18n="The password is shown once, on this screen. Write it down before you close it.">The password is shown once, on this screen. Write it down before you close it.</p>
+        <div id="new-account-form">
+          <div class="row">
+            <div><label for="na-person" data-i18n="Person">Person</label><select id="na-person"></select></div>
+            <div><label for="na-email" data-i18n="Email">Email</label><input id="na-email" type="email" /></div>
+            <div><label for="na-name" data-i18n="Display name">Display name</label><input id="na-name" type="text" /></div>
+          </div>
+          <div class="caps" id="na-caps"></div>
+          <div style="margin-top:14px"><button class="btn primary" id="na-btn" data-i18n="Create account">Create account</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PROPOSALS -->
+    <div id="tab-proposals" class="hide">
+      <div class="card">
+        <h2 data-i18n="Proposals waiting for you">Proposals waiting for you</h2>
+        <p class="sub" data-i18n="Approving writes the change to the record. It happens once — approving again is refused.">Approving writes the change to the record. It happens once — approving again is refused.</p>
+        <div id="proposals-host" class="stack"></div>
+      </div>
+    </div>
+
+    <!-- PEOPLE -->
+    <div id="tab-people" class="hide">
+      <div class="card">
+        <h2 data-i18n="People">People</h2>
+        <p class="sub" data-i18n="Names, dates and the details only you can change.">Names, dates and the details only you can change.</p>
+        <label for="pp-search" data-i18n="Search">Search</label>
+        <input id="pp-search" type="text" data-i18n-ph="Type a name" placeholder="Type a name" />
+        <div class="scroller" style="margin-top:12px"><table id="people-table"><thead><tr>
+          <th data-i18n="Name">Name</th><th data-i18n="Born">Born</th><th data-i18n="Child">Child</th>
+          <th data-i18n="Login allowed">Login allowed</th>
+          <th data-i18n="On the public site">On the public site</th>
+          <th data-i18n="Actions">Actions</th>
+        </tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="card hide" id="person-editor-card">
+        <h2 data-i18n="Edit person">Edit person</h2>
+        <div id="person-editor"><p class="muted small" data-i18n="Choose someone from the list.">Choose someone from the list.</p></div>
+        <!-- Stage E: what is written ABOUT this person — stories, timeline,
+             work and titles, migrations, and the testimony they gave. -->
+        <div id="person-records"></div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="small muted" style="margin:18px 0 40px">
+    <span data-i18n="Family Heritage owner area. Developed by Peter Chidozie Okafor.">Family Heritage owner area. Developed by Peter Chidozie Okafor.</span>
+  </footer>
+</div>
+
+<div id="modal-host"></div>
+
+<script>
+/* ────────────────────────── configuration ──────────────────────────
+   API base is resolved the same way the admin portal does. The Supabase
+   URL and anon key come from the API (GET /fh/config): both are public
+   values, but they differ per environment and must never be pasted into
+   a committed file — that is how Ejima ended up with a production key in
+   source. */
+const API_BASE = (function () {
+  const h = location.hostname;
+  if (h === 'localhost' || h === '127.0.0.1') return 'http://localhost:3001/api';
+  if (h.indexOf('staging') !== -1) return 'https://partenaire-account-server-staging.onrender.com/api';
+  return 'https://partenaire-account-api.onrender.com/api';
+})();
+const SESSION_KEY = 'fh_owner_session';   // sessionStorage: dies with the tab
+let CONFIG = null, SESSION = null, LANG = 'en', MEMBERS = [], PEOPLE = [], SELECTED = null;
+
+/* ────────────────────────── language ────────────────────────────── */
+const FR = {
+  'Family Heritage':'Héritage familial',
+  'Not signed in':'Non connecté',
+  'Sign out':'Se déconnecter',
+  'Sign in with your Family Heritage account':'Connectez-vous avec votre compte Héritage familial',
+  'This is your own family account, not your administrator login. An administrator login — including master admin — has no access to the family archive.':"C'est votre compte familial personnel, pas votre identifiant administrateur. Un identifiant administrateur — y compris master admin — n'a aucun accès aux archives familiales.",
+  'Email':'E-mail', 'Password':'Mot de passe', 'Sign in':'Se connecter',
+  'Accounts':'Comptes', 'Proposals':'Propositions', 'People':'Personnes',
+  'Family accounts':'Comptes de la famille',
+  'You create every account. Nobody can sign themselves up.':"Vous créez chaque compte. Personne ne peut s'inscrire seul.",
+  'Name':'Nom', 'Can':'Droits', 'State':'État', 'Actions':'Actions',
+  'New account':'Nouveau compte',
+  'The password is shown once, on this screen. Write it down before you close it.':"Le mot de passe s'affiche une seule fois, sur cet écran. Notez-le avant de fermer.",
+  'Person':'Personne', 'Display name':'Nom affiché', 'Create account':'Créer le compte',
+  'Proposals waiting for you':'Propositions en attente',
+  'Approving writes the change to the record. It happens once — approving again is refused.':"Approuver écrit la modification dans la fiche. Cela se fait une seule fois — approuver de nouveau est refusé.",
+  'Names, dates and the details only you can change.':'Les noms, les dates et les détails que vous seul pouvez changer.',
+  'Search':'Rechercher', 'Type a name':'Tapez un nom', 'Born':'Naissance', 'Child':'Enfant',
+  'Login allowed':'Connexion autorisée', 'Edit person':'Modifier la personne',
+  'Choose someone from the list.':'Choisissez une personne dans la liste.',
+  'Family Heritage owner area. Developed by Peter Chidozie Okafor.':'Espace propriétaire Héritage familial. Développé par Peter Chidozie Okafor.',
+  'Signed in as':'Connecté en tant que', 'Family account (owner)':'Compte familial (propriétaire)',
+  'View':'Voir', 'Edit':'Modifier', 'Propose':'Proposer', 'Archive':'Archiver',
+  'Suspend':'Suspendre', 'Restore':'Rétablir', 'Unlink':'Délier', 'Force password change':'Forcer le changement de mot de passe',
+  'Active':'Actif', 'Suspended':'Suspendu', 'Unlinked':'Délié', 'Must change password':'Doit changer le mot de passe',
+  'No access — child not allowed':"Aucun accès — enfant non autorisé",
+  'Yes':'Oui', 'No':'Non', 'Approve':'Approuver', 'Reject':'Rejeter', 'Cancel':'Annuler',
+  'Confirm':'Confirmer', 'I understand':'Je comprends', 'Close':'Fermer', 'Copy':'Copier', 'Copied':'Copié',
+  'Account created':'Compte créé',
+  'This password is shown ONCE':'Ce mot de passe est affiché UNE SEULE FOIS',
+  'If you close this without writing it down, it cannot be shown again — you would have to force a new password for this account.':"Si vous fermez sans le noter, il ne pourra plus être affiché — vous devrez forcer un nouveau mot de passe pour ce compte.",
+  'I have written it down':"Je l'ai noté",
+  'Allow a login for this child':'Autoriser une connexion pour cet enfant',
+  'Stop this child’s access':'Mettre fin à l’accès de cet enfant',
+  'Reason (recorded)':'Motif (enregistré)',
+  'A child cannot have an account unless you allow it for that child, one at a time. The reason is recorded with your name and the date.':"Un enfant ne peut pas avoir de compte à moins que vous ne l'autorisiez pour cet enfant, un par un. Le motif est enregistré avec votre nom et la date.",
+  'Turning this off ends that child’s access immediately — any account linked to them stops working at once.':"Désactiver met fin immédiatement à l'accès de cet enfant — tout compte qui lui est lié cesse de fonctionner aussitôt.",
+  'This cannot be undone. The account is closed for good; to give this person access again you must create a new account.':"Ceci est irréversible. Le compte est fermé définitivement ; pour redonner accès à cette personne, vous devrez créer un nouveau compte.",
+  'The person keeps their account but cannot use it until you restore them.':"La personne garde son compte mais ne peut pas l'utiliser tant que vous ne l'avez pas rétabli.",
+  'They will be asked to choose a new password the next time they sign in, and can do nothing else until they do.':"Il lui sera demandé de choisir un nouveau mot de passe à sa prochaine connexion, et elle ne pourra rien faire d'autre avant.",
+  'This writes the proposed change to the record.':'Ceci écrit la modification proposée dans la fiche.',
+  'Proposed by':'Proposé par', 'Proposed':'Proposé', 'Note (optional)':'Note (facultatif)',
+  'Nothing waiting.':'Rien en attente.', 'Working…':'En cours…',
+  'Something went wrong. Please try again.':"Une erreur s'est produite. Veuillez réessayer.",
+  'Save':'Enregistrer', 'Saved':'Enregistré', 'Surname':'Nom de famille', 'Given names':'Prénoms',
+  'Biography':'Biographie', 'Sex':'Sexe', 'male':'masculin', 'female':'féminin', 'unknown':'inconnu',
+  'Is a child':'Est un enfant', 'Verification':'Vérification', 'Allowed':'Autorisé', 'Not allowed':'Non autorisé',
+  'Change':'Modifier', 'Owner-only details':'Détails réservés au propriétaire',
+  'Session ended. Please sign in again.':'Session terminée. Veuillez vous reconnecter.',
+  // ── the public site ──────────────────────────────────────────────────────
+  'On the public site':'Sur le site public', 'Public site':'Site public',
+  'Currently':'Actuellement',
+  'Public — full page':'Public — page complète',
+  'Public — name only':'Public — nom seulement',
+  'Not public':'Non public',
+  'Never public — child':'Jamais public — enfant',
+  'Name, dates, places and biography are served to anyone.':
+    'Le nom, les dates, les lieux et la biographie sont accessibles à tous.',
+  'Name and position in the family. Dates and biography are withheld.':
+    'Le nom et la place dans la famille. Les dates et la biographie sont retenues.',
+  'Served to nobody. Every person starts here.':
+    'Accessible à personne. Chaque personne commence ainsi.',
+  'This person is recorded as a child. A child is never shown on the public site, whatever is chosen here — and neither are their stories, their timeline or their photographs.':
+    "Cette personne est enregistrée comme un enfant. Un enfant n'est jamais affiché sur le site public, quel que soit le choix fait ici — pas plus que ses récits, sa chronologie ou ses photographies.",
+  'This is the current setting. Nothing will change.':
+    'C’est le réglage actuel. Rien ne changera.',
+  'This stops the public site serving this person from now on. It cannot undo what was already seen, copied or indexed while they were public.':
+    "Cela empêche désormais le site public de diffuser cette personne. Cela n'annule pas ce qui a déjà été vu, copié ou indexé pendant qu'elle était publique.",
+  'This makes the information visible to ANYONE ON THE INTERNET, with no login, as soon as the public site is switched on.':
+    "Cela rend les informations visibles par N'IMPORTE QUI SUR INTERNET, sans connexion, dès que le site public est activé.",
+  'This changes what the public site shows for this person.':
+    'Cela modifie ce que le site public affiche pour cette personne.',
+  // ── Stage E: records about a person ──────────────────────────────────────
+  'Stories':'Récits', 'Timeline':'Chronologie', 'Work and titles':'Travail et titres',
+  'Migrations':'Migrations', 'Testimony given':'Témoignage donné', 'Testimony':'Témoignage',
+  'Add':'Ajouter', 'History':'Historique', 'Archive':'Archiver', 'Restore':'Rétablir',
+  'Untitled':'Sans titre', 'Loading…':'Chargement…',
+  'Nothing recorded yet.':'Rien n’a encore été enregistré.',
+  'Show archived':'Voir les archivés', 'Showing archived':'Archivés affichés',
+  'Nothing archived.':'Rien n’est archivé.',
+  'No history recorded.':'Aucun historique enregistré.',
+  'Written by':'Écrit par', 'Edited by':'Modifié par', '(no longer a member)':'(n’est plus membre)',
+  'A title or name is required.':'Un titre ou un nom est obligatoire.',
+  'Archived':'Archivé', 'Private':'Privé', 'Family only':'Famille seulement', 'Public':'Public',
+  'On the public site':'Sur le site public',
+  'Marked public — not served, because':'Marqué public — non diffusé, car',
+  'it is still a draft':'c’est encore un brouillon',
+  'this person is a child':'cette personne est un enfant',
+  'this person is not published':'cette personne n’est pas publiée',
+  'and':'et',
+  'Put this on the public site':'Mettre ceci sur le site public',
+  'Marked public, this record is served to ANYONE ON THE INTERNET once the person is published and the public site is switched on.':
+    "Marqué public, cet élément est diffusé à N'IMPORTE QUI SUR INTERNET dès que la personne est publiée et que le site public est activé.",
+  'It stops being shown anywhere, including the public site. It is not deleted and you can restore it.':
+    "Il cesse d'être affiché partout, y compris sur le site public. Il n'est pas supprimé et vous pouvez le rétablir.",
+  // field labels
+  'Title':'Titre', 'Subtitle':'Sous-titre', 'Text':'Texte', 'Period':'Période',
+  'From year':'Année de début', 'To year':'Année de fin', 'Draft or published':'Brouillon ou publié',
+  'Who can see it':'Qui peut le voir', 'Order':'Ordre', 'Description':'Description',
+  'Date':'Date', 'How exact is the date':'Précision de la date', 'Place':'Lieu',
+  'Kind of event':'Type d’événement', 'Kind':'Type', 'From':'De', 'To':'À',
+  'Reason':'Motif', 'Account':'Récit', 'Narrator':'Narrateur', 'Recorded on':'Enregistré le',
+  'Language':'Langue', 'What was said':'Ce qui a été dit',
+  // option labels
+  'Draft':'Brouillon', 'Published':'Publié', 'Exact':'Exacte', 'Month':'Mois', 'Year':'Année',
+  'Approximate':'Approximative', 'Unknown':'Inconnue', 'Birth':'Naissance', 'Death':'Décès',
+  'Marriage':'Mariage', 'Migration':'Migration', 'Business':'Entreprise', 'Tradition':'Tradition',
+  'Achievement':'Réalisation', 'Other':'Autre', 'Office':'Fonction', 'Education':'Éducation'
+};
+function t(s) { return (LANG === 'fr' && Object.prototype.hasOwnProperty.call(FR, s)) ? FR[s] : s; }
+function applyLang() {
+  document.documentElement.lang = LANG;
+  document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); });
+  document.querySelectorAll('[data-i18n-ph]').forEach(function (el) { el.setAttribute('placeholder', t(el.getAttribute('data-i18n-ph'))); });
+  document.getElementById('lang-toggle').textContent = LANG === 'fr' ? 'English' : 'Français';
+  renderIdentity(); renderMembers(); renderPeople(); renderProposals();
+}
+
+/* ────────────────────────── helpers ─────────────────────────────── */
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+function banner(kind, msg) {
+  $('banner-host').innerHTML = '<div class="banner ' + kind + '">' + esc(msg) + '</div>';
+  if (kind === 'ok') setTimeout(() => { $('banner-host').innerHTML = ''; }, 4000);
+}
+/** Every action button locks while it runs: the simplest answer to "what if it
+    runs twice?". The server refuses repeats as well — this only stops the
+    accidental double click. */
+async function withLock(btn, fn) {
+  if (!btn) return fn();
+  if (btn.disabled) return;
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = t('Working…');
+  try { return await fn(); }
+  finally { btn.disabled = false; btn.textContent = label; }
+}
+async function api(method, path, body) {
+  const r = await fetch(API_BASE + '/fh' + path, {
+    method,
+    headers: Object.assign({ 'content-type': 'application/json' },
+      SESSION ? { authorization: 'Bearer ' + SESSION.access_token } : {}),
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  let data = null; try { data = await r.json(); } catch (_) { /* no body */ }
+  if (r.status === 401) { signOut(t('Session ended. Please sign in again.')); throw new Error('unauthorised'); }
+  if (!r.ok) { const e = new Error((data && data.message) || t('Something went wrong. Please try again.')); e.code = data && data.error; throw e; }
+  return data;
+}
+
+/* ────────────────────────── confirm step ────────────────────────── */
+/** Names what will happen, in the owner's language, before anything irreversible.
+    `acknowledge` adds a checkbox that must be ticked — used where there is no undo. */
+function confirmAction({ title, consequence, confirmLabel, danger, acknowledge, requireReason, extraHtml, onConfirm }) {
+  return new Promise((resolve) => {
+    const host = $('modal-host');
+    host.innerHTML =
+      '<div class="modal-back"><div class="modal" role="dialog" aria-modal="true">' +
+        '<h3>' + esc(title) + '</h3>' +
+        '<div class="consequence">' + esc(consequence) + '</div>' +
+        (extraHtml || '') +
+        (acknowledge ? '<label style="display:flex;gap:8px;align-items:center;color:var(--text)">' +
+            '<input type="checkbox" id="cf-ack" /> <span>' + esc(t('I understand')) + '</span></label>' : '') +
+        '<div class="actions">' +
+          '<button class="btn" id="cf-cancel">' + esc(t('Cancel')) + '</button>' +
+          '<button class="btn ' + (danger ? 'danger' : 'primary') + '" id="cf-ok"' +
+            (acknowledge || requireReason ? ' disabled' : '') + '>' +
+            esc(confirmLabel || t('Confirm')) + '</button>' +
+        '</div>' +
+      '</div></div>';
+    const close = () => { host.innerHTML = ''; resolve(false); };
+    $('cf-cancel').onclick = close;
+    // The confirm button stays disabled until every condition this action asks
+    // for is met: the acknowledgement ticked, and — where the record must say WHY
+    // (the child override) — a reason actually typed. An optional reason box is
+    // one that gets left empty, and then the record cannot explain itself later.
+    const ta = host.querySelector('textarea');
+    const refresh = () => {
+      const ackOk = !acknowledge || ($('cf-ack') && $('cf-ack').checked);
+      const reasonOk = !requireReason || (ta && ta.value.trim().length > 0);
+      $('cf-ok').disabled = !(ackOk && reasonOk);
+    };
+    if (acknowledge) $('cf-ack').onchange = refresh;
+    if (requireReason && ta) ta.oninput = refresh;
+    $('cf-ok').onclick = async () => {
+      await withLock($('cf-ok'), async () => {
+        try { await onConfirm(); host.innerHTML = ''; resolve(true); }
+        catch (err) { banner('err', err.message); host.innerHTML = ''; resolve(false); }
+      });
+    };
+  });
+}
+
+/* ────────────────────────── session ─────────────────────────────── */
+function renderIdentity() {
+  const el = $('identity');
+  if (!SESSION) { el.innerHTML = '<span>' + esc(t('Not signed in')) + '</span>'; return; }
+  el.innerHTML = '<span>' + esc(t('Signed in as')) + ' <b>' + esc(SESSION.email || '') + '</b></span> ' +
+                 '<span class="pill owner">' + esc(t('Family account (owner)')) + '</span>';
+}
+function saveSession(s) {
+  SESSION = s;
+  try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch (_) { /* private mode */ }
+}
+function signOut(msg) {
+  SESSION = null;
+  try { sessionStorage.removeItem(SESSION_KEY); } catch (_) {}
+  $('view-owner').classList.add('hide'); $('view-signin').classList.remove('hide');
+  $('signout').classList.add('hide'); renderIdentity();
+  if (msg) banner('err', msg);
+}
+async function signIn(email, password) {
+  const r = await fetch(CONFIG.supabase_url + '/auth/v1/token?grant_type=password', {
+    method: 'POST',
+    headers: { apikey: CONFIG.anon_key, 'content-type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok || !data || !data.access_token) throw new Error((data && (data.error_description || data.msg)) || 'Sign-in failed');
+  saveSession({ access_token: data.access_token, email });
+  return data;
+}
+async function afterSignIn() {
+  const me = await api('GET', '/whoami');
+  if (!me.is_owner) {
+    signOut(LANG === 'fr'
+      ? "Ce compte n'est pas le compte propriétaire de l'Héritage familial."
+      : 'That account is not the Family Heritage owner account.');
+    return;
+  }
+  $('view-signin').classList.add('hide'); $('view-owner').classList.remove('hide');
+  $('signout').classList.remove('hide'); renderIdentity();
+  await Promise.all([loadMembers(), loadPeople(), loadProposals()]);
+}
+
+/* ────────────────────────── accounts ────────────────────────────── */
+const CAP_KEYS = ['can_view', 'can_edit', 'can_submit', 'can_archive'];
+const CAP_LABEL = { can_view:'View', can_edit:'Edit', can_submit:'Propose', can_archive:'Archive' };
+async function loadMembers() { MEMBERS = (await api('GET', '/owner/members')).members || []; renderMembers(); }
+/** The picker needs BOTH lists, which load concurrently — so it is rebuilt by
+    whichever render runs last, not just by the members one. */
+function renderPersonPicker() {
+  const sel = $('na-person'); if (!sel) return;
+  const linked = new Set(MEMBERS.filter((m) => !m.unlinked).map((m) => m.person_id));
+  const free = PEOPLE.filter((p) => !linked.has(p.id) && !p.archived);
+  const keep = sel.value;
+  sel.innerHTML = free.map((p) => '<option value="' + p.id + '">' + esc(personName(p)) +
+    (p.is_minor ? ' — ' + t('Child') : '') + '</option>').join('');
+  if (keep && free.some((p) => p.id === keep)) sel.value = keep;
+}
+function renderMembers() {
+  const tb = document.querySelector('#members-table tbody'); if (!tb) return;
+  tb.innerHTML = MEMBERS.map((m) => {
+    const caps = CAP_KEYS.filter((k) => m[k]).map((k) => t(CAP_LABEL[k])).join(', ') || '—';
+    // 🔴 A CHILD WITHOUT THE OVERRIDE CANNOT USE THEIR ACCOUNT, even though the
+    // member row is untouched. Measured 2026-09-16 on staging: that login sees
+    // ZERO people and every write is refused. Showing it as "Active" — which
+    // this table did — tells the owner an account works when it does not.
+    const person = PEOPLE.find((p) => p.id === m.person_id);
+    const childBlocked = person && person.is_minor && !person.minor_login_override;
+    const state = m.unlinked ? '<span class="danger-text">' + t('Unlinked') + '</span>'
+      : m.suspended ? '<span class="warn">' + t('Suspended') + '</span>'
+      : childBlocked ? '<span class="warn">' + t('No access — child not allowed') + '</span>'
+      : '<span class="ok-text">' + t('Active') + '</span>';
+    const mustChange = m.must_change_password ? ' <span class="pill">' + t('Must change password') + '</span>' : '';
+    const actions = m.unlinked ? '' :
+      '<button class="btn sm" data-act="' + (m.suspended ? 'unsuspend' : 'suspend') + '" data-id="' + m.id + '">' +
+        (m.suspended ? t('Restore') : t('Suspend')) + '</button> ' +
+      '<button class="btn sm" data-act="force-pw" data-id="' + m.id + '">' + t('Force password change') + '</button> ' +
+      '<button class="btn sm danger" data-act="unlink" data-id="' + m.id + '">' + t('Unlink') + '</button>';
+    return '<tr><td>' + esc(m.display_name) + '</td><td class="small muted">' + esc(m.email || '') + '</td>' +
+           '<td class="small">' + caps + '</td><td class="small">' + state + mustChange + '</td>' +
+           '<td style="white-space:nowrap">' + actions + '</td></tr>';
+  }).join('') || '<tr><td colspan="5" class="muted">—</td></tr>';
+  tb.querySelectorAll('button[data-act]').forEach((b) => { b.onclick = () => memberAction(b); });
+  renderPersonPicker();
+  const capHost = $('na-caps');
+  if (capHost && !capHost.dataset.built) {
+    capHost.innerHTML = CAP_KEYS.map((k) => '<label><input type="checkbox" data-cap="' + k + '"' +
+      (k === 'can_view' ? ' checked' : '') + ' /> ' + t(CAP_LABEL[k]) + '</label>').join('');
+    capHost.dataset.built = '1';
+  }
+}
+async function memberAction(btn) {
+  const m = MEMBERS.find((x) => x.id === btn.dataset.id); if (!m) return;
+  const act = btn.dataset.act;
+  if (act === 'suspend') {
+    await confirmAction({ title: t('Suspend') + ' — ' + m.display_name,
+      consequence: t('The person keeps their account but cannot use it until you restore them.'),
+      confirmLabel: t('Suspend'), danger: true,
+      onConfirm: async () => { await api('POST', '/owner/members/' + m.id + '/suspend'); await loadMembers(); } });
+  } else if (act === 'unsuspend') {
+    await withLock(btn, async () => { await api('POST', '/owner/members/' + m.id + '/unsuspend'); await loadMembers(); });
+  } else if (act === 'force-pw') {
+    await confirmAction({ title: t('Force password change') + ' — ' + m.display_name,
+      consequence: t('They will be asked to choose a new password the next time they sign in, and can do nothing else until they do.'),
+      confirmLabel: t('Confirm'),
+      onConfirm: async () => { await api('PATCH', '/owner/members/' + m.id, { must_change_password: true }); await loadMembers(); } });
+  } else if (act === 'unlink') {
+    await confirmAction({ title: t('Unlink') + ' — ' + m.display_name,
+      consequence: t('This cannot be undone. The account is closed for good; to give this person access again you must create a new account.'),
+      confirmLabel: t('Unlink'), danger: true, acknowledge: true,
+      onConfirm: async () => { await api('POST', '/owner/members/' + m.id + '/unlink'); await loadMembers(); } });
+  }
+}
+/** The temporary password: shown once, and the screen says so. Closing needs an
+    explicit acknowledgement, because there is no second chance to read it. */
+function showPasswordOnce(member, password) {
+  const host = $('modal-host');
+  host.innerHTML =
+    '<div class="modal-back"><div class="modal">' +
+      '<h3>' + esc(t('Account created')) + ' — ' + esc(member.display_name) + '</h3>' +
+      '<div class="once">' +
+        '<div style="font-weight:700;color:var(--accent-2)">⚠ ' + esc(t('This password is shown ONCE')) + '</div>' +
+        '<div class="pw" id="pw-value">' + esc(password) + '</div>' +
+        '<div class="small">' + esc(t('If you close this without writing it down, it cannot be shown again — you would have to force a new password for this account.')) + '</div>' +
+        '<div style="margin-top:10px"><button class="btn sm" id="pw-copy">' + esc(t('Copy')) + '</button></div>' +
+      '</div>' +
+      '<label style="display:flex;gap:8px;align-items:center;color:var(--text);margin-top:12px">' +
+        '<input type="checkbox" id="pw-ack" /> <span>' + esc(t('I have written it down')) + '</span></label>' +
+      '<div class="actions"><button class="btn primary" id="pw-close" disabled>' + esc(t('Close')) + '</button></div>' +
+    '</div></div>';
+  $('pw-copy').onclick = async () => {
+    try { await navigator.clipboard.writeText(password); $('pw-copy').textContent = t('Copied'); } catch (_) { /* manual copy */ }
+  };
+  $('pw-ack').onchange = (e) => { $('pw-close').disabled = !e.target.checked; };
+  $('pw-close').onclick = () => { host.innerHTML = ''; };
+}
+
+/* ────────────────────────── proposals ───────────────────────────── */
+let PROPOSALS = [];
+async function loadProposals() { PROPOSALS = (await api('GET', '/owner/proposals?status=pending')).proposals || []; renderProposals(); }
+function renderProposals() {
+  const host = $('proposals-host'); if (!host) return;
+  if (!PROPOSALS.length) { host.innerHTML = '<p class="muted">' + t('Nothing waiting.') + '</p>'; return; }
+  host.innerHTML = PROPOSALS.map((p) => {
+    const fields = Object.keys(p.payload || {}).map((k) =>
+      '<div class="small"><span class="muted">' + esc(k) + ':</span> ' + esc(String(p.payload[k]).slice(0, 160)) + '</div>').join('');
+    return '<div class="card" style="margin:0">' +
+      '<div class="small muted">' + esc(t('Proposed by')) + ' <b>' + esc(p.submitted_by_name || '—') + '</b> · ' +
+        esc(new Date(p.submitted_at).toLocaleString()) + ' · ' + esc(p.kind) + ' / ' + esc(p.operation) + '</div>' +
+      '<div style="margin:8px 0">' + fields + '</div>' +
+      '<div><button class="btn primary sm" data-p="' + p.id + '" data-act="approve">' + t('Approve') + '</button> ' +
+           '<button class="btn sm" data-p="' + p.id + '" data-act="reject">' + t('Reject') + '</button></div>' +
+    '</div>';
+  }).join('');
+  host.querySelectorAll('button[data-p]').forEach((b) => { b.onclick = () => proposalAction(b); });
+}
+async function proposalAction(btn) {
+  const id = btn.dataset.p;
+  if (btn.dataset.act === 'approve') {
+    await confirmAction({ title: t('Approve'), consequence: t('This writes the proposed change to the record.'),
+      confirmLabel: t('Approve'),
+      onConfirm: async () => { await api('POST', '/owner/proposals/' + id + '/approve'); await Promise.all([loadProposals(), loadPeople()]); } });
+  } else {
+    await confirmAction({ title: t('Reject'), consequence: t('This writes the proposed change to the record.'),
+      confirmLabel: t('Reject'), danger: true,
+      extraHtml: '<label>' + t('Note (optional)') + '</label><textarea id="rj-note"></textarea>',
+      onConfirm: async () => {
+        const note = ($('rj-note') && $('rj-note').value.trim()) || null;
+        await api('POST', '/owner/proposals/' + id + '/reject', note ? { review_note: note } : {});
+        await loadProposals();
+      } });
+  }
+}
+
+/* ────────────────────────── people ──────────────────────────────── */
+function personName(p) {
+  const n = [p.given_names, p.surname].filter(Boolean).join(' ').trim();
+  return n || p.placeholder_label || '—';
+}
+/* Read through the OWNER list, not /persons: the member-facing list carries no
+   override columns, and a page that cannot see the true state of a child's
+   override cannot honestly offer to change it. */
+async function loadPeople() {
+  PEOPLE = (await api('GET', '/owner/persons?limit=500')).persons || [];
+  renderPeople();
+  // The accounts table reads the child-override state off these rows, and the two
+  // lists load concurrently — so redraw it once the people are actually here.
+  renderMembers();
+}
+function renderPeople() {
+  const tb = document.querySelector('#people-table tbody'); if (!tb) return;
+  const q = ($('pp-search') && $('pp-search').value.trim().toLowerCase()) || '';
+  const rows = PEOPLE.filter((p) => !q || personName(p).toLowerCase().indexOf(q) !== -1);
+  tb.innerHTML = rows.map((p) => {
+    const allowed = !p.is_minor ? '<span class="muted">—</span>'
+      : (p.minor_login_override ? '<span class="ok-text">' + t('Allowed') + '</span>'
+                                : '<span class="warn">' + t('Not allowed') + '</span>');
+    return '<tr><td>' + esc(personName(p)) + '</td><td class="small muted">' + esc(p.birth_date || '—') + '</td>' +
+      '<td class="small">' + (p.is_minor ? t('Yes') : t('No')) + '</td><td class="small">' + allowed + '</td>' +
+      '<td class="small">' + publicStateLabel(p) + '</td>' +
+      '<td style="white-space:nowrap"><button class="btn sm" data-person="' + p.id + '">' + t('Edit') + '</button>' +
+      ' <button class="btn sm" data-publish="' + p.id + '">' + t('Public site') + '</button>' +
+      (p.is_minor ? ' <button class="btn sm" data-minor="' + p.id + '">' + t('Change') + '</button>' : '') + '</td></tr>';
+  }).join('') || '<tr><td colspan="5" class="muted">—</td></tr>';
+  tb.querySelectorAll('button[data-person]').forEach((b) => { b.onclick = () => editPerson(b.dataset.person); });
+  tb.querySelectorAll('button[data-minor]').forEach((b) => { b.onclick = () => minorOverride(b.dataset.minor); });
+  tb.querySelectorAll('button[data-publish]').forEach((b) => { b.onclick = () => publishControl(b.dataset.publish); });
+  renderPersonPicker();
+}
+function editPerson(id) {
+  const p = PEOPLE.find((x) => x.id === id); if (!p) return; SELECTED = p;
+  $('person-editor-card').classList.remove('hide');
+  $('person-editor').innerHTML =
+    '<div class="row">' +
+      '<div><label>' + t('Given names') + '</label><input id="pe-given" type="text" value="' + esc(p.given_names || '') + '" /></div>' +
+      '<div><label>' + t('Surname') + '</label><input id="pe-surname" type="text" value="' + esc(p.surname || '') + '" /></div>' +
+      '<div><label>' + t('Sex') + '</label><select id="pe-sex">' +
+        ['male','female','unknown'].map((s) => '<option value="' + s + '"' + (p.sex === s ? ' selected' : '') + '>' + t(s) + '</option>').join('') +
+      '</select></div>' +
+    '</div>' +
+    '<label>' + t('Biography') + '</label><textarea id="pe-bio">' + esc(p.biography || '') + '</textarea>' +
+    '<div class="row"><div><label>' + t('Is a child') + '</label><select id="pe-minor">' +
+      '<option value="false"' + (!p.is_minor ? ' selected' : '') + '>' + t('No') + '</option>' +
+      '<option value="true"' + (p.is_minor ? ' selected' : '') + '>' + t('Yes') + '</option></select></div>' +
+      '<div><label>' + t('Verification') + '</label><select id="pe-ver">' +
+        ['unknown','family_testimony','needs_verification','verified','disputed'].map((s) =>
+          '<option value="' + s + '"' + (p.verification_status === s ? ' selected' : '') + '>' + s + '</option>').join('') +
+      '</select></div></div>' +
+    '<div style="margin-top:14px"><button class="btn primary" id="pe-save">' + t('Save') + '</button></div>';
+  $('pe-save').onclick = () => withLock($('pe-save'), async () => {
+    try {
+      await api('PATCH', '/owner/persons/' + p.id, {
+        given_names: $('pe-given').value.trim() || null, surname: $('pe-surname').value.trim() || null,
+        sex: $('pe-sex').value, biography: $('pe-bio').value, is_minor: $('pe-minor').value === 'true',
+        verification_status: $('pe-ver').value,
+      });
+      banner('ok', t('Saved')); await loadPeople();
+    } catch (e) { banner('err', e.message); }
+  });
+  renderRecords(p);
+}
+
+/* ═══ WHAT IS WRITTEN ABOUT A PERSON (Stage E) ═══════════════════════════════
+   Five kinds of record, one screen. The owner writes on anybody's page; a member
+   writes only on their own, and the API refuses the rest — this surface is the
+   owner's, so it never has to decide that.
+
+   🔴 THE LABELS SAY WHAT IS ACTUALLY SERVED, NOT WHAT THE FLAG SAYS. A record
+   marked public is NOT on the public site unless the person is published too
+   (and, for a story, unless it is published rather than a draft), because the
+   database's views require all of it. Showing "Public" for a row the site will
+   never serve is the "Active" bug again — the flag is not the enforcement. */
+// Field and option names in plain words. The database's values are never shown
+// raw: "members_only" is a column value, "Family only" is what it means.
+const FIELD_LABELS = {
+  title: 'Title', subtitle: 'Subtitle', body: 'Text', period_label: 'Period',
+  year_from: 'From year', year_to: 'To year', status: 'Draft or published',
+  visibility: 'Who can see it', sort_order: 'Order', description: 'Description',
+  event_date: 'Date', date_precision: 'How exact is the date', place: 'Place',
+  category: 'Kind of event', name: 'Name', kind: 'Kind',
+  from_place: 'From', to_place: 'To', reason: 'Reason', account: 'Account',
+  narrator_name: 'Narrator', recorded_on: 'Recorded on', language: 'Language',
+  transcript: 'What was said',
+};
+const OPT_LABELS = {
+  private: 'Private', members_only: 'Family only', public: 'Public',
+  draft: 'Draft', published: 'Published', archived: 'Archived',
+  exact: 'Exact', month: 'Month', year: 'Year', approx: 'Approximate', unknown: 'Unknown',
+  birth: 'Birth', death: 'Death', marriage: 'Marriage', migration: 'Migration',
+  business: 'Business', tradition: 'Tradition', achievement: 'Achievement', other: 'Other',
+  title: 'Title', office: 'Office', education: 'Education',
+};
+const VIS = ['private', 'members_only', 'public'];
+const RECORD_KINDS = {
+  stories: { label: 'Stories', title: (i) => i.title, fields: [
+    { k: 'title', t: 'text', req: true }, { k: 'subtitle', t: 'text' },
+    { k: 'body', t: 'textarea' }, { k: 'period_label', t: 'text' },
+    { k: 'year_from', t: 'number' }, { k: 'year_to', t: 'number' },
+    { k: 'status', t: 'select', opts: ['draft', 'published', 'archived'] },
+    { k: 'visibility', t: 'select', opts: VIS }, { k: 'sort_order', t: 'number' }] },
+  timeline: { label: 'Timeline', title: (i) => i.title, fields: [
+    { k: 'title', t: 'text', req: true }, { k: 'description', t: 'textarea' },
+    { k: 'event_date', t: 'date' },
+    { k: 'date_precision', t: 'select', opts: ['exact', 'month', 'year', 'approx', 'unknown'] },
+    { k: 'year_from', t: 'number' }, { k: 'year_to', t: 'number' }, { k: 'place', t: 'text' },
+    { k: 'category', t: 'select', opts: ['', 'birth', 'death', 'marriage', 'migration', 'business', 'tradition', 'achievement', 'other'] },
+    { k: 'visibility', t: 'select', opts: VIS }] },
+  businesses: { label: 'Work and titles', title: (i) => i.name, fields: [
+    { k: 'name', t: 'text', req: true },
+    { k: 'kind', t: 'select', opts: ['', 'business', 'achievement', 'title', 'office', 'education', 'other'] },
+    { k: 'description', t: 'textarea' }, { k: 'place', t: 'text' },
+    { k: 'year_from', t: 'number' }, { k: 'year_to', t: 'number' },
+    { k: 'visibility', t: 'select', opts: VIS }] },
+  migrations: { label: 'Migrations', title: (i) => [i.from_place || '?', i.to_place || '?'].join(' → '), fields: [
+    { k: 'from_place', t: 'text' }, { k: 'to_place', t: 'text' },
+    { k: 'year_from', t: 'number' }, { k: 'year_to', t: 'number' },
+    { k: 'reason', t: 'text' }, { k: 'account', t: 'textarea' },
+    { k: 'visibility', t: 'select', opts: VIS }] },
+  // Testimony hangs off the NARRATOR: this is testimony this person GAVE, not
+  // testimony about them. The heading says so, because the distinction is the
+  // whole point of keeping it.
+  testimony: { label: 'Testimony given', title: (i) => i.narrator_name || t('Testimony'), fields: [
+    { k: 'narrator_name', t: 'text' }, { k: 'recorded_on', t: 'date' },
+    { k: 'language', t: 'text' }, { k: 'transcript', t: 'textarea' },
+    { k: 'visibility', t: 'select', opts: VIS }] },
+};
+let RECORD_KIND = 'stories';
+let RECORD_ARCHIVED = false;   // the archived view — the only place Restore is reachable
+let RECORDS = [];
+
+/** What the public site will actually do with this row, in plain words. */
+function servedState(kind, item, person) {
+  if (item.archived) return { cls: 'muted', text: t('Archived') };
+  if (item.visibility !== 'public') {
+    return { cls: 'muted', text: item.visibility === 'private' ? t('Private') : t('Family only') };
+  }
+  const why = [];
+  if (kind === 'stories' && item.status !== 'published') why.push(t('it is still a draft'));
+  if (person.is_minor) why.push(t('this person is a child'));
+  else if (!['full', 'limited'].includes(person.public_visibility)) why.push(t('this person is not published'));
+  return why.length
+    ? { cls: 'warn', text: t('Marked public — not served, because') + ' ' + why.join(' ' + t('and') + ' ') }
+    : { cls: 'ok-text', text: t('On the public site') };
+}
+
+function renderRecords(person) {
+  const host = $('person-records');
+  host.innerHTML =
+    '<hr style="border:0;border-top:1px solid var(--line);margin:22px 0" />' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">' +
+      Object.keys(RECORD_KINDS).map((k) =>
+        '<button class="btn sm" data-kind="' + k + '"' +
+        (k === RECORD_KIND ? ' style="border-color:var(--gold-soft);color:var(--text)"' : '') + '>' +
+        esc(t(RECORD_KINDS[k].label)) + '</button>').join('') +
+      '<span style="flex:1"></span>' +
+      // Without this the Restore button could never be reached: the list only
+      // fetches unarchived rows, so an archived record vanished from the screen
+      // and the control for bringing it back was unreachable by construction.
+      '<button class="btn sm" id="rec-archived"' +
+        (RECORD_ARCHIVED ? ' style="border-color:var(--gold-soft);color:var(--text)"' : '') + '>' +
+        esc(RECORD_ARCHIVED ? t('Showing archived') : t('Show archived')) + '</button> ' +
+      '<button class="btn primary sm" id="rec-add">+ ' + esc(t('Add')) + '</button>' +
+    '</div>' +
+    '<div id="rec-form"></div><div id="rec-list" class="stack"></div>';
+  host.querySelectorAll('button[data-kind]').forEach((b) => {
+    b.onclick = () => { RECORD_KIND = b.dataset.kind; renderRecords(person); };
+  });
+  $('rec-add').onclick = () => recordForm(person, null);
+  $('rec-archived').onclick = () => { RECORD_ARCHIVED = !RECORD_ARCHIVED; renderRecords(person); };
+  loadRecords(person);
+}
+
+async function loadRecords(person) {
+  const list = $('rec-list');
+  list.innerHTML = '<p class="small muted">' + esc(t('Loading…')) + '</p>';
+  try {
+    const r = await api('GET', '/' + RECORD_KIND + '?person_id=' + encodeURIComponent(person.id) +
+      (RECORD_ARCHIVED ? '&archived=1' : ''));
+    RECORDS = r.items || [];
+  } catch (e) { list.innerHTML = '<p class="small danger-text">' + esc(e.message) + '</p>'; return; }
+  const spec = RECORD_KINDS[RECORD_KIND];
+  list.innerHTML = RECORDS.length ? RECORDS.map((i) => {
+    const st = servedState(RECORD_KIND, i, person);
+    return '<div class="card" style="margin:0;padding:12px 14px">' +
+      '<div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">' +
+        '<div style="flex:1;min-width:200px">' +
+          '<b>' + esc(spec.title(i) || t('Untitled')) + '</b>' +
+          '<div class="small ' + st.cls + '">' + esc(st.text) + '</div>' +
+        '</div>' +
+        '<div style="white-space:nowrap">' +
+          '<button class="btn sm" data-edit="' + i.id + '">' + esc(t('Edit')) + '</button> ' +
+          '<button class="btn sm" data-history="' + i.id + '">' + esc(t('History')) + '</button> ' +
+          '<button class="btn sm ' + (i.archived ? '' : 'danger') + '" data-arch="' + i.id + '">' +
+            esc(i.archived ? t('Restore') : t('Archive')) + '</button>' +
+        '</div>' +
+      '</div><div data-hist="' + i.id + '"></div></div>';
+  }).join('') : '<p class="small muted">' + esc(RECORD_ARCHIVED ? t('Nothing archived.') : t('Nothing recorded yet.')) + '</p>';
+
+  list.querySelectorAll('button[data-edit]').forEach((b) => {
+    b.onclick = () => recordForm(person, RECORDS.find((x) => x.id === b.dataset.edit));
+  });
+  list.querySelectorAll('button[data-history]').forEach((b) => { b.onclick = () => showHistory(b.dataset.history); });
+  list.querySelectorAll('button[data-arch]').forEach((b) => {
+    b.onclick = () => archiveRecord(person, RECORDS.find((x) => x.id === b.dataset.arch));
+  });
+}
+
+function recordForm(person, item) {
+  const spec = RECORD_KINDS[RECORD_KIND];
+  const val = (f) => (item && item[f.k] !== null && item[f.k] !== undefined ? String(item[f.k]) : '');
+  $('rec-form').innerHTML =
+    '<div class="card" style="margin:0 0 14px;background:var(--panel)">' +
+      '<h3 style="margin:0 0 10px;font-size:16px">' +
+        esc((item ? t('Edit') : t('Add')) + ' — ' + t(spec.label) + ' · ' + personName(person)) + '</h3>' +
+      '<div class="row">' + spec.fields.map((f) => {
+        const id = 'rf-' + f.k;
+        const label = '<label for="' + id + '">' + esc(t(FIELD_LABELS[f.k] || f.k)) + '</label>';
+        if (f.t === 'textarea') return '<div style="flex:1 1 100%">' + label +
+          '<textarea id="' + id + '" style="min-height:110px">' + esc(val(f)) + '</textarea></div>';
+        if (f.t === 'select') return '<div>' + label + '<select id="' + id + '">' +
+          f.opts.map((o) => '<option value="' + esc(o) + '"' + (val(f) === o ? ' selected' : '') + '>' +
+            esc(o === '' ? '—' : t(OPT_LABELS[o] || o)) + '</option>').join('') + '</select></div>';
+        return '<div>' + label + '<input id="' + id + '" type="' + (f.t === 'number' ? 'number' : f.t) +
+          '" value="' + esc(val(f)) + '" /></div>';
+      }).join('') + '</div>' +
+      '<div style="margin-top:12px"><button class="btn primary" id="rf-save">' + esc(t('Save')) + '</button> ' +
+      '<button class="btn" id="rf-cancel">' + esc(t('Cancel')) + '</button></div>' +
+    '</div>';
+  $('rf-cancel').onclick = () => { $('rec-form').innerHTML = ''; };
+  $('rf-save').onclick = () => withLock($('rf-save'), () => saveRecord(person, item, spec));
+}
+
+// NOT NULL in the database AND carrying a default. An explicit null for one of
+// these does not fall back to the default — it violates the constraint, and the
+// API answers "a required detail is missing" for a field the form never asked
+// about. Blank means "leave it to the database", never "set it to nothing".
+// (fh_stories.sort_order and fh_timeline_events.date_precision are the two that
+// actually bit: an empty number input sent null and the insert was refused.)
+const NOT_NULL_WITH_DEFAULT = new Set(['status', 'sort_order', 'date_precision', 'visibility',
+                                       'verification_status']);
+async function saveRecord(person, item, spec) {
+  const body = {};
+  for (const f of spec.fields) {
+    const el = $('rf-' + f.k); if (!el) continue;
+    const raw = el.value;
+    if (raw === '') {
+      // Creating: omit, so the column default applies. Editing: an emptied field
+      // means "clear it" — but only where the column may actually be null.
+      if (item && !NOT_NULL_WITH_DEFAULT.has(f.k)) body[f.k] = null;
+      continue;
+    }
+    if (f.t === 'number') {
+      const n = Number(raw);
+      if (!Number.isFinite(n)) continue;
+      body[f.k] = n;
+    } else {
+      body[f.k] = raw;
+    }
+  }
+  if (spec.fields.some((f) => f.req) && !body[spec.fields.find((f) => f.req).k]) {
+    banner('err', t('A title or name is required.')); return;
+  }
+  // Moving a record to public increases exposure — the same confirm discipline
+  // as publishing a person, and for the same reason.
+  const goingPublic = body.visibility === 'public' && (!item || item.visibility !== 'public');
+  const write = async () => {
+    try {
+      if (item) await api('PATCH', '/' + RECORD_KIND + '/' + item.id, body);
+      else await api('POST', '/' + RECORD_KIND, Object.assign({ person_id: person.id }, body));
+      $('rec-form').innerHTML = '';
+      await loadRecords(person);
+      banner('ok', t('Saved'));
+    } catch (e) { banner('err', e.message); }
+  };
+  if (!goingPublic) return write();
+  await confirmAction({
+    title: t('Put this on the public site') + ' — ' + personName(person),
+    consequence: t('Marked public, this record is served to ANYONE ON THE INTERNET once the person is published and the public site is switched on.'),
+    confirmLabel: t('Save'), acknowledge: true, onConfirm: write,
+  });
+}
+
+async function archiveRecord(person, item) {
+  if (!item) return;
+  if (item.archived) {
+    return withLock(null, async () => {
+      try { await api('POST', '/' + RECORD_KIND + '/' + item.id + '/unarchive'); await loadRecords(person); }
+      catch (e) { banner('err', e.message); }
+    });
+  }
+  await confirmAction({
+    title: t('Archive') + ' — ' + (RECORD_KINDS[RECORD_KIND].title(item) || t('Untitled')),
+    consequence: t('It stops being shown anywhere, including the public site. It is not deleted and you can restore it.'),
+    confirmLabel: t('Archive'), danger: true,
+    onConfirm: async () => { await api('POST', '/' + RECORD_KIND + '/' + item.id + '/archive'); await loadRecords(person); },
+  });
+}
+
+/** Who wrote it and who changed it since — read from the audit trail, which is
+    the same record the database writes on every change, not a guess from
+    timestamps. */
+async function showHistory(id) {
+  const host = document.querySelector('[data-hist="' + id + '"]');
+  if (!host) return;
+  if (host.innerHTML) { host.innerHTML = ''; return; }        // toggle
+  host.innerHTML = '<p class="small muted">' + esc(t('Loading…')) + '</p>';
+  try {
+    const r = await api('GET', '/owner/audit?record_id=' + encodeURIComponent(id));
+    const entries = (r.entries || []).slice().reverse();      // oldest first: written, then edited
+    host.innerHTML = entries.length
+      ? '<div class="small muted" style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px">' +
+          entries.map((e) => {
+            const who = e.by || t('(no longer a member)');
+            const when = new Date(e.at).toLocaleString();
+            if (e.operation === 'insert') return esc(t('Written by') + ' ' + who + ' · ' + when);
+            if (e.operation === 'update') return esc(t('Edited by') + ' ' + who + ' · ' + when) +
+              (e.changed_fields && e.changed_fields.length
+                ? ' <span class="muted">(' + esc(e.changed_fields.map((f) => t(FIELD_LABELS[f] || f)).join(', ')) + ')</span>'
+                : '');
+            return esc(e.operation + ' · ' + who + ' · ' + when);
+          }).join('<br />') +
+        '</div>'
+      : '<p class="small muted">' + esc(t('No history recorded.')) + '</p>';
+  } catch (e) { host.innerHTML = '<p class="small danger-text">' + esc(e.message) + '</p>'; }
+}
+/* ── the public site ───────────────────────────────────────────────────────
+   🔴 THIS COLUMN EXISTS BECAUSE THE OWNER COULD NOT SEE IT. Until 2026-09-18 the
+   owner API did not return public_visibility at all: the enforcement was correct
+   and the screen was blind, so Peter had no way to know who was published — the
+   third time that shape has appeared here. Everything below reads the SAME field
+   the public views read; there is no second source. */
+const PUBLIC_STATE = {
+  full:    { label: 'Public — full page', hint: 'Name, dates, places and biography are served to anyone.' },
+  limited: { label: 'Public — name only', hint: 'Name and position in the family. Dates and biography are withheld.' },
+  hidden:  { label: 'Not public',         hint: 'Served to nobody. Every person starts here.' },
+};
+function publicStateLabel(p) {
+  const v = PUBLIC_STATE[p.public_visibility] ? p.public_visibility : 'hidden';
+  // A child is never published whatever this says — the database excludes them,
+  // and their stories, timeline and photographs with them. Saying "Public" for a
+  // child would be a label that lies, which is the thing this column is for.
+  if (p.is_minor) {
+    return v === 'hidden'
+      ? '<span class="muted">' + t('Not public') + '</span>'
+      : '<span class="warn">' + t('Never public — child') + '</span>';
+  }
+  return v === 'hidden'
+    ? '<span class="muted">' + t('Not public') + '</span>'
+    : '<span class="ok-text">' + t(PUBLIC_STATE[v].label) + '</span>';
+}
+
+/** Choosing what the public site shows. The consequence is stated for the
+    option actually selected, and it changes as the selection changes — a fixed
+    warning would be read once and stop being read. */
+async function publishControl(id) {
+  const p = PEOPLE.find((x) => x.id === id); if (!p) return;
+  const current = PUBLIC_STATE[p.public_visibility] ? p.public_visibility : 'hidden';
+  const host = $('modal-host');
+  const opts = ['full', 'limited', 'hidden'].map((v) =>
+    '<label style="display:flex;gap:10px;align-items:flex-start;color:var(--text);margin:8px 0">' +
+      '<input type="radio" name="pv" value="' + v + '"' + (v === current ? ' checked' : '') + ' style="margin-top:4px" />' +
+      '<span><b>' + esc(t(PUBLIC_STATE[v].label)) + '</b><br>' +
+      '<span class="small muted">' + esc(t(PUBLIC_STATE[v].hint)) + '</span></span></label>').join('');
+
+  host.innerHTML =
+    '<div class="modal-back"><div class="modal" role="dialog" aria-modal="true">' +
+      '<h3>' + esc(t('Public site')) + ' — ' + esc(personName(p)) + '</h3>' +
+      (p.is_minor
+        ? '<div class="consequence" style="border-left-color:var(--danger)">' +
+          esc(t('This person is recorded as a child. A child is never shown on the public site, whatever is chosen here — and neither are their stories, their timeline or their photographs.')) + '</div>'
+        : '') +
+      '<div class="small muted" style="margin-bottom:6px">' + esc(t('Currently')) + ': <b>' +
+        esc(t(PUBLIC_STATE[current].label)) + '</b></div>' +
+      opts +
+      '<div class="consequence" id="pv-consequence"></div>' +
+      '<label id="pv-ack-row" style="display:none;gap:8px;align-items:center;color:var(--text)">' +
+        '<input type="checkbox" id="pv-ack" /> <span>' + esc(t('I understand')) + '</span></label>' +
+      '<div class="actions">' +
+        '<button class="btn" id="pv-cancel">' + esc(t('Cancel')) + '</button>' +
+        '<button class="btn primary" id="pv-ok" disabled>' + esc(t('Save')) + '</button>' +
+      '</div>' +
+    '</div></div>';
+
+  const chosen = () => (host.querySelector('input[name=pv]:checked') || {}).value || current;
+  const refresh = () => {
+    const v = chosen();
+    const goingPublic = v !== 'hidden' && current === 'hidden';
+    const widening = v === 'full' && current === 'limited';
+    const unpublishing = v === 'hidden' && current !== 'hidden';
+    let text;
+    if (v === current) text = t('This is the current setting. Nothing will change.');
+    else if (unpublishing) text = t('This stops the public site serving this person from now on. It cannot undo what was already seen, copied or indexed while they were public.');
+    else if (goingPublic || widening) text = t('This makes the information visible to ANYONE ON THE INTERNET, with no login, as soon as the public site is switched on.');
+    else text = t('This changes what the public site shows for this person.');
+    $('pv-consequence').textContent = text;
+    // An acknowledgement only where exposure increases. Asking for one on every
+    // change would train Peter to tick it without reading.
+    const needAck = goingPublic || widening;
+    $('pv-ack-row').style.display = needAck ? 'flex' : 'none';
+    if (!needAck) $('pv-ack').checked = false;
+    $('pv-ok').disabled = v === current || (needAck && !$('pv-ack').checked);
+  };
+  host.querySelectorAll('input[name=pv]').forEach((r) => { r.onchange = refresh; });
+  $('pv-ack').onchange = refresh;
+  $('pv-cancel').onclick = () => { host.innerHTML = ''; };
+  $('pv-ok').onclick = () => withLock($('pv-ok'), async () => {
+    try {
+      await api('POST', '/owner/persons/' + p.id + '/publish', { visibility: chosen() });
+      host.innerHTML = '';
+      await loadPeople();
+      banner('ok', t('Saved'));
+    } catch (e) { banner('err', e.message); }
+  });
+  refresh();
+}
+
+/** The child-login override. The child's NAME is in the title, the reason is
+    required in the same step, and turning it OFF says plainly that access ends
+    immediately — because it does (the database checks it on every read and write). */
+async function minorOverride(id) {
+  const p = PEOPLE.find((x) => x.id === id); if (!p) return;
+  const turningOn = !p.minor_login_override;
+  await confirmAction({
+    title: (turningOn ? t('Allow a login for this child') : t('Stop this child’s access')) + ' — ' + personName(p),
+    consequence: turningOn
+      ? t('A child cannot have an account unless you allow it for that child, one at a time. The reason is recorded with your name and the date.')
+      : t('Turning this off ends that child’s access immediately — any account linked to them stops working at once.'),
+    confirmLabel: turningOn ? t('Confirm') : t('Stop this child’s access'),
+    danger: !turningOn, acknowledge: !turningOn, requireReason: true,
+    extraHtml: '<label>' + t('Reason (recorded)') + '</label><textarea id="mo-reason"></textarea>',
+    onConfirm: async () => {
+      const reason = ($('mo-reason') && $('mo-reason').value.trim()) || '';
+      await api('POST', '/owner/persons/' + p.id + '/minor-login-override', { enabled: turningOn, reason: reason || null });
+      await Promise.all([loadPeople(), loadMembers()]);
+    },
+  });
+}
+
+/* ────────────────────────── wiring ──────────────────────────────── */
+$('lang-toggle').onclick = () => {
+  LANG = LANG === 'fr' ? 'en' : 'fr';
+  try { localStorage.setItem('fh_lang', LANG); } catch (_) {}
+  applyLang();
+};
+$('signout').onclick = () => signOut();
+$('signin-form').onsubmit = (e) => {
+  e.preventDefault();
+  withLock($('si-btn'), async () => {
+    try { await signIn($('si-email').value.trim(), $('si-pass').value); $('si-pass').value = ''; await afterSignIn(); }
+    catch (err) { banner('err', err.message); }
+  });
+};
+$('na-btn').onclick = () => withLock($('na-btn'), async () => {
+  const caps = {};
+  document.querySelectorAll('#na-caps input[data-cap]').forEach((c) => { caps[c.dataset.cap] = c.checked; });
+  const body = Object.assign({ person_id: $('na-person').value, email: $('na-email').value.trim(),
+                               display_name: $('na-name').value.trim() }, caps);
+  const person = PEOPLE.find((p) => p.id === body.person_id);
+  const isChild = person && person.is_minor;
+  const go = async () => {
+    try {
+      const out = await api('POST', '/owner/members', body);
+      $('na-email').value = ''; $('na-name').value = '';
+      await Promise.all([loadMembers(), loadPeople()]);
+      showPasswordOnce(out.member, out.temporary_password);
+    } catch (e) { banner('err', e.message); }
+  };
+  if (isChild) {
+    await confirmAction({ title: t('Create account') + ' — ' + personName(person),
+      consequence: t('A child cannot have an account unless you allow it for that child, one at a time. The reason is recorded with your name and the date.'),
+      confirmLabel: t('Create account'), onConfirm: go });
+  } else { await go(); }
+});
+document.querySelectorAll('.tab').forEach((tb) => {
+  tb.onclick = () => {
+    document.querySelectorAll('.tab').forEach((x) => x.setAttribute('aria-selected', String(x === tb)));
+    ['accounts', 'proposals', 'people'].forEach((n) => {
+      $('tab-' + n).classList.toggle('hide', n !== tb.dataset.tab);
+    });
+  };
+});
+$('pp-search').oninput = renderPeople;
+
+(async function start() {
+  try { LANG = localStorage.getItem('fh_lang') === 'fr' ? 'fr' : 'en'; } catch (_) {}
+  applyLang();
+  try {
+    CONFIG = await (await fetch(API_BASE + '/fh/config')).json();
+    if (!CONFIG || !CONFIG.supabase_url || !CONFIG.anon_key) throw new Error('config');
+  } catch (_) {
+    banner('err', LANG === 'fr' ? "Configuration indisponible." : 'Configuration unavailable.');
+    return;
+  }
+  try {
+    const saved = sessionStorage.getItem(SESSION_KEY);
+    if (saved) { SESSION = JSON.parse(saved); await afterSignIn(); }
+  } catch (_) { signOut(); }
+})();
+</script>
+</body>
+</html>
