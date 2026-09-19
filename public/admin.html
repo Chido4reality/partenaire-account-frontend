@@ -503,6 +503,31 @@
     .mm-inline-form input[type="text"] { min-width: 160px; }
     .mm-inline-form input[type="number"] { width: 120px; }
     .mm-check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); }
+
+    /* ── Family Heritage sections ────────────────────────────────────────
+       The identity strip is not decoration: this page holds TWO signed-in
+       identities and the family one is the quieter of the two, so it says
+       plainly which family account is acting. */
+    .fh-identity {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      padding: 8px 12px; margin-bottom: 14px; font-size: 13px;
+      background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 8px;
+    }
+    .fh-identity .fh-who { font-weight: 700; }
+    .fh-identity .fh-spacer { flex: 1; }
+    .fh-caps { display: flex; flex-wrap: wrap; gap: 10px; }
+    .fh-caps label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); }
+    .fh-signin { max-width: 420px; }
+    .fh-signin .field { margin-bottom: 10px; }
+    .fh-once {
+      border: 1px solid var(--border-subtle); border-radius: 8px;
+      padding: 12px; background: var(--bg-tertiary); margin: 10px 0;
+    }
+    .fh-once .fh-pw {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 20px; font-weight: 700; letter-spacing: .06em;
+      word-break: break-all; margin: 8px 0;
+    }
     .mm-code {
       display: inline-flex; align-items: center; gap: 8px;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -1043,7 +1068,17 @@
              landed on the POS app. Family ACCOUNTS and GOVERNANCE become proper
              sections in this sidebar instead (Peter, 2026-09-18: control it from
              the portal, don't open a link); AUTHORING moves to the family site
-             at okaforheritage.com, a different origin with no service worker. -->
+             at okaforheritage.com, a different origin with no service worker.
+
+             Built 2026-09-19. These are #hash routes INSIDE admin.html, which is
+             already on the POS service worker's navigateFallbackDenylist and has
+             its own sw-admin.js — so the unreachability that killed the old page
+             cannot recur here. That is the whole reason they are sections and
+             not a page. -->
+        <div class="sb-section" id="sb-section-family">Family</div>
+        <a class="sb-link" data-route="family-accounts" id="sb-link-family-accounts"><span class="sb-link-icon">👪</span><span class="sb-link-label">Family accounts</span></a>
+        <a class="sb-link" data-route="family-approvals" id="sb-link-family-approvals"><span class="sb-link-icon">🗳️</span><span class="sb-link-label">Family approvals</span></a>
+        <a class="sb-link" data-route="family-people" id="sb-link-family-people"><span class="sb-link-icon">🌳</span><span class="sb-link-label">Family people</span></a>
       </nav>
 
       <div class="sb-footer">
@@ -2228,6 +2263,132 @@
           </div>
         </div>
       </section>
+
+      <!-- ══ FAMILY HERITAGE — accounts, approvals, roster ════════════════════
+           🔴 TWO IDENTITIES ON ONE PAGE, ON PURPOSE. The admin JWT in
+           localStorage opens /api/admin/*. It is NOT accepted by /api/fh/* and
+           must never be sent there: the backend refuses a pa_users token as a
+           family session (harness probe 8, with a positive control proving the
+           same token still works where it belongs). So Peter signs in to the
+           FAMILY account inside this page with his Supabase password, and that
+           token lives in sessionStorage, separately, and is thrown away when he
+           signs out of the portal.
+
+           The alternative — a server-side bridge letting any master admin act
+           as the owner — would undo the protected-identities work that stops an
+           admin touching Peter's accounts at all. It is not built and must not
+           be. Not signed in to the family account is a SIGN-IN PANEL, never an
+           error: the section works, it just needs the other key. -->
+      <section class="route" id="route-family-accounts">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Family accounts</div>
+            <div class="page-sub">
+              Who can sign in to the family archive, and what they may do. Creating an
+              account here is the only way a relative ever gets in — there is no sign-up.
+            </div>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center">
+            <button class="btn" id="fa-refresh">Refresh</button>
+          </div>
+        </div>
+        <div id="fa-no-permission" class="placeholder" hidden>
+          <div class="placeholder-icon">🔒</div>
+          <div class="placeholder-title">Master admin only</div>
+          <div class="placeholder-text">You don't have permission to view this section.</div>
+        </div>
+        <div class="fh-gate" id="fa-gate" hidden></div>
+        <div id="fa-body" hidden>
+          <div class="fh-identity" id="fa-identity"></div>
+          <div class="card" style="margin-bottom:16px">
+            <div style="font-weight:700; margin-bottom:10px">Create an account</div>
+            <div class="al-filter-grid">
+              <div class="field"><label>Person</label><select id="fa-person"></select></div>
+              <div class="field"><label>Name shown to the family</label><input type="text" id="fa-name" /></div>
+              <div class="field"><label>Email</label><input type="email" id="fa-email" /></div>
+              <div class="field"><label>They may</label><div id="fa-caps" class="fh-caps"></div></div>
+              <div class="field al-filter-actions">
+                <button class="btn btn-primary" id="fa-create">Create account</button>
+              </div>
+            </div>
+            <div class="muted" style="font-size:12px; margin-top:8px">
+              The temporary password is shown once, on this screen, and never again.
+            </div>
+          </div>
+          <div class="card" style="padding:0; overflow:hidden">
+            <table class="data-table" id="fa-table">
+              <thead><tr>
+                <th>Name</th><th>Email</th><th>Person</th><th>May</th><th>State</th><th class="ta-right">Actions</th>
+              </tr></thead>
+              <tbody id="fa-tbody"><tr><td colspan="6" class="muted ta-center" style="padding:20px">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="route" id="route-family-approvals">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Family approvals</div>
+            <div class="page-sub">
+              Changes a relative has proposed. Approving writes the change to the record;
+              rejecting writes nothing and keeps the proposal as a record of the asking.
+            </div>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center">
+            <div class="field" style="margin:0"><select id="fp-status">
+              <option value="pending">Waiting</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+              <option value="withdrawn">Withdrawn</option>
+            </select></div>
+            <button class="btn" id="fp-refresh">Refresh</button>
+          </div>
+        </div>
+        <div id="fp-no-permission" class="placeholder" hidden>
+          <div class="placeholder-icon">🔒</div>
+          <div class="placeholder-title">Master admin only</div>
+          <div class="placeholder-text">You don't have permission to view this section.</div>
+        </div>
+        <div class="fh-gate" id="fp-gate" hidden></div>
+        <div id="fp-body" hidden>
+          <div class="fh-identity" id="fp-identity"></div>
+          <div id="fp-host"><div class="activity-empty">Loading…</div></div>
+        </div>
+      </section>
+
+      <section class="route" id="route-family-people">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Family people</div>
+            <div class="page-sub">
+              The roster, read-only. Names and life details are written on the family
+              site, not here. What IS decided here is whether a child may hold a login.
+            </div>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center">
+            <div class="field" style="margin:0"><input type="text" id="fr-search" placeholder="Search by name" /></div>
+            <button class="btn" id="fr-refresh">Refresh</button>
+          </div>
+        </div>
+        <div id="fr-no-permission" class="placeholder" hidden>
+          <div class="placeholder-icon">🔒</div>
+          <div class="placeholder-title">Master admin only</div>
+          <div class="placeholder-text">You don't have permission to view this section.</div>
+        </div>
+        <div class="fh-gate" id="fr-gate" hidden></div>
+        <div id="fr-body" hidden>
+          <div class="fh-identity" id="fr-identity"></div>
+          <div class="card" style="padding:0; overflow:hidden">
+            <table class="data-table" id="fr-table">
+              <thead><tr>
+                <th>Name</th><th>Born</th><th>Child</th><th>Child login</th><th>On the public site</th><th class="ta-right">Actions</th>
+              </tr></thead>
+              <tbody id="fr-tbody"><tr><td colspan="6" class="muted ta-center" style="padding:20px">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -2609,7 +2770,8 @@
       'marketplace-users', 'verifications', 'dozie-subscriptions', 'orders', 'disputes', 'marketplace-finance',
       'sell-restrictions', 'subscription-discounts', 'promo-codes', 'loyalty-grants',
       'broadcasts', 'admin-team', 'audit-log', 'admin-activity', 'cart-reconcile', 'settings',
-      'my-marketing', 'marketers', 'expenses'
+      'my-marketing', 'marketers', 'expenses',
+      'family-accounts', 'family-approvals', 'family-people'
     ]);
 
     function parseHashRoute() {
@@ -2752,6 +2914,9 @@
       if (route === 'my-marketing')        { applyMarketingLang(); loadMyMarketing(); }
       if (route === 'marketers')           loadMarketers();
       if (route === 'expenses')            loadExpenses();
+      if (route === 'family-accounts')     loadFamilyAccounts();
+      if (route === 'family-approvals')    loadFamilyApprovals();
+      if (route === 'family-people')       loadFamilyPeople();
       // Render placeholders lazily on first visit (cheap; idempotent).
       if (ROUTE_PLACEHOLDERS[route]) renderPlaceholder(route);
       // Stop auto-refresh when navigating away from sections that use it.
@@ -4094,6 +4259,13 @@
       // by typing #expenses or calling the endpoint directly.
       const exLink = $('sb-link-expenses');
       if (exLink) exLink.style.display = isMaster ? '' : 'none';
+      // FAMILY HERITAGE: master-admin-only, and the same style.display rule for
+      // the same reason. Cosmetic twice over — the sections themselves check
+      // isMasterAdmin() again, and beyond that every /api/fh/owner/* route is
+      // open only to the env-pinned family owner, which no admin role can
+      // become. Hiding the header too, or "Family" sits above nothing.
+      ['sb-section-family', 'sb-link-family-accounts', 'sb-link-family-approvals', 'sb-link-family-people']
+        .forEach(function (id) { const el = $(id); if (el) el.style.display = isMaster ? '' : 'none'; });
       // MP-SUBSCRIPTION-DISCOUNT: Plan discounts is full-CRUD admins only
       // (write endpoints are requireAdminRole('master_admin','admin')) — hide
       // for staff admins.
@@ -4204,6 +4376,12 @@
 
     function signOut() {
       localStorage.removeItem(TOKEN_KEY);
+      // 🔴 THE FAMILY SESSION GOES WITH IT. Two identities live on this page and
+      // only one of them is the portal's. Leaving the family token behind would
+      // mean the next person to sign in to the portal on this machine — Nora,
+      // Paul, anyone — finds Peter's family archive already open. Session
+      // storage dies with the tab, which is not the same as dying with him.
+      fhClearSession();
       location.hash = '';
       location.reload();
     }
@@ -8389,6 +8567,544 @@
       }
     }
 
+    // ══════════════════ FAMILY HERITAGE ══════════════════
+    //
+    // Three sections, one family session, and a hard separation from the admin
+    // one. Read the long comment on #route-family-accounts for why.
+    //
+    // WHAT IS HERE: accounts (create, suspend, restore, force a new password,
+    // unlink), approvals (approve / reject a relative's proposal), and the
+    // roster read-only plus the one governance decision that belongs beside
+    // suspend and unlink — whether a named child may hold a login.
+    //
+    // WHAT IS DELIBERATELY NOT HERE:
+    //   · authoring of any kind — names, dates, stories live on the family site
+    //   · the publish control — the family site's, still to be built
+    //   · fh_site_settings — NEVER writable through the spine. No route, no
+    //     button, at any stage. The master switch is a SQL statement Peter runs
+    //     himself, and this portal does not display it either.
+    //   · successors — out of scope for now.
+    const FH_SESSION_KEY = 'fh_portal_session';
+    let FH_SESSION = null;
+    let FH_MEMBERS = [], FH_PEOPLE = [], FH_PROPOSALS = [];
+
+    function fhReadSession() {
+      if (FH_SESSION) return FH_SESSION;
+      try {
+        const raw = sessionStorage.getItem(FH_SESSION_KEY);
+        FH_SESSION = raw ? JSON.parse(raw) : null;
+      } catch (_) { FH_SESSION = null; }        // private mode, or corrupt
+      return FH_SESSION;
+    }
+    function fhSaveSession(s) {
+      FH_SESSION = s;
+      try { sessionStorage.setItem(FH_SESSION_KEY, JSON.stringify(s)); } catch (_) { /* private mode */ }
+    }
+    function fhClearSession() {
+      FH_SESSION = null;
+      FH_MEMBERS = []; FH_PEOPLE = []; FH_PROPOSALS = [];
+      try { sessionStorage.removeItem(FH_SESSION_KEY); } catch (_) {}
+    }
+
+    /** The family half of the API. 🔴 It reads FH_SESSION and NEVER TOKEN_KEY:
+        the admin JWT is not a family session and sending it would be both
+        useless (the backend refuses it) and a bad habit to establish. */
+    async function apiFamily(method, path, body) {
+      const s = fhReadSession();
+      if (!s || !s.access_token) { const e = new Error('Not signed in to the family account'); e.fhNoSession = true; throw e; }
+      const res = await fetch(API_BASE + '/fh' + path, {
+        method: method,
+        headers: Object.assign({ Authorization: 'Bearer ' + s.access_token },
+          body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      let data = null;
+      try { data = await res.json(); } catch (_) { /* no body */ }
+      if (res.status === 401) {
+        // The family token expired. That is not an error state for the portal —
+        // it is the sign-in panel again, with a line saying why.
+        fhClearSession();
+        fhRenderAll('Your family sign-in has expired. Please sign in again.');
+        const e = new Error('Family session expired'); e.fhNoSession = true; throw e;
+      }
+      if (!res.ok) {
+        const e = new Error((data && data.message) || ('HTTP ' + res.status));
+        e.status = res.status; e.body = data; throw e;
+      }
+      return data;
+    }
+
+    async function fhSignIn(email, password) {
+      // The project URL and anon key are served by the backend, never hardcoded
+      // here: they differ per environment, and a committed key is how the Ejima
+      // key ended up in source.
+      const cfgRes = await fetch(API_BASE + '/fh/config', { headers: { Accept: 'application/json' } });
+      const cfg = await cfgRes.json().catch(() => null);
+      if (!cfgRes.ok || !cfg || !cfg.supabase_url || !cfg.anon_key) {
+        throw new Error('The family archive is not configured on this server.');
+      }
+      const r = await fetch(cfg.supabase_url + '/auth/v1/token?grant_type=password', {
+        method: 'POST',
+        headers: { apikey: cfg.anon_key, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, password: password }),
+      });
+      const data = await r.json().catch(() => null);
+      if (!r.ok || !data || !data.access_token) {
+        throw new Error((data && (data.error_description || data.msg)) || 'Sign-in failed');
+      }
+      fhSaveSession({ access_token: data.access_token, email: email });
+      // 🔴 THE OWNER, NOT MERELY A FAMILY ACCOUNT. Every route these sections
+      // call is /owner/*, which the backend allows only for the env-pinned
+      // owner id. A relative's login would sign in here and then meet 403 on
+      // every single request — so it is refused now, with a sentence, rather
+      // than becoming a screen full of failures.
+      let me;
+      try { me = await apiFamily('GET', '/whoami'); }
+      catch (e) { fhClearSession(); throw e; }
+      if (!me || !me.is_owner) {
+        fhClearSession();
+        throw new Error('That family account is not the archive owner, so it cannot manage accounts here.');
+      }
+      fhSaveSession({ access_token: data.access_token, email: email, display_name: me.display_name || email });
+    }
+
+    const FH_SECTIONS = [
+      { gate: 'fa-gate', body: 'fa-body', deny: 'fa-no-permission', ident: 'fa-identity', load: function () { return fhLoadAccounts(); } },
+      { gate: 'fp-gate', body: 'fp-body', deny: 'fp-no-permission', ident: 'fp-identity', load: function () { return fhLoadProposals(); } },
+      { gate: 'fr-gate', body: 'fr-body', deny: 'fr-no-permission', ident: 'fr-identity', load: function () { return fhLoadPeople(); } },
+    ];
+
+    /** One renderer for all three sections, so they cannot drift into
+        disagreeing about whether someone is signed in. */
+    function fhRenderGate(sec, note) {
+      const gate = $(sec.gate), body = $(sec.body), deny = $(sec.deny);
+      if (!gate || !body || !deny) return false;
+      // Place 2 of the role gate. Place 1 is the sidebar link in showApp(); the
+      // real boundary is neither — it is requireAdminRole on the server for
+      // /api/admin/*, and the env-pinned owner id for /api/fh/owner/*.
+      if (!isMasterAdmin()) {
+        deny.hidden = false; gate.hidden = true; body.hidden = true;
+        return false;
+      }
+      deny.hidden = true;
+      if (!fhReadSession()) {
+        body.hidden = true; gate.hidden = false;
+        gate.innerHTML =
+          '<div class="card fh-signin">' +
+            '<div style="font-weight:700; margin-bottom:6px">Sign in to the family archive</div>' +
+            '<div class="muted" style="font-size:13px; margin-bottom:12px">' +
+              'This is a different account from your portal login. Use the family owner ' +
+              'email and password.' +
+            '</div>' +
+            (note ? '<div class="muted" style="font-size:13px; color:var(--danger); margin-bottom:10px">' + escapeHtml(note) + '</div>' : '') +
+            '<div class="field"><label>Email</label><input type="email" autocomplete="username" data-fh-email /></div>' +
+            '<div class="field"><label>Password</label><input type="password" autocomplete="current-password" data-fh-pass /></div>' +
+            '<button class="btn btn-primary" data-fh-signin>Sign in</button>' +
+            '<div class="muted" style="font-size:12px; margin-top:10px">' +
+              'Signing out of the portal signs you out of this too.' +
+            '</div>' +
+          '</div>';
+        return false;
+      }
+      gate.hidden = true; body.hidden = false;
+      const s = fhReadSession();
+      const ident = $(sec.ident);
+      if (ident) {
+        ident.innerHTML =
+          '<span>Family archive:</span>' +
+          '<span class="fh-who">' + escapeHtml(s.display_name || s.email || '') + '</span>' +
+          '<span class="pill pill-success">owner</span>' +
+          '<span class="fh-spacer"></span>' +
+          '<button class="btn btn-sm" data-fh-signout>Sign out of the family archive</button>';
+      }
+      return true;
+    }
+
+    function fhRenderAll(note) {
+      FH_SECTIONS.forEach(function (sec) { fhRenderGate(sec, note); });
+    }
+
+    async function fhSection(sec) {
+      if (!fhRenderGate(sec)) return;
+      try { await sec.load(); }
+      catch (e) { if (!e.fhNoSession) showToast(e.message || 'Could not load', 'danger'); }
+    }
+    function loadFamilyAccounts()  { return fhSection(FH_SECTIONS[0]); }
+    function loadFamilyApprovals() { return fhSection(FH_SECTIONS[1]); }
+    function loadFamilyPeople()    { return fhSection(FH_SECTIONS[2]); }
+
+    // ── people, read first: the accounts table needs them ──────────────────
+    function fhPersonName(p) {
+      const n = [p.given_names, p.surname].filter(Boolean).join(' ').trim();
+      return n || p.placeholder_label || '—';
+    }
+    async function fhLoadPeople() {
+      // The OWNER list, not /persons: the member-facing one carries no override
+      // columns, and a screen that cannot see the true state of a child's
+      // override cannot honestly offer to change it.
+      FH_PEOPLE = (await apiFamily('GET', '/owner/persons?limit=500')).persons || [];
+      fhRenderPeople();
+      fhRenderAccounts();     // its state column reads these rows
+      return FH_PEOPLE;
+    }
+    function fhRenderPeople() {
+      const tb = $('fr-tbody'); if (!tb) return;
+      const q = (($('fr-search') && $('fr-search').value) || '').trim().toLowerCase();
+      const rows = FH_PEOPLE.filter(function (p) { return !q || fhPersonName(p).toLowerCase().indexOf(q) !== -1; });
+      tb.innerHTML = rows.map(function (p) {
+        const born = p.birth_date ? String(p.birth_date).slice(0, 4) : '—';
+        const child = p.is_minor ? '<span class="pill pill-critical">Child</span>' : '<span class="muted">—</span>';
+        // Read from the column the database enforces on, not from a guess.
+        const allowed = p.is_minor
+          ? (p.minor_login_override
+              ? '<span class="pill pill-info">Allowed</span>'
+              : '<span class="pill pill-muted">Not allowed</span>')
+          : '<span class="muted">—</span>';
+        const pub = p.public_visibility === 'full' ? '<span class="pill pill-success">Public</span>'
+                  : p.public_visibility === 'limited' ? '<span class="pill pill-info">In outline</span>'
+                  : '<span class="pill pill-muted">Not public</span>';
+        // A minor is never public whatever this says, so say that too rather
+        // than letting the badge imply the child is exposed.
+        const pubCell = p.is_minor ? pub + ' <span class="muted" style="font-size:11px">(a child is never public)</span>' : pub;
+        const act = p.is_minor
+          ? '<button class="btn btn-sm" data-fh-override="' + escapeHtml(p.id) + '">' +
+              (p.minor_login_override ? 'Stop child access' : 'Allow a login') + '</button>'
+          : '<span class="muted">—</span>';
+        return '<tr><td>' + escapeHtml(fhPersonName(p)) + '</td>' +
+               '<td class="muted">' + escapeHtml(born) + '</td>' +
+               '<td>' + child + '</td><td>' + allowed + '</td><td>' + pubCell + '</td>' +
+               '<td class="ta-right" style="white-space:nowrap">' + act + '</td></tr>';
+      }).join('') || '<tr><td colspan="6" class="muted ta-center" style="padding:20px">Nobody yet.</td></tr>';
+    }
+
+    // ── accounts ───────────────────────────────────────────────────────────
+    const FH_CAPS = ['can_view', 'can_edit', 'can_submit', 'can_archive'];
+    const FH_CAP_LABEL = { can_view: 'View', can_edit: 'Edit their own page', can_submit: 'Propose changes', can_archive: 'Archive' };
+    async function fhLoadAccounts() {
+      const jobs = [apiFamily('GET', '/owner/members')];
+      if (!FH_PEOPLE.length) jobs.push(apiFamily('GET', '/owner/persons?limit=500'));
+      const out = await Promise.all(jobs);
+      FH_MEMBERS = out[0].members || [];
+      if (out[1]) FH_PEOPLE = out[1].persons || [];
+      fhRenderAccounts();
+    }
+    function fhRenderAccounts() {
+      const tb = $('fa-tbody'); if (!tb) return;
+      tb.innerHTML = FH_MEMBERS.map(function (m) {
+        const person = FH_PEOPLE.find(function (p) { return p.id === m.person_id; });
+        // 🔴 A CHILD WITHOUT THE OVERRIDE CANNOT USE THEIR ACCOUNT even though
+        // the member row looks perfect. Measured on staging: that login sees
+        // ZERO people and every write is refused. Calling it "Active" tells
+        // Peter an account works when it does not.
+        const childBlocked = person && person.is_minor && !person.minor_login_override;
+        const state = m.unlinked ? '<span class="pill pill-muted">Unlinked</span>'
+          : m.suspended ? '<span class="pill pill-critical">Suspended</span>'
+          : childBlocked ? '<span class="pill pill-critical">No access — child not allowed</span>'
+          : '<span class="pill pill-success">Active</span>';
+        const must = m.must_change_password ? ' <span class="pill pill-info">Must change password</span>' : '';
+        const caps = FH_CAPS.filter(function (k) { return m[k]; })
+          .map(function (k) { return FH_CAP_LABEL[k]; }).join(', ') || '—';
+        const actions = m.unlinked ? '<span class="muted">—</span>'
+          : '<button class="btn btn-sm" data-fh-member="' + escapeHtml(m.id) + '" data-fh-act="' + (m.suspended ? 'unsuspend' : 'suspend') + '">' +
+              (m.suspended ? 'Restore' : 'Suspend') + '</button> ' +
+            '<button class="btn btn-sm" data-fh-member="' + escapeHtml(m.id) + '" data-fh-act="force-pw">New password</button> ' +
+            '<button class="btn btn-sm btn-danger" data-fh-member="' + escapeHtml(m.id) + '" data-fh-act="unlink">Unlink</button>';
+        return '<tr><td>' + escapeHtml(m.display_name || '') + '</td>' +
+               '<td class="muted">' + escapeHtml(m.email || '') + '</td>' +
+               '<td>' + escapeHtml(person ? fhPersonName(person) : '—') + '</td>' +
+               '<td class="muted" style="font-size:12px">' + escapeHtml(caps) + '</td>' +
+               '<td>' + state + must + '</td>' +
+               '<td class="ta-right" style="white-space:nowrap">' + actions + '</td></tr>';
+      }).join('') || '<tr><td colspan="6" class="muted ta-center" style="padding:20px">No accounts yet.</td></tr>';
+      fhRenderPersonPicker();
+      const capHost = $('fa-caps');
+      if (capHost && !capHost.dataset.built) {
+        capHost.innerHTML = FH_CAPS.map(function (k) {
+          return '<label><input type="checkbox" data-fh-cap="' + k + '"' + (k === 'can_view' ? ' checked' : '') + ' /> ' +
+                 FH_CAP_LABEL[k] + '</label>';
+        }).join('');
+        capHost.dataset.built = '1';
+      }
+    }
+    function fhRenderPersonPicker() {
+      const sel = $('fa-person'); if (!sel) return;
+      const linked = {};
+      FH_MEMBERS.forEach(function (m) { if (!m.unlinked) linked[m.person_id] = true; });
+      const free = FH_PEOPLE.filter(function (p) { return !linked[p.id] && !p.archived; });
+      const keep = sel.value;
+      sel.innerHTML = free.map(function (p) {
+        return '<option value="' + escapeHtml(p.id) + '">' + escapeHtml(fhPersonName(p)) +
+               (p.is_minor ? ' — child' : '') + '</option>';
+      }).join('') || '<option value="">Everyone already has an account</option>';
+      if (keep && free.some(function (p) { return p.id === keep; })) sel.value = keep;
+    }
+
+    /** Shown once, and the screen says so. Closing needs an explicit tick,
+        because there is no second chance to read it. */
+    function fhShowPasswordOnce(member, password) {
+      openModal({
+        title: 'Account created — ' + (member.display_name || ''),
+        lock: true,
+        content:
+          '<div class="fh-once">' +
+            '<div style="font-weight:700">⚠ This password is shown ONCE</div>' +
+            '<div class="fh-pw" id="fh-pw-value">' + escapeHtml(password) + '</div>' +
+            '<div class="muted" style="font-size:12px">If you close this without writing it down it cannot be shown ' +
+              'again — you would have to set a new password for the account.</div>' +
+            '<div style="margin-top:10px"><button class="btn btn-sm" id="fh-pw-copy">Copy</button></div>' +
+          '</div>' +
+          '<label class="mm-check" style="margin-top:10px"><input type="checkbox" id="fh-pw-ack" /> I have written it down</label>',
+        primary: { label: 'Close', onClick: function (close) { close(); } },
+      });
+      const ok = document.querySelector('.modal-footer .btn-primary');
+      if (ok) ok.disabled = true;
+      const ack = $('fh-pw-ack');
+      if (ack) ack.addEventListener('change', function () { if (ok) ok.disabled = !ack.checked; });
+      const copy = $('fh-pw-copy');
+      if (copy) copy.addEventListener('click', async function () {
+        try { await navigator.clipboard.writeText(password); copy.textContent = 'Copied'; }
+        catch (_) { copy.textContent = 'Select it and copy'; }
+      });
+    }
+
+    async function fhCreateAccount() {
+      const personId = ($('fa-person') && $('fa-person').value) || '';
+      const name = ($('fa-name') && $('fa-name').value || '').trim();
+      const email = ($('fa-email') && $('fa-email').value || '').trim();
+      if (!personId) { showToast('Choose the person this account belongs to.', 'danger'); return; }
+      if (!name)     { showToast('Give the name the family will see.', 'danger'); return; }
+      if (!email)    { showToast('An email address is needed to sign in.', 'danger'); return; }
+      const caps = {};
+      document.querySelectorAll('#fa-caps input[data-fh-cap]').forEach(function (c) {
+        caps[c.getAttribute('data-fh-cap')] = c.checked;
+      });
+      const person = FH_PEOPLE.find(function (p) { return p.id === personId; });
+      const body = Object.assign({ person_id: personId, email: email, display_name: name }, caps);
+      const go = async function () {
+        const out = await apiFamily('POST', '/owner/members', body);
+        if ($('fa-email')) $('fa-email').value = '';
+        if ($('fa-name')) $('fa-name').value = '';
+        await Promise.all([fhLoadAccounts(), fhLoadPeople()]);
+        fhShowPasswordOnce(out.member, out.temporary_password);
+      };
+      // A child needs the override FIRST — the database refuses the link
+      // otherwise, and an unset override is not permission. Say so before the
+      // attempt rather than surfacing a raw refusal.
+      if (person && person.is_minor && !person.minor_login_override) {
+        showToast('This is a child. Allow a login for them in Family people first — the archive refuses otherwise.', 'danger');
+        return;
+      }
+      try { await go(); }
+      catch (e) { if (!e.fhNoSession) showToast(e.message || 'Could not create the account', 'danger'); }
+    }
+
+    async function fhMemberAction(id, act) {
+      const m = FH_MEMBERS.find(function (x) { return x.id === id; }); if (!m) return;
+      const run = async function (fn) {
+        try { await fn(); await fhLoadAccounts(); }
+        catch (e) { if (!e.fhNoSession) showToast(e.message || 'That did not work', 'danger'); }
+      };
+      if (act === 'unsuspend') {
+        await run(function () { return apiFamily('POST', '/owner/members/' + id + '/unsuspend'); });
+        return;
+      }
+      const spec = {
+        suspend: {
+          title: 'Suspend — ' + (m.display_name || ''),
+          sub: 'They keep the account but cannot use it until you restore them.',
+          label: 'Suspend', danger: true,
+          run: function () { return apiFamily('POST', '/owner/members/' + id + '/suspend'); },
+        },
+        'force-pw': {
+          title: 'Set a new password — ' + (m.display_name || ''),
+          sub: 'They will be asked to choose a new password next time they sign in, and can do nothing else until they do.',
+          label: 'Confirm', danger: false,
+          run: function () { return apiFamily('PATCH', '/owner/members/' + id, { must_change_password: true }); },
+        },
+        unlink: {
+          title: 'Unlink — ' + (m.display_name || ''),
+          sub: 'This cannot be undone. The account is closed for good; to give this person access again you would create a new one.',
+          label: 'Unlink', danger: true, ack: true,
+        },
+      }[act];
+      if (!spec) return;
+      if (act === 'unlink') spec.run = function () { return apiFamily('POST', '/owner/members/' + id + '/unlink'); };
+      fhConfirm(spec, function () { return run(spec.run); });
+    }
+
+    /** Names the consequence before anything irreversible, and where there is no
+        undo it asks for a tick as well. */
+    function fhConfirm(spec, onOk) {
+      openModal({
+        title: spec.title,
+        sub: spec.sub,
+        content: (spec.extraHtml || '') +
+          (spec.ack ? '<label class="mm-check" style="margin-top:10px"><input type="checkbox" id="fh-ack" /> I understand</label>' : ''),
+        secondary: { label: 'Cancel' },
+        primary: {
+          label: spec.label, danger: spec.danger,
+          onClick: async function (close) { await onOk(); close(); },
+        },
+      });
+      const ok = document.querySelector('.modal-footer .btn-primary');
+      const ack = $('fh-ack');
+      const reason = spec.reasonId ? $(spec.reasonId) : null;
+      const refresh = function () {
+        if (!ok) return;
+        const ackOk = !spec.ack || (ack && ack.checked);
+        const reasonOk = !spec.reasonId || (reason && reason.value.trim().length > 0);
+        ok.disabled = !(ackOk && reasonOk);
+      };
+      if (ack) ack.addEventListener('change', refresh);
+      if (reason) reason.addEventListener('input', refresh);
+      refresh();
+    }
+
+    // ── the child-login override ───────────────────────────────────────────
+    function fhOverride(id) {
+      const p = FH_PEOPLE.find(function (x) { return x.id === id; }); if (!p) return;
+      const on = !p.minor_login_override;
+      fhConfirm({
+        title: (on ? 'Allow a login for this child' : 'Stop this child’s access') + ' — ' + fhPersonName(p),
+        sub: on
+          ? 'A child cannot hold an account unless you allow it for that child, one at a time. Your name, the date and the reason are recorded.'
+          : 'This ends the child’s access IMMEDIATELY — any account linked to them stops working at once.',
+        label: on ? 'Allow a login' : 'Stop child access',
+        danger: !on, ack: !on, reasonId: 'fh-reason',
+        extraHtml: '<div class="field"><label>Reason (recorded)</label><textarea id="fh-reason" rows="3"></textarea></div>',
+      }, async function () {
+        const reason = ($('fh-reason') && $('fh-reason').value.trim()) || '';
+        try {
+          await apiFamily('POST', '/owner/persons/' + id + '/minor-login-override', { enabled: on, reason: reason || null });
+          await fhLoadPeople();
+          showToast(on ? 'A login is now allowed for this child.' : 'That child’s access has stopped.', 'success');
+        } catch (e) { if (!e.fhNoSession) showToast(e.message || 'That did not work', 'danger'); }
+      });
+    }
+
+    // ── approvals ──────────────────────────────────────────────────────────
+    // What the owner's approval can actually WRITE. Mirrors APPLY_FIELDS in
+    // backend/src/routes/fhOwner.js. A proposal carrying anything else is
+    // annotated HERE rather than answering the Approve button with a 400 —
+    // the same rule as everywhere else: no control that fails when clicked.
+    const FH_APPLY_FIELDS = {
+      person: ['given_names', 'other_names', 'title', 'biography', 'birth_date', 'birth_date_precision',
+               'birth_place', 'death_date', 'death_date_precision', 'death_place', 'is_living', 'life_outcome',
+               'placeholder_label', 'is_name_unknown'],
+      story: ['title', 'subtitle', 'body', 'period_label', 'year_from', 'year_to', 'primary_person_id',
+              'visibility', 'status', 'sort_order'],
+      timeline_event: ['title', 'description', 'event_date', 'date_precision', 'year_from', 'year_to', 'place',
+                       'category', 'person_id', 'visibility'],
+      relationship: ['from_person_id', 'to_person_id', 'kind', 'spouse_order', 'union_start', 'union_end',
+                     'union_status', 'notes'],
+    };
+    function fhUnappliable(p) {
+      const allowed = FH_APPLY_FIELDS[p.kind];
+      if (!allowed) return ['this kind of record cannot be applied yet'];
+      return Object.keys(p.payload || {}).filter(function (k) { return allowed.indexOf(k) === -1; });
+    }
+    async function fhLoadProposals() {
+      const status = ($('fp-status') && $('fp-status').value) || 'pending';
+      FH_PROPOSALS = (await apiFamily('GET', '/owner/proposals?status=' + encodeURIComponent(status))).proposals || [];
+      fhRenderProposals(status);
+    }
+    function fhRenderProposals(status) {
+      const host = $('fp-host'); if (!host) return;
+      if (!FH_PROPOSALS.length) {
+        host.innerHTML = '<div class="activity-empty">' +
+          (status === 'pending' ? 'Nothing is waiting for you.' : 'Nothing here.') + '</div>';
+        return;
+      }
+      host.innerHTML = FH_PROPOSALS.map(function (p) {
+        const fields = Object.keys(p.payload || {}).map(function (k) {
+          return '<div style="font-size:13px"><span class="muted">' + escapeHtml(k) + ':</span> ' +
+                 escapeHtml(String(p.payload[k]).slice(0, 200)) + '</div>';
+        }).join('') || '<div class="muted" style="font-size:13px">(nothing in the proposal)</div>';
+        const bad = fhUnappliable(p);
+        const blocked = bad.length > 0;
+        const warn = blocked
+          ? '<div class="muted" style="font-size:12px; color:var(--danger); margin:8px 0">' +
+              'Cannot be approved here: ' + escapeHtml(bad.join(', ')) + '. Reject it, or make the change directly.' +
+            '</div>'
+          : '';
+        const buttons = p.status !== 'pending'
+          ? '<span class="muted" style="font-size:12px">Already ' + escapeHtml(p.status) + '</span>'
+          : (blocked ? '' : '<button class="btn btn-primary btn-sm" data-fh-prop="' + escapeHtml(p.id) + '" data-fh-act="approve">Approve</button> ') +
+            '<button class="btn btn-sm" data-fh-prop="' + escapeHtml(p.id) + '" data-fh-act="reject">Reject</button>';
+        return '<div class="card" style="margin-bottom:12px">' +
+          '<div class="muted" style="font-size:12px">Proposed by <b>' + escapeHtml(p.submitted_by_name || '—') + '</b> · ' +
+            escapeHtml(fmtDate(p.submitted_at)) + ' · ' + escapeHtml(p.kind) + ' / ' + escapeHtml(p.operation) + '</div>' +
+          '<div style="margin:8px 0">' + fields + '</div>' + warn +
+          '<div>' + buttons + '</div>' +
+        '</div>';
+      }).join('');
+    }
+    function fhProposalAction(id, act) {
+      const run = async function (fn) {
+        try { await fn(); await Promise.all([fhLoadProposals(), fhLoadPeople()]); }
+        catch (e) { if (!e.fhNoSession) showToast(e.message || 'That did not work', 'danger'); }
+      };
+      if (act === 'approve') {
+        fhConfirm({
+          title: 'Approve this change',
+          sub: 'This writes the proposed change to the record, now.',
+          label: 'Approve',
+        }, function () { return run(function () { return apiFamily('POST', '/owner/proposals/' + id + '/approve'); }); });
+      } else {
+        fhConfirm({
+          // The old portal told Peter that rejecting "writes the proposed change
+          // to the record" — Approve's sentence, copied. It says the opposite of
+          // what the button does.
+          title: 'Reject this change',
+          sub: 'Nothing is written to the record. The proposal stays as a record that it was asked for.',
+          label: 'Reject', danger: true,
+          extraHtml: '<div class="field"><label>Note back to them (optional)</label><textarea id="fh-note" rows="3"></textarea></div>',
+        }, function () {
+          const note = ($('fh-note') && $('fh-note').value.trim()) || null;
+          return run(function () {
+            return apiFamily('POST', '/owner/proposals/' + id + '/reject', note ? { review_note: note } : {});
+          });
+        });
+      }
+    }
+
+    function wireFamily() {
+      const on = function (id, evt, fn) { const el = $(id); if (el) el.addEventListener(evt, fn); };
+      on('fa-refresh', 'click', loadFamilyAccounts);
+      on('fa-create', 'click', fhCreateAccount);
+      on('fp-refresh', 'click', loadFamilyApprovals);
+      on('fp-status', 'change', loadFamilyApprovals);
+      on('fr-refresh', 'click', loadFamilyPeople);
+      on('fr-search', 'input', fhRenderPeople);
+      // Delegated, because every one of these lists is rebuilt by innerHTML.
+      ['route-family-accounts', 'route-family-approvals', 'route-family-people'].forEach(function (rid) {
+        const host = $(rid); if (!host) return;
+        host.addEventListener('click', function (e) {
+          const signin = e.target.closest('[data-fh-signin]');
+          if (signin) {
+            const card = signin.closest('.fh-signin');
+            const email = card.querySelector('[data-fh-email]').value.trim();
+            const pass = card.querySelector('[data-fh-pass]').value;
+            signin.disabled = true; signin.textContent = 'Signing in…';
+            fhSignIn(email, pass).then(function () {
+              fhRenderAll();
+              return Promise.all([loadFamilyAccounts(), loadFamilyApprovals(), loadFamilyPeople()]);
+            }).catch(function (err) {
+              fhRenderAll(err.message || 'Sign-in failed');
+            });
+            return;
+          }
+          if (e.target.closest('[data-fh-signout]')) { fhClearSession(); fhRenderAll(); return; }
+          const mem = e.target.closest('[data-fh-member]');
+          if (mem) { fhMemberAction(mem.getAttribute('data-fh-member'), mem.getAttribute('data-fh-act')); return; }
+          const ov = e.target.closest('[data-fh-override]');
+          if (ov) { fhOverride(ov.getAttribute('data-fh-override')); return; }
+          const pr = e.target.closest('[data-fh-prop]');
+          if (pr) { fhProposalAction(pr.getAttribute('data-fh-prop'), pr.getAttribute('data-fh-act')); return; }
+        });
+      });
+    }
+
     // ────────────────────── WIRE-UP ──────────────────────
     document.addEventListener('DOMContentLoaded', function () {
       $('login-form').addEventListener('submit', handleLoginSubmit);
@@ -8402,6 +9118,7 @@
       $('dashboard-refresh').addEventListener('click', loadDashboard);
       wireMarketing();   // PHASE 1 — marketer screen + oversight tab
       wireExpenses();    // MP-EXPENSE-TRACKER — master_admin only
+      wireFamily();      // FAMILY HERITAGE — accounts, approvals, roster
 
       // BUSINESSES
       $('biz-refresh').addEventListener('click', loadBusinesses);
