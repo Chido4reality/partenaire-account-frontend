@@ -132,6 +132,14 @@ const PEOPLE = [
     public_visibility: "hidden", birth_date: "2015-06-01", archived: false },
   { id: "p-child-ok", given_names: "Ngozi", surname: "Bright", is_minor: true, minor_login_override: true,
     public_visibility: "hidden", birth_date: "2012-03-04", archived: false },
+  // UNLINKED, so they actually reach the picker. p-adult and p-child below are
+  // both already linked to members and are therefore filtered out of it — the
+  // first version of these assertions tested a list that could never contain
+  // them, and said so by failing.
+  { id: "p-child-free", given_names: "Obiageli", surname: "Okafor", is_minor: true, minor_login_override: false,
+    public_visibility: "hidden", birth_date: "2016-02-02", archived: false },
+  { id: "p-adult-free", given_names: "Emeka", surname: "Okafor", is_minor: false, minor_login_override: false,
+    public_visibility: "full", birth_date: "1978-07-07", archived: false },
 ];
 const MEMBERS = [
   { id: "m1", display_name: "Ada", email: "ada@x.test", person_id: "p-adult",
@@ -205,13 +213,31 @@ const childRow = accounts.slice(accounts.indexOf("Chinemelu"));
 check("the child's row does not also claim Active",
   !/pill-success">Active/.test(childRow.slice(0, childRow.indexOf("</tr>") + 5)), "");
 
+// ── the person picker: a child must not be a selectable option ──────────────
+// Peter hit this on the live screen: Chinemelu Bright Okafor was selectable in
+// "Create an account". The database would have refused the link, so nothing
+// unsafe could land — but an option that 403s on submit is the same
+// control-that-fails-when-clicked rule this build has caught four times.
+const picker = getEl("fa-person").innerHTML;
+check("a child without the override is in the list but DISABLED",
+  /value="p-child-free"[^>]*\sdisabled/.test(picker), "");
+check("and the option says what to do about it",
+  /allow a login in Family people first/.test(picker), "the rule is taught, not hidden");
+check("a child WITH the override is selectable",
+  /value="p-child-ok"(?![^>]*\sdisabled)/.test(picker), "the override is what makes the difference");
+check("the adult is selectable",
+  /value="p-adult-free"(?![^>]*\sdisabled)/.test(picker), "");
+check("the resting selection is never a disabled option",
+  !/^p-child-free$/.test(getEl("fa-person").value),
+  `defaults to ${getEl("fa-person").value || "(none)"}`);
+
 // ── the roster ──────────────────────────────────────────────────────────────
 await ctx.loadFamilyPeople();
 const roster = getEl("fr-tbody").innerHTML;
 check("a child without the override shows Not allowed", /Not allowed/.test(roster), "");
 check("a child with the override shows Allowed", /pill-info">Allowed/.test(roster), "");
 check("the override control is offered only for children",
-  (roster.match(/data-fh-override/g) || []).length === 2, "2 of the 3 rows are children");
+  (roster.match(/data-fh-override/g) || []).length === 3, "3 of the 5 roster rows are children");
 check("a minor's public column says a child is never public",
   /a child is never public/.test(roster), "");
 check("the roster offers no way to edit a name",

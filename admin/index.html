@@ -8832,11 +8832,26 @@
       FH_MEMBERS.forEach(function (m) { if (!m.unlinked) linked[m.person_id] = true; });
       const free = FH_PEOPLE.filter(function (p) { return !linked[p.id] && !p.archived; });
       const keep = sel.value;
+      // 🔴 A CHILD WITHOUT THE OVERRIDE IS OFFERED, BUT NOT SELECTABLE. The
+      // database refuses the link (FH_MEMBER_MINOR_REFUSED) and nothing unsafe
+      // could land — but an option that 403s on submit is the control-that-
+      // fails-when-clicked rule, and Peter hit it on the live screen.
+      // Disabled WITH THE REASON rather than hidden: removing the child from
+      // the list makes the rule invisible and looks like the person is missing
+      // from the archive. This way the screen teaches what to do next.
+      const selectable = free.filter(function (p) { return !(p.is_minor && !p.minor_login_override); });
       sel.innerHTML = free.map(function (p) {
-        return '<option value="' + escapeHtml(p.id) + '">' + escapeHtml(fhPersonName(p)) +
-               (p.is_minor ? ' — child' : '') + '</option>';
+        const blocked = p.is_minor && !p.minor_login_override;
+        return '<option value="' + escapeHtml(p.id) + '"' + (blocked ? ' disabled' : '') + '>' +
+               escapeHtml(fhPersonName(p)) +
+               (blocked ? ' — child, allow a login in Family people first'
+                        : (p.is_minor ? ' — child, login allowed' : '')) + '</option>';
       }).join('') || '<option value="">Everyone already has an account</option>';
-      if (keep && free.some(function (p) { return p.id === keep; })) sel.value = keep;
+      // Never leave a disabled option as the resting selection: the first
+      // person in the list can be a child, and the browser would show it.
+      if (keep && selectable.some(function (p) { return p.id === keep; })) sel.value = keep;
+      else if (selectable.length) sel.value = selectable[0].id;
+      else if (free.length) sel.value = '';
     }
 
     /** Shown once, and the screen says so. Closing needs an explicit tick,

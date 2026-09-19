@@ -27,8 +27,8 @@
 // which is precisely how this domain drifted to a two-month-old build before.
 // This file is maintained SEPARATELY from public/sw-admin.js because the two
 // hosts differ in shell path; their version numbers are independent.
-// v3: the three Family Heritage sections (accounts, approvals, roster).
-const VERSION = 'admin-pwa-v3';
+// v4: the person picker no longer offers a child as a selectable option.
+const VERSION = 'admin-pwa-v4';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const API_CACHE = `${VERSION}-api`;

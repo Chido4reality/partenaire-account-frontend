@@ -136,12 +136,20 @@ check("the generated admin/index.html is in sync",
 
 // Both service workers precache the shell CacheFirst. Without a bump the new
 // sections ship and nobody ever sees them.
+// The first form of this pinned the comment to one feature's wording ("Family
+// Heritage sections"), so the next change to admin.html broke the check by
+// doing the right thing. The invariant is not which feature bumped it — it is
+// that WHOEVER bumped it wrote down why, for THIS version. Numbers that drift
+// apart mean someone bumped without a note, or wrote a note without bumping.
 for (const [f, label] of [["public/sw-admin.js", "pos host"], ["admin/sw-admin.js", "admin host"]]) {
   const sw = readFileSync(join(HERE, f), "utf8");
   const m = sw.match(/const VERSION = 'admin-pwa-v(\d+)'/);
-  check(`${label} service worker was bumped for these sections`,
-    Boolean(m) && /Family Heritage sections/.test(sw),
-    m ? `admin-pwa-v${m[1]}` : "no VERSION found");
+  const noted = m && new RegExp(`^//\\s*v${m[1]}:\\s*\\S`, "m").test(sw);
+  check(`${label} service worker version is bumped and explained`,
+    Boolean(m) && noted,
+    !m ? "no VERSION found"
+       : noted ? `admin-pwa-v${m[1]}, with a "// v${m[1]}:" note`
+               : `admin-pwa-v${m[1]} but no "// v${m[1]}:" line saying what changed`);
 }
 
 console.log("=".repeat(78));
