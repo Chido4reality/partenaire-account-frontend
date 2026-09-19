@@ -21,7 +21,12 @@
 // v1.1 (separate work item) will add the push event handler that
 // fires on pa_admin_notifications-driven push events.
 
-const VERSION = 'admin-pwa-v3';
+// 🔴 BUMP THIS WHENEVER admin.html CHANGES. The shell is precached CacheFirst,
+// so without a bump an admin who already has the app keeps the OLD admin.html
+// and simply never sees the new section — deployed, and invisible, which is
+// exactly how the Family Heritage page failed the first time.
+// v4: the three Family Heritage sections (accounts, approvals, roster).
+const VERSION = 'admin-pwa-v4';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const API_CACHE = `${VERSION}-api`;

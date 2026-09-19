@@ -55,6 +55,11 @@ const CHECKS = [
   // put the app in queue-only mode until restart, because no write could reach
   // axios to produce the 2xx that was its only exit.
   ["degraded-ttl",  "scripts/degraded-ttl-check.mjs", "the degraded signal expires after 120s instead of latching for the whole session"],
+  // FAMILY HERITAGE: every failure this feature has had was SILENT — a page that
+  // deployed and was unreachable, a portal copy two months stale, a label saying
+  // "Active" for an account that could do nothing.
+  ["fh-portal",     "scripts/fh-portal-check.mjs", "the Family sections are reachable, keep the two identities apart, and both service workers were bumped"],
+  ["fh-portal-render", "scripts/fh-portal-render-check.mjs", "the Family sections RENDER against the real inline script: no 'Active' on a blocked child, no Approve the server would refuse"],
 ];
 
 const results = [];
