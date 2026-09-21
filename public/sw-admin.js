@@ -26,7 +26,8 @@
 // and simply never sees the new section — deployed, and invisible, which is
 // exactly how the Family Heritage page failed the first time.
 // v5: the person picker no longer offers a child as a selectable option.
-const VERSION = 'admin-pwa-v5';
+// v6: relationship proposals are shown by name and an add-a-relative proposal can be approved.
+const VERSION = 'admin-pwa-v6';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const API_CACHE = `${VERSION}-api`;

@@ -28,7 +28,8 @@
 // This file is maintained SEPARATELY from public/sw-admin.js because the two
 // hosts differ in shell path; their version numbers are independent.
 // v4: the person picker no longer offers a child as a selectable option.
-const VERSION = 'admin-pwa-v4';
+// v5: relationship proposals are shown by name and an add-a-relative proposal can be approved.
+const VERSION = 'admin-pwa-v5';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const API_CACHE = `${VERSION}-api`;

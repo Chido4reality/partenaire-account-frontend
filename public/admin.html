@@ -9013,14 +9013,90 @@
       relationship: ['from_person_id', 'to_person_id', 'kind', 'spouse_order', 'union_start', 'union_end',
                      'union_status', 'notes'],
     };
+    // 🔴 MIRRORS THE BACKEND'S ONE EXCEPTION (fhOwner.js approve): a proposal
+    // to ADD A NEW PERSON carries a nested `relationship` — who they are to the
+    // tree — because the new person's id does not exist until approval, so a
+    // second proposal could never name them. This list did not know that, so
+    // every add-a-relative proposal read "Cannot be approved here:
+    // relationship" and lost its Approve button. A new person may also carry
+    // surname / sex / is_minor, which are facts on a new row (the backend's
+    // insertOnlyPersonFields). Same rules as the server, no wider.
+    const FH_REL_KINDS = ['spouse_of', 'parent_of', 'guardian_of', 'adopted_parent_of'];
+    function fhIsNewPerson(p) { return p.kind === 'person' && p.operation === 'insert'; }
     function fhUnappliable(p) {
       const allowed = FH_APPLY_FIELDS[p.kind];
       if (!allowed) return ['this kind of record cannot be applied yet'];
-      return Object.keys(p.payload || {}).filter(function (k) { return allowed.indexOf(k) === -1; });
+      const ok = allowed.concat(fhIsNewPerson(p) ? ['surname', 'sex', 'is_minor'] : []);
+      const bad = [];
+      Object.keys(p.payload || {}).forEach(function (k) {
+        if (k === 'relationship') {
+          const r = p.payload.relationship || {};
+          if (!fhIsNewPerson(p)) bad.push('relationship (only a new person may carry one)');
+          else if (FH_REL_KINDS.indexOf(r.kind) === -1 || ['anchor', 'new'].indexOf(r.anchor_is) === -1 || !r.anchor_id) {
+            bad.push('relationship (not one that can be applied)');
+          }
+          return;
+        }
+        if (ok.indexOf(k) === -1) bad.push(k);
+      });
+      return bad;
+    }
+
+    // ── proposals, BY NAME ─────────────────────────────────────────────────
+    // A relationship proposal is two people and a kind. Shown as raw ids it
+    // cannot be judged — Peter would be approving "from_person_id: 07583af3…".
+    // Every person id is resolved against the owner's people list; one that is
+    // not in it says so in words, never as an id.
+    const FH_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    function fhWho(id) {
+      const p = FH_PEOPLE.find(function (x) { return x.id === id; });
+      return p ? fhPersonName(p) : 'someone not in the current list of people';
+    }
+    function fhSexOf(id) {
+      const p = FH_PEOPLE.find(function (x) { return x.id === id; });
+      return p ? p.sex : null;
+    }
+    // "X → mother of Y". The role is worded from the FROM person's sex where
+    // it is recorded, and stays neutral where it is not.
+    function fhRoleOf(kind, fromSex) {
+      const f = fromSex === 'female', m = fromSex === 'male';
+      if (kind === 'parent_of') return f ? 'mother of' : m ? 'father of' : 'parent of';
+      if (kind === 'spouse_of') return f ? 'wife of' : m ? 'husband of' : 'spouse of';
+      if (kind === 'guardian_of') return 'guardian of';
+      if (kind === 'adopted_parent_of') return f ? 'adoptive mother of' : m ? 'adoptive father of' : 'adoptive parent of';
+      return String(kind || 'related to');
+    }
+    function fhRelLine(fromName, kind, fromSex, toName) {
+      return '<div style="font-size:14px;margin:2px 0 6px"><b>' + escapeHtml(fromName) + '</b> → ' +
+             escapeHtml(fhRoleOf(kind, fromSex)) + ' <b>' + escapeHtml(toName) + '</b></div>';
+    }
+    function fhProposalSummary(p) {
+      const pay = p.payload || {};
+      if (p.kind === 'relationship' && pay.from_person_id && pay.to_person_id) {
+        return fhRelLine(fhWho(pay.from_person_id), pay.kind, fhSexOf(pay.from_person_id), fhWho(pay.to_person_id));
+      }
+      if (fhIsNewPerson(p) && pay.relationship) {
+        const r = pay.relationship;
+        const nw = (fhPersonName(pay) === '—' ? 'A new person' : fhPersonName(pay)) + ' (new)';
+        return r.anchor_is === 'anchor'
+          ? fhRelLine(fhWho(r.anchor_id), r.kind, fhSexOf(r.anchor_id), nw)
+          : fhRelLine(nw, r.kind, pay.sex || null, fhWho(r.anchor_id));
+      }
+      return '';
+    }
+    function fhProposalValue(k, v) {
+      if (v !== null && typeof v === 'object') return '';            // relationship: shown in the summary
+      if (typeof v === 'string' && FH_UUID.test(v) && /(^|_)(person_id|id)$/.test(k)) return fhWho(v);
+      return String(v).slice(0, 200);
     }
     async function fhLoadProposals() {
       const status = ($('fp-status') && $('fp-status').value) || 'pending';
-      FH_PROPOSALS = (await apiFamily('GET', '/owner/proposals?status=' + encodeURIComponent(status))).proposals || [];
+      const jobs = [apiFamily('GET', '/owner/proposals?status=' + encodeURIComponent(status))];
+      // Names come from the people list; this screen can be opened first.
+      if (!FH_PEOPLE.length) jobs.push(apiFamily('GET', '/owner/persons?limit=500'));
+      const out = await Promise.all(jobs);
+      FH_PROPOSALS = out[0].proposals || [];
+      if (out[1]) FH_PEOPLE = out[1].persons || [];
       fhRenderProposals(status);
     }
     function fhRenderProposals(status) {
@@ -9031,10 +9107,14 @@
         return;
       }
       host.innerHTML = FH_PROPOSALS.map(function (p) {
-        const fields = Object.keys(p.payload || {}).map(function (k) {
+        const summary = fhProposalSummary(p);
+        // The edge's own three keys are the summary line; listing them again
+        // underneath would put the ids straight back on screen.
+        const shown = summary && p.kind === 'relationship' ? ['from_person_id', 'to_person_id', 'kind'] : ['relationship'];
+        const fields = summary + (Object.keys(p.payload || {}).filter(function (k) { return shown.indexOf(k) === -1; }).map(function (k) {
           return '<div style="font-size:13px"><span class="muted">' + escapeHtml(k) + ':</span> ' +
-                 escapeHtml(String(p.payload[k]).slice(0, 200)) + '</div>';
-        }).join('') || '<div class="muted" style="font-size:13px">(nothing in the proposal)</div>';
+                 escapeHtml(fhProposalValue(k, p.payload[k])) + '</div>';
+        }).join('') || (summary ? '' : '<div class="muted" style="font-size:13px">(nothing in the proposal)</div>'));
         const bad = fhUnappliable(p);
         const blocked = bad.length > 0;
         const warn = blocked
