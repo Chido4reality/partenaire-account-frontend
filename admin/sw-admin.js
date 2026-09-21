@@ -29,7 +29,8 @@
 // hosts differ in shell path; their version numbers are independent.
 // v4: the person picker no longer offers a child as a selectable option.
 // v5: relationship proposals are shown by name and an add-a-relative proposal can be approved.
-const VERSION = 'admin-pwa-v5';
+// v6: the login picker leaves out people whose line has ended, and an open-this-line request can be approved.
+const VERSION = 'admin-pwa-v6';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const API_CACHE = `${VERSION}-api`;

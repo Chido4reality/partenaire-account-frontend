@@ -27,7 +27,8 @@
 // exactly how the Family Heritage page failed the first time.
 // v5: the person picker no longer offers a child as a selectable option.
 // v6: relationship proposals are shown by name and an add-a-relative proposal can be approved.
-const VERSION = 'admin-pwa-v6';
+// v7: the login picker leaves out people whose line has ended, and an open-this-line request can be approved.
+const VERSION = 'admin-pwa-v7';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const API_CACHE = `${VERSION}-api`;

@@ -8830,7 +8830,15 @@
       const sel = $('fa-person'); if (!sel) return;
       const linked = {};
       FH_MEMBERS.forEach(function (m) { if (!m.unlinked) linked[m.person_id] = true; });
-      const free = FH_PEOPLE.filter(function (p) { return !linked[p.id] && !p.archived; });
+      // 🔴 A PERSON WHOSE LINE HAS ENDED IS NOT OFFERED AT ALL (Peter,
+      // 2026-09-21: a sister's child can NEVER be given a login, no override).
+      // Unlike a child — whose override can change the answer, so it is listed
+      // disabled — nothing Peter can do makes this one selectable, so it is
+      // removed; the last line of the list says how many and why, so the rule
+      // is visible and nobody reads the archive as missing people.
+      // `line_ended` is fh_line_ended() from the server, the guard's own answer.
+      const ended = FH_PEOPLE.filter(function (p) { return !linked[p.id] && !p.archived && p.line_ended === true; });
+      const free = FH_PEOPLE.filter(function (p) { return !linked[p.id] && !p.archived && p.line_ended !== true; });
       const keep = sel.value;
       // 🔴 A CHILD WITHOUT THE OVERRIDE IS OFFERED, BUT NOT SELECTABLE. The
       // database refuses the link (FH_MEMBER_MINOR_REFUSED) and nothing unsafe
@@ -8846,7 +8854,10 @@
                escapeHtml(fhPersonName(p)) +
                (blocked ? ' — child, allow a login in Family people first'
                         : (p.is_minor ? ' — child, login allowed' : '')) + '</option>';
-      }).join('') || '<option value="">Everyone already has an account</option>';
+      }).join('') + (ended.length
+        ? '<option value="" disabled>— ' + ended.length + (ended.length === 1 ? ' person is' : ' people are') +
+          ' not listed: their line ends with them, so they are never given a login</option>'
+        : '') || '<option value="">Everyone already has an account</option>';
       // Never leave a disabled option as the resting selection: the first
       // person in the list can be a child, and the browser would show it.
       if (keep && selectable.some(function (p) { return p.id === keep; })) sel.value = keep;
@@ -8907,6 +8918,10 @@
       // attempt rather than surfacing a raw refusal.
       if (person && person.is_minor && !person.minor_login_override) {
         showToast('This is a child. Allow a login for them in Family people first — the archive refuses otherwise.', 'danger');
+        return;
+      }
+      if (person && person.line_ended === true) {
+        showToast('This person’s line ends with them, so they cannot be given a login.', 'danger');
         return;
       }
       try { await go(); }
@@ -9023,7 +9038,20 @@
     // insertOnlyPersonFields). Same rules as the server, no wider.
     const FH_REL_KINDS = ['spouse_of', 'parent_of', 'guardian_of', 'adopted_parent_of'];
     function fhIsNewPerson(p) { return p.kind === 'person' && p.operation === 'insert'; }
+    // "OPEN THIS LINE": a member asks Peter to set lineage_override on a person.
+    // The override is never a proposal key; the request is `open_line_reason`
+    // on a person update, and the backend applies it through the owner's own
+    // override writer. Mirrors fhOwner.js: the reason and nothing else.
+    function fhIsOpenLine(p) {
+      return p.kind === 'person' && p.operation === 'update' && p.payload &&
+             Object.prototype.hasOwnProperty.call(p.payload, 'open_line_reason');
+    }
     function fhUnappliable(p) {
+      if (fhIsOpenLine(p)) {
+        const r = p.payload.open_line_reason;
+        return (Object.keys(p.payload).length === 1 && typeof r === 'string' && r.trim())
+          ? [] : ['a request to open a line must carry only its reason'];
+      }
       const allowed = FH_APPLY_FIELDS[p.kind];
       if (!allowed) return ['this kind of record cannot be applied yet'];
       const ok = allowed.concat(fhIsNewPerson(p) ? ['surname', 'sex', 'is_minor'] : []);
@@ -9072,6 +9100,14 @@
     }
     function fhProposalSummary(p) {
       const pay = p.payload || {};
+      if (fhIsOpenLine(p)) {
+        return '<div style="font-size:14px;margin:2px 0 6px">Open the line of <b>' + escapeHtml(fhWho(p.target_id)) +
+               '</b> — children could then be recorded under them.</div>' +
+               '<div style="font-size:13px"><span class="muted">Their reason:</span> ' +
+               escapeHtml(String(pay.open_line_reason || '').slice(0, 2000)) + '</div>' +
+               '<div class="muted" style="font-size:12px;margin-top:4px">Approving sets the lineage override on that person, ' +
+               'with this reason, exactly as if you set it yourself. It never makes a login possible.</div>';
+      }
       if (p.kind === 'relationship' && pay.from_person_id && pay.to_person_id) {
         return fhRelLine(fhWho(pay.from_person_id), pay.kind, fhSexOf(pay.from_person_id), fhWho(pay.to_person_id));
       }
@@ -9110,7 +9146,8 @@
         const summary = fhProposalSummary(p);
         // The edge's own three keys are the summary line; listing them again
         // underneath would put the ids straight back on screen.
-        const shown = summary && p.kind === 'relationship' ? ['from_person_id', 'to_person_id', 'kind'] : ['relationship'];
+        const shown = summary && p.kind === 'relationship' ? ['from_person_id', 'to_person_id', 'kind']
+                    : fhIsOpenLine(p) ? ['open_line_reason'] : ['relationship'];
         const fields = summary + (Object.keys(p.payload || {}).filter(function (k) { return shown.indexOf(k) === -1; }).map(function (k) {
           return '<div style="font-size:13px"><span class="muted">' + escapeHtml(k) + ':</span> ' +
                  escapeHtml(fhProposalValue(k, p.payload[k])) + '</div>';
