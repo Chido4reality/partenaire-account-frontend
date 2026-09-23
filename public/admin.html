@@ -8866,10 +8866,14 @@
     }
 
     /** Shown once, and the screen says so. Closing needs an explicit tick,
-        because there is no second chance to read it. */
-    function fhShowPasswordOnce(member, password) {
+        because there is no second chance to read it.
+        🔴 #modal-host holds ONE modal: openModal blanks it first. So this must
+        never be opened from inside another modal's handler that will call
+        close() afterwards — the close would wipe this panel and the password
+        with it. Every caller closes first, then shows. */
+    function fhShowPasswordOnce(member, password, heading) {
       openModal({
-        title: 'Account created — ' + (member.display_name || ''),
+        title: (heading || 'Account created') + ' — ' + (member.display_name || ''),
         lock: true,
         content:
           '<div class="fh-once">' +
@@ -8882,7 +8886,14 @@
           '<label class="mm-check" style="margin-top:10px"><input type="checkbox" id="fh-pw-ack" /> I have written it down</label>',
         primary: { label: 'Close', onClick: function (close) { close(); } },
       });
-      const ok = document.querySelector('.modal-footer .btn-primary');
+      /* 🔴 THE TICK NEVER GATED ANYTHING. openModal builds the footer as
+         `.modal-foot`; this asked for `.modal-footer`, so `ok` was null, the
+         `if (ok)` guards below all fell through, and Close was live from the
+         first paint. On the one screen whose whole promise is "written down
+         before you close it", the control that enforced that did nothing.
+         A danger primary carries .btn-danger instead of .btn-primary, so both
+         are named — otherwise this comes back the next time a dialog is red. */
+      const ok = document.querySelector('.modal-foot .btn-primary, .modal-foot .btn-danger');
       if (ok) ok.disabled = true;
       const ack = $('fh-pw-ack');
       if (ack) ack.addEventListener('change', function () { if (ok) ok.disabled = !ack.checked; });
@@ -8910,8 +8921,17 @@
         const out = await apiFamily('POST', '/owner/members', body);
         if ($('fa-email')) $('fa-email').value = '';
         if ($('fa-name')) $('fa-name').value = '';
-        await Promise.all([fhLoadAccounts(), fhLoadPeople()]);
-        fhShowPasswordOnce(out.member, out.temporary_password);
+        /* 🔴 SHOW THE PASSWORD BEFORE ANYTHING ELSE IS ALLOWED TO FAIL. This used
+           to await both list reloads FIRST, so a refresh that threw — an
+           expired session, a slow network, anything — was caught by the outer
+           handler, turned into a toast, and the password was never rendered.
+           The account existed by then and the only copy of its password was in
+           the response we had just discarded. That is the state Paul, Ifunanya
+           and Collins were left in. The reload is cosmetic; the password is
+           irreplaceable, so it goes first and the reload may fail quietly. */
+        fhShowPasswordOnce(out.member, out.temporary_password, 'Account created');
+        try { await Promise.all([fhLoadAccounts(), fhLoadPeople()]); }
+        catch (_) { /* a stale list is recoverable with a refresh; the password is not */ }
       };
       // A child needs the override FIRST — the database refuses the link
       // otherwise, and an unset override is not permission. Say so before the
@@ -8945,11 +8965,24 @@
           label: 'Suspend', danger: true,
           run: function () { return apiFamily('POST', '/owner/members/' + id + '/suspend'); },
         },
+        /* 🔴 THIS USED TO CALL PATCH, WHICH ONLY RAISES A FLAG. No password was
+           generated, none was written to Supabase Auth, and the response had
+           nothing to show — so the dialog closed on an empty hand while the
+           screen promised a password shown once. The account kept whatever
+           string was minted at creation and never read by anyone, which is why
+           Paul could not sign in. POST …/password is the route that actually
+           mints one and returns it; the flag it raises is a side effect, not
+           the point. */
         'force-pw': {
-          title: 'Set a new password — ' + (m.display_name || ''),
-          sub: 'They will be asked to choose a new password next time they sign in, and can do nothing else until they do.',
-          label: 'Confirm', danger: false,
-          run: function () { return apiFamily('PATCH', '/owner/members/' + id, { must_change_password: true }); },
+          title: 'New password — ' + (m.display_name || ''),
+          sub: 'A new temporary password is generated now and shown once, on this screen. They must change it the next time they sign in.',
+          label: 'Generate password', danger: false,
+          run: async function () {
+            const out = await apiFamily('POST', '/owner/members/' + id + '/password');
+            // Shown before the list reload — see the note in fhCreateAccount.
+            // fhConfirm has already closed its own modal, so this panel stands.
+            fhShowPasswordOnce(out.member, out.temporary_password, 'New password');
+          },
         },
         unlink: {
           title: 'Unlink — ' + (m.display_name || ''),
@@ -8973,10 +9006,20 @@
         secondary: { label: 'Cancel' },
         primary: {
           label: spec.label, danger: spec.danger,
-          onClick: async function (close) { await onOk(); close(); },
+          /* 🔴 CLOSE FIRST, THEN ACT. #modal-host holds one modal at a time, so
+             an action that opens a panel of its own — the new password — would
+             have had it wiped by a close() running afterwards. The dialog
+             closed either way before (a failure is reported as a toast), so
+             nothing is lost by closing first, and the panel now survives. This
+             is the order the business-side force-reset already used. */
+          onClick: async function (close) { close(); await onOk(); },
         },
       });
-      const ok = document.querySelector('.modal-footer .btn-primary');
+      // Same mismatch as fhShowPasswordOnce: `.modal-footer` never existed, so
+      // the "I understand" tick on Unlink — and any reason field — never
+      // actually disabled the button. Unlink cannot be undone; its
+      // acknowledgement should not have been decorative.
+      const ok = document.querySelector('.modal-foot .btn-primary, .modal-foot .btn-danger');
       const ack = $('fh-ack');
       const reason = spec.reasonId ? $(spec.reasonId) : null;
       const refresh = function () {

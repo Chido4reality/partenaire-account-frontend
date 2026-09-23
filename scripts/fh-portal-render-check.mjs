@@ -104,6 +104,10 @@ let script = blocks.reduce((a, b) => (b.length > a.length ? b : a), "");
 // pass. So append an accessor. This ADDS a line; it rewrites nothing, and the
 // role logic under test is still the shipped isMasterAdmin().
 script += "\n;globalThis.__setAdmin = function (a) { currentAdmin = a; };\n";
+// Same reason, same shape: FH_MEMBERS is a lexical binding the rig cannot reach
+// from outside, and fhMemberAction looks the member up in it before doing
+// anything at all.
+script += "\n;globalThis.__setFhMembers = function (m) { FH_MEMBERS = m; };\n";
 
 console.log("\n── family heritage portal render check ──────────────────────\n");
 check("found the admin inline script", script.length > 100000, `${script.length} chars`);
@@ -259,6 +263,61 @@ check("it can still be rejected",
 check("fhUnappliable agrees with APPLY_FIELDS.person",
   ctx.fhUnappliable(PROPOSALS[1]).join(",") === "birth_order" &&
   ctx.fhUnappliable(PROPOSALS[0]).length === 0, "");
+
+/* ── THE OWNER MINTS A PASSWORD, AND ACTUALLY SEES IT ───────────────────────
+   The bug: "New password" called PATCH /owner/members/:id {must_change_password}
+   which only raises a flag — no password generated, none written to auth,
+   nothing in the response — so the dialog closed on an empty hand while the
+   screen promised a password shown once. Three family accounts were left with a
+   credential nobody knew. These assertions fail on that code and pass on this. */
+{
+  const PW = "Xk7mQp2Rt9Vn4b";
+  ctx.__setFhMembers([{ id: "m-paul", display_name: "Paul Okafor", person_id: "p-adult", unlinked: false }]);
+  NEXT = { "/owner/members/m-paul/password": { member: { id: "m-paul", display_name: "Paul Okafor", must_change_password: true }, temporary_password: PW } };
+
+  const shown = [];
+  const realShow = ctx.fhShowPasswordOnce;
+  ctx.fhShowPasswordOnce = (m, p, h) => { shown.push({ name: m && m.display_name, password: p, heading: h }); };
+  let spec = null, onOk = null;
+  const realConfirm = ctx.fhConfirm;
+  ctx.fhConfirm = (s, ok) => { spec = s; onOk = ok; };
+
+  await ctx.fhMemberAction("m-paul", "force-pw");
+  check("the New password action offers a confirm that promises a password",
+    !!spec && /New password/.test(spec.title) && /shown once/i.test(spec.sub || ""), spec ? spec.title : "none");
+
+  const from = CALLS.length;
+  await onOk();
+  const made = CALLS.slice(from).map((c) => `${c.method} ${c.url}`);
+  check("...and confirming calls POST …/password — the route that mints one",
+    made.some((u) => /POST .*\/owner\/members\/m-paul\/password/.test(u)), made.join(" | ") || "no call");
+  check("...and NOT the PATCH that only raises a flag",
+    !made.some((u) => /PATCH .*\/owner\/members\/m-paul(\?|$)/.test(u)), made.join(" | "));
+  check("...and the password reaches the panel the owner reads",
+    shown.length === 1 && shown[0].password === PW, JSON.stringify(shown));
+  check("...labelled as a new password, not as a new account",
+    shown[0] && shown[0].heading === "New password", shown[0] && shown[0].heading);
+
+  /* CREATE: the password used to be rendered AFTER two list reloads were
+     awaited, so a reload that threw was caught by the outer handler, turned
+     into a toast, and the only copy of the password was discarded — with the
+     account already created. Make both reloads throw: the password must still
+     be shown. */
+  shown.length = 0;
+  NEXT = { "/owner/members": { member: { id: "m-new", display_name: "New Person" }, temporary_password: PW } };
+  const realLoadA = ctx.fhLoadAccounts, realLoadP = ctx.fhLoadPeople;
+  ctx.fhLoadAccounts = async () => { throw new Error("list reload failed"); };
+  ctx.fhLoadPeople = async () => { throw new Error("list reload failed"); };
+  getEl("fa-person").value = "p-adult";
+  getEl("fa-name").value = "New Person";
+  getEl("fa-email").value = "new.person@example.com";
+  await ctx.fhCreateAccount();
+  check("on creation the password is shown even when the list reload FAILS",
+    shown.length === 1 && shown[0].password === PW, JSON.stringify(shown));
+
+  ctx.fhLoadAccounts = realLoadA; ctx.fhLoadPeople = realLoadP;
+  ctx.fhShowPasswordOnce = realShow; ctx.fhConfirm = realConfirm;
+}
 
 // ── signing out ─────────────────────────────────────────────────────────────
 ctx.fhClearSession();
