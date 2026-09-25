@@ -191,6 +191,20 @@ const PROPOSALS = [
     file: null },
   { id: "s6", kind: "source", operation: "insert", status: "pending", submitted_at: "2026-09-25T10:03:00Z",
     submitted_by_name: "Ada", payload: { title: "Parish register", citation: "St Mary's, 1952" } },
+  // fh_58: a relative proposes a NEW second parent. It carries no sex (a
+  // proposal cannot), the child already has a father — so Peter must choose it,
+  // and only "female" fits.
+  { id: "s7", kind: "person", operation: "insert", status: "pending", submitted_at: "2026-09-26T10:00:00Z",
+    submitted_by_name: "Ada", payload: { given_names: "Ngozi", relationship: { kind: "parent_of", anchor_id: "p-adult", anchor_is: "new" } },
+    parent_check: { code: "sex_unknown", child: { id: "p-adult", name: "Ada Okafor" },
+      person: { id: null, name: "Ngozi", sex: null, is_new: true },
+      other: { id: "f1", name: "Okonkwo Okafor", sex: "male", is_new: false } } },
+  // fh_58: an EXISTING person with no sex on record proposed as a second parent.
+  { id: "s8", kind: "relationship", operation: "insert", status: "pending", submitted_at: "2026-09-26T10:01:00Z",
+    submitted_by_name: "Ada", payload: { from_person_id: "p-adult-free", to_person_id: "p-adult", kind: "parent_of" },
+    parent_check: { code: "sex_unknown", child: { id: "p-adult", name: "Ada Okafor" },
+      person: { id: "p-adult-free", name: "Emeka Okafor", sex: "unknown", is_new: false },
+      other: { id: "f1", name: "Okonkwo Okafor", sex: "male", is_new: false } } },
 ];
 
 // ── the role gate, place 2 ──────────────────────────────────────────────────
@@ -378,6 +392,44 @@ check("a document with its file shows it and offers to open it",
   /Attached: <b>PDF<\/b> · 244 KB/.test(props) && /data-fh-prop="s4" data-fh-act="file"/.test(props), "");
 check("…and never prints the media_id",
   !/11111111-1111-4111-8111-111111111111/.test(props), "");
+
+// ── a proposed second parent (fh_58): said BEFORE the click ─────────────────
+{
+  const card = (id) => { const i = props.indexOf(`id="fh-psex-${id}"`) >= 0 ? props.indexOf(`id="fh-psex-${id}"`) : props.indexOf(`data-fh-prop="${id}"`);
+                         const start = props.lastIndexOf('<div class="card"', i); return props.slice(start, props.indexOf('data-fh-act="reject"', i) + 30); };
+  const c7 = card("s7"), c8 = card("s8");
+  check("a proposed NEW second parent: the card says why, and offers ONLY the sex that fits",
+    /Ada Okafor already has Okonkwo Okafor \(male\)/.test(c7) && /id="fh-psex-s7"/.test(c7) &&
+    /<option value="female">/.test(c7) && !/<option value="male">/.test(c7) && /data-fh-prop="s7" data-fh-act="approve"/.test(c7),
+    c7.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 140));
+  check("an EXISTING parent with no sex: named, told where to record it, and NO Approve",
+    /Emeka Okafor’s sex is not recorded/.test(c8) && /on their page on the family site/.test(c8) &&
+    !/data-fh-prop="s8" data-fh-act="approve"/.test(c8) && /data-fh-prop="s8" data-fh-act="reject"/.test(c8), "");
+
+  let spec = null, onOk = null, toast = null;
+  const realConfirm = ctx.fhConfirm, realToast = ctx.showToast;
+  ctx.fhConfirm = (sp, ok) => { spec = sp; onOk = ok; };
+  ctx.showToast = (m) => { toast = m; };
+  getEl("fh-psex-s7").value = "";
+  ctx.fhProposalAction("s7", "approve");
+  check("Approve with no sex chosen: stopped on the card, nothing sent", spec === null && /Choose their sex/.test(toast || ""), toast || "no toast");
+  getEl("fh-psex-s7").value = "female";
+  CALLS.length = 0;
+  NEXT = { "/approve": { applied: true }, "/owner/proposals": { proposals: PROPOSALS }, "/owner/persons": { persons: PEOPLE } };
+  ctx.fhProposalAction("s7", "approve");
+  if (onOk) await onOk();
+  const sent = CALLS.find((c) => c.method === "POST" && /\/approve$/.test(c.url));
+  check("…with 'female' chosen: the confirm says so, and Approve SENDS it",
+    !!spec && /recorded as female/.test(spec.sub) && !!sent && JSON.stringify(sent.body) === JSON.stringify({ sex: "female" }),
+    sent ? JSON.stringify(sent.body) : "no POST");
+  CALLS.length = 0; spec = null; onOk = null;
+  ctx.fhProposalAction("s1", "approve");
+  if (onOk) await onOk();
+  const plain = CALLS.find((c) => c.method === "POST" && /\/approve$/.test(c.url));
+  check("…and an ordinary proposal still approves with NO body (nothing added)", !!plain && plain.body === undefined,
+    plain ? JSON.stringify(plain.body) : "no POST");
+  ctx.fhConfirm = realConfirm; ctx.showToast = realToast;
+}
 check("a document whose file never arrived offers NO Approve, and says why",
   !/data-fh-prop="s5" data-fh-act="approve"/.test(props) && /never arrived/.test(props) &&
   /data-fh-prop="s5" data-fh-act="reject"/.test(props), "the server would answer 409 file_missing");

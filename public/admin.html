@@ -9207,13 +9207,17 @@
       const who = function (x) { return x.name + (x.sex && x.sex !== 'unknown' ? ' (' + x.sex + ')' : ' (sex not recorded)'); };
       const parentLines = function (list) {
         return (list || []).map(function (pc) {
-          return pc.child + ' already has ' + pc.existing.map(who).join(' and ') + ' on record as a parent.';
+          // fh_58: when the cause is a missing sex, say WHOSE, and that recording it clears the way.
+          const pr = pc.problem || {};
+          const fix = pr.code === 'sex_unknown' && pr.person && pr.person.name
+            ? ' ' + pr.person.name + '’s sex is not recorded: record it on their page, and this restore can go ahead.' : '';
+          return pc.child + ' already has ' + (pc.existing || []).map(who).join(' and ') + ' on record as a parent.' + fix;
         });
       };
       if (chk.blocked) {
         openModal({
           title: 'Cannot restore ' + fhPersonName(p),
-          sub: 'A child would get a third parent, or a second of the same sex. Nothing has been changed.',
+          sub: 'A child would get a third parent, a second of the same sex, or a second parent while a sex is not recorded. Nothing has been changed.',
           content: '<ul style="margin:6px 0 0 18px;padding:0">' + parentLines(c.parent_conflicts.filter(function (x) { return x.hard; }))
             .map(function (s) { return '<li style="margin:6px 0">' + escapeHtml(s) + '</li>'; }).join('') +
             '</ul><p class="muted" style="font-size:12px;margin-top:8px">Withdraw the wrong parent first, or leave this person archived.</p>',
@@ -9468,6 +9472,38 @@
       if (out[1]) FH_PEOPLE = out[1].persons || [];
       fhRenderProposals(status);
     }
+    /* 🔴 fh_58 — SAY IT BEFORE THE CLICK. A second parent is refused while
+       either parent's sex is unknown, and Approve would only find out at the
+       very end, after Peter had decided. The server's parent_check is the SAME
+       function the database refuses from, so what this says is what Approve
+       will get:
+         · a PROPOSED NEW parent with no sex — Peter chooses it here; only the
+           sex that fits beside the child's other parent is offered
+         · an EXISTING parent with no sex — record it on their page first;
+           no Approve until then
+         · a third parent, or a second of the same sex — no Approve */
+    function fhParentCheck(p) {
+      const pc = p && p.parent_check;
+      if (!pc || !pc.code) return null;
+      const child = (pc.child && pc.child.name) || 'this child';
+      if (pc.code === 'too_many') {
+        return { block: true, text: 'Approving would be refused: ' + child + ' already has two parents on record. Withdraw the wrong one first, or reject this.' };
+      }
+      const who = (pc.person && pc.person.name) || 'this person', other = pc.other || {};
+      if (pc.code === 'same_sex') {
+        return { block: true, text: 'Approving would be refused: ' + child + ' already has ' + (other.name || 'a parent') +
+          ' (' + (other.sex || '') + ') on record, and ' + who + ' is also ' + (other.sex || 'that sex') + '. Reject this, or withdraw the wrong one first.' };
+      }
+      if (pc.code === 'sex_unknown' && pc.person && pc.person.is_new && (other.sex === 'male' || other.sex === 'female')) {
+        const fits = other.sex === 'male' ? 'female' : 'male';
+        return { needsSex: true, allowed: [fits],
+          text: child + ' already has ' + (other.name || 'a parent') + ' (' + other.sex + ') on record, so ' + who +
+            ' would be the second parent — and a second parent needs their sex recorded. Choose it to approve. ' +
+            'Only ' + fits + ' fits beside ' + (other.name || 'the other parent') + '; if that is wrong, reject this.' };
+      }
+      return { block: true, text: 'Approving would be refused: ' + who + '’s sex is not recorded, and ' + child +
+        ' would then have two parents. Record ' + who + '’s sex on their page on the family site, then approve.' };
+    }
     function fhRenderProposals(status) {
       const host = $('fp-host'); if (!host) return;
       if (!FH_PROPOSALS.length) {
@@ -9487,12 +9523,22 @@
                  escapeHtml(fhProposalValue(k, p.payload[k])) + '</div>';
         }).join('') || (summary ? '' : '<div class="muted" style="font-size:13px">(nothing in the proposal)</div>'));
         const bad = fhUnappliable(p);
-        const blocked = bad.length > 0;
-        const warn = blocked
+        const pc = fhParentCheck(p);
+        const blocked = bad.length > 0 || !!(pc && pc.block);
+        const warn = bad.length > 0
           ? '<div class="muted" style="font-size:12px; color:var(--danger); margin:8px 0">' +
               'Cannot be approved here: ' + escapeHtml(bad.join(', ')) + '. Reject it, or make the change directly.' +
             '</div>'
-          : '';
+          : pc
+            ? '<div style="font-size:12px; margin:8px 0; color:' + (pc.block ? 'var(--danger)' : 'var(--text)') + '">' + escapeHtml(pc.text) +
+                (pc.needsSex
+                  ? '<div style="margin-top:6px"><select id="fh-psex-' + escapeHtml(p.id) + '" class="input" style="max-width:260px">' +
+                      '<option value="">Choose their sex…</option>' +
+                      pc.allowed.map(function (s) { return '<option value="' + escapeHtml(s) + '">' + escapeHtml(s) + '</option>'; }).join('') +
+                    '</select></div>'
+                  : '') +
+              '</div>'
+            : '';
         const buttons = p.status !== 'pending'
           ? '<span class="muted" style="font-size:12px">Already ' + escapeHtml(p.status) + '</span>'
           : (blocked ? '' : '<button class="btn btn-primary btn-sm" data-fh-prop="' + escapeHtml(p.id) + '" data-fh-act="approve">Approve</button> ') +
@@ -9526,12 +9572,19 @@
         return;
       }
       if (act === 'approve') {
+        // fh_58: a proposed second parent needs the sex Peter chose on the card.
+        // Read NOW — the card is re-rendered after the request.
+        const pc = fhParentCheck(p);
+        const sexSel = pc && pc.needsSex ? $('fh-psex-' + id) : null;
+        const sex = sexSel ? sexSel.value : '';
+        if (pc && pc.needsSex && !sex) { showToast('Choose their sex on the card first.', 'warning'); return; }
         fhConfirm({
           title: 'Approve this change',
           sub: 'This writes the proposed change to the record, now.' +
+               (sex ? ' They are recorded as ' + sex + '.' : '') +
                (hasFile ? ' The attached file moves into the family archive with it.' : ''),
           label: 'Approve',
-        }, function () { return run(function () { return apiFamily('POST', '/owner/proposals/' + id + '/approve'); }); });
+        }, function () { return run(function () { return apiFamily('POST', '/owner/proposals/' + id + '/approve', sex ? { sex: sex } : undefined); }); });
       } else {
         fhConfirm({
           // The old portal told Peter that rejecting "writes the proposed change
