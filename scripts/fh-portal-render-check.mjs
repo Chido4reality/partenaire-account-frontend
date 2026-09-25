@@ -70,7 +70,8 @@ const sandbox = {
   navigator: { userAgent: "node", language: "en", clipboard: { writeText: async () => {} } },
   setTimeout, clearTimeout, setInterval, clearInterval, Intl, Date, Math, JSON,
   fetch: async (url, opts) => {
-    CALLS.push({ url: String(url), headers: (opts && opts.headers) || {}, method: (opts && opts.method) || "GET" });
+    CALLS.push({ url: String(url), headers: (opts && opts.headers) || {}, method: (opts && opts.method) || "GET",
+                 body: opts && opts.body ? JSON.parse(opts.body) : undefined });
     const key = Object.keys(NEXT).find((k) => String(url).includes(k));
     const body = key ? NEXT[key] : {};
     return { ok: true, status: 200, text: async () => JSON.stringify(body), json: async () => body };
@@ -150,6 +151,17 @@ const PEOPLE = [
   { id: "p-archived-child", given_names: "Honorine", surname: "Okafor", is_minor: true, minor_login_override: false,
     public_visibility: "hidden", birth_date: null, archived: true, archived_at: "2026-09-21T07:38:26Z",
     restore_relationships_back: 1, restore_relationships_not_back: 1 },
+  // fh_57 (prod, 2026-09-26): a KNOWN duplicate — marked, so its row must say of
+  // whom and offer no plain Restore — and an UNMARKED namesake, whose row must
+  // say a living person already has the name.
+  { id: "p-dup", given_names: "Father of Chief Ifenjilika", is_minor: false, archived: true,
+    archived_at: "2026-09-25T21:35:23Z", restore_relationships_back: 1, restore_relationships_not_back: 0,
+    duplicate_of: "p-adult",
+    restore_conflicts: { duplicate_of: { id: "p-adult", name: "Ada Okafor", live: true },
+      name_matches: [], parent_conflicts: [] } },
+  { id: "p-namesake", given_names: "Okwunna", is_minor: false, archived: true,
+    archived_at: "2026-09-25T21:35:23Z", restore_relationships_back: 0, restore_relationships_not_back: 1,
+    restore_conflicts: { duplicate_of: null, name_matches: [{ id: "p-live-okwunna", name: "Okwunna" }], parent_conflicts: [] } },
 ];
 const MEMBERS = [
   { id: "m1", display_name: "Ada", email: "ada@x.test", person_id: "p-adult",
@@ -280,11 +292,62 @@ check("…and offered Restore, and NOTHING else — no override, no Archive, no 
 check("…and her row says how many relationships would NOT come back", /1 would not/.test(hRow), "");
 {
   let spec = null; const real = ctx.fhConfirm; ctx.fhConfirm = (sp) => { spec = sp; };
-  ctx.fhRestore("p-archived-child");
+  // fh_57: Restore reads /restore-check FIRST. The key must precede the list's
+  // "/owner/persons" key, which would also match this url.
+  NEXT = { "/restore-check": { conflicts: { duplicate_of: null, name_matches: [], parent_conflicts: [] },
+                               blocked: false, needs_confirm: false, confirm: { duplicate_of: null, name_matches: [], parents: [] } } };
+  await ctx.fhRestore("p-archived-child");
   ctx.fhConfirm = real;
   check("Restore warns BEFORE the click that the restore is partial",
     !!spec && /1 relationship will come back/.test(spec.sub) && /1 will NOT/.test(spec.sub) && spec.label === "Restore anyway",
     spec ? `${spec.label}: ${spec.sub.slice(0, 110)}…` : "no confirm");
+}
+// ── duplicates and namesakes (fh_57, 2026-09-26) ────────────────────────────
+{
+  const rowOf = (id) => (withArchived.split("<tr").find((r) => r.includes(`"${id}"`)) || "");
+  const dRow = rowOf("p-dup"), nRow = rowOf("p-namesake");
+  const txt = (r) => r.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  check("a KNOWN duplicate's row says of whom — the reason is on the row",
+    /Duplicate/.test(dRow) && /Ada Okafor/.test(dRow), txt(dRow).slice(0, 110));
+  check("…and offers NO plain Restore — only the deliberate 'Restore anyway…'",
+    /Restore anyway…/.test(dRow) && !/>Restore<\/button>/.test(dRow) && !/data-fh-dupmark/.test(dRow), "");
+  check("an UNMARKED namesake's row says a living person has the name, and keeps Restore + Mark",
+    /Same name as a living person/.test(nRow) && /Okwunna/.test(nRow) && />Restore<\/button>/.test(nRow) && /data-fh-dupmark="p-namesake"/.test(nRow), txt(nRow).slice(0, 110));
+  check("a plain archived row (no duplicate, no namesake) is unchanged: Restore and Mark",
+    />Restore<\/button>/.test(hRow) && /data-fh-dupmark="p-archived-child"/.test(hRow) && !/Duplicate|Same name/.test(hRow), "");
+
+  // The duplicate's dialog: both records, a tick, then "Restore duplicate".
+  let spec = null, onOk = null; const real = ctx.fhConfirm;
+  ctx.fhConfirm = (sp, ok) => { spec = sp; onOk = ok; };
+  const DUP_CONFIRM = { duplicate_of: "p-adult", name_matches: [], parents: [] };
+  NEXT = { "/restore-check": { conflicts: PEOPLE.find((p) => p.id === "p-dup").restore_conflicts,
+                               blocked: false, needs_confirm: true, confirm: DUP_CONFIRM },
+           "/restore": { person: {}, relationships_restored: 1, relationships_not_restored: 0 },
+           "/owner/persons": { persons: PEOPLE } };
+  await ctx.fhRestore("p-dup");
+  check("restoring a duplicate: says what it duplicates, shows BOTH records side by side",
+    !!spec && /duplicate of Ada Okafor/.test(spec.extraHtml) && /Archived duplicate — this record/.test(spec.extraHtml) &&
+    /Living record it duplicates/.test(spec.extraHtml), spec ? spec.title : "no dialog");
+  check("…and its button stays off until 'I understand this puts a second Ada Okafor in the tree' is ticked",
+    !!spec && spec.ack === true && /second Ada Okafor/.test(spec.ackLabel || "") && spec.label === "Restore duplicate", spec ? spec.label : "");
+  CALLS.length = 0;
+  if (onOk) await onOk();
+  const sent = CALLS.find((c) => c.method === "POST" && /\/restore$/.test(c.url));
+  check("…and what it sends back is EXACTLY the ids the check returned",
+    !!sent && JSON.stringify(sent.body) === JSON.stringify({ confirm: DUP_CONFIRM }), sent ? JSON.stringify(sent.body) : "no POST");
+
+  // A hard conflict: named, and no Restore button at all.
+  let modal = null; const realModal = ctx.openModal; ctx.openModal = (o) => { modal = o; };
+  spec = null;
+  NEXT = { "/restore-check": { conflicts: { duplicate_of: null, name_matches: [],
+             parent_conflicts: [{ child_id: "c1", child: "Chief Ifenjilika", hard: true,
+               existing: [{ id: "f1", name: "Father of Chief Ifenjilika", sex: "male" }] }] },
+           blocked: true, needs_confirm: false, confirm: { duplicate_of: null, name_matches: [], parents: [] } } };
+  await ctx.fhRestore("p-namesake");
+  ctx.openModal = realModal; ctx.fhConfirm = real;
+  check("a restore the server would BLOCK names the child and the parent, and offers no Restore",
+    !!modal && /Cannot restore/.test(modal.title) && /Chief Ifenjilika already has Father of Chief Ifenjilika \(male\)/.test(modal.content) &&
+    !modal.primary && spec === null, modal ? modal.title : "no dialog");
 }
 getEl("fr-show-archived").checked = false;
 ctx.fhRenderPeople();

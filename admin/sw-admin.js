@@ -33,7 +33,8 @@
 // v7: "New password" actually mints one and shows it; the one-time panel's tick now gates Close.
 // v8: Family approvals — documents (with their file) and sources can be reviewed; belief and deity history are approvable.
 // v9: Family people — archived people hidden by default and marked; Archive and Restore (with a partial-restore warning).
-const VERSION = 'admin-pwa-v9';
+// v11: Family people — duplicates are marked and linked; Restore asks what it collides with and needs the ids confirmed.
+const VERSION = 'admin-pwa-v11';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const API_CACHE = `${VERSION}-api`;

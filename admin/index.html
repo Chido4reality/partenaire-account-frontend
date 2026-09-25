@@ -8769,13 +8769,30 @@
       tb.innerHTML = rows.map(function (p) {
         if (p.archived) {
           const back = Number(p.restore_relationships_back || 0), notBack = Number(p.restore_relationships_not_back || 0);
+          // 🔴 fh_57 (Peter, 2026-09-26): two duplicates were restored on prod
+          // because their rows showed a name identical to a living person and
+          // nothing else. The row now SAYS why it was archived, and a known
+          // duplicate has no Restore button — only a deliberate "Restore anyway…".
+          const c = p.restore_conflicts || {};
+          const dup = c.duplicate_of;
+          const names = c.name_matches || [];
+          const why = dup
+            ? '<div style="margin-bottom:3px"><span class="pill pill-warning">Duplicate</span> of <b>' + escapeHtml(dup.name) + '</b>' +
+                (dup.live ? '' : ' <span class="muted">(also archived)</span>') + '</div>'
+            : names.length
+              ? '<div style="margin-bottom:3px"><span class="pill pill-warning">Same name as a living person</span> ' +
+                  escapeHtml(names.map(function (m) { return m.name; }).join(', ')) + '</div>'
+              : '';
+          const acts = dup
+            ? '<button class="btn btn-sm" style="background:transparent;border-style:dashed" data-fh-restore="' + escapeHtml(p.id) + '">Restore anyway…</button>'
+            : '<button class="btn btn-sm" data-fh-dupmark="' + escapeHtml(p.id) + '">Mark as duplicate…</button> ' +
+              '<button class="btn btn-sm" data-fh-restore="' + escapeHtml(p.id) + '">Restore</button>';
           return '<tr class="muted"><td>' + escapeHtml(fhPersonName(p)) + ' ' + fhArchivedLabel(p) + '</td>' +
                  '<td class="muted">' + escapeHtml(p.birth_date ? String(p.birth_date).slice(0, 4) : '—') + '</td>' +
-                 '<td colspan="3" class="muted" style="font-size:12px">Not in the tree or the archive. ' +
+                 '<td colspan="3" class="muted" style="font-size:12px">' + why + 'Not in the tree or the archive. ' +
                    escapeHtml(back + ' relationship' + (back === 1 ? '' : 's') + ' would come back') +
                    (notBack ? '<b style="color:var(--danger)">; ' + escapeHtml(notBack + ' would not') + '</b>' : '') + '.</td>' +
-                 '<td class="ta-right" style="white-space:nowrap"><button class="btn btn-sm" data-fh-restore="' +
-                   escapeHtml(p.id) + '">Restore</button></td></tr>';
+                 '<td class="ta-right" style="white-space:nowrap">' + acts + '</td></tr>';
         }
         const born = p.birth_date ? String(p.birth_date).slice(0, 4) : '—';
         const child = p.is_minor ? '<span class="pill pill-critical">Child</span>' : '<span class="muted">—</span>';
@@ -9027,7 +9044,8 @@
         title: spec.title,
         sub: spec.sub,
         content: (spec.extraHtml || '') +
-          (spec.ack ? '<label class="mm-check" style="margin-top:10px"><input type="checkbox" id="fh-ack" /> I understand</label>' : ''),
+          (spec.ack ? '<label class="mm-check" style="margin-top:10px"><input type="checkbox" id="fh-ack" /> ' +
+            escapeHtml(spec.ackLabel || 'I understand') + '</label>' : ''),
         secondary: { label: 'Cancel' },
         primary: {
           label: spec.label, danger: spec.danger,
@@ -9094,43 +9112,183 @@
         return;
       }
       const rel = Number(chk.relationships_to_archive || 0);
+      // fh_57: WHY. A duplicate is recorded as a LINK to the living person it
+      // duplicates, so the row can say "Duplicate of X" and keep Restore behind
+      // a deliberate step. Read on change: the dialog is gone by the time the
+      // confirm runs (fhConfirm closes first).
+      let dupOf = null;
       fhConfirm({
         title: 'Archive ' + fhPersonName(p),
         sub: 'They leave the family tree, the People list and the archive. Nothing is deleted, and Restore brings them back.' +
           (rel ? ' Their ' + rel + ' relationship' + (rel === 1 ? '' : 's') + ' will be archived with them, and come back with them.' : '') +
           (chk.published ? ' They are on the public site now, and will leave it at once.' : ''),
+        extraHtml: '<label style="display:block;margin-top:6px;font-size:13px">Why?</label>' + fhDuplicatePicker(p, 'fh-arch-dup', true),
         label: 'Archive', danger: true,
       }, async function () {
         try {
-          const r = await apiFamily('POST', '/owner/persons/' + id + '/archive', {});
+          const r = await apiFamily('POST', '/owner/persons/' + id + '/archive', dupOf ? { duplicate_of: dupOf } : {});
           await fhLoadPeople();
-          showToast(fhPersonName(p) + ' archived' + (r.relationships_archived ? ', with ' + r.relationships_archived + ' relationship' + (r.relationships_archived === 1 ? '' : 's') : '') + '.', 'success');
+          showToast(fhPersonName(p) + ' archived' + (dupOf ? ' as a duplicate' : '') +
+            (r.relationships_archived ? ', with ' + r.relationships_archived + ' relationship' + (r.relationships_archived === 1 ? '' : 's') : '') + '.', 'success');
         } catch (e) { if (!e.fhNoSession) showToast(e.message || 'That did not work', 'danger'); }
       });
+      const dupSel = $('fh-arch-dup');
+      if (dupSel) dupSel.addEventListener('change', function () { dupOf = dupSel.value || null; });
+    }
+
+    /* fh_57: choose the LIVING person a record duplicates. Same-name people
+       first (the case that bit: the two names were identical), then everyone
+       else live and not the person themselves. `withOther` adds "not a
+       duplicate" as the default, for the archive dialog's Why?. */
+    function fhDuplicatePicker(p, selectId, withOther) {
+      const key = function (x) { return fhPersonName(x).trim().toLowerCase().replace(/\s+/g, ' '); };
+      const mine = key(p);
+      const live = FH_PEOPLE.filter(function (x) { return !x.archived && x.id !== p.id; });
+      const same = live.filter(function (x) { return key(x) === mine; });
+      const rest = live.filter(function (x) { return key(x) !== mine; })
+        .sort(function (a, b) { return fhPersonName(a).localeCompare(fhPersonName(b)); });
+      const opt = function (x) {
+        const born = x.birth_date ? ' (b. ' + String(x.birth_date).slice(0, 4) + ')' : '';
+        return '<option value="' + escapeHtml(x.id) + '">' + escapeHtml(fhPersonName(x) + born) + '</option>';
+      };
+      return '<select id="' + escapeHtml(selectId) + '" class="input" style="width:100%;margin-top:4px">' +
+        (withOther ? '<option value="">Another reason (not a duplicate)</option>' : '<option value="">Choose the living person…</option>') +
+        (same.length ? '<optgroup label="Duplicate of — same name">' + same.map(opt).join('') + '</optgroup>' : '') +
+        '<optgroup label="Duplicate of — anyone else">' + rest.map(opt).join('') + '</optgroup></select>';
+    }
+
+    // "Mark as duplicate…" on an archived row that has no mark yet.
+    function fhDupMark(id) {
+      const p = FH_PEOPLE.find(function (x) { return x.id === id; }); if (!p) return;
+      let target = null;
+      openModal({
+        title: 'Mark ' + fhPersonName(p) + ' as a duplicate',
+        sub: 'They stay archived. The row will say who they duplicate, and Restore moves behind a deliberate second step.',
+        content: fhDuplicatePicker(p, 'fh-mark-dup', false),
+        secondary: { label: 'Cancel' },
+        primary: { label: 'Mark as duplicate', onClick: async function (close) {
+          if (!target) { showToast('Choose the living person first.', 'warning'); return; }
+          close();
+          await fhSetDuplicate(p, target);
+        } },
+      });
+      const sel = $('fh-mark-dup');
+      if (sel) sel.addEventListener('change', function () { target = sel.value || null; });
+    }
+    async function fhSetDuplicate(p, targetId) {
+      try {
+        await apiFamily('POST', '/owner/persons/' + p.id + '/duplicate-of', { duplicate_of: targetId });
+        await fhLoadPeople();
+        const t = FH_PEOPLE.find(function (x) { return x.id === targetId; });
+        showToast(targetId ? fhPersonName(p) + ' marked as a duplicate of ' + (t ? fhPersonName(t) : 'that person') + '.'
+                           : fhPersonName(p) + ' is no longer marked as a duplicate.', 'success');
+      } catch (e) { if (!e.fhNoSession) showToast(e.message || 'That did not work', 'danger'); }
     }
     // 🔴 A PARTIAL RESTORE IS SAID TO BE PARTIAL, BEFORE THE CLICK. Only the
     // relationships archived at the same instant as the person — and whose
     // other end is live — come back. Five people archived before this existed
     // do not all match (Peter checked prod), and he re-links the rest by hand.
-    function fhRestore(id) {
+    /* 🔴 fh_57 — RESTORE ASKS WHAT IT COLLIDES WITH FIRST (Peter, 2026-09-26).
+       Read fresh from /restore-check, never from the roster's copy: the confirm
+       sent back is EXACTLY the ids this check returned, and the server re-runs
+       the same check under a row lock, so a stale screen is refused rather than
+       honoured. Three cases:
+         · a hard parent conflict — named, and NO Restore button
+         · a known duplicate      — both records side by side, a tick, then
+                                    "Restore duplicate" (three deliberate acts)
+         · a living namesake / a child's existing parent — said in words,
+           with "Mark as duplicate of X" offered beside the restore */
+    async function fhRestore(id) {
       const p = FH_PEOPLE.find(function (x) { return x.id === id; }); if (!p) return;
+      let chk;
+      try { chk = await apiFamily('GET', '/owner/persons/' + id + '/restore-check'); }
+      catch (e) { if (!e.fhNoSession) showToast(e.message || 'That did not work', 'danger'); return; }
+      const c = chk.conflicts || {};
+      const who = function (x) { return x.name + (x.sex && x.sex !== 'unknown' ? ' (' + x.sex + ')' : ' (sex not recorded)'); };
+      const parentLines = function (list) {
+        return (list || []).map(function (pc) {
+          return pc.child + ' already has ' + pc.existing.map(who).join(' and ') + ' on record as a parent.';
+        });
+      };
+      if (chk.blocked) {
+        openModal({
+          title: 'Cannot restore ' + fhPersonName(p),
+          sub: 'A child would get a third parent, or a second of the same sex. Nothing has been changed.',
+          content: '<ul style="margin:6px 0 0 18px;padding:0">' + parentLines(c.parent_conflicts.filter(function (x) { return x.hard; }))
+            .map(function (s) { return '<li style="margin:6px 0">' + escapeHtml(s) + '</li>'; }).join('') +
+            '</ul><p class="muted" style="font-size:12px;margin-top:8px">Withdraw the wrong parent first, or leave this person archived.</p>',
+          secondary: { label: 'Close' },
+        });
+        return;
+      }
       const back = Number(p.restore_relationships_back || 0), notBack = Number(p.restore_relationships_not_back || 0);
+      const relText = back + ' relationship' + (back === 1 ? '' : 's') + ' will come back with them.' +
+        (notBack ? ' ' + notBack + ' will NOT: ' + (notBack === 1 ? 'it was' : 'they were') +
+          ' withdrawn at a different time, or ' + (notBack === 1 ? 'it links' : 'they link') +
+          ' to someone still archived. Re-link ' + (notBack === 1 ? 'it' : 'them') + ' by hand afterwards.' : '');
+      const sections = [];
+      const dup = c.duplicate_of;
+      if (dup) {
+        const s = FH_PEOPLE.find(function (x) { return x.id === dup.id; }) || { given_names: dup.name };
+        const card = function (label, x, note) {
+          return '<div style="flex:1;min-width:0;border:1px solid var(--border);border-radius:8px;padding:8px 10px">' +
+            '<div class="muted" style="font-size:11px">' + escapeHtml(label) + '</div>' +
+            '<div style="font-weight:600">' + escapeHtml(fhPersonName(x)) + '</div>' +
+            '<div class="muted" style="font-size:12px">' + escapeHtml((x.birth_date ? 'b. ' + String(x.birth_date).slice(0, 4) : 'birth year not recorded') +
+              ' · ' + (x.sex && x.sex !== 'unknown' ? x.sex : 'sex not recorded')) + '</div>' +
+            '<div class="muted" style="font-size:12px">' + escapeHtml(note) + '</div></div>';
+        };
+        sections.push('<p style="margin:0 0 8px"><b>This record is a duplicate of ' + escapeHtml(dup.name) + '.</b> ' +
+          'Restoring it puts a second ' + escapeHtml(dup.name) + ' into the tree.</p>' +
+          '<div style="display:flex;gap:8px;margin-bottom:8px">' +
+            card('Archived duplicate — this record', p, relText) +
+            card(dup.live ? 'Living record it duplicates' : 'The record it duplicates (also archived)', s, dup.live ? 'In the tree now.' : 'Not in the tree.') +
+          '</div>');
+      }
+      if ((c.name_matches || []).length) {
+        sections.push('<p style="margin:0 0 6px">' + (dup ? 'The same name is also on ' : '<b>A living person already has this name:</b> ') +
+          escapeHtml(c.name_matches.map(function (m) { return m.name; }).join(', ')) + '.</p>' +
+          (dup ? '' : '<div style="margin:0 0 8px">' + c.name_matches.map(function (m) {
+            return '<button type="button" class="btn btn-sm btn-primary" data-fh-dupset="' + escapeHtml(m.id) + '" style="margin:2px 4px 2px 0">' +
+              'Mark as duplicate of ' + escapeHtml(m.name) + '</button>';
+          }).join('') + '<div class="muted" style="font-size:12px;margin-top:4px">It stays archived, marked, and out of the way.</div></div>'));
+      }
+      const soft = (c.parent_conflicts || []).filter(function (x) { return !x.hard; });
+      if (soft.length) {
+        sections.push('<p style="margin:0 0 4px"><b>A child already has a parent on record:</b></p><ul style="margin:0 0 8px 18px;padding:0">' +
+          parentLines(soft).map(function (s) { return '<li>' + escapeHtml(s) + '</li>'; }).join('') + '</ul>');
+      }
+      const needs = chk.needs_confirm;
       fhConfirm({
-        title: 'Restore ' + fhPersonName(p),
-        sub: 'They come back into the family tree, the People list and the archive. ' +
-          back + ' relationship' + (back === 1 ? '' : 's') + ' will come back with them.' +
-          (notBack ? ' ' + notBack + ' will NOT: ' + (notBack === 1 ? 'it was' : 'they were') +
-            ' withdrawn at a different time, or ' + (notBack === 1 ? 'it links' : 'they link') +
-            ' to someone still archived. Re-link ' + (notBack === 1 ? 'it' : 'them') + ' by hand afterwards.' : ''),
-        label: notBack ? 'Restore anyway' : 'Restore',
+        title: dup ? 'Restore a duplicate — ' + fhPersonName(p) : 'Restore ' + fhPersonName(p),
+        sub: 'They come back into the family tree, the People list and the archive.' + (dup ? '' : ' ' + relText),
+        extraHtml: sections.join(''),
+        label: dup ? 'Restore duplicate' : needs ? 'Restore as a separate person' : notBack ? 'Restore anyway' : 'Restore',
+        // A known duplicate: the button stays disabled until this is ticked.
+        ack: !!dup, ackLabel: dup ? 'I understand this puts a second ' + dup.name + ' in the tree' : undefined,
       }, async function () {
         try {
-          const r = await apiFamily('POST', '/owner/persons/' + id + '/restore', {});
+          const r = await apiFamily('POST', '/owner/persons/' + id + '/restore', needs ? { confirm: chk.confirm } : {});
           await fhLoadPeople();
           showToast(fhPersonName(p) + ' restored, with ' + r.relationships_restored + ' relationship' +
             (r.relationships_restored === 1 ? '' : 's') + (r.relationships_not_restored ? '; ' + r.relationships_not_restored + ' still to re-link by hand' : '') + '.',
             r.relationships_not_restored ? 'warning' : 'success');
-        } catch (e) { if (!e.fhNoSession) showToast(e.message || 'That did not work', 'danger'); }
+        } catch (e) {
+          if (e.fhNoSession) return;
+          // The server saw a different set of collisions than this dialog showed
+          // (something changed since it opened). Nothing was restored.
+          if (e.body && e.body.error === 'restore_needs_confirm') {
+            await fhLoadPeople().catch(function () {});
+            showToast('Something changed since this opened, so nothing was restored. Open Restore again.', 'warning');
+            return;
+          }
+          showToast(e.message || 'That did not work', 'danger');
+        }
+      });
+      // "Mark as duplicate of X" inside the dialog: #modal-host is outside the
+      // family section's delegated click handler, so these are wired here.
+      document.querySelectorAll('#modal-host [data-fh-dupset]').forEach(function (b) {
+        b.addEventListener('click', function () { closeModal(); fhSetDuplicate(p, b.getAttribute('data-fh-dupset')); });
       });
     }
 
@@ -9429,6 +9587,8 @@
           if (ar) { fhArchive(ar.getAttribute('data-fh-archive')); return; }
           const rs = e.target.closest('[data-fh-restore]');
           if (rs) { fhRestore(rs.getAttribute('data-fh-restore')); return; }
+          const dm = e.target.closest('[data-fh-dupmark]');
+          if (dm) { fhDupMark(dm.getAttribute('data-fh-dupmark')); return; }
           const pr = e.target.closest('[data-fh-prop]');
           if (pr) { fhProposalAction(pr.getAttribute('data-fh-prop'), pr.getAttribute('data-fh-act')); return; }
         });
