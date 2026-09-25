@@ -18,6 +18,7 @@ import Dashboard from "./pages/Dashboard";
 import POSPage from "./pages/POSPage";
 import OnlineCartPage from "./pages/OnlineCartPage";
 import ReportsPage from "./pages/ReportsPage";
+import ComparePage from "./pages/ComparePage"; // MP-COMPARE
 import RefundsPage from "./pages/RefundsPage";
 import TransfersPage from "./pages/TransfersPage";
 import ExpenditurePage from "./pages/ExpenditurePage";
@@ -111,6 +112,9 @@ const ROUTE_ACCESS = {
   "/transfers":    ["owner", "manager", "warehouse", "cashier"],
   "/expenditures": ["owner", "manager", "cashier"],
   "/reports":      ["owner", "manager"],
+  // MP-COMPARE: owner always; a manager only with can_view_compare (the page and
+  // the server both check it). Never an accountant — see RoleGuard.
+  "/compare":      ["owner", "manager"],
   // MP-OWNER-OPERATIONS-DASHBOARD-V1: owner statement view (multi-day
   // signals, anomalies, debt aging). Owner + manager only.
   "/operations":   ["owner", "manager"],
@@ -180,7 +184,7 @@ function RoleGuard({ path, children }) {
   // management + billing) and the Accountant Log itself. Mirrors Layout's NAV
   // filter; the server enforces the authoritative per-route gate.
   const accountantInherits = user?.role === "accountant" && allowed.includes("manager")
-    && path !== "/settings" && path !== "/accountant-log";
+    && path !== "/settings" && path !== "/accountant-log" && path !== "/compare";
   if (!user || (!allowed.includes(user.role) && !accountantInherits)) {
     // MP-CASHIER-ROLE-GATING: cashier hitting a gated route is
     // redirected to /pos (their primary workspace) rather than
@@ -564,6 +568,7 @@ export default function App() {
             <Route path="transfers"    element={<RoleGuard path="/transfers"><PlanGuard path="/transfers"><TransfersPage /></PlanGuard></RoleGuard>} />
             <Route path="expenditures" element={<RoleGuard path="/expenditures"><PlanGuard path="/expenditures"><ExpenditurePage /></PlanGuard></RoleGuard>} />
             <Route path="reports"      element={<RoleGuard path="/reports"><PlanGuard path="/reports"><ReportsPage /></PlanGuard></RoleGuard>} />
+            <Route path="compare"      element={<RoleGuard path="/compare"><ComparePage /></RoleGuard>} />
             {/* MP-OWNER-OPERATIONS-DASHBOARD-V1: owner/manager deep-view.
                 RoleGuard path matches Layout.NAV; PlanGuard reuses the
                 reports section gate since the data class is the same. */}

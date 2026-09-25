@@ -109,6 +109,11 @@ const NAV = [
   // so they only see their own history (not org-wide).
   { to: "/expenditures", en: "Expenses",   fr: "Dépenses",        icon: "💸", roles: ["owner","manager","cashier"],            section: "cashflow" },
   { to: "/reports",      en: "Reports",    fr: "Rapports",        icon: "📋", roles: ["owner","manager"],                       section: "reports" },
+  // MP-COMPARE: month vs month, location vs location. Pro and above (feature
+  // "compare"); a MANAGER only with the owner's can_view_compare grant; never an
+  // accountant (excluded below from the manager inheritance). A locked entry
+  // links to PRO, not the Pro Plus default — this is a Pro feature.
+  { to: "/compare",      en: "Compare",    fr: "Comparer",        icon: "⚖️", roles: ["owner","manager"],                       section: "reports", feature: "compare", lockPlan: "pro", requiresGrant: "can_view_compare" },
   // MP-OWNER-OPERATIONS-DASHBOARD-V1: multi-day deep view sidecar
   // to the existing Dashboard at "/". Owner + manager only; reuses
   // the reports plan-section gate since the data class is the same.
@@ -865,7 +870,8 @@ export default function Layout() {
   const { summary: ticketSummary } = useTicketSummary(ticketLocId, { onError: () => {} });
   // Only the two ticket nav items consume this; a failed read leaves perms null,
   // which ticketNavVisible resolves to "hidden" — fail closed.
-  const { perms: myPerms } = useMyPermissions({ enabled: !!ticketLocId, retry: 1 });
+  // MP-COMPARE: also read for a MANAGER — the Compare entry needs his grant.
+  const { perms: myPerms } = useMyPermissions({ enabled: !!ticketLocId || role === "manager", retry: 1 });
   const ticketMode      = ticketSummary?.mode || "direct";
   const awaitingPayment = ticketSummary?.awaiting_payment || 0;
   const awaitingPickup  = ticketSummary?.awaiting_pickup || 0;
@@ -912,7 +918,8 @@ export default function Layout() {
       // the owner-only surfaces: Settings (staff management + billing live there)
       // and the Accountant Log itself. Server enforces the matching per-route gates.
       const inheritsManager = role === "accountant" && item.roles.includes("manager")
-        && item.to !== "/settings" && item.feature !== "accountant_log";
+        && item.to !== "/settings" && item.feature !== "accountant_log"
+        && item.to !== "/compare";   // MP-COMPARE: owner + granted manager only
       if (!inheritsManager) return false;
     }
     if (!hasSection(effectivePlan, item.section)) return false;
@@ -924,6 +931,9 @@ export default function Layout() {
     if (item.gate && !ticketNavVisible({ mode: ticketMode, role, perms: myPerms, flag: item.gate })) return false;
     // MP-STAFF-ACTIVITY-LEDGER Phase 4: the staff self-view only appears when the owner opted in.
     if (item.requiresStaffActivity && !(org && org.staff_can_view_own_activity)) return false;
+    // MP-COMPARE: a manager sees a granted-only entry only WITH the grant. A
+    // failed or pending permissions read leaves perms null → hidden (fail closed).
+    if (item.requiresGrant && role === "manager" && !(myPerms && myPerms[item.requiresGrant] === true)) return false;
     return true;
   }).map(item => {
     // Pro Plus feature entries: if the org isn't entitled, either HIDE the entry
@@ -941,7 +951,9 @@ export default function Layout() {
     // route (always unique) and key every render off that, not the mutated `to`.
     if (item.feature && !hasFeature(effectivePlan, item.feature)) {
       if (item.lockHide) return null;
-      return { ...item, navKey: item.to, to: "/request-activation?plan=pro_plus",
+      // A plan upsell is the OWNER's decision: nobody else is shown one.
+      if (item.lockPlan && role !== "owner") return null;
+      return { ...item, navKey: item.to, to: `/request-activation?plan=${item.lockPlan || "pro_plus"}`,
                en: `${item.en} 🔒`, fr: `${item.fr} 🔒`, _locked: true };
     }
     return { ...item, navKey: item.to };

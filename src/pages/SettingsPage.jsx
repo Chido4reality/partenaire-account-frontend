@@ -34,6 +34,52 @@ const roleStyle = (role) => {
 // the Pro Plus capability. Otherwise omit it entirely so a non-Pro-Plus owner
 // editing a staff member (or a downgraded org) never trips the server's
 // upgrade-required gate, and a previously-set assignment is left untouched.
+/* MP-COMPARE — the ONE manager grant a Pro owner can reach. The full
+   permission editor (Accountant Log → Permissions) is Pro Plus only, so on Pro
+   nothing else could ever let a manager open Compare. Reads and writes a single
+   column through its own route (GET/PUT /staff/:id/compare-access); shown only
+   where that editor does not exist, so each plan has exactly one place to grant
+   it. Saves on click and shows what the SERVER stored, not what was clicked. */
+function CompareAccessToggle({ userId, lang }) {
+  const en = lang === "en";
+  const [granted, setGranted] = useState(null);   // null = not read yet / unreadable
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let live = true;
+    api.get(`/staff/${userId}/compare-access`)
+      .then((r) => { if (live) setGranted(r.data?.data?.granted === true); })
+      .catch(() => { if (live) setGranted(null); });
+    return () => { live = false; };
+  }, [userId]);
+  const set = async (next) => {
+    setBusy(true);
+    try {
+      const r = await api.put(`/staff/${userId}/compare-access`, { granted: next });
+      setGranted(r.data?.data?.can_view_compare === true);
+      toast.success(next ? (en ? "Compare opened to this manager." : "Comparaison ouverte à ce gérant.")
+                         : (en ? "Compare closed for this manager." : "Comparaison fermée pour ce gérant."));
+    } catch (e) {
+      toast.error(e?.response?.data?.message_en && en ? e.response.data.message_en
+        : e?.response?.data?.message_fr || (en ? "That did not save." : "Non enregistré."));
+    } finally { setBusy(false); }
+  };
+  return (
+    <div data-compare-access style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
+      <label style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 600, cursor: granted === null ? "default" : "pointer" }}>
+        <input type="checkbox" checked={granted === true} disabled={granted === null || busy}
+               onChange={(e) => set(e.target.checked)} />
+        {en ? "Can open Compare" : "Peut ouvrir Comparer"}
+      </label>
+      <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
+        {granted === null
+          ? (en ? "Could not read this setting." : "Réglage illisible pour le moment.")
+          : (en ? "Month-to-month and shop-to-shop figures, including capital. Off unless you turn it on."
+                : "Chiffres mois contre mois et boutique contre boutique, capital compris. Désactivé sauf si vous l'activez.")}
+      </div>
+    </div>
+  );
+}
+
 function buildStaffPayload(form, effectivePlan) {
   const p = { full_name: form.full_name, phone: form.phone, role: form.role };
   // MP-STAFF-PIN-CLOBBER: only send the PIN when the owner ACTUALLY typed a new one, and
@@ -2302,6 +2348,12 @@ export default function SettingsPage() {
               {staffForm.role === "warehouse" && (lang === "en" ? "✓ Can: receive goods, adjust stock" : "✓ Peut: réceptionner, ajuster le stock")}
               {staffForm.role === "accountant" && (lang === "en" ? "✓ Can: sales + inventory + reports. ✗ No staff, billing, or Accountant Log" : "✓ Peut: ventes + inventaire + rapports. ✗ Pas de personnel, facturation, ni Journal du comptable")}
             </div>
+            {/* MP-COMPARE: Pro owners grant Compare here; Pro Plus grants it in the
+                Accountant Log editor. Only for a SAVED manager (the grant is per user). */}
+            {isOwner && editStaff && editStaff.role === "manager" && staffForm.role === "manager"
+              && hasFeature(effectivePlan, "compare") && !hasFeature(effectivePlan, "accountant_log") && (
+              <CompareAccessToggle userId={editStaff.id} lang={lang} />
+            )}
 
             {/* ── HR-LITE ENRICHMENT (Staff Maintenance) — Pro Plus + OWNER only.
                 Hidden for managers and non-Pro-Plus orgs; basic fields above keep

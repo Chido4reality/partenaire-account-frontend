@@ -55,7 +55,7 @@ const SECTIONS = [
   // + pro/pro_plus gate; listing it here just lets the mobile drawer surface it.
   { en: "INVENTORY",  fr: "INVENTAIRE",        routes: ["/inventory", "/stock-count", "/barcodes", "/transfers", "/stock-check", "/restock", "/goods-buffer", "/my-activity", "/dozie-listings", "/dozie-orders", "/dozie-messages", "/dozie-disputes"] },
   { en: "PEOPLE & MONEY", fr: "PERSONNES & ARGENT", routes: ["/customers", "/credits", "/expenditures", "/attendance", "/assets"] },
-  { en: "REPORTING",  fr: "RAPPORTS",          routes: ["/reports", "/operations", "/filters"] },
+  { en: "REPORTING",  fr: "RAPPORTS",          routes: ["/reports", "/compare", "/operations", "/filters"] },
   // Accountant Log Phase 1: owner-only oversight surface. Lives next to Settings
   // in the drawer (it inherits Layout's NAV owner+pro_plus gate; listing it here
   // just lets the mobile drawer surface it — same SECTIONS-omission fix pattern).

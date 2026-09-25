@@ -1453,6 +1453,7 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
         // save, or a save about something else would silently clear the grant.
         can_resolve_stock_checks: !!perms.can_resolve_stock_checks,
         receive_without_count: !!perms.receive_without_count, // F-C
+        can_view_compare: !!perms.can_view_compare, // MP-COMPARE
         // MP-CASHIER-PHASE-1b: sent on every save like the flags above, so an
         // untouched grant round-trips as itself rather than being cleared by a
         // save that happened to be about something else.
@@ -2221,8 +2222,31 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                       {en ? "Confirms an arrival without counting it, with a written reason (10 characters minimum). Every use is logged with their name and counts towards the override rate you see above. Leave this off unless someone genuinely receives goods while you are away."
                           : "Confirme une arrivée sans la compter, avec un motif écrit (10 caractères minimum). Chaque utilisation est enregistrée à son nom et compte dans le taux de dérogation affiché ci-dessus. Laissez désactivé sauf si quelqu'un réceptionne réellement en votre absence."}
                     </div>
+                    {/* MP-COMPARE: may this MANAGER open the Compare screen? Off by
+                        default (NOT NULL DEFAULT false); only ever honoured for a
+                        manager (compareAuthority). */}
+                    {staff.role === "manager" && (<>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 12, marginBottom: 5 }}>{en ? "Compare screen:" : "Écran Comparer :"}</div>
+                    <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>
+                      {[
+                        { val: false, en: "No", fr: "Non" },
+                        { val: true,  en: "Can open Compare", fr: "Peut ouvrir Comparer" },
+                      ].map((o) => (
+                        <button key={String(o.val)} onClick={() => setPerms((p) => ({ ...(p || {}), can_view_compare: o.val }))}
+                          style={{ flex: 1, padding: "7px 4px", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
+                            background: !!perms.can_view_compare === o.val ? (o.val ? "rgba(16,185,129,0.9)" : "rgba(239,68,68,0.9)") : "var(--bg-elevated)",
+                            color: !!perms.can_view_compare === o.val ? (o.val ? "#06281d" : "#fff") : "var(--text-muted)" }}>
+                          {en ? o.en : o.fr}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: "var(--text-muted)", marginTop: 4 }}>
+                      {en ? "Month-to-month and shop-to-shop figures, including capital (stock at cost)."
+                          : "Chiffres mois contre mois et boutique contre boutique, capital compris (stock au coût)."}
+                    </div>
+                    </>)}
                     <button className="btn btn-secondary" style={{ width: "100%", marginTop: 10 }}
-                      onClick={() => setPerms((p) => ({ ...(p || {}), can_approve: [], branch_scope: "own", can_manage_staff: false, can_cancel_transfers: false, can_resolve_stock_checks: false, receive_without_count: false }))}>
+                      onClick={() => setPerms((p) => ({ ...(p || {}), can_approve: [], branch_scope: "own", can_manage_staff: false, can_cancel_transfers: false, can_resolve_stock_checks: false, receive_without_count: false, can_view_compare: false }))}>
                       {en ? "↺ Remove all delegation" : "↺ Retirer toute délégation"}
                     </button>
                   </div>
