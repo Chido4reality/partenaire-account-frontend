@@ -144,6 +144,12 @@ const PEOPLE = [
     public_visibility: "hidden", birth_date: "2016-02-02", archived: false },
   { id: "p-adult-free", given_names: "Emeka", surname: "Okafor", is_minor: false, minor_login_override: false,
     public_visibility: "full", birth_date: "1978-07-07", archived: false },
+  // ARCHIVED, and a child — the prod case (Honorine Okafor, 2026-09-25): the
+  // roster showed her as live, with a Child badge and an "Allow a login" that
+  // saved. One of her two relationships matches her archived_at, one does not.
+  { id: "p-archived-child", given_names: "Honorine", surname: "Okafor", is_minor: true, minor_login_override: false,
+    public_visibility: "hidden", birth_date: null, archived: true, archived_at: "2026-09-21T07:38:26Z",
+    restore_relationships_back: 1, restore_relationships_not_back: 1 },
 ];
 const MEMBERS = [
   { id: "m1", display_name: "Ada", email: "ada@x.test", person_id: "p-adult",
@@ -259,6 +265,29 @@ check("a minor's public column says a child is never public",
   /a child is never public/.test(roster), "");
 check("the roster offers no way to edit a name",
   !/data-fh-edit|<input/.test(roster), "read-only, as briefed");
+
+// ── archived people (2026-09-25) ────────────────────────────────────────────
+check("an archived person is NOT listed by default", !/Honorine/.test(roster), "live people only until asked");
+check("every live person can be archived", (roster.match(/data-fh-archive=/g) || []).length === 5, `${(roster.match(/data-fh-archive=/g) || []).length} Archive buttons`);
+getEl("fr-show-archived").checked = true;
+ctx.fhRenderPeople();
+const withArchived = getEl("fr-tbody").innerHTML;
+const hRow = (withArchived.split("<tr").find((r) => /Honorine/.test(r)) || "");
+check("with Show archived, she is listed and plainly marked with her date",
+  /Honorine/.test(hRow) && /Archived/.test(hRow) && /2026|21/.test(hRow), hRow.replace(/<[^>]+>/g, " ").replace(/s+/g, " ").slice(0, 120));
+check("…and offered Restore, and NOTHING else — no override, no Archive, no publish",
+  /data-fh-restore="p-archived-child"/.test(hRow) && !/data-fh-override/.test(hRow) && !/data-fh-archive/.test(hRow) && !/Public|Not public|Allowed|Not allowed/.test(hRow), "");
+check("…and her row says how many relationships would NOT come back", /1 would not/.test(hRow), "");
+{
+  let spec = null; const real = ctx.fhConfirm; ctx.fhConfirm = (sp) => { spec = sp; };
+  ctx.fhRestore("p-archived-child");
+  ctx.fhConfirm = real;
+  check("Restore warns BEFORE the click that the restore is partial",
+    !!spec && /1 relationship will come back/.test(spec.sub) && /1 will NOT/.test(spec.sub) && spec.label === "Restore anyway",
+    spec ? `${spec.label}: ${spec.sub.slice(0, 110)}…` : "no confirm");
+}
+getEl("fr-show-archived").checked = false;
+ctx.fhRenderPeople();
 
 // ── approvals ───────────────────────────────────────────────────────────────
 NEXT = { "/owner/proposals": { proposals: PROPOSALS } };

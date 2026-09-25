@@ -2362,11 +2362,13 @@
           <div>
             <div class="page-title">Family people</div>
             <div class="page-sub">
-              The roster, read-only. Names and life details are written on the family
-              site, not here. What IS decided here is whether a child may hold a login.
+              Names and life details are written on the family site, not here. What IS
+              decided here is whether a child may hold a login, and whether someone is
+              archived — taken out of the tree and the archive — or restored.
             </div>
           </div>
           <div style="display:flex; gap:8px; align-items:center">
+            <label class="mm-check" style="margin:0; white-space:nowrap"><input type="checkbox" id="fr-show-archived" /> Show archived</label>
             <div class="field" style="margin:0"><input type="text" id="fr-search" placeholder="Search by name" /></div>
             <button class="btn" id="fr-refresh">Refresh</button>
           </div>
@@ -8747,11 +8749,34 @@
       fhRenderAccounts();     // its state column reads these rows
       return FH_PEOPLE;
     }
+    /* 🔴 ARCHIVED PEOPLE WERE LISTED AS LIVE. /owner/persons returns everyone,
+       with an `archived` flag, and this table never read it — so an archived
+       child carried a Child badge and an "Allow a login" button that saved
+       (measured on prod 2026-09-25: five archived people, Honorine Okafor among
+       them). Live people by default; archived ones only when asked for, marked
+       with their date, and offered Restore and nothing else. */
+    function fhArchivedLabel(p) {
+      const d = p.archived_at ? fmtDate(p.archived_at) : '';
+      return '<span class="pill pill-muted">Archived' + (d ? ' ' + escapeHtml(d) : '') + '</span>';
+    }
     function fhRenderPeople() {
       const tb = $('fr-tbody'); if (!tb) return;
       const q = (($('fr-search') && $('fr-search').value) || '').trim().toLowerCase();
-      const rows = FH_PEOPLE.filter(function (p) { return !q || fhPersonName(p).toLowerCase().indexOf(q) !== -1; });
+      const showArchived = Boolean($('fr-show-archived') && $('fr-show-archived').checked);
+      const rows = FH_PEOPLE.filter(function (p) {
+        return (showArchived || !p.archived) && (!q || fhPersonName(p).toLowerCase().indexOf(q) !== -1);
+      });
       tb.innerHTML = rows.map(function (p) {
+        if (p.archived) {
+          const back = Number(p.restore_relationships_back || 0), notBack = Number(p.restore_relationships_not_back || 0);
+          return '<tr class="muted"><td>' + escapeHtml(fhPersonName(p)) + ' ' + fhArchivedLabel(p) + '</td>' +
+                 '<td class="muted">' + escapeHtml(p.birth_date ? String(p.birth_date).slice(0, 4) : '—') + '</td>' +
+                 '<td colspan="3" class="muted" style="font-size:12px">Not in the tree or the archive. ' +
+                   escapeHtml(back + ' relationship' + (back === 1 ? '' : 's') + ' would come back') +
+                   (notBack ? '<b style="color:var(--danger)">; ' + escapeHtml(notBack + ' would not') + '</b>' : '') + '.</td>' +
+                 '<td class="ta-right" style="white-space:nowrap"><button class="btn btn-sm" data-fh-restore="' +
+                   escapeHtml(p.id) + '">Restore</button></td></tr>';
+        }
         const born = p.birth_date ? String(p.birth_date).slice(0, 4) : '—';
         const child = p.is_minor ? '<span class="pill pill-critical">Child</span>' : '<span class="muted">—</span>';
         // Read from the column the database enforces on, not from a guess.
@@ -8766,10 +8791,10 @@
         // A minor is never public whatever this says, so say that too rather
         // than letting the badge imply the child is exposed.
         const pubCell = p.is_minor ? pub + ' <span class="muted" style="font-size:11px">(a child is never public)</span>' : pub;
-        const act = p.is_minor
+        const act = (p.is_minor
           ? '<button class="btn btn-sm" data-fh-override="' + escapeHtml(p.id) + '">' +
-              (p.minor_login_override ? 'Stop child access' : 'Allow a login') + '</button>'
-          : '<span class="muted">—</span>';
+              (p.minor_login_override ? 'Stop child access' : 'Allow a login') + '</button> '
+          : '') + '<button class="btn btn-sm" data-fh-archive="' + escapeHtml(p.id) + '">Archive</button>';
         return '<tr><td>' + escapeHtml(fhPersonName(p)) + '</td>' +
                '<td class="muted">' + escapeHtml(born) + '</td>' +
                '<td>' + child + '</td><td>' + allowed + '</td><td>' + pubCell + '</td>' +
@@ -9031,6 +9056,82 @@
       if (ack) ack.addEventListener('change', refresh);
       if (reason) reason.addEventListener('input', refresh);
       refresh();
+    }
+
+    // ── archive and restore a person ───────────────────────────────────────
+    // The server is asked FIRST what stands in the way. If anything does, the
+    // dialog names it — who, and how much of what — and offers no Archive
+    // button, because the server would refuse it. Otherwise it says exactly
+    // what archiving will do before it is done.
+    const FH_CONTENT_LABEL = {
+      stories_about: 'stories about them', stories_told: 'stories they told', timeline: 'timeline events',
+      photographs_files: 'photographs or files', documents: 'documents', testimony_given: 'testimony they gave',
+      testimony_about: 'testimony about them', businesses: 'business records', migrations: 'migration records',
+      beliefs: 'beliefs they recorded', deity_custodian: 'deity custodianships', deity_revival: 'deity revival records',
+    };
+    async function fhArchive(id) {
+      const p = FH_PEOPLE.find(function (x) { return x.id === id; }); if (!p) return;
+      let chk;
+      try { chk = await apiFamily('GET', '/owner/persons/' + id + '/archive-check'); }
+      catch (e) { if (!e.fhNoSession) showToast(e.message || 'That did not work', 'danger'); return; }
+      const b = chk.blockers || {};
+      if (chk.blocked) {
+        const items = [];
+        if (b.active_logins > 0) items.push('They have a login that still works — unlink or suspend their account first (Family accounts).');
+        if ((b.children || []).length) items.push('They are the parent of ' + b.children.map(function (c) { return c.name; }).join(', ') +
+          '. Archive or re-link ' + (b.children.length === 1 ? 'that child' : 'those children') + ' first.');
+        const content = Object.keys(b.content || {}).map(function (k) { return b.content[k] + ' ' + (FH_CONTENT_LABEL[k] || k); });
+        if (content.length) items.push('The archive still holds ' + content.join(', ') + '. Archive or move ' +
+          (content.length === 1 && b.content[Object.keys(b.content)[0]] === 1 ? 'it' : 'them') + ' first (on the family site).');
+        if (b.legacies > 0) items.push('They own a legacy.');
+        if (b.branch_roots > 0) items.push('A family branch is rooted at them.');
+        openModal({
+          title: 'Cannot archive ' + fhPersonName(p) + ' yet',
+          sub: 'Something still depends on this person. Nothing has been changed.',
+          content: '<ul style="margin:6px 0 0 18px;padding:0">' + items.map(function (s) { return '<li style="margin:6px 0">' + escapeHtml(s) + '</li>'; }).join('') + '</ul>',
+          secondary: { label: 'Close' },
+        });
+        return;
+      }
+      const rel = Number(chk.relationships_to_archive || 0);
+      fhConfirm({
+        title: 'Archive ' + fhPersonName(p),
+        sub: 'They leave the family tree, the People list and the archive. Nothing is deleted, and Restore brings them back.' +
+          (rel ? ' Their ' + rel + ' relationship' + (rel === 1 ? '' : 's') + ' will be archived with them, and come back with them.' : '') +
+          (chk.published ? ' They are on the public site now, and will leave it at once.' : ''),
+        label: 'Archive', danger: true,
+      }, async function () {
+        try {
+          const r = await apiFamily('POST', '/owner/persons/' + id + '/archive', {});
+          await fhLoadPeople();
+          showToast(fhPersonName(p) + ' archived' + (r.relationships_archived ? ', with ' + r.relationships_archived + ' relationship' + (r.relationships_archived === 1 ? '' : 's') : '') + '.', 'success');
+        } catch (e) { if (!e.fhNoSession) showToast(e.message || 'That did not work', 'danger'); }
+      });
+    }
+    // 🔴 A PARTIAL RESTORE IS SAID TO BE PARTIAL, BEFORE THE CLICK. Only the
+    // relationships archived at the same instant as the person — and whose
+    // other end is live — come back. Five people archived before this existed
+    // do not all match (Peter checked prod), and he re-links the rest by hand.
+    function fhRestore(id) {
+      const p = FH_PEOPLE.find(function (x) { return x.id === id; }); if (!p) return;
+      const back = Number(p.restore_relationships_back || 0), notBack = Number(p.restore_relationships_not_back || 0);
+      fhConfirm({
+        title: 'Restore ' + fhPersonName(p),
+        sub: 'They come back into the family tree, the People list and the archive. ' +
+          back + ' relationship' + (back === 1 ? '' : 's') + ' will come back with them.' +
+          (notBack ? ' ' + notBack + ' will NOT: ' + (notBack === 1 ? 'it was' : 'they were') +
+            ' withdrawn at a different time, or ' + (notBack === 1 ? 'it links' : 'they link') +
+            ' to someone still archived. Re-link ' + (notBack === 1 ? 'it' : 'them') + ' by hand afterwards.' : ''),
+        label: notBack ? 'Restore anyway' : 'Restore',
+      }, async function () {
+        try {
+          const r = await apiFamily('POST', '/owner/persons/' + id + '/restore', {});
+          await fhLoadPeople();
+          showToast(fhPersonName(p) + ' restored, with ' + r.relationships_restored + ' relationship' +
+            (r.relationships_restored === 1 ? '' : 's') + (r.relationships_not_restored ? '; ' + r.relationships_not_restored + ' still to re-link by hand' : '') + '.',
+            r.relationships_not_restored ? 'warning' : 'success');
+        } catch (e) { if (!e.fhNoSession) showToast(e.message || 'That did not work', 'danger'); }
+      });
     }
 
     // ── the child-login override ───────────────────────────────────────────
@@ -9300,6 +9401,7 @@
       on('fp-status', 'change', loadFamilyApprovals);
       on('fr-refresh', 'click', loadFamilyPeople);
       on('fr-search', 'input', fhRenderPeople);
+      on('fr-show-archived', 'change', fhRenderPeople);
       // Delegated, because every one of these lists is rebuilt by innerHTML.
       ['route-family-accounts', 'route-family-approvals', 'route-family-people'].forEach(function (rid) {
         const host = $(rid); if (!host) return;
@@ -9323,6 +9425,10 @@
           if (mem) { fhMemberAction(mem.getAttribute('data-fh-member'), mem.getAttribute('data-fh-act')); return; }
           const ov = e.target.closest('[data-fh-override]');
           if (ov) { fhOverride(ov.getAttribute('data-fh-override')); return; }
+          const ar = e.target.closest('[data-fh-archive]');
+          if (ar) { fhArchive(ar.getAttribute('data-fh-archive')); return; }
+          const rs = e.target.closest('[data-fh-restore]');
+          if (rs) { fhRestore(rs.getAttribute('data-fh-restore')); return; }
           const pr = e.target.closest('[data-fh-prop]');
           if (pr) { fhProposalAction(pr.getAttribute('data-fh-prop'), pr.getAttribute('data-fh-act')); return; }
         });

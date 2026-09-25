@@ -30,7 +30,8 @@
 // v7: the login picker leaves out people whose line has ended, and an open-this-line request can be approved.
 // v8: "New password" actually mints one and shows it; the one-time panel's tick now gates Close.
 // v9: Family approvals — documents (with their file) and sources can be reviewed; belief and deity history are approvable.
-const VERSION = 'admin-pwa-v9';
+// v10: Family people — archived people hidden by default and marked; Archive and Restore (with a partial-restore warning).
+const VERSION = 'admin-pwa-v10';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const API_CACHE = `${VERSION}-api`;
