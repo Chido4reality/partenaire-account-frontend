@@ -160,6 +160,19 @@ const PROPOSALS = [
   // birth_order passes the submission guard and is NOT in APPLY_FIELDS.person.
   { id: "s2", kind: "person", operation: "update", status: "pending", submitted_at: "2026-09-18T11:00:00Z",
     submitted_by_name: "Ada", payload: { birth_order: 3 } },
+  // The four kinds added 2026-09-25. belief was approvable on the server and
+  // hidden HERE — the portal's mirror had never been told about it.
+  { id: "s3", kind: "belief", operation: "insert", status: "pending", submitted_at: "2026-09-25T10:00:00Z",
+    submitted_by_name: "Ada", payload: { name: "Ancestral shrine", description: "Kept in the compound." } },
+  { id: "s4", kind: "document", operation: "insert", status: "pending", submitted_at: "2026-09-25T10:01:00Z",
+    submitted_by_name: "Ada", payload: { title: "Land deed", media_id: "11111111-1111-4111-8111-111111111111" },
+    file: { mime_type: "application/pdf", byte_size: 250000 } },
+  // A document whose file never arrived: the server answers 409 file_missing.
+  { id: "s5", kind: "document", operation: "insert", status: "pending", submitted_at: "2026-09-25T10:02:00Z",
+    submitted_by_name: "Ada", payload: { title: "Baptism card", media_id: "22222222-2222-4222-8222-222222222222" },
+    file: null },
+  { id: "s6", kind: "source", operation: "insert", status: "pending", submitted_at: "2026-09-25T10:03:00Z",
+    submitted_by_name: "Ada", payload: { title: "Parish register", citation: "St Mary's, 1952" } },
 ];
 
 // ── the role gate, place 2 ──────────────────────────────────────────────────
@@ -263,6 +276,19 @@ check("it can still be rejected",
 check("fhUnappliable agrees with APPLY_FIELDS.person",
   ctx.fhUnappliable(PROPOSALS[1]).join(",") === "birth_order" &&
   ctx.fhUnappliable(PROPOSALS[0]).length === 0, "");
+for (const id of ["s3", "s4", "s6"]) {
+  const p = PROPOSALS.find((x) => x.id === id);
+  check(`a ${p.kind} proposal offers Approve (the server applies it)`,
+    new RegExp(`data-fh-prop="${id}" data-fh-act="approve"`).test(props),
+    ctx.fhUnappliable(p).join(",") || "unappliable says nothing");
+}
+check("a document with its file shows it and offers to open it",
+  /Attached: <b>PDF<\/b> · 244 KB/.test(props) && /data-fh-prop="s4" data-fh-act="file"/.test(props), "");
+check("…and never prints the media_id",
+  !/11111111-1111-4111-8111-111111111111/.test(props), "");
+check("a document whose file never arrived offers NO Approve, and says why",
+  !/data-fh-prop="s5" data-fh-act="approve"/.test(props) && /never arrived/.test(props) &&
+  /data-fh-prop="s5" data-fh-act="reject"/.test(props), "the server would answer 409 file_missing");
 
 /* ── THE OWNER MINTS A PASSWORD, AND ACTUALLY SEES IT ───────────────────────
    The bug: "New password" called PATCH /owner/members/:id {must_change_password}

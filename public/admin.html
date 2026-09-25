@@ -9070,7 +9070,24 @@
                        'category', 'person_id', 'visibility'],
       relationship: ['from_person_id', 'to_person_id', 'kind', 'spouse_order', 'union_start', 'union_end',
                      'union_status', 'notes'],
+      // 🔴 belief and deity_history were approvable on the server's list and
+      // missing HERE, so this screen hid their Approve button with "cannot be
+      // approved here" — the same one-sided mirror that made the server answer
+      // 409, on the other side of the wire. All four added together.
+      belief: ['name', 'kind', 'description', 'origin_note', 'still_practised', 'generation_id',
+               'visibility', 'author_person_id'],
+      deity_history: ['name', 'origin_account', 'origin_generation_id', 'practising_generations',
+                      'what_changed', 'why_it_declined', 'near_disappearance_account',
+                      'revival_account', 'revived_by_person_id', 'interpretation',
+                      'contested_note', 'visibility'],
+      document: ['title', 'doc_type', 'summary', 'issued_on', 'issuer', 'person_id', 'media_id', 'visibility'],
+      source: ['title', 'citation', 'url', 'notes', 'source_type', 'visibility'],
     };
+    // A submitted document may carry a file (media_id). The server reports
+    // whether it arrived as p.file — { mime_type, byte_size } or null.
+    function fhDocFileMissing(p) {
+      return p.kind === 'document' && p.payload && p.payload.media_id && !p.file;
+    }
     // 🔴 MIRRORS THE BACKEND'S ONE EXCEPTION (fhOwner.js approve): a proposal
     // to ADD A NEW PERSON carries a nested `relationship` — who they are to the
     // tree — because the new person's id does not exist until approval, so a
@@ -9097,6 +9114,7 @@
       }
       const allowed = FH_APPLY_FIELDS[p.kind];
       if (!allowed) return ['this kind of record cannot be applied yet'];
+      if (fhDocFileMissing(p)) return ['its file never finished uploading'];
       const ok = allowed.concat(fhIsNewPerson(p) ? ['surname', 'sex', 'is_minor'] : []);
       const bad = [];
       Object.keys(p.payload || {}).forEach(function (k) {
@@ -9161,6 +9179,19 @@
           ? fhRelLine(fhWho(r.anchor_id), r.kind, fhSexOf(r.anchor_id), nw)
           : fhRelLine(nw, r.kind, pay.sex || null, fhWho(r.anchor_id));
       }
+      if (p.kind === 'document' && pay.media_id) {
+        // The file is opened from here and nowhere else; nobody but the
+        // submitter and the owner can read it until it is approved.
+        if (!p.file) {
+          return '<div style="font-size:13px;margin:2px 0 6px;color:var(--danger)">A file was meant to come with this ' +
+                 'document and never arrived.</div>';
+        }
+        const kind = p.file.mime_type === 'application/pdf' ? 'PDF' : 'Image';
+        const size = p.file.byte_size >= 1048576 ? (p.file.byte_size / 1048576).toFixed(1) + ' MB'
+                   : Math.max(1, Math.round(p.file.byte_size / 1024)) + ' KB';
+        return '<div style="font-size:13px;margin:2px 0 6px">Attached: <b>' + kind + '</b> · ' + escapeHtml(size) +
+               ' <button class="btn btn-sm" data-fh-prop="' + escapeHtml(p.id) + '" data-fh-act="file">Open file</button></div>';
+      }
       return '';
     }
     function fhProposalValue(k, v) {
@@ -9190,7 +9221,8 @@
         // The edge's own three keys are the summary line; listing them again
         // underneath would put the ids straight back on screen.
         const shown = summary && p.kind === 'relationship' ? ['from_person_id', 'to_person_id', 'kind']
-                    : fhIsOpenLine(p) ? ['open_line_reason'] : ['relationship'];
+                    : fhIsOpenLine(p) ? ['open_line_reason']
+                    : p.kind === 'document' ? ['media_id'] : ['relationship'];
         const fields = summary + (Object.keys(p.payload || {}).filter(function (k) { return shown.indexOf(k) === -1; }).map(function (k) {
           return '<div style="font-size:13px"><span class="muted">' + escapeHtml(k) + ':</span> ' +
                  escapeHtml(fhProposalValue(k, p.payload[k])) + '</div>';
@@ -9219,10 +9251,26 @@
         try { await fn(); await Promise.all([fhLoadProposals(), fhLoadPeople()]); }
         catch (e) { if (!e.fhNoSession) showToast(e.message || 'That did not work', 'danger'); }
       };
+      const p = FH_PROPOSALS.find(function (x) { return x.id === id; }) || {};
+      const hasFile = p.kind === 'document' && !!p.file;
+      if (act === 'file') {
+        // Opened BEFORE the await, or a popup blocker eats it: the url only
+        // exists after the request, and by then the click is no longer "user
+        // initiated". The url is short-lived and minted per click.
+        const w = window.open('', '_blank');
+        apiFamily('GET', '/proposals/' + id + '/file').then(function (r) {
+          if (w) w.location.href = r.url; else window.location.href = r.url;
+        }).catch(function (e) {
+          if (w) w.close();
+          if (!e.fhNoSession) showToast(e.message || 'That file could not be opened', 'danger');
+        });
+        return;
+      }
       if (act === 'approve') {
         fhConfirm({
           title: 'Approve this change',
-          sub: 'This writes the proposed change to the record, now.',
+          sub: 'This writes the proposed change to the record, now.' +
+               (hasFile ? ' The attached file moves into the family archive with it.' : ''),
           label: 'Approve',
         }, function () { return run(function () { return apiFamily('POST', '/owner/proposals/' + id + '/approve'); }); });
       } else {
@@ -9231,7 +9279,8 @@
           // to the record" — Approve's sentence, copied. It says the opposite of
           // what the button does.
           title: 'Reject this change',
-          sub: 'Nothing is written to the record. The proposal stays as a record that it was asked for.',
+          sub: 'Nothing is written to the record. The proposal stays as a record that it was asked for.' +
+               (hasFile ? ' The attached file is deleted from storage and cannot be recovered.' : ''),
           label: 'Reject', danger: true,
           extraHtml: '<div class="field"><label>Note back to them (optional)</label><textarea id="fh-note" rows="3"></textarea></div>',
         }, function () {

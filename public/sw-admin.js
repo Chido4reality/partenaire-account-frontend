@@ -29,7 +29,8 @@
 // v6: relationship proposals are shown by name and an add-a-relative proposal can be approved.
 // v7: the login picker leaves out people whose line has ended, and an open-this-line request can be approved.
 // v8: "New password" actually mints one and shows it; the one-time panel's tick now gates Close.
-const VERSION = 'admin-pwa-v8';
+// v9: Family approvals — documents (with their file) and sources can be reviewed; belief and deity history are approvable.
+const VERSION = 'admin-pwa-v9';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const API_CACHE = `${VERSION}-api`;
