@@ -35,7 +35,8 @@
 // v9: Family people — archived people hidden by default and marked; Archive and Restore (with a partial-restore warning).
 // v11: Family people — duplicates are marked and linked; Restore asks what it collides with and needs the ids confirmed.
 // v12: Family approvals — a proposed second parent is flagged before Approve (and given a sex there); a missing sex is named.
-const VERSION = 'admin-pwa-v12';
+// v13: Family approvals — a relative's Gallery photograph is reviewed here, with its file.
+const VERSION = 'admin-pwa-v13';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const API_CACHE = `${VERSION}-api`;

@@ -199,6 +199,13 @@ const PROPOSALS = [
     parent_check: { code: "sex_unknown", child: { id: "p-adult", name: "Ada Okafor" },
       person: { id: null, name: "Ngozi", sex: null, is_new: true },
       other: { id: "f1", name: "Okonkwo Okafor", sex: "male", is_new: false } } },
+  // fh_59: a relative's Gallery photograph, its file arrived; and one whose never did.
+  { id: "s9", kind: "media", operation: "insert", status: "pending", submitted_at: "2026-09-26T11:00:00Z",
+    submitted_by_name: "Ada", payload: { caption: "At the compound, 1998", media_id: "33333333-3333-4333-8333-333333333333" },
+    file: { mime_type: "image/jpeg", byte_size: 812000 } },
+  { id: "s10", kind: "media", operation: "insert", status: "pending", submitted_at: "2026-09-26T11:01:00Z",
+    submitted_by_name: "Ada", payload: { caption: "Never arrived", media_id: "44444444-4444-4444-8444-444444444444" },
+    file: null },
   // fh_58: an EXISTING person with no sex on record proposed as a second parent.
   { id: "s8", kind: "relationship", operation: "insert", status: "pending", submitted_at: "2026-09-26T10:01:00Z",
     submitted_by_name: "Ada", payload: { from_person_id: "p-adult-free", to_person_id: "p-adult", kind: "parent_of" },
@@ -392,6 +399,24 @@ check("a document with its file shows it and offers to open it",
   /Attached: <b>PDF<\/b> · 244 KB/.test(props) && /data-fh-prop="s4" data-fh-act="file"/.test(props), "");
 check("…and never prints the media_id",
   !/11111111-1111-4111-8111-111111111111/.test(props), "");
+
+// ── a relative's Gallery photograph (fh_59) ─────────────────────────────────
+{
+  const at = (id) => { const i = props.indexOf(`data-fh-prop="${id}"`); const st = props.lastIndexOf('<div class="card"', i);
+                       return props.slice(st, props.indexOf('data-fh-act="reject"', i) + 30); };
+  const c9 = at("s9"), c10 = at("s10");
+  check("a photograph proposal offers Approve, and shows its file as a PHOTOGRAPH to open",
+    /data-fh-prop="s9" data-fh-act="approve"/.test(c9) && /Attached: <b>Photograph<\/b> · 793 KB/.test(c9) &&
+    /data-fh-prop="s9" data-fh-act="file"/.test(c9), c9.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 120));
+  check("…never prints the media_id", !/33333333-3333-4333-8333-333333333333/.test(props), "");
+  check("a photograph whose file never arrived: said in words, and NO Approve",
+    /never arrived/.test(c10) && /photograph/.test(c10) && !/data-fh-prop="s10" data-fh-act="approve"/.test(c10), "");
+  let spec = null; const real = ctx.fhConfirm; ctx.fhConfirm = (sp) => { spec = sp; };
+  ctx.fhProposalAction("s9", "approve");
+  ctx.fhConfirm = real;
+  check("approving it says the file moves into the archive and the family only will see it",
+    !!spec && /moves into the family archive/.test(spec.sub) && /family only/.test(spec.sub), spec ? spec.sub.slice(0, 120) : "");
+}
 
 // ── a proposed second parent (fh_58): said BEFORE the click ─────────────────
 {
