@@ -11,6 +11,7 @@ import { useLangStore } from "../store";
 import { useCurrency } from "../utils/useCurrency";
 import api from "../utils/api";
 import ApprovalDetailView from "../components/common/ApprovalDetailView"; // MP-APPROVAL-FULL-DETAIL
+import HoldRejectFields, { HOLD_ACTION, holdRejectReady } from "../components/common/HoldRejectFields"; // receive-mismatch gate
 
 const VERB = {
   void:            { en: "cancel a sale",      fr: "annuler une vente" },
@@ -28,6 +29,8 @@ const VERB = {
   float_edit:      { en: "opening-float correction", fr: "correction du fonds de caisse" },
   expense_edit:    { en: "expense correction",  fr: "correction de dépense" },
   expense_delete:  { en: "expense deletion",    fr: "suppression de dépense" },
+  // RECEIVE-MISMATCH GATE: ANY manager decides these — no grant needed (Peter).
+  transfer_receive_hold: { en: "goods received short", fr: "réception non conforme" },
 };
 const verb = (a, en) => (VERB[a] ? (en ? VERB[a].en : VERB[a].fr) : a);
 
@@ -46,6 +49,8 @@ export default function TeamApprovalsPage() {
   const [pin, setPin] = useState("");
   const [rejectFor, setRejectFor] = useState(null); // row awaiting reject confirm
   const [note, setNote] = useState("");
+  const [holdMode, setHoldMode] = useState(null); // receive-mismatch gate
+  const [holdPin, setHoldPin] = useState("");
 
   const { data: resp, isLoading, isError } = useQuery({
     queryKey: ["team-approvals"],
@@ -55,12 +60,14 @@ export default function TeamApprovalsPage() {
   const rows = resp?.data || [];
 
   const closePin = () => { setPinFor(null); setPin(""); };
-  const closeReject = () => { setRejectFor(null); setNote(""); };
+  const closeReject = () => { setRejectFor(null); setNote(""); setHoldMode(null); setHoldPin(""); };
 
   const approveMut = useMutation({
     mutationFn: ({ id, pin }) => api.post(`/staff/approvals/${id}/approve`, { pin }).then((r) => r.data),
-    onSuccess: () => {
-      toast.success(en ? "Approved — the staffer can now complete it." : "Approuvé — l'employé peut maintenant finaliser.");
+    onSuccess: (res) => {
+      toast.success(res?.status === "executed"
+        ? (en ? "Approved — the counted goods are now in stock." : "Approuvé — les marchandises comptées sont en stock.")
+        : (en ? "Approved — the staffer can now complete it." : "Approuvé — l'employé peut maintenant finaliser."));
       closePin();
       qc.invalidateQueries({ queryKey: ["team-approvals"] });
     },
@@ -75,9 +82,11 @@ export default function TeamApprovalsPage() {
   });
 
   const rejectMut = useMutation({
-    mutationFn: ({ id, note }) => api.post(`/staff/approvals/${id}/reject`, { note }).then((r) => r.data),
-    onSuccess: () => {
-      toast.success(en ? "Rejected." : "Rejeté.");
+    mutationFn: ({ id, note, mode, pin }) => api.post(`/staff/approvals/${id}/reject`, { note, ...(mode ? { mode, pin } : {}) }).then((r) => r.data),
+    onSuccess: (res) => {
+      toast.success(res?.mode === "recount" ? (en ? "Sent back for a recount." : "Renvoyé pour recomptage.")
+        : res?.mode === "return_to_source" ? (en ? "Return transfer created — the source must receive it." : "Transfert de retour créé — la source doit le réceptionner.")
+        : (en ? "Rejected." : "Rejeté."));
       closeReject();
       qc.invalidateQueries({ queryKey: ["team-approvals"] });
     },
@@ -177,6 +186,9 @@ export default function TeamApprovalsPage() {
             <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 10 }}>
               {en ? "Reject this request?" : "Rejeter cette demande ?"}
             </div>
+            {rejectFor.action_type === HOLD_ACTION && (
+              <HoldRejectFields en={en} mode={holdMode} setMode={setHoldMode} pin={holdPin} setPin={setHoldPin} />
+            )}
             <input className="input" type="text" value={note} maxLength={200}
               onChange={(e) => setNote(e.target.value)}
               placeholder={en ? "Reason (optional)" : "Raison (facultatif)"}
@@ -185,8 +197,10 @@ export default function TeamApprovalsPage() {
               <button className="btn btn-secondary" style={{ flex: 1 }} disabled={rejectMut.isPending} onClick={closeReject}>
                 {en ? "Keep" : "Garder"}
               </button>
-              <button className="btn btn-primary" style={{ flex: 2 }} disabled={rejectMut.isPending}
-                onClick={() => rejectMut.mutate({ id: rejectFor.id, note: note.trim() || null })}>
+              <button className="btn btn-primary" style={{ flex: 2 }}
+                disabled={rejectMut.isPending || (rejectFor.action_type === HOLD_ACTION && !holdRejectReady(holdMode, holdPin))}
+                onClick={() => rejectMut.mutate({ id: rejectFor.id, note: note.trim() || null,
+                  ...(rejectFor.action_type === HOLD_ACTION ? { mode: holdMode, pin: holdPin } : {}) })}>
                 {rejectMut.isPending ? "..." : (en ? "Yes, reject" : "Oui, rejeter")}
               </button>
             </div>

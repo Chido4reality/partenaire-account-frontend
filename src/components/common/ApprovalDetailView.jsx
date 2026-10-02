@@ -185,6 +185,27 @@ function buildReasons(row, en, fmt, lk) {
       }
       break;
     }
+    case "transfer_receive_hold": {
+      // RECEIVE-MISMATCH GATE: the receiver counted something different from what was
+      // sent, and is not allowed to credit that on his own. Headline: who, where, and
+      // what is in limbo at COST price; then one plain line per held product.
+      const items = Array.isArray(p.items) ? p.items : [];
+      const from = p.from_name || lk.location(p.from_location), to = p.to_name || lk.location(p.to_location);
+      out.push({ tone: "warn", text: en
+        ? `${p.receiver_name || "The receiver"} counted less than was sent: ${p.transfer_number || ""} ${from} → ${to}`
+        : `${p.receiver_name || "Le réceptionnaire"} a compté moins que l'envoi : ${p.transfer_number || ""} ${from} → ${to}` });
+      items.forEach((it) => {
+        const name = it.name || (en ? "an item" : "un article");
+        const broken = num(it.damaged) > 0 ? (en ? `, ${num(it.damaged)} broken` : `, ${num(it.damaged)} cassé(s)`) : "";
+        out.push({ tone: "danger", text: en
+          ? `${name}: sent ${num(it.sent)}, counted ${num(it.counted)}${broken} — ${num(it.missing)} missing (${fmt(num(it.value_missing))} at cost)`
+          : `${name} : envoyé ${num(it.sent)}, compté ${num(it.counted)}${broken} — ${num(it.missing)} manquant(s) (${fmt(num(it.value_missing))} au coût)` });
+      });
+      out.push({ tone: "info", text: en
+        ? `Held, counted nowhere until you decide: ${fmt(num(p.value_held))} at cost`
+        : `En attente, compté nulle part jusqu'à votre décision : ${fmt(num(p.value_held))} au coût` });
+      break;
+    }
     case "transfer": {
       // Item lines are { product_id, quantity, note } and from/to are location UUIDs —
       // all resolved to names by the backend. The full list renders below in THE ITEMS;
@@ -346,6 +367,19 @@ function orderView(row, lk, en) {
     const full = Array.isArray(p.items) && p.items.length ? p.items : (Array.isArray(p.below_cost) ? p.below_cost : []);
     return { ...base, items: full, customer: p.customer_name,
              where: has(p.location_id) ? lk.location(p.location_id) : null };
+  }
+  if (row.action_type === "transfer_receive_hold") {
+    // The held lines carry their own names (stored when the request was raised).
+    const items = (Array.isArray(p.items) ? p.items : []).map((it) => ({
+      name: it && (it.name || lk.product(it.product_id)),
+      quantity: it && it.counted,
+      note: it && (en
+        ? `sent ${num(it.sent)} · counted ${num(it.counted)}${num(it.damaged) > 0 ? ` · broken ${num(it.damaged)}` : ""}`
+        : `envoyé ${num(it.sent)} · compté ${num(it.counted)}${num(it.damaged) > 0 ? ` · cassé ${num(it.damaged)}` : ""}`),
+    }));
+    return { ...base, items,
+             title: en ? "Held lines (counted)" : "Lignes en attente (comptées)",
+             where: `${p.from_name || lk.location(p.from_location)} → ${p.to_name || lk.location(p.to_location)}` };
   }
   if (row.action_type === "transfer") {
     // The payload's own lines carry NO name — resolve each product_id. `note` is

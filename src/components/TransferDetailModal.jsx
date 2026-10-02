@@ -84,7 +84,11 @@ export default function TransferDetailModal({ transferId, onClose }) {
   // no existing consumer changes behaviour. Showing the raw "completed" beside an
   // unresolved-variance badge is what made a transfer with six missing pieces read
   // as finished — the same shape as Paul's 20 Complete Chain Bajaj.
-  const statusText = t?.display_status === "completed_with_variance"
+  const statusText = t?.display_status === "completed_on_hold"
+    // RECEIVE-MISMATCH GATE: held / recount lines are counted nowhere yet.
+    ? (en ? `Completed — ${(t.held_lines || 0) + (t.recount_lines || 0)} line(s) on hold`
+          : `Terminé — ${(t.held_lines || 0) + (t.recount_lines || 0)} ligne(s) en attente`)
+    : t?.display_status === "completed_with_variance"
     ? (en ? "Completed — variance unresolved" : "Terminé — écart non résolu")
     : (t?.status || "—");
 

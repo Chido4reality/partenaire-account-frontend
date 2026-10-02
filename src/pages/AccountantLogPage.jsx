@@ -29,6 +29,7 @@ import TransferDetailModal from "../components/TransferDetailModal"; // MP-STAFF
 import BufferDetailModal from "../components/BufferDetailModal";
 import { LEDGER_TYPES, LEDGER_TYPE_ORDER, ltLabel, fmtLedgerWhen } from "../utils/ledgerTypes";
 import HelpButton from "../components/common/HelpButton"; // MP-STAFF-ACTIVITY-LEDGER Phase 5
+import HoldRejectFields, { HOLD_ACTION, holdRejectReady } from "../components/common/HoldRejectFields"; // receive-mismatch gate
 
 // Role badge colours — mirror SettingsPage ROLES.
 const ROLE_META = {
@@ -244,6 +245,9 @@ export default function AccountantLogPage() {
   const [pinValue, setPinValue] = useState("");
   const [rejectFor, setRejectFor] = useState(null); // approval row being rejected (note prompt)
   const [rejectNote, setRejectNote] = useState("");
+  // RECEIVE-MISMATCH GATE: a held receipt is rejected with a mode (+ PIN for a return).
+  const [holdMode, setHoldMode] = useState(null);
+  const [holdPin, setHoldPin] = useState("");
   const [cancelFor, setCancelFor] = useState(null); // approval row being cancelled (confirm)
 
   const APPROVAL_VERB = {
@@ -315,8 +319,11 @@ export default function AccountantLogPage() {
 
   const approveMut = useMutation({
     mutationFn: ({ id, pin }) => api.post(`/staff/approvals/${id}/approve`, { pin }),
-    onSuccess: () => {
-      toast.success(en ? "Approved — staff will complete it" : "Approuvé — le personnel le finalisera");
+    onSuccess: (res) => {
+      // A held receipt executes on approve (no finalize) — say what actually happened.
+      toast.success(res?.data?.status === "executed"
+        ? (en ? "Approved — the counted goods are now in stock" : "Approuvé — les marchandises comptées sont en stock")
+        : (en ? "Approved — staff will complete it" : "Approuvé — le personnel le finalisera"));
       setPinFor(null); setPinValue("");
       qc.invalidateQueries({ queryKey: ["staff-approvals-pending"] });
       // MP-CORRECTIONS-GUARDRAIL: the row moves pending → approved, so the
@@ -328,10 +335,13 @@ export default function AccountantLogPage() {
     onError: (e) => toast.error(e?.response?.data?.message || (en ? "Could not approve" : "Échec de l'approbation")),
   });
   const rejectMut = useMutation({
-    mutationFn: ({ id, note }) => api.post(`/staff/approvals/${id}/reject`, { note }),
-    onSuccess: () => {
-      toast.success(en ? "Rejected" : "Rejeté");
-      setRejectFor(null); setRejectNote("");
+    mutationFn: ({ id, note, mode, pin }) => api.post(`/staff/approvals/${id}/reject`, { note, ...(mode ? { mode, pin } : {}) }),
+    onSuccess: (res) => {
+      const m = res?.data?.mode;
+      toast.success(m === "recount" ? (en ? "Sent back for a recount" : "Renvoyé pour recomptage")
+        : m === "return_to_source" ? (en ? "Return transfer created — the source must receive it" : "Transfert de retour créé — la source doit le réceptionner")
+        : (en ? "Rejected" : "Rejeté"));
+      setRejectFor(null); setRejectNote(""); setHoldMode(null); setHoldPin("");
       qc.invalidateQueries({ queryKey: ["staff-approvals-pending"] });
     },
     onError: (e) => toast.error(e?.response?.data?.message || (en ? "Could not reject" : "Échec du rejet")),
@@ -767,14 +777,19 @@ export default function AccountantLogPage() {
             <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 14 }}>
               {(rejectFor.requested_by_name || (en ? "A staff member" : "Un employé"))} {en ? "wanted to" : "voulait"} {approvalVerb(rejectFor.action_type, rejectFor.target_ref)}.
             </div>
+            {rejectFor.action_type === HOLD_ACTION && (
+              <HoldRejectFields en={en} mode={holdMode} setMode={setHoldMode} pin={holdPin} setPin={setHoldPin} />
+            )}
             <div className="form-group"><label className="label">{en ? "Reason (optional)" : "Raison (facultatif)"}</label>
               <input className="input" value={rejectNote} onChange={e => setRejectNote(e.target.value)}
                 placeholder={en ? "e.g. not needed" : "ex. pas nécessaire"} />
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setRejectFor(null)}>{en ? "Cancel" : "Annuler"}</button>
-              <button className="btn btn-primary" style={{ flex: 2 }} disabled={rejectMut.isPending}
-                onClick={() => rejectMut.mutate({ id: rejectFor.id, note: rejectNote.trim() || null })}>
+              <button className="btn btn-primary" style={{ flex: 2 }}
+                disabled={rejectMut.isPending || (rejectFor.action_type === HOLD_ACTION && !holdRejectReady(holdMode, holdPin))}
+                onClick={() => rejectMut.mutate({ id: rejectFor.id, note: rejectNote.trim() || null,
+                  ...(rejectFor.action_type === HOLD_ACTION ? { mode: holdMode, pin: holdPin } : {}) })}>
                 {rejectMut.isPending ? "..." : (en ? "Reject" : "Rejeter")}
               </button>
             </div>
@@ -1453,6 +1468,9 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
         // save, or a save about something else would silently clear the grant.
         can_resolve_stock_checks: !!perms.can_resolve_stock_checks,
         receive_without_count: !!perms.receive_without_count, // F-C
+        // RECEIVE-MISMATCH GATE: DEFAULT ON — only an explicit false blocks, so an
+        // untouched toggle (undefined) must save as allowed, never as blocked.
+        can_receive_mismatch: perms.can_receive_mismatch !== false,
         can_view_compare: !!perms.can_view_compare, // MP-COMPARE
         // MP-CASHIER-PHASE-1b: sent on every save like the flags above, so an
         // untouched grant round-trips as itself rather than being cleared by a
@@ -2221,6 +2239,31 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                     <div style={{ fontSize: 10.5, color: "var(--text-muted)", marginTop: 4 }}>
                       {en ? "Confirms an arrival without counting it, with a written reason (10 characters minimum). Every use is logged with their name and counts towards the override rate you see above. Leave this off unless someone genuinely receives goods while you are away."
                           : "Confirme une arrivée sans la compter, avec un motif écrit (10 caractères minimum). Chaque utilisation est enregistrée à son nom et compte dans le taux de dérogation affiché ci-dessus. Laissez désactivé sauf si quelqu'un réceptionne réellement en votre absence."}
+                    </div>
+                    {/* RECEIVE-MISMATCH GATE (Peter, 2026-10-02): may this person confirm a
+                        receipt whose count differs from what was sent? DEFAULT ON (undefined
+                        reads as ON). When OFF, matching lines still go into stock; the lines
+                        that differ are held — counted nowhere — until you or a manager decide. */}
+                    <div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 12, marginBottom: 5 }}>{en ? "Confirm receipt when count ≠ sent:" : "Confirmer une réception quand le comptage ≠ l'envoi :"}</div>
+                    <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>
+                      {[
+                        { val: false, en: "Needs approval", fr: "Soumis à approbation" },
+                        { val: true,  en: "Allowed", fr: "Autorisé" },
+                      ].map((o) => {
+                        const cur = perms.can_receive_mismatch !== false;
+                        return (
+                          <button key={String(o.val)} onClick={() => setPerms((p) => ({ ...(p || {}), can_receive_mismatch: o.val }))}
+                            style={{ flex: 1, padding: "7px 4px", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
+                              background: cur === o.val ? (o.val ? "rgba(16,185,129,0.9)" : "rgba(239,68,68,0.9)") : "var(--bg-elevated)",
+                              color: cur === o.val ? (o.val ? "#06281d" : "#fff") : "var(--text-muted)" }}>
+                            {en ? o.en : o.fr}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: "var(--text-muted)", marginTop: 4 }}>
+                      {en ? "When set to Needs approval: lines that match what was sent go into stock as usual; lines that don't are held — counted nowhere — and you and every manager are asked to approve, send back for a recount, or return them to the source."
+                          : "Si « Soumis à approbation » : les lignes conformes à l'envoi entrent en stock comme d'habitude ; les autres sont mises en attente — comptées nulle part — et vous et chaque gérant êtes invités à approuver, faire recompter, ou les renvoyer à la source."}
                     </div>
                     {/* MP-COMPARE: may this MANAGER open the Compare screen? Off by
                         default (NOT NULL DEFAULT false); only ever honoured for a

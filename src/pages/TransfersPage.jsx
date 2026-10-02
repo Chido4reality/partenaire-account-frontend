@@ -292,6 +292,24 @@ export default function TransfersPage() {
     }
   });
 
+  // RECEIVE-MISMATCH GATE: lines an approver sent back for RECOUNT. Same blind count,
+  // same reveal; the server credits what matches (or what an allowed counter counted)
+  // and holds again what a blocked counter still finds short.
+  const recountMutation = useMutation({
+    mutationFn: ({ id, lines }) => api.post(`/transfers/${id}/recount`, { lines }),
+    onSuccess: (res) => {
+      const cmp = Array.isArray(res?.data?.comparison) ? res.data.comparison : [];
+      if (cmp.length) setReveal({ comparison: cmp, variance_lines: 0, held_lines: res?.data?.held_lines || 0 });
+      else toast.success(lang === "en" ? "Recount saved" : "Recomptage enregistré");
+      setAdjustFor(null);
+      qc.invalidateQueries(["transfers"]); qc.invalidateQueries(["transfers-incoming"]); qc.invalidateQueries(["stock"]);
+    },
+    onError: (err) => {
+      const d = err.response?.data || {};
+      toast.error((lang === "en" ? (d.message_en || d.message) : (d.message_fr || d.message)) || "Error");
+    }
+  });
+
   // (B) EDIT a PENDING transfer: reopen the editor preloaded with its from/to +
   // items. from/to are read-only here (to change them, cancel + start fresh).
   const startEdit = async (tr) => {
@@ -806,7 +824,9 @@ export default function TransfersPage() {
                       // There is no longer a way to agree with a number you have not seen.
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end", flexShrink: 0 }}>
                         <button className="btn btn-primary btn-sm" onClick={() => setAdjustFor(tr)}>
-                          {lang === "en" ? "Count & receive" : "Compter & réceptionner"}
+                          {tr.recount
+                            ? (lang === "en" ? "Recount" : "Recompter")
+                            : (lang === "en" ? "Count & receive" : "Compter & réceptionner")}
                         </button>
                       </div>
                     )}
@@ -956,10 +976,12 @@ export default function TransfersPage() {
 
       {adjustFor && (
         <ReceiveCountModal
-          transfer={adjustFor} lang={lang} busy={confirmMutation.isPending}
-          canSkipCount={canReceiveWithoutCount}
+          transfer={adjustFor} lang={lang} busy={confirmMutation.isPending || recountMutation.isPending}
+          canSkipCount={canReceiveWithoutCount && !adjustFor.recount}
           onCancel={() => setAdjustFor(null)}
-          onSubmit={(lines) => confirmMutation.mutate({ id: adjustFor.id, lines })}
+          onSubmit={(lines) => (adjustFor.recount
+            ? recountMutation.mutate({ id: adjustFor.id, lines })
+            : confirmMutation.mutate({ id: adjustFor.id, lines }))}
           onOverride={(reason) => confirmMutation.mutate({ id: adjustFor.id, override: true, override_reason: reason })} />
       )}
 
@@ -1136,6 +1158,8 @@ export function ReceiveRevealModal({ reveal, lang, onClose }) {
   const en = lang === "en";
   const rows = reveal.comparison || [];
   const off = rows.filter(r => !r.matches);
+  // RECEIVE-MISMATCH GATE: held lines were NOT added to stock — say so plainly.
+  const held = rows.filter(r => r.held).length;
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
@@ -1147,7 +1171,10 @@ export function ReceiveRevealModal({ reveal, lang, onClose }) {
           {off.length === 0
             ? (en ? "Your count agrees with what was sent. Stock has been added."
                   : "Votre comptage correspond à ce qui a été envoyé. Le stock a été ajouté.")
-            : (en ? "Stock was added at YOUR counted quantity. Differences have gone to the owner as a stock check."
+            : held > 0
+              ? (en ? `Lines that matched are in stock. ${held} line(s) that differ are ON HOLD — not in stock — until the owner or a manager decides.`
+                    : `Les lignes conformes sont en stock. ${held} ligne(s) différente(s) sont EN ATTENTE — pas en stock — jusqu'à la décision du propriétaire ou d'un gérant.`)
+              : (en ? "Stock was added at YOUR counted quantity. Differences have gone to the owner as a stock check."
                   : "Le stock a été ajouté selon VOTRE comptage. Les écarts sont transmis au propriétaire comme vérification.")}
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 340, overflowY: "auto" }}>
@@ -1162,6 +1189,11 @@ export function ReceiveRevealModal({ reveal, lang, onClose }) {
                 {r.lost !== 0 ? ` · ${r.lost > 0 ? (en ? `missing ${r.lost}` : `manquant ${r.lost}`)
                                                 : (en ? `extra ${-r.lost}` : `en trop ${-r.lost}`)}` : ""}
               </div>
+              {r.held && (
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: "#fbbf24", marginTop: 3 }}>
+                  {en ? "⏳ On hold — waiting for approval, not in stock" : "⏳ En attente — approbation requise, pas en stock"}
+                </div>
+              )}
             </div>
           ))}
         </div>
