@@ -186,7 +186,10 @@ export default function TransferDetailModal({ transferId, onClose }) {
                   <div key={it.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "5px 0", borderBottom: "1px solid var(--border)" }}>
                     <span>{it.pa_products?.name || (en ? "Item" : "Article")}</span>
                     <span style={{ color: "var(--text-secondary)" }}>
-                      {en ? "sent" : "envoyé"} {it.quantity}
+                      {/* BLIND COUNT: absent (not 0) for a receiver whose count is awaited — the server withheld it. */}
+                      {it.quantity === undefined || it.quantity === null
+                        ? (en ? "sent: hidden until you count" : "envoyé : masqué jusqu'à votre comptage")
+                        : `${en ? "sent" : "envoyé"} ${it.quantity}`}
                       {it.received_quantity != null && ` · ${en ? "received" : "reçu"} ${it.received_quantity}`}
                     </span>
                   </div>

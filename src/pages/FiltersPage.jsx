@@ -528,7 +528,8 @@ function FactRow({ row, fact, en, fmt, onOpenTransaction }) {
           </div>
         )}
       </div>
-      <div style={{ fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }}>{fmt(row.amount)}</div>
+      {/* BLIND COUNT: a dispatch movement awaiting this person's count arrives without quantity or amount. */}
+      <div style={{ fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }}>{row.quantity_hidden ? "—" : fmt(row.amount)}</div>
     </div>
   );
 }

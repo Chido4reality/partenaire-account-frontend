@@ -1028,7 +1028,8 @@ export default function TransfersPage() {
                   {/* MP-TRANSFER-WAYBILL: A4 delivery note for a DISPATCHED transfer
                       (dispatched_at set → two-sided Pro/Pro Plus flow). Reprintable
                       anytime; shares to WhatsApp / prints on Android via the OS sheet. */}
-                  {tr.status !== "pending" && tr.dispatched_at && canWaybill && (
+                  {/* BLIND COUNT: no waybill for a receiver whose count is awaited — the server sent no quantities, and a waybill would only be the leak as a PDF. The dispatcher prints it. */}
+                  {tr.status !== "pending" && tr.dispatched_at && canWaybill && !tr.quantities_hidden && (
                     <button className="btn btn-secondary btn-sm" style={{ flexShrink: 0 }}
                       disabled={waybillBusy === tr.id}
                       onClick={() => handleWaybill(tr)}>
@@ -1050,7 +1051,7 @@ export default function TransfersPage() {
                   <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)", display: "flex", flexWrap: "wrap", gap: 8 }}>
                     {tr.pa_transfer_items.map((item, i) => (
                       <span key={i} style={{ fontSize: 12, padding: "3px 10px", borderRadius: 10, background: "var(--bg-elevated)", color: "var(--text-secondary)" }}>
-                        {item.pa_products?.name} x{item.quantity}
+                        {item.pa_products?.name}{item.quantity != null ? ` x${item.quantity}` : ""}
                       </span>
                     ))}
                   </div>
