@@ -73,6 +73,7 @@ export default function NavDrawer({
   myRequestsApproved,
   stockCheckPending,
   restockPending,
+  expiryLowPending,   // Check Expiry/Low — the same count the desktop sidebar shows
   onLogout,
 }) {
   const { lang } = useLangStore();
@@ -235,6 +236,8 @@ export default function NavDrawer({
                           ? stockCheckPending
                           : item.badge === "restock" && restockPending > 0
                           ? restockPending
+                          : item.badge === "expiry_low" && expiryLowPending > 0
+                          ? expiryLowPending
                           : undefined
                       }
                       onTap={handleNav}

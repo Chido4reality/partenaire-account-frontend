@@ -1528,6 +1528,7 @@ export default function Layout() {
           myRequestsApproved={myRequestsApproved}
           stockCheckPending={stockCheckPending}
           restockPending={restockPending}
+          expiryLowPending={expiryLowPending}
           onLogout={handleLogout}
         />
         <motion.div
