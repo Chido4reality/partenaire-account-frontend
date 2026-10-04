@@ -657,6 +657,19 @@ export default function Layout() {
       }
       return;
     }
+    // OWNER CONFIRM-IN-PLACE on replay: a count that was queued (offline, or a slow
+    // connection past the 8 s first attempt) turned out not to match what was sent.
+    // Nothing was written — say so loudly, and where to answer it.
+    if (e.type === 'owner_mismatch') {
+      const en = useLangStore.getState().lang === 'en';
+      const ref = e.transferNumber ? ` ${e.transferNumber}` : '';
+      toast(en
+        ? `Your count for receipt${ref} doesn't match what was sent — it was NOT recorded. Open Transfers to recount or continue anyway.`
+        : `Votre comptage pour la réception${ref} ne correspond pas à l'envoi — il n'a PAS été enregistré. Ouvrez Transferts pour recompter ou continuer quand même.`,
+        { icon: '⚠️', duration: 15000, id: `owner-mismatch-${e.rowId}` });
+      qc.invalidateQueries({ queryKey: ['owner-mismatch-queue'] });
+      return;
+    }
     if (e.type !== 'sent') return;
     // [Wave 4.0 debug instrumentation — Peter pastes these traces.]
     console.log('[sync] handler fired', { type: e.type, endpoint: e.endpoint });

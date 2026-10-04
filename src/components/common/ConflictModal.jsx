@@ -15,9 +15,10 @@
 // pending sales before switching versions.
 
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useLangStore } from "../../store";
-import { listPending, retry, retryAll, discard } from "../../utils/pendingSync";
+import { listPending, retry, retryAll, discard, ownerMismatchOf, continueWithConfirm } from "../../utils/pendingSync";
 
 function parseError(s) {
   if (!s) return { status: null, body: null, raw: null };
@@ -37,6 +38,10 @@ function endpointLabel(endpoint, lang) {
   if (/^\/stock\/arrivals$/.test(endpoint))         return en ? "Arrival" : "Arrivée";
   if (/^\/products$/.test(endpoint))                return en ? "Product" : "Produit";
   if (/^\/customers$/.test(endpoint))               return en ? "Customer" : "Client";
+  if (/^\/transfers\/[^/]+\/confirm-receipt/.test(endpoint)) return en ? "Receipt" : "Réception";
+  if (/^\/transfers\/[^/]+\/recount/.test(endpoint))         return en ? "Recount" : "Recomptage";
+  if (/^\/transfers\/[^/]+\/dispatch/.test(endpoint))        return en ? "Dispatch" : "Expédition";
+  if (/^\/transfers$/.test(endpoint))                        return en ? "Transfer" : "Transfert";
   return endpoint;
 }
 
@@ -58,6 +63,8 @@ function reasonText(r, lang) {
   const en = lang === "en";
   if (r.status === "queued")  return en ? "Waiting for connection to sync." : "En attente de connexion pour synchroniser.";
   if (r.status === "sending") return en ? "Sending to server now…" : "Envoi au serveur en cours…";
+  const om = ownerMismatchOf(r);
+  if (om) return (en ? om.message_en : om.message_fr) + (en ? " Nothing was recorded yet." : " Rien n'a encore été enregistré.");
   const err = parseError(r.last_error);
   const code = err.body?.code || err.body?.data?.code;
   const MAP = {
@@ -82,11 +89,29 @@ export default function ConflictModal({ onClose }) {
   const [rows, setRows] = useState([]);
   const [busyId, setBusyId] = useState(null);
   const [busyAll, setBusyAll] = useState(false);
+  const navigate = useNavigate();
+
+  // OWNER CONFIRM-IN-PLACE, answered from the queue: "Recount" drops the queued
+  // count and reopens the blind count for that transfer; "Continue anyway" sends the
+  // same count again with the owner's confirmation (logged server-side).
+  const handleOwnerRecount = async (r, om) => {
+    setBusyId(r.id);
+    try { await discard(r.id); onClose && onClose(); navigate(`/transfers?count=${encodeURIComponent(om.transferId)}`); }
+    finally { setBusyId(null); }
+  };
+  const handleOwnerContinue = async (r) => {
+    setBusyId(r.id);
+    try { await continueWithConfirm(r.id); toast.success(en ? "Sent with your confirmation" : "Envoyé avec votre confirmation"); reload(); }
+    finally { setBusyId(null); }
+  };
 
   const reload = () => listPending().then(setRows).catch(() => setRows([]));
   useEffect(() => { reload(); const t = setInterval(reload, 4000); return () => clearInterval(t); }, []);
 
   const failedCount  = rows.filter(r => r.status === "failed_permanent" || r.status === "failed_transient").length;
+  // "Retry all" skips owner short counts (they are answered, not re-sent), so it only
+  // shows when there is something it would actually retry.
+  const retryableCount = rows.filter(r => (r.status === "failed_permanent" || r.status === "failed_transient") && !ownerMismatchOf(r)).length;
   const waitingCount = rows.filter(r => r.status === "queued" || r.status === "sending").length;
 
   // Dependent-ordering visibility: when a /shifts/open is still unsynced, the
@@ -139,7 +164,7 @@ export default function ConflictModal({ onClose }) {
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
-            {failedCount > 0 && (
+            {retryableCount > 0 && (
               <button onClick={handleRetryAll} disabled={busyAll}
                 style={{ padding: "7px 12px", borderRadius: 8, border: "none", background: "var(--brand)", color: "#152B52", fontWeight: 700, fontSize: 12, cursor: busyAll ? "not-allowed" : "pointer" }}>
                 ↻ {en ? "Retry all" : "Tout réessayer"}
@@ -167,13 +192,15 @@ export default function ConflictModal({ onClose }) {
             const err = parseError(r.last_error);
             const payload = (() => { try { return JSON.parse(r.payload_json); } catch { return {}; } })();
             const sm = statusMeta(r.status, lang);
-            const canRetry = r.status === "failed_permanent" || r.status === "failed_transient";
+            const om = ownerMismatchOf(r);
+            // An owner short count is answered, never retried as-is (it would be refused forever).
+            const canRetry = !om && (r.status === "failed_permanent" || r.status === "failed_transient");
             const canDiscard = r.status !== "sending";
             return (
               <div key={r.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 14px", marginBottom: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, gap: 8 }}>
                   <div style={{ fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{endpointLabel(r.endpoint, lang)}</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{endpointLabel(r.endpoint, lang)}{payload.transfer_number ? ` ${payload.transfer_number}` : ""}</span>
                     <span style={{ fontSize: 10, fontWeight: 800, color: sm.color, border: `1px solid ${sm.color}`, borderRadius: 8, padding: "1px 7px", flexShrink: 0 }}>{sm.label}</span>
                   </div>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>
@@ -196,6 +223,18 @@ export default function ConflictModal({ onClose }) {
 {JSON.stringify({ endpoint: r.endpoint, status: r.status, attempts: r.attempts, payload, server: err.body || err.raw }, null, 2)}
                   </pre>
                 </details>
+                {om && (
+                  <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                    <button onClick={() => handleOwnerRecount(r, om)} disabled={busyId === r.id}
+                      style={{ flex: 1, padding: "8px", borderRadius: 8, border: "none", background: "var(--brand)", color: "#152B52", fontWeight: 700, fontSize: 12, cursor: busyId === r.id ? "not-allowed" : "pointer" }}>
+                      {en ? "Recount" : "Recompter"}
+                    </button>
+                    <button onClick={() => handleOwnerContinue(r)} disabled={busyId === r.id}
+                      style={{ flex: 1, padding: "8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", fontWeight: 700, fontSize: 12, cursor: busyId === r.id ? "not-allowed" : "pointer" }}>
+                      {en ? "Continue anyway" : "Continuer quand même"}
+                    </button>
+                  </div>
+                )}
                 {(canRetry || canDiscard) && (
                   <div style={{ display: "flex", gap: 8 }}>
                     {canRetry && (

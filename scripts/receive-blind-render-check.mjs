@@ -49,6 +49,10 @@ const STUBS = {
   "CameraScanner": `export default function CameraScanner(){ return null; }`,
   "PaywallModal": `export default function PaywallModal(){ return null; }`,
   "ProductSearchBox": `export default function ProductSearchBox(){ return null; }`,
+  // The offline queue (TransfersPage lists owner counts refused on replay). Its real
+  // module opens the device database; the blind rule under test never touches it.
+  "pendingSync": `export const subscribe = () => () => {}; export const listFailedPermanent = async () => [];
+                  export const ownerMismatchOf = () => null; export const continueWithConfirm = async () => true; export const discard = async () => {};`,
 };
 
 await build({

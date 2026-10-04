@@ -33,6 +33,7 @@
 
 import { exec, query } from './localDb';
 import { onNetworkChange, getNetworkStatus } from './network';
+import { ownerMismatchOf } from './ownerMismatch';
 
 // MP-RENDER-COLDSTART-WARMUP: per-attempt fetch timeout. 12s → 45s
 // because Render free-tier cold-start can take 30-60s. Paul (Cameroon,
@@ -423,6 +424,12 @@ async function attempt(row) {
       ['failed_permanent', JSON.stringify({ status: 409, body }), row.id]
     );
     notify();
+    // OWNER CONFIRM-IN-PLACE on replay: the owner's queued short count was refused
+    // BEFORE anything was written. It must be ANSWERED (Recount / Continue anyway),
+    // not retried as-is (it would 409 forever) — surface it loudly.
+    if (body?.code === 'owner_mismatch_confirm') {
+      emitSyncEvent({ type: 'owner_mismatch', rowId: row.id, ...ownerMismatchOf({ ...row, last_error: JSON.stringify({ status: 409, body }) }) });
+    }
     return;
   }
 
@@ -474,6 +481,28 @@ export async function retry(rowId) {
   flushIfOnline();
 }
 
+// OWNER CONFIRM-IN-PLACE (Peter, 2026-10-04): ownerMismatchOf (utils/ownerMismatch)
+// recognises a queued owner count the server refused — re-exported for the screens.
+export { ownerMismatchOf };
+
+// "Continue anyway" for a queued owner short count: the SAME request (same local_id —
+// the refusal came before the server's dedupe, so nothing is cached against it) with
+// the owner's confirmation added, then sent again.
+export async function continueWithConfirm(rowId) {
+  const rows = await query(`SELECT * FROM pending_sync WHERE id = ?`, [rowId]);
+  const row = rows && rows[0];
+  if (!row) return false;
+  let payload = {}; try { payload = JSON.parse(row.payload_json || '{}'); } catch { payload = {}; }
+  payload.owner_mismatch_confirmed = true;
+  await exec(
+    `UPDATE pending_sync SET payload_json = ?, status = ?, last_error = ?, attempts = ? WHERE id = ?`,
+    [JSON.stringify(payload), 'queued', null, 0, rowId]
+  );
+  notify();
+  flushIfOnline();
+  return true;
+}
+
 export async function discard(rowId) {
   await exec(`DELETE FROM pending_sync WHERE id = ?`, [rowId]);
   notify();
@@ -516,7 +545,9 @@ export async function retryAll() {
   let n = 0;
   try {
     const rows = await query(`SELECT * FROM pending_sync`);
-    const failed = rows.filter(r => r.status === 'failed_permanent' || r.status === 'failed_transient');
+    // An owner short count refused on replay is ANSWERED (Recount / Continue anyway),
+    // never re-sent as-is: it would be refused again, forever.
+    const failed = rows.filter(r => (r.status === 'failed_permanent' || r.status === 'failed_transient') && !ownerMismatchOf(r));
     for (const r of failed) {
       await exec(
         `UPDATE pending_sync SET status = ?, last_error = ?, attempts = ? WHERE id = ?`,

@@ -40,6 +40,10 @@ const CHECKS = [
   // rendering fact — invisible to the API gates and to `vite build`, since esbuild
   // does not evaluate a useState initialiser.
   ["receive-blind",  "scripts/receive-blind-render-check.mjs", "no sent quantity on the receiver's screen, and no prefill in any input"],
+  // OWNER CONFIRM-IN-PLACE: confirm-receipt queues after 8 s, so on a slow line the
+  // owner's short count is refused only at REPLAY. That row must be answerable
+  // (Recount / Continue anyway), surfaced, and never re-sent as-is by Retry all.
+  ["owner-mismatch-queue", "scripts/owner-mismatch-queue-check.mjs", "a queued owner short count is answerable, surfaced, and never retried as-is"],
   // MP-RECEIPT-PRINT-SCOPE: 0957ac41 moved the line-item normaliser into
   // buildBodyLines but kept using it in THREE call sites inside the component,
   // where it does not exist — every print path threw "saleItems is not defined".

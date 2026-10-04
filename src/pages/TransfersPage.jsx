@@ -15,6 +15,8 @@ import HeldReceiptsBanner, { useHeldSummary, ageLabel } from "../components/comm
 import RestrictedAction from "../components/common/RestrictedAction";
 import { useSearchParams } from "react-router-dom";
 import TransferDetailModal from "../components/TransferDetailModal"; // MP-STAFF-ACTIVITY-LEDGER Phase 3
+import { subscribe, listFailedPermanent, ownerMismatchOf, continueWithConfirm, discard } from "../utils/pendingSync"; // owner count refused on replay
+import { ownerShortLocal } from "../utils/ownerMismatch"; // owner short count, checked on the phone
 
 export default function TransfersPage() {
   const { lang } = useLangStore();
@@ -86,6 +88,36 @@ export default function TransfersPage() {
     enabled: confirmFlow, refetchInterval: 30000,
   });
   const incoming = incomingData?.data || [];
+
+  // OWNER CONFIRM-IN-PLACE, from the queue: an owner count that was queued (offline,
+  // or a slow connection past the 8 s first attempt) and refused on replay. Nothing
+  // was written. Shown HERE, on the screen he receives from, with the same two
+  // answers — never only as a row in the sync list.
+  const [queuedMismatch, setQueuedMismatch] = useState([]);
+  useEffect(() => subscribe(() => {
+    listFailedPermanent()
+      .then(rows => setQueuedMismatch((rows || []).map(r => ({ row: r, om: ownerMismatchOf(r) })).filter(x => x.om)))
+      .catch(() => setQueuedMismatch([]));
+  }), []);
+  // ?count=<transferId> — "Recount" from the sync list lands here: reopen the blind count.
+  useEffect(() => {
+    const id = searchParams.get("count");
+    if (!id || !incoming.length) return;
+    const tr = incoming.find(t => t.id === id);
+    if (tr) setAdjustFor(tr);
+    searchParams.delete("count"); setSearchParams(searchParams, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, incoming]);
+  const recountQueued = async ({ row, om }) => {
+    await discard(row.id);
+    const tr = incoming.find(t => t.id === om.transferId);
+    if (tr) setAdjustFor(tr);
+    else toast(lang === "en" ? "That transfer is no longer waiting here." : "Ce transfert n'attend plus ici.");
+  };
+  const continueQueued = async ({ row }) => {
+    await continueWithConfirm(row.id);
+    toast.success(lang === "en" ? "Sent with your confirmation" : "Envoyé avec votre confirmation");
+  };
 
   // MP-TRANSFER-GOVERNANCE: the current user's own grant (for the cancel-button gate).
   // MP-MY-PERMISSIONS-ONE-SHAPE: via the shared hook — this used to read `?.data?.x` off
@@ -272,10 +304,22 @@ export default function TransfersPage() {
   // request so "Continue anyway" can resend it with the confirmation.
   const [ownerPrompt, setOwnerPrompt] = useState(null); // { kind: 'confirm'|'recount', id, lines }
   const confirmMutation = useMutation({
-    mutationFn: ({ id, lines, override, override_reason, owner_mismatch_confirmed }) =>
+    // transfer_number rides along (the server ignores it) so a count that ends up in
+    // the offline queue can be labelled "Receipt TRF-…" there, not by a raw path.
+    mutationFn: ({ id, lines, override, override_reason, owner_mismatch_confirmed, transfer_number }) =>
       api.post(`/transfers/${id}/confirm-receipt`,
-        override ? { override: true, override_reason } : { lines, ...(owner_mismatch_confirmed ? { owner_mismatch_confirmed: true } : {}) }),
+        override ? { override: true, override_reason, transfer_number } : { lines, transfer_number, ...(owner_mismatch_confirmed ? { owner_mismatch_confirmed: true } : {}) }),
     onSuccess: (res) => {
+      // QUEUED, not received: offline, or a slow connection past the 8 s first
+      // attempt. Nothing has reached the server — never say "stock added" here.
+      if (res?.data?.offline_queued) {
+        toast(lang === "en"
+          ? "No connection — your count is saved on this phone and will be sent automatically. Stock is added once the server receives it."
+          : "Pas de connexion — votre comptage est gardé sur ce téléphone et sera envoyé automatiquement. Le stock est ajouté quand le serveur le reçoit.",
+          { icon: "📶", duration: 8000 });
+        setAdjustFor(null);
+        return;
+      }
       const v = res?.data?.variance_lines || 0;
       // F-C — THE REVEAL. The receiver counted blind; only now do they see what was
       // sent. Deliberately a STATE, not a toast: a toast is not a state, and the
@@ -293,7 +337,7 @@ export default function TransfersPage() {
     // (e.g. cannot_confirm_own_dispatch / not_your_destination) — never a raw 4xx.
     onError: (err, vars) => {
       const d = err.response?.data || {};
-      if (d.code === "owner_mismatch_confirm") { setOwnerPrompt({ kind: "confirm", id: vars.id, lines: vars.lines }); return; }
+      if (d.code === "owner_mismatch_confirm") { setOwnerPrompt({ kind: "confirm", id: vars.id, lines: vars.lines, transfer_number: vars.transfer_number }); return; }
       toast.error((lang === "en" ? (d.message_en || d.message) : (d.message_fr || d.message)) || "Error");
     }
   });
@@ -784,6 +828,24 @@ export default function TransfersPage() {
       {/* HELD-RECEIPT REMINDERS: the strip, owner/manager only (amber ≥ 8h, red ≥ 24h). */}
       {(isOwner || user?.role === "manager") && <HeldReceiptsBanner variant="strip" en={lang === "en"} />}
 
+      {/* OWNER count refused on replay — NOT recorded. Same two answers as the live prompt. */}
+      {queuedMismatch.map(x => (
+        <div key={x.row.id} data-testid="owner-mismatch-queued"
+          style={{ marginBottom: 12, padding: "12px 14px", borderRadius: 10, background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.5)" }}>
+          <div style={{ fontWeight: 800, color: "#f59e0b", marginBottom: 4 }}>
+            ⚠️ {lang === "en" ? `Receipt ${x.om.transferNumber || ""} — your count was NOT recorded` : `Réception ${x.om.transferNumber || ""} — votre comptage n'a PAS été enregistré`}
+          </div>
+          <div style={{ fontSize: 13, marginBottom: 10 }}>
+            {lang === "en" ? "You have entered a count that doesn't match what was sent. Recount, or continue anyway?"
+                           : "Vous avez saisi un comptage qui ne correspond pas à l'envoi. Recompter, ou continuer quand même ?"}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => recountQueued(x)}>{lang === "en" ? "Recount" : "Recompter"}</button>
+            <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={() => continueQueued(x)}>{lang === "en" ? "Continue anyway" : "Continuer quand même"}</button>
+          </div>
+        </div>
+      ))}
+
       {/* MP-TRANSFER-RECEIVE-CONFIRM (Phase 1) — destination "Incoming transfers"
           inbox: in_transit deliveries arriving at my location, awaiting confirmation.
           A staffer can't confirm their own dispatch (server enforces + button hidden). */}
@@ -1004,10 +1066,21 @@ export default function TransfersPage() {
           transfer={adjustFor} lang={lang} busy={confirmMutation.isPending || recountMutation.isPending}
           canSkipCount={canReceiveWithoutCount && !adjustFor.recount}
           onCancel={() => setAdjustFor(null)}
-          onSubmit={(lines) => (adjustFor.recount
-            ? recountMutation.mutate({ id: adjustFor.id, lines })
-            : confirmMutation.mutate({ id: adjustFor.id, lines }))}
-          onOverride={(reason) => confirmMutation.mutate({ id: adjustFor.id, override: true, override_reason: reason })} />
+          onSubmit={(lines) => {
+            const kind = adjustFor.recount ? "recount" : "confirm";
+            // OWNER, transfer HE dispatched: the sent figures are already on the phone
+            // (his own dispatch is not blinded), so warn HERE — before anything is sent
+            // or queued — instead of waiting for the server, which on a slow or dropped
+            // connection answers only at replay. Same predicate as the server.
+            if (user?.role === "owner" && ownerShortLocal(adjustFor, lines)) {
+              setOwnerPrompt({ kind, id: adjustFor.id, lines, transfer_number: adjustFor.transfer_number });
+              return;
+            }
+            return kind === "recount"
+              ? recountMutation.mutate({ id: adjustFor.id, lines })
+              : confirmMutation.mutate({ id: adjustFor.id, lines, transfer_number: adjustFor.transfer_number });
+          }}
+          onOverride={(reason) => confirmMutation.mutate({ id: adjustFor.id, override: true, override_reason: reason, transfer_number: adjustFor.transfer_number })} />
       )}
 
       {/* F-C: the reveal. Separate from the count modal on purpose — the count is
@@ -1034,7 +1107,7 @@ export default function TransfersPage() {
               </button>
               <button className="btn btn-secondary" style={{ flex: 1 }} disabled={confirmMutation.isPending || recountMutation.isPending}
                 onClick={() => { const p = ownerPrompt; setOwnerPrompt(null);
-                  (p.kind === "recount" ? recountMutation : confirmMutation).mutate({ id: p.id, lines: p.lines, owner_mismatch_confirmed: true }); }}>
+                  (p.kind === "recount" ? recountMutation : confirmMutation).mutate({ id: p.id, lines: p.lines, owner_mismatch_confirmed: true, transfer_number: p.transfer_number }); }}>
                 {lang === "en" ? "Continue anyway" : "Continuer quand même"}
               </button>
             </div>
