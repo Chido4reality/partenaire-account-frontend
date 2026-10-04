@@ -19,6 +19,9 @@ import { unitValue } from "./units";
 export const TEMPLATE_HEADERS = [
   "name", "barcode", "sku", "unit", "cost_price", "walk_in_price",
   "wholesale_price", "min_price", "qty", "location", "slot_zone",
+  // EXPIRY-TRACKING (optional, Pro): track_expiry yes/no, the expiry date of the
+  // initial qty, and its batch / lot number.
+  "track_expiry", "expiry_date", "batch_no",
 ];
 
 // Which CSV/XLSX headers map to which internal field. Accepts the friendly form
@@ -36,7 +39,32 @@ const HEADER_ALIASES = {
   qty: "qty", quantity: "qty", initial_quantity: "qty", quantité: "qty", quantite: "qty", stock: "qty",
   location: "location", branch: "location", shop: "location", boutique: "location", emplacement: "location",
   slot_zone: "slot_zone", slot: "slot_zone", zone: "slot_zone", "slot/zone": "slot_zone", slot_code: "slot_zone", rayon: "slot_zone",
+  track_expiry: "track_expiry", suivi_expiration: "track_expiry", suivre_expiration: "track_expiry",
+  expiry_date: "expiry_date", expiry: "expiry_date", expires: "expiry_date", date_expiration: "expiry_date",
+  "date_d'expiration": "expiry_date", peremption: "expiry_date", péremption: "expiry_date", dlc: "expiry_date",
+  batch_no: "batch_no", batch: "batch_no", lot: "batch_no", lot_no: "batch_no", numero_lot: "batch_no", "n°_lot": "batch_no",
 };
+
+// EXPIRY-TRACKING: yes/oui/true/1/x → true.
+const truthy = (v) => /^(y|yes|oui|o|true|vrai|1|x)$/i.test(String(v == null ? "" : v).trim());
+
+// An expiry cell → 'YYYY-MM-DD' | '' (blank) | null (unreadable). Accepts an Excel
+// date serial (raw:true hands those over as numbers), YYYY-MM-DD, or DD/MM/YYYY.
+export function coerceExpiryDate(raw) {
+  if (raw == null || String(raw).trim() === "") return "";
+  let iso = null;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    iso = new Date(Math.round((raw - 25569) * 86400000)).toISOString().slice(0, 10);
+  } else {
+    const t = String(raw).trim();
+    let m;
+    if ((m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) iso = `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+    else if ((m = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/))) iso = `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  }
+  if (!iso) return null;
+  const d = new Date(`${iso}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === iso ? iso : null;
+}
 
 const normHeader = (h) => String(h || "").trim().toLowerCase().replace(/\s+/g, "_");
 const normLoc = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
@@ -131,8 +159,17 @@ export async function parseProductImport(file, locations) {
       });
     }
 
+    // EXPIRY-TRACKING: a tracked row with stock must carry a readable expiry date.
+    const trackExpiry = truthy(rec.track_expiry);
+    const expiry = coerceExpiryDate(rec.expiry_date);
+    if (expiry === null) errors.push({ en: "expiry_date is not a date (use YYYY-MM-DD or DD/MM/YYYY).", fr: "expiry_date n'est pas une date (AAAA-MM-JJ ou JJ/MM/AAAA)." });
+    else if (trackExpiry && qty > 0 && !expiry) errors.push({ en: "expiry_date is required when track_expiry is yes.", fr: "expiry_date est obligatoire quand track_expiry est oui." });
+
     rows.push({
       _rowNum: rowNum,
+      track_expiry: trackExpiry,
+      expiry_date: expiry || "",
+      batch_no: String(rec.batch_no == null ? "" : rec.batch_no).trim().slice(0, 60),
       name,
       barcode: bc.value || "",
       sku: String(rec.sku == null ? "" : rec.sku).trim(),   // optional; ignored if blank
@@ -157,8 +194,8 @@ export async function parseProductImport(file, locations) {
 export async function buildProductTemplateXlsx(locations, en) {
   const XLSX = await loadXLSX();
   const locName = (locations && locations[0] && locations[0].name) || (en ? "Your Shop" : "Votre Boutique");
-  const ex1 = ["Tube", "6001234567890", "TUB-01", "pcs", 2500, 4000, 3500, 2500, 100, locName, "A-01 Rayon 2"];
-  const ex2 = ["Huile palme", "6009988776655", "", "litre", 1800, 3000, 2500, 1800, 50, locName, ""];
+  const ex1 = ["Tube", "6001234567890", "TUB-01", "pcs", 2500, 4000, 3500, 2500, 100, locName, "A-01 Rayon 2", "", "", ""];
+  const ex2 = ["Huile palme", "6009988776655", "", "litre", 1800, 3000, 2500, 1800, 50, locName, "", "yes", "2027-03-31", "L2410"];
   const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, ex1, ex2]);
 
   // Force the barcode column (B) to TEXT for a buffer of rows so long digit
@@ -193,6 +230,9 @@ export async function buildProductTemplateXlsx(locations, en) {
     ["qty             how many you have now"],
     ["location        must match one of your shop/branch names exactly"],
     ["slot_zone       shelf/zone label, e.g. A-01 Rayon 2 (optional)"],
+    ["track_expiry    yes = track expiry dates for this product (Pro plan, optional)"],
+    ["expiry_date     expiry date of the qty above, YYYY-MM-DD (required if track_expiry is yes)"],
+    ["batch_no        batch / lot number (optional)"],
     [""],
     ["IMPORTANT: do not let Excel change a long barcode into 1.23E+09."],
     ["Keep the barcode column formatted as Text. A barcode shown as 1.23E+09"],
@@ -217,6 +257,9 @@ export async function buildProductTemplateXlsx(locations, en) {
     ["qty             quantité en stock actuelle"],
     ["location        doit correspondre exactement à un nom de boutique/succursale"],
     ["slot_zone       étagère/zone, ex : A-01 Rayon 2 (facultatif)"],
+    ["track_expiry    oui = suivre les dates d'expiration de ce produit (forfait Pro, facultatif)"],
+    ["expiry_date     date d'expiration de la quantité, AAAA-MM-JJ (obligatoire si track_expiry = oui)"],
+    ["batch_no        numéro de lot (facultatif)"],
     [""],
     ["IMPORTANT : ne laissez pas Excel transformer un long code-barres en 1.23E+09."],
     ["Gardez la colonne code-barres en Texte. Un code affiché 1.23E+09 sera"],

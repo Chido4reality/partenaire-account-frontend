@@ -132,6 +132,7 @@ function toArray(x) {
 function damageSourceLabel(sourceType, en) {
   if (sourceType === "transfer_variance") return en ? "🔁 transfer variance" : "🔁 écart de transfert";
   if (sourceType === "return")            return en ? "↩ returned"         : "↩ retourné";
+  if (sourceType === "expired")           return en ? "⏳ expired"          : "⏳ périmé"; // EXPIRY-TRACKING
   return en ? "🔨 marked damaged" : "🔨 marqué endommagé"; // manual_writeoff (+ any future source)
 }
 
@@ -443,6 +444,8 @@ export default function StockCheckPage() {
   // MP-DAMAGED-GOODS: pile rows are already date-scoped + remaining_qty>0 server-side.
   const damagedRows = Array.isArray(damaged.data?.data) ? damaged.data.data : [];
   const scrapLoss = damaged.data?.scrap_loss || { quantity: 0, estimated_cost: 0 };
+  // EXPIRY-TRACKING: expired write-offs, valued at cost on the day each was written off.
+  const expiryLoss = damaged.data?.expiry_loss || { quantity: 0, value: 0 };
   const staleRows = Array.isArray(stale.data) ? stale.data : [];
 
   return (
@@ -580,6 +583,19 @@ export default function StockCheckPage() {
           </span>
           <span style={{ fontSize: 13, fontWeight: 800, color: "#f87171" }}>
             {scrapLoss.quantity} {en ? "units" : "unités"} · ~{fmt(scrapLoss.estimated_cost)}
+          </span>
+        </div>
+      )}
+
+      {/* EXPIRY-TRACKING: the expiry LOSS beside the scrapped loss — same window, same
+          owner-only gate. Valued at cost on the day each expired lot was written off. */}
+      {tab === "damaged" && isOwner && !damaged.isLoading && !damaged.isError && (expiryLoss.quantity > 0) && (
+        <div style={{ marginBottom: 12, padding: "10px 14px", background: "rgba(251,146,60,0.08)", border: "1px solid rgba(251,146,60,0.35)", borderRadius: 10, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+          <span style={{ fontSize: 12.5, color: "#fb923c", fontWeight: 700 }}>
+            ⏳ {en ? "Expiry loss (this range)" : "Perte par péremption (cette période)"}
+          </span>
+          <span style={{ fontSize: 13, fontWeight: 800, color: "#fb923c" }}>
+            {expiryLoss.quantity} {en ? "units" : "unités"} · {fmt(expiryLoss.value)}
           </span>
         </div>
       )}

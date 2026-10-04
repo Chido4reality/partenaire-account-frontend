@@ -17,6 +17,8 @@ import BufferDetailModal from "../components/BufferDetailModal"; // MP-STAFF-ACT
 import { useCurrency } from "../utils/useCurrency";
 import ProductSearchBox from "../components/common/ProductSearchBox";
 import { openWhatsApp } from "../utils/whatsapp";
+import ExpiryFields, { TrackExpiryToggle, expiryMissing } from "../components/common/ExpiryFields"; // EXPIRY-TRACKING
+import useExpiryFeature from "../hooks/useExpiryFeature";
 
 const genLocalId = () => {
   try { return crypto.randomUUID(); } catch { return `gb-${Date.now()}-${Math.floor(Math.random() * 1e6)}`; }
@@ -505,6 +507,13 @@ function ReleaseModal({ row, en, lang, fmt, locList, onClose, onDone }) {
   const [parts, setParts] = useState([]);     // kit parts
   const [loadingInfo, setLoadingInfo] = useState(true);
   const [siblings, setSiblings] = useState([]);   // F-A: other captures of the same goods
+  // EXPIRY-TRACKING: release is where buffer goods become stock, so it is where the
+  // delivery's expiry date is recorded (Pro). A brand-new product can be switched on here.
+  const { canExpiry } = useExpiryFeature();
+  const [productTracked, setProductTracked] = useState(false); // existing product's switch
+  const [newTracked, setNewTracked] = useState(false);         // switch for a NEW product
+  const [expDate, setExpDate] = useState("");
+  const [expBatch, setExpBatch] = useState("");
 
   // Prefill: EXISTING product → its current prices (a blank re-save would overwrite the
   // real price). NEW product → generate an SKU + prefill the barcode staff scanned at add.
@@ -519,6 +528,7 @@ function ReleaseModal({ row, en, lang, fmt, locList, onClose, onDone }) {
           setCost(p.cost_price != null ? String(p.cost_price) : "");
           setMin(p.min_price != null ? String(p.min_price) : "");
           setWholesale(p.wholesale_price != null ? String(p.wholesale_price) : "");
+          setProductTracked(!!p.track_expiry);
         } else if (info && info.is_new_product) {
           setSku(genSku());
           setBarcode(info.buffer_barcode || genBarcode());
@@ -543,6 +553,12 @@ function ReleaseModal({ row, en, lang, fmt, locList, onClose, onDone }) {
     wholesale_price: wholesale !== "" ? num(wholesale) : null,
   });
   const newCodes = () => (isNew ? { sku: sku.trim() || null, barcode: barcode.trim() || null } : {});
+  // Tracked = the existing product's switch, the merge target's, or the new-product toggle.
+  const tracked = canExpiry && !kit && (isNew ? (mergeProduct ? !!mergeProduct.track_expiry : newTracked) : productTracked);
+  const expiryBody = () => (canExpiry && !kit && (tracked || expDate)
+    ? { expiry_date: expDate || null, batch_no: expBatch.trim() || null,
+        ...(isNew && !mergeProduct && newTracked ? { track_expiry: true } : {}) }
+    : {});
 
   const mut = useMutation({
     mutationFn: (body) => api.post(`/goods-buffer/${row.buffer_id}/release`, body).then(r => r.data),
@@ -572,7 +588,8 @@ function ReleaseModal({ row, en, lang, fmt, locList, onClose, onDone }) {
     const assignments = rows.filter(r => r.location_id && num(r.quantity) > 0).map(r => ({ location_id: r.location_id, quantity: num(r.quantity) }));
     if (!assignments.length) return toast.error(en ? "Add at least one location + quantity" : "Ajoutez au moins un site + une quantité");
     if (assigned > remaining) return toast.error(en ? "That's more than what's left" : "C'est plus que ce qui reste");
-    mut.mutate({ assignments, ...prices(), ...newCodes(),
+    if (tracked && expiryMissing(true, expDate)) return toast.error(en ? "Enter the expiry date" : "Saisissez la date d'expiration");
+    mut.mutate({ assignments, ...prices(), ...newCodes(), ...expiryBody(),
       merge_product_id: (isNew && mergeProduct) ? mergeProduct.id : null, invoice_ref: invoiceRef.trim() || null });
   };
 
@@ -605,7 +622,7 @@ function ReleaseModal({ row, en, lang, fmt, locList, onClose, onDone }) {
               </div>
             ) : (
               <ProductSearchBox lang={lang} placeholder={en ? "…or merge into an existing product (optional)" : "…ou fusionner dans un produit existant (facultatif)"}
-                onSelect={(p) => setMergeProduct({ id: p.id, name: p.name })} clearOnSelect />
+                onSelect={(p) => setMergeProduct({ id: p.id, name: p.name, track_expiry: !!p.track_expiry })} clearOnSelect />
             )}
           </div>
         )}
@@ -628,6 +645,14 @@ function ReleaseModal({ row, en, lang, fmt, locList, onClose, onDone }) {
           <>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>{en ? "Split across locations" : "Répartir sur les sites"}</div>
             <SplitRows rows={rows} setRows={setRows} locList={locList} en={en} />
+            {canExpiry && isNew && !mergeProduct && (
+              <TrackExpiryToggle en={en} checked={newTracked} onChange={setNewTracked} />
+            )}
+            {tracked && (
+              <div style={{ marginBottom: 10 }}>
+                <ExpiryFields en={en} date={expDate} batch={expBatch} onDate={setExpDate} onBatch={setExpBatch} />
+              </div>
+            )}
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, marginBottom: 10,
                           color: left < 0 ? "#f87171" : "var(--text-secondary)" }}>
               <span>{en ? "Assigned" : "Réparti"}: {assigned} / {remaining}</span>

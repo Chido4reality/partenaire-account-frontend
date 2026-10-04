@@ -21,7 +21,8 @@ import PaywallModal from "../components/common/PaywallModal";
 import useOwnerApproval from "../hooks/useOwnerApproval";
 import RestrictedAction from "../components/common/RestrictedAction";
 import DoziePublishModal from "../components/common/DoziePublishModal";
-import { getCapabilities, isAtCap } from "../utils/planCapabilities";
+import { getCapabilities, isAtCap, hasFeature } from "../utils/planCapabilities";
+import ExpiryFields, { TrackExpiryToggle, expiryMissing } from "../components/common/ExpiryFields"; // EXPIRY-TRACKING
 import MultipartBuilder, { partsToPayload, emptyPart } from "../components/common/MultipartBuilder";
 import MultipartAvailability from "../components/common/MultipartAvailability";
 import { useLiteMode } from "../hooks/useLiteMode";
@@ -80,7 +81,8 @@ const UNITS = ["pce", "kg", "litre", "metre", "boite", "set", "paire", "carton",
 const EMPTY_PRODUCT = {
   name: "", barcode: "", sku: "", category_id: "", unit: "pce", is_multipart: false,
   cost_price: "", sell_price: "", wholesale_price: "", min_price: "",
-  description: "", initial_location_id: "", initial_quantity: "", initial_slot: ""
+  description: "", initial_location_id: "", initial_quantity: "", initial_slot: "",
+  track_expiry: false, initial_expiry: "", initial_batch: "" // EXPIRY-TRACKING
 };
 
 export default function InventoryPage() {
@@ -572,6 +574,9 @@ export default function InventoryPage() {
   const atInventoryCap = isAtCap(effectivePlan, "inventory_cap", productsCount);
   // MP-MULTIPART: kit creation is a Pro / Pro Plus feature (trial resolves to pro).
   const canMultipart = ["pro", "pro_plus"].includes(effectivePlan);
+  // EXPIRY-TRACKING: the per-product switch + receive-time dates (Pro and above).
+  const canExpiry = hasFeature(effectivePlan, "track_expiry");
+  const isTracked = (pid) => !!(products.find((p) => p.id === pid) || {}).track_expiry;
 
   // MP-SKU: the Category selector was removed from Add/Edit (seeded categories are
   // auto-parts-specific). The category_id column + existing categorized products
@@ -648,6 +653,7 @@ export default function InventoryPage() {
         description: newProduct.description || null,
         // MP-MULTIPART: a kit is sold as one line; its parts build the BOM.
         ...(newProduct.is_multipart ? { is_multipart: true, parts: partsToPayload(newParts) } : {}),
+        ...(canExpiry && !newProduct.is_multipart && newProduct.track_expiry ? { track_expiry: true } : {}),
       });
       const product = res.data.data;
       // Sprint C: if the user attached a photo, upload it now that we
@@ -664,7 +670,8 @@ export default function InventoryPage() {
       if (!newProduct.is_multipart && newProduct.initial_location_id && newProduct.initial_quantity) {
         await api.post("/stock/arrivals", {
           location_id: newProduct.initial_location_id,
-          items: [{ product_id: product.id, quantity: +newProduct.initial_quantity, slot_code: newProduct.initial_slot || null, cost_price: +newProduct.cost_price || 0 }]
+          items: [{ product_id: product.id, quantity: +newProduct.initial_quantity, slot_code: newProduct.initial_slot || null, cost_price: +newProduct.cost_price || 0,
+                    ...(canExpiry && newProduct.track_expiry ? { expiry_date: newProduct.initial_expiry || null, batch_no: newProduct.initial_batch || null } : {}) }]
         });
       }
       // Bug Y: pass offline_queued marker + the formData snapshot
@@ -751,6 +758,12 @@ export default function InventoryPage() {
     setDupeProduct(null);
     const ladderErr = priceLadderError(newProduct);
     if (ladderErr) { toast.error(ladderErr); return; }
+    // EXPIRY-TRACKING: a tracked product's initial stock needs its expiry date —
+    // checked BEFORE the product is created, so a refusal never leaves it half-made.
+    if (canExpiry && newProduct.track_expiry && !newProduct.is_multipart && newProduct.initial_location_id
+        && newProduct.initial_quantity && expiryMissing(true, newProduct.initial_expiry)) {
+      toast.error(en ? "Enter the expiry date of the initial stock." : "Saisissez la date d'expiration du stock initial."); return;
+    }
     const bc = (newProduct.barcode || "").trim();
     let local = null;
     if (bc) {
@@ -788,6 +801,8 @@ export default function InventoryPage() {
         sell_price: +editProduct.sell_price,
         wholesale_price: +editProduct.wholesale_price || 0,
         min_price: +editProduct.min_price || 0,
+        // EXPIRY-TRACKING: only sent on Pro, never for a kit parent.
+        ...(canExpiry && !editProduct.is_multipart ? { track_expiry: !!editProduct.track_expiry } : {}),
       };
       const headers = { "X-Edit-Source": "product-edit" };
       // Owner direct. Non-owner (manager today; cashier never reaches
@@ -956,7 +971,9 @@ export default function InventoryPage() {
         invoice_ref: receiveForm.invoice_ref || null,
         notes: receiveForm.notes || null,
         flag_recount: !!receiveForm.flag_recount, // MP-STOCK-CHECK: boss re-count flag
-        items: validItems.map(i => ({ product_id: i.product_id, quantity: +i.quantity, slot_code: i.slot_code || null, cost_price: +i.cost_price || 0 }))
+        items: validItems.map(i => ({ product_id: i.product_id, quantity: +i.quantity, slot_code: i.slot_code || null, cost_price: +i.cost_price || 0,
+          // EXPIRY-TRACKING: the delivery's expiry date + optional batch (tracked products).
+          ...(canExpiry && (i.expiry_date || i.batch_no) ? { expiry_date: i.expiry_date || null, batch_no: i.batch_no || null } : {}) }))
       });
       return { ...res, _priceSkipped: priceSkipped };
     },
@@ -985,6 +1002,13 @@ export default function InventoryPage() {
   // is skipped for it, same as Add New Product).
   const rapidMutation = useMutation({
     mutationFn: async () => {
+      // EXPIRY-TRACKING: refuse BEFORE the product is created (all three submit paths
+      // — button and both Enter keys — land here).
+      if (canExpiry && rapidItem.track_expiry && !rapidItem.is_multipart && rapidItem.initial_location_id
+          && rapidItem.initial_quantity && expiryMissing(true, rapidItem.initial_expiry)) {
+        const msg = en ? "Enter the expiry date of the initial stock." : "Saisissez la date d'expiration du stock initial.";
+        throw Object.assign(new Error(msg), { response: { data: { message: msg } } });
+      }
       const res = await api.post("/products", {
         name: rapidItem.name, barcode: rapidItem.barcode || null, unit: rapidItem.unit,
         sku: (rapidItem.sku || "").trim() || null,
@@ -992,12 +1016,14 @@ export default function InventoryPage() {
         cost_price: +rapidItem.cost_price || 0, sell_price: +rapidItem.sell_price,
         wholesale_price: +rapidItem.wholesale_price || 0, min_price: +rapidItem.min_price || 0,
         ...(rapidItem.is_multipart ? { is_multipart: true, parts: partsToPayload(rapidParts) } : {}),
+        ...(canExpiry && !rapidItem.is_multipart && rapidItem.track_expiry ? { track_expiry: true } : {}),
       });
       const product = res.data.data;
       if (!rapidItem.is_multipart && rapidItem.initial_location_id && rapidItem.initial_quantity) {
         await api.post("/stock/arrivals", {
           location_id: rapidItem.initial_location_id,
-          items: [{ product_id: product.id, quantity: +rapidItem.initial_quantity, slot_code: rapidItem.initial_slot || null, cost_price: +rapidItem.cost_price || 0 }]
+          items: [{ product_id: product.id, quantity: +rapidItem.initial_quantity, slot_code: rapidItem.initial_slot || null, cost_price: +rapidItem.cost_price || 0,
+                    ...(canExpiry && rapidItem.track_expiry ? { expiry_date: rapidItem.initial_expiry || null, batch_no: rapidItem.initial_batch || null } : {}) }]
         });
       }
       // Bug Y companion (same shape as addProductMutation): snapshot
@@ -1067,12 +1093,14 @@ export default function InventoryPage() {
             name: row.name, barcode: row.barcode || null, sku: (row.sku || "").trim() || null, unit: row.unit || "pce",
             cost_price: +row.cost_price || 0, sell_price: +row.sell_price,
             wholesale_price: +row.wholesale_price || 0, min_price: +row.min_price || 0,
+            ...(canExpiry && row.track_expiry ? { track_expiry: true } : {}),
           });
           const product = res.data.data;
           if (row.location_id && row.qty !== "" && +row.qty > 0) {
             await api.post("/stock/arrivals", {
               location_id: row.location_id,
-              items: [{ product_id: product.id, quantity: +row.qty, cost_price: +row.cost_price || 0, slot_code: row.slot_zone || null }]
+              items: [{ product_id: product.id, quantity: +row.qty, cost_price: +row.cost_price || 0, slot_code: row.slot_zone || null,
+                        ...(canExpiry && (row.expiry_date || row.batch_no) ? { expiry_date: row.expiry_date || null, batch_no: row.batch_no || null } : {}) }]
             });
           }
           results.push({ rowNum: row._rowNum, name: row.name, success: true });
@@ -1773,6 +1801,13 @@ export default function InventoryPage() {
               </div>
             )}
 
+            {/* EXPIRY-TRACKING: per-product switch (Pro). Not for kits — the parts hold the stock. */}
+            {canExpiry && !newProduct.is_multipart && (
+              <div style={{ marginBottom: 14 }}>
+                <TrackExpiryToggle en={en} checked={newProduct.track_expiry} onChange={v => setNewProduct(p => ({ ...p, track_expiry: v }))} />
+              </div>
+            )}
+
             {!newProduct.is_multipart && (
             <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 14 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 12 }}>
@@ -1794,6 +1829,12 @@ export default function InventoryPage() {
                   <label className="label">📍 {lang === "en" ? "Slot/Zone (optional)" : "Emplacement/Rayon (optionnel)"}</label>
                   <input className="input" value={newProduct.initial_slot || ""} onChange={e => setNewProduct(p => ({ ...p, initial_slot: e.target.value }))} placeholder="A-01, Rayon 2..." disabled={!newProduct.initial_location_id} />
                 </div>
+                {canExpiry && newProduct.track_expiry && newProduct.initial_location_id && (
+                  <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+                    <ExpiryFields en={en} date={newProduct.initial_expiry} batch={newProduct.initial_batch}
+                      onDate={v => setNewProduct(p => ({ ...p, initial_expiry: v }))} onBatch={v => setNewProduct(p => ({ ...p, initial_batch: v }))} />
+                  </div>
+                )}
               </div>
             </div>
             )}
@@ -1893,6 +1934,7 @@ export default function InventoryPage() {
                 onRemove={receiveForm.items.length > 1 ? () => removeReceiveItem(idx) : null}
                 canSeePrices={canSeePrices}
                 duplicateOf={receiveDuplicates.firstLineOf[idx]}
+                canExpiry={canExpiry}
               />
             ))}
 
@@ -1904,7 +1946,18 @@ export default function InventoryPage() {
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowReceive(false)}>{lang === "en" ? "Cancel" : "Annuler"}</button>
               <button className="btn btn-primary" style={{ flex: 2 }}
                 disabled={!receiveForm.location_id || receiveMutation.isPending || receiveForm.items.every(i => !i.product_id)}
-                onClick={() => receiveMutation.mutate()}>
+                onClick={() => {
+                  // EXPIRY-TRACKING: tracked lines need a date; one product = one date per delivery.
+                  if (canExpiry) {
+                    const lines = receiveForm.items.filter(i => i.product_id && i.quantity);
+                    const missing = lines.filter(i => isTracked(i.product_id) && expiryMissing(true, i.expiry_date));
+                    if (missing.length) { toast.error(en ? `Expiry date required: ${missing.map(i => i.product_name).join(", ")}` : `Date d'expiration obligatoire : ${missing.map(i => i.product_name).join(", ")}`); return; }
+                    const seen = {}; const clash = new Set();
+                    for (const i of lines) { const k = `${i.expiry_date || ""}|${(i.batch_no || "").trim()}`; if (i.product_id in seen && seen[i.product_id] !== k) clash.add(i.product_name); else seen[i.product_id] = k; }
+                    if (clash.size) { toast.error(en ? `Same product with two expiry dates: ${[...clash].join(", ")}. Receive each date as a separate delivery.` : `Même produit avec deux dates : ${[...clash].join(", ")}. Réceptionnez chaque date séparément.`); return; }
+                  }
+                  receiveMutation.mutate();
+                }}>
                 {receiveMutation.isPending ? "..." : (lang === "en" ? "✓ Confirm & Update Prices" : "✓ Confirmer & Mettre à jour prix")}
               </button>
             </div>
@@ -1995,6 +2048,14 @@ export default function InventoryPage() {
                       }} />}
               </div>
             </div>
+
+            {/* EXPIRY-TRACKING: per-product switch (Pro). Switching it off keeps the dates
+                already recorded; switching it on makes every NEXT delivery need a date. */}
+            {canExpiry && !editProduct.is_multipart && (
+              <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: "4px 16px 12px", marginBottom: 14 }}>
+                <TrackExpiryToggle en={en} checked={editProduct.track_expiry} onChange={v => setEditProduct(p => ({ ...p, track_expiry: v }))} />
+              </div>
+            )}
 
             {/* MP-INVENTORY-DOZIE-CONTROLS — Sell-on-Stenamo Market toggle + price.
                 Saves via the existing PATCH /products/:id/expose-on-dozie.
@@ -2164,6 +2225,12 @@ export default function InventoryPage() {
               </div>
             )}
 
+            {canExpiry && !rapidItem.is_multipart && (
+              <div style={{ marginBottom: 14 }}>
+                <TrackExpiryToggle en={en} checked={rapidItem.track_expiry} onChange={v => setRapidItem(p => ({ ...p, track_expiry: v }))} />
+              </div>
+            )}
+
             {!rapidItem.is_multipart && (
             <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 14 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 10 }}>📦 Initial Stock</div>
@@ -2185,6 +2252,12 @@ export default function InventoryPage() {
                   <label className="label">📍 Slot/Zone</label>
                   <input className="input" value={rapidItem.initial_slot || ""} onChange={e => setRapidItem(p => ({ ...p, initial_slot: e.target.value }))} placeholder="A-01, Rayon 2..." disabled={!rapidItem.initial_location_id} />
                 </div>
+                {canExpiry && rapidItem.track_expiry && rapidItem.initial_location_id && (
+                  <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+                    <ExpiryFields en={en} date={rapidItem.initial_expiry} batch={rapidItem.initial_batch}
+                      onDate={v => setRapidItem(p => ({ ...p, initial_expiry: v }))} onBatch={v => setRapidItem(p => ({ ...p, initial_batch: v }))} />
+                  </div>
+                )}
               </div>
             </div>
             )}
@@ -2595,7 +2668,7 @@ function PricingSection({ data, onChange, lang }) {
 }
 
 // ── RECEIVE ITEM ROW COMPONENT ────────────────────────────────────────────────
-function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemove, canSeePrices, duplicateOf }) {
+function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemove, canSeePrices, duplicateOf, canExpiry }) {
   const [selected, setSelected] = useState(null);
 
   const pickProduct = (p) => {
@@ -2611,7 +2684,11 @@ function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemov
     onChange("sell_price", "");
     onChange("wholesale_price", "");
     onChange("min_price", "");
+    onChange("expiry_date", "");
+    onChange("batch_no", "");
   };
+  // EXPIRY-TRACKING: the search result may be a slim row — fall back to the list.
+  const tracked = !!(selected && (selected.track_expiry || (products.find(p => p.id === selected.id) || {}).track_expiry));
 
   return (
     <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 14, marginBottom: 12, border: "1px solid var(--border)" }}>
@@ -2656,6 +2733,12 @@ function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemov
             <label className="label">📍 {lang === "en" ? "Slot/Zone (optional)" : "Emplacement (opt.)"}</label>
             <input className="input" value={item.slot_code || ""} onChange={e => onChange("slot_code", e.target.value)} placeholder="A-01, Shelf 2..." />
           </div>
+          {canExpiry && tracked && (
+            <div className="form-group">
+              <ExpiryFields en={lang === "en"} date={item.expiry_date} batch={item.batch_no}
+                onDate={v => onChange("expiry_date", v)} onBatch={v => onChange("batch_no", v)} />
+            </div>
+          )}
 
           {/* Pricing section */}
           <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14 }}>

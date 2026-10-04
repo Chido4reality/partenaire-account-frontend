@@ -67,6 +67,8 @@ export const PLAN_CAPABILITIES = {
     cashier_workflow: true,
     // MP-COMPARE: the Compare screen (month vs month, location vs location). Pro and above.
     compare: true,
+    // EXPIRY-TRACKING (Peter, 2026-10-04): per-product expiry on receive, alerts, write-off. Pro and above.
+    track_expiry: true,
     price_fcfa_month: 10000
   },
 
@@ -87,6 +89,7 @@ export const PLAN_CAPABILITIES = {
     cashier_workflow: true,   // MP-CASHIER-PLAN-GATE (Pro and above)
     // MP-COMPARE: the Compare screen (month vs month, location vs location). Pro and above.
     compare: true,
+    track_expiry: true,       // EXPIRY-TRACKING (Pro and above) — mirrors backend
     price_fcfa_month: 13000,
     ai_assistant: true,
     // Owner pins a cashier to a home location that follows them across devices

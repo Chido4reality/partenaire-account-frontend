@@ -80,6 +80,11 @@ const FEATURE_COPY = {
   credits:    { en: { title: "Credits requires a higher plan",    body: "Upgrade to access credits."       }, fr: { title: "Crédits nécessite un plan supérieur",            body: "Mise à niveau requise pour accéder aux crédits." } },
   cashflow:   { en: { title: "Cash flow requires a higher plan",  body: "Upgrade to access cash flow."     }, fr: { title: "Trésorerie nécessite un plan supérieur",         body: "Mise à niveau requise pour la trésorerie." } },
   reports:    { en: { title: "Reports require a higher plan",     body: "Upgrade to access reports."       }, fr: { title: "Les rapports nécessitent un plan supérieur",     body: "Mise à niveau requise pour les rapports." } },
+  // EXPIRY-TRACKING (Peter, 2026-10-04)
+  track_expiry: {
+    en: { title: "Expiry tracking is a Pro feature", body: "Record expiry dates on every delivery, get alerts 90, 60 and 30 days before, and write off expired stock with its loss value." },
+    fr: { title: "Le suivi des dates d'expiration est une fonctionnalité Pro", body: "Enregistrez la date d'expiration de chaque livraison, recevez des alertes 90, 60 et 30 jours avant, et sortez le stock périmé avec sa perte." }
+  },
   trial_countdown: {
     en: { title: "Your free trial is ending", body: "Pick a plan to keep full access after your trial ends." },
     fr: { title: "Votre essai gratuit se termine", body: "Choisissez un plan pour garder l'accès complet après votre essai." }

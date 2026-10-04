@@ -12,6 +12,7 @@ import { unitLabel } from "../utils/units";
 import { openWhatsApp } from "../utils/whatsapp";
 import { PLAY_STORE_URL } from "../utils/receiptExtras"; // reuse the SAME app-download link the receipt footer uses
 import DateRangeFilter, { inRange, wideRange } from "../components/common/DateRangeFilter";
+import ExpiryFields, { expiryMissing } from "../components/common/ExpiryFields"; // EXPIRY-TRACKING
 
 function toArray(x) {
   if (Array.isArray(x)) return x;
@@ -383,7 +384,7 @@ function ReceiveModal({ en, order, onClose, onDone }) {
     const m = {};
     for (const it of items) {
       const done = it.received_quantity !== null && it.received_quantity !== undefined;
-      m[it.id] = { counted: String(done ? it.received_quantity : (Number(it.quantity) || 0)), vAction: "", vLoc: "", vQty: "", slot: "" };
+      m[it.id] = { counted: String(done ? it.received_quantity : (Number(it.quantity) || 0)), vAction: "", vLoc: "", vQty: "", slot: "", exp: "", batch: "" };
     }
     return m;
   });
@@ -397,6 +398,12 @@ function ReceiveModal({ en, order, onClose, onDone }) {
 
   const pending   = items.filter(it => it.received_quantity === null || it.received_quantity === undefined);
   const doneItems = items.filter(it => it.received_quantity !== null && it.received_quantity !== undefined);
+  // EXPIRY-TRACKING: a tracked product's delivery needs its expiry date (restock is Pro).
+  const isTracked = (it) => !!(it.pa_products && it.pa_products.track_expiry);
+  const receivesSomething = (it) => {
+    const r = rows[it.id] || {};
+    return Math.max(0, Number(r.counted) || 0) > 0 || r.vAction === "move";
+  };
 
   const mut = useMutation({
     mutationFn: (body) => api.post(`/restock/orders/${order.id}/receive`, body).then(r => r.data),
@@ -419,7 +426,8 @@ function ReceiveModal({ en, order, onClose, onDone }) {
       const variance = (short && r.vAction === "move")
         ? { action: "move", location_id: r.vLoc, quantity: Math.min(ordered - counted, Number(r.vQty) || (ordered - counted)) }
         : { action: "ignore" };
-      return { item_id: it.id, product_id: it.product_id, counted, variance, slot_code: (r.slot || "").trim() || null };
+      return { item_id: it.id, product_id: it.product_id, counted, variance, slot_code: (r.slot || "").trim() || null,
+               ...(isTracked(it) || r.exp ? { expiry_date: r.exp || null, batch_no: (r.batch || "").trim() || null } : {}) };
     });
     mut.mutate({ mode: "refill", location_id: dest, lines });
   };
@@ -429,6 +437,7 @@ function ReceiveModal({ en, order, onClose, onDone }) {
     const r = rows[it.id] || {};
     const ordered = Number(it.quantity) || 0;
     const counted = Math.max(0, Number(r.counted) || 0);
+    if (isTracked(it) && receivesSomething(it) && expiryMissing(true, r.exp)) return false;
     if (counted >= ordered) return true;
     if (r.vAction === "ignore") return true;
     if (r.vAction === "move") return !!r.vLoc;
@@ -494,6 +503,12 @@ function ReceiveModal({ en, order, onClose, onDone }) {
                       <span style={{ fontSize: 11, color: "var(--text-muted)" }}>📍 {en ? "Slot/Zone (opt.)" : "Emplacement (opt.)"}</span>
                       <input className="input" value={r.slot} style={{ flex: 1 }} placeholder="A-01, Shelf 2..."
                         onChange={e => setRow(it.id, { slot: e.target.value })} />
+                    </div>
+                  )}
+                  {isTracked(it) && receivesSomething(it) && (
+                    <div style={{ marginTop: 8 }}>
+                      <ExpiryFields en={en} compact date={r.exp} batch={r.batch}
+                        onDate={v => setRow(it.id, { exp: v })} onBatch={v => setRow(it.id, { batch: v })} />
                     </div>
                   )}
                   {short && (

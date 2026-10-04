@@ -31,6 +31,7 @@ import StockCountPage from "./pages/StockCountPage";
 import BarcodePage from "./pages/BarcodePage";
 import OperationsDashboardPage from "./pages/OperationsDashboardPage"; // MP-OWNER-OPERATIONS-DASHBOARD-V1
 import StockCheckPage from "./pages/StockCheckPage"; // MP-STOCK-CHECK
+import ExpiryPage from "./pages/ExpiryPage"; // EXPIRY-TRACKING
 import RestockPage from "./pages/RestockPage"; // MP-RESTOCK
 import GoodsBufferPage from "./pages/GoodsBufferPage"; // MP-GOODS-BUFFER
 import TicketListPage from "./pages/TicketListPage"; // MP-CASHIER-PHASE-1b
@@ -119,6 +120,7 @@ const ROUTE_ACCESS = {
   // signals, anomalies, debt aging). Owner + manager only.
   "/operations":   ["owner", "manager"],
   "/stock-check":  ["owner", "manager", "warehouse"],
+  "/expiry":       ["owner", "manager", "warehouse"], // EXPIRY-TRACKING
   // MP-GOODS-BUFFER: every staff role can pre-register arrived goods (pricing/release
   // is gated inside the RPCs by pa_staff_permissions.buffer_access, not by route).
   "/goods-buffer": ["owner", "manager", "cashier", "warehouse", "accountant"],
@@ -574,6 +576,7 @@ export default function App() {
                 reports section gate since the data class is the same. */}
             <Route path="operations"   element={<RoleGuard path="/operations"><PlanGuard path="/reports"><OperationsDashboardPage /></PlanGuard></RoleGuard>} />
             <Route path="stock-check"  element={<RoleGuard path="/stock-check"><StockCheckPage /></RoleGuard>} />
+            <Route path="expiry"       element={<RoleGuard path="/expiry"><ExpiryPage /></RoleGuard>} />
             <Route path="restock"      element={<RoleGuard path="/restock"><RestockPage /></RoleGuard>} />
             <Route path="goods-buffer" element={<RoleGuard path="/goods-buffer"><GoodsBufferPage /></RoleGuard>} />
             {/* MP-CASHIER-PHASE-1b: one component, two variants — the queue and

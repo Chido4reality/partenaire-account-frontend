@@ -86,6 +86,10 @@ const NAV = [
   // only granted by pro/pro_plus (sections:'*'); lite/expired-trial floors omit it,
   // so it's Pro/Pro Plus-only (active trial resolves to 'pro'). Server also 403s.
   { to: "/stock-check",  en: "Stock Check", fr: "Vérification de stock", icon: "🔍", roles: ["owner","manager","warehouse"], section: "stock_check", badge: "stock_check" },
+  // EXPIRY-TRACKING (Peter, 2026-10-04): estimated expiring stock + expired write-off.
+  // Pro and above (feature "track_expiry"); a locked entry links to PRO. Also in
+  // NavDrawer.jsx SECTIONS (mobile) + App.jsx routes.
+  { to: "/expiry",       en: "Expiring stock", fr: "Stock à expiration", icon: "⏳", roles: ["owner","manager","warehouse"], section: "inventory", feature: "track_expiry", lockPlan: "pro" },
   // MP-RESTOCK — order more stock from a supplier (boss tool). section:"restock" is
   // only granted by pro/pro_plus (sections:'*'); lite/trial floors omit it → Pro/Pro
   // Plus-only. owner + manager (cashiers excluded). Server also gates (requirePro +
@@ -1202,6 +1206,7 @@ export default function Layout() {
     if (type === "low_stock") return "#fbbf24";
     if (type === "debt_due")  return "#f87171";
     if (type === "hold_reminder") return "#f97316"; // HELD-RECEIPT REMINDERS
+    if (type === "expiry")    return "#fb923c"; // EXPIRY-TRACKING: orange — between low stock and debt
     return "var(--brand-light)";
   };
 

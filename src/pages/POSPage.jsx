@@ -36,6 +36,7 @@ import { unitLabel } from "../utils/units";
 import MultipartAvailability from "../components/common/MultipartAvailability";
 import RestrictedAction from "../components/common/RestrictedAction";
 import useOwnerApproval from "../hooks/useOwnerApproval";
+import useExpiryFeature from "../hooks/useExpiryFeature"; // EXPIRY-TRACKING
 
 const PAYMENT_MODES = [
   { key: "paid",    en: "Full Payment",  fr: "Paiement total",   color: "#10b981", icon: "✓" },
@@ -441,6 +442,15 @@ export default function POSPage() {
   const { saveDraft, getDraft, clearDraft } = useDraftCartStore();
   const userId = user?.id;
   const locId  = selectedLocation?.id;
+  // EXPIRY-TRACKING (Peter, rule 2): WARN when a tracked product has estimated
+  // expired stock at this location — never block. Cached for offline like the catalogue.
+  const { canExpiry } = useExpiryFeature();
+  const { data: expiryWarnData } = useOfflineCachedQuery({
+    queryKey: ["expiry-pos-warnings", locId],
+    queryFn: () => api.get("/expiry/pos-warnings", { params: { location_id: locId } }).then(r => r.data),
+    enabled: !!(canExpiry && locId), staleTime: 300000, fallback: { data: {} },
+  });
+  const expiryWarn = (canExpiry && expiryWarnData?.data) || {};
   const draftRestoredRef = useRef(false);
   const cartScopeRef     = useRef(null); // { userId, locId } when cart non-empty
   // Restore once user + location are resolved. Skip if no draft, draft
@@ -1115,6 +1125,17 @@ export default function POSPage() {
       toast(`⚠️ ${lang === "en" ? "Low stock:" : "Stock bas:"} ${product.name} — ${stockQty} ${unitLabel(product.unit)} ${lang === "en" ? "remaining" : "restant(s)"}`, {
         duration: 3000,
         style: { background: "#451a03", color: "#fbbf24", border: "1px solid #92400e" }
+      });
+    }
+    // EXPIRY-TRACKING: non-blocking — the line is added either way.
+    const ew = expiryWarn[product.product_id || product.id];
+    if (ew && ew.expired_qty > 0) {
+      const [y, m, d] = String(ew.earliest_expiry || "").split("-");
+      toast(`⏳ ${lang === "en"
+        ? `Check the date: about ${ew.expired_qty} ${unitLabel(product.unit)} of ${product.name} may be expired (since ${d}/${m}/${y}, estimate).`
+        : `Vérifiez la date : environ ${ew.expired_qty} ${unitLabel(product.unit)} de ${product.name} pourraient être périmés (depuis le ${d}/${m}/${y}, estimation).`}`, {
+        duration: 5000,
+        style: { background: "#431407", color: "#fdba74", border: "1px solid #9a3412" }
       });
     }
     setCart(prev => {
