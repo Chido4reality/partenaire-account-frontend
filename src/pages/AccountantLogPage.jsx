@@ -1468,9 +1468,6 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
         // save, or a save about something else would silently clear the grant.
         can_resolve_stock_checks: !!perms.can_resolve_stock_checks,
         receive_without_count: !!perms.receive_without_count, // F-C
-        // RECEIVE-MISMATCH GATE: DEFAULT ON — only an explicit false blocks, so an
-        // untouched toggle (undefined) must save as allowed, never as blocked.
-        can_receive_mismatch: perms.can_receive_mismatch !== false,
         can_view_compare: !!perms.can_view_compare, // MP-COMPARE
         // MP-CASHIER-PHASE-1b: sent on every save like the flags above, so an
         // untouched grant round-trips as itself rather than being cleared by a
@@ -2239,31 +2236,6 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                     <div style={{ fontSize: 10.5, color: "var(--text-muted)", marginTop: 4 }}>
                       {en ? "Confirms an arrival without counting it, with a written reason (10 characters minimum). Every use is logged with their name and counts towards the override rate you see above. Leave this off unless someone genuinely receives goods while you are away."
                           : "Confirme une arrivée sans la compter, avec un motif écrit (10 caractères minimum). Chaque utilisation est enregistrée à son nom et compte dans le taux de dérogation affiché ci-dessus. Laissez désactivé sauf si quelqu'un réceptionne réellement en votre absence."}
-                    </div>
-                    {/* RECEIVE-MISMATCH GATE (Peter, 2026-10-02): may this person confirm a
-                        receipt whose count differs from what was sent? DEFAULT ON (undefined
-                        reads as ON). When OFF, matching lines still go into stock; the lines
-                        that differ are held — counted nowhere — until you or a manager decide. */}
-                    <div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 12, marginBottom: 5 }}>{en ? "Confirm receipt when count ≠ sent:" : "Confirmer une réception quand le comptage ≠ l'envoi :"}</div>
-                    <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>
-                      {[
-                        { val: false, en: "Needs approval", fr: "Soumis à approbation" },
-                        { val: true,  en: "Allowed", fr: "Autorisé" },
-                      ].map((o) => {
-                        const cur = perms.can_receive_mismatch !== false;
-                        return (
-                          <button key={String(o.val)} onClick={() => setPerms((p) => ({ ...(p || {}), can_receive_mismatch: o.val }))}
-                            style={{ flex: 1, padding: "7px 4px", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
-                              background: cur === o.val ? (o.val ? "rgba(16,185,129,0.9)" : "rgba(239,68,68,0.9)") : "var(--bg-elevated)",
-                              color: cur === o.val ? (o.val ? "#06281d" : "#fff") : "var(--text-muted)" }}>
-                            {en ? o.en : o.fr}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <div style={{ fontSize: 10.5, color: "var(--text-muted)", marginTop: 4 }}>
-                      {en ? "When set to Needs approval: lines that match what was sent go into stock as usual; lines that don't are held — counted nowhere — and you and every manager are asked to approve, send back for a recount, or return them to the source."
-                          : "Si « Soumis à approbation » : les lignes conformes à l'envoi entrent en stock comme d'habitude ; les autres sont mises en attente — comptées nulle part — et vous et chaque gérant êtes invités à approuver, faire recompter, ou les renvoyer à la source."}
                     </div>
                     {/* MP-COMPARE: may this MANAGER open the Compare screen? Off by
                         default (NOT NULL DEFAULT false); only ever honoured for a
