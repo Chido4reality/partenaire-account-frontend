@@ -801,8 +801,12 @@ export default function InventoryPage() {
         sell_price: +editProduct.sell_price,
         wholesale_price: +editProduct.wholesale_price || 0,
         min_price: +editProduct.min_price || 0,
-        // EXPIRY-TRACKING: only sent on Pro, never for a kit parent.
-        ...(canExpiry && !editProduct.is_multipart ? { track_expiry: !!editProduct.track_expiry } : {}),
+        // EXPIRY-TRACKING: only sent on Pro, never for a kit parent — and ONLY when the
+        // form actually holds a value. The Stock Levels / Alerts rows open this modal with
+        // a SLIM product (no track_expiry); sending !!undefined would silently switch a
+        // tracked product OFF on any ordinary edit (found in the browser, 2026-10-04).
+        ...(canExpiry && !editProduct.is_multipart && typeof editProduct.track_expiry === "boolean"
+          ? { track_expiry: editProduct.track_expiry } : {}),
       };
       const headers = { "X-Edit-Source": "product-edit" };
       // Owner direct. Non-owner (manager today; cashier never reaches
@@ -2053,7 +2057,8 @@ export default function InventoryPage() {
                 already recorded; switching it on makes every NEXT delivery need a date. */}
             {canExpiry && !editProduct.is_multipart && (
               <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: "4px 16px 12px", marginBottom: 14 }}>
-                <TrackExpiryToggle en={en} checked={editProduct.track_expiry} onChange={v => setEditProduct(p => ({ ...p, track_expiry: v }))} />
+                <TrackExpiryToggle en={en} checked={typeof editProduct.track_expiry === "boolean" ? editProduct.track_expiry : isTracked(editProduct.id)}
+                  onChange={v => setEditProduct(p => ({ ...p, track_expiry: v }))} />
               </div>
             )}
 

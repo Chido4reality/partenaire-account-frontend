@@ -827,6 +827,8 @@ export default function Layout() {
         navigate(user.role === "owner" ? "/accountant-log"
                : user.role === "manager" ? "/team-approvals" : "/my-requests");
       }
+      // EXPIRY-TRACKING: the owner's daily expiry digest opens Expiring stock.
+      if (data?.type === "expiry" || data?.ref_type === "expiry_digest") navigate("/expiry");
     };
     ensureRegisteredOnLogin({ onTap });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1248,6 +1250,9 @@ export default function Layout() {
         if (n.ref_type === "action_approval") return `/accountant-log`;
         // HELD-RECEIPT REMINDERS: the owner decides in the Accountant Log, a manager in Team Approvals.
         if (n.ref_type === "hold_reminder") return role === "owner" ? `/accountant-log` : `/team-approvals`;
+        // EXPIRY-TRACKING: per-product alerts and the owner's daily push digest
+        // (no ref_id) both open the Expiring stock screen.
+        if (n.type === "expiry") return `/expiry`;
         if (!n.ref_type || !n.ref_id) return null;
         switch (n.ref_type) {
           case "product":  return `/inventory?focus=${n.ref_id}`;
