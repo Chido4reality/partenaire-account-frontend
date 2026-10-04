@@ -44,6 +44,9 @@ const CHECKS = [
   // owner's short count is refused only at REPLAY. That row must be answerable
   // (Recount / Continue anyway), surfaced, and never re-sent as-is by Retry all.
   ["owner-mismatch-queue", "scripts/owner-mismatch-queue-check.mjs", "a queued owner short count is answerable, surfaced, and never retried as-is"],
+  // PRODUCT IMPORT: SheetJS guessed CSV dates month-first — "03/04/2027" (3 April)
+  // was stored as 2027-03-04 with NO error. Asserts the STORED value, not a message.
+  ["import-dates", "scripts/product-import-dates-check.mjs", "a CSV expiry date is stored as typed (DD/MM), impossible / US dates are rejected rows"],
   // MP-RECEIPT-PRINT-SCOPE: 0957ac41 moved the line-item normaliser into
   // buildBodyLines but kept using it in THREE call sites inside the component,
   // where it does not exist — every print path threw "saleItems is not defined".

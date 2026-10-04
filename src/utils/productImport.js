@@ -106,7 +106,13 @@ async function loadXLSX() {
 export async function parseProductImport(file, locations) {
   const XLSX = await loadXLSX();
   const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type: "array" });
+  // raw: true — CSV cells arrive as the TEXT that was typed. Without it SheetJS
+  // guesses dates in CSV text MONTH-FIRST: "03/04/2027" (3 April, as Douala writes
+  // it) became 4 March, silently, with no error — every date with a day ≤ 12. Our
+  // own parser (coerceExpiryDate) is the one rule: DD/MM/YYYY or YYYY-MM-DD, and an
+  // impossible date is a rejected row, never a guess. Real .xlsx date cells are
+  // unaffected (raw only governs plain-text formats); numbers still parse via num().
+  const wb = XLSX.read(buf, { type: "array", raw: true });
   const ws = wb.Sheets[wb.SheetNames[0]];                 // first sheet = the data ("Products")
   const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: "" });
   if (!aoa.length) return { rows: [] };
