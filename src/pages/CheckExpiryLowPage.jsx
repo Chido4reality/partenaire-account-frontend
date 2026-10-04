@@ -3,7 +3,7 @@
 //   Tab 1 FILTER   — chips (date / location / category / product / type) + group-by,
 //                    with row actions (write off expired, restock low).
 //   Tab 2 EXPIRING — every dated lot, expired first (red), then soonest expiry.
-//   Tab 3 LOW      — per-location low stock, lowest against its minimum first.
+//   Tab 3 LOW      — per-location low stock (alert on); sold here in 30 days first, then the rest.
 // Expiry quantities are an ESTIMATE (pa_expiry_estimate: oldest stock sold first).
 // Data: GET /expiry/check (Pro and above — track_expiry). Low-stock rule lives in
 // routes/expiry.js isLowRow; this screen never re-derives it.
@@ -110,8 +110,8 @@ export default function CheckExpiryLowPage() {
       </div>
       <div style={{ fontSize: 12, padding: "7px 11px", borderRadius: 8, background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.35)", marginBottom: 12 }}>
         <strong>{en ? "Expiry quantities are an ESTIMATE" : "Les quantités à expiration sont une ESTIMATION"}</strong>{" — "}
-        {en ? "oldest stock assumed sold first. Low stock is exact: quantity at or below the location's minimum."
-            : "le stock le plus ancien est supposé vendu en premier. Le stock bas est exact : quantité au plus égale au minimum de l'emplacement."}
+        {en ? "oldest stock assumed sold first. Low stock is exact: quantity at or below the location's minimum, alert switched on. The menu count includes only low items sold there in the last 30 days."
+            : "le stock le plus ancien est supposé vendu en premier. Le stock bas est exact : quantité au plus égale au minimum de l'emplacement, alerte activée. Le compteur du menu ne compte que les articles bas vendus à cet emplacement ces 30 derniers jours."}
       </div>
 
       {q.isLoading && <div style={{ color: "var(--text-muted)" }}>{en ? "Loading…" : "Chargement…"}</div>}
@@ -140,6 +140,7 @@ function FilterTab({ en, fmt, expiring, low, categories, allLocations, seesValue
   const [categoryId, setCategoryId] = useState(null);
   const [productId, setProductId] = useState(null);
   const [type, setType] = useState("both");           // expiring | low | both
+  const [soldOnly, setSoldOnly] = useState(false);    // low rows: only those sold here in 30 days
   const [groupBy, setGroupBy] = useState("type");     // date | location | category | type
   const [open, setOpen] = useState(null);
   const [pq, setPq] = useState("");
@@ -181,9 +182,11 @@ function FilterTab({ en, fmt, expiring, low, categories, allLocations, seesValue
     return [...m.values()];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expiring, type, range, locationId, categoryId, productId]);
-  const lowRows = useMemo(() => (type === "expiring" ? [] : low.filter(dimOk).map(r => ({ ...r, type: "low" }))),
+  // Low rows: the SAME rows as Tab 3, in the same order (sold recently first), plus the
+  // "Sold recently" chip to keep only the ones the badge counts.
+  const lowRows = useMemo(() => (type === "expiring" ? [] : sortLow(low.filter(r => dimOk(r) && (!soldOnly || r.sold_recently === true)), en).map(r => ({ ...r, type: "low" }))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [low, type, locationId, categoryId, productId]);
+    [low, type, locationId, categoryId, productId, soldOnly, en]);
   const rows = [...expRows, ...lowRows];
 
   const groupKey = (r) => groupBy === "date" ? (r.type === "expiring" ? r.expiry_date : "~low")
@@ -247,6 +250,11 @@ function FilterTab({ en, fmt, expiring, low, categories, allLocations, seesValue
         <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700 }}>{en ? "Type" : "Type"}:</span>
         {[["expiring", "Expiring", "Expiration"], ["low", "Low stock", "Stock bas"], ["both", "Both", "Les deux"]].map(([k, e, f]) =>
           <button key={k} style={chipStyle(type === k)} onClick={() => setType(k)}>{en ? e : f}</button>)}
+        {type !== "expiring" && (
+          <button style={chipStyle(soldOnly)} onClick={() => setSoldOnly(s => !s)} aria-pressed={soldOnly}>
+            {soldOnly ? "✓ " : ""}{en ? "Sold recently" : "Vendu récemment"}
+          </button>
+        )}
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
         <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700 }}>{en ? "Group by" : "Grouper par"}:</span>
@@ -264,7 +272,7 @@ function FilterTab({ en, fmt, expiring, low, categories, allLocations, seesValue
             {list.map(r => r.type === "expiring"
               ? <ExpRowCard key={`e:${r.product_id}:${r.location_id}`} r={r} en={en} fmt={fmt} seesValue={seesValue} grouped
                   action={canWriteOff && r.expired_qty > 0 ? () => onWriteOff({ ...r, est_qty: r.expired_qty, expiry_date: r.expired_date }) : null} />
-              : <LowRowCard key={`l:${r.product_id}:${r.location_id}`} r={r} en={en} action={canRestock ? () => onRestock(r) : null} />)}
+              : <LowRowCard key={`l:${r.product_id}:${r.location_id}`} r={r} en={en} soldTag action={canRestock ? () => onRestock(r) : null} />)}
           </div>
         </div>
       ))}
@@ -288,13 +296,30 @@ function ExpiringTab({ en, fmt, rows, canWriteOff, onWriteOff }) {
 }
 
 // ── TAB 3: LOW STOCK ──────────────────────────────────────────────────────────
+// Peter, 2026-10-04: every low row is listed, but those that SOLD at that location in
+// the last 30 days come first (they are the ones the badge counts); within each group
+// the shortfall order is unchanged. One sort, shared with Tab 1.
+const lowRatio = (r) => (r.min_quantity > 0 ? r.quantity / r.min_quantity : (r.quantity <= 0 ? 0 : 1));
+const sortLow = (rows, en) => [...rows].sort((a, b) =>
+  (b.sold_recently === true) - (a.sold_recently === true)
+  || lowRatio(a) - lowRatio(b) || b.shortage - a.shortage || name(a, en).localeCompare(name(b, en)));
+const soldTagStyle = { fontSize: 10.5, fontWeight: 800, padding: "2px 8px", borderRadius: 999,
+  background: "rgba(16,185,129,0.14)", color: "#10b981", border: "1px solid rgba(16,185,129,0.4)" };
+const SoldTag = ({ en }) => <span style={soldTagStyle}>{en ? "Sold recently" : "Vendu récemment"}</span>;
+
 function LowTab({ en, rows, canRestock, onRestock }) {
-  const ratio = (r) => (r.min_quantity > 0 ? r.quantity / r.min_quantity : (r.quantity <= 0 ? 0 : 1));
-  const sorted = useMemo(() => [...rows].sort((a, b) => ratio(a) - ratio(b) || b.shortage - a.shortage || name(a, en).localeCompare(name(b, en))), [rows, en]);
+  const sorted = useMemo(() => sortLow(rows, en), [rows, en]);
   if (!sorted.length) return <div style={{ color: "var(--text-muted)", padding: 12 }}>{en ? "Nothing is low." : "Rien n'est bas."}</div>;
+  const sold = sorted.filter(r => r.sold_recently === true);
+  const rest = sorted.filter(r => r.sold_recently !== true);
+  const head = { display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 800, color: "var(--text-muted)", margin: "4px 2px 6px" };
+  const list = (rs) => rs.map(r => <LowRowCard key={`${r.product_id}:${r.location_id}`} r={r} en={en} action={canRestock ? () => onRestock(r) : null} />);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      {sorted.map(r => <LowRowCard key={`${r.product_id}:${r.location_id}`} r={r} en={en} action={canRestock ? () => onRestock(r) : null} />)}
+      {sold.length > 0 && <div style={head}><SoldTag en={en} /> <span>{en ? "sold here in the last 30 days" : "vendu ici ces 30 derniers jours"} · {sold.length}</span></div>}
+      {list(sold)}
+      {rest.length > 0 && <div style={{ ...head, marginTop: sold.length ? 12 : 4 }}>{en ? "Not sold here in the last 30 days" : "Pas vendu ici ces 30 derniers jours"} · {rest.length}</div>}
+      {list(rest)}
     </div>
   );
 }
@@ -327,11 +352,11 @@ function ExpRowCard({ r, en, fmt, seesValue, action, grouped }) {
     </div>
   );
 }
-function LowRowCard({ r, en, action }) {
+function LowRowCard({ r, en, action, soldTag }) {
   return (
     <div style={{ ...card, borderLeft: "4px solid #fbbf24", display: "flex", flexWrap: "wrap", gap: "8px 16px", alignItems: "center" }}>
       <div style={{ flex: "1 1 200px", minWidth: 0 }}>
-        <div style={{ fontWeight: 700, overflowWrap: "anywhere" }}>📉 {name(r, en)}</div>
+        <div style={{ fontWeight: 700, overflowWrap: "anywhere" }}>📉 {name(r, en)}{soldTag && r.sold_recently === true && <> <SoldTag en={en} /></>}</div>
         <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{r.location_name}</div>
       </div>
       <Cell label={en ? "Quantity" : "Quantité"} color={r.quantity <= 0 ? "#f87171" : "#fbbf24"}>{Number(r.quantity).toLocaleString()} {r.unit || ""}</Cell>
