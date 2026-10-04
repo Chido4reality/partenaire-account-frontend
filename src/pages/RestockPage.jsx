@@ -3,7 +3,8 @@
 //   To Buy    — live low-stock list (+ manual adds) → check lines → send via WhatsApp
 //   Ordered   — past sent orders (date-filtered) → edit + re-send (new dated order)
 //   Unstocked — ignored products (hidden from To Buy) → re-add
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "../utils/api";
 import { useLangStore, useAuthStore } from "../store";
@@ -57,6 +58,8 @@ export default function RestockPage() {
     qc.invalidateQueries({ queryKey: ["restock-tobuy"] });
     qc.invalidateQueries({ queryKey: ["restock-orders"] });
     qc.invalidateQueries({ queryKey: ["restock-ignores"] });
+    qc.invalidateQueries({ queryKey: ["expiry-low-badge"] }); // a receive can clear a low-stock row
+    qc.invalidateQueries({ queryKey: ["expiry-check"] });
   };
 
   const toBuy = useQuery({ queryKey: ["restock-tobuy"], queryFn: () => api.get("/restock/to-buy").then(r => toArray(r)), refetchInterval: 30000 });
@@ -99,6 +102,23 @@ export default function RestockPage() {
     setManual(prev => [...prev, { product_id: p.id, name: en ? (p.name_en || p.name) : p.name, unit: p.unit, qty: 1, checked: true }]);
     setShowAdd(false);
   };
+
+  // EXPIRY-TRACKING: "Restock" from Check Expiry/Low opens /restock?product=<id> —
+  // land on To Buy with that product on the list (added as a line if the low-stock
+  // suggestions don't already carry it). The param is consumed once.
+  const [params, setParams] = useSearchParams();
+  const wantProduct = params.get("product");
+  useEffect(() => {
+    if (!wantProduct || toBuy.isLoading) return;
+    setTab("tobuy");
+    if (buyRows.some(r => r.product_id === wantProduct) || manual.some(m => m.product_id === wantProduct)) {
+      toast(en ? "Already on the To Buy list" : "Déjà dans la liste à acheter");
+    } else {
+      api.get(`/products/${wantProduct}`).then(r => r.data?.data).then(p => { if (p) addManual(p); }).catch(() => {});
+    }
+    const next = new URLSearchParams(params); next.delete("product"); setParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantProduct, toBuy.isLoading]);
 
   const tabBtn = (t, label) => (
     <button key={t} onClick={() => setTab(t)}

@@ -86,10 +86,11 @@ const NAV = [
   // only granted by pro/pro_plus (sections:'*'); lite/expired-trial floors omit it,
   // so it's Pro/Pro Plus-only (active trial resolves to 'pro'). Server also 403s.
   { to: "/stock-check",  en: "Stock Check", fr: "Vérification de stock", icon: "🔍", roles: ["owner","manager","warehouse"], section: "stock_check", badge: "stock_check" },
-  // EXPIRY-TRACKING (Peter, 2026-10-04): estimated expiring stock + expired write-off.
-  // Pro and above (feature "track_expiry"); a locked entry links to PRO. Also in
-  // NavDrawer.jsx SECTIONS (mobile) + App.jsx routes.
-  { to: "/expiry",       en: "Expiring stock", fr: "Stock à expiration", icon: "⏳", roles: ["owner","manager","warehouse"], section: "inventory", feature: "track_expiry", lockPlan: "pro" },
+  // EXPIRY-TRACKING (Peter, 2026-10-04): "Check Expiry/Low" — expiring lots (estimate)
+  // + per-location low stock, one screen. Pro and above (feature "track_expiry"); a
+  // locked entry links to PRO. Red badge = expiry_low. Also in NavDrawer.jsx SECTIONS
+  // (mobile) + App.jsx routes (the old /expiry route redirects here).
+  { to: "/check-expiry-low", en: "Check Expiry/Low", fr: "Vérif. Expiration/Stock bas", icon: "⏳", roles: ["owner","manager","warehouse"], section: "inventory", feature: "track_expiry", lockPlan: "pro", badge: "expiry_low" },
   // MP-RESTOCK — order more stock from a supplier (boss tool). section:"restock" is
   // only granted by pro/pro_plus (sections:'*'); lite/trial floors omit it → Pro/Pro
   // Plus-only. owner + manager (cashiers excluded). Server also gates (requirePro +
@@ -828,7 +829,7 @@ export default function Layout() {
                : user.role === "manager" ? "/team-approvals" : "/my-requests");
       }
       // EXPIRY-TRACKING: the owner's daily expiry digest opens Expiring stock.
-      if (data?.type === "expiry" || data?.ref_type === "expiry_digest") navigate("/expiry");
+      if (data?.type === "expiry" || data?.ref_type === "expiry_digest") navigate("/check-expiry-low");
     };
     ensureRegisteredOnLogin({ onTap });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1104,6 +1105,21 @@ export default function Layout() {
   });
   const goodsBufferPending = bufferCount || 0;
 
+  // EXPIRY-TRACKING — "Check Expiry/Low" badge: distinct product+location pairs that
+  // are expired / ≤30 days (estimate) or low stock, each counted once (computed
+  // server-side, GET /expiry/badge). Pro+ only (track_expiry) and the nav's roles, so
+  // it never 403s. NOT gated on lite mode: Lite hides the bell, so this badge is the
+  // visible alert there. Same 60s poll as the other sidebar counts.
+  const { data: expiryLow } = useQuery({
+    queryKey: ["expiry-low-badge"],
+    queryFn: () => api.get("/expiry/badge").then(r => r.data),
+    refetchInterval: 60000,
+    enabled: hasFeature(effectivePlan, "track_expiry") && ["owner", "manager", "warehouse"].includes(role),
+    retry: 1,
+    onError: () => {}
+  });
+  const expiryLowPending = expiryLow?.count || 0;
+
   // MP-DOZIE-SELLER-MIGRATION Phase 2 — "Online Dozie" attention badge. Polls the
   // resolved seller's needs-attention count (pending orders now; messages/disputes
   // later) on the same 30s cadence as the online-cart badge. Owner/manager only
@@ -1148,6 +1164,7 @@ export default function Layout() {
     : item.badge === "stock_check"    ? stockCheckPending
     : item.badge === "restock"        ? restockPending
     : item.badge === "goodsBuffer"    ? goodsBufferPending
+    : item.badge === "expiry_low"     ? expiryLowPending
     : 0;
 
   // STOCK-UX-PASS Part A — cross-account location leak fix.
@@ -1252,7 +1269,7 @@ export default function Layout() {
         if (n.ref_type === "hold_reminder") return role === "owner" ? `/accountant-log` : `/team-approvals`;
         // EXPIRY-TRACKING: per-product alerts and the owner's daily push digest
         // (no ref_id) both open the Expiring stock screen.
-        if (n.type === "expiry") return `/expiry`;
+        if (n.type === "expiry") return `/check-expiry-low`;
         if (!n.ref_type || !n.ref_id) return null;
         switch (n.ref_type) {
           case "product":  return `/inventory?focus=${n.ref_id}`;
