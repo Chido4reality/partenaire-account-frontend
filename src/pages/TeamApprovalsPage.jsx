@@ -12,6 +12,7 @@ import { useCurrency } from "../utils/useCurrency";
 import api from "../utils/api";
 import ApprovalDetailView from "../components/common/ApprovalDetailView"; // MP-APPROVAL-FULL-DETAIL
 import HoldRejectFields, { HOLD_ACTION, holdRejectReady } from "../components/common/HoldRejectFields"; // receive-mismatch gate
+import HeldReceiptsBanner, { HoldTierBadge } from "../components/common/HeldReceiptsBanner"; // held-receipt reminders
 
 const VERB = {
   void:            { en: "cancel a sale",      fr: "annuler une vente" },
@@ -112,6 +113,7 @@ export default function TeamApprovalsPage() {
         {isError && !isLoading && (
           <div style={{ padding: 20, color: "#fca5a5" }}>{en ? "Could not load requests. Pull to retry." : "Impossible de charger. Réessayez."}</div>
         )}
+        <div style={{ padding: "0 14px" }}><HeldReceiptsBanner variant="pinned" en={en} /></div>
         {!isLoading && !isError && rows.length === 0 && (
           <div className="empty-state" style={{ padding: 28, textAlign: "center" }}>
             <div style={{ fontWeight: 600 }}>{en ? "Nothing waiting" : "Rien en attente"}</div>
@@ -124,6 +126,7 @@ export default function TeamApprovalsPage() {
           <div key={r.id} style={{ padding: "12px 14px", borderTop: i === 0 ? "none" : "1px solid var(--border)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <span style={{ fontWeight: 600, fontSize: 14.5, textTransform: "capitalize" }}>{verb(r.action_type, en)}</span>
+              <HoldTierBadge tier={r.hold_tier} ageHours={r.hold_age_hours} en={en} />
               <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--text-muted)" }}>{whenLabel(r.created_at, en)}</span>
             </div>
             <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 3 }}>

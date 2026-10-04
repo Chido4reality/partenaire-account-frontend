@@ -11,6 +11,7 @@ import DateRangeFilter, { inRange, wideRange } from "../components/common/DateRa
 import api, { formatDate } from "../utils/api";
 import { useMyPermissions } from "../utils/useMyPermissions";
 import { useReceiveSummary } from "../utils/useReceiveSummary"; // F-C: the override rate
+import HeldReceiptsBanner, { useHeldSummary, ageLabel } from "../components/common/HeldReceiptsBanner"; // held-receipt reminders
 import RestrictedAction from "../components/common/RestrictedAction";
 import { useSearchParams } from "react-router-dom";
 import TransferDetailModal from "../components/TransferDetailModal"; // MP-STAFF-ACTIVITY-LEDGER Phase 3
@@ -266,10 +267,14 @@ export default function TransfersPage() {
   // Receiver confirms (one-tap, all correct): in_transit→completed (trigger credits DEST).
   // ONE-TAP (no lines) → dest gets sent qty. ADJUST ({lines:[{item_id,received_quantity}]})
   // → dest gets received; any received≠sent becomes a Stock Check variance for the owner.
+  // OWNER CONFIRM-IN-PLACE (Peter, 2026-10-04): the server refuses an owner's short
+  // count with code owner_mismatch_confirm BEFORE writing anything; this holds the
+  // request so "Continue anyway" can resend it with the confirmation.
+  const [ownerPrompt, setOwnerPrompt] = useState(null); // { kind: 'confirm'|'recount', id, lines }
   const confirmMutation = useMutation({
-    mutationFn: ({ id, lines, override, override_reason }) =>
+    mutationFn: ({ id, lines, override, override_reason, owner_mismatch_confirmed }) =>
       api.post(`/transfers/${id}/confirm-receipt`,
-        override ? { override: true, override_reason } : { lines }),
+        override ? { override: true, override_reason } : { lines, ...(owner_mismatch_confirmed ? { owner_mismatch_confirmed: true } : {}) }),
     onSuccess: (res) => {
       const v = res?.data?.variance_lines || 0;
       // F-C — THE REVEAL. The receiver counted blind; only now do they see what was
@@ -286,8 +291,9 @@ export default function TransfersPage() {
     },
     // MP-TRANSFER-APPROVAL-IN-TRANSIT: surface the server's bilingual reason clearly
     // (e.g. cannot_confirm_own_dispatch / not_your_destination) — never a raw 4xx.
-    onError: (err) => {
+    onError: (err, vars) => {
       const d = err.response?.data || {};
+      if (d.code === "owner_mismatch_confirm") { setOwnerPrompt({ kind: "confirm", id: vars.id, lines: vars.lines }); return; }
       toast.error((lang === "en" ? (d.message_en || d.message) : (d.message_fr || d.message)) || "Error");
     }
   });
@@ -296,7 +302,7 @@ export default function TransfersPage() {
   // same reveal; the server credits what matches (or what an allowed counter counted)
   // and holds again what a blocked counter still finds short.
   const recountMutation = useMutation({
-    mutationFn: ({ id, lines }) => api.post(`/transfers/${id}/recount`, { lines }),
+    mutationFn: ({ id, lines, owner_mismatch_confirmed }) => api.post(`/transfers/${id}/recount`, { lines, ...(owner_mismatch_confirmed ? { owner_mismatch_confirmed: true } : {}) }),
     onSuccess: (res) => {
       const cmp = Array.isArray(res?.data?.comparison) ? res.data.comparison : [];
       if (cmp.length) setReveal({ comparison: cmp, variance_lines: 0, held_lines: res?.data?.held_lines || 0 });
@@ -304,8 +310,9 @@ export default function TransfersPage() {
       setAdjustFor(null);
       qc.invalidateQueries(["transfers"]); qc.invalidateQueries(["transfers-incoming"]); qc.invalidateQueries(["stock"]);
     },
-    onError: (err) => {
+    onError: (err, vars) => {
       const d = err.response?.data || {};
+      if (d.code === "owner_mismatch_confirm") { setOwnerPrompt({ kind: "recount", id: vars.id, lines: vars.lines }); return; }
       toast.error((lang === "en" ? (d.message_en || d.message) : (d.message_fr || d.message)) || "Error");
     }
   });
@@ -374,6 +381,10 @@ export default function TransfersPage() {
   // F-C: the override rate, shared hook so this and the Accountant Log cannot drift.
   const { data: recvSummaryResp } = useReceiveSummary({ onError: () => {} });
   const recvSummary = recvSummaryResp?.data || { overrides: 0, receipts: 0, pct: 0, amber: false };
+  // HELD-RECEIPT REMINDERS: every staff member at the branch sees "On hold Xh" on the
+  // transfer row; owner/manager also get the strip above the list.
+  const { data: heldResp } = useHeldSummary(true);
+  const heldByTransfer = new Map(((heldResp?.data?.items) || []).map(i => [i.transfer_id, i]));
   // Part 4 — the per-org owner-cancel lock, mirrored in the UI. When it's ON, a granted
   // manager may still cancel STAFF transfers but not the OWNER's; the row carries
   // `owner_actor` (dispatcher once in-transit, else creator — computed server-side by the
@@ -770,6 +781,9 @@ export default function TransfersPage() {
         </RestrictedAction>
       </div>
 
+      {/* HELD-RECEIPT REMINDERS: the strip, owner/manager only (amber ≥ 8h, red ≥ 24h). */}
+      {(isOwner || user?.role === "manager") && <HeldReceiptsBanner variant="strip" en={lang === "en"} />}
+
       {/* MP-TRANSFER-RECEIVE-CONFIRM (Phase 1) — destination "Incoming transfers"
           inbox: in_transit deliveries arriving at my location, awaiting confirmation.
           A staffer can't confirm their own dispatch (server enforces + button hidden). */}
@@ -785,6 +799,14 @@ export default function TransfersPage() {
               override exists — a permanent "0 of 21" would be noise, and the chip
               needs to mean something when it appears. Amber is decided SERVER-side
               so the two surfaces cannot disagree about the threshold. */}
+          {/* OWNER CONFIRM-IN-PLACE: short counts the owner chose to continue anyway. */}
+          {(recvSummary.owner_mismatch_continued || 0) > 0 && (
+            <div style={{ fontSize: 11.5, marginBottom: 10, padding: "6px 10px", borderRadius: 8, background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>
+              {lang === "en"
+                ? `${recvSummary.owner_mismatch_continued} short count(s) by the owner were continued anyway in the last 30 days (each logged).`
+                : `${recvSummary.owner_mismatch_continued} comptage(s) incomplet(s) du propriétaire ont été validés quand même ces 30 derniers jours (chacun enregistré).`}
+            </div>
+          )}
           {recvSummary.overrides > 0 && (
             <div style={{ fontSize: 11.5, marginBottom: 10, padding: "6px 10px", borderRadius: 8,
                           background: recvSummary.amber ? "rgba(245,158,11,0.12)" : "var(--bg-elevated)",
@@ -902,6 +924,9 @@ export default function TransfersPage() {
                         {tr.transfer_number}
                       </button>
                       <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: sc.bg, color: sc.color }}>{statusLabel(tr.status)}</span>
+                      {heldByTransfer.has(tr.id) && (() => { const h = heldByTransfer.get(tr.id); const red = h.tier === "stuck" || h.tier === "week"; const amber = h.tier === "overdue";
+                        return <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, fontWeight: 700, background: red ? "rgba(239,68,68,0.15)" : amber ? "rgba(245,158,11,0.15)" : "var(--bg-elevated)", color: red ? "#f87171" : amber ? "#f59e0b" : "var(--text-muted)" }}>
+                          ⏸ {lang === "en" ? `On hold ${ageLabel(h.age_hours, true)} — waiting for approval` : `En attente ${ageLabel(h.age_hours, false)} — approbation requise`}</span>; })()}
                     </div>
                     <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>
                       {fromName} <span style={{ color: "var(--text-muted)" }}>></span> {toName}
@@ -990,6 +1015,31 @@ export default function TransfersPage() {
           then go back and "adjust" the answer. */}
       {reveal && (
         <ReceiveRevealModal reveal={reveal} lang={lang} onClose={() => setReveal(null)} />
+      )}
+
+      {/* OWNER CONFIRM-IN-PLACE: shown BEFORE anything is written (the server refused).
+          "Recount" closes this and leaves the blind count open, sent figures still
+          hidden; "Continue anyway" resends with the confirmation (logged server-side). */}
+      {ownerPrompt && (
+        <div className="modal-overlay" style={{ zIndex: 1100 }}>
+          <div className="modal" style={{ maxWidth: 420 }}>
+            <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 8 }}>⚠️ {lang === "en" ? "Count doesn't match" : "Le comptage ne correspond pas"}</div>
+            <div style={{ fontSize: 14, marginBottom: 16 }}>
+              {lang === "en" ? "You have entered a count that doesn't match what was sent. Recount, or continue anyway?"
+                             : "Vous avez saisi un comptage qui ne correspond pas à l'envoi. Recompter, ou continuer quand même ?"}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => setOwnerPrompt(null)}>
+                {lang === "en" ? "Recount" : "Recompter"}
+              </button>
+              <button className="btn btn-secondary" style={{ flex: 1 }} disabled={confirmMutation.isPending || recountMutation.isPending}
+                onClick={() => { const p = ownerPrompt; setOwnerPrompt(null);
+                  (p.kind === "recount" ? recountMutation : confirmMutation).mutate({ id: p.id, lines: p.lines, owner_mismatch_confirmed: true }); }}>
+                {lang === "en" ? "Continue anyway" : "Continuer quand même"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

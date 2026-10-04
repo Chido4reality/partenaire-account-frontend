@@ -30,6 +30,7 @@ import BufferDetailModal from "../components/BufferDetailModal";
 import { LEDGER_TYPES, LEDGER_TYPE_ORDER, ltLabel, fmtLedgerWhen } from "../utils/ledgerTypes";
 import HelpButton from "../components/common/HelpButton"; // MP-STAFF-ACTIVITY-LEDGER Phase 5
 import HoldRejectFields, { HOLD_ACTION, holdRejectReady } from "../components/common/HoldRejectFields"; // receive-mismatch gate
+import HeldReceiptsBanner, { HoldTierBadge } from "../components/common/HeldReceiptsBanner"; // held-receipt reminders
 
 // Role badge colours — mirror SettingsPage ROLES.
 const ROLE_META = {
@@ -72,6 +73,8 @@ export default function AccountantLogPage() {
   const recvReceipts  = Number(recvSummaryResp?.data?.receipts) || 0;
   const recvPct       = Number(recvSummaryResp?.data?.pct) || 0;
   const recvAmber     = recvSummaryResp?.data?.amber === true;
+  // OWNER CONFIRM-IN-PLACE: the owner's own short counts he chose to continue anyway.
+  const recvOwnerContinued = Number(recvSummaryResp?.data?.owner_mismatch_continued) || 0;
 
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ full_name: "", phone: "", password: "" });
@@ -441,6 +444,8 @@ export default function AccountantLogPage() {
         </button>
       </div>
 
+      {/* HELD-RECEIPT REMINDERS: receipts waiting 24h+ pinned above the inbox. */}
+      <div style={{ marginTop: 12 }}><HeldReceiptsBanner variant="pinned" en={en} /></div>
       {/* Phase 5b — pending approvals (owner inbox) */}
       {pendingApprovals.length > 0 && (
         <div className="card" style={{ marginTop: 12, padding: 0, overflow: "hidden", border: "1px solid rgba(245,158,11,0.5)" }}>
@@ -457,6 +462,7 @@ export default function AccountantLogPage() {
             <div key={a.id} style={{ padding: "12px 14px", borderTop: i === 0 ? "none" : "1px solid var(--border)" }}>
               <div style={{ fontWeight: 600, fontSize: 14.5 }}>
                 {(a.requested_by_name || (en ? "A staff member" : "Un employé"))} {en ? "wants to" : "veut"} {approvalVerb(a.action_type, a.target_ref)}
+                <HoldTierBadge tier={a.hold_tier} ageHours={a.hold_age_hours} en={en} />
               </div>
               <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 2 }}>
                 {/* MP-BELOW-COST-CLEAR-WORDING: a below-cost amount is the shortfall,
@@ -525,6 +531,15 @@ export default function AccountantLogPage() {
           bare number is not just ignorable, it is unreadable. `amber` is decided
           SERVER-side (>= 20% or >= 5 absolute) so this line and the Transfers
           screen can never disagree about the threshold. */}
+      {recvOwnerContinued > 0 && (
+        <div className="card" style={{ marginTop: 12, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 15 }}>📝</span>
+          <div style={{ fontSize: 13.5, color: "var(--text-secondary)", flex: 1 }}>
+            {en ? <><strong style={{ color: "var(--text-primary)" }}>{recvOwnerContinued}</strong> short count(s) you entered were continued anyway in the last 30 days — each one is in the activity log with what was sent and what you counted.</>
+                : <><strong style={{ color: "var(--text-primary)" }}>{recvOwnerContinued}</strong> comptage(s) incomplet(s) que vous avez saisis ont été validés quand même sur les 30 derniers jours — chacun figure au journal avec l'envoyé et le compté.</>}
+          </div>
+        </div>
+      )}
       {recvOverrides > 0 && (
         <div className="card" style={{ marginTop: 12, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10,
           border: recvAmber ? "1px solid rgba(251,191,36,0.35)" : undefined,

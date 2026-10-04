@@ -805,6 +805,7 @@ export default function Layout() {
     const onTap = (data) => {
       // A tap from the lock screen should land where the thing actually is, not on the
       // dashboard leaving the boss to hunt for it.
+      if (data?.ref_type === "hold_reminder") navigate(user.role === "owner" ? "/accountant-log" : "/team-approvals");
       if (data?.ref_type === "action_approval") {
         navigate(user.role === "owner" ? "/accountant-log"
                : user.role === "manager" ? "/team-approvals" : "/my-requests");
@@ -1187,6 +1188,7 @@ export default function Layout() {
   const notifColor = (type) => {
     if (type === "low_stock") return "#fbbf24";
     if (type === "debt_due")  return "#f87171";
+    if (type === "hold_reminder") return "#f97316"; // HELD-RECEIPT REMINDERS
     return "var(--brand-light)";
   };
 
@@ -1226,6 +1228,8 @@ export default function Layout() {
         // Phase 5b: approval request/result alerts deep-link to the Accountant Log
         // (the owner's pending-approvals inbox sits at the top of that screen).
         if (n.ref_type === "action_approval") return `/accountant-log`;
+        // HELD-RECEIPT REMINDERS: the owner decides in the Accountant Log, a manager in Team Approvals.
+        if (n.ref_type === "hold_reminder") return role === "owner" ? `/accountant-log` : `/team-approvals`;
         if (!n.ref_type || !n.ref_id) return null;
         switch (n.ref_type) {
           case "product":  return `/inventory?focus=${n.ref_id}`;

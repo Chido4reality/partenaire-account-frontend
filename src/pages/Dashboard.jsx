@@ -9,6 +9,7 @@ import { ActiveShiftIndicator } from '../components/common/ShiftWidgets';
 import DrawerDashboardCard from '../components/dashboard/DrawerDashboardCard';
 // MP-TILE-ISOLATION: one broken tile must not blank the app (and the POS with it).
 import TileErrorBoundary from '../components/common/TileErrorBoundary';
+import HeldReceiptsBanner from '../components/common/HeldReceiptsBanner'; // held-receipt reminders: the 7-day banner
 
 const StatCard = ({ label, value, sub, color = 'var(--brand-light)', icon, onClick }) => (
   <div className="stat-card" onClick={onClick} style={{ cursor: onClick ? 'pointer' : 'default' }}>
@@ -235,6 +236,9 @@ export default function Dashboard() {
           </button>
         )}
       </div>
+
+      {/* HELD-RECEIPT REMINDERS: red banner once a held receipt has waited a week. */}
+      {(isOwner || isManager) && <HeldReceiptsBanner variant="dashboard" en={lang === 'en'} onOpen={() => navigate(isOwner ? '/accountant-log' : '/team-approvals')} />}
 
       {/* Alerts — only for owner/manager */}
       {(isOwner || isManager) && (lowStockCount > 0 || overdueCount > 0) && (
