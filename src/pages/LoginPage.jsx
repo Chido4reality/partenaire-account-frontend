@@ -5,6 +5,30 @@ import { useAuthStore, useLangStore } from "../store";
 import api from "../utils/api";
 import { setLanguageLocalPending } from "../utils/setLanguage"; // MP-LANGUAGE-PERSIST
 
+// LOGIN DIAGNOSTICS (2026-10-05). Paul, on Orange: "the button dims for a few seconds, then
+// returns — no message, over and over". A failed sign-in must say WHY, on the screen itself
+// (a toast is easy to miss and can sit under the status bar), with a short technical code a
+// screenshot can carry back to us. Pure, so the render check can drive every branch.
+export function loginFailure(err, lang) {
+  const fr = lang !== "en";
+  const res = err && err.response;
+  const d = (res && res.data) || {};
+  if (!res || err.code === "ECONNABORTED" || err.code === "ERR_NETWORK") {
+    const code = err && err.code === "ECONNABORTED" ? "timeout" : ((err && err.code) || "no_response");
+    return { code, message: fr
+      ? "Impossible de joindre le serveur — vérifiez vos données mobiles, ou passez en Wi-Fi, puis réessayez."
+      : "Can't reach the server — check your mobile data, or switch to Wi-Fi, then try again." };
+  }
+  const code = `HTTP ${res.status}${d.error || d.code ? " · " + (d.error || d.code) : ""}`;
+  if (d.error === "account_disabled") return { code, message: fr ? d.message_fr || d.message : d.message_en || d.message };
+  if (res.status === 429) return { code, message: fr
+    ? "Trop d'essais depuis ce réseau — patientez 15 minutes, ou passez en Wi-Fi."
+    : "Too many attempts from this network — wait 15 minutes, or switch to Wi-Fi." };
+  const server = fr ? (d.message_fr || d.message) : (d.message_en || d.message);
+  if (res.status === 401) return { code, message: server || (fr ? "Identifiants incorrects." : "Wrong phone number or password.") };
+  return { code, message: server || (fr ? "Le serveur a refusé la connexion — réessayez." : "The server refused the sign-in — try again.") };
+}
+
 export default function LoginPage() {
   const { t, lang }             = useLangStore();
 
@@ -16,6 +40,10 @@ export default function LoginPage() {
     const flash = new URLSearchParams(window.location.search).get("flash");
     if (flash === "session_changed") {
       toast("Session changed — please log in again.", { icon: "🔒" });
+    }
+    // LOGIN DIAGNOSTICS: the server refused a stored session — say so instead of a silent bounce.
+    if (flash === "session_expired") {
+      setFailure({ code: "session_expired", message: lang === "en" ? "Your session expired — please sign in again." : "Votre session a expiré — reconnectez-vous." });
     }
     // Fix A: the disabled reason arrives reload-proof in the URL (?flash=account_disabled)
     // for a forced logout; the sessionStorage flag is the fallback (e.g. no-reload paths).
@@ -33,12 +61,22 @@ export default function LoginPage() {
   const [phone, setPhone]       = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading]   = useState(false);
+  const [failure, setFailure]   = useState(null);   // { message, code } — shown under the button
+  const [attempt, setAttempt]   = useState(null);   // { attempt, of } while api.js retries
+
+  useEffect(() => {
+    const onRetry = (e) => setAttempt(e.detail || null);
+    window.addEventListener("mp-auth-retry", onRetry);
+    return () => window.removeEventListener("mp-auth-retry", onRetry);
+  }, []);
   const { login }               = useAuthStore();
   const navigate                = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setFailure(null);
+    setAttempt(null);
     try {
       const res = await api.post("/auth/login", { phone, password });
       login(res.data.user, res.data.org, res.data.token);
@@ -47,15 +85,10 @@ export default function LoginPage() {
       // No response / axios timeout (ECONNABORTED) / transport error
       // (ERR_NETWORK) = connectivity problem, not bad credentials. Say so
       // clearly and fast (6s timeout) instead of a generic error after a hang.
-      const networkish = !err.response || err.code === "ECONNABORTED" || err.code === "ERR_NETWORK";
-      // Disabled account (correct PIN, account turned off) gets its own bilingual line.
-      const disabled = err.response?.data?.error === "account_disabled";
-      toast.error(networkish
-        ? (lang === "fr" ? "Pas de connexion — vérifiez votre réseau" : "No connection — check your network")
-        : disabled
-          ? t("auth.accountDisabled")
-          : (err.response?.data?.message || t("common.error")));
-    } finally { setLoading(false); }
+      const f = loginFailure(err, lang);
+      setFailure(f);
+      toast.error(f.message);
+    } finally { setLoading(false); setAttempt(null); }
   };
 
   return (
@@ -79,8 +112,11 @@ export default function LoginPage() {
               <input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="" />
             </div>
             <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={loading} style={{ marginTop: 8 }}>
-              {loading ? t("auth.logging") : t("auth.loginBtn")}
+              {loading
+                ? `${t("auth.logging")}${attempt ? ` (${lang === "en" ? "attempt" : "essai"} ${attempt.attempt}/${attempt.of})` : ""}`
+                : t("auth.loginBtn")}
             </button>
+            <LoginFailure failure={failure} />
           </form>
           <div style={{ textAlign: "center", marginTop: 18, fontSize: 13, color: "var(--text-secondary)" }}>
             {lang === "en" ? "No account yet? " : "Pas encore de compte? "}
@@ -97,6 +133,18 @@ export default function LoginPage() {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Module scope + props-only, so the render check can mount it (useEffect never runs there).
+export function LoginFailure({ failure }) {
+  if (!failure) return null;
+  return (
+    <div data-login-error role="alert" style={{ marginTop: 12, padding: "10px 12px", borderRadius: 10, fontSize: 13, lineHeight: 1.5,
+      color: "#fca5a5", background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.35)" }}>
+      {failure.message}
+      {failure.code && <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4, fontFamily: "monospace" }}>{failure.code}</div>}
     </div>
   );
 }

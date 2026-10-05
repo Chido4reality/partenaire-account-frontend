@@ -61,7 +61,8 @@ const SECTIONS = [
   // just lets the mobile drawer surface it — same SECTIONS-omission fix pattern).
   { en: "SETTINGS",   fr: "PARAMÈTRES",        routes: ["/accountant-log", "/settings"] },
   // MP-HELP v1 — mobile drawer entry (Layout NAV + App.jsx also register /help).
-  { en: "HELP",       fr: "AIDE",              routes: ["/help"] },
+  // SUPPORT MESSAGING — the owner's conversation with Équipe Stenamo sits with Help.
+  { en: "HELP",       fr: "AIDE",              routes: ["/messages", "/help"] },
 ];
 
 export default function NavDrawer({
@@ -74,6 +75,7 @@ export default function NavDrawer({
   stockCheckPending,
   restockPending,
   expiryLowPending,   // Check Expiry/Low — the same count the desktop sidebar shows
+  messagesUnread,     // SUPPORT MESSAGING — unread messages from Équipe Stenamo (owner)
   onLogout,
 }) {
   const { lang } = useLangStore();
@@ -238,6 +240,8 @@ export default function NavDrawer({
                           ? restockPending
                           : item.badge === "expiry_low" && expiryLowPending > 0
                           ? expiryLowPending
+                          : item.badge === "messages" && messagesUnread > 0
+                          ? messagesUnread
                           : undefined
                       }
                       onTap={handleNav}

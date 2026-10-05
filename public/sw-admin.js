@@ -34,7 +34,8 @@
 // v11: Family people — duplicates are marked and linked; Restore asks what it collides with (duplicate, namesake, a child's existing parent) and needs the ids confirmed.
 // v12: Family approvals — a proposed second parent is flagged before Approve (and given a sex there); a missing sex is named.
 // v13: Family approvals — a relative's Gallery photograph is reviewed here, with its file.
-const VERSION = 'admin-pwa-v13';
+// v14: Support Messaging — Équipe Stenamo ↔ one shop owner, master admin only.
+const VERSION = 'admin-pwa-v14';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const API_CACHE = `${VERSION}-api`;

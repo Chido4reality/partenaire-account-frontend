@@ -53,6 +53,10 @@ const CHECKS = [
   // PUSH ASK: Android allows TWO permission dialogs per install. Our card asks first; only a
   // tap on yes may open Android's dialog; "Plus tard" is free; the badge reads THIS phone.
   ["push-ask", "scripts/push-ask-check.mjs", "only a tap opens Android's dialog; Plus tard is free; 3/7/14/30 ladder; badge reads this phone"],
+  // SUPPORT MESSAGING + LOGIN DIAGNOSTICS: the admin Messages screen against the REAL inline
+  // script (honest reach, never "delivered"), the shop thread, the login failure line, and
+  // /messages registered everywhere a route lives (incl. NOT hidden in Lite).
+  ["messages-ui", "scripts/support-messaging-render-check.mjs", "admin Messages renders honest reach; owner thread + login failure render; /messages wired in all places, Lite too"],
   // MP-RECEIPT-PRINT-SCOPE: 0957ac41 moved the line-item normaliser into
   // buildBodyLines but kept using it in THREE call sites inside the component,
   // where it does not exist — every print path threw "saleItems is not defined".

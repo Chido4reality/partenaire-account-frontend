@@ -154,9 +154,32 @@ function buildOptimisticResponse(endpoint, payload, localId) {
   };
 }
 
+// PLATFORM CAPTURE (2026-10-05): which client this is, sent on /auth/* requests only — they
+// are already preflighted (JSON body / Authorization), so the header costs no extra round
+// trip; a plain GET would gain a preflight. The server stores it as pa_users.last_client so
+// the admin messaging screen can say "iPhone / browser — never reachable by push" as a fact.
+// There is no iOS app: an iPhone is always "web/iphone".
+let _appBuild = null;
+try {
+  if (typeof window !== "undefined" && window.Capacitor?.isNativePlatform?.()) {
+    // Only a plain info object crosses the promise boundary — never the plugin proxy.
+    import("@capacitor/app").then(({ App }) => App.getInfo()).then((i) => { _appBuild = i && i.build ? String(i.build) : null; }).catch(() => {});
+  }
+} catch { /* not native */ }
+export function appClient() {
+  try {
+    if (window.Capacitor?.isNativePlatform?.()) return _appBuild ? `android-app/${_appBuild}` : "android-app";
+    const ua = navigator.userAgent || "";
+    if (/iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return "web/iphone";
+    if (/Android/i.test(ua)) return "web/android";
+    return "web/desktop";
+  } catch { return "web/desktop"; }
+}
+
 api.interceptors.request.use(config => {
   const token = useAuthStore.getState().token;
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  if (/^\/auth\//.test((config.url || "").replace(BASE_URL, "").split("?")[0])) config.headers["X-App-Client"] = appClient();
   // MP-CAPACITOR Slice 3: stamp local_id on every offline-eligible
   // POST regardless of online state. Online → backend dedupes via
   // (org_id, local_id) unique index (Slice 1). Offline → the queue
@@ -398,6 +421,11 @@ api.interceptors.response.use(res => {
       cfg._retry = (cfg._retry || 0);
       if (cfg._retry < 3) {
         cfg._retry += 1;
+        // LOGIN DIAGNOSTICS: the login screen shows "essai 2/4" on its own button — the
+        // toast alone was easy to miss (Paul: "it dims, then nothing").
+        if (/^\/auth\/login\b/.test(_path)) {
+          try { window.dispatchEvent(new CustomEvent("mp-auth-retry", { detail: { attempt: cfg._retry + 1, of: 4 } })); } catch { /* noop */ }
+        }
         // MP-PEAK-MTN-RESILIENCE: visible reassurance so an MTN user on a congested
         // route doesn't give up thinking the app is broken while we back off + retry.
         // One toast (fixed id) that updates across retries; dismissed on success below.
@@ -495,8 +523,11 @@ api.interceptors.response.use(res => {
     // /login and consume the one-shot flag (firing a toast) BEFORE this hard reload tears
     // the page down and wipes it, so nothing shows. The query param survives the reload
     // and is read by the FINAL LoginPage mount. sessionStorage is kept as a fallback.
+    // LOGIN DIAGNOSTICS: never a SILENT bounce. A session the server refused (expired,
+    // revoked, signed elsewhere) used to reload /login with no word — indistinguishable
+    // from "the login button does nothing". Now it says why.
     if (window.location.pathname !== "/login") {
-      window.location.href = isDisabled ? "/login?flash=account_disabled" : "/login";
+      window.location.href = isDisabled ? "/login?flash=account_disabled" : "/login?flash=session_expired";
     }
   }
   // Sprint A: any 403 with { error: 'upgrade_required' } pops the universal

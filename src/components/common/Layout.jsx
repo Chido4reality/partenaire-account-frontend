@@ -153,6 +153,11 @@ const NAV = [
   // MP-MANAGER-DELEGATION — deputy inbox, MANAGER only (owner uses the Accountant Log
   // inbox). Only useful once the owner delegates approvals; harmless empty list otherwise.
   { to: "/team-approvals", en: "Approvals", fr: "Approbations", icon: "✅", roles: ["manager"], section: "sales" },
+  // SUPPORT MESSAGING (Phase A) — the owner's conversation with Équipe Stenamo. Owner only;
+  // section:"settings" so every plan shows it; NOT in LITE_HIDDEN_ROUTES — Lite hides the
+  // bell, so this item + its badge is how a Lite owner sees a message at all. Also in
+  // NavDrawer SECTIONS (mobile) + App.jsx ROUTE_ACCESS.
+  { to: "/messages",     en: "Messages",   fr: "Messages",        icon: "💬", roles: ["owner"],                                section: "settings", badge: "messages" },
   { to: "/settings",     en: "Settings",   fr: "Paramètres",      icon: "⚙️", roles: ["owner","manager"],                       section: "settings" },
   // MP-HELP v1 — in-app guide (bundled, offline). Everyone can get stuck, so ALL
   // roles; also registered in NavDrawer.jsx SECTIONS (mobile) + App.jsx ROUTE_ACCESS.
@@ -829,6 +834,8 @@ export default function Layout() {
       }
       // EXPIRY-TRACKING: the owner's daily expiry digest opens Expiring stock.
       if (data?.type === "expiry" || data?.ref_type === "expiry_digest") navigate("/check-expiry-low");
+      // SUPPORT MESSAGING: a message from Équipe Stenamo opens the conversation.
+      if (data?.type === "admin_message" || data?.ref_type === "admin_message") navigate("/messages");
     };
     ensureRegisteredOnLogin({ onTap });
     // MP-PUSH-ASK: the day-2 fallback's clock, and (vc114) the first start of a new build on a
@@ -1152,6 +1159,29 @@ export default function Layout() {
   });
   const expiryLowPending = expiryLow?.count || 0;
 
+  // SUPPORT MESSAGING: unread messages from Équipe Stenamo — owner only, every plan, Lite too.
+  const { data: msgUnread } = useQuery({
+    queryKey: ["messages-unread"],
+    queryFn: () => api.get("/messages/unread").then((r) => r.data?.data?.unread || 0),
+    refetchInterval: 60000,
+    enabled: role === "owner",
+    retry: 1,
+    onError: () => {},
+  });
+  const messagesUnread = role === "owner" ? (msgUnread || 0) : 0;
+
+  // SUPPORT MESSAGING: the dashboard strip — so an owner without push (iPhone, browser, alerts
+  // off) and without a bell (Lite) still sees a new message the moment he opens the app.
+  const messagesStrip = role === "owner" && messagesUnread > 0 && location.pathname === "/" ? (
+    <div data-messages-strip onClick={() => navigate("/messages")} role="button"
+      style={{ margin: "12px 16px 0", padding: "11px 14px", borderRadius: 12, cursor: "pointer", fontSize: 14, fontWeight: 600,
+        background: "rgba(251,197,3,0.14)", border: "1px solid rgba(251,197,3,0.45)", color: "var(--text-primary)" }}>
+      💬 {lang === "en"
+        ? `New message from the Stenamo team (${messagesUnread}) — tap to read`
+        : `Nouveau message de l'équipe Stenamo (${messagesUnread}) — touchez pour lire`}
+    </div>
+  ) : null;
+
   // MP-DOZIE-SELLER-MIGRATION Phase 2 — "Online Dozie" attention badge. Polls the
   // resolved seller's needs-attention count (pending orders now; messages/disputes
   // later) on the same 30s cadence as the online-cart badge. Owner/manager only
@@ -1197,6 +1227,7 @@ export default function Layout() {
     : item.badge === "restock"        ? restockPending
     : item.badge === "goodsBuffer"    ? goodsBufferPending
     : item.badge === "expiry_low"     ? expiryLowPending
+    : item.badge === "messages"       ? messagesUnread
     : 0;
 
   // STOCK-UX-PASS Part A — cross-account location leak fix.
@@ -1294,6 +1325,7 @@ export default function Layout() {
         // can deep-link the matching activity entry; the daily digest has no ref_id.
         if (n.ref_type === "audit_log" && n.ref_id) return `/accountant-log?audit=${n.ref_id}`;
         if (n.ref_type === "accountant_log") return `/accountant-log`;
+        if (n.ref_type === "admin_message") return `/messages`;   // SUPPORT MESSAGING
         // Phase 5b: approval request/result alerts deep-link to the Accountant Log
         // (the owner's pending-approvals inbox sits at the top of that screen).
         if (n.ref_type === "action_approval") return `/accountant-log`;
@@ -1565,6 +1597,7 @@ export default function Layout() {
           stockCheckPending={stockCheckPending}
           restockPending={restockPending}
           expiryLowPending={expiryLowPending}
+          messagesUnread={messagesUnread}
           onLogout={handleLogout}
         />
         <motion.div
@@ -1649,7 +1682,7 @@ export default function Layout() {
         </div>
 
         <main style={{ flex: 1, overflowY: "auto", background: "var(--bg-base)" }}>
-          {restrictedBlock ? <RestrictedLock lang={lang} hasPending={hasPendingRequest} onRequest={() => navigate("/request-activation")} /> : <>{restrictedBanner}<Outlet /></>}
+          {restrictedBlock ? <RestrictedLock lang={lang} hasPending={hasPendingRequest} onRequest={() => navigate("/request-activation")} /> : <>{restrictedBanner}{messagesStrip}<Outlet /></>}
         </main>
 
         <div style={{ background: "var(--bg-surface)", borderTop: "1px solid var(--border)", display: "flex", flexShrink: 0, paddingBottom: "var(--safe-area-bottom)" }}>
@@ -1863,7 +1896,7 @@ export default function Layout() {
       </aside>
 
       <main style={{ flex: 1, overflowY: "auto", background: "var(--bg-base)" }}>
-        {restrictedBlock ? <RestrictedLock lang={lang} hasPending={hasPendingRequest} onRequest={() => navigate("/request-activation")} /> : <>{restrictedBanner}<Outlet /></>}
+        {restrictedBlock ? <RestrictedLock lang={lang} hasPending={hasPendingRequest} onRequest={() => navigate("/request-activation")} /> : <>{restrictedBanner}{messagesStrip}<Outlet /></>}
       </main>
 
       {paywall && <PaywallModal feature={paywall.feature} currentPlan={effectivePlan} mpId={myPlan?.user_id_number} onClose={() => setPaywall(null)} />}

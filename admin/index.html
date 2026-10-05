@@ -747,6 +747,21 @@
     .chart-canvas-host { position: relative; height: 280px; }
 
     /* ───────────────── PHASE D ───────────────── */
+    /* SUPPORT MESSAGING — list + thread. minmax(0,…) so neither pane can force overflow. */
+    .msg-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 16px; align-items: start; }
+    @media (max-width: 900px) { .msg-grid { grid-template-columns: minmax(0, 1fr); } }
+    .msg-list { max-height: 70vh; overflow-y: auto; }
+    .msg-row { padding: 10px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
+    .msg-row:hover, .msg-row.active { background: rgba(255,255,255,0.04); }
+    .msg-row .msg-name { font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
+    .msg-reach { font-size: 11.5px; margin-top: 3px; }
+    .msg-unread { background: #FBC503; color: #111; border-radius: 10px; padding: 0 7px; font-size: 11px; font-weight: 700; }
+    .msg-body { display: flex; flex-direction: column; gap: 10px; max-height: 55vh; overflow-y: auto; margin-top: 12px; }
+    .msg-b { max-width: 82%; padding: 9px 12px; border-radius: 12px; border: 1px solid var(--border); white-space: pre-wrap; word-break: break-word; font-size: 13.5px; }
+    .msg-b.admin { align-self: flex-end; background: rgba(59,130,246,0.12); }
+    .msg-b.owner { align-self: flex-start; background: rgba(255,255,255,0.04); }
+    .msg-meta { font-size: 11px; opacity: 0.75; margin-top: 4px; }
+
     /* Generic data-table — used by broadcasts, admin-team, audit-log. */
     /* Wrapper injected by wrapTables() — see the observer below. */
     .table-scroll {
@@ -1054,6 +1069,7 @@
         <a class="sb-link" data-route="marketers" id="sb-link-marketers"><span class="sb-link-icon">📈</span><span class="sb-link-label">Marketers</span></a>
 
         <div class="sb-section" id="sb-section-shared">Shared</div>
+        <a class="sb-link" data-route="messages" id="sb-link-messages"><span class="sb-link-icon">💬</span><span class="sb-link-label">Messages</span></a>
         <a class="sb-link" data-route="broadcasts"><span class="sb-link-icon">📣</span><span class="sb-link-label">Broadcasts</span></a>
         <a class="sb-link" data-route="admin-team"><span class="sb-link-icon">👤</span><span class="sb-link-label">Admin team</span></a>
         <a class="sb-link" data-route="audit-log"><span class="sb-link-icon">📋</span><span class="sb-link-label">Audit log</span></a>
@@ -1758,6 +1774,42 @@
         </div>
       </section>
       <!-- BROADCASTS (Phase D-C) -->
+      <!-- SUPPORT MESSAGING (Phase A, 2026-10-05) — Équipe Stenamo ↔ one shop owner at a time.
+           Master admin only (the API refuses every other role; role 'admin' includes a
+           customer on prod). Reachability is shown as FACTS: who can get a lock-screen push,
+           who only sees it next visit, who can never be pushed (iPhone / browser), and who
+           cannot sign in at all. "Push accepted by Google" is not "seen" — only "Read" is. -->
+      <section class="route" id="route-messages">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Messages</div>
+            <div class="page-sub">Write to a shop owner — first, or in reply. Owners see it under 💬 Messages in their app (and as a push where possible). They only ever see their own conversation.</div>
+          </div>
+        </div>
+        <div class="msg-grid">
+          <div class="card" style="padding:0;overflow:hidden">
+            <div style="padding:10px 12px;border-bottom:1px solid var(--border)">
+              <input class="input" id="msg-search" placeholder="Search a business or owner…" style="width:100%">
+            </div>
+            <div id="msg-customers" class="msg-list"><div class="muted" style="padding:16px">Loading…</div></div>
+          </div>
+          <div class="card" id="msg-thread-card" style="min-width:0">
+            <div class="muted" id="msg-thread-empty" style="padding:24px 8px">Pick a customer on the left to read or start the conversation.</div>
+            <div id="msg-thread" style="display:none">
+              <div id="msg-thread-head"></div>
+              <div id="msg-thread-body" class="msg-body"></div>
+              <div id="msg-compose" style="margin-top:12px">
+                <textarea class="input" id="msg-text" rows="3" maxlength="2000" placeholder="Write to this owner…" style="width:100%;resize:vertical"></textarea>
+                <div style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap">
+                  <button class="btn btn-primary" id="msg-send">Send</button>
+                  <span class="muted" id="msg-compose-note" style="font-size:12px"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section class="route" id="route-broadcasts">
         <div class="page-head">
           <div>
@@ -2766,12 +2818,131 @@
       catch (e) { showToast(e.message, 'danger'); }
     }
 
+    // ────────────────────── SUPPORT MESSAGING (Phase A) ──────────────────────
+    // Pure helpers at top level so the render check can drive them against the real script.
+    const MSG_REACH = {
+      push:           ['📱', 'Push possible', 'Lock-screen push to their Android phone.'],
+      next_visit:     ['🔔', 'Next visit only', 'No push device — they see it the next time they open the app.'],
+      iphone:         ['🍎', 'iPhone (browser) — never pushable', 'There is no iOS app. They see it next time they open Stenamo Book in the browser.'],
+      browser:        ['🌐', 'Browser — no push', 'They use the browser, which cannot receive pushes. They see it next visit.'],
+      cannot_sign_in: ['⛔', 'Cannot sign in', 'This business was deleted — its owner’s login is refused, so nothing can be read. Restore it first.'],
+      no_owner:       ['—', 'No active owner', 'There is no active owner account to write to.'],
+      unknown:        ['❓', 'No push device · not seen recently', 'No device and no recent sign-in. They may never open it.'],
+    };
+    function msgReachLabel(reach) { const r = MSG_REACH[reach] || MSG_REACH.unknown; return r[0] + ' ' + r[1]; }
+    function msgReachExplain(reach) { return (MSG_REACH[reach] || MSG_REACH.unknown)[2]; }
+    const MSG_PUSH = {
+      accepted:  'Push accepted by Google (not proof they saw it)',
+      failed:    'Push FAILED',
+      no_device: 'No push device — in the app only',
+      push_off:  'Push not configured on this server',
+      pending:   'Push pending…',
+    };
+    function msgStatusLine(m) {
+      if (m.from !== 'admin') return '';
+      const parts = [MSG_PUSH[m.push] || m.push];
+      if (m.push === 'failed' && m.push_errors && m.push_errors.length) parts[0] += ' (' + m.push_errors.join(', ') + ')';
+      parts.push(m.read ? '✓ Read' : 'Not read yet');
+      if (m.replied) parts.push('↩ Replied');
+      return parts.join(' · ');
+    }
+    function msgWhen(iso) { try { return new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch (e) { return iso || ''; } }
+    function renderMsgCustomers(list, q, activeId) {
+      const qq = String(q || '').trim().toLowerCase();
+      const rows = (list || []).filter(function (c) {
+        return !qq || (c.name || '').toLowerCase().indexOf(qq) >= 0 || ((c.owner && c.owner.name) || '').toLowerCase().indexOf(qq) >= 0 || (c.mp_id || '').toLowerCase().indexOf(qq) >= 0;
+      }).sort(function (a, b) {
+        const ua = (a.thread && a.thread.unread_from_owner) || 0, ub = (b.thread && b.thread.unread_from_owner) || 0;
+        if (ua !== ub) return ub - ua;
+        const ta = (a.thread && a.thread.last_message_at) || '', tb = (b.thread && b.thread.last_message_at) || '';
+        if (ta !== tb) return ta < tb ? 1 : -1;
+        return (a.name || '').localeCompare(b.name || '');
+      });
+      if (!rows.length) return '<div class="muted" style="padding:16px">No customer matches.</div>';
+      return rows.map(function (c) {
+        const unread = (c.thread && c.thread.unread_from_owner) || 0;
+        const last = c.thread && c.thread.last;
+        return '<div class="msg-row' + (c.org_id === activeId ? ' active' : '') + '" data-msg-org="' + escapeHtml(c.org_id) + '">'
+          + '<div class="msg-name"><span>' + escapeHtml(c.name || '—') + '</span>' + (unread ? '<span class="msg-unread">' + unread + '</span>' : '') + '</div>'
+          + '<div class="muted" style="font-size:12px">' + escapeHtml((c.owner && c.owner.name) || 'no owner') + (c.mp_id ? ' · ' + escapeHtml(c.mp_id) : '') + '</div>'
+          + '<div class="msg-reach" data-reach="' + escapeHtml(c.reach || '') + '">' + escapeHtml(msgReachLabel(c.reach)) + '</div>'
+          + (last ? '<div class="muted" style="font-size:12px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (last.from === 'owner' ? '↩ ' : 'You: ') + escapeHtml(last.preview) + '</div>' : '')
+          + '</div>';
+      }).join('');
+    }
+    function renderMsgThread(t) {
+      const reach = t.reach;
+      const head = '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">'
+        + '<div><div style="font-weight:700;font-size:16px">' + escapeHtml(t.org.name || '—') + '</div>'
+        + '<div class="muted" style="font-size:12px">' + escapeHtml((t.owner && t.owner.name) || 'no owner')
+        + (t.owner && t.owner.phone ? ' · ' + escapeHtml(t.owner.phone) : '') + (t.org.lite_mode ? ' · Lite mode (no bell — they see the 💬 Messages badge)' : '') + '</div></div>'
+        + '<div class="msg-reach" data-reach="' + escapeHtml(reach || '') + '" style="text-align:right;max-width:320px"><b>' + escapeHtml(msgReachLabel(reach)) + '</b><br><span class="muted">' + escapeHtml(msgReachExplain(reach)) + '</span></div></div>';
+      const body = (t.messages || []).length ? t.messages.map(function (m) {
+        return '<div class="msg-b ' + (m.from === 'admin' ? 'admin' : 'owner') + '" data-msg-from="' + m.from + '">' + escapeHtml(m.body)
+          + '<div class="msg-meta">' + (m.from === 'admin' ? 'Équipe Stenamo' + (m.sent_by ? ' (' + escapeHtml(m.sent_by) + ')' : '') : escapeHtml((t.owner && t.owner.name) || 'Owner'))
+          + ' · ' + escapeHtml(msgWhen(m.created_at)) + '</div>'
+          + (m.from === 'admin' ? '<div class="msg-meta" data-msg-status>' + escapeHtml(msgStatusLine(m)) + '</div>' : '')
+          + '</div>';
+      }).join('') : '<div class="muted">No messages yet — write the first one.</div>';
+      return { head: head, body: body, canSend: reach !== 'cannot_sign_in' && reach !== 'no_owner' };
+    }
+    let _msgCustomers = [], _msgActive = null;
+    async function loadMessages() {
+      try {
+        const res = await apiAdmin('GET', '/admin/messages/customers');
+        _msgCustomers = (res && res.data) || [];
+        drawMsgCustomers();
+        if (_msgActive) openMsgThread(_msgActive);
+      } catch (e) { $('msg-customers').innerHTML = '<div class="muted" style="padding:16px">' + escapeHtml(e.message) + '</div>'; }
+    }
+    function drawMsgCustomers() {
+      $('msg-customers').innerHTML = renderMsgCustomers(_msgCustomers, $('msg-search').value, _msgActive);
+      document.querySelectorAll('#msg-customers [data-msg-org]').forEach(function (el) {
+        el.onclick = function () { openMsgThread(el.getAttribute('data-msg-org')); };
+      });
+    }
+    async function openMsgThread(orgId) {
+      _msgActive = orgId;
+      drawMsgCustomers();
+      $('msg-thread-empty').style.display = 'none';
+      $('msg-thread').style.display = '';
+      try {
+        const res = await apiAdmin('GET', '/admin/messages/threads/' + encodeURIComponent(orgId));
+        const v = renderMsgThread(res.data);
+        $('msg-thread-head').innerHTML = v.head;
+        $('msg-thread-body').innerHTML = v.body;
+        $('msg-thread-body').scrollTop = $('msg-thread-body').scrollHeight;
+        $('msg-text').disabled = !v.canSend; $('msg-send').disabled = !v.canSend;
+        $('msg-compose-note').textContent = v.canSend ? 'They will see it as "Équipe Stenamo".' : msgReachExplain(res.data.reach);
+        apiAdmin('POST', '/admin/messages/threads/' + encodeURIComponent(orgId) + '/read').then(function () {
+          const c = _msgCustomers.find(function (x) { return x.org_id === orgId; });
+          if (c && c.thread) { c.thread.unread_from_owner = 0; drawMsgCustomers(); }
+        }).catch(function () {});
+      } catch (e) { $('msg-thread-head').innerHTML = '<div class="muted">' + escapeHtml(e.message) + '</div>'; $('msg-thread-body').innerHTML = ''; }
+    }
+    async function sendMsg() {
+      const body = ($('msg-text').value || '').trim();
+      if (!body || !_msgActive) return;
+      $('msg-send').disabled = true;
+      try {
+        await apiAdmin('POST', '/admin/messages/threads/' + encodeURIComponent(_msgActive), { body: body });
+        $('msg-text').value = '';
+        showToast('Sent', 'success');
+        await loadMessages();
+      } catch (e) { showToast(e.message, 'danger'); }
+      finally { $('msg-send').disabled = false; }
+    }
+    (function wireMessages() {
+      const s = $('msg-search'); if (s) s.addEventListener('input', drawMsgCustomers);
+      const b = $('msg-send'); if (b) b.addEventListener('click', sendMsg);
+    })();
+
     // ────────────────────── ROUTING ──────────────────────
     const VALID_ROUTES = new Set([
       'dashboard', 'live', 'businesses', 'subscriptions', 'subscription-requests', 'mp-finance',
       'marketplace-users', 'verifications', 'dozie-subscriptions', 'orders', 'disputes', 'marketplace-finance',
       'sell-restrictions', 'subscription-discounts', 'promo-codes', 'loyalty-grants',
-      'broadcasts', 'admin-team', 'audit-log', 'admin-activity', 'cart-reconcile', 'settings',
+      'messages', 'broadcasts', 'admin-team', 'audit-log', 'admin-activity', 'cart-reconcile', 'settings',
       'my-marketing', 'marketers', 'expenses',
       'family-accounts', 'family-approvals', 'family-people'
     ]);
@@ -2908,6 +3079,7 @@
       if (route === 'marketplace-finance') loadDzFinance();
       if (route === 'dozie-subscriptions') loadDozieSubs();
       if (route === 'sell-restrictions')   loadSellRestrictions();
+      if (route === 'messages')            loadMessages();
       if (route === 'broadcasts')          loadBroadcasts();
       if (route === 'admin-team')          loadAdminTeam();
       if (route === 'audit-log')           { loadAuditLogActions(); loadAuditLog(); }
@@ -4261,6 +4433,10 @@
       // by typing #expenses or calling the endpoint directly.
       const exLink = $('sb-link-expenses');
       if (exLink) exLink.style.display = isMaster ? '' : 'none';
+      // SUPPORT MESSAGING — master admin only (role 'admin' includes a customer on prod;
+      // the API refuses everyone else regardless of this link).
+      const msgLink = $('sb-link-messages');
+      if (msgLink) msgLink.style.display = isMaster ? '' : 'none';
       // FAMILY HERITAGE: master-admin-only, and the same style.display rule for
       // the same reason. Cosmetic twice over — the sections themselves check
       // isMasterAdmin() again, and beyond that every /api/fh/owner/* route is

@@ -45,6 +45,7 @@ import MyRequestsPage from "./pages/MyRequestsPage"; // staffer-facing approval 
 import TeamApprovalsPage from "./pages/TeamApprovalsPage"; // MP-MANAGER-DELEGATION deputy inbox
 import FiltersPage from "./pages/FiltersPage"; // MP-FILTERS — what/who/when clarity screen
 import HelpPage from "./pages/HelpPage"; // MP-HELP v1 — bundled offline in-app guide
+import MessagesPage from "./pages/MessagesPage"; // SUPPORT MESSAGING (Phase A) — owner ↔ Équipe Stenamo
 
 // MP-INVALIDATE-AFTER-SALE: refetch stale data when the user returns to
 // the tab/app or reconnects (e.g. after making a sale on another device
@@ -172,6 +173,7 @@ const ROUTE_ACCESS = {
   // not by hiding this route.
   "/filters": ["owner", "manager", "accountant", "warehouse", "cashier"],
   "/help": ["owner", "manager", "accountant", "cashier", "warehouse"], // MP-HELP — everyone
+  "/messages": ["owner"], // SUPPORT MESSAGING — owner only (server 403s every other role too)
 };
 
 function Guard({ children }) {
@@ -607,6 +609,7 @@ export default function App() {
             <Route path="filters"     element={<RoleGuard path="/filters"><PlanGuard path="/filters"><FiltersPage /></PlanGuard></RoleGuard>} />
             <Route path="settings"     element={<RoleGuard path="/settings"><PlanGuard path="/settings"><SettingsPage /></PlanGuard></RoleGuard>} />
             <Route path="help"         element={<RoleGuard path="/help"><HelpPage /></RoleGuard>} />
+            <Route path="messages"     element={<RoleGuard path="/messages"><MessagesPage /></RoleGuard>} />
             {/* MP-RESTRICTED-MODE (B2): reachable even when restricted — no PlanGuard. */}
             <Route path="request-activation" element={<RequestActivationPage />} />
             <Route path="shifts"       element={<RoleGuard path="/shifts"><ShiftsPage /></RoleGuard>} />
