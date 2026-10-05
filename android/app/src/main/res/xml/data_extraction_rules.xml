@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MP-PUSH-ASK (vc114) — backup + device-transfer rules for Android 12+ (dataExtractionRules).
+     Same list as backup_rules.xml (Android 11 and below) — see the reasons there. Device
+     transfer is covered too: moving to a new phone must not carry over a stale "denied". -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="PluginPermStates.xml" />
+        <exclude domain="sharedpref" path="CapacitorStorage.xml" />
+        <exclude domain="root" path="app_webview/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="PluginPermStates.xml" />
+        <exclude domain="sharedpref" path="CapacitorStorage.xml" />
+        <exclude domain="root" path="app_webview/" />
+    </device-transfer>
+</data-extraction-rules>

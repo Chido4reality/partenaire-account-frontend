@@ -831,7 +831,10 @@ export default function Layout() {
       if (data?.type === "expiry" || data?.ref_type === "expiry_digest") navigate("/check-expiry-low");
     };
     ensureRegisteredOnLogin({ onTap });
-    noteAppStart();   // MP-PUSH-ASK: the day-2 fallback's clock (never asks on the first session)
+    // MP-PUSH-ASK: the day-2 fallback's clock, and (vc114) the first start of a new build on a
+    // phone that started signed in → the "app_update" moment. Runs after render, so pushMoment
+    // (declared below) is initialised by the time this resolves.
+    noteAppStart().then((m) => { if (m) pushMoment(m); }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, user?.role]);
 

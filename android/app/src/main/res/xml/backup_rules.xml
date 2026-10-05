@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MP-PUSH-ASK (vc114) — Auto Backup rules for Android 11 and below (fullBackupContent).
+     Android 12+ reads data_extraction_rules.xml instead; keep the two lists IDENTICAL.
+
+     A backup restored onto a reinstall must not bring back state that only made sense on the
+     old install:
+       PluginPermStates.xml  Capacitor's CACHED permission guess. A restored "DENIED" makes the
+                             app treat notifications as blocked on a fresh install that Android
+                             would happily ask again — the phone stops being asked at all.
+       CapacitorStorage.xml  Capacitor Preferences: the permission-ask ladder and dialog count,
+                             which describe the OLD install's dialogs, not this one's.
+       app_webview/          everything the WebView keeps: localStorage (incl. the login token),
+                             IndexedDB (incl. the offline write queue — replaying a restored
+                             queue would re-send old writes), cache. A reinstall starts clean
+                             and logged out. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="PluginPermStates.xml" />
+    <exclude domain="sharedpref" path="CapacitorStorage.xml" />
+    <exclude domain="root" path="app_webview/" />
+</full-backup-content>

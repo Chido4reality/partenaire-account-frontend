@@ -13,8 +13,9 @@
 // where every other Android app switches them off: the phone's notification settings.
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { canUsePush, pushStatus, lastRegistrationOutcome, readPushPermission, getStoredToken, askAndRegister } from "../../utils/push";
-import { settingsBadge, sayYes, recheck } from "../../utils/pushAsk";
+import { canUsePush, pushStatus, lastRegistrationOutcome, getStoredToken, askAndRegister } from "../../utils/push";
+import { settingsBadge, sayYes, recheck, readPhoneState } from "../../utils/pushAsk";
+import { hasNativeSettings, openNotificationSettings } from "../../utils/notifSettings";
 import { readAsk } from "../../utils/pushAskStore";
 import { BlockedSteps, COPY } from "./PushAskCard";
 
@@ -53,7 +54,8 @@ export function explainOutcome(o, en) {
 }
 
 // Props-only, module scope: the render guard mounts it under renderToString.
-export function PushAlertsCardView({ lang, badge, maybeNotBlocked, reason, serverOff, busy, onEnable, onCheck, onRetry }) {
+export function PushAlertsCardView({ lang, badge, maybeNotBlocked, osOff, channelBlocked, canOpenSettings, reason, serverOff,
+  busy, onEnable, onCheck, onRetry, onOpenSettings }) {
   const en = lang === "en";
   const L = en ? "en" : "fr";
   const b = BADGE[badge] || BADGE.unknown;
@@ -96,10 +98,14 @@ export function PushAlertsCardView({ lang, badge, maybeNotBlocked, reason, serve
 
       {badge === "blocked" && (
         <div style={{ marginTop: 10 }}>
-          <BlockedSteps lang={L} maybeNotBlocked={maybeNotBlocked} />
+          <BlockedSteps lang={L} maybeNotBlocked={maybeNotBlocked && !osOff} channelBlocked={channelBlocked} />
           <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-            <button className="btn btn-primary" disabled={busy} onClick={onCheck}>{COPY.blocked[L].check}</button>
-            <button className="btn btn-secondary" disabled={busy} onClick={onEnable}>{COPY.blocked[L].retry}</button>
+            {canOpenSettings && (
+              <button className="btn btn-primary" disabled={busy} onClick={onOpenSettings}>{COPY.blocked[L].open}</button>
+            )}
+            <button className={canOpenSettings ? "btn btn-secondary" : "btn btn-primary"} disabled={busy} onClick={onCheck}>{COPY.blocked[L].check}</button>
+            {/* No retry when permission is granted and the phone's switch is what's off — it would do nothing. */}
+            {!osOff && <button className="btn btn-secondary" disabled={busy} onClick={onEnable}>{COPY.blocked[L].retry}</button>}
           </div>
         </div>
       )}
@@ -143,9 +149,10 @@ export default function PushAlertsCard({ lang }) {
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
-    const [receive, store, status] = await Promise.all([readPushPermission(), readAsk(), pushStatus()]);
+    // receive = Capacitor's answer corrected by the phone's real state (vc114 native plugin).
+    const [{ receive, native }, store, status] = await Promise.all([readPhoneState(), readAsk(), pushStatus()]);
     const d = deriveSettings({ receive, store, storedToken: getStoredToken(), status });
-    setView(d);
+    setView({ ...d, channelBlocked: !!(native && native.channelBlocked) });
     setServerOff(d.serverOff);
   };
 
@@ -173,11 +180,13 @@ export default function PushAlertsCard({ lang }) {
   return (
     <PushAlertsCardView
       lang={lang} badge={view.badge} maybeNotBlocked={view.maybeNotBlocked} reason={reason}
+      osOff={view.osOff} channelBlocked={view.channelBlocked} canOpenSettings={hasNativeSettings()}
       serverOff={serverOff} busy={busy}
       onEnable={() => run(async () => {
         const out = await sayYes();
         if (out === "granted") toast.success(en ? "Alerts on." : "Alertes activées.");
       })}
+      onOpenSettings={() => run(async () => { await openNotificationSettings(view.channelBlocked ? "channel" : "app"); })}
       onCheck={() => run(async () => { await recheck(); })}
       onRetry={() => run(async () => {
         // Permission is already granted here, so this opens no dialog — it re-runs registration.

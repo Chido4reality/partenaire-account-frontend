@@ -49,6 +49,14 @@ const STUBS = {
         set: async ({ key, value }) => { globalThis.__prefs.set(key, value); },
       };`,
   "react-hot-toast": `const t = () => {}; t.success = t; t.error = t; t.dismiss = t; export default t;`,
+  // vc114 in-repo NotificationSettings plugin, scripted: globalThis.__ns = { status, opened[] } or null (= no plugin).
+  "@capacitor/core": `
+      export const Capacitor = { isNativePlatform: () => true, isPluginAvailable: (n) => n === "NotificationSettings" && !!globalThis.__ns };
+      export const registerPlugin = () => ({
+        getStatus: async () => globalThis.__ns.status,
+        openSettings: async ({ target }) => { globalThis.__ns.opened.push(target); return { opened: target === "channel" ? "channel" : "app_notifications" }; },
+      });`,
+  "@capacitor/app": `export const App = { getInfo: async () => ({ build: globalThis.__build || "114", version: "2.4.0" }) };`,
 };
 
 await build({
@@ -87,8 +95,9 @@ const render = (C, p) => raw(C, p).replace(/ /g, " ");
 const ls = new Map();
 globalThis.localStorage = { getItem: (k) => (ls.has(k) ? ls.get(k) : null), setItem: (k, v) => ls.set(k, String(v)), removeItem: (k) => ls.delete(k), clear: () => ls.clear() };
 globalThis.window = { Capacitor: { isNativePlatform: () => true }, dispatchEvent() {}, addEventListener() {}, removeEventListener() {} };
-const phone = (receive, answer = receive, prefs = {}) => {
+const phone = (receive, answer = receive, prefs = {}, native = { enabled: true, channelExists: true, channelBlocked: false }) => {
   globalThis.__fp = { receive, answer, requests: [], posts: [], listeners: {} };
+  globalThis.__ns = native ? { status: native, opened: [] } : null;
   globalThis.__prefs = new Map(Object.keys(prefs).length ? [["mp-push-ask-v1", JSON.stringify(prefs)]] : []);
   ls.clear();
 };
@@ -206,6 +215,68 @@ try {
   check("granted + this phone's token, server count 0 → ACTIVÉ (the count is not consulted)", c.badge === "active", c.badge);
   const html = render(M.PushAlertsCardView, { lang: "fr", badge: a.badge });
   check("…and the card renders 'BLOQUÉ' with the steps", html.includes("BLOQUÉ") && html.includes("Stenamo Book"));
+
+  // ── G6 ────────────────────────────────────────────────────────────────────────────────
+  console.log("\nG6  vc114 'app_update' moment — the first start of a new build, for people already signed in");
+  phone("prompt");
+  check("first start of build 114, started signed in → 'app_update'", (await ask.noteAppStart({ build: "114", startedSignedIn: true })) === "app_update");
+  check("second start of the same build → nothing (once per build per phone)", (await ask.noteAppStart({ build: "114", startedSignedIn: true })) === null);
+  check("…and the next build asks again", (await ask.noteAppStart({ build: "115", startedSignedIn: true })) === "app_update");
+  phone("prompt");
+  check("first start that began signed OUT (new signup) → nothing…", (await ask.noteAppStart({ build: "114", startedSignedIn: false })) === null);
+  check("…and the build is consumed: a later signed-in start of 114 does not ask either", (await ask.noteAppStart({ build: "114", startedSignedIn: true })) === null);
+  check("build unreadable → nothing", (await ask.noteAppStart({ build: null, startedSignedIn: true })) === null);
+  const up = (role, receive = "prompt", store = {}) => ask.decideAsk({ moment: "app_update", role, receive, store });
+  check("app_update: owner → owner card, manager → manager card", up("owner").variant === "owner" && up("manager").variant === "manager");
+  check("app_update: cashier and warehouse → the 'staff' card (not 'Demande envoyée')", up("cashier").variant === "staff" && up("warehouse").variant === "staff");
+  check("app_update: already granted → no card", !up("cashier", "granted").show);
+  check("app_update: blocked phone → the guidance card", up("owner", "denied", { dialogsOpened: 2 }).variant === "blocked");
+  check("app_update still respects the ladder ('Plus tard' is not bypassed)", !ask.decideAsk({ moment: "app_update", role: "owner", receive: "prompt", store: { nextAt: Date.now() + DAY } }).show);
+  phone("prompt", "prompt", { firstSeenDay: yesterday }); ask.__resetSession();
+  await ask.evaluateMoment("app_update", "cashier");
+  check("raising app_update opens NOTHING on Android (our card first)", globalThis.__fp.requests.length === 0);
+  const staffCard = render(M.PushAskCardView, { variant: "staff", lang: "fr" });
+  check("staff card (FR) carries the 'appuyez sur « Autoriser »' line and Plus tard", staffCard.includes("appuyez sur « Autoriser »") && staffCard.includes("Plus tard"));
+
+  // ── G7 ────────────────────────────────────────────────────────────────────────────────
+  console.log("\nG7  vc114 native state — 'granted' is corrected by the phone's real switch");
+  const E = ask.effectiveReceive;
+  check("granted + app notifications OFF → 'off'", E("granted", { enabled: false, channelBlocked: false }) === "off");
+  check("granted + only the mp_alerts channel set to NONE → 'off'", E("granted", { enabled: true, channelBlocked: true }) === "off");
+  check("granted + all on → granted", E("granted", { enabled: true, channelBlocked: false }) === "granted");
+  check("no plugin (null) → Capacitor's answer unchanged", E("granted", null) === "granted" && E("prompt", null) === "prompt");
+  check("'off' classifies as blocked, osOff", C("off").state === "blocked" && C("off").osOff === true);
+  phone("granted", "granted", { firstSeenDay: yesterday }, { enabled: false, channelExists: true, channelBlocked: false }); ask.__resetSession();
+  const offD = await ask.evaluateMoment("approvals", "owner");
+  check("real evaluateMoment: Android 12-style 'granted' but switched off → blocked card, osOff", offD.show && offD.variant === "blocked" && offD.osOff === true, JSON.stringify(offD));
+  phone("granted", "granted", {}, { enabled: true, channelExists: true, channelBlocked: true });
+  const chOut = await ask.sayYes();
+  check("'Oui' with the mp_alerts channel off → 'os_off', never a false 'Alertes activées'", chOut === "os_off", chOut);
+  phone("granted", "granted", {}, { enabled: false, channelExists: true, channelBlocked: false });
+  check("Settings badge: granted + phone switch off → BLOQUÉ", M.deriveSettings({ receive: (await ask.readPhoneState()).receive, store: {}, storedToken: "tok", status: server3 }).badge === "blocked");
+  const osCard = render(M.PushAskCardView, { variant: "blocked", lang: "fr", osOff: true, canOpenSettings: true });
+  check("blocked card with the plugin → 'Ouvrir les réglages'; osOff → no pointless 'Réessayer'", osCard.includes("Ouvrir les réglages") && !osCard.includes("Réessayer"));
+  check("blocked card WITHOUT the plugin → no 'Ouvrir les réglages', written steps only", !render(M.PushAskCardView, { variant: "blocked", lang: "fr" }).includes("Ouvrir les réglages"));
+  check("channel off → the card names the « Alertes / Alerts » category", render(M.PushAskCardView, { variant: "blocked", lang: "fr", osOff: true, channelBlocked: true }).includes("catégorie « Alertes / Alerts »"));
+
+  // ── G8 ────────────────────────────────────────────────────────────────────────────────
+  console.log("\nG8  vc114 native wiring (static — the files the APK is built from)");
+  const { readFileSync } = await import("node:fs");
+  const A = (p) => readFileSync(resolve(HERE, "../android/app/src/main", p), "utf8");
+  const man = A("AndroidManifest.xml");
+  check("manifest points fullBackupContent and dataExtractionRules at our rules", man.includes('android:fullBackupContent="@xml/backup_rules"') && man.includes('android:dataExtractionRules="@xml/data_extraction_rules"'));
+  const ex = (x) => [...x.matchAll(/<exclude domain="([^"]+)" path="([^"]+)"/g)].map((m) => `${m[1]}:${m[2]}`);
+  const old = ex(A("res/xml/backup_rules.xml")), dx = A("res/xml/data_extraction_rules.xml");
+  const cloud = ex(dx.split("<device-transfer>")[0]), xfer = ex(dx.split("<device-transfer>")[1] || "");
+  const need = ["sharedpref:PluginPermStates.xml", "sharedpref:CapacitorStorage.xml", "root:app_webview/"];
+  check("backup rules (≤11), cloud backup and device transfer (12+) all exclude the three, identically",
+    [old, cloud, xfer].every((l) => need.every((n) => l.includes(n)) && l.length === need.length), JSON.stringify({ old, cloud, xfer }));
+  const java = A("java/com/partenaire/monpartenaire/NotificationSettingsPlugin.java");
+  check("plugin is registered in MainActivity", A("java/com/partenaire/monpartenaire/MainActivity.java").includes("registerPlugin(NotificationSettingsPlugin.class)"));
+  check("plugin name matches the JS side (NotificationSettings) and checks channel mp_alerts",
+    java.includes('@CapacitorPlugin(name = "NotificationSettings")') && java.includes('"mp_alerts"') &&
+    readFileSync(resolve(SRC, "utils/notifSettings.js"), "utf8").includes('registerPlugin("NotificationSettings")'));
+  check("mp_alerts is the same channel id push.js creates", readFileSync(resolve(SRC, "utils/push.js"), "utf8").includes('id: "mp_alerts"'));
 } catch (e) {
   console.error("!! rig error:", e.stack || e.message); fails++;
 } finally {

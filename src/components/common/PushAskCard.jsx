@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { MOMENT_EVENT, evaluateMoment, putOff, sayYes, recheck, classify } from "../../utils/pushAsk";
+import { hasNativeSettings, openNotificationSettings } from "../../utils/notifSettings";
 
 const HINT = {
   fr: "Android va vous demander l'autorisation : appuyez sur « Autoriser ».",
@@ -30,6 +31,15 @@ export const COPY = {
           hint: HINT.fr, yes: "Oui, me prévenir", later: "Plus tard" },
     en: { title: "Get alerts on your phone",
           body: "Your cashiers' requests reach you straight away, and you'll know as soon as the boss answers yours — even with the app closed.",
+          hint: HINT.en, yes: "Yes, alert me", later: "Not now" },
+  },
+  // vc114 app_update moment: a cashier / warehouse user who already uses the app daily.
+  staff: {
+    fr: { title: "Soyez prévenu sur votre téléphone",
+          body: "Vous savez tout de suite quand le patron répond à vos demandes — même si l'application est fermée.",
+          hint: HINT.fr, yes: "Oui, me prévenir", later: "Plus tard" },
+    en: { title: "Get alerts on your phone",
+          body: "You'll know as soon as the boss answers your requests — even with the app closed.",
           hint: HINT.en, yes: "Yes, alert me", later: "Not now" },
   },
   staff_request: {
@@ -54,21 +64,24 @@ export const COPY = {
           steps: ["Ouvrez Paramètres", "Applications (parfois « Gestion des applications »)", "Stenamo Book", "Notifications → activez."],
           alt: "Ou : appuyez longuement sur une notification de Stenamo Book.",
           maybe: "Il se peut qu'Android vous redemande : touchez « Réessayer ».",
-          check: "J'ai activé — vérifier", retry: "Réessayer", later: "Plus tard" },
+          channel: "C'est la catégorie « Alertes / Alerts » de Stenamo Book qui est coupée.",
+          open: "Ouvrir les réglages", check: "J'ai activé — vérifier", retry: "Réessayer", later: "Plus tard" },
     en: { title: "Alerts are off on this phone",
           intro: "To turn them back on:",
           steps: ["Open Settings", "Apps (sometimes “App management”)", "Stenamo Book", "Notifications → turn on."],
           alt: "Or: press and hold a Stenamo Book notification.",
           maybe: "Android may still ask you: tap “Try again”.",
-          check: "I've turned it on — check", retry: "Try again", later: "Not now" },
+          channel: "It's Stenamo Book's “Alertes / Alerts” category that is off.",
+          open: "Open settings", check: "I've turned it on — check", retry: "Try again", later: "Not now" },
   },
 };
 
 // The guidance block on its own — the Settings card reuses it.
-export function BlockedSteps({ lang, maybeNotBlocked }) {
+export function BlockedSteps({ lang, maybeNotBlocked, channelBlocked }) {
   const c = COPY.blocked[lang === "en" ? "en" : "fr"];
   return (
     <div data-push-blocked-steps style={{ fontSize: 13, lineHeight: 1.6 }}>
+      {channelBlocked && <div style={{ marginBottom: 6 }}>{c.channel}</div>}
       <div>{c.intro}</div>
       <ol style={{ margin: "4px 0 6px", paddingLeft: 20 }}>
         {c.steps.map((s) => <li key={s}>{s}</li>)}
@@ -79,7 +92,11 @@ export function BlockedSteps({ lang, maybeNotBlocked }) {
   );
 }
 
-export function PushAskCardView({ variant, lang, hasDigest, maybeNotBlocked, busy, onYes, onLater, onCheck }) {
+// Blocked buttons (vc114): "Ouvrir les réglages" first when the native plugin is there;
+// "Réessayer" only when Android might still show its dialog — never when permission is
+// already granted and it is the phone's switch (osOff) that is off, where it would do nothing.
+export function PushAskCardView({ variant, lang, hasDigest, maybeNotBlocked, osOff, channelBlocked, canOpenSettings,
+  busy, onYes, onLater, onCheck, onOpenSettings }) {
   const L = lang === "en" ? "en" : "fr";
   const c = COPY[variant]?.[L];
   if (!c) return null;
@@ -92,7 +109,7 @@ export function PushAskCardView({ variant, lang, hasDigest, maybeNotBlocked, bus
         borderRadius: 16, padding: "18px 18px 16px", boxShadow: "0 10px 30px rgba(0,0,0,0.3)" }}>
         <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>🔔 {c.title}</div>
         {variant === "blocked" ? (
-          <BlockedSteps lang={L} maybeNotBlocked={maybeNotBlocked} />
+          <BlockedSteps lang={L} maybeNotBlocked={maybeNotBlocked && !osOff} channelBlocked={channelBlocked} />
         ) : (
           <>
             <div style={{ fontSize: 14, lineHeight: 1.55 }}>{c.body}</div>
@@ -104,8 +121,11 @@ export function PushAskCardView({ variant, lang, hasDigest, maybeNotBlocked, bus
         <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
           {variant === "blocked" ? (
             <>
-              <button className="btn btn-primary" style={btn} disabled={busy} onClick={onCheck}>{c.check}</button>
-              <button className="btn btn-secondary" style={btn} disabled={busy} onClick={onYes}>{c.retry}</button>
+              {canOpenSettings && (
+                <button className="btn btn-primary" style={{ ...btn, flexBasis: "100%" }} disabled={busy} onClick={onOpenSettings}>{c.open}</button>
+              )}
+              <button className={canOpenSettings ? "btn btn-secondary" : "btn btn-primary"} style={btn} disabled={busy} onClick={onCheck}>{c.check}</button>
+              {!osOff && <button className="btn btn-secondary" style={btn} disabled={busy} onClick={onYes}>{c.retry}</button>}
               <button className="btn btn-secondary" style={{ ...btn, flexBasis: "100%" }} disabled={busy} onClick={onLater}>{c.later}</button>
             </>
           ) : (
@@ -121,7 +141,7 @@ export function PushAskCardView({ variant, lang, hasDigest, maybeNotBlocked, bus
 }
 
 export default function PushAskHost({ role, lang, hasDigest }) {
-  const [card, setCard] = useState(null);   // { variant, maybeNotBlocked }
+  const [card, setCard] = useState(null);   // { variant, maybeNotBlocked, osOff, channelBlocked }
   const [busy, setBusy] = useState(false);
   const en = lang === "en";
 
@@ -129,12 +149,25 @@ export default function PushAskHost({ role, lang, hasDigest }) {
     const onMoment = async (e) => {
       try {
         const d = await evaluateMoment(e?.detail?.moment, role);
-        if (d.show) setCard({ variant: d.variant, maybeNotBlocked: !!d.maybeNotBlocked });
+        if (d.show) setCard({ variant: d.variant, maybeNotBlocked: !!d.maybeNotBlocked, osOff: !!d.osOff, channelBlocked: !!d.channelBlocked });
       } catch { /* an ask must never break the screen it sits on */ }
     };
     window.addEventListener(MOMENT_EVENT, onMoment);
     return () => window.removeEventListener(MOMENT_EVENT, onMoment);
   }, [role]);
+
+  // Coming back from Android's settings (opened by the button below): re-read and close the
+  // card if alerts are now on, so the user is not asked to press "vérifier" for what they did.
+  useEffect(() => {
+    if (card?.variant !== "blocked") return;
+    const onBack = async () => {
+      if (document.hidden) return;
+      const { receive, store } = await recheck();
+      if (classify(receive, store).state === "active") { setCard(null); toast.success(en ? "Alerts on." : "Alertes activées."); }
+    };
+    document.addEventListener("visibilitychange", onBack);
+    return () => document.removeEventListener("visibilitychange", onBack);
+  }, [card?.variant, en]);
 
   if (!card) return null;
   const close = () => setCard(null);
@@ -142,14 +175,17 @@ export default function PushAskHost({ role, lang, hasDigest }) {
 
   return (
     <PushAskCardView
-      variant={card.variant} lang={lang} hasDigest={hasDigest} maybeNotBlocked={card.maybeNotBlocked} busy={busy}
+      variant={card.variant} lang={lang} hasDigest={hasDigest} maybeNotBlocked={card.maybeNotBlocked}
+      osOff={card.osOff} channelBlocked={card.channelBlocked} canOpenSettings={hasNativeSettings()} busy={busy}
       onLater={() => run(async () => { await putOff(); close(); })}
       onYes={() => run(async () => {
         const out = await sayYes();
+        if (out === "os_off") { setCard({ variant: "blocked", osOff: true, maybeNotBlocked: false, channelBlocked: card.channelBlocked }); return; }
         close();
         if (out === "granted") toast.success(en ? "Alerts on." : "Alertes activées.");
         else if (out !== "not_granted") toast.error(en ? "Alerts could not be turned on — see Settings." : "Impossible d'activer les alertes — voir Paramètres.");
       })}
+      onOpenSettings={() => run(async () => { await openNotificationSettings(card.channelBlocked ? "channel" : "app"); })}
       onCheck={() => run(async () => {
         const { receive, store } = await recheck();
         if (classify(receive, store).state === "active") { close(); toast.success(en ? "Alerts on." : "Alertes activées."); }

@@ -10,6 +10,8 @@ public class MainActivity extends BridgeActivity {
         // MP-BT-THERMAL: register the in-repo Classic-Bluetooth ESC/POS plugin
         // BEFORE super.onCreate so the bridge exposes it to the WebView.
         registerPlugin(BluetoothPrinterPlugin.class);
+        // MP-PUSH-ASK (vc114): real notification state + a direct way to the settings screen.
+        registerPlugin(NotificationSettingsPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
