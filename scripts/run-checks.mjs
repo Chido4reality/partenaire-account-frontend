@@ -47,6 +47,9 @@ const CHECKS = [
   // PRODUCT IMPORT: SheetJS guessed CSV dates month-first — "03/04/2027" (3 April)
   // was stored as 2027-03-04 with NO error. Asserts the STORED value, not a message.
   ["import-dates", "scripts/product-import-dates-check.mjs", "a CSV expiry date is stored as typed (DD/MM), impossible / US dates are rejected rows"],
+  // PUSH LOGOUT: a web logout (no token) fell back to {all:true} and retired every phone
+  // the user owned — on prod, half of all person-addressed alerts had no live device.
+  ["push-logout", "scripts/push-logout-check.mjs", "logout revokes THIS phone's token only — web never, missing/stale token revokes nothing"],
   // MP-RECEIPT-PRINT-SCOPE: 0957ac41 moved the line-item normaliser into
   // buildBodyLines but kept using it in THREE call sites inside the component,
   // where it does not exist — every print path threw "saleItems is not defined".

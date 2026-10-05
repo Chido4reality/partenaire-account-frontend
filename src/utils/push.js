@@ -279,38 +279,43 @@ export async function pushStatus(ms = 8000) {
   return r.value?.data?.data || null;
 }
 
-// Stop THIS handset receiving alerts. Server-side this sets pa_device_tokens.revoked_at,
-// and the sender only ever selects tokens where revoked_at IS NULL — so the backend stops
-// sending to this device immediately, rather than sending into the void.
+// Stop THIS handset receiving alerts — and ONLY this handset. Server-side this sets
+// pa_device_tokens.revoked_at on the one row whose token this phone registered; the sender
+// only selects rows where revoked_at IS NULL, so this phone stops buzzing immediately.
 //
-// Used ONLY by logout — never by a UI toggle. There is no in-app on/off any more: every
-// hang this feature produced lived in a native bridge call on that toggle (createChannel,
-// register-after-revoke, unregister), so the toggle is gone and alerts are controlled
-// where every other Android app controls them — the OS notification settings. What remains
-// is the security case: a shared or handed-over phone must stop receiving the previous
-// user's approvals, and that is a pure server-side revoke.
+// Used ONLY by logout. The security case it serves: a shared or handed-over phone must stop
+// receiving the previous user's approvals.
+//
+// TWO RULES, BOTH LEARNED ON PROD (2026-10-05):
+//
+//   1. NATIVE ONLY. A browser has no device token and nothing to revoke. This used to run on
+//      every platform, and with no stored token it fell through to rule 2's old fallback —
+//      so logging out of the WEB app retired every phone the user owned.
+//
+//   2. NEVER "ALL". If the stored token is missing, or is stale and matches no row, revoke
+//      NOTHING. The old fallback retired every live device for the user instead, which is
+//      how both of a user's live tokens vanished at one instant on a logout, and how an owner
+//      went a month with no live device. Losing one stale row is harmless; wiping a user's
+//      other phones silently stops their alerts with nothing recording it.
+//
+// A STALE stored token (FCM rotated it and this phone has not re-registered since) therefore
+// leaves this phone's real row live. That is the accepted trade: the next authenticated app
+// start re-registers (POST /devices/token upserts on the token), which refreshes the row —
+// and if a DIFFERENT person logs in on the phone, the upsert re-points the row to them, so
+// the previous user's alerts stop at that moment.
 async function disableOnThisDevice() {
+  if (!isNative()) return false;
   const token = getStoredToken();
+  if (!token) return false;
   let ok = false;
   try {
-    let revoked = 0;
-    if (token) {
-      const r = await api.delete("/devices/token", { data: { token } });
-      revoked = r?.data?.revoked ?? 0;
-    }
-    // FCM rotates tokens silently, so the stored copy can be stale and match nothing.
-    // Turning alerts off must never be a no-op that reports success — fall back to
-    // retiring every live device for this user, which is what "off" means anyway.
-    if (revoked === 0) {
-      const r2 = await api.delete("/devices/token", { data: { all: true } });
-      revoked = r2?.data?.revoked ?? 0;
-    }
-    ok = revoked > 0 || !token;
+    const r = await api.delete("/devices/token", { data: { token } });
+    ok = (r?.data?.revoked ?? 0) > 0;
   } catch (e) {
     console.warn("[push] revoke failed:", e && e.message);
   }
-  // Clear locally regardless: if the call failed we must not keep claiming this device is
-  // registered. The next successful registration re-creates the row.
+  // Clear locally regardless: logout nukes local state anyway, and the next successful
+  // registration stores the token again.
   storeToken(null);
   // Deliberately NO P.unregister(). Added in vc97 and the OFF path started hanging in the
   // same build; FCM does not expect apps to register/unregister repeatedly, and we no
