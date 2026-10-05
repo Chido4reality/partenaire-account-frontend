@@ -157,7 +157,7 @@ const NAV = [
   // section:"settings" so every plan shows it; NOT in LITE_HIDDEN_ROUTES — Lite hides the
   // bell, so this item + its badge is how a Lite owner sees a message at all. Also in
   // NavDrawer SECTIONS (mobile) + App.jsx ROUTE_ACCESS.
-  { to: "/messages",     en: "Messages",   fr: "Messages",        icon: "💬", roles: ["owner"],                                section: "settings", badge: "messages" },
+  { to: "/messages",     en: "Stenamo messages", fr: "Messages Stenamo", icon: "💬", roles: ["owner"],                                section: "settings", badge: "messages" },
   { to: "/settings",     en: "Settings",   fr: "Paramètres",      icon: "⚙️", roles: ["owner","manager"],                       section: "settings" },
   // MP-HELP v1 — in-app guide (bundled, offline). Everyone can get stuck, so ALL
   // roles; also registered in NavDrawer.jsx SECTIONS (mobile) + App.jsx ROUTE_ACCESS.
@@ -1868,6 +1868,17 @@ export default function Layout() {
               "Plan: " + tier + "\n" +
               "Message:\n";
             const href = "https://wa.me/" + SUPPORT_PHONE + "?text=" + encodeURIComponent(supportBody);
+            // SUPPORT MESSAGING: for an OWNER, "Contacter le Support" opens the same
+            // conversation as "Messages Stenamo" — one way in, not two. Staff can't use
+            // Messages (owner-only), so they keep the WhatsApp line.
+            if (role === "owner") {
+              return (
+                <button data-support-link="messages" onClick={() => navigate("/messages")}
+                  style={{ display: "block", width: "100%", padding: "6px 10px", borderRadius: 8, background: "rgba(37,211,102,0.08)", border: "1px solid rgba(37,211,102,0.2)", color: "#25d366", fontSize: 11, textAlign: "left", cursor: "pointer", marginBottom: 6 }}>
+                  💬 {lang === "en" ? "Contact Support" : "Contacter le Support"}
+                </button>
+              );
+            }
             return (
               <a href={href} target="_blank" rel="noopener noreferrer"
                 onClick={(e) => openWhatsApp(e, SUPPORT_PHONE, supportBody)}

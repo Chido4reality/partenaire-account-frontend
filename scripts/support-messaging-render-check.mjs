@@ -153,6 +153,13 @@ check("the drawer renders its badge", /item\.badge === "messages" && messagesUnr
 check("App ROUTE_ACCESS: owner only", /"\/messages": \["owner"\]/.test(app));
 check("the route exists", /<Route path="messages"/.test(app));
 check("a push tap / bell row opens /messages", /ref_type === "admin_message"\) navigate\("\/messages"\)/.test(layout) && /n\.ref_type === "admin_message"\) return `\/messages`/.test(layout));
+check("the nav entry reads 'Messages Stenamo' (not a third bare 'Messages' beside Stenamo Market's)", /fr: "Messages Stenamo"/.test(layout));
+check("desktop 'Contacter le Support' sends an OWNER to /messages (one way in)",
+  /if \(role === "owner"\) \{\s*return \(\s*<button data-support-link="messages" onClick=\{\(\) => navigate\("\/messages"\)\}/.test(layout));
+check("mobile drawer 'Contacter le Support' sends an OWNER to /messages",
+  /if \(role === "owner"\) \{\s*return \(\s*<button data-support-link="messages" onClick=\{\(\) => \{ handleNav\(\); navigate\("\/messages"\); \}\}/.test(drawer));
+check("…while staff (no Messages access) keep the WhatsApp line in both places",
+  (layout.match(/wa\.me\/" \+ SUPPORT_PHONE/g) || []).length >= 1 && /href=\{"https:\/\/wa\.me\/" \+ phone/.test(drawer));
 check("the dashboard strip is declared AFTER the count it reads (no TDZ)", layout.indexOf("const messagesUnread =") > 0 && layout.indexOf("const messagesUnread =") < layout.indexOf("const messagesStrip ="));
 
 console.log(fails ? `\n  ${fails} FAILED\n` : "\n  all passed\n");

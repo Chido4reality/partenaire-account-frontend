@@ -19,6 +19,7 @@ import { openWhatsApp } from "../../utils/whatsapp";
 import { setLanguage } from "../../utils/setLanguage"; // MP-LANGUAGE-PERSIST
 
 import { SUPPORT_PHONE } from "../../utils/support";
+import { useNavigate } from "react-router-dom";
 export const DRAWER_WIDTH = 280;
 
 // Section grouping by route path. Items not listed in any section are
@@ -81,6 +82,7 @@ export default function NavDrawer({
   const { lang } = useLangStore();
   const { user, org } = useAuthStore();
   const role = user?.role || "";
+  const navigate = useNavigate();
 
   // Index nav items by route for quick lookup when materialising sections.
   // Key on navKey (the ORIGINAL route) when present — locked Pro Plus items
@@ -271,6 +273,23 @@ export default function NavDrawer({
                   "Nom: " + (org?.name || "") + "\n" +
                   "Plan: " + (org?.plan_id || "") + "\n" +
                   "Message:\n";
+                // SUPPORT MESSAGING: an owner's "Contacter le Support" opens the same screen as
+                // "Messages Stenamo" — one way in. Staff (no Messages access) keep WhatsApp.
+                if (role === "owner") {
+                  return (
+                    <button data-support-link="messages" onClick={() => { handleNav(); navigate("/messages"); }}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 10, width: "100%",
+                        padding: "10px 14px", borderRadius: 10, marginBottom: 8, cursor: "pointer",
+                        background: "rgba(37,211,102,0.08)", border: "1px solid rgba(37,211,102,0.2)",
+                        color: "#25d366", fontSize: 13, fontWeight: 600, textAlign: "left",
+                      }}
+                    >
+                      <span style={{ fontSize: 16 }}>💬</span>
+                      <span>{lang === "en" ? "Contact Support" : "Contacter le Support"}</span>
+                    </button>
+                  );
+                }
                 return (
                   <a
                     href={"https://wa.me/" + phone + "?text=" + encodeURIComponent(supportBody)}
