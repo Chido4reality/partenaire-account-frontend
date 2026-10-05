@@ -37,7 +37,8 @@
 // v12: Family approvals — a proposed second parent is flagged before Approve (and given a sex there); a missing sex is named.
 // v13: Family approvals — a relative's Gallery photograph is reviewed here, with its file.
 // v14: Support Messaging — Équipe Stenamo ↔ one shop owner, master admin only.
-const VERSION = 'admin-pwa-v14';
+// v15: Messages hides deleted businesses by default ("Show deactivated", like Businesses).
+const VERSION = 'admin-pwa-v15';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const API_CACHE = `${VERSION}-api`;

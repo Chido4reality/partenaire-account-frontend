@@ -62,13 +62,17 @@ for (const fn of ["loadMessages", "renderMsgCustomers", "renderMsgThread", "msgS
 const CUSTOMERS = [
   { org_id: "o1", name: "EST LE SOLDEUR", mp_id: "MP-1", reach: "push", owner: { name: "Paul" }, thread: { unread_from_owner: 2, last_message_at: "2026-10-05T10:00:00Z", last: { from: "owner", preview: "Merci !" } } },
   { org_id: "o2", name: "Miondo Bar", mp_id: "MP-40", reach: "iphone", owner: { name: "Fabrice" }, thread: null },
-  { org_id: "o3", name: "Dozass", reach: "cannot_sign_in", owner: { name: "X" }, thread: null },
+  { org_id: "o3", name: "Dozass", status: "deactivated", reach: "cannot_sign_in", owner: { name: "X" }, thread: null },
   { org_id: "o4", name: "<img src=x onerror=alert(1)>", reach: "next_visit", owner: { name: "Y" }, thread: null },
 ];
 const list = ctx.renderMsgCustomers(CUSTOMERS, "", null);
 check("Paul's row: push possible + 2 unread replies", list.includes("📱 Push possible") && /msg-unread">2</.test(list));
 check("iPhone owner says 'never pushable' — a fact, not a hope", list.includes("🍎 iPhone (browser) — never pushable"));
-check("deleted org says 'Cannot sign in'", list.includes("⛔ Cannot sign in"));
+check("deleted orgs are HIDDEN by default (like the Businesses screen)", !list.includes("Dozass") && !list.includes("⛔ Cannot sign in"));
+const withDeleted = ctx.renderMsgCustomers(CUSTOMERS, "", null, true);
+check("…'Show deactivated' reveals them, marked 'Cannot sign in'", withDeleted.includes("Dozass") && withDeleted.includes("⛔ Cannot sign in"));
+check("the toggle exists, with the Businesses screen's label, and redraws the list",
+  /<input type="checkbox" id="msg-show-deactivated" \/>\s*Show deactivated/.test(html) && /\$\('msg-show-deactivated'\); if \(d\) d\.addEventListener\('change', drawMsgCustomers\)/.test(html));
 check("a hostile business name stays inert text", !list.includes("<img src=x") && list.includes("&lt;img"));
 check("unread replies sort first", list.indexOf("EST LE SOLDEUR") < list.indexOf("Miondo Bar"));
 check("search filters by owner name", ctx.renderMsgCustomers(CUSTOMERS, "fabri", null).includes("Miondo Bar") && !ctx.renderMsgCustomers(CUSTOMERS, "fabri", null).includes("SOLDEUR"));

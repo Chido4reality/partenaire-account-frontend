@@ -1790,6 +1790,12 @@
           <div class="card" style="padding:0;overflow:hidden">
             <div style="padding:10px 12px;border-bottom:1px solid var(--border)">
               <input class="input" id="msg-search" placeholder="Search a business or owner…" style="width:100%">
+              <!-- Deleted (deactivated) businesses can't sign in, so they can't read anything —
+                   hidden by default, exactly like the Businesses screen's toggle. -->
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-muted);cursor:pointer;margin-top:8px">
+                <input type="checkbox" id="msg-show-deactivated" />
+                Show deactivated
+              </label>
             </div>
             <div id="msg-customers" class="msg-list"><div class="muted" style="padding:16px">Loading…</div></div>
           </div>
@@ -2851,9 +2857,10 @@
       return parts.join(' · ');
     }
     function msgWhen(iso) { try { return new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch (e) { return iso || ''; } }
-    function renderMsgCustomers(list, q, activeId) {
+    function renderMsgCustomers(list, q, activeId, showDeactivated) {
       const qq = String(q || '').trim().toLowerCase();
       const rows = (list || []).filter(function (c) {
+        if (!showDeactivated && c.status === 'deactivated') return false;   // hidden by default, like Businesses
         return !qq || (c.name || '').toLowerCase().indexOf(qq) >= 0 || ((c.owner && c.owner.name) || '').toLowerCase().indexOf(qq) >= 0 || (c.mp_id || '').toLowerCase().indexOf(qq) >= 0;
       }).sort(function (a, b) {
         const ua = (a.thread && a.thread.unread_from_owner) || 0, ub = (b.thread && b.thread.unread_from_owner) || 0;
@@ -2900,7 +2907,7 @@
       } catch (e) { $('msg-customers').innerHTML = '<div class="muted" style="padding:16px">' + escapeHtml(e.message) + '</div>'; }
     }
     function drawMsgCustomers() {
-      $('msg-customers').innerHTML = renderMsgCustomers(_msgCustomers, $('msg-search').value, _msgActive);
+      $('msg-customers').innerHTML = renderMsgCustomers(_msgCustomers, $('msg-search').value, _msgActive, !!$('msg-show-deactivated').checked);
       document.querySelectorAll('#msg-customers [data-msg-org]').forEach(function (el) {
         el.onclick = function () { openMsgThread(el.getAttribute('data-msg-org')); };
       });
@@ -2938,6 +2945,7 @@
     }
     (function wireMessages() {
       const s = $('msg-search'); if (s) s.addEventListener('input', drawMsgCustomers);
+      const d = $('msg-show-deactivated'); if (d) d.addEventListener('change', drawMsgCustomers);
       const b = $('msg-send'); if (b) b.addEventListener('click', sendMsg);
     })();
 
