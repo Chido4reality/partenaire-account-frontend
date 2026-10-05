@@ -1,37 +1,39 @@
-// MP-PUSH — informational only. Settings → Account.
+// MP-PUSH — Settings → Account: THIS phone's alert state, honestly.
 //
-// THIS COMPONENT MAKES NO NATIVE CALLS AND HAS NO CONTROLS.
+// MP-PUSH-ASK (2026-10-05): the badge used to read `my_live_devices > 0` — a SERVER count
+// across all of the user's devices — so a phone with notifications off showed ON whenever
+// another phone of theirs was live. It now reads THIS phone (checkPermissions, a read-only,
+// time-boxed call) and shows one of four states: Activé · Pas encore demandé · Refusé une
+// fois · Bloqué (plus "Non enregistré" when permission is granted but no token was stored).
 //
-// Every hang this feature produced lived in a native bridge call sitting behind a button
-// users could tap: createChannel stalling inside bindListeners, register() after a revoke
-// never re-firing `registration`, then unregister() itself. Each fix surfaced the next,
-// because the fault was not any individual call — it was putting the plugin's
-// register/unregister lifecycle behind a toggle at all.
-//
-// So: the token registers ONCE when permission is granted and is never unregistered, and
-// alerts are managed where every other Android app manages them — the OS notification
-// settings. Nothing here can hang, because nothing here does anything.
+// No register/unregister toggle, ever: every hang this feature produced lived in that
+// lifecycle (createChannel, register-after-revoke, unregister). The buttons here can only
+// ADD a registration, through the same time-boxed routine login uses, and the only one that
+// can open Android's dialog is an explicit tap (askAndRegister). Alerts are switched off
+// where every other Android app switches them off: the phone's notification settings.
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { canUsePush, pushStatus, lastRegistrationOutcome, promptIfSensible } from "../../utils/push";
+import { canUsePush, pushStatus, lastRegistrationOutcome, readPushPermission, getStoredToken, askAndRegister } from "../../utils/push";
+import { settingsBadge, sayYes, recheck } from "../../utils/pushAsk";
+import { readAsk } from "../../utils/pushAskStore";
+import { BlockedSteps, COPY } from "./PushAskCard";
 
-// Plain-language explanation of what the last login attempt hit. The point is that a
-// failure to register must be READABLE without a debugger, a diagnostics table, or
-// another instrumented build.
+const BADGE = {
+  active:       { fr: "ACTIVÉ",             en: "ON",              color: "#10b981" },
+  unregistered: { fr: "NON ENREGISTRÉ",     en: "NOT REGISTERED",  color: "#fbbf24" },
+  not_asked:    { fr: "PAS ENCORE DEMANDÉ", en: "NOT ASKED YET",   color: "var(--text-muted)" },
+  refused_once: { fr: "REFUSÉ UNE FOIS",    en: "REFUSED ONCE",    color: "#fbbf24" },
+  blocked:      { fr: "BLOQUÉ",             en: "BLOCKED",         color: "#ef4444" },
+  unknown:      { fr: "—",                  en: "—",               color: "var(--text-muted)" },
+};
+
 const outcomeDetail = (o) => (o && typeof o.detail === "string" ? o.detail.split(":").pop().trim() : "");
 
-function explainOutcome(o, en) {
+// Why a GRANTED phone has no token. Only shown in the "unregistered" state — permission
+// problems are the badge's job now, so nothing here can say "refused" about a swipe-away.
+export function explainOutcome(o, en) {
   if (!o) return null;
   switch (o.outcome) {
-    case "granted":
-      return null; // registered — the ON badge already says so
-    case "blocked":
-      return en
-        ? "Your phone is blocking notifications for this app. Open Settings → Apps → Stenamo → Notifications and allow them, then log out and back in."
-        : "Votre téléphone bloque les notifications pour cette application. Ouvrez Paramètres → Applications → Stenamo → Notifications, autorisez-les, puis déconnectez-vous et reconnectez-vous.";
-    case "denied":
-      return en ? "Notification permission was refused. Allow it in your phone's settings, then log out and back in."
-                : "L'autorisation a été refusée. Autorisez-la dans les réglages du téléphone, puis reconnectez-vous.";
     case "no_token":
       return en ? "Permission is allowed, but the phone didn't return a notification token. Check the internet connection, then tap Retry."
                 : "L'autorisation est accordée, mais le téléphone n'a pas renvoyé de jeton. Vérifiez la connexion, puis touchez Réessayer.";
@@ -40,13 +42,9 @@ function explainOutcome(o, en) {
         + (outcomeDetail(o) ? ` (${outcomeDetail(o)})` : "")
         + (en ? ". Check the connection and tap Retry." : ". Vérifiez la connexion et touchez Réessayer.");
     case "register_failed":
-      return en ? "Registration failed on this phone. Log out and back in; if it persists, tell support."
-                : "L'enregistrement a échoué. Reconnectez-vous ; si cela persiste, signalez-le.";
+      return en ? "Registration failed on this phone. Tap Retry; if it persists, tell support."
+                : "L'enregistrement a échoué sur ce téléphone. Touchez Réessayer ; si cela persiste, signalez-le.";
     case "unavailable":
-      // The detail used to be DROPPED here, which made this the one outcome that
-      // told you nothing: "unavailable" covers a plugin that timed out loading, one
-      // that failed to load, and a non-native build — three different causes with
-      // three different fixes, all printed as the same dead-end sentence. Show it.
       return (en ? "Alerts aren't available on this device." : "Alertes indisponibles sur cet appareil.")
         + (o.detail ? ` (${o.detail})` : "");
     default:
@@ -54,20 +52,107 @@ function explainOutcome(o, en) {
   }
 }
 
+// Props-only, module scope: the render guard mounts it under renderToString.
+export function PushAlertsCardView({ lang, badge, maybeNotBlocked, reason, serverOff, busy, onEnable, onCheck, onRetry }) {
+  const en = lang === "en";
+  const L = en ? "en" : "fr";
+  const b = BADGE[badge] || BADGE.unknown;
+  const note = { fontSize: 12.5, color: "var(--text-muted)", marginTop: 10, lineHeight: 1.55 };
+  const amber = { fontSize: 12, lineHeight: 1.55, marginTop: 10, padding: "9px 11px", borderRadius: 8,
+    color: "#fbbf24", background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.35)" };
+  const ask = badge === "refused_once" ? COPY.refused_once[L] : COPY.owner[L];
+
+  return (
+    <div data-push-settings={badge} style={{ marginTop: 22, paddingTop: 18, borderTop: "1px solid var(--border)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <span style={{ fontWeight: 600, fontSize: 15 }}>🔔 {en ? "Lock-screen alerts" : "Alertes sur l'écran verrouillé"}</span>
+        <span data-push-badge style={{ marginLeft: "auto", fontSize: 12, fontWeight: 700, color: b.color }}>{b[L]}</span>
+      </div>
+
+      <div style={{ fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.55 }}>
+        {en
+          ? "Approvals, risky staff actions and the end-of-day summary arrive on this phone even when the app is closed. Low-stock alerts stay in the app only."
+          : "Les approbations, les actions à risque du personnel et le résumé du jour arrivent sur ce téléphone même quand l'application est fermée. Les alertes de stock bas restent dans l'application."}
+      </div>
+
+      {serverOff && (
+        <div style={amber}>{en ? "Alerts aren't available yet on this server." : "Les alertes ne sont pas encore disponibles sur ce serveur."}</div>
+      )}
+
+      {badge === "unknown" && (
+        <div style={note}>{en ? "Couldn't read this phone's notification setting just now. It will refresh when you come back to this screen."
+                              : "Impossible de lire le réglage des notifications de ce téléphone. Cela se mettra à jour en revenant sur cet écran."}</div>
+      )}
+
+      {(badge === "not_asked" || badge === "refused_once") && (
+        <div style={{ marginTop: 10 }}>
+          {badge === "refused_once" && <div style={{ fontSize: 13, lineHeight: 1.55, marginBottom: 8 }}>{ask.body}</div>}
+          <div data-push-hint style={{ fontSize: 12.5, marginBottom: 8 }}>{ask.hint}</div>
+          <button className="btn btn-primary" disabled={busy} onClick={onEnable}>
+            {busy ? (en ? "Waiting…" : "Patientez…") : badge === "refused_once" ? ask.yes : (en ? "Turn on alerts" : "Activer les alertes")}
+          </button>
+        </div>
+      )}
+
+      {badge === "blocked" && (
+        <div style={{ marginTop: 10 }}>
+          <BlockedSteps lang={L} maybeNotBlocked={maybeNotBlocked} />
+          <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+            <button className="btn btn-primary" disabled={busy} onClick={onCheck}>{COPY.blocked[L].check}</button>
+            <button className="btn btn-secondary" disabled={busy} onClick={onEnable}>{COPY.blocked[L].retry}</button>
+          </div>
+        </div>
+      )}
+
+      {badge === "unregistered" && (
+        <>
+          {reason && <div style={amber}>{reason}</div>}
+          <div style={{ marginTop: 10 }}>
+            <button className="btn btn-primary" disabled={busy} onClick={onRetry}>
+              {busy ? (en ? "Trying…" : "Tentative…") : (en ? "Retry" : "Réessayer")}
+            </button>
+          </div>
+        </>
+      )}
+
+      {badge === "active" && (
+        <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 10, lineHeight: 1.55 }}>
+          {en
+            ? "To turn alerts off, use your phone's own settings: press and hold a notification, or open Settings → Apps → Stenamo Book → Notifications."
+            : "Pour couper les alertes, utilisez les réglages du téléphone : appuyez longuement sur une notification, ou ouvrez Paramètres → Applications → Stenamo Book → Notifications."}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// What the card shows, from what it read. `status` is the server's /devices/status: only its
+// push_configured flag is used — NEVER my_live_devices (another phone being live says
+// nothing about this one).
+export function deriveSettings({ receive, store, storedToken, status }) {
+  return {
+    ...settingsBadge({ receive, store, storedToken }),
+    serverOff: !!status && !status.unknown && status.push_configured === false,
+  };
+}
+
 export default function PushAlertsCard({ lang }) {
   const en = lang === "en";
-  const [status, setStatus] = useState(null);
-  const [retrying, setRetrying] = useState(false);
-  // Held in state, not read during render: the outcome is written by the login flow AFTER
-  // this card may already have mounted, and a plain localStorage read would never refresh.
-  const [outcome, setOutcome] = useState(() => lastRegistrationOutcome());
+  const [view, setView] = useState({ badge: "unknown" });
+  const [serverOff, setServerOff] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  // Re-read on mount and whenever the screen regains focus — which is exactly what
-  // happens on returning from Android's notification settings, so the status reflects a
-  // change the user just made there. A plain GET; no bridge involved.
+  const load = async () => {
+    const [receive, store, status] = await Promise.all([readPushPermission(), readAsk(), pushStatus()]);
+    const d = deriveSettings({ receive, store, storedToken: getStoredToken(), status });
+    setView(d);
+    setServerOff(d.serverOff);
+  };
+
+  // Re-read on mount and whenever the screen regains focus — exactly what happens on coming
+  // back from Android's notification settings.
   useEffect(() => {
     if (!canUsePush()) return;
-    const load = async () => { setStatus(await pushStatus()); setOutcome(lastRegistrationOutcome()); };
     load();
     const refresh = () => { if (!document.hidden) load(); };
     window.addEventListener("focus", refresh);
@@ -76,116 +161,29 @@ export default function PushAlertsCard({ lang }) {
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Web build: push doesn't exist here, so claiming it would be a lie.
+  // Web build: push doesn't exist here, so claiming anything would be a lie.
   if (!canUsePush()) return null;
 
-  // `unknown` = the status read timed out. Deliberately NOT folded into "OFF": telling
-  // someone their alerts are off when we simply couldn't reach the server is the kind of
-  // small lie that sends them into Android settings to fix nothing.
-  const unknown = !!status?.unknown;
-  const registered = (status?.my_live_devices || 0) > 0 && status?.push_configured;
-  const reason = explainOutcome(outcome, en);
-
-  const retry = async () => {
-    setRetrying(true);
-    try {
-      // force:true — an explicit press must always attempt, even if the automatic ask
-      // already ran this session. This runs the SAME routine the login path runs (the
-      // Diagnose sequence), and every step inside it is time-boxed, so this button always
-      // terminates — it cannot sit on "Trying…" indefinitely the way vc102 could.
-      const r = await promptIfSensible({ force: true });
-      setOutcome(lastRegistrationOutcome());
-      const s = await pushStatus();
-      setStatus(s);
-      // r === "granted" already means the server ACKed the token, so trust it even when
-      // the follow-up status read times out — otherwise a slow link turns a success into
-      // a "still not registered" error message.
-      if ((s?.my_live_devices || 0) > 0 || r === "granted") {
-        toast.success(en ? "Alerts on." : "Alertes activées.");
-      } else if (r === "denied" || r === "blocked") {
-        toast.error(en
-          ? "Your phone is blocking notifications. Allow them in Settings → Apps → Stenamo → Notifications."
-          : "Votre téléphone bloque les notifications. Autorisez-les dans Paramètres → Applications → Stenamo → Notifications.");
-      } else {
-        toast.error(en ? "Still not registered — see the note below." : "Toujours pas enregistré — voir la note ci-dessous.");
-      }
-    } finally { setRetrying(false); }
-  };
+  const run = async (fn) => { setBusy(true); try { await fn(); } finally { setBusy(false); await load(); } };
+  const reason = view.badge === "unregistered" ? explainOutcome(lastRegistrationOutcome(), en) : null;
 
   return (
-    <div style={{ marginTop: 22, paddingTop: 18, borderTop: "1px solid var(--border)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-        <span style={{ fontWeight: 600, fontSize: 15 }}>
-          🔔 {en ? "Lock-screen alerts" : "Alertes sur l'écran verrouillé"}
-        </span>
-        <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 700,
-          color: registered ? "#10b981" : "var(--text-muted)" }}>
-          {registered ? (en ? "ON" : "ACTIVÉ")
-            : unknown ? (en ? "—" : "—")
-            : (en ? "OFF" : "DÉSACTIVÉ")}
-        </span>
-      </div>
-
-      <div style={{ fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.55 }}>
-        {en
-          ? "Approvals, risky staff actions and the end-of-day summary arrive on your phone even when the app is closed. Low-stock alerts stay in the app only."
-          : "Les approbations, les actions à risque du personnel et le résumé du jour arrivent sur votre téléphone même quand l'application est fermée. Les alertes de stock bas restent dans l'application."}
-      </div>
-
-      {unknown ? (
-        // The status read timed out (time-boxed at 8s — it used to be able to hang for
-        // over a minute). Say so plainly instead of showing a confident OFF.
-        <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 10, lineHeight: 1.55 }}>
-          {en ? "Couldn't check the alert status just now — connection too slow. It will refresh when you come back to this screen."
-              : "Impossible de vérifier l'état des alertes — connexion trop lente. Cela se mettra à jour en revenant sur cet écran."}
-        </div>
-      ) : status && !status.push_configured ? (
-        // Not the user's fault and nothing they can do — say so rather than imply they
-        // have a setting to find.
-        <div style={{ fontSize: 12.5, color: "#fbbf24", background: "rgba(251,191,36,0.10)",
-          border: "1px solid rgba(251,191,36,0.35)", borderRadius: 8, padding: "9px 11px", marginTop: 10 }}>
-          {en ? "Alerts aren't available yet on this server."
-              : "Les alertes ne sont pas encore disponibles sur ce serveur."}
-        </div>
-      ) : (
-        <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 10, lineHeight: 1.55 }}>
-          {en
-            ? "To turn alerts off or back on, use your phone's own settings: press and hold a notification, or open Settings → Apps → Stenamo → Notifications."
-            : "Pour désactiver ou réactiver les alertes, utilisez les réglages de votre téléphone : appuyez longuement sur une notification, ou ouvrez Paramètres → Applications → Stenamo → Notifications."}
-        </div>
-      )}
-
-      {/* RETRY — the only control, and only when something is wrong.
-          This is NOT the old on/off toggle: it can only ever ADD a registration, never
-          unregister, so it cannot reproduce the register/unregister cycling that caused
-          every previous hang. Every call inside it is time-boxed. Without it, a user whose
-          registration failed once had no way back except logging out and in — a dead end
-          for anyone who doesn't know that trick. */}
-      {!registered && (status?.push_configured || unknown) && (
-        <div style={{ marginTop: 10 }}>
-          <button className="btn btn-primary" disabled={retrying} onClick={retry}>
-            {retrying ? (en ? "Trying…" : "Tentative…") : (en ? "Turn on alerts / Retry" : "Activer les alertes / Réessayer")}
-          </button>
-        </div>
-      )}
-
-      {/* Why this phone isn't registered, in plain words. Only shown when it isn't. */}
-      {!registered && reason && (
-        <div style={{ fontSize: 11.5, lineHeight: 1.55, marginTop: 10, padding: "9px 11px", borderRadius: 8,
-          color: "#fbbf24", background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.35)" }}>
-          {reason}
-          {outcome?.at && (
-            <div style={{ opacity: 0.7, marginTop: 4 }}>
-              {(en ? "Last check: " : "Dernière vérification : ") +
-                new Date(outcome.at).toLocaleString(en ? "en-GB" : "fr-FR",
-                  { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
-              {outcome.outcome ? ` · ${outcome.outcome}` : ""}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+    <PushAlertsCardView
+      lang={lang} badge={view.badge} maybeNotBlocked={view.maybeNotBlocked} reason={reason}
+      serverOff={serverOff} busy={busy}
+      onEnable={() => run(async () => {
+        const out = await sayYes();
+        if (out === "granted") toast.success(en ? "Alerts on." : "Alertes activées.");
+      })}
+      onCheck={() => run(async () => { await recheck(); })}
+      onRetry={() => run(async () => {
+        // Permission is already granted here, so this opens no dialog — it re-runs registration.
+        const out = await askAndRegister();
+        if (out === "granted") toast.success(en ? "Alerts on." : "Alertes activées.");
+      })}
+    />
   );
 }

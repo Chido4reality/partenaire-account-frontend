@@ -50,6 +50,9 @@ const CHECKS = [
   // PUSH LOGOUT: a web logout (no token) fell back to {all:true} and retired every phone
   // the user owned — on prod, half of all person-addressed alerts had no live device.
   ["push-logout", "scripts/push-logout-check.mjs", "logout revokes THIS phone's token only — web never, missing/stale token revokes nothing"],
+  // PUSH ASK: Android allows TWO permission dialogs per install. Our card asks first; only a
+  // tap on yes may open Android's dialog; "Plus tard" is free; the badge reads THIS phone.
+  ["push-ask", "scripts/push-ask-check.mjs", "only a tap opens Android's dialog; Plus tard is free; 3/7/14/30 ladder; badge reads this phone"],
   // MP-RECEIPT-PRINT-SCOPE: 0957ac41 moved the line-item normaliser into
   // buildBodyLines but kept using it in THREE call sites inside the component,
   // where it does not exist — every print path threw "saleItems is not defined".

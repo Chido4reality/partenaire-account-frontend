@@ -31,21 +31,23 @@
 //   4. It POSTed the token inline in the same function, not from inside a listener
 //      callback whose result then has to be plumbed back to the caller.
 //
-// PERMISSION POLICY (Android 13+): we do NOT ask at first launch. A cold prompt with no
-// context gets denied, and on Android a denial is effectively permanent — the OS blocks
-// re-prompting, so the only way back is System Settings. We ask at the first moment the
-// value is obvious (login), and a dismissed prompt costs nothing — we simply ask again.
+// PERMISSION POLICY (Android 13+, MP-PUSH-ASK 2026-10-05): Android shows its permission
+// dialog at most TWICE per install — the second refusal blocks it for good and only the
+// phone's Settings can undo it. Each dialog opened is one of two lives. So:
+//   - login NEVER opens the dialog. It registers silently when permission is ALREADY granted
+//     (refreshing a rotated token) and otherwise does nothing (allowPrompt:false).
+//   - the dialog opens ONLY from askAndRegister(), which is called ONLY when the user taps
+//     yes on our own card (utils/pushAsk.js, components/common/PushAskCard.jsx) or on the
+//     Settings card. The card explains first, and "Plus tard" never touches Android.
 import api from "./api";
+import { noteDialogOpened } from "./pushAskStore";
 
-const ASKED_KEY = "mp-push-asked";       // the OS prompt got a definitive answer once
 const TOKEN_KEY = "mp-push-token";       // last token we registered, for logout revoke
 const LAST_KEY  = "mp-push-last";        // outcome of the last registration attempt
 
 const isNative = () =>
   typeof window !== "undefined" && !!window.Capacitor?.isNativePlatform?.();
 
-const readAsked = () => { try { return localStorage.getItem(ASKED_KEY) === "1"; } catch { return false; } };
-const markAsked = () => { try { localStorage.setItem(ASKED_KEY, "1"); } catch { /* private mode */ } };
 export const getStoredToken = () => { try { return localStorage.getItem(TOKEN_KEY); } catch { return null; } };
 const storeToken = (t) => { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ } };
 
@@ -63,10 +65,10 @@ const withTimeout = (p, ms, label) => Promise.race([
 // Record what an attempt actually hit, so a silent failure can be READ rather than guessed
 // at. localStorage (surfaced on the Settings card) + logcat. Deliberately not a server
 // round-trip: the diagnostics table and endpoint were removed and this needs no schema.
-function rec(outcome, detail) {
+function rec(outcome, detail, receive) {
   try {
     localStorage.setItem(LAST_KEY, JSON.stringify({
-      outcome, detail: detail ?? null, at: new Date().toISOString(),
+      outcome, detail: detail ?? null, receive: receive ?? null, at: new Date().toISOString(),
     }));
   } catch { /* private mode */ }
   try { console.warn("[push] registration:", outcome, detail ?? ""); } catch { /* ignore */ }
@@ -99,9 +101,14 @@ async function bindTapListener(P, onTap) {
 // ── THE ONE REGISTRATION ROUTINE ────────────────────────────────────────────────────────
 // Diagnose's sequence verbatim, minus the /devices/diag upload (endpoint is gone).
 //
-// Returns { outcome, detail } where outcome is one of:
-//   granted | blocked | no_token | server_rejected | register_failed | unavailable | skipped
-async function registerDeviceToken({ onTap, force = false } = {}) {
+// Returns { outcome, detail, receive } where outcome is one of:
+//   granted | not_granted | no_token | server_rejected | register_failed | unavailable
+// and `receive` is the permission state last read ('granted' | 'prompt' |
+// 'prompt-with-rationale' | 'denied' | null when it could not be read).
+//
+// allowPrompt:false (login) never opens Android's dialog; allowPrompt:true (a user's tap
+// on our card) may. See PERMISSION POLICY at the top of this file.
+async function registerDeviceToken({ onTap, allowPrompt = false } = {}) {
   const steps = [];
   const add = (name, result) => { steps.push({ name, ...result }); return result; };
 
@@ -159,31 +166,36 @@ async function registerDeviceToken({ onTap, force = false } = {}) {
   const chk = add("checkPermissions", await withTimeout(P.checkPermissions(), 8000, "checkPermissions"));
   let receive = chk.ok ? (chk.value && chk.value.receive) : null;
 
-  // 'denied' → the OS will not show the dialog again. Nothing we call can change that;
-  // only System Settings can. Bail before register() so we don't burn 10s for nothing.
-  if (receive === "denied") {
-    trace(steps, "blocked");
-    return { outcome: "blocked", detail: "Android reports notifications DENIED for this app — only phone settings can change it" };
+  // NOT GRANTED and nobody tapped yes → stop here. Never open Android's dialog unasked:
+  // each one is one of the two this install will ever get.
+  if (receive !== "granted" && !allowPrompt) {
+    trace(steps, `not_granted:${receive}`);
+    return { outcome: "not_granted", detail: `permission is '${receive}'`, receive };
   }
 
-  // 4. REQUEST PERMISSIONS. Diagnose called this UNCONDITIONALLY, including when
-  //    permission was already granted, and that is the version that worked — on Android an
-  //    already-granted requestPermissions() returns immediately without showing a dialog,
-  //    so it costs nothing and it keeps this path identical to the proven one. The one
-  //    guard kept is the anti-nag rule: skip the automatic ask if a previous prompt was
-  //    definitively answered and the user did not explicitly press Retry.
-  if (receive !== "granted") {
-    if (readAsked() && !force) { trace(steps, "skipped"); return { outcome: "skipped", detail: "already asked once" }; }
-  }
+  // 4. REQUEST PERMISSIONS.
+  //
+  //    Already granted: Diagnose called this UNCONDITIONALLY and that is the version that
+  //    worked — an already-granted requestPermissions() returns at once with no dialog, so
+  //    it costs nothing and keeps this path identical to the proven one.
+  //
+  //    Not granted: we only get here from a user's tap (allowPrompt). And we DO call it even
+  //    when Capacitor reports 'denied' — DELIBERATELY. That 'denied' is not Android's answer;
+  //    it is Capacitor's own cached GUESS (Bridge.validatePermissions, PluginPermStates):
+  //    whenever a request comes back not-granted and shouldShowRequestPermissionRationale is
+  //    false, it stores DENIED. A swipe-away on the very FIRST dialog fits that exactly
+  //    (no rationale flag yet), although Android would still ask; and allowBackup can
+  //    restore a stale DENIED onto a reinstall. Read from the Capacitor source, not observed
+  //    on a phone. So on a tap we let Android decide: if it really is blocked, no dialog
+  //    appears and the call returns at once — nothing spent; if Capacitor guessed wrong, the
+  //    dialog appears, with the user's consent. Do not "fix" this back into a bail-out.
+  if (receive !== "granted") await noteDialogOpened();
   const req = add("requestPermissions", await withTimeout(P.requestPermissions(), 20000, "requestPermissions"));
   if (req.ok && req.value && req.value.receive) receive = req.value.receive;
 
-  // Mark asked ONLY on a definitive answer. A prompt the user SWIPED AWAY leaves
-  // permission at 'prompt' — neither granted nor denied — and must not burn the ask.
-  if (receive === "granted" || receive === "denied") markAsked();
   if (receive !== "granted") {
     trace(steps, `not_granted:${receive}`);
-    return { outcome: receive === "denied" ? "blocked" : "denied", detail: `permission is '${receive}'` };
+    return { outcome: "not_granted", detail: `permission is '${receive}'`, receive };
   }
 
   // 5. LISTEN, FRESH, IMMEDIATELY BEFORE register(). Not once per app start — every time,
@@ -248,24 +260,51 @@ function trace(steps, outcome) {
   catch { /* ignore */ }
 }
 
-// THE single entry point, called once per authenticated app start (Layout).
+// Every outcome past the permission step implies permission was granted.
+const receiveOf = (r) => r.receive ?? (["granted", "no_token", "register_failed", "server_rejected"].includes(r.outcome) ? "granted" : null);
+
+// Called once per authenticated app start (Layout). SILENT: registers when permission is
+// already granted (refreshing a rotated token), and otherwise does nothing — it never opens
+// Android's dialog. Asking is the card's job (utils/pushAsk.js).
 //
 // Registration does not depend on the user visiting any particular screen: tying it to a
 // route meant a user who never opened that screen never registered.
 export async function ensureRegisteredOnLogin({ onTap } = {}) {
   if (!isNative()) return rec("unavailable", "not a native build");
-  const r = await registerDeviceToken({ onTap });
-  return rec(r.outcome, r.detail);
+  const r = await registerDeviceToken({ onTap, allowPrompt: false });
+  return rec(r.outcome, r.detail, receiveOf(r));
 }
 
-// The Settings Retry button. Same routine — force skips only the anti-nag guard.
+// The ONLY caller allowed to open Android's dialog: a user's tap on "Oui, me prévenir" /
+// "Réessayer" (PushAskCard) or "Activer les alertes" (Settings). Same routine as login.
 //
-// Returns 'granted' | 'blocked' | 'denied' | 'no_token' | 'server_rejected' |
-//         'register_failed' | 'unavailable' | 'skipped'.
-export async function promptIfSensible({ onTap, force = false } = {}) {
+// Returns 'granted' | 'not_granted' | 'no_token' | 'server_rejected' |
+//         'register_failed' | 'unavailable'.
+export async function askAndRegister({ onTap } = {}) {
   if (!isNative()) return rec("unavailable", "not a native build");
-  const r = await registerDeviceToken({ onTap, force });
-  return rec(r.outcome, r.detail);
+  const r = await registerDeviceToken({ onTap, allowPrompt: true });
+  return rec(r.outcome, r.detail, receiveOf(r));
+}
+
+// THIS phone's permission state, read-only: 'granted' | 'prompt' | 'prompt-with-rationale'
+// | 'denied', or null when it cannot be read (web build, plugin failed, timed out). Opens
+// nothing. Same proxy-safe import as registerDeviceToken (captured by closure, only a
+// boolean crosses the promise boundary).
+//
+// ANDROID 12 AND BELOW: the plugin answers 'granted' unconditionally there
+// (PushNotificationsPlugin.checkPermissions, SDK < 33), even if the user switched
+// notifications off — detecting that needs areNotificationsEnabled, i.e. native code.
+export async function readPushPermission() {
+  if (!isNative()) return null;
+  let P = null;
+  const imp = await withTimeout((async () => {
+    const mod = await import("@capacitor/push-notifications");
+    P = mod.PushNotifications;
+    return !!P;
+  })(), 8000, "import");
+  if (!imp.ok || !P) return null;
+  const chk = await withTimeout(P.checkPermissions(), 8000, "checkPermissions");
+  return chk.ok ? (chk.value && chk.value.receive) || null : null;
 }
 
 // TIME-BOXED. This is a plain GET, but api.js gives reads a 20s ceiling AND retries a

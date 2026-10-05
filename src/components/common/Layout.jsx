@@ -15,6 +15,8 @@ import { cacheKeyFor } from "../../utils/offlineQuery";
 import { openWhatsApp } from "../../utils/whatsapp";
 import { nukeClientState, hardRedirectToLogin } from "../../utils/authReset";
 import { ensureRegisteredOnLogin, revokeOnLogout, canUsePush } from "../../utils/push"; // MP-PUSH
+import PushAskHost from "./PushAskCard"; // MP-PUSH-ASK
+import { MOMENT_EVENT, noteAppStart } from "../../utils/pushAsk"; // MP-PUSH-ASK
 import { setLanguage, syncLanguageOnLogin } from "../../utils/setLanguage"; // MP-LANGUAGE-PERSIST
 // MP-SUB-FLOW-MERGE: UpgradeModal retired — both entry points now use the one
 // canonical /request-activation flow (RequestActivationPage). No second checkout
@@ -808,16 +810,13 @@ export default function Layout() {
     syncLanguageOnLogin(user.language || null);
   }, [user?.id, user?.language]);
 
-  // MP-PUSH: registration happens ONCE per authenticated app start, right here.
+  // MP-PUSH: registration happens ONCE per authenticated app start, right here — SILENTLY.
   //
-  // It used to be split — a silent re-register on mount, plus a permission ask gated to
-  // the approvals screens. That meant a user who never opened those screens never
-  // registered, and anyone whose "asked" flag had been set by an earlier build could
-  // never recover, because the buttons that used to force it are gone. Now one call
-  // covers every case: register silently when permission is already granted (which also
-  // refreshes a rotated token and rescues a stale asked-flag), prompt once when it has
-  // never been decided, and do nothing when it has been denied — only Android's own
-  // settings can undo a denial.
+  // It registers when permission is already granted (which also refreshes a rotated token)
+  // and otherwise does nothing. MP-PUSH-ASK: it NEVER opens Android's permission dialog any
+  // more. That dialog appears at most twice per install, and opening it bare while the
+  // dashboard loaded spent those lives on people who had no idea what they were allowing.
+  // Asking is now PushAskHost's job (below), at a moment where the value is obvious.
   useEffect(() => {
     if (!user?.id || !canUsePush()) return;
     const onTap = (data) => {
@@ -832,8 +831,24 @@ export default function Layout() {
       if (data?.type === "expiry" || data?.ref_type === "expiry_digest") navigate("/check-expiry-low");
     };
     ensureRegisteredOnLogin({ onTap });
+    noteAppStart();   // MP-PUSH-ASK: the day-2 fallback's clock (never asks on the first session)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, user?.role]);
+
+  // MP-PUSH-ASK — ask-moments. Each only RAISES the moment; PushAskHost decides (ladder,
+  // role, this phone's state) and shows at most one card per app session.
+  const pushMoment = (moment) => {
+    if (!canUsePush()) return;
+    window.dispatchEvent(new CustomEvent(MOMENT_EVENT, { detail: { moment } }));
+  };
+  useEffect(() => {
+    if (!user?.id) return;
+    const p = location.pathname;
+    if ((p === "/accountant-log" && user.role === "owner") ||
+        (p === "/team-approvals" && ["owner", "manager"].includes(user.role))) pushMoment("approvals");
+    else if (p === "/" && user.role === "owner") pushMoment("dashboard_day2");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, user?.id, user?.role]);
 
   // MP-AUTH-STATE-HYGIENE — FIX 2: user-change tripwire. If the persisted
   // last-user id doesn't match the authenticated user (different person
@@ -879,6 +894,20 @@ export default function Layout() {
 
   const notifications = notifData?.data || [];
   const unread = notifications.filter(n => !n.is_read).length;
+
+  // MP-PUSH-ASK: a staff approval request that ARRIVES in the bell while the app is open is
+  // the moment to offer the lock-screen version. The first load only records what is already
+  // there — an old request is not news.
+  const seenApprovalNotifs = useRef(null);
+  useEffect(() => {
+    if (!notifData) return;
+    const ids = notifications.filter(n => !n.is_read && n.type === "staff_approval_request").map(n => n.id);
+    if (seenApprovalNotifs.current === null) { seenApprovalNotifs.current = new Set(ids); return; }
+    const fresh = ids.some(id => !seenApprovalNotifs.current.has(id));
+    ids.forEach(id => seenApprovalNotifs.current.add(id));
+    if (fresh && ["owner", "manager"].includes(user?.role)) pushMoment("bell_request");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notifData]);
   const role = user?.role || "cashier";
 
   // ── MP-CASHIER-PHASE-1b: the nav gate's inputs ────────────────────────────
@@ -1519,6 +1548,10 @@ export default function Layout() {
         {showOnboarding && user?.id && (
           <OnboardingGuide userId={user.id} lang={lang} onClose={() => setShowOnboarding(false)} />
         )}
+        {/* MP-PUSH-ASK: never on top of the onboarding guide. */}
+        {!showOnboarding && user?.id && (
+          <PushAskHost role={role} lang={lang} hasDigest={hasFeature(effectivePlan, "accountant_log")} />
+        )}
         <NavDrawer
           open={drawerOpen}
           onClose={() => setDrawerOpen(false)}
@@ -1644,6 +1677,10 @@ export default function Layout() {
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
       {showOnboarding && user?.id && (
         <OnboardingGuide userId={user.id} lang={lang} onClose={() => setShowOnboarding(false)} />
+      )}
+      {/* MP-PUSH-ASK: never on top of the onboarding guide. */}
+      {!showOnboarding && user?.id && (
+        <PushAskHost role={role} lang={lang} hasDigest={hasFeature(effectivePlan, "accountant_log")} />
       )}
       {/* MP-CAPACITOR Slice 2: connectivity bar at very top — same
           placement as mobile so the cashier sees the same indicator

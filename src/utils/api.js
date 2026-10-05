@@ -346,6 +346,15 @@ function safeJson(s) { try { return JSON.parse(s); } catch { return {}; } }
 api.interceptors.response.use(res => {
   // MP-PEAK-MTN-RESILIENCE: a request landed → clear any "retrying…" reassurance toast.
   try { toast.dismiss("mp-net-retry"); } catch { /* noop */ }
+  // MP-PUSH-ASK: a staffer's action came back "held for approval" — the moment to offer an
+  // alert when the boss answers. ONE place for every gated surface (same shape
+  // utils/approval.js isPendingApproval detects). Only RAISES the moment; PushAskHost
+  // decides, and does nothing off-device. Event name = pushAsk.MOMENT_EVENT.
+  try {
+    if (res?.data?.pending_approval === true && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("mp-push-moment", { detail: { moment: "request_sent" } }));
+    }
+  } catch { /* noop */ }
   // MP-STALE-TRUST-LOCKOUT: the backend stamps X-MP-Active-Verified on any response where it
   // CONFIRMED the caller is still active (never on a deactivated user or a fail-open blip).
   // Refresh the offline tripwire + pick up the org's current window. This is what makes the
