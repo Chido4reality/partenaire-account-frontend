@@ -82,6 +82,9 @@ check("a failed push names FCM's reason", failed.body.includes("Push FAILED (mes
 const noDev = thread("next_visit", [{ id: "m3", from: "admin", body: "x", created_at: "2026-10-05T10:00:00Z", push: "no_device", read: true, replied: true }]);
 check("no device → 'in the app only'; read + replied shown", noDev.body.includes("No push device — in the app only") && noDev.body.includes("✓ Read") && noDev.body.includes("↩ Replied"));
 check("Lite owner: the header says there is no bell, the badge is how they see it", accepted.head.includes("Lite mode (no bell"));
+const fresh = ctx.msgStatusLine({ from: "admin", push: "pending", created_at: new Date().toISOString() });
+const stale = ctx.msgStatusLine({ from: "admin", push: "pending", created_at: new Date(Date.now() - 10 * 60000).toISOString() });
+check("a push still pending after 2 min says NOTHING WAS RECORDED, not 'pending' forever", fresh.startsWith("Push pending") && stale.startsWith("No push result recorded"), `${fresh} | ${stale}`);
 check("deleted org: composer disabled", thread("cannot_sign_in", []).canSend === false);
 check("no owner: composer disabled", thread("no_owner", []).canSend === false);
 check("push-able owner: composer enabled", accepted.canSend === true);

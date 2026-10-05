@@ -2838,9 +2838,13 @@
       push_off:  'Push not configured on this server',
       pending:   'Push pending…',
     };
-    function msgStatusLine(m) {
+    function msgStatusLine(m, nowMs) {
       if (m.from !== 'admin') return '';
       const parts = [MSG_PUSH[m.push] || m.push];
+      // A push is attempted within seconds. "Pending" that is still pending after 2 minutes
+      // is not pending — nothing was recorded (push off, hook down). Say that, not "pending".
+      if (m.push === 'pending' && (nowMs || Date.now()) - new Date(m.created_at).getTime() > 2 * 60 * 1000)
+        parts[0] = 'No push result recorded (push may not have been attempted)';
       if (m.push === 'failed' && m.push_errors && m.push_errors.length) parts[0] += ' (' + m.push_errors.join(', ') + ')';
       parts.push(m.read ? '✓ Read' : 'Not read yet');
       if (m.replied) parts.push('↩ Replied');
