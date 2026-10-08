@@ -76,6 +76,9 @@ const CHECKS = [
   // deployed and was unreachable, a portal copy two months stale, a label saying
   // "Active" for an account that could do nothing.
   ["fh-portal",     "scripts/fh-portal-check.mjs", "the Family sections are reachable, keep the two identities apart, and both service workers were bumped"],
+  // CHECK EXPIRY/LOW: every role reaches it (route, menu, badge); a role without the value grant sees
+  // product/qty/expiry/days/lot but no money; Lite sees the Pro lock card.
+  ["expiry-access", "scripts/expiry-access-render-check.mjs", "every role reaches Check Expiry/Low; no value without the grant; Lite locked"],
   ["fh-portal-render", "scripts/fh-portal-render-check.mjs", "the Family sections RENDER against the real inline script: no 'Active' on a blocked child, no Approve the server would refuse"],
 ];
 

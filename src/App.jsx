@@ -121,7 +121,9 @@ const ROUTE_ACCESS = {
   // signals, anomalies, debt aging). Owner + manager only.
   "/operations":   ["owner", "manager"],
   "/stock-check":  ["owner", "manager", "warehouse"],
-  "/check-expiry-low": ["owner", "manager", "warehouse"], // EXPIRY-TRACKING
+  // EXPIRY-TRACKING — every role (2026-10-08); Pro+ only via track_expiry. VALUE is the
+  // server's call: owner, or a manager granted can_view_compare (routes/expiry.js).
+  "/check-expiry-low": ["owner", "manager", "cashier", "warehouse", "accountant"],
   // MP-GOODS-BUFFER: every staff role can pre-register arrived goods (pricing/release
   // is gated inside the RPCs by pa_staff_permissions.buffer_access, not by route).
   "/goods-buffer": ["owner", "manager", "cashier", "warehouse", "accountant"],

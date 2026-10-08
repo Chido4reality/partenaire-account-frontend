@@ -2256,11 +2256,11 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                         default (NOT NULL DEFAULT false); only ever honoured for a
                         manager (compareAuthority). */}
                     {staff.role === "manager" && (<>
-                    <div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 12, marginBottom: 5 }}>{en ? "Compare screen:" : "Écran Comparer :"}</div>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 12, marginBottom: 5 }}>{en ? "Compare screen & stock values:" : "Écran Comparer et valeurs du stock :"}</div>
                     <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>
                       {[
                         { val: false, en: "No", fr: "Non" },
-                        { val: true,  en: "Can open Compare", fr: "Peut ouvrir Comparer" },
+                        { val: true,  en: "Can open Compare + see values", fr: "Comparer + voir les valeurs" },
                       ].map((o) => (
                         <button key={String(o.val)} onClick={() => setPerms((p) => ({ ...(p || {}), can_view_compare: o.val }))}
                           style={{ flex: 1, padding: "7px 4px", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
@@ -2271,8 +2271,8 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                       ))}
                     </div>
                     <div style={{ fontSize: 10.5, color: "var(--text-muted)", marginTop: 4 }}>
-                      {en ? "Month-to-month and shop-to-shop figures, including capital (stock at cost)."
-                          : "Chiffres mois contre mois et boutique contre boutique, capital compris (stock au coût)."}
+                      {en ? "Month-to-month and shop-to-shop figures, including capital (stock at cost) — and the stock Value (at cost) on Check Expiry/Low."
+                          : "Chiffres mois contre mois et boutique contre boutique, capital compris (stock au coût) — et la Valeur du stock (au coût) dans Vérif. Expiration/Stock bas."}
                     </div>
                     </>)}
                     <button className="btn btn-secondary" style={{ width: "100%", marginTop: 10 }}

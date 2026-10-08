@@ -69,7 +69,10 @@ export default function CheckExpiryLowPage() {
   // MP-LOCATIONS-CACHE-FIX: shared ["locations"] key, same queryFn shape as every consumer.
   const locsQ = useQuery({ queryKey: ["locations"], queryFn: () => api.get("/locations").then(r => r.data), enabled: canExpiry });
   const allLocations = Array.isArray(locsQ.data?.data) ? locsQ.data.data : [];
-  const seesValue = expiring.some(r => r.est_value !== null) || canWriteOff;
+  // VALUE is the SERVER's decision (2026-10-08): owner, or a manager granted
+  // can_view_compare. It used to be inferred here from the role (canWriteOff), which
+  // showed an empty Value column to a manager the server gave no figures to.
+  const seesValue = q.data?.sees_value === true;
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["expiry-check"] });

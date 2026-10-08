@@ -92,7 +92,7 @@ const NAV = [
   // + per-location low stock, one screen. Pro and above (feature "track_expiry"); a
   // locked entry links to PRO. Red badge = expiry_low. Also in NavDrawer.jsx SECTIONS
   // (mobile) + App.jsx routes (the old /expiry route redirects here).
-  { to: "/check-expiry-low", en: "Check Expiry/Low", fr: "Vérif. Expiration/Stock bas", icon: "⏳", roles: ["owner","manager","warehouse"], section: "inventory", feature: "track_expiry", lockPlan: "pro", badge: "expiry_low" },
+  { to: "/check-expiry-low", en: "Check Expiry/Low", fr: "Vérif. Expiration/Stock bas", icon: "⏳", roles: ["owner","manager","cashier","warehouse","accountant"], section: "inventory", feature: "track_expiry", lockPlan: "pro", badge: "expiry_low" },
   // MP-RESTOCK — order more stock from a supplier (boss tool). section:"restock" is
   // only granted by pro/pro_plus (sections:'*'); lite/trial floors omit it → Pro/Pro
   // Plus-only. owner + manager (cashiers excluded). Server also gates (requirePro +
@@ -1153,7 +1153,8 @@ export default function Layout() {
     queryKey: ["expiry-low-badge"],
     queryFn: () => api.get("/expiry/badge").then(r => r.data),
     refetchInterval: 60000,
-    enabled: hasFeature(effectivePlan, "track_expiry") && ["owner", "manager", "warehouse"].includes(role),
+    // 2026-10-08: every role sees this screen, so every role gets its count (plan-gated).
+    enabled: hasFeature(effectivePlan, "track_expiry"),
     retry: 1,
     onError: () => {}
   });

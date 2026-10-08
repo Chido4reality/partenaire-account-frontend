@@ -68,13 +68,13 @@ function CompareAccessToggle({ userId, lang }) {
       <label style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 600, cursor: granted === null ? "default" : "pointer" }}>
         <input type="checkbox" checked={granted === true} disabled={granted === null || busy}
                onChange={(e) => set(e.target.checked)} />
-        {en ? "Can open Compare" : "Peut ouvrir Comparer"}
+        {en ? "Can open Compare and see stock values" : "Peut ouvrir Comparer et voir les valeurs du stock"}
       </label>
       <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
         {granted === null
           ? (en ? "Could not read this setting." : "Réglage illisible pour le moment.")
-          : (en ? "Month-to-month and shop-to-shop figures, including capital. Off unless you turn it on."
-                : "Chiffres mois contre mois et boutique contre boutique, capital compris. Désactivé sauf si vous l'activez.")}
+          : (en ? "Month-to-month and shop-to-shop figures, including capital — and the stock Value (at cost) on Check Expiry/Low. Off unless you turn it on."
+                : "Chiffres mois contre mois et boutique contre boutique, capital compris — et la Valeur du stock (au coût) dans Vérif. Expiration/Stock bas. Désactivé sauf si vous l'activez.")}
       </div>
     </div>
   );
