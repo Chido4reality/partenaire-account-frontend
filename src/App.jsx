@@ -46,6 +46,7 @@ import TeamApprovalsPage from "./pages/TeamApprovalsPage"; // MP-MANAGER-DELEGAT
 import FiltersPage from "./pages/FiltersPage"; // MP-FILTERS — what/who/when clarity screen
 import HelpPage from "./pages/HelpPage"; // MP-HELP v1 — bundled offline in-app guide
 import MessagesPage from "./pages/MessagesPage"; // SUPPORT MESSAGING (Phase A) — owner ↔ Équipe Stenamo
+import { scrubCachedCost, shouldScrubCost } from "./utils/costCacheScrub"; // WHO SEES COST
 
 // MP-INVALIDATE-AFTER-SALE: refetch stale data when the user returns to
 // the tab/app or reconnects (e.g. after making a sale on another device
@@ -370,6 +371,13 @@ async function consumeImpersonateToken() {
 
 export default function App() {
   const { setOnline } = useOfflineStore();
+  // WHO SEES COST (2026-10-08): at app start and after every sign-in (the user id/role
+  // changing), rewrite this device's cached product data and draft cart without any
+  // cost — a phone that cached cost before the server stopped sending it keeps none.
+  const sessionUser = useAuthStore(s => s.user);
+  useEffect(() => {
+    if (shouldScrubCost(sessionUser)) scrubCachedCost();
+  }, [sessionUser?.id, sessionUser?.role]);
   // MP-IMPERSONATION (Bug #3): when an ?impersonate token is present, hold the
   // router until the async token-exchange resolves — otherwise the auth Guard
   // renders first, sees no session, and redirects to /login before the

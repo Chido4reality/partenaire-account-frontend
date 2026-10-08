@@ -82,6 +82,8 @@ const CHECKS = [
   // WHO SEES COST: when the server withholds a floor that IS the cost, the below-cost popup says
   // "below the minimum price" with no amounts — never "0".
   ["below-cost-floor", "scripts/below-cost-floor-render-check.mjs", "withheld cost-floor renders without amounts; a real floor is unchanged"],
+  // WHO SEES COST: at app start / sign-in, a non-owner device keeps no cached cost (POS cache, cart, reports).
+  ["cost-cache-scrub", "scripts/cost-cache-scrub-check.mjs", "cached cost is scrubbed from the device for everyone but the owner"],
   ["fh-portal-render", "scripts/fh-portal-render-check.mjs", "the Family sections RENDER against the real inline script: no 'Active' on a blocked child, no Approve the server would refuse"],
 ];
 

@@ -321,7 +321,9 @@ export default function FiltersPage() {
                   <option value="voided">{en ? "Voided" : "Annulé"}</option>
                 </select>
                 <Toggle label={en ? "Damaged only" : "Endommagé seulement"} checked={damagedOnly} onChange={setDamagedOnly} />
-                <Toggle label={en ? "Below-cost only" : "Sous le coût seulement"} checked={belowCostOnly} onChange={setBelowCostOnly} />
+                {/* WHO SEES COST: below-cost compares against cost — the server ignores it for anyone
+                    but the owner or a granted manager, so it is only offered to owner/manager. */}
+                {["owner", "manager"].includes(user?.role) && <Toggle label={en ? "Below-cost only" : "Sous le coût seulement"} checked={belowCostOnly} onChange={setBelowCostOnly} />}
                 <Toggle label={en ? "Discounted only" : "Remisé seulement"} checked={discountedOnly} onChange={setDiscountedOnly} />
                 <Toggle label={en ? "Needed approval only" : "A nécessité approbation"} checked={needApprovalOnly} onChange={setNeedApprovalOnly} />
                 <Toggle label={en ? "Has sold-date note" : "A une note de date de vente"} checked={soldDateNoteOnly} onChange={setSoldDateNoteOnly} />
