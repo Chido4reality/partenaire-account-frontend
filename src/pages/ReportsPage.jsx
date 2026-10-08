@@ -323,6 +323,8 @@ export default function ReportsPage() {
     .sort((a, b) => b.total - a.total);
   const dailyProductsTotal = dailyProducts.reduce((s, p) => s + p.total, 0);
 
+  // The server sends gross/net profit only to someone who may see cost.
+  const seesProfit = daily.some((d) => d && d.gross_profit !== undefined);
   const totals = daily.reduce((acc, d) => ({
     gross_sales:       acc.gross_sales       + (+d.gross_sales || 0),
     cash_collected:    acc.cash_collected    + (+d.cash_collected || 0),
@@ -543,9 +545,11 @@ export default function ReportsPage() {
             {[
               { label: lang === "en" ? "Total sales" : "Ventes totales", value: fmt(totals.gross_sales), sub: totals.sale_count + " transactions", color: "var(--brand-light)" },
               { label: lang === "en" ? "Cash collected" : "Espèces encaissées", value: fmt(totals.cash_collected), color: "#34d399" },
-              { label: lang === "en" ? "Gross profit" : "Bénéfice brut", value: fmt(totals.gross_profit), sub: avgMargin + "% avg", color: "#34d399" },
+              // WHO SEES COST (2026-10-08): profit is cost-derived; the server omits it for a
+              // cashier or an ungranted manager — no card rather than a false "0".
+              seesProfit && { label: lang === "en" ? "Gross profit" : "Bénéfice brut", value: fmt(totals.gross_profit), sub: avgMargin + "% avg", color: "#34d399" },
               { label: lang === "en" ? "Expenses" : "Dépenses", value: fmt(totals.total_expenditure), color: "#f87171" },
-              { label: lang === "en" ? "Net profit" : "Bénéfice net", value: fmt(totals.net_profit), color: totals.net_profit >= 0 ? "#34d399" : "#f87171" },
+              seesProfit && { label: lang === "en" ? "Net profit" : "Bénéfice net", value: fmt(totals.net_profit), color: totals.net_profit >= 0 ? "#34d399" : "#f87171" },
               { label: lang === "en" ? "Credit given today" : "Crédit accordé (jour)", value: fmt(totals.credit_given), color: "#fbbf24",
                 // MP-CREDIT-DRILLDOWN: tap → the credit sales behind the total, for this range/location.
                 onClick: Number(totals.credit_given) > 0 ? () => setCreditScope({
@@ -553,7 +557,7 @@ export default function ReportsPage() {
                   subtitle: `${from}${from !== to ? ` → ${to}` : ""}`,
                   from, to, location_id: repLoc || undefined,
                 }) : undefined },
-            ].map(card => (
+            ].filter(Boolean).map(card => (
               <div key={card.label} className="stat-card"
                 onClick={card.onClick}
                 style={card.onClick ? { cursor: "pointer" } : undefined}

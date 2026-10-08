@@ -468,7 +468,7 @@ function FactResults({ data, en, fmt, onOpenTransaction, hasAnyDim }) {
           ) : group.map((g, i) => (
             <div key={g.key} style={{ display: "flex", justifyContent: "space-between", padding: "6px 4px", borderBottom: "1px solid var(--border)" }}>
               <span style={{ fontSize: 13 }}><strong>#{i + 1}</strong> {g.label}</span>
-              <span style={{ fontSize: 13, fontWeight: 700 }}>{fmt(g.total)} · {g.count} {en ? "rows" : "lignes"}</span>
+              <span style={{ fontSize: 13, fontWeight: 700 }}>{g.total === null ? "—" : fmt(g.total)} · {g.count} {en ? "rows" : "lignes"}</span>
             </div>
           ))}
         </div>
@@ -477,7 +477,7 @@ function FactResults({ data, en, fmt, onOpenTransaction, hasAnyDim }) {
         <div key={f} style={card}>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 20, marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid var(--border)" }}>
             <Stat label={`${en ? "Rows" : "Lignes"} (${f})`} value={summary[f]?.count ?? 0} />
-            <Stat label={en ? "Total value" : "Valeur totale"} value={fmt(summary[f]?.total || 0)} />
+            <Stat label={en ? "Total value" : "Valeur totale"} value={summary[f]?.total === null ? "—" : fmt(summary[f]?.total || 0)} />
           </div>
           {(results[f] || []).length === 0 ? (
             <div style={{ textAlign: "center", padding: 16, color: "var(--text-muted)", fontSize: 12.5 }}>{en ? "No rows for this filter." : "Aucune ligne pour ce filtre."}</div>
@@ -529,7 +529,7 @@ function FactRow({ row, fact, en, fmt, onOpenTransaction }) {
         )}
       </div>
       {/* BLIND COUNT: a dispatch movement awaiting this person's count arrives without quantity or amount. */}
-      <div style={{ fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }}>{row.quantity_hidden ? "—" : fmt(row.amount)}</div>
+      <div style={{ fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }}>{row.quantity_hidden || row.amount === null ? "—" : fmt(row.amount)}</div>
     </div>
   );
 }
@@ -589,8 +589,9 @@ function TransactionView({ txQuery, en, fmt, onClose }) {
           <div style={{ borderTop: "1px solid var(--border)", paddingTop: 8, display: "flex", flexWrap: "wrap", gap: 20 }}>
             <Row label={en ? "Discount" : "Remise"} value={fmt(d.discount_amount)} />
             <Row label={en ? "Revenue" : "Revenu"} value={fmt(d.revenue)} />
-            <Row label={en ? "Cost" : "Coût"} value={fmt(d.cost)} />
-            <Row label={en ? "Profit" : "Profit"} value={fmt(d.profit)} />
+            {/* WHO SEES COST: the server sends cost/profit as null to someone who may not see cost. */}
+            {d.cost != null && <Row label={en ? "Cost" : "Coût"} value={fmt(d.cost)} />}
+            {d.profit != null && <Row label={en ? "Profit" : "Profit"} value={fmt(d.profit)} />}
           </div>
 
           {d.inventory_deduction.length > 0 && (

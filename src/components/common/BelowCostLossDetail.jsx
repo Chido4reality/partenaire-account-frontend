@@ -15,10 +15,15 @@ export default function BelowCostLossDetail({ payload, shortfall, en, fmt, cashi
   const belowCost = Array.isArray(p.below_cost) ? p.below_cost : [];
   const who = String(cashier || "").trim() || (en ? "A cashier" : "Un caissier");
 
+  // WHO SEES COST (2026-10-08): when the floor IS the cost (no min_price set), the
+  // server sends no floor to someone who may not see cost (min_price: null). Then
+  // there is no honest figure to show — say "below the minimum", no amounts.
+  const floorKnown = (l) => l.shortfall != null || l.floor != null || l.min_price != null;
   const lineLoss = (l) => Number(l.shortfall)
     || Math.max(0, (Number(l.floor != null ? l.floor : l.min_price) || 0) - (Number(l.unit_price) || 0)) * (Number(l.qty) || 0);
+  const allKnown = belowCost.every(floorKnown);
   const totalLoss = belowCost.length
-    ? belowCost.reduce((s, l) => s + lineLoss(l), 0)
+    ? belowCost.reduce((s, l) => s + (floorKnown(l) ? lineLoss(l) : 0), 0)
     : (Number(shortfall != null ? shortfall : p.shortfall) || 0);
 
   return (
@@ -27,6 +32,13 @@ export default function BelowCostLossDetail({ payload, shortfall, en, fmt, cashi
         const item = String(l.name || "").trim() || (en ? "this item" : "cet article");
         const unit = Number(l.unit_price) || 0;
         const floor = Number(l.floor != null ? l.floor : l.min_price) || 0;
+        if (!floorKnown(l)) return (
+          <div key={idx} style={{ marginBottom: 5 }}>
+            {en
+              ? `${who} wants to sell ${item} for ${fmt(unit)} — below the minimum price.`
+              : `${who} veut vendre ${item} à ${fmt(unit)} — en dessous du prix minimum.`}
+          </div>
+        );
         return (
           <div key={idx} style={{ marginBottom: 5 }}>
             {en
@@ -35,9 +47,11 @@ export default function BelowCostLossDetail({ payload, shortfall, en, fmt, cashi
           </div>
         );
       })}
-      <div style={{ fontWeight: 700, color: "#fca5a5" }}>
-        {en ? `Total loss: ${fmt(totalLoss)}` : `Perte totale : ${fmt(totalLoss)}`}
-      </div>
+      {allKnown && (
+        <div style={{ fontWeight: 700, color: "#fca5a5" }}>
+          {en ? `Total loss: ${fmt(totalLoss)}` : `Perte totale : ${fmt(totalLoss)}`}
+        </div>
+      )}
     </div>
   );
 }

@@ -1290,9 +1290,12 @@ export default function POSPage() {
     if (!bundle) return;
     const who = String(user?.full_name || "").trim() || (lang === "en" ? "A cashier" : "Un caissier");
     const parts = (bundle.actions || []).map(a => {
-      if (a.type === "below_cost") return lang === "en"
-        ? `sell "${a.name}" for ${fmt(a.attempted_price)} (below the ${fmt(a.min_price)} floor)`
-        : `vendre "${a.name}" à ${fmt(a.attempted_price)} (sous le plancher de ${fmt(a.min_price)})`;
+      // min_price is null when the floor is the cost and this user may not see cost.
+      if (a.type === "below_cost") return a.min_price == null
+        ? (lang === "en" ? `sell "${a.name}" for ${fmt(a.attempted_price)} (below the minimum price)`
+                         : `vendre "${a.name}" à ${fmt(a.attempted_price)} (sous le prix minimum)`)
+        : (lang === "en" ? `sell "${a.name}" for ${fmt(a.attempted_price)} (below the ${fmt(a.min_price)} floor)`
+                         : `vendre "${a.name}" à ${fmt(a.attempted_price)} (sous le plancher de ${fmt(a.min_price)})`);
       if (a.type === "discount") return lang === "en"
         ? `give a total discount of ${fmt(a.total_discount)}` : `accorder une remise totale de ${fmt(a.total_discount)}`;
       if (a.type === "credit") return lang === "en"

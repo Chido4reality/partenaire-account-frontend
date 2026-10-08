@@ -79,6 +79,9 @@ const CHECKS = [
   // CHECK EXPIRY/LOW: every role reaches it (route, menu, badge); a role without the value grant sees
   // product/qty/expiry/days/lot but no money; Lite sees the Pro lock card.
   ["expiry-access", "scripts/expiry-access-render-check.mjs", "every role reaches Check Expiry/Low; no value without the grant; Lite locked"],
+  // WHO SEES COST: when the server withholds a floor that IS the cost, the below-cost popup says
+  // "below the minimum price" with no amounts — never "0".
+  ["below-cost-floor", "scripts/below-cost-floor-render-check.mjs", "withheld cost-floor renders without amounts; a real floor is unchanged"],
   ["fh-portal-render", "scripts/fh-portal-render-check.mjs", "the Family sections RENDER against the real inline script: no 'Active' on a blocked child, no Approve the server would refuse"],
 ];
 
