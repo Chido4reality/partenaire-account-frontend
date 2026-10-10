@@ -53,8 +53,7 @@ export default function TeamApprovalsPage() {
   const [note, setNote] = useState("");
   const [holdMode, setHoldMode] = useState(null); // receive-mismatch gate
   const [holdPin, setHoldPin] = useState("");
-  const [sfChoice, setSfChoice] = useState(null); // variance outcomes: the shortfall answer
-  const [sfNote, setSfNote] = useState("");
+  const [sfAnswers, setSfAnswers] = useState({}); // variance outcomes: one answer per short line
   const hold = useHoldShortfall(pinFor);
 
   const { data: resp, isLoading, isError } = useQuery({
@@ -64,7 +63,7 @@ export default function TeamApprovalsPage() {
   });
   const rows = resp?.data || [];
 
-  const closePin = () => { setPinFor(null); setPin(""); setSfChoice(null); setSfNote(""); };
+  const closePin = () => { setPinFor(null); setPin(""); setSfAnswers({}); };
   const closeReject = () => { setRejectFor(null); setNote(""); setHoldMode(null); setHoldPin(""); };
 
   const approveMut = useMutation({
@@ -177,7 +176,7 @@ export default function TeamApprovalsPage() {
               style={{ width: "100%", marginBottom: 14, textAlign: "center", letterSpacing: 4, fontSize: 18 }} />
             {pinFor.action_type === HOLD_ACTION && (
               <div style={{ marginBottom: 14, maxHeight: "45vh", overflowY: "auto" }}>
-                <HoldShortfallFields en={en} hold={hold} choice={sfChoice} setChoice={setSfChoice} note={sfNote} setNote={setSfNote} />
+                <HoldShortfallFields en={en} hold={hold} answers={sfAnswers} setAnswers={setSfAnswers} />
               </div>
             )}
             <div style={{ display: "flex", gap: 8 }}>
@@ -186,9 +185,9 @@ export default function TeamApprovalsPage() {
               </button>
               <button className="btn btn-primary" style={{ flex: 2 }}
                 disabled={approveMut.isPending || !/^\d{4,6}$/.test(pin)
-                  || (pinFor.action_type === HOLD_ACTION && !holdShortfallReady(hold, sfChoice, sfNote))}
+                  || (pinFor.action_type === HOLD_ACTION && !holdShortfallReady(hold, sfAnswers))}
                 onClick={() => approveMut.mutate({ id: pinFor.id, pin,
-                  extra: pinFor.action_type === HOLD_ACTION ? holdShortfallBody(hold, sfChoice, sfNote) : {} })}>
+                  extra: pinFor.action_type === HOLD_ACTION ? holdShortfallBody(hold, sfAnswers) : {} })}>
                 {approveMut.isPending ? "..." : (en ? "Approve" : "Approuver")}
               </button>
             </div>

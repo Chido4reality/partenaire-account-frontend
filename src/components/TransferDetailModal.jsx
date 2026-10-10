@@ -5,14 +5,14 @@ import api from "../utils/api";
 import { useLangStore, useAuthStore } from "../store";
 import { transferCountLabel } from "../utils/transferCount"; // MP-APPROVAL-FULL-DETAIL
 import { useMyPermissions } from "../utils/useMyPermissions";
-import { allowedOutcomes, outcomeByKey, outcomeNoteRequired } from "../utils/transferVarianceOutcomes";
-import OptionCard from "./common/OptionCard";
+import { allowedOutcomes } from "../utils/transferVarianceOutcomes";
+import ShortfallLinesPicker, { LATER, shortfallMissing, shortfallLinesBody } from "./common/ShortfallLinesPicker";
 
-// ── MP-TRANSFER-VARIANCE-CLOSE (F4) + VARIANCE OUTCOMES (2026-10-10) ────────
-// What happened to the missing pieces — the shared list in
-// utils/transferVarianceOutcomes. NO default: the old list preselected "arrived
-// later", so one tap on Close credited sellable stock that never existed
-// (TRF-20261009-0001, where the owner meant Damaged).
+// ── MP-TRANSFER-VARIANCE-CLOSE (F4) + VARIANCE OUTCOMES (2026-10-10, per line 2026-10-11)
+// What happened to the missing pieces — ONE answer per short line (the shared
+// ShortfallLinesPicker). NO default: the old list preselected "arrived later", so one
+// tap on Close credited sellable stock that never existed (TRF-20261009-0001, where
+// the owner meant Damaged).
 
 // MP-STAFF-ACTIVITY-LEDGER Phase 3: the full plain-language transfer chain, reachable from
 // the Transfers list, the Activity Ledger, and search (?tr=<id>). Shop-timezone times.
@@ -37,23 +37,18 @@ function Step({ icon, label, who, when }) {
   );
 }
 
-// initialReason: ONLY an answer the owner already gave elsewhere — the stock-check
-// mismatch's "Where did they go?" — carried through the hand-off so it is not lost.
-// It is shown as such and still needs the Close tap; it is never a default.
-export default function TransferDetailModal({ transferId, onClose, initialReason = null }) {
+// initialReason / initialProduct: ONLY an answer the owner already gave elsewhere — the
+// stock-check mismatch's "Where did they go?" for that product — carried through the
+// hand-off so it is not lost. It fills that one line and still needs the Close tap;
+// it is never a default.
+export default function TransferDetailModal({ transferId, onClose, initialReason = null, initialProduct = null }) {
   const { lang } = useLangStore();
   const en = lang === "en";
   const qc = useQueryClient();
   const role = useAuthStore((s) => s.user?.role);
-  const isOwner = role === "owner";
   const { perms: myPerms } = useMyPermissions({ enabled: role === "manager" });
-  const options = allowedOutcomes({ isOwner, canCancelTransfers: role === "manager" && !!myPerms?.can_cancel_transfers });
-  const carried = initialReason && options.some((o) => o.key === initialReason) ? initialReason : null;
-  const [reason, setReason] = useState(carried);
-  // A manager's grant arrives after the first render — apply the carried answer then.
-  useEffect(() => { if (carried && !reason) setReason(carried); }, [carried]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [note, setNote] = useState("");
-  const noteMissing = outcomeNoteRequired(reason) && !note.trim();
+  const options = allowedOutcomes({ isOwner: role === "owner", canCancelTransfers: role === "manager" && !!myPerms?.can_cancel_transfers });
+  const [answers, setAnswers] = useState({});
 
   const { data: resp, isLoading, isError } = useQuery({
     queryKey: ["transfer-detail", transferId],
@@ -67,15 +62,35 @@ export default function TransferDetailModal({ transferId, onClose, initialReason
   const outstanding = t?.variance_lines || [];
   const nameFor = (pid) => items.find((i) => i.product_id === pid)?.pa_products?.name || (en ? "Item" : "Article");
   const totalOutstanding = outstanding.reduce((s, l) => s + Number(l.outstanding || 0), 0);
+  // One picker line per PRODUCT (the server keys answers by product).
+  const shortLines = Object.values(outstanding.reduce((acc, l) => {
+    const pid = String(l.product_id);
+    acc[pid] = { product_id: pid, name: nameFor(l.product_id), missing: (acc[pid]?.missing || 0) + Number(l.outstanding || 0) };
+    return acc;
+  }, {}));
+  const missingAnswers = shortfallMissing(shortLines, answers);
+  const allLater = shortLines.length > 0 && shortLines.every((l) => answers[l.product_id]?.reason === LATER);
+
+  // The carried stock-check answer fills its own line, once the line and (for a
+  // manager) the grant are known.
+  const carriedOk = initialReason && initialProduct && options.some((o) => o.key === initialReason)
+    && shortLines.some((l) => l.product_id === String(initialProduct));
+  useEffect(() => {
+    if (carriedOk && !answers[String(initialProduct)])
+      setAnswers((a) => ({ ...a, [String(initialProduct)]: { reason: initialReason, note: "" } }));
+  }, [carriedOk]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const resolveMut = useMutation({
-    mutationFn: () => api.post(`/transfers/${transferId}/resolve-variance`, { reason, note: note.trim() || null }).then((r) => r.data),
+    mutationFn: () => api.post(`/transfers/${transferId}/resolve-variance`, { lines: shortfallLinesBody(shortLines, answers) }).then((r) => r.data),
     onSuccess: (res) => {
+      const parts = [];
+      if (res.piled) parts.push(en ? `${res.piled} to the Damaged pile` : `${res.piled} en pile Endommagés`);
+      if (res.written_off) parts.push(en ? `${res.written_off} written off` : `${res.written_off} passées en perte`);
+      if (res.credited) parts.push(en ? `${res.credited} added to ${t?.to_name || "the destination"}` : `${res.credited} ajoutées à ${t?.to_name || "la destination"}`);
+      if (res.returned) parts.push(en ? `${res.returned} returned to ${t?.from_name || "the source"}` : `${res.returned} renvoyées à ${t?.from_name || "la source"}`);
       toast.success(res.already ? (en ? "Already closed" : "Déjà clos")
-        : res.credited ? (en ? `Variance closed — ${res.credited} added to ${t?.to_name || "the destination"}` : `Écart clos — ${res.credited} ajoutées à ${t?.to_name || "la destination"}`)
-        : res.returned ? (en ? `Variance closed — ${res.returned} returned to ${t?.from_name || "the source"}` : `Écart clos — ${res.returned} renvoyées à ${t?.from_name || "la source"}`)
-        : res.piled ? (en ? `Variance closed — ${res.piled} in the Damaged pile` : `Écart clos — ${res.piled} dans la pile Endommagés`)
-        : (en ? `Variance closed — ${res.written_off || 0} written off` : `Écart clos — ${res.written_off || 0} passées en perte`));
+        : `${res.variance_closed ? (en ? "Variance closed" : "Écart clos") : (en ? `${res.later} line(s) left open` : `${res.later} ligne(s) laissée(s) ouverte(s)`)}${parts.length ? " — " + parts.join(", ") : ""}`);
+      setAnswers({});
       qc.invalidateQueries({ queryKey: ["transfer-detail", transferId] });
       qc.invalidateQueries({ queryKey: ["transfers"] });
       qc.invalidateQueries({ queryKey: ["stock-checks"] });
@@ -158,30 +173,22 @@ export default function TransferDetailModal({ transferId, onClose, initialReason
                   </div>
                 ) : (
                   <>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", margin: "10px 0 6px" }}>
-                      {en ? "What happened to them? Choose one." : "Que leur est-il arrivé ? Choisissez."}
+                    <div style={{ marginTop: 10 }}>
+                      <ShortfallLinesPicker en={en} lines={shortLines} options={options} answers={answers}
+                        setAnswers={setAnswers} allowLater sourceName={t.from_name} disabled={resolveMut.isPending} />
                     </div>
-                    {carried && reason === carried && (
-                      <div style={{ fontSize: 11.5, color: "var(--text-secondary)", marginBottom: 6, lineHeight: 1.45 }}>
-                        {en ? `You chose “${outcomeByKey(carried).en}” on the stock check. Check it, then close.`
-                            : `Vous avez choisi « ${outcomeByKey(carried).fr} » sur la vérification. Vérifiez, puis clôturez.`}
+                    {carriedOk && answers[String(initialProduct)]?.reason === initialReason && (
+                      <div style={{ fontSize: 11.5, color: "var(--text-secondary)", marginTop: 6, lineHeight: 1.45 }}>
+                        {en ? `${nameFor(initialProduct)}: filled in from your answer on the stock check. Check it, then close.`
+                            : `${nameFor(initialProduct)} : rempli depuis votre réponse sur la vérification. Vérifiez, puis clôturez.`}
                       </div>
                     )}
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      {options.map((r) => (
-                        <OptionCard key={r.key} testId={`variance-outcome-${r.key}`} selected={reason === r.key}
-                          onClick={() => setReason(r.key)} disabled={resolveMut.isPending}
-                          title={en ? r.en : r.fr} hint={en ? r.hintEn : r.hintFr} />
-                      ))}
-                    </div>
-                    <input className="input" value={note} onChange={(e) => setNote(e.target.value)}
-                      placeholder={outcomeNoteRequired(reason) ? (en ? "Note (required)" : "Note (obligatoire)") : (en ? "Note (optional)" : "Note (facultative)")}
-                      style={{ marginTop: 8 }} />
-                    <button className="btn btn-primary" style={{ width: "100%", marginTop: 8, fontWeight: 700 }}
-                      disabled={resolveMut.isPending || !reason || noteMissing} onClick={() => resolveMut.mutate()}>
+                    <button className="btn btn-primary" style={{ width: "100%", marginTop: 10, fontWeight: 700 }}
+                      disabled={resolveMut.isPending || missingAnswers.length > 0 || allLater} onClick={() => resolveMut.mutate()}>
                       {resolveMut.isPending ? "…"
-                        : !reason ? (en ? "Choose what happened first" : "Choisissez d'abord ce qui s'est passé")
-                        : (en ? `Close this variance — ${outcomeByKey(reason).en}` : `Clore cet écart — ${outcomeByKey(reason).fr}`)}
+                        : missingAnswers.length ? (en ? `Choose for ${missingAnswers.length} more line(s)` : `Choisissez pour ${missingAnswers.length} ligne(s) de plus`)
+                        : allLater ? (en ? "Every line is “Decide later”" : "Toutes les lignes : « Décider plus tard »")
+                        : (en ? "Close these lines" : "Clore ces lignes")}
                     </button>
                   </>
                 )}

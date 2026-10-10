@@ -253,10 +253,9 @@ export default function AccountantLogPage() {
   const [holdMode, setHoldMode] = useState(null);
   const [holdPin, setHoldPin] = useState("");
   // VARIANCE OUTCOMES: what happened to a held receipt's shortfall, chosen at approval.
-  const [sfChoice, setSfChoice] = useState(null);
-  const [sfNote, setSfNote] = useState("");
+  const [sfAnswers, setSfAnswers] = useState({}); // variance outcomes: one answer per short line
   const hold = useHoldShortfall(pinFor);
-  useEffect(() => { setSfChoice(null); setSfNote(""); }, [pinFor && pinFor.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setSfAnswers({}); }, [pinFor && pinFor.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [cancelFor, setCancelFor] = useState(null); // approval row being cancelled (confirm)
 
   const APPROVAL_VERB = {
@@ -779,7 +778,7 @@ export default function AccountantLogPage() {
             <div style={{ marginBottom: 14 }}>
               <ApprovalDetailView approval={pinFor} defaultOpen />
               {pinFor.action_type === HOLD_ACTION && (
-                <HoldShortfallFields en={en} hold={hold} choice={sfChoice} setChoice={setSfChoice} note={sfNote} setNote={setSfNote} />
+                <HoldShortfallFields en={en} hold={hold} answers={sfAnswers} setAnswers={setSfAnswers} />
               )}
             </div>
             <div className="form-group"><label className="label">{en ? "Enter your PIN to approve" : "Entrez votre code PIN pour approuver"}</label>
@@ -791,9 +790,9 @@ export default function AccountantLogPage() {
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setPinFor(null)}>{en ? "Cancel" : "Annuler"}</button>
               <button className="btn btn-primary" style={{ flex: 2 }}
                 disabled={pinValue.length < 4 || approveMut.isPending
-                  || (pinFor.action_type === HOLD_ACTION && !holdShortfallReady(hold, sfChoice, sfNote))}
+                  || (pinFor.action_type === HOLD_ACTION && !holdShortfallReady(hold, sfAnswers))}
                 onClick={() => approveMut.mutate({ id: pinFor.id, pin: pinValue,
-                  extra: pinFor.action_type === HOLD_ACTION ? holdShortfallBody(hold, sfChoice, sfNote) : {} })}>
+                  extra: pinFor.action_type === HOLD_ACTION ? holdShortfallBody(hold, sfAnswers) : {} })}>
                 {approveMut.isPending ? "..." : (en ? "Approve & do it" : "Approuver et exécuter")}
               </button>
             </div>

@@ -41,10 +41,11 @@ export default function TransfersPage() {
   // VARIANCE OUTCOMES: ?why=<outcome> = what the owner already answered on the
   // stock-check mismatch that sent him here. Carried so it is not lost on the way.
   const handedOffReason = searchParams.get("why") || null;
+  const handedOffProduct = searchParams.get("whyp") || null; // the line that answer belongs to
   const closeTransferDetail = () => {
     setDetailTransferId(null);
-    if (searchParams.get("tr") || searchParams.get("why")) {
-      searchParams.delete("tr"); searchParams.delete("why"); setSearchParams(searchParams, { replace: true });
+    if (searchParams.get("tr") || searchParams.get("why") || searchParams.get("whyp")) {
+      searchParams.delete("tr"); searchParams.delete("why"); searchParams.delete("whyp"); setSearchParams(searchParams, { replace: true });
     }
   };
 
@@ -818,7 +819,8 @@ export default function TransfersPage() {
   return (
     <div style={{ padding: 24, maxWidth: 1000, margin: "0 auto" }}>
       {detailTransferId && <TransferDetailModal transferId={detailTransferId} onClose={closeTransferDetail}
-        initialReason={detailTransferId === searchParams.get("tr") ? handedOffReason : null} />}
+        initialReason={detailTransferId === searchParams.get("tr") ? handedOffReason : null}
+        initialProduct={detailTransferId === searchParams.get("tr") ? handedOffProduct : null} />}
       <div className="page-header">
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <h1 className="page-title" style={{ margin: 0 }}>{lang === "en" ? "Stock Transfers" : "Transferts de stock"}</h1>

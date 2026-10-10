@@ -903,7 +903,7 @@ export default function StockCheckPage() {
           refusal={varRefusal}
           onClearRefusal={() => setVarRefusal(null)}
           onRecount={() => recountMut.mutate(varResolveFor.id)}
-          onOpenTransfer={(id, why) => { setVarResolveFor(null); setVarRefusal(null); navigate(`/transfers?tr=${id}${why ? `&why=${why}` : ""}`); }}
+          onOpenTransfer={(id, why) => { const pid = varResolveFor && varResolveFor.product_id; setVarResolveFor(null); setVarRefusal(null); navigate(`/transfers?tr=${id}${why && pid ? `&why=${why}&whyp=${pid}` : ""}`); }}
           onCancel={() => { setVarResolveFor(null); setVarRefusal(null); }}
           onResolve={(payload) => varResolveMut.mutate({ id: varResolveFor.id, ...payload })} />
       )}
