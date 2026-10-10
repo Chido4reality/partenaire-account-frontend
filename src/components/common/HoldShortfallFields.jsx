@@ -61,6 +61,18 @@ export function holdShortfallBody(hold, answers) {
   return { shortfall: { lines: shortfallLinesBody(hold.lines, answers) } };
 }
 
+/** Why Approve is disabled, in words — so a dim button is never a mystery (Nora,
+ *  2026-10-11: Approve stayed dim with nothing to tell her why). A browser's saved-
+ *  password PREVIEW shows dots in the PIN box while its value is still empty, so the
+ *  PIN case is named too. null when Approve is live. */
+export function approveBlockedReason({ en, pin, hold, answers }) {
+  if (hold && hold.isHold && hold.loading) return en ? "Loading the held lines…" : "Chargement des lignes en attente…";
+  if (hold && hold.isHold && !holdShortfallReady(hold, answers))
+    return en ? "Choose an option for every line above." : "Choisissez une option pour chaque ligne ci-dessus.";
+  if (!/^\d{4,6}$/.test(String(pin || ""))) return en ? "Enter your PIN (4–6 digits)." : "Saisissez votre PIN (4 à 6 chiffres).";
+  return null;
+}
+
 export default function HoldShortfallFields({ en, hold, answers, setAnswers }) {
   const role = useAuthStore((s) => s.user?.role);
   const { perms } = useMyPermissions({ enabled: role === "manager" });

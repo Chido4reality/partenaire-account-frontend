@@ -12,7 +12,7 @@ import { useCurrency } from "../utils/useCurrency";
 import api from "../utils/api";
 import ApprovalDetailView from "../components/common/ApprovalDetailView"; // MP-APPROVAL-FULL-DETAIL
 import HoldRejectFields, { HOLD_ACTION, holdRejectReady } from "../components/common/HoldRejectFields"; // receive-mismatch gate
-import HoldShortfallFields, { useHoldShortfall, holdShortfallReady, holdShortfallBody } from "../components/common/HoldShortfallFields"; // variance outcomes
+import HoldShortfallFields, { useHoldShortfall, holdShortfallReady, holdShortfallBody, approveBlockedReason } from "../components/common/HoldShortfallFields"; // variance outcomes
 import HeldReceiptsBanner, { HoldTierBadge } from "../components/common/HeldReceiptsBanner"; // held-receipt reminders
 
 const VERB = {
@@ -191,6 +191,11 @@ export default function TeamApprovalsPage() {
                 {approveMut.isPending ? "..." : (en ? "Approve" : "Approuver")}
               </button>
             </div>
+            {!approveMut.isPending && approveBlockedReason({ en, pin, hold: pinFor.action_type === HOLD_ACTION ? hold : null, answers: sfAnswers }) && (
+              <div style={{ fontSize: 12, color: "#fbbf24", marginTop: 8, textAlign: "center" }}>
+                {approveBlockedReason({ en, pin, hold: pinFor.action_type === HOLD_ACTION ? hold : null, answers: sfAnswers })}
+              </div>
+            )}
           </div>
         </div>
       )}
