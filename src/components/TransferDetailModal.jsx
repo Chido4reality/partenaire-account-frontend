@@ -84,10 +84,10 @@ export default function TransferDetailModal({ transferId, onClose, initialReason
     mutationFn: () => api.post(`/transfers/${transferId}/resolve-variance`, { lines: shortfallLinesBody(shortLines, answers) }).then((r) => r.data),
     onSuccess: (res) => {
       const parts = [];
-      if (res.piled) parts.push(en ? `${res.piled} to the Damaged pile` : `${res.piled} en pile Endommagés`);
-      if (res.written_off) parts.push(en ? `${res.written_off} written off` : `${res.written_off} passées en perte`);
-      if (res.credited) parts.push(en ? `${res.credited} added to ${t?.to_name || "the destination"}` : `${res.credited} ajoutées à ${t?.to_name || "la destination"}`);
-      if (res.returned) parts.push(en ? `${res.returned} returned to ${t?.from_name || "the source"}` : `${res.returned} renvoyées à ${t?.from_name || "la source"}`);
+      if (res.piled) parts.push(en ? `${res.piled} moved to the Damaged list` : `${res.piled} mises dans la liste Endommagés`);
+      if (res.written_off) parts.push(en ? `${res.written_off} removed from stock` : `${res.written_off} retirées du stock`);
+      if (res.credited) parts.push(en ? `${res.credited} added to ${t?.to_name || "the shop"}` : `${res.credited} ajoutées à ${t?.to_name || "la boutique"}`);
+      if (res.returned) parts.push(en ? `${res.returned} put back at ${t?.from_name || "the warehouse"}` : `${res.returned} remises à ${t?.from_name || "l'entrepôt"}`);
       toast.success(res.already ? (en ? "Already closed" : "Déjà clos")
         : `${res.variance_closed ? (en ? "Variance closed" : "Écart clos") : (en ? `${res.later} line(s) left open` : `${res.later} ligne(s) laissée(s) ouverte(s)`)}${parts.length ? " — " + parts.join(", ") : ""}`);
       setAnswers({});
@@ -175,7 +175,8 @@ export default function TransferDetailModal({ transferId, onClose, initialReason
                   <>
                     <div style={{ marginTop: 10 }}>
                       <ShortfallLinesPicker en={en} lines={shortLines} options={options} answers={answers}
-                        setAnswers={setAnswers} allowLater sourceName={t.from_name} disabled={resolveMut.isPending} />
+                        setAnswers={setAnswers} allowLater sourceName={t.from_name} destName={t.to_name}
+                        context="transfer" disabled={resolveMut.isPending} />
                     </div>
                     {carriedOk && entriesOf(answers[String(initialProduct)])[0]?.reason === initialReason && (
                       <div style={{ fontSize: 11.5, color: "var(--text-secondary)", marginTop: 6, lineHeight: 1.45 }}>

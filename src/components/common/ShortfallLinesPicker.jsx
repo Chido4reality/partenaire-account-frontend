@@ -14,18 +14,23 @@
 // answer this person may give (an ungranted manager), it is chosen for them, since
 // there is nothing to choose between. Lines still waiting are NAMED.
 import { useEffect } from "react";
-import { outcomeByKey, outcomeNoteRequired } from "../../utils/transferVarianceOutcomes";
+import { outcomeByKey, outcomeHint, outcomeNoteRequired } from "../../utils/transferVarianceOutcomes";
 
 export const LATER = "later";
+// Plain words (Peter, 2026-10-11). On the approval the counted units are being
+// approved now; on the transfer screen there is nothing to approve, so the line
+// simply stays open.
 const LATER_LABEL = { en: "Decide later", fr: "Décider plus tard",
-  hintEn: "This stays open on the transfer.", hintFr: "Ceci reste ouvert sur le transfert." };
+  approvalEn: "Approve what was counted now. Decide about the missing goods later.",
+  approvalFr: "Approuver maintenant ce qui a été compté. Décider plus tard pour les marchandises manquantes.",
+  transferEn: "Leave it open. Decide about the missing goods later.",
+  transferFr: "Laisser ouvert. Décider plus tard pour les marchandises manquantes." };
 
 const labelOf = (key, en) => key === LATER ? (en ? LATER_LABEL.en : LATER_LABEL.fr) : (en ? outcomeByKey(key).en : outcomeByKey(key).fr);
-const hintOf = (key, en, sourceName) => {
-  if (key === LATER) return en ? LATER_LABEL.hintEn : LATER_LABEL.hintFr;
-  if (key === "return_to_source" && sourceName)
-    return en ? `Put back into ${sourceName}'s stock now.` : `Remises maintenant dans le stock de ${sourceName}.`;
-  const o = outcomeByKey(key); return en ? o.hintEn : o.hintFr;
+const hintOf = (key, en, names, context) => {
+  if (key === LATER) return context === "transfer" ? (en ? LATER_LABEL.transferEn : LATER_LABEL.transferFr)
+                                                   : (en ? LATER_LABEL.approvalEn : LATER_LABEL.approvalFr);
+  return outcomeHint(outcomeByKey(key), en, names);
 };
 
 /** The parts of one line's answer ([] when unanswered). */
@@ -70,7 +75,9 @@ export function shortfallLinesBody(lines, answers) {
 /** A whole-line answer (one part, no qty). */
 export const wholeLine = (reason) => ({ entries: [{ reason, qty: "", note: "" }] });
 
-export default function ShortfallLinesPicker({ en, lines, options, answers, setAnswers, allowLater = true, sourceName, disabled }) {
+// sourceName / destName: the REAL branch names shown in the descriptions; context:
+// "approval" (held receipt) or "transfer" (the transfer screen).
+export default function ShortfallLinesPicker({ en, lines, options, answers, setAnswers, allowLater = true, sourceName, destName, context = "approval", disabled }) {
   const keys = [...options.map((o) => o.key), ...(allowLater ? [LATER] : [])];
   const onlyLater = keys.length === 1 && keys[0] === LATER;
   const lineKey = lines.map((l) => l.product_id).join(",");
@@ -178,7 +185,7 @@ export default function ShortfallLinesPicker({ en, lines, options, answers, setA
                       </div>
                       {e.reason && (
                         <div style={{ fontSize: 11.5, color: "var(--text-secondary)", marginTop: 4, lineHeight: 1.4 }}>
-                          {hintOf(e.reason, en, sourceName)}
+                          {hintOf(e.reason, en, { src: sourceName, dst: destName }, context)}
                         </div>
                       )}
                       {e.reason && e.reason !== LATER && (

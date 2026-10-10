@@ -82,7 +82,8 @@ export default function HoldShortfallFields({ en, hold, answers, setAnswers }) {
   return (
     <div style={{ marginTop: 12 }}>
       <ShortfallLinesPicker en={en} lines={hold.lines} options={options} answers={answers || {}}
-        setAnswers={setAnswers} allowLater sourceName={(hold.payload || {}).from_name} />
+        setAnswers={setAnswers} allowLater sourceName={(hold.payload || {}).from_name}
+        destName={(hold.payload || {}).to_name} context="approval" />
     </div>
   );
 }

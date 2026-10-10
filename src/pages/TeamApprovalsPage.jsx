@@ -55,6 +55,7 @@ export default function TeamApprovalsPage() {
   const [holdPin, setHoldPin] = useState("");
   const [sfAnswers, setSfAnswers] = useState({}); // variance outcomes: one answer per short line
   const hold = useHoldShortfall(pinFor);
+  const rejectHold = useHoldShortfall(rejectFor); // its source branch name, for the reject wording
 
   const { data: resp, isLoading, isError } = useQuery({
     queryKey: ["team-approvals"],
@@ -208,7 +209,8 @@ export default function TeamApprovalsPage() {
               {en ? "Reject this request?" : "Rejeter cette demande ?"}
             </div>
             {rejectFor.action_type === HOLD_ACTION && (
-              <HoldRejectFields en={en} mode={holdMode} setMode={setHoldMode} pin={holdPin} setPin={setHoldPin} />
+              <HoldRejectFields en={en} mode={holdMode} setMode={setHoldMode} pin={holdPin} setPin={setHoldPin}
+                sourceName={(rejectHold.payload || {}).from_name} />
             )}
             <input className="input" type="text" value={note} maxLength={200}
               onChange={(e) => setNote(e.target.value)}

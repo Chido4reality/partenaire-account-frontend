@@ -14,14 +14,20 @@ export function holdRejectReady(mode, pin) {
   return false;
 }
 
-export default function HoldRejectFields({ en, mode, setMode, pin, setPin }) {
+// WORDING (Peter, 2026-10-11): plain trader language and the REAL source name.
+// "Return to source" here was confused with the shortfall outcome of the same name,
+// which keeps the counted goods and only puts the missing ones back. This one sends
+// EVERYTHING back — pa_transfer_hold_return creates the return with the original SENT
+// quantity (verified on prod) — so it now says so.
+export default function HoldRejectFields({ en, mode, setMode, pin, setPin, sourceName }) {
+  const src = sourceName || (en ? "the warehouse" : "l'entrepôt");
   const opts = [
     { val: "recount", en: "Send back for a recount", fr: "Faire recompter",
-      hintEn: "The lines go back to the shop to be counted again. Nothing moves until then.",
-      hintFr: "Les lignes retournent à la boutique pour être recomptées. Rien ne bouge d'ici là." },
-    { val: "return_to_source", en: "Return to the source", fr: "Renvoyer à la source",
-      hintEn: "A return transfer is created back to the source, which must receive it.",
-      hintFr: "Un transfert de retour est créé vers la source, qui doit le réceptionner." },
+      hintEn: "Ask the shop to count again. Nothing moves until they do.",
+      hintFr: "Demander à la boutique de recompter. Rien ne bouge d'ici là." },
+    { val: "return_to_source", en: "Send everything back to the warehouse", fr: "Tout renvoyer à l'entrepôt",
+      hintEn: `Send the whole line back to ${src} — everything that was sent, counted or missing. ${src} must receive it.`,
+      hintFr: `Renvoyer toute la ligne à ${src} — tout ce qui a été envoyé, compté ou manquant. ${src} doit la réceptionner.` },
   ];
   return (
     <div className="form-group">

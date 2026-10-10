@@ -5,32 +5,43 @@
 //
 // There is NO default. TRF-20261009-0001: the old list preselected "arrived later",
 // and 3 units that did not exist were credited as sellable when "Damaged" was meant.
+//
+// WORDING (Peter, 2026-10-11): plain trader language, never accounting words
+// ("credited", "written off", "sellable stock"), and REAL branch names — {src} is
+// where the goods came from, {dst} where they were going (see outcomeHint).
 export const VARIANCE_OUTCOMES = [
   { key: "damaged", en: "Damaged", fr: "Endommagées",
-    hintEn: "They arrived broken. Recorded in the Damaged pile at the destination — not sellable stock.",
-    hintFr: "Arrivées cassées. Enregistrées dans la pile Endommagés de la destination — pas en stock vendable." },
+    hintEn: "They arrived broken. Moved to the Damaged list at {dst} — can't be sold as normal.",
+    hintFr: "Arrivées cassées. Mises dans la liste Endommagés de {dst} — ne se vendent pas normalement." },
   { key: "expired", en: "Expired", fr: "Périmées",
-    hintEn: "They arrived expired. Recorded in the Damaged pile as expired — not sellable stock.",
-    hintFr: "Arrivées périmées. Enregistrées dans la pile Endommagés comme périmées — pas en stock vendable." },
+    hintEn: "They arrived expired. Moved to the Damaged list at {dst}.",
+    hintFr: "Arrivées périmées. Mises dans la liste Endommagés de {dst}." },
   { key: "theft", en: "Theft", fr: "Vol",
-    hintEn: "Written off. No branch is credited — stock already reflects the loss.",
-    hintFr: "Passées en perte. Aucune boutique n'est créditée — le stock en tient déjà compte." },
+    hintEn: "Stolen. Removed from stock.",
+    hintFr: "Volées. Retirées du stock." },
   { key: "lost_in_transit", en: "Lost in transit", fr: "Perdues en route",
-    hintEn: "Written off. No branch is credited — stock already reflects the loss.",
-    hintFr: "Passées en perte. Aucune boutique n'est créditée — le stock en tient déjà compte." },
+    hintEn: "Lost on the way. Removed from stock.",
+    hintFr: "Perdues pendant le trajet. Retirées du stock." },
   { key: "unrecorded_sale", en: "Sold, never recorded", fr: "Vendues sans être enregistrées",
-    hintEn: "Written off as an unrecorded sale. No branch is credited.",
-    hintFr: "Passées en perte comme vente non enregistrée. Aucune boutique n'est créditée." },
+    hintEn: "Sold without a receipt. Removed from stock.",
+    hintFr: "Vendues sans ticket. Retirées du stock." },
   { key: "other", en: "Other", fr: "Autre",
-    hintEn: "Written off. Say what happened in the note (required).",
-    hintFr: "Passées en perte. Précisez dans la note (obligatoire)." },
+    hintEn: "Something else — explain in the note.",
+    hintFr: "Autre chose — expliquez dans la note." },
   { key: "received_late", en: "Received late", fr: "Reçues plus tard",
-    hintEn: "They turned up after the count. Added to the destination's sellable stock now.",
-    hintFr: "Arrivées après le comptage. Ajoutées maintenant au stock vendable de la destination." },
-  { key: "return_to_source", en: "Return to source", fr: "Renvoyer à la source",
-    hintEn: "The source packed short. Put back into the source branch's stock now.",
-    hintFr: "La source a envoyé moins. Remises maintenant dans le stock de la boutique source." },
+    hintEn: "They turned up after the count. Added to {dst}'s stock now.",
+    hintFr: "Arrivées après le comptage. Ajoutées maintenant au stock de {dst}." },
+  { key: "return_to_source", en: "Never left the warehouse", fr: "Jamais sorties de l'entrepôt",
+    hintEn: "The missing goods are still at {src}. Put them back in its stock now.",
+    hintFr: "Les marchandises manquantes sont encore à {src}. Les remettre dans son stock maintenant." },
 ];
+
+/** An outcome's description with the real branch names filled in. */
+export function outcomeHint(o, en, { src, dst } = {}) {
+  const s = src || (en ? "the warehouse" : "l'entrepôt");
+  const d = dst || (en ? "the shop" : "la boutique");
+  return String(en ? o.hintEn : o.hintFr).replaceAll("{src}", s).replaceAll("{dst}", d);
+}
 
 export const outcomeByKey = (k) => VARIANCE_OUTCOMES.find((o) => o.key === k) || null;
 

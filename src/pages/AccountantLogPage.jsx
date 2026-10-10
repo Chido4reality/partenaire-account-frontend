@@ -255,6 +255,7 @@ export default function AccountantLogPage() {
   // VARIANCE OUTCOMES: what happened to a held receipt's shortfall, chosen at approval.
   const [sfAnswers, setSfAnswers] = useState({}); // variance outcomes: one answer per short line
   const hold = useHoldShortfall(pinFor);
+  const rejectHold = useHoldShortfall(rejectFor); // its source branch name, for the reject wording
   useEffect(() => { setSfAnswers({}); }, [pinFor && pinFor.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [cancelFor, setCancelFor] = useState(null); // approval row being cancelled (confirm)
 
@@ -814,7 +815,8 @@ export default function AccountantLogPage() {
               {(rejectFor.requested_by_name || (en ? "A staff member" : "Un employé"))} {en ? "wanted to" : "voulait"} {approvalVerb(rejectFor.action_type, rejectFor.target_ref)}.
             </div>
             {rejectFor.action_type === HOLD_ACTION && (
-              <HoldRejectFields en={en} mode={holdMode} setMode={setHoldMode} pin={holdPin} setPin={setHoldPin} />
+              <HoldRejectFields en={en} mode={holdMode} setMode={setHoldMode} pin={holdPin} setPin={setHoldPin}
+                sourceName={(rejectHold.payload || {}).from_name} />
             )}
             <div className="form-group"><label className="label">{en ? "Reason (optional)" : "Raison (facultatif)"}</label>
               <input className="input" value={rejectNote} onChange={e => setRejectNote(e.target.value)}

@@ -1350,8 +1350,15 @@ function ResolveVarianceModal({ row, en, busy, recounting, onCancel, onResolve, 
               </label>
               <input className="input" type="number" min="0" value={qty} onChange={e => setQty(e.target.value)} style={{ marginTop: 6 }} />
               {/* Direction is SHOWN, never chosen. */}
-              <div style={{ fontSize: 12, marginTop: 7, lineHeight: 1.5, color: !qtyValid ? "var(--text-muted)" : delta === 0 ? "#fbbf24" : delta < 0 ? "#f87171" : "#34d399" }}>
+              <div style={{ fontSize: 12, marginTop: 7, lineHeight: 1.5,
+                            color: !qtyValid ? "var(--text-muted)" : fromTransfer && delta < 0 ? "var(--text-primary)" : delta === 0 ? "#fbbf24" : delta < 0 ? "#f87171" : "#34d399" }}>
                 {!qtyValid ? (en ? "Enter the corrected quantity." : "Entrez la quantité corrigée.")
+                  // A TRANSFER check: the shop was only ever given what was counted, so
+                  // stock already sits at the count and nothing is subtracted — "Stock
+                  // goes DOWN" was simply wrong here (Peter, 2026-10-11).
+                  : fromTransfer && delta < 0
+                    ? (en ? `Stock stays at ${liveNow != null ? liveNow : n}. Choose below what happened to the ${Math.abs(delta)} missing.`
+                          : `Le stock reste à ${liveNow != null ? liveNow : n}. Choisissez ci-dessous ce que sont devenues les ${Math.abs(delta)} manquantes.`)
                   : delta === 0 ? (en ? "That is already the system's figure — nothing to correct." : "C'est déjà le chiffre du système — rien à corriger.")
                   : delta < 0 ? (en ? `Stock goes DOWN by ${Math.abs(delta)} (${expected} → ${n}).` : `Le stock BAISSE de ${Math.abs(delta)} (${expected} → ${n}).`)
                   : (en ? `Stock goes UP by ${delta} (${expected} → ${n}).` : `Le stock MONTE de ${delta} (${expected} → ${n}).`)}
