@@ -6,7 +6,7 @@ import { useLangStore, useAuthStore } from "../store";
 import { transferCountLabel } from "../utils/transferCount"; // MP-APPROVAL-FULL-DETAIL
 import { useMyPermissions } from "../utils/useMyPermissions";
 import { allowedOutcomes } from "../utils/transferVarianceOutcomes";
-import ShortfallLinesPicker, { LATER, shortfallMissing, shortfallLinesBody } from "./common/ShortfallLinesPicker";
+import ShortfallLinesPicker, { shortfallMissing, shortfallLinesBody, shortfallAllLater, entriesOf, wholeLine } from "./common/ShortfallLinesPicker";
 
 // ── MP-TRANSFER-VARIANCE-CLOSE (F4) + VARIANCE OUTCOMES (2026-10-10, per line 2026-10-11)
 // What happened to the missing pieces — ONE answer per short line (the shared
@@ -69,7 +69,7 @@ export default function TransferDetailModal({ transferId, onClose, initialReason
     return acc;
   }, {}));
   const missingAnswers = shortfallMissing(shortLines, answers);
-  const allLater = shortLines.length > 0 && shortLines.every((l) => answers[l.product_id]?.reason === LATER);
+  const allLater = shortfallAllLater(shortLines, answers);
 
   // The carried stock-check answer fills its own line, once the line and (for a
   // manager) the grant are known.
@@ -77,7 +77,7 @@ export default function TransferDetailModal({ transferId, onClose, initialReason
     && shortLines.some((l) => l.product_id === String(initialProduct));
   useEffect(() => {
     if (carriedOk && !answers[String(initialProduct)])
-      setAnswers((a) => ({ ...a, [String(initialProduct)]: { reason: initialReason, note: "" } }));
+      setAnswers((a) => ({ ...a, [String(initialProduct)]: wholeLine(initialReason) }));
   }, [carriedOk]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const resolveMut = useMutation({
@@ -177,7 +177,7 @@ export default function TransferDetailModal({ transferId, onClose, initialReason
                       <ShortfallLinesPicker en={en} lines={shortLines} options={options} answers={answers}
                         setAnswers={setAnswers} allowLater sourceName={t.from_name} disabled={resolveMut.isPending} />
                     </div>
-                    {carriedOk && answers[String(initialProduct)]?.reason === initialReason && (
+                    {carriedOk && entriesOf(answers[String(initialProduct)])[0]?.reason === initialReason && (
                       <div style={{ fontSize: 11.5, color: "var(--text-secondary)", marginTop: 6, lineHeight: 1.45 }}>
                         {en ? `${nameFor(initialProduct)}: filled in from your answer on the stock check. Check it, then close.`
                             : `${nameFor(initialProduct)} : rempli depuis votre réponse sur la vérification. Vérifiez, puis clôturez.`}

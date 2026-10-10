@@ -14,7 +14,7 @@ import { useAuthStore } from "../../store";
 import { useMyPermissions } from "../../utils/useMyPermissions";
 import { allowedOutcomes } from "../../utils/transferVarianceOutcomes";
 import { HOLD_ACTION } from "./HoldRejectFields";
-import ShortfallLinesPicker, { LATER, shortfallMissing, shortfallLinesBody } from "./ShortfallLinesPicker";
+import ShortfallLinesPicker, { shortfallMissing, shortfallLinesBody, shortfallAllLater } from "./ShortfallLinesPicker";
 
 /** The pending-approvals LIST carries no payload, so the held lines come from the
  *  approval's own detail — the same endpoint ApprovalDetailView reads.
@@ -57,7 +57,7 @@ export function holdShortfallReady(hold, answers) {
 export function holdShortfallBody(hold, answers) {
   if (!hold || !hold.isHold || !hold.lines.length) return {};
   if (shortfallMissing(hold.lines, answers || {}).length) return {};
-  if (hold.lines.every((l) => answers[l.product_id].reason === LATER)) return {};
+  if (shortfallAllLater(hold.lines, answers)) return {};
   return { shortfall: { lines: shortfallLinesBody(hold.lines, answers) } };
 }
 
