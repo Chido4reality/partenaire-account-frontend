@@ -4,23 +4,15 @@ import toast from "react-hot-toast";
 import api from "../utils/api";
 import { useLangStore, useAuthStore } from "../store";
 import { transferCountLabel } from "../utils/transferCount"; // MP-APPROVAL-FULL-DETAIL
+import { useMyPermissions } from "../utils/useMyPermissions";
+import { allowedOutcomes, outcomeByKey, outcomeNoteRequired } from "../utils/transferVarianceOutcomes";
+import OptionCard from "./common/OptionCard";
 
-// ── MP-TRANSFER-VARIANCE-CLOSE (F4) ─────────────────────────────────────────
-// What happened to the missing pieces. Mirrors the backend's three reasons.
-// Only received_late moves sellable stock; the other two are records, not
-// corrections — see the route comment for why writing a "loss" movement would
-// double-subtract stock the shop still has.
-const VARIANCE_REASONS = [
-  { key: "received_late", en: "They arrived later", fr: "Elles sont arrivées plus tard",
-    hintEn: "Add them to the destination's stock now.",
-    hintFr: "Les ajouter maintenant au stock de la destination." },
-  { key: "damaged", en: "They arrived broken", fr: "Elles sont arrivées cassées",
-    hintEn: "Record them in the damaged pile — not added to sellable stock.",
-    hintFr: "Les enregistrer dans la pile Endommagés — pas en stock vendable." },
-  { key: "lost_in_transit", en: "They never arrived", fr: "Elles ne sont jamais arrivées",
-    hintEn: "Record the loss. Stock already reflects it — nothing is deducted twice.",
-    hintFr: "Enregistrer la perte. Le stock en tient déjà compte — rien n'est déduit deux fois." },
-];
+// ── MP-TRANSFER-VARIANCE-CLOSE (F4) + VARIANCE OUTCOMES (2026-10-10) ────────
+// What happened to the missing pieces — the shared list in
+// utils/transferVarianceOutcomes. NO default: the old list preselected "arrived
+// later", so one tap on Close credited sellable stock that never existed
+// (TRF-20261009-0001, where the owner meant Damaged).
 
 // MP-STAFF-ACTIVITY-LEDGER Phase 3: the full plain-language transfer chain, reachable from
 // the Transfers list, the Activity Ledger, and search (?tr=<id>). Shop-timezone times.
@@ -45,13 +37,21 @@ function Step({ icon, label, who, when }) {
   );
 }
 
-export default function TransferDetailModal({ transferId, onClose }) {
+// initialReason: ONLY an answer the owner already gave elsewhere — the stock-check
+// mismatch's "Where did they go?" — carried through the hand-off so it is not lost.
+// It is shown as such and still needs the Close tap; it is never a default.
+export default function TransferDetailModal({ transferId, onClose, initialReason = null }) {
   const { lang } = useLangStore();
   const en = lang === "en";
   const qc = useQueryClient();
-  const isOwner = useAuthStore((s) => s.user?.role) === "owner";
-  const [reason, setReason] = useState("received_late");
+  const role = useAuthStore((s) => s.user?.role);
+  const isOwner = role === "owner";
+  const { perms: myPerms } = useMyPermissions({ enabled: role === "manager" });
+  const options = allowedOutcomes({ isOwner, canCancelTransfers: role === "manager" && !!myPerms?.can_cancel_transfers });
+  const carried = initialReason && options.some((o) => o.key === initialReason) ? initialReason : null;
+  const [reason, setReason] = useState(carried);
   const [note, setNote] = useState("");
+  const noteMissing = outcomeNoteRequired(reason) && !note.trim();
 
   const { data: resp, isLoading, isError } = useQuery({
     queryKey: ["transfer-detail", transferId],
@@ -69,9 +69,11 @@ export default function TransferDetailModal({ transferId, onClose }) {
   const resolveMut = useMutation({
     mutationFn: () => api.post(`/transfers/${transferId}/resolve-variance`, { reason, note: note.trim() || null }).then((r) => r.data),
     onSuccess: (res) => {
-      toast.success(res.stock_changed
-        ? (en ? `Variance closed — ${res.credited} added to stock` : `Écart clos — ${res.credited} ajoutées au stock`)
-        : (en ? "Variance closed — stock unchanged" : "Écart clos — stock inchangé"));
+      toast.success(res.already ? (en ? "Already closed" : "Déjà clos")
+        : res.credited ? (en ? `Variance closed — ${res.credited} added to ${t?.to_name || "the destination"}` : `Écart clos — ${res.credited} ajoutées à ${t?.to_name || "la destination"}`)
+        : res.returned ? (en ? `Variance closed — ${res.returned} returned to ${t?.from_name || "the source"}` : `Écart clos — ${res.returned} renvoyées à ${t?.from_name || "la source"}`)
+        : res.piled ? (en ? `Variance closed — ${res.piled} in the Damaged pile` : `Écart clos — ${res.piled} dans la pile Endommagés`)
+        : (en ? `Variance closed — ${res.written_off || 0} written off` : `Écart clos — ${res.written_off || 0} passées en perte`));
       qc.invalidateQueries({ queryKey: ["transfer-detail", transferId] });
       qc.invalidateQueries({ queryKey: ["transfers"] });
       qc.invalidateQueries({ queryKey: ["stock-checks"] });
@@ -147,32 +149,37 @@ export default function TransferDetailModal({ transferId, onClose }) {
                   </div>
                 ))}
 
-                {!isOwner ? (
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.5 }}>
+                {options.length === 0 ? (
+                  <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 8, lineHeight: 1.5 }}>
                     {en ? "The owner closes this. Until then it stays open on the transfer."
                         : "Le patron doit le clore. En attendant, il reste ouvert sur le transfert."}
                   </div>
                 ) : (
                   <>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", margin: "10px 0 6px" }}>
-                      {en ? "What happened to them?" : "Que leur est-il arrivé ?"}
+                      {en ? "What happened to them? Choose one." : "Que leur est-il arrivé ? Choisissez."}
                     </div>
+                    {carried && reason === carried && (
+                      <div style={{ fontSize: 11.5, color: "var(--text-secondary)", marginBottom: 6, lineHeight: 1.45 }}>
+                        {en ? `You chose “${outcomeByKey(carried).en}” on the stock check. Check it, then close.`
+                            : `Vous avez choisi « ${outcomeByKey(carried).fr} » sur la vérification. Vérifiez, puis clôturez.`}
+                      </div>
+                    )}
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      {VARIANCE_REASONS.map((r) => (
-                        <button key={r.key} onClick={() => setReason(r.key)} disabled={resolveMut.isPending}
-                          style={{ textAlign: "left", padding: "8px 10px", borderRadius: 10, cursor: "pointer",
-                            background: reason === r.key ? "rgba(99,102,241,0.14)" : "transparent",
-                            border: `1px solid ${reason === r.key ? "rgba(99,102,241,0.55)" : "var(--border)"}` }}>
-                          <div style={{ fontWeight: 700, fontSize: 12.5 }}>{en ? r.en : r.fr}</div>
-                          <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 2, lineHeight: 1.4 }}>{en ? r.hintEn : r.hintFr}</div>
-                        </button>
+                      {options.map((r) => (
+                        <OptionCard key={r.key} testId={`variance-outcome-${r.key}`} selected={reason === r.key}
+                          onClick={() => setReason(r.key)} disabled={resolveMut.isPending}
+                          title={en ? r.en : r.fr} hint={en ? r.hintEn : r.hintFr} />
                       ))}
                     </div>
                     <input className="input" value={note} onChange={(e) => setNote(e.target.value)}
-                      placeholder={en ? "Note (optional)" : "Note (facultative)"} style={{ marginTop: 8 }} />
+                      placeholder={outcomeNoteRequired(reason) ? (en ? "Note (required)" : "Note (obligatoire)") : (en ? "Note (optional)" : "Note (facultative)")}
+                      style={{ marginTop: 8 }} />
                     <button className="btn btn-primary" style={{ width: "100%", marginTop: 8, fontWeight: 700 }}
-                      disabled={resolveMut.isPending} onClick={() => resolveMut.mutate()}>
-                      {resolveMut.isPending ? "…" : (en ? "Close this variance" : "Clore cet écart")}
+                      disabled={resolveMut.isPending || !reason || noteMissing} onClick={() => resolveMut.mutate()}>
+                      {resolveMut.isPending ? "…"
+                        : !reason ? (en ? "Choose what happened first" : "Choisissez d'abord ce qui s'est passé")
+                        : (en ? `Close this variance — ${outcomeByKey(reason).en}` : `Clore cet écart — ${outcomeByKey(reason).fr}`)}
                     </button>
                   </>
                 )}

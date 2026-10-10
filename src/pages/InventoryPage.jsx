@@ -3026,13 +3026,14 @@ function AdjustModal({ product, role, requestApproval, lang, onClose, onSuccess 
                   onClick={() => { setAdjustReason(b.value); setAdjustSubReason(""); }}
                   style={{
                     textAlign: "left", padding: "11px 13px", borderRadius: 10, cursor: "pointer",
+                    color: "var(--text-primary)", // a <button> does not inherit it (preflight is off)
                     border: on ? "2px solid var(--brand)" : "1px solid var(--border)",
                     background: on ? "rgba(16,185,129,0.10)" : "var(--bg-elevated)",
                   }}>
-                  <div style={{ fontSize: 14, fontWeight: 700 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: on ? "var(--brand)" : "var(--text-primary)" }}>
                     {on ? "● " : "○ "}{rLabel(b, lang === "en")}
                   </div>
-                  <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 2, lineHeight: 1.4 }}>
+                  <div style={{ fontSize: 11.5, color: "var(--text-secondary)", marginTop: 2, lineHeight: 1.4 }}>
                     {lang === "en" ? b.hintEn : b.hintFr}
                   </div>
                 </button>

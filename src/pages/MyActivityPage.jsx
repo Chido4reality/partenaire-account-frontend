@@ -78,7 +78,7 @@ export default function MyActivityPage() {
                 const tappable = r.ref_type === "transfer" || r.ref_type === "buffer";
                 return (
                   <button key={r.entry_id} onClick={tappable ? () => openDetail(r) : undefined}
-                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, textAlign: "left", cursor: tappable ? "pointer" : "default", width: "100%" }}>
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", color: "var(--text-primary)", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, textAlign: "left", cursor: tappable ? "pointer" : "default", width: "100%" }}>
                     <div style={{ fontSize: 20, flexShrink: 0 }}>{LEDGER_TYPES[r.activity_type]?.icon || "•"}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 700, fontSize: 13.5 }}>

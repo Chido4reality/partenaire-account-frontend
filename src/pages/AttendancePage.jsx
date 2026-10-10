@@ -120,7 +120,7 @@ export default function AttendancePage() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 }}>
           {staff.map(s => (
             <button key={s.id} onClick={() => { setPicked(s); setPin(""); }}
-              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "16px 10px", borderRadius: 14, border: "1px solid var(--border)", background: "var(--bg-card)", cursor: "pointer" }}>
+              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "16px 10px", color: "var(--text-primary)", borderRadius: 14, border: "1px solid var(--border)", background: "var(--bg-card)", cursor: "pointer" }}>
               <div style={{ width: 52, height: 52, borderRadius: 14, overflow: "hidden", background: "var(--bg-elevated)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 20, color: "var(--text-muted)" }}>
                 {s.photo_url ? <img src={s.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : (s.full_name || "?").charAt(0).toUpperCase()}
               </div>

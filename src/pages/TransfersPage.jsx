@@ -38,9 +38,14 @@ export default function TransfersPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [detailTransferId, setDetailTransferId] = useState(searchParams.get("tr") || null);
   useEffect(() => { const tr = searchParams.get("tr"); if (tr) setDetailTransferId(tr); }, [searchParams]);
+  // VARIANCE OUTCOMES: ?why=<outcome> = what the owner already answered on the
+  // stock-check mismatch that sent him here. Carried so it is not lost on the way.
+  const handedOffReason = searchParams.get("why") || null;
   const closeTransferDetail = () => {
     setDetailTransferId(null);
-    if (searchParams.get("tr")) { searchParams.delete("tr"); setSearchParams(searchParams, { replace: true }); }
+    if (searchParams.get("tr") || searchParams.get("why")) {
+      searchParams.delete("tr"); searchParams.delete("why"); setSearchParams(searchParams, { replace: true });
+    }
   };
 
   // (A) tick-list multi-select picker state
@@ -812,7 +817,8 @@ export default function TransfersPage() {
   // -- TRANSFER LIST ------------------------------------------
   return (
     <div style={{ padding: 24, maxWidth: 1000, margin: "0 auto" }}>
-      {detailTransferId && <TransferDetailModal transferId={detailTransferId} onClose={closeTransferDetail} />}
+      {detailTransferId && <TransferDetailModal transferId={detailTransferId} onClose={closeTransferDetail}
+        initialReason={detailTransferId === searchParams.get("tr") ? handedOffReason : null} />}
       <div className="page-header">
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <h1 className="page-title" style={{ margin: 0 }}>{lang === "en" ? "Stock Transfers" : "Transferts de stock"}</h1>

@@ -33,7 +33,7 @@ export default function HoldRejectFields({ en, mode, setMode, pin, setPin }) {
             <input type="radio" name="hold-reject-mode" checked={mode === o.val} onChange={() => setMode(o.val)} style={{ marginTop: 3 }} />
             <span>
               <span style={{ fontWeight: 700, fontSize: 13.5 }}>{en ? o.en : o.fr}</span>
-              <span style={{ display: "block", fontSize: 12, color: "var(--text-muted)" }}>{en ? o.hintEn : o.hintFr}</span>
+              <span style={{ display: "block", fontSize: 12, color: "var(--text-secondary)" }}>{en ? o.hintEn : o.hintFr}</span>
             </span>
           </label>
         ))}

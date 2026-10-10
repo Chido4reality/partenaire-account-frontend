@@ -12,6 +12,7 @@ import { useCurrency } from "../utils/useCurrency";
 import api from "../utils/api";
 import ApprovalDetailView from "../components/common/ApprovalDetailView"; // MP-APPROVAL-FULL-DETAIL
 import HoldRejectFields, { HOLD_ACTION, holdRejectReady } from "../components/common/HoldRejectFields"; // receive-mismatch gate
+import HoldShortfallFields, { useHoldShortfall, holdShortfallReady, holdShortfallBody } from "../components/common/HoldShortfallFields"; // variance outcomes
 import HeldReceiptsBanner, { HoldTierBadge } from "../components/common/HeldReceiptsBanner"; // held-receipt reminders
 
 const VERB = {
@@ -52,6 +53,9 @@ export default function TeamApprovalsPage() {
   const [note, setNote] = useState("");
   const [holdMode, setHoldMode] = useState(null); // receive-mismatch gate
   const [holdPin, setHoldPin] = useState("");
+  const [sfChoice, setSfChoice] = useState(null); // variance outcomes: the shortfall answer
+  const [sfNote, setSfNote] = useState("");
+  const hold = useHoldShortfall(pinFor);
 
   const { data: resp, isLoading, isError } = useQuery({
     queryKey: ["team-approvals"],
@@ -60,15 +64,18 @@ export default function TeamApprovalsPage() {
   });
   const rows = resp?.data || [];
 
-  const closePin = () => { setPinFor(null); setPin(""); };
+  const closePin = () => { setPinFor(null); setPin(""); setSfChoice(null); setSfNote(""); };
   const closeReject = () => { setRejectFor(null); setNote(""); setHoldMode(null); setHoldPin(""); };
 
   const approveMut = useMutation({
-    mutationFn: ({ id, pin }) => api.post(`/staff/approvals/${id}/approve`, { pin }).then((r) => r.data),
+    mutationFn: ({ id, pin, extra }) => api.post(`/staff/approvals/${id}/approve`, { pin, ...(extra || {}) }).then((r) => r.data),
     onSuccess: (res) => {
       toast.success(res?.status === "executed"
         ? (en ? "Approved — the counted goods are now in stock." : "Approuvé — les marchandises comptées sont en stock.")
         : (en ? "Approved — the staffer can now complete it." : "Approuvé — l'employé peut maintenant finaliser."));
+      const sf = res?.shortfall;
+      if (sf && sf.success) toast.success(en ? "Shortfall closed" : "Manque clos");
+      else if (sf) toast.error(sf[en ? "message_en" : "message_fr"] || sf.message || (en ? "Shortfall still open on the transfer" : "Manque toujours ouvert sur le transfert"));
       closePin();
       qc.invalidateQueries({ queryKey: ["team-approvals"] });
     },
@@ -168,13 +175,20 @@ export default function TeamApprovalsPage() {
               onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
               placeholder={en ? "4-6 digit PIN" : "PIN 4-6 chiffres"}
               style={{ width: "100%", marginBottom: 14, textAlign: "center", letterSpacing: 4, fontSize: 18 }} />
+            {pinFor.action_type === HOLD_ACTION && (
+              <div style={{ marginBottom: 14, maxHeight: "45vh", overflowY: "auto" }}>
+                <HoldShortfallFields en={en} hold={hold} choice={sfChoice} setChoice={setSfChoice} note={sfNote} setNote={setSfNote} />
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} disabled={approveMut.isPending} onClick={closePin}>
                 {en ? "Cancel" : "Annuler"}
               </button>
               <button className="btn btn-primary" style={{ flex: 2 }}
-                disabled={approveMut.isPending || !/^\d{4,6}$/.test(pin)}
-                onClick={() => approveMut.mutate({ id: pinFor.id, pin })}>
+                disabled={approveMut.isPending || !/^\d{4,6}$/.test(pin)
+                  || (pinFor.action_type === HOLD_ACTION && !holdShortfallReady(hold, sfChoice, sfNote))}
+                onClick={() => approveMut.mutate({ id: pinFor.id, pin,
+                  extra: pinFor.action_type === HOLD_ACTION ? holdShortfallBody(hold, sfChoice, sfNote) : {} })}>
                 {approveMut.isPending ? "..." : (en ? "Approve" : "Approuver")}
               </button>
             </div>

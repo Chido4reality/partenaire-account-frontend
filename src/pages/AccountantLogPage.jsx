@@ -30,6 +30,7 @@ import BufferDetailModal from "../components/BufferDetailModal";
 import { LEDGER_TYPES, LEDGER_TYPE_ORDER, ltLabel, fmtLedgerWhen } from "../utils/ledgerTypes";
 import HelpButton from "../components/common/HelpButton"; // MP-STAFF-ACTIVITY-LEDGER Phase 5
 import HoldRejectFields, { HOLD_ACTION, holdRejectReady } from "../components/common/HoldRejectFields"; // receive-mismatch gate
+import HoldShortfallFields, { useHoldShortfall, holdShortfallReady, holdShortfallBody } from "../components/common/HoldShortfallFields"; // variance outcomes
 import HeldReceiptsBanner, { HoldTierBadge } from "../components/common/HeldReceiptsBanner"; // held-receipt reminders
 
 // Role badge colours — mirror SettingsPage ROLES.
@@ -251,6 +252,11 @@ export default function AccountantLogPage() {
   // RECEIVE-MISMATCH GATE: a held receipt is rejected with a mode (+ PIN for a return).
   const [holdMode, setHoldMode] = useState(null);
   const [holdPin, setHoldPin] = useState("");
+  // VARIANCE OUTCOMES: what happened to a held receipt's shortfall, chosen at approval.
+  const [sfChoice, setSfChoice] = useState(null);
+  const [sfNote, setSfNote] = useState("");
+  const hold = useHoldShortfall(pinFor);
+  useEffect(() => { setSfChoice(null); setSfNote(""); }, [pinFor && pinFor.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [cancelFor, setCancelFor] = useState(null); // approval row being cancelled (confirm)
 
   const APPROVAL_VERB = {
@@ -321,12 +327,17 @@ export default function AccountantLogPage() {
   };
 
   const approveMut = useMutation({
-    mutationFn: ({ id, pin }) => api.post(`/staff/approvals/${id}/approve`, { pin }),
+    mutationFn: ({ id, pin, extra }) => api.post(`/staff/approvals/${id}/approve`, { pin, ...(extra || {}) }),
     onSuccess: (res) => {
       // A held receipt executes on approve (no finalize) — say what actually happened.
       toast.success(res?.data?.status === "executed"
         ? (en ? "Approved — the counted goods are now in stock" : "Approuvé — les marchandises comptées sont en stock")
         : (en ? "Approved — staff will complete it" : "Approuvé — le personnel le finalisera"));
+      const sf = res?.data?.shortfall;
+      if (sf && sf.success) toast.success(en ? "Shortfall closed" : "Manque clos");
+      else if (sf) toast.error(sf[en ? "message_en" : "message_fr"] || sf.message || (en ? "Shortfall still open on the transfer" : "Manque toujours ouvert sur le transfert"));
+      qc.invalidateQueries({ queryKey: ["transfers"] });
+      qc.invalidateQueries({ queryKey: ["stock-checks"] });
       setPinFor(null); setPinValue("");
       qc.invalidateQueries({ queryKey: ["staff-approvals-pending"] });
       // MP-CORRECTIONS-GUARDRAIL: the row moves pending → approved, so the
@@ -767,6 +778,9 @@ export default function AccountantLogPage() {
             {/* MP-APPROVAL-DETAIL: show the full why + order right where he decides (auto-open). */}
             <div style={{ marginBottom: 14 }}>
               <ApprovalDetailView approval={pinFor} defaultOpen />
+              {pinFor.action_type === HOLD_ACTION && (
+                <HoldShortfallFields en={en} hold={hold} choice={sfChoice} setChoice={setSfChoice} note={sfNote} setNote={setSfNote} />
+              )}
             </div>
             <div className="form-group"><label className="label">{en ? "Enter your PIN to approve" : "Entrez votre code PIN pour approuver"}</label>
               <input className="input" type="password" inputMode="numeric" value={pinValue}
@@ -775,8 +789,11 @@ export default function AccountantLogPage() {
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setPinFor(null)}>{en ? "Cancel" : "Annuler"}</button>
-              <button className="btn btn-primary" style={{ flex: 2 }} disabled={pinValue.length < 4 || approveMut.isPending}
-                onClick={() => approveMut.mutate({ id: pinFor.id, pin: pinValue })}>
+              <button className="btn btn-primary" style={{ flex: 2 }}
+                disabled={pinValue.length < 4 || approveMut.isPending
+                  || (pinFor.action_type === HOLD_ACTION && !holdShortfallReady(hold, sfChoice, sfNote))}
+                onClick={() => approveMut.mutate({ id: pinFor.id, pin: pinValue,
+                  extra: pinFor.action_type === HOLD_ACTION ? holdShortfallBody(hold, sfChoice, sfNote) : {} })}>
                 {approveMut.isPending ? "..." : (en ? "Approve & do it" : "Approuver et exécuter")}
               </button>
             </div>
@@ -1374,7 +1391,7 @@ function LedgerView({ staffList, en, onBack }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {rows.map((r) => (
             <button key={r.entry_id} onClick={() => openDetail(r)}
-              style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, textAlign: "left", cursor: "pointer", width: "100%" }}>
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", color: "var(--text-primary)", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, textAlign: "left", cursor: "pointer", width: "100%" }}>
               <div style={{ fontSize: 20, flexShrink: 0 }}>{LEDGER_TYPES[r.activity_type]?.icon || "•"}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 700, fontSize: 13.5 }}>

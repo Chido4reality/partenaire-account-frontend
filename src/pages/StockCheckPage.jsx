@@ -23,6 +23,8 @@ import { unitLabel } from "../utils/units";
 import DateRangeFilter, { inRange, wideRange } from "../components/common/DateRangeFilter";
 import { genLocalId } from "../utils/pendingSync";
 import { useStockCheckSummary, NOT_COUNTED_AMBER_AT } from "../utils/useStockCheckSummary";
+import OptionCard from "../components/common/OptionCard"; // readable option titles
+import { outcomeFromStockCheckSub, outcomeByKey } from "../utils/transferVarianceOutcomes"; // carry "Where did they go?" to the transfer
 
 // MP-STALE-PRODUCT-SCAN: mirrors backend lib/stockChecks.js's STALE_THRESHOLD_DAYS
 // (fixed, not per-org configurable — Peter, 2026-07-14). Display-only.
@@ -898,7 +900,7 @@ export default function StockCheckPage() {
           refusal={varRefusal}
           onClearRefusal={() => setVarRefusal(null)}
           onRecount={() => recountMut.mutate(varResolveFor.id)}
-          onOpenTransfer={(id) => { setVarResolveFor(null); setVarRefusal(null); navigate(`/transfers?tr=${id}`); }}
+          onOpenTransfer={(id, why) => { setVarResolveFor(null); setVarRefusal(null); navigate(`/transfers?tr=${id}${why ? `&why=${why}` : ""}`); }}
           onCancel={() => { setVarResolveFor(null); setVarRefusal(null); }}
           onResolve={(payload) => varResolveMut.mutate({ id: varResolveFor.id, ...payload })} />
       )}
@@ -1140,6 +1142,9 @@ function ResolveVarianceModal({ row, en, busy, recounting, onCancel, onResolve, 
   const [qty, setQty] = useState(String(counted));       // best available number
   const [subReason, setSubReason] = useState("");
   const [note, setNote] = useState("");
+  // A check raised by a transfer is closed ON the transfer (Guard A). There, the
+  // shortfall answer is not "for the record only" — it decides where the units go.
+  const fromTransfer = row.flagged_by === "transfer";
 
   // What the shelf holds RIGHT NOW. baseline_mismatch reports it authoritatively
   // (that refusal exists because it disagrees with the frozen figure); otherwise
@@ -1153,6 +1158,8 @@ function ResolveVarianceModal({ row, en, busy, recounting, onCancel, onResolve, 
   // DIRECTION FROM THE SIGN — never from the reason word. Mirrors the backend.
   const delta = qtyValid ? n - expected : 0;
   const subOptions = delta < 0 ? SUB_SHORTFALL : SUB_SURPLUS;
+  // Only a SHORTFALL answer the owner actually gave is carried to the transfer.
+  const carriedOutcome = fromTransfer && reason === "stock_wrong" && delta < 0 ? outcomeFromStockCheckSub(subReason) : null;
 
   // Changing the answer invalidates a refusal that was about the previous answer.
   const pick = (key) => { setReason(key); if (refusal) onClearRefusal(); };
@@ -1283,9 +1290,18 @@ function ResolveVarianceModal({ row, en, busy, recounting, onCancel, onResolve, 
                 no way to reach it is a dead end wearing a hand-off's clothes.
                 20 Complete Chain Bajaj left Principal Magazine and were credited
                 nowhere; this button is what stops the next 20. */}
+            {/* VARIANCE OUTCOMES: the answer to "Where did they go?" travels WITH the
+                hand-off. It used to be dropped here, and the transfer screen's
+                preselected "arrived later" was written instead (TRF-20261009-0001). */}
+            {code === "resolve_on_transfer" && carriedOutcome && (
+              <div style={{ fontSize: 12.5, marginTop: 10, color: "var(--text-primary)", lineHeight: 1.5 }}>
+                {en ? <>Your answer — <b style={{ color: "var(--brand)" }}>{outcomeByKey(carriedOutcome).en}</b> — goes with you to the transfer.</>
+                    : <>Votre réponse — <b style={{ color: "var(--brand)" }}>{outcomeByKey(carriedOutcome).fr}</b> — vous suit sur le transfert.</>}
+              </div>
+            )}
             {code === "resolve_on_transfer" && refusal.transfer_id && (
               <button className="btn btn-primary" style={{ width: "100%", marginTop: 14, fontWeight: 700 }}
-                disabled={busy} onClick={() => onOpenTransfer(refusal.transfer_id)}>
+                disabled={busy} onClick={() => onOpenTransfer(refusal.transfer_id, carriedOutcome)}>
                 {en ? "Open the transfer" : "Ouvrir le transfert"} {refusal.transfer_number ? `· ${refusal.transfer_number}` : ""}
               </button>
             )}
@@ -1319,13 +1335,9 @@ function ResolveVarianceModal({ row, en, busy, recounting, onCancel, onResolve, 
             </label>
             <div style={{ marginTop: 8, marginBottom: 12, display: "flex", flexDirection: "column", gap: 6 }}>
               {RESOLVE_BRANCHES.map(b => (
-                <button key={b.key} onClick={() => pick(b.key)} disabled={busy}
-                  style={{ textAlign: "left", padding: "9px 11px", borderRadius: 10, cursor: "pointer",
-                           background: reason === b.key ? "rgba(99,102,241,0.14)" : "transparent",
-                           border: `1px solid ${reason === b.key ? "rgba(99,102,241,0.55)" : "var(--border, rgba(255,255,255,0.12))"}` }}>
-                  <div style={{ fontWeight: 700, fontSize: 13 }}>{en ? b.en : b.fr}</div>
-                  <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 2, lineHeight: 1.45 }}>{en ? b.hintEn : b.hintFr}</div>
-                </button>
+                <OptionCard key={b.key} testId={`resolve-branch-${b.key}`} selected={reason === b.key}
+                  onClick={() => pick(b.key)} disabled={busy}
+                  title={en ? b.en : b.fr} hint={en ? b.hintEn : b.hintFr} />
               ))}
             </div>
 
@@ -1351,8 +1363,11 @@ function ResolveVarianceModal({ row, en, busy, recounting, onCancel, onResolve, 
                   <option value="">{en ? "— not specified —" : "— non précisé —"}</option>
                   {subOptions.map(o => <option key={o.key} value={o.key}>{en ? o.en : o.fr}</option>)}
                 </select>
-                <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 6, lineHeight: 1.5 }}>
-                  {subReason === "damaged"
+                <div style={{ fontSize: 11.5, color: "var(--text-secondary)", marginTop: 6, lineHeight: 1.5 }}>
+                  {fromTransfer && delta < 0
+                    ? (en ? "This came from a transfer, so it is closed on the transfer — your answer goes with you and decides where the missing units go."
+                          : "Ceci vient d'un transfert : il se clôt sur le transfert — votre réponse vous suit et décide où vont les unités manquantes.")
+                    : subReason === "damaged"
                     ? (en ? `📦 ${Math.abs(delta)} unit(s) will be added to the Damaged pile, where they can still be sold cheap or scrapped.`
                           : `📦 ${Math.abs(delta)} unité(s) iront dans la pile Endommagés, où elles peuvent encore être vendues ou mises au rebut.`)
                     : (en ? "Recorded for the record only — it does not change the correction."
