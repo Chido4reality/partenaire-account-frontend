@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import api from "../utils/api";
@@ -50,6 +50,8 @@ export default function TransferDetailModal({ transferId, onClose, initialReason
   const options = allowedOutcomes({ isOwner, canCancelTransfers: role === "manager" && !!myPerms?.can_cancel_transfers });
   const carried = initialReason && options.some((o) => o.key === initialReason) ? initialReason : null;
   const [reason, setReason] = useState(carried);
+  // A manager's grant arrives after the first render — apply the carried answer then.
+  useEffect(() => { if (carried && !reason) setReason(carried); }, [carried]); // eslint-disable-line react-hooks/exhaustive-deps
   const [note, setNote] = useState("");
   const noteMissing = outcomeNoteRequired(reason) && !note.trim();
 

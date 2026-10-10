@@ -34,13 +34,11 @@ export const VARIANCE_OUTCOMES = [
 
 export const outcomeByKey = (k) => VARIANCE_OUTCOMES.find((o) => o.key === k) || null;
 
-/** The outcomes this user may choose. The owner: all. A manager granted
- *  can_cancel_transfers: return to source only. Anyone else: none. The server
- *  re-checks every one. */
+/** The outcomes this user may choose: ALL of them for the owner or a manager granted
+ *  can_cancel_transfers (Peter, 2026-10-10 — a manager given full control must be
+ *  able to say Damaged too); none for anyone else. The server re-checks. */
 export function allowedOutcomes({ isOwner, canCancelTransfers }) {
-  if (isOwner) return VARIANCE_OUTCOMES;
-  if (canCancelTransfers) return VARIANCE_OUTCOMES.filter((o) => o.key === "return_to_source");
-  return [];
+  return isOwner || canCancelTransfers ? VARIANCE_OUTCOMES : [];
 }
 
 /** A stock-check "Where did they go?" answer → the transfer outcome it means. Only an

@@ -167,6 +167,9 @@ export default function StockCheckPage() {
   const { perms: myPerms } = useMyPermissions({ enabled: role === "manager" });
   const canResolveChecks = isOwner
     || (role === "manager" && myPerms?.can_resolve_stock_checks === true);
+  // VARIANCE OUTCOMES: a check raised by a TRANSFER is resolved on the transfer, which a
+  // manager granted can_cancel_transfers may do — so he gets the Resolve (hand-off) too.
+  const canTransferVariance = isOwner || (role === "manager" && myPerms?.can_cancel_transfers === true);
   // MP-DAMAGED-GOODS: owner/manager may write off sellable stock into a damaged pile.
   const canWriteoff = role === "owner" || role === "manager";
   const [tab, setTab] = useState("pending");           // pending | mismatch | resolved | damaged
@@ -788,7 +791,7 @@ export default function StockCheckPage() {
                 )}
                 {/* Part B: the owner — or a manager granted can_resolve_stock_checks —
                     resolves a mismatch (reason + corrected qty → stock fix). */}
-                {isMismatch && canResolveChecks && (
+                {isMismatch && (canResolveChecks || (r.flagged_by === "transfer" && canTransferVariance)) && (
                   <div style={{ alignSelf: "center" }}>
                     <button onClick={() => setVarResolveFor(r)} className="btn btn-primary" style={{ fontWeight: 700, whiteSpace: "nowrap" }}>
                       🛠 {en ? "Resolve" : "Résoudre"}
