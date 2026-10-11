@@ -114,6 +114,16 @@ export default function StockCountPage() {
     setCountList(prev => prev.map((c, i) => i === idx ? { ...c, actual_qty: qty } : c));
   };
 
+  // LAUNCH-BATCH-1 F7: a cleared box is NOT a count of zero. `+""` is 0, so the old
+  // submit turned a blank box into "the shelf is empty" and zeroed the stock. Blank,
+  // non-numeric and negative lines block the save; the raw value is sent so the server
+  // (which now refuses them too) sees exactly what was typed.
+  const isBadCount = (v) => {
+    if (v === null || v === undefined || String(v).trim() === "") return true;
+    const n = Number(v);
+    return !Number.isFinite(n) || n < 0;
+  };
+
   const removeFromCount = (idx) => {
     setCountList(prev => prev.filter((_, i) => i !== idx));
   };
@@ -123,11 +133,13 @@ export default function StockCountPage() {
       // Guard: only a single-location count can be saved as an adjustment — the
       // "All locations" sum can't be attributed to one location's pa_stock row.
       if (!singleLoc) throw new Error(lang === "en" ? "Select a location to save corrections" : "Choisissez une boutique pour enregistrer");
+      if (countList.some(c => isBadCount(c.actual_qty)))
+        throw new Error(lang === "en" ? "Enter a count (0 or more) for every item" : "Saisissez un comptage (0 ou plus) pour chaque article");
       return api.post("/stock/count", {
         counts: countList.map(c => ({
           product_id: c.product_id,
           location_id: c.location_id,   // = the audited shop → adjusts ONLY that pa_stock row
-          actual_quantity: +c.actual_qty,
+          actual_quantity: typeof c.actual_qty === "string" ? c.actual_qty.trim() : c.actual_qty,
           notes: `Stock count by ${user?.full_name} @ ${selectedLocName}`
         }))
       });
@@ -145,6 +157,7 @@ export default function StockCountPage() {
 
   const differences = countList.filter(c => +c.actual_qty !== +c.system_qty);
   const totalItems = countList.length;
+  const hasBadCount = countList.some(c => isBadCount(c.actual_qty));
 
   return (
     <div style={{ padding: 24, maxWidth: 900, margin: "0 auto" }}>
@@ -156,7 +169,7 @@ export default function StockCountPage() {
           </div>
         </div>
         {countList.length > 0 && !submitted && singleLoc && (
-          <button className="btn btn-primary" onClick={() => submitMutation.mutate()} disabled={submitMutation.isPending}>
+          <button className="btn btn-primary" onClick={() => submitMutation.mutate()} disabled={submitMutation.isPending || hasBadCount}>
             {submitMutation.isPending ? "..." : `✓ ${lang === "en" ? "Save Count" : "Sauvegarder"} (${totalItems})`}
           </button>
         )}
@@ -333,9 +346,10 @@ export default function StockCountPage() {
                       </div>
                       <div>
                         <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 3 }}>Counted *</div>
-                        <input type="number" value={item.actual_qty}
+                        <input type="number" min="0" value={item.actual_qty}
                           onChange={e => updateActualQty(idx, e.target.value)}
-                          style={{ width: "100%", padding: "6px 8px", borderRadius: 8, border: `1px solid ${hasDiff ? "#f87171" : "var(--border)"}`, background: "var(--bg-elevated)", color: "var(--text-primary)", fontSize: 14, fontWeight: 700, textAlign: "center" }} />
+                          aria-invalid={isBadCount(item.actual_qty)}
+                          style={{ width: "100%", padding: "6px 8px", borderRadius: 8, border: `${isBadCount(item.actual_qty) ? "2px" : "1px"} solid ${isBadCount(item.actual_qty) || hasDiff ? "#f87171" : "var(--border)"}`, background: "var(--bg-elevated)", color: "var(--text-primary)", fontSize: 14, fontWeight: 700, textAlign: "center" }} />
                       </div>
                       <div style={{ textAlign: "center" }}>
                         <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 3 }}>Diff</div>
@@ -366,7 +380,7 @@ export default function StockCountPage() {
                   view/count-only: Save is disabled (no ambiguous cross-shop write). */}
               <button className="btn btn-primary" style={{ height: 46, fontWeight: 700 }}
                 onClick={() => submitMutation.mutate()}
-                disabled={submitMutation.isPending || countList.length === 0 || !singleLoc}
+                disabled={submitMutation.isPending || countList.length === 0 || !singleLoc || hasBadCount}
                 title={!singleLoc ? (lang === "en" ? "Select a location to save corrections" : "Choisissez une boutique pour enregistrer") : ""}>
                 {submitMutation.isPending
                   ? "⏳ Saving..."
