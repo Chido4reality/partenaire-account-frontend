@@ -144,7 +144,23 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
 
   const removeNewItem = (idx) => setNewItems(prev => prev.filter((_, i) => i !== idx));
 
-  const returnedTotal = selectedItems.filter(i => i.selected).reduce((s, i) => s + i.returnQty * i.unit_price, 0);
+  // LAUNCH-BATCH-2 M3: preview what the server will actually refund — each line's NET
+  // value (after its own discount), scaled by the sale-level discount. The preview used
+  // the gross unit price: a 2 × 5,000 sale with 1,000 off showed 5,000 back for one unit
+  // while the refund is 4,500. (The server also gives the last unit the exact remainder;
+  // the preview can differ from it by rounding only.)
+  const _lineNet = (si) => (si.net_amount != null
+    ? Number(si.net_amount)
+    : Number(si.unit_price || 0) * Number(si.quantity || 0) - Number(si.discount_amount || 0));
+  const _productLines = (sale.pa_sale_items || []).filter(si => (si.line_type || "product") === "product" && si.product_id);
+  const _lineSubtotal = _productLines.reduce((s, si) => s + _lineNet(si), 0);
+  const _saleDiscount = Math.max(0, Number(sale.discount_amount || 0));
+  const _discountFactor = _lineSubtotal > 0 && _saleDiscount > 0 ? Math.max(0, (_lineSubtotal - _saleDiscount) / _lineSubtotal) : 1;
+  const refundUnit = (it) => {
+    const q = Number(it.quantity || 0);
+    return (q > 0 ? _lineNet(it) / q : Number(it.unit_price || 0)) * _discountFactor;
+  };
+  const returnedTotal = Math.round(selectedItems.filter(i => i.selected).reduce((s, i) => s + i.returnQty * refundUnit(i), 0) * 100) / 100;
   const newTotal = newItems.reduce((s, i) => s + i.quantity * i.sell_price, 0);
   const cashDiff = newTotal - returnedTotal;
 
@@ -398,7 +414,8 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
         // Approval-Token from cashiers on /returns/return + /exchange.
         if (user?.role !== "owner" && user?.role !== "cashier") {
           try {
-            const refundTotal = items_returned.reduce((s, i) => s + (i.qty * i.unit_price), 0);
+            // M3: the approver sees the refund the server will pay (discounts included).
+            const refundTotal = returnedTotal;
             const { token } = await requestApproval({
               actionType:  mode === "exchange" ? "exchange_sale" : "refund_sale",
               targetTable: "pa_sales",
