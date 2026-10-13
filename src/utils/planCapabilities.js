@@ -21,9 +21,9 @@ export const PLAN_CAPABILITIES = {
   trial: {
     label: 'Trial',
     label_fr: 'Essai',
-    duration_days: 7,    // MP-7DAY-FULL-TRIAL: 7-day full-feature trial window
+    duration_days: 30,   // LAUNCH-BATCH-2b: 30 days of every Pro feature from sign-up
     grace_days: 0,       // these caps are the restricted FREE floor AFTER expiry
-    // NOTE: during the 7-day window the backend effective plan is 'pro' (full);
+    // NOTE: during the 30-day window the backend effective plan is 'pro' (full);
     // these 'trial' sections are the restricted free floor an org lands on after.
     sections: ['sales', 'inventory', 'settings'],
     inventory_cap: 10,     // MP-BILLING-V2 Q3
@@ -41,9 +41,9 @@ export const PLAN_CAPABILITIES = {
     sections: ['dashboard', 'sales', 'inventory', 'count', 'labels',
                'transfers', 'customers', 'credits', 'cashflow', 'reports',
                'online_cart', 'settings'],
-    inventory_cap: null,
+    inventory_cap: 100,    // LAUNCH-BATCH-2b: Lite = 1 location / 100 products / 2 users
     staff_cap: 2,
-    location_cap: 2,
+    location_cap: 1,
     csv_exports: false,
     receipt_branding: false,
     dozie_access: true,

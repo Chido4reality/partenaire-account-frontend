@@ -15,7 +15,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useLangStore, useAuthStore } from "../../store";
-import { planFeatureList } from "../../utils/market";
+import { planFeatureList, planFeatureLabel } from "../../utils/market";
 import { useCurrency } from "../../utils/useCurrency";
 import api from "../../utils/api";
 import { getCapabilities, hasSection, hasFeature } from "../../utils/planCapabilities";
@@ -56,17 +56,19 @@ const FEATURE_COPY = {
     en: { title: "Upgrade to access Stenamo Market", body: "Stenamo Market — the wholesale marketplace — is included on Trial, Gold, and Premium plans." },
     fr: { title: "Mise à niveau requise pour Stenamo Market", body: "Stenamo Market — la place de marché — est incluse dans les plans Essai, Gold et Premium." }
   },
+  // LAUNCH-BATCH-2b: the limit's real number comes from planCapabilities (capBody below);
+  // a server refusal carries its own message, in the shop's currency, which wins.
   inventory_cap: {
-    en: { title: "Inventory cap reached", body: "Silver is capped at 10 products. Upgrade to add more." },
-    fr: { title: "Limite d'inventaire atteinte", body: "Silver est limité à 10 produits. Mise à niveau requise pour en ajouter." }
+    en: { title: "Product limit reached", body: "Upgrade to Pro to add more products." },
+    fr: { title: "Limite de produits atteinte", body: "Passez au forfait Pro pour ajouter d'autres produits." }
   },
   staff_cap: {
-    en: { title: "Staff cap reached", body: "Your current plan limits the number of staff accounts you can invite. Upgrade to add more." },
-    fr: { title: "Limite d'utilisateurs atteinte", body: "Votre plan limite le nombre d'utilisateurs. Mise à niveau requise." }
+    en: { title: "User limit reached", body: "Upgrade to Pro to add more users." },
+    fr: { title: "Limite d'utilisateurs atteinte", body: "Passez au forfait Pro pour ajouter d'autres utilisateurs." }
   },
   location_cap: {
-    en: { title: "Location cap reached", body: "Your current plan limits the number of locations. Upgrade to add more." },
-    fr: { title: "Limite d'emplacements atteinte", body: "Votre plan limite le nombre d'emplacements." }
+    en: { title: "Location limit reached", body: "Upgrade to Pro to add more locations." },
+    fr: { title: "Limite d'emplacements atteinte", body: "Passez au forfait Pro pour ajouter d'autres emplacements." }
   },
   csv_exports: {
     en: { title: "CSV exports require Premium", body: "Bulk CSV downloads of sales, inventory, customers, and staff are a Premium feature." },
@@ -104,7 +106,23 @@ function copyFor(feature, lang) {
     : { title: `${titled} requires a higher plan`, body: "Upgrade required." };
 }
 
-export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
+// LAUNCH-BATCH-2b: "Your Lite plan allows 100 products. Upgrade to Pro to add more." —
+// the number from the same capability table the server enforces.
+const CAP_NOUN = {
+  inventory_cap: { en: ["product", "products"], fr: ["produit", "produits"] },
+  staff_cap:     { en: ["user (the owner counts)", "users (the owner counts)"], fr: ["utilisateur (propriétaire compris)", "utilisateurs (propriétaire compris)"] },
+  location_cap:  { en: ["location", "locations"], fr: ["emplacement", "emplacements"] },
+};
+function capBody(feature, caps, lang) {
+  const cap = caps && caps[feature];
+  if (cap == null || !CAP_NOUN[feature]) return null;
+  const noun = CAP_NOUN[feature][lang === "fr" ? "fr" : "en"][cap === 1 ? 0 : 1];
+  return lang === "fr"
+    ? `Votre forfait ${caps.label_fr} permet ${cap} ${noun}. Passez au forfait Pro pour en ajouter.`
+    : `Your ${caps.label} plan allows ${cap} ${noun}. Upgrade to Pro to add more.`;
+}
+
+export default function PaywallModal({ feature, currentPlan, mpId, onClose, message }) {
   const { lang } = useLangStore();
   const fmt = useCurrency();
   const navigate = useNavigate();
@@ -138,6 +156,9 @@ export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
   const currentPlanLabel = myPlan?.plan?.name
     || (lang === "fr" ? currentCaps.label_fr : currentCaps.label)
     || realPlanId;
+  // LAUNCH-BATCH-2b: the server's refusal (EN/FR, the shop's currency) when there is one; else
+  // the plan's real limit; else the generic copy.
+  const bodyText = (message && (lang === "fr" ? message.fr : message.en)) || capBody(feature, currentCaps, lang) || copy.body;
 
   // Purchasable paid tiers (Lite / Pro / Pro Plus) from the API, minus the free
   // floor — Pro Plus appears automatically once is_active. Only offer tiers
@@ -179,7 +200,7 @@ export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
   // Feature chips per plan — tolerate array or JSON-string shape from the API.
   // LAUNCH-BATCH-2b: "Stenamo Market", and only for shops the Market is open to.
   const org = useAuthStore((s) => s.org);
-  const planFeatures = (p) => planFeatureList(p.features, org);
+  const planFeatures = (p) => planFeatureList(p.features, org).map((f) => planFeatureLabel(f, lang));
 
   return (
     <div
@@ -212,7 +233,7 @@ export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
         </div>
 
         <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>
-          {copy.body}
+          {bodyText}
         </div>
 
         <div style={{ background: "var(--bg-card)", borderRadius: 10, padding: "10px 14px", marginBottom: 16, display: "flex", justifyContent: "space-between", fontSize: 12 }}>

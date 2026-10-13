@@ -36,7 +36,8 @@
 // v13: Family approvals — a relative's Gallery photograph is reviewed here, with its file.
 // v14: Support Messaging — Équipe Stenamo ↔ one shop owner, master admin only.
 // v15: Messages hides deleted businesses by default ("Show deactivated", like Businesses).
-const VERSION = 'admin-pwa-v15';
+// v16: Launch discount (owner only) — one setting for the plan discount; the old Plan discounts link is retired.
+const VERSION = 'admin-pwa-v16';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const API_CACHE = `${VERSION}-api`;

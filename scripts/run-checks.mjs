@@ -24,6 +24,7 @@ const CHECKS = [
   ["i18n-keys",     "scripts/i18n-keys-check.mjs",       "LAUNCH-BATCH-2: every t(\"a.b\") key exists in en AND fr (a missing one renders the raw key)"],
   ["refund-receipt-method", "scripts/refund-receipt-method-check.mjs", "LAUNCH-BATCH-2b: a refund wholly against the debt prints 'account', not a cash method"],
   ["plan-features", "scripts/plan-features-check.mjs", "LAUNCH-BATCH-2b: plan cards say Stenamo Market and never offer it to a non-XAF shop"],
+  ["plan-caps-parity", "scripts/plan-caps-parity-check.mjs", "LAUNCH-BATCH-2b: the app's plan limits = the server's (Lite 1/100/2, trial 30 days)"],
   ["query-invalidate", "scripts/query-invalidation-check.mjs", "LAUNCH-BATCH-2b: Inventory names its query keys (v5 array form refetched the whole app); the rest may only shrink"],
   ["export-check",  "scripts/report-export-check.mjs",   "regression #7 — CSV round-trips through a real spreadsheet parser"],
   ["marketing",     "scripts/marketing-render-check.mjs","admin.html marketing screens RENDER against the real inline script"],

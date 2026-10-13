@@ -21,7 +21,7 @@ import { openWhatsApp } from "../utils/whatsapp";
 import { isFrenchEnglishOrg } from "../utils/receiptExtras";
 
 import { SUPPORT_PHONE } from "../utils/support";
-import { planFeatureList } from "../utils/market";
+import { planFeatureList, planFeatureLabel } from "../utils/market";
 // Manual (offline) fallback methods → admin approval, ONLY for paying the owner
 // directly offline. MP-SUB-NO-PHANTOM-PENDING: Mobile Money / Orange are NOT
 // here — those are Flutterwave methods and go through the FW hosted page (the
@@ -206,7 +206,7 @@ export default function RequestActivationPage() {
         {plans.map(p => {
           const price = p.price ?? p.price_monthly;
           const isSel = selected?.id === p.id;
-          const feats = planFeatureList(p.features, org);   // LAUNCH-BATCH-2b: Stenamo Market, XAF only
+          const feats = planFeatureList(p.features, org).map((f) => planFeatureLabel(f, en ? "en" : "fr"));   // LAUNCH-BATCH-2b: Stenamo Market, XAF only; in the shop's language
           return (
             <div key={p.id} onClick={() => setSelectedId(p.id)}
               style={{ cursor: "pointer", borderRadius: 14, padding: 16,

@@ -581,7 +581,10 @@ api.interceptors.response.use(res => {
           feature:      d.feature,
           current_plan: d.current_plan,
           current_count: d.current_count,
-          cap:           d.cap
+          cap:           d.cap,
+          // LAUNCH-BATCH-2b: the server's own words (EN/FR, the shop's currency)
+          message_en:    d.message_en,
+          message_fr:    d.message_fr
         }
       }));
     } catch (_) { /* SSR / no-window env */ }

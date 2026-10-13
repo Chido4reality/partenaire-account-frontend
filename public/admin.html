@@ -1045,6 +1045,7 @@
         <a class="sb-link" data-route="businesses"><span class="sb-link-icon">🏪</span><span class="sb-link-label">Businesses</span></a>
         <a class="sb-link" data-route="subscriptions"><span class="sb-link-icon">💳</span><span class="sb-link-label">Subscriptions</span></a>
         <a class="sb-link" data-route="subscription-discounts" id="sb-link-subdiscounts"><span class="sb-link-icon">🏷️</span><span class="sb-link-label">Plan discounts</span></a>
+        <a class="sb-link" data-route="launch-discount" id="sb-link-launch-discount" style="display:none"><span class="sb-link-icon">🚀</span><span class="sb-link-label">Launch discount</span></a>
         <a class="sb-link" data-route="promo-codes" id="sb-link-promocodes"><span class="sb-link-icon">🎟️</span><span class="sb-link-label">Promo codes</span></a>
         <a class="sb-link" data-route="loyalty-grants" id="sb-link-loyalty"><span class="sb-link-icon">🎁</span><span class="sb-link-label">Loyalty grants</span></a>
         <!-- MP-SUB-CONSOLIDATION (v2): "Sub. requests" tab retired. It read the
@@ -1892,6 +1893,64 @@
               <tbody id="sd-tbody"><tr><td colspan="6" class="muted ta-center" style="padding:20px">Loading…</td></tr></tbody>
             </table>
           </div>
+        </div>
+      </section>
+
+      <!-- LAUNCH DISCOUNT (LAUNCH-BATCH-2b) — master_admin only. ONE setting that drives the
+           plan cards, the "you save" line, the Flutterwave charge and the payment check.
+           The server gates it (requireAdminRole('master_admin')); hiding the link is cosmetic. -->
+      <section class="route" id="route-launch-discount">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Launch discount</div>
+            <div class="page-sub">An amount off every month of a paid plan, per currency. What you save here is what shops see on the plan cards and what they are charged — immediately, no deploy. Every change is recorded below.</div>
+          </div>
+          <span class="pill" id="ld-status">…</span>
+        </div>
+        <div class="card" style="padding:16px;margin-bottom:16px">
+          <label style="display:flex;align-items:center;gap:10px;font-size:15px;font-weight:700;margin-bottom:14px;cursor:pointer">
+            <input type="checkbox" id="ld-enabled" style="width:20px;height:20px" /> Discount ON
+          </label>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px">
+            <div class="field"><label>Nigeria — ₦ off per month</label><input type="number" min="0" step="1" id="ld-ngn" /></div>
+            <div class="field"><label>Cameroon — FCFA off per month</label><input type="number" min="0" step="1" id="ld-xaf" /></div>
+            <div class="field"><label>Starts (optional)</label><input type="date" id="ld-starts" /></div>
+            <div class="field"><label>Ends (optional — off from this day)</label><input type="date" id="ld-ends" /></div>
+          </div>
+          <div class="field" style="margin-top:12px"><label>Plans</label>
+            <div style="display:flex;flex-wrap:wrap;gap:14px;font-size:13px;align-items:center">
+              <label style="display:flex;align-items:center;gap:6px"><input type="radio" name="ld-scope" id="ld-scope-all" value="all" /> All paid plans</label>
+              <label style="display:flex;align-items:center;gap:6px"><input type="radio" name="ld-scope" id="ld-scope-some" value="some" /> Only:</label>
+              <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" class="ld-plan" value="lite" /> Lite</label>
+              <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" class="ld-plan" value="pro" /> Pro</label>
+              <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" class="ld-plan" value="pro_plus" /> Pro Plus</label>
+            </div>
+          </div>
+          <div id="ld-summary" class="muted" style="margin-top:12px;font-size:13px"></div>
+          <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+            <button class="btn btn-primary" id="ld-save-btn">Save…</button>
+            <span class="muted" id="ld-updated" style="font-size:12px"></span>
+          </div>
+          <div id="ld-confirm" style="display:none;margin-top:12px;padding:12px;border:1px solid var(--warning);border-radius:10px">
+            <div style="font-weight:700;margin-bottom:6px">Save this? Shops see the new prices immediately.</div>
+            <div id="ld-confirm-text" style="font-size:13px;margin-bottom:10px"></div>
+            <button class="btn btn-primary" id="ld-confirm-yes">Yes, save</button>
+            <button class="btn" id="ld-confirm-no">Cancel</button>
+          </div>
+        </div>
+        <div class="card" style="padding:0;overflow:auto;margin-bottom:16px">
+          <div style="padding:12px 14px;font-weight:700">What shops pay with the saved setting</div>
+          <table class="data-table" id="ld-preview">
+            <thead><tr><th>Country</th><th>Plan</th><th class="ta-right">1 month</th><th class="ta-right">3 months</th><th class="ta-right">6 months</th><th class="ta-right">12 months</th></tr></thead>
+            <tbody id="ld-preview-body"><tr><td colspan="6" class="muted ta-center" style="padding:20px">Loading…</td></tr></tbody>
+          </table>
+        </div>
+        <div class="card" style="padding:0;overflow:auto">
+          <div style="padding:12px 14px;font-weight:700">Change history</div>
+          <table class="data-table">
+            <thead><tr><th>When</th><th>Who</th><th>Before</th><th>After</th></tr></thead>
+            <tbody id="ld-history"><tr><td colspan="4" class="muted ta-center" style="padding:20px">Loading…</td></tr></tbody>
+          </table>
         </div>
       </section>
 
@@ -2953,7 +3012,7 @@
     const VALID_ROUTES = new Set([
       'dashboard', 'live', 'businesses', 'subscriptions', 'subscription-requests', 'mp-finance',
       'marketplace-users', 'verifications', 'dozie-subscriptions', 'orders', 'disputes', 'marketplace-finance',
-      'sell-restrictions', 'subscription-discounts', 'promo-codes', 'loyalty-grants',
+      'sell-restrictions', 'subscription-discounts', 'launch-discount', 'promo-codes', 'loyalty-grants',
       'messages', 'broadcasts', 'admin-team', 'audit-log', 'admin-activity', 'cart-reconcile', 'settings',
       'my-marketing', 'marketers', 'expenses',
       'family-accounts', 'family-approvals', 'family-people'
@@ -3080,6 +3139,7 @@
       if (route === 'businesses')         loadBusinesses();
       if (route === 'subscriptions')      loadSubscriptions();
       if (route === 'subscription-discounts') loadSubDiscounts();
+      if (route === 'launch-discount')    loadLaunchDiscount();
       if (route === 'promo-codes')        loadPromoCodes();
       if (route === 'loyalty-grants')     loadLoyaltyGrants();
       if (route === 'subscription-requests') loadSubscriptionRequests();
@@ -4459,8 +4519,12 @@
       // MP-SUBSCRIPTION-DISCOUNT: Plan discounts is full-CRUD admins only
       // (write endpoints are requireAdminRole('master_admin','admin')) — hide
       // for staff admins.
+      // LAUNCH-BATCH-2b: pricing no longer reads those rules (writes are refused with 410) —
+      // the link is retired; the Launch discount setting replaces it, master_admin only.
       const sdLink = $('sb-link-subdiscounts');
-      if (sdLink) sdLink.style.display = (role === 'staff') ? 'none' : '';
+      if (sdLink) sdLink.style.display = 'none';
+      const ldLink = $('sb-link-launch-discount');
+      if (ldLink) ldLink.style.display = isMaster ? '' : 'none';
 
       // PHASE 1 — marketer. The server refuses every non-marketing admin route
       // for this role (lib/adminRoleScope.js), so hiding links here is purely
@@ -7146,6 +7210,99 @@
     }
     function formatActionSlug(s) {
       return String(s || '').replace(/_/g, ' ');
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  LAUNCH DISCOUNT (LAUNCH-BATCH-2b) — GET/PUT /api/admin/launch-discount,
+    //  master_admin only (the API refuses everyone else). One setting: on/off,
+    //  ₦ and FCFA off per month, optional start/end, all plans or chosen ones.
+    // ════════════════════════════════════════════════════════════════
+    let _ldBound = false;
+    const LD_PLAN = { lite: 'Lite', pro: 'Pro', pro_plus: 'Pro Plus' };
+    const ldMoney = (n, cur) => cur === 'NGN'
+      ? '₦' + Math.round(Number(n) || 0).toLocaleString('en-US')
+      : Math.round(Number(n) || 0).toLocaleString('en-US').replace(/,/g, ' ') + ' FCFA';
+    const ldDate = (iso) => iso ? String(iso).slice(0, 10) : '';
+    function ldDescribe(s) {
+      if (!s) return '—';
+      const plans = Array.isArray(s.plan_ids) && s.plan_ids.length ? s.plan_ids.map(p => LD_PLAN[p] || p).join(', ') : 'all plans';
+      const win = (s.starts_at ? 'from ' + ldDate(s.starts_at) : '') + (s.ends_at ? ' until ' + ldDate(s.ends_at) : (s.starts_at ? ', no end' : 'no end'));
+      return (s.enabled ? 'ON' : 'OFF') + ' · −' + ldMoney(s.amount_ngn, 'NGN') + ' / −' + ldMoney(s.amount_xaf, 'XAF') + ' a month · ' + plans + ' · ' + win;
+    }
+    function ldRender(d) {
+      const s = d.setting || {};
+      $('ld-enabled').checked = !!s.enabled;
+      $('ld-ngn').value = s.amount_ngn != null ? Number(s.amount_ngn) : '';
+      $('ld-xaf').value = s.amount_xaf != null ? Number(s.amount_xaf) : '';
+      $('ld-starts').value = ldDate(s.starts_at);
+      $('ld-ends').value = ldDate(s.ends_at);
+      const some = Array.isArray(s.plan_ids) && s.plan_ids.length > 0;
+      $('ld-scope-all').checked = !some; $('ld-scope-some').checked = some;
+      document.querySelectorAll('.ld-plan').forEach(cb => { cb.checked = some ? s.plan_ids.includes(cb.value) : true; cb.disabled = !some; });
+      const st = $('ld-status');
+      st.textContent = d.live_now ? 'Live now' : (s.enabled ? 'On — outside its dates' : 'Off');
+      st.className = 'pill ' + (d.live_now ? 'active' : (s.enabled ? 'pending' : 'suspended'));
+      $('ld-summary').textContent = 'Saved: ' + ldDescribe(s);
+      $('ld-updated').textContent = s.updated_at ? 'Last change ' + new Date(s.updated_at).toLocaleString() + (s.updated_by_email ? ' by ' + s.updated_by_email : '') : '';
+      const rows = d.preview || [];
+      const cell = (r) => r.you_save > 0
+        ? '<div style="text-decoration:line-through;color:var(--text-muted);font-size:11px">' + ldMoney(r.full_price, r.currency) + '</div><div style="font-weight:700">' + ldMoney(r.price, r.currency) + '</div><div style="font-size:11px;color:var(--success)">save ' + ldMoney(r.you_save, r.currency) + '</div>'
+        : '<div style="font-weight:700">' + ldMoney(r.price, r.currency) + '</div>';
+      let html = '';
+      [['NGN', 'Nigeria'], ['XAF', 'Cameroon']].forEach(([cur, country]) => {
+        ['lite', 'pro', 'pro_plus'].forEach(plan => {
+          const by = (m) => rows.find(r => r.currency === cur && r.plan_id === plan && r.months === m);
+          html += '<tr><td>' + country + '</td><td>' + LD_PLAN[plan] + '</td>' + [1, 3, 6, 12].map(m => '<td class="ta-right">' + (by(m) ? cell(by(m)) : '—') + '</td>').join('') + '</tr>';
+        });
+      });
+      $('ld-preview-body').innerHTML = html || '<tr><td colspan="6" class="muted ta-center">—</td></tr>';
+      const hist = d.history || [];
+      $('ld-history').innerHTML = hist.length ? hist.map(h =>
+        '<tr><td>' + escapeHtml(new Date(h.changed_at).toLocaleString()) + '</td><td>' + escapeHtml(h.changed_by_email || '—') + '</td><td style="font-size:12px">'
+        + escapeHtml(Array.isArray(h.old_value) ? 'Automatic country rules (' + h.old_value.length + ')' : ldDescribe(h.old_value)) + '</td><td style="font-size:12px">' + escapeHtml(ldDescribe(h.new_value)) + '</td></tr>'
+      ).join('') : '<tr><td colspan="4" class="muted ta-center" style="padding:20px">No changes yet.</td></tr>';
+    }
+    async function loadLaunchDiscount() {
+      if (!_ldBound) {
+        _ldBound = true;
+        const syncScope = () => document.querySelectorAll('.ld-plan').forEach(cb => { cb.disabled = !$('ld-scope-some').checked; if (cb.disabled) cb.checked = true; });
+        $('ld-scope-all').addEventListener('change', syncScope);
+        $('ld-scope-some').addEventListener('change', syncScope);
+        $('ld-save-btn').addEventListener('click', askSaveLaunchDiscount);
+        $('ld-confirm-yes').addEventListener('click', saveLaunchDiscount);
+        $('ld-confirm-no').addEventListener('click', () => { $('ld-confirm').style.display = 'none'; });
+      }
+      try { const r = await apiAdmin('GET', '/admin/launch-discount'); ldRender(r.data || {}); }
+      catch (e) { if (e.status === 403) showToast('Launch discount is for the owner account only.', 'danger'); else showToast(e.message || 'Could not load the launch discount', 'danger'); }
+    }
+    function ldFormBody() {
+      const some = $('ld-scope-some').checked;
+      const plan_ids = some ? Array.from(document.querySelectorAll('.ld-plan')).filter(cb => cb.checked).map(cb => cb.value) : null;
+      return {
+        enabled: $('ld-enabled').checked,
+        amount_ngn: Number($('ld-ngn').value || 0),
+        amount_xaf: Number($('ld-xaf').value || 0),
+        starts_at: $('ld-starts').value ? $('ld-starts').value + 'T00:00:00Z' : null,
+        ends_at: $('ld-ends').value ? $('ld-ends').value + 'T00:00:00Z' : null,
+        plan_ids,
+      };
+    }
+    function askSaveLaunchDiscount() {
+      const body = ldFormBody();
+      if (Array.isArray(body.plan_ids) && !body.plan_ids.length) { showToast('Tick at least one plan, or choose All paid plans.', 'danger'); return; }
+      $('ld-confirm-text').textContent = ldDescribe(body);
+      $('ld-confirm').style.display = '';
+    }
+    async function saveLaunchDiscount() {
+      const body = ldFormBody();
+      $('ld-confirm').style.display = 'none';
+      const btn = $('ld-save-btn'); btn.disabled = true;
+      try {
+        await apiAdmin('PUT', '/admin/launch-discount', body);
+        showToast('Launch discount saved', 'success');
+        await loadLaunchDiscount();
+      } catch (e) { showToast(e.message || 'Could not save', 'danger'); }
+      finally { btn.disabled = false; }
     }
 
     // ════════════════════════════════════════════════════════════════

@@ -755,7 +755,8 @@ export default function Layout() {
     const handler = (e) => {
       setPaywall({
         feature: e.detail && e.detail.feature,
-        mpId:    null
+        mpId:    null,
+        message: e.detail && (e.detail.message_en || e.detail.message_fr) ? { en: e.detail.message_en, fr: e.detail.message_fr } : null,
       });
     };
     window.addEventListener("partenaire:paywall", handler);
@@ -1720,7 +1721,7 @@ export default function Layout() {
             );
           })}
         </div>
-        {paywall && <PaywallModal feature={paywall.feature} currentPlan={effectivePlan} mpId={myPlan?.user_id_number} onClose={() => setPaywall(null)} />}
+        {paywall && <PaywallModal feature={paywall.feature} currentPlan={effectivePlan} mpId={myPlan?.user_id_number} message={paywall.message} onClose={() => setPaywall(null)} />}
         </motion.div>
       </div>
     );
@@ -1928,7 +1929,7 @@ export default function Layout() {
         {restrictedBlock ? <RestrictedLock lang={lang} hasPending={hasPendingRequest} onRequest={() => navigate("/request-activation")} /> : <>{restrictedBanner}{messagesStrip}<Outlet /></>}
       </main>
 
-      {paywall && <PaywallModal feature={paywall.feature} currentPlan={effectivePlan} mpId={myPlan?.user_id_number} onClose={() => setPaywall(null)} />}
+      {paywall && <PaywallModal feature={paywall.feature} currentPlan={effectivePlan} mpId={myPlan?.user_id_number} message={paywall.message} onClose={() => setPaywall(null)} />}
       </div>
     </div>
   );
