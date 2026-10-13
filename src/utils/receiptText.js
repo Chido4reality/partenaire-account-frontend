@@ -269,10 +269,12 @@ function bodyRefund(L, data, lang) {
     L.push(itemLine(i.name, i.qty, total));
   });
   L.push(repeat("─", WIDTH));
-  const m = data.refund_method ? ` (${data.refund_method})` : "";
-  L.push(amountLine(`${en ? "REFUND TOTAL" : "TOTAL REMB."}${m}`, data.refund_amount));
   const credit = Number(data.credit_portion || 0);
   const cash   = Number(data.cash_portion   || 0);
+  // LAUNCH-BATCH-2b: wholly set against the debt → no cash method to print.
+  const m = (credit > 0 && cash <= 0) ? (en ? " (account)" : " (compte)")
+    : data.refund_method ? ` (${data.refund_method})` : "";
+  L.push(amountLine(`${en ? "REFUND TOTAL" : "TOTAL REMB."}${m}`, data.refund_amount));
   if (credit > 0 && cash > 0) {
     L.push(amountLine(en ? "  to credit account" : "  au compte crédit", credit));
     L.push(amountLine(en ? "  cash returned"     : "  rendu en espèces", cash));

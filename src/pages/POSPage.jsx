@@ -1389,6 +1389,17 @@ export default function POSPage() {
     return Math.max(0, Math.min(a, Math.round(base)));
   };
   const isDebtish = (i) => i.product_id === "__DEBT__" || i.type === "debt_payment";
+  // LAUNCH-BATCH-2b: the amount of a debt line is editable in the cart, between 0 and
+  // the balance it was added with (debtAmount for picked invoices, debtMax for the banner).
+  const debtLineMax = (i) => Number(i.debtAmount ?? i.debtMax) || 0;
+  const setDebtLineAmount = (lineId, raw) => setCart(c => c.map(it => {
+    if (it.lineId !== lineId) return it;
+    if (raw === "") return { ...it, unit_price: "" };
+    const v = Math.max(0, Math.min(Number(raw) || 0, debtLineMax(it) || Infinity));
+    return { ...it, unit_price: v };
+  }));
+  const onDebtLineBlur = (lineId) => setCart(c => c.map(it =>
+    it.lineId === lineId && !(Number(it.unit_price) > 0) ? { ...it, unit_price: debtLineMax(it) } : it));
   const lineGross = (i) => (Number(i.quantity) || 0) * (Number(i.unit_price) || 0);
   const lineDisc  = (i) => isDebtish(i) ? 0 : resolveDisc(i.discount_type, i.discount_value, lineGross(i));
   const grossProducts   = cart.reduce((s, i) => s + (isDebtish(i) ? 0 : lineGross(i)), 0);
@@ -1409,6 +1420,20 @@ export default function POSPage() {
   // read by the legacy __DEBT__ allocation loop).
   const isDebtOnlyCart = cart.length > 0 && cart.every(i =>
     i.product_id === "__DEBT__" || i.type === "debt_payment");
+  // LAUNCH-BATCH-2b: "Amount to collect" is a debt-only-cart field. When a product joins
+  // the cart that field disappears, so the amount typed there used to be dropped and the
+  // debt line went in at the full balance. Carry it onto the debt line instead.
+  useEffect(() => {
+    if (isDebtOnlyCart || !debtPayAmt) return;
+    const amt = Number(debtPayAmt) || 0;
+    const debtLines = cart.filter(isDebtish);
+    if (amt > 0 && debtLines.length === 1) {
+      const d = debtLines[0];
+      setCart(c => c.map(it => it.lineId === d.lineId
+        ? { ...it, unit_price: Math.min(amt, debtLineMax(it) || amt) } : it));
+    }
+    setDebtPayAmt("");
+  }, [isDebtOnlyCart]); // eslint-disable-line react-hooks/exhaustive-deps
   // MP-OVERPAY-CAP: the APPLIED payment is capped at the amount due (cart total,
   // or the debt total for a debt-only cart). Excess tendered is CHANGE — shown,
   // never sent/stored. partialTendered is what the cashier typed; partialChange
@@ -1637,7 +1662,7 @@ export default function POSPage() {
       const isPureInvoiceSettle = !!debtItem && productItems.length === 0 && newDebtItems.length === 0;
 
       if (isPureInvoiceSettle) {
-        const totalDebt  = debtItem.debtAmount;
+        const totalDebt  = Number(debtItem.unit_price) || debtItem.debtAmount;   // 2b: the line amount is editable
         const amountToPay = debtPayAmt ? Math.min(parseFloat(debtPayAmt), totalDebt) : totalDebt;
         let remaining = amountToPay;
         // MP-POS-COLLECT-DEBT-CART-NO-RECEIPT (Bug A): capture each
@@ -2592,7 +2617,18 @@ export default function POSPage() {
                   <button onClick={() => removeLine(item.lineId)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: "0 2px", flexShrink: 0 }}>✕</button>
                 </div>
                 {item.isDebt ? (
-                  <div style={{ fontSize: 14, fontWeight: 800, color: "#f87171", textAlign: "right" }}>{fmt(item.unit_price)}</div>
+                  // LAUNCH-BATCH-2b: editable — collect part of the picked invoices' balance.
+                  <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "flex-end" }}>
+                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                      {lang === "en" ? "Amount" : "Montant"} ({lang === "en" ? "max" : "max"} {fmt(debtLineMax(item))})
+                    </span>
+                    <div style={{ width: 110, position: "relative" }}>
+                      <input type="number" aria-label={lang === "en" ? "Debt amount to collect" : "Montant de la dette à encaisser"}
+                        value={item.unit_price} onChange={e => setDebtLineAmount(item.lineId, e.target.value)} onBlur={() => onDebtLineBlur(item.lineId)}
+                        style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "#f87171", fontWeight: 800, padding: "4px 6px 4px 18px", fontSize: 13, textAlign: "right" }} />
+                      <span style={{ position: "absolute", left: 6, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "var(--text-muted)" }}>{currencyShort(fmt.currency)}</span>
+                    </div>
+                  </div>
                 ) : (
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     <button onClick={() => updateQty(item.lineId, item.quantity - 1)} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: "pointer", fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>

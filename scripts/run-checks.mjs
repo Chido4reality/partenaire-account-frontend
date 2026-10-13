@@ -22,6 +22,7 @@ const CHECKS = [
   ["damaged-check", "scripts/receipt-damaged-check.mjs", "regression #10 — the damaged marker on all 3 receipt surfaces"],
   ["currency",      "scripts/currency-check.mjs",        "LAUNCH-BATCH-2: receipts, money and WhatsApp numbers follow the org (₦ / 234 for Nigeria; Cameroon unchanged)"],
   ["i18n-keys",     "scripts/i18n-keys-check.mjs",       "LAUNCH-BATCH-2: every t(\"a.b\") key exists in en AND fr (a missing one renders the raw key)"],
+  ["refund-receipt-method", "scripts/refund-receipt-method-check.mjs", "LAUNCH-BATCH-2b: a refund wholly against the debt prints 'account', not a cash method"],
   ["query-invalidate", "scripts/query-invalidation-check.mjs", "LAUNCH-BATCH-2b: Inventory names its query keys (v5 array form refetched the whole app); the rest may only shrink"],
   ["export-check",  "scripts/report-export-check.mjs",   "regression #7 — CSV round-trips through a real spreadsheet parser"],
   ["marketing",     "scripts/marketing-render-check.mjs","admin.html marketing screens RENDER against the real inline script"],

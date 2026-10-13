@@ -401,11 +401,15 @@ function buildBodyLines(eventType, data, lang, org) {
     } else {
       // Pure refund OR cheaper-replacement exchange (refund/credit the diff).
       lines.push(`*${en ? "Refund total" : "Total remboursé"}: ${money(data.refund_amount)}*`);
-      if (data.refund_method && data.refund_method !== "none") {
-        lines.push(`${en ? "Method" : "Mode"}: ${methodLbl(data.refund_method)}`);
-      }
       const credit = Number(data.credit_portion || 0);
       const cash = Number(data.cash_portion || 0);
+      // LAUNCH-BATCH-2b: a refund set wholly against the customer's debt hands over no
+      // cash — the method is the account, not the refund_method the request defaulted.
+      if (credit > 0 && cash <= 0) {
+        lines.push(`${en ? "Method" : "Mode"}: ${en ? "Applied to account" : "Imputé sur le compte"}`);
+      } else if (data.refund_method && data.refund_method !== "none") {
+        lines.push(`${en ? "Method" : "Mode"}: ${methodLbl(data.refund_method)}`);
+      }
       if (credit > 0 && cash > 0) {
         lines.push("");
         lines.push(en
