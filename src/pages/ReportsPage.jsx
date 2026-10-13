@@ -1478,7 +1478,7 @@ export default function ReportsPage() {
                                 color={bl.day_flow.expenses > 0 ? "#f87171" : undefined}
                                 sign={bl.day_flow.expenses > 0 ? "-" : ""} />
                       <div style={{ height: 1, background: "var(--border)", margin: "8px 0 4px" }} />
-                      <BlockRow label={lang === "en" ? "Net cash flow" : "Flux net espèces"}
+                      <BlockRow label={lang === "en" ? "Net cash flow (cash only)" : "Flux net espèces (espèces seules)"}
                                 value={fmt(bl.day_flow.net_cash_flow)} bold
                                 color={bl.day_flow.net_cash_flow < 0 ? "#f87171" : "#34d399"} />
                     </CollapsibleBlock>

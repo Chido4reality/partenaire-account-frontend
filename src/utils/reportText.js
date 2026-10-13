@@ -173,7 +173,7 @@ export function buildLedgerTextV2(ledger, lang) {
   }
   L.push(`${en ? "Expenses" : "Dépenses"}: ${n(df.expenses)} ${sym}`);
   L.push("─────────────────────────");
-  L.push(`*${en ? "Net cash flow" : "Flux net espèces"}: ${n(df.net_cash_flow)} ${sym}*`);
+  L.push(`*${en ? "Net cash flow (cash only)" : "Flux net espèces (espèces seules)"}: ${n(df.net_cash_flow)} ${sym}*`);
   L.push("");
 
   // ── BLOCK 2 — SHIFTS ────────────────────────────────────────

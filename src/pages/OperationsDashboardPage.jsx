@@ -311,7 +311,7 @@ export default function OperationsDashboardPage() {
               <MetricBlock label={en ? "Debt collected"  : "Dette encaissée"}    value={rangeTotals.debt_collected} delta={isSingleDay ? overview.data.deltas?.debt_collected?.pct : null} />
               <MetricBlock label={en ? "Refunds & voids" : "Remb. & annulations"} value={rangeTotals.refunds_voids}  delta={isSingleDay ? overview.data.deltas?.refunds_voids?.pct  : null} />
               <MetricBlock label={en ? "Expenses"        : "Dépenses"}            value={rangeTotals.expenses}       delta={isSingleDay ? overview.data.deltas?.expenses?.pct      : null} />
-              <MetricBlock label={en ? "Net cash flow"   : "Flux net espèces"}    value={rangeTotals.net_cash_flow}  delta={isSingleDay ? overview.data.deltas?.net_cash_flow?.pct  : null} />
+              <MetricBlock label={en ? "Net cash flow (cash only)" : "Flux net espèces (espèces seules)"}    value={rangeTotals.net_cash_flow}  delta={isSingleDay ? overview.data.deltas?.net_cash_flow?.pct  : null} />
             </div>
             <div style={{ width: "100%", height: 320 }}>
               <ResponsiveContainer>
