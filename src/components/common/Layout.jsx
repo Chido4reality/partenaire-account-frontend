@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { Drawer } from "vaul";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore, useLangStore, useOfflineStore, useSettingsStore } from "../../store";
+import { MARKET_ROUTES, marketAvailable } from "../../utils/market";
 import { useLiteMode } from "../../hooks/useLiteMode";
 import { useTrialState } from "../../hooks/useTrialState";
 import { useKeyboardInset } from "../../hooks/useKeyboardInset";
@@ -984,6 +985,7 @@ export default function Layout() {
     }
     if (!hasSection(effectivePlan, item.section)) return false;
     if (lite && LITE_HIDDEN_ROUTES.has(item.to)) return false;
+    if (MARKET_ROUTES.has(item.to) && !marketAvailable(org)) return false;   // 2b(b): Stenamo Market is XAF-only
     // MP-CASHIER-PHASE-1b: cashier-mode-only entries. ticketNavVisible returns
     // false for every direct-mode location without ever reading a permission
     // flag, so the three active staff with no pa_staff_permissions row are

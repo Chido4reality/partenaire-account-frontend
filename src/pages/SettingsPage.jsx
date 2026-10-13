@@ -7,6 +7,7 @@ import api from "../utils/api";
 import { useMyPermissions } from "../utils/useMyPermissions";
 import { useCurrency } from "../utils/useCurrency";
 import { usePlaceholders } from "../utils/placeholders";
+import { marketAvailable } from "../utils/market";
 import { setLanguage } from "../utils/setLanguage"; // MP-LANGUAGE-PERSIST
 import { formatLastSeen, isRecentlyActive } from "../utils/lastSeen";
 import PaywallModal from "../components/common/PaywallModal";
@@ -829,7 +830,7 @@ export default function SettingsPage() {
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 4, marginBottom: 24, borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
-        {TABS.filter(tb => (!tb.ownerOnly || isOwner) && !(lite && tb.hideInLite)).map(tb => (
+        {TABS.filter(tb => (!tb.ownerOnly || isOwner) && !(lite && tb.hideInLite) && !(tb.key === "dozie" && !marketAvailable(org))).map(tb => (
           <button key={tb.key} onClick={() => setTab(tb.key)}
             style={{ padding: "10px 20px", background: "none", border: "none", borderBottom: tab === tb.key ? "2px solid var(--brand)" : "2px solid transparent", color: tab === tb.key ? "var(--text-primary)" : "var(--text-muted)", cursor: "pointer", fontSize: 13, fontWeight: tab === tb.key ? 600 : 400, marginBottom: -1 }}>
             {lang === "en" ? tb.en : tb.fr}

@@ -16,6 +16,7 @@ import api from "../utils/api";
 import { isPendingApproval, keepWorkingToast } from "../utils/approval";
 import { useCurrency } from "../utils/useCurrency";
 import { usePlaceholders } from "../utils/placeholders";
+import { marketAvailable } from "../utils/market";
 import OwnerPIN from "../components/common/OwnerPIN";
 import PhotoUploadButtons from "../components/common/PhotoUploadButtons";
 import PaywallModal from "../components/common/PaywallModal";
@@ -91,6 +92,7 @@ export default function InventoryPage() {
   const en = lang === "en";
   const { selectedLocation } = useSettingsStore();
   const { user } = useAuthStore();
+  const orgForMarket = useAuthStore(s => s.org);   // 2b(b)
   const PH = usePlaceholders();   // LAUNCH-BATCH-2: placeholders in the UI language + the org's country
   const qc = useQueryClient();
   // MP-LITE-MODE-PHASE-1: skip dozie-listings + dozie-migrate-candidates,
@@ -2095,7 +2097,7 @@ export default function InventoryPage() {
                 Toggle OFF still sends the price so it is preserved for a
                 later toggle-on (matches pa_dozie_seller_listings semantics).
                 MP-LITE-MODE-PHASE-1: section hidden in Lite. */}
-            {!lite && (
+            {!lite && marketAvailable(orgForMarket) && (   /* 2b(b): Stenamo Market is XAF-only */
             <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 14 }}>
               <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
                 <input type="checkbox" checked={dozieEnabled} onChange={e => setDozieEnabled(e.target.checked)} />
