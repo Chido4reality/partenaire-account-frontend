@@ -367,6 +367,15 @@ api.defaults.adapter = async function offlineAwareAdapter(config) {
 function safeJson(s) { try { return JSON.parse(s); } catch { return {}; } }
 
 api.interceptors.response.use(res => {
+  // LAUNCH-BATCH-2b (c): success messages too ("PIN mis à jour", "Upgrade request
+  // submitted…") — the server now sends message_en / message_fr on every response.
+  try {
+    const d = res?.data;
+    if (d && typeof d === "object" && !Array.isArray(d)) {
+      const pick = useLangStore.getState().lang === "en" ? d.message_en : d.message_fr;
+      if (typeof pick === "string" && pick) d.message = pick;
+    }
+  } catch { /* noop */ }
   // MP-PEAK-MTN-RESILIENCE: a request landed → clear any "retrying…" reassurance toast.
   try { toast.dismiss("mp-net-retry"); } catch { /* noop */ }
   // MP-PUSH-ASK: a staffer's action came back "held for approval" — the moment to offer an
