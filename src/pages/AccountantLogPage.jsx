@@ -19,6 +19,7 @@ import { hasFeature } from "../utils/planCapabilities";
 import { useCurrency } from "../utils/useCurrency";
 import { SHOP_TZ } from "../utils/shopTime"; // MP-REPORT-TZ
 import api from "../utils/api";
+import { usePlaceholders } from "../utils/placeholders";
 import { formatLastSeen, isRecentlyActive } from "../utils/lastSeen";
 import { useStockCheckSummary, NOT_COUNTED_AMBER_AT } from "../utils/useStockCheckSummary";
 import { useReceiveSummary } from "../utils/useReceiveSummary"; // F-C: the receive-override rate
@@ -50,6 +51,7 @@ const ALNUM = /[^a-zA-Z0-9]/g;
 // Settings → Staff) so the two screens can never format presence differently.
 
 export default function AccountantLogPage() {
+  const PH = usePlaceholders();   // LAUNCH-BATCH-2: placeholders in the UI language + the org's country
   const { lang } = useLangStore();
   const en = lang === "en";
   const qc = useQueryClient();
@@ -710,10 +712,10 @@ export default function AccountantLogPage() {
               {en ? "They log in with their phone number and this PIN." : "Il se connecte avec son téléphone et ce code PIN."}
             </div>
             <div className="form-group"><label className="label">{en ? "Full name" : "Nom complet"} *</label>
-              <input className="input" value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} placeholder="Jean Dupont" />
+              <input className="input" value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} placeholder={PH.personName} />
             </div>
             <div className="form-group"><label className="label">{en ? "Phone number" : "Téléphone"} *</label>
-              <input className="input" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="6XXXXXXXX" />
+              <input className="input" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder={PH.phone} />
             </div>
             <div className="form-group"><label className="label">{en ? "Starting PIN" : "Code PIN de départ"} *</label>
               {/* letters + numbers only, no special characters */}

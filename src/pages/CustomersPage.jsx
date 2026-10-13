@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 import { isPendingApproval, keepWorkingToast } from "../utils/approval";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import { waPhone } from "../utils/waPhone";
+import { usePlaceholders } from "../utils/placeholders";
 import api, { formatDate } from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
 import { momoLabel } from "../utils/paymentLabels";
@@ -32,6 +33,7 @@ export default function CustomersPage() {
   const { lang } = useLangStore();
   const { selectedLocation } = useSettingsStore();
   const { org, user } = useAuthStore();
+  const PH = usePlaceholders();   // LAUNCH-BATCH-2: placeholders in the UI language + the org's country
   const role = user?.role || "";
   const qc = useQueryClient();
   // MP-OWNER-PIN-APPROVAL: PIN-entry modal for sensitive operations.
@@ -957,7 +959,7 @@ export default function CustomersPage() {
             <div className="form-group">
               <label className="label">{lang === "en" ? "Phone" : "Telephone"}</label>
               <input className="input" value={form.phone !== undefined ? form.phone : (selected.phone || "")}
-                onChange={e => setF("phone", e.target.value)} placeholder="6XXXXXXXX" />
+                onChange={e => setF("phone", e.target.value)} placeholder={PH.phone} />
             </div>
             <div className="form-group">
               <label className="label">{lang === "en" ? "Type" : "Type"}</label>
@@ -1059,11 +1061,11 @@ export default function CustomersPage() {
             </div>
             <div className="form-group">
               <label className="label">{lang === "en" ? "Full name" : "Nom complet"} *</label>
-              <input className="input" value={form.name} onChange={e => setF("name", e.target.value)} placeholder="Jean Dupont" />
+              <input className="input" value={form.name} onChange={e => setF("name", e.target.value)} placeholder={PH.personName} />
             </div>
             <div className="form-group">
               <label className="label">{lang === "en" ? "Phone" : "Telephone"}</label>
-              <input className="input" value={form.phone} onChange={e => setF("phone", e.target.value)} placeholder="6XXXXXXXX" />
+              <input className="input" value={form.phone} onChange={e => setF("phone", e.target.value)} placeholder={PH.phone} />
             </div>
             <div className="form-group">
               <label className="label">{lang === "en" ? "Customer type" : "Type de client"}</label>
@@ -1073,7 +1075,7 @@ export default function CustomersPage() {
             </div>
             <div className="form-group">
               <label className="label">{lang === "en" ? "Address" : "Adresse"}</label>
-              <input className="input" value={form.address} onChange={e => setF("address", e.target.value)} placeholder="Douala" />
+              <input className="input" value={form.address} onChange={e => setF("address", e.target.value)} placeholder={PH.city} />
             </div>
             <div className="form-group">
               <label className="label">{lang === "en" ? `Credit limit (${fmt.symbol})` : `Limite credit (${fmt.symbol})`}</label>

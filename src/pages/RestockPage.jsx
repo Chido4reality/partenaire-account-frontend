@@ -7,6 +7,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "../utils/api";
+import { usePlaceholders } from "../utils/placeholders";
 import { useLangStore, useAuthStore } from "../store";
 import toast from "react-hot-toast";
 import { unitLabel } from "../utils/units";
@@ -397,6 +398,7 @@ function OrderedList({ orders, en, onEdit, onReceive }) {
 // only ever += the COUNTED number, and submit is blocked until every short line has an
 // explicit disposition (no silent completion). Online-only (writes stock).
 function ReceiveModal({ en, order, onClose, onDone }) {
+  const PH = usePlaceholders();   // LAUNCH-BATCH-2: placeholders in the UI language + the org's country
   const items = order.pa_restock_order_items || [];
   const [step, setStep] = useState("choice");   // choice | refill
   const [dest, setDest] = useState("");
@@ -521,7 +523,7 @@ function ReceiveModal({ en, order, onClose, onDone }) {
                   {counted > 0 && (
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
                       <span style={{ fontSize: 11, color: "var(--text-muted)" }}>📍 {en ? "Slot/Zone (opt.)" : "Emplacement (opt.)"}</span>
-                      <input className="input" value={r.slot} style={{ flex: 1 }} placeholder="A-01, Shelf 2..."
+                      <input className="input" value={r.slot} style={{ flex: 1 }} placeholder={PH.slot}
                         onChange={e => setRow(it.id, { slot: e.target.value })} />
                     </div>
                   )}

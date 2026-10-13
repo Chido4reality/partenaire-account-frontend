@@ -15,6 +15,7 @@ import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import api from "../utils/api";
 import { isPendingApproval, keepWorkingToast } from "../utils/approval";
 import { useCurrency } from "../utils/useCurrency";
+import { usePlaceholders } from "../utils/placeholders";
 import OwnerPIN from "../components/common/OwnerPIN";
 import PhotoUploadButtons from "../components/common/PhotoUploadButtons";
 import PaywallModal from "../components/common/PaywallModal";
@@ -90,6 +91,7 @@ export default function InventoryPage() {
   const en = lang === "en";
   const { selectedLocation } = useSettingsStore();
   const { user } = useAuthStore();
+  const PH = usePlaceholders();   // LAUNCH-BATCH-2: placeholders in the UI language + the org's country
   const qc = useQueryClient();
   // MP-LITE-MODE-PHASE-1: skip dozie-listings + dozie-migrate-candidates,
   // hide Sell-on-Dozie controls in Lite. Multi-location stock display +
@@ -1720,14 +1722,14 @@ export default function InventoryPage() {
 
             <div className="form-group">
               <label className="label">{lang === "en" ? "Product name" : "Nom du produit"} *</label>
-              <input className="input" value={newProduct.name} onChange={e => setNewProduct(p => ({ ...p, name: e.target.value }))} placeholder="Ex: Tube, Huile palme..." autoFocus />
+              <input className="input" value={newProduct.name} onChange={e => setNewProduct(p => ({ ...p, name: e.target.value }))} placeholder={PH.productName} autoFocus />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div className="form-group">
                 <label className="label">Barcode</label>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <div style={{ flex: 1 }}>
-                    <BarcodeInput lang={lang} value={newProduct.barcode} onChange={v => setNewProduct(p => ({ ...p, barcode: v }))} placeholder="Scan or type" />
+                    <BarcodeInput lang={lang} value={newProduct.barcode} onChange={v => setNewProduct(p => ({ ...p, barcode: v }))} placeholder={PH.barcode} />
                   </div>
                   <button type="button" onClick={() => setShowCameraAdd(true)}
                     style={{ flexShrink: 0, height: 42, width: 42, borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elevated)", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" }}
@@ -1831,7 +1833,7 @@ export default function InventoryPage() {
                 </div>
                 <div className="form-group" style={{ gridColumn: "1 / -1" }}>
                   <label className="label">📍 {lang === "en" ? "Slot/Zone (optional)" : "Emplacement/Rayon (optionnel)"}</label>
-                  <input className="input" value={newProduct.initial_slot || ""} onChange={e => setNewProduct(p => ({ ...p, initial_slot: e.target.value }))} placeholder="A-01, Rayon 2..." disabled={!newProduct.initial_location_id} />
+                  <input className="input" value={newProduct.initial_slot || ""} onChange={e => setNewProduct(p => ({ ...p, initial_slot: e.target.value }))} placeholder={PH.slot} disabled={!newProduct.initial_location_id} />
                 </div>
                 {canExpiry && newProduct.track_expiry && newProduct.initial_location_id && (
                   <div className="form-group" style={{ gridColumn: "1 / -1" }}>
@@ -1882,11 +1884,11 @@ export default function InventoryPage() {
               </div>
               <div className="form-group">
                 <label className="label">Supplier</label>
-                <input className="input" value={receiveForm.supplier_name} onChange={e => setReceiveForm(f => ({ ...f, supplier_name: e.target.value }))} placeholder="Optional" />
+                <input className="input" value={receiveForm.supplier_name} onChange={e => setReceiveForm(f => ({ ...f, supplier_name: e.target.value }))} placeholder={PH.optional} />
               </div>
               <div className="form-group">
                 <label className="label">Invoice ref</label>
-                <input className="input" value={receiveForm.invoice_ref} onChange={e => setReceiveForm(f => ({ ...f, invoice_ref: e.target.value }))} placeholder="Optional" />
+                <input className="input" value={receiveForm.invoice_ref} onChange={e => setReceiveForm(f => ({ ...f, invoice_ref: e.target.value }))} placeholder={PH.optional} />
               </div>
             </div>
 
@@ -2166,7 +2168,7 @@ export default function InventoryPage() {
 
             <div className="form-group">
               <label className="label">{lang === "en" ? "Product name" : "Nom du produit"} *</label>
-              <input ref={rapidNameRef} className="input" value={rapidItem.name} onChange={e => setRapidItem(p => ({ ...p, name: e.target.value }))} placeholder="Ex: Tube, Huile palme..." autoFocus
+              <input ref={rapidNameRef} className="input" value={rapidItem.name} onChange={e => setRapidItem(p => ({ ...p, name: e.target.value }))} placeholder={PH.productName} autoFocus
                 onKeyDown={e => { if (e.key === "Enter" && rapidItem.name && rapidItem.sell_price) rapidMutation.mutate(); }} />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -2174,7 +2176,7 @@ export default function InventoryPage() {
                 <label className="label">Barcode</label>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <div style={{ flex: 1 }}>
-                    <BarcodeInput lang={lang} value={rapidItem.barcode} onChange={v => setRapidItem(p => ({ ...p, barcode: v }))} placeholder="Scan or type" />
+                    <BarcodeInput lang={lang} value={rapidItem.barcode} onChange={v => setRapidItem(p => ({ ...p, barcode: v }))} placeholder={PH.barcode} />
                   </div>
                   <button type="button" onClick={() => setShowCameraRapid(true)}
                     style={{ flexShrink: 0, height: 42, width: 42, borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elevated)", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" }}
@@ -2255,7 +2257,7 @@ export default function InventoryPage() {
                 </div>
                 <div className="form-group" style={{ gridColumn: "1 / -1" }}>
                   <label className="label">📍 Slot/Zone</label>
-                  <input className="input" value={rapidItem.initial_slot || ""} onChange={e => setRapidItem(p => ({ ...p, initial_slot: e.target.value }))} placeholder="A-01, Rayon 2..." disabled={!rapidItem.initial_location_id} />
+                  <input className="input" value={rapidItem.initial_slot || ""} onChange={e => setRapidItem(p => ({ ...p, initial_slot: e.target.value }))} placeholder={PH.slot} disabled={!rapidItem.initial_location_id} />
                 </div>
                 {canExpiry && rapidItem.track_expiry && rapidItem.initial_location_id && (
                   <div className="form-group" style={{ gridColumn: "1 / -1" }}>
@@ -2676,6 +2678,7 @@ function PricingSection({ data, onChange, lang }) {
 function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemove, canSeePrices, duplicateOf, canExpiry }) {
   const [selected, setSelected] = useState(null);
   const fmt = useCurrency();   // LAUNCH-BATCH-2: prices in the org's currency (was a literal "F")
+  const PH = usePlaceholders();   // LAUNCH-BATCH-2: placeholders in the UI language + the org's country
   const en = lang === "en";
 
   const pickProduct = (p) => {
@@ -2738,7 +2741,7 @@ function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemov
           </div>
           <div className="form-group">
             <label className="label">📍 {lang === "en" ? "Slot/Zone (optional)" : "Emplacement (opt.)"}</label>
-            <input className="input" value={item.slot_code || ""} onChange={e => onChange("slot_code", e.target.value)} placeholder="A-01, Shelf 2..." />
+            <input className="input" value={item.slot_code || ""} onChange={e => onChange("slot_code", e.target.value)} placeholder={PH.slot} />
           </div>
           {canExpiry && tracked && (
             <div className="form-group">

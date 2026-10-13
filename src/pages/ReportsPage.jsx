@@ -7,6 +7,7 @@ import { useLangStore, useAuthStore, useSettingsStore } from "../store";
 import api, { formatDate } from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
 import { waPhone } from "../utils/waPhone";
+import { usePlaceholders } from "../utils/placeholders";
 import { openWhatsApp } from "../utils/whatsapp"; // MP-DAY-SUMMARY (Feature A)
 import { buildDaySummaryText } from "../utils/daySummaryText"; // MP-DAY-SUMMARY shared engine
 import { momoLabelShort } from "../utils/paymentLabels";
@@ -96,6 +97,7 @@ export default function ReportsPage() {
     setBlockExpanded(prev => ({ ...prev, [key]: typeof next === "boolean" ? next : !prev[key] }));
 
   const fmt = useCurrency();
+  const PH = usePlaceholders();   // LAUNCH-BATCH-2: placeholders in the UI language + the org's country
 
   // Deep-link from the global order search: /reports?sale=<id>&on=<YYYY-MM-DD>.
   // Jump to the Sales Detail tab, widen the range to that day so the
@@ -524,7 +526,7 @@ export default function ReportsPage() {
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>{lang === "en" ? "WhatsApp number (with country code)" : "Numéro WhatsApp (avec indicatif)"}</div>
             <input className="input" inputMode="numeric" value={summaryModal.number}
               onChange={e => setSummaryModal(m => ({ ...m, number: e.target.value.replace(/\D/g, "") }))}
-              placeholder="2376XXXXXXXX" style={{ width: "100%", marginBottom: 12 }} />
+              placeholder={PH.whatsapp} style={{ width: "100%", marginBottom: 12 }} />
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>{lang === "en" ? "Preview" : "Aperçu"}</div>
             <pre style={{ whiteSpace: "pre-wrap", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: 12, fontSize: 12.5, fontFamily: "inherit", margin: "0 0 14px", maxHeight: 220, overflowY: "auto" }}>{summaryModal.text}</pre>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>

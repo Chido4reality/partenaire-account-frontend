@@ -6,6 +6,7 @@ import { useAuthStore, useLangStore, useSettingsStore } from "../store";
 import api from "../utils/api";
 import { useMyPermissions } from "../utils/useMyPermissions";
 import { useCurrency } from "../utils/useCurrency";
+import { usePlaceholders } from "../utils/placeholders";
 import { setLanguage } from "../utils/setLanguage"; // MP-LANGUAGE-PERSIST
 import { formatLastSeen, isRecentlyActive } from "../utils/lastSeen";
 import PaywallModal from "../components/common/PaywallModal";
@@ -169,6 +170,7 @@ function useAppVersion() {
 export default function SettingsPage() {
   const appVersion = useAppVersion();
   const { user, org } = useAuthStore();
+  const PH = usePlaceholders();   // LAUNCH-BATCH-2: placeholders in the UI language + the org's country
   const { lang } = useLangStore();
   const { selectedLocation, setLocation } = useSettingsStore();
   const qc = useQueryClient();
@@ -1283,7 +1285,7 @@ export default function SettingsPage() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               <div className="form-group" style={{ gridColumn: "1 / -1" }}>
                 <label className="label">{lang === "en" ? "Shop name" : "Nom de la boutique"} *</label>
-                <input className="input" value={shopForm.name} onChange={e => setFF("name", e.target.value)} placeholder="Ex: Stenamo Market Store" />
+                <input className="input" value={shopForm.name} onChange={e => setFF("name", e.target.value)} placeholder={PH.storeName} />
               </div>
               {/* FACTURE letterhead: slogan shows under the business name. */}
               <div className="form-group" style={{ gridColumn: "1 / -1" }}>
@@ -1292,15 +1294,15 @@ export default function SettingsPage() {
               </div>
               <div className="form-group">
                 <label className="label">{lang === "en" ? "Phone" : "Téléphone"}</label>
-                <input className="input" value={shopForm.phone} onChange={e => setFF("phone", e.target.value)} placeholder="6XXXXXXXX" />
+                <input className="input" value={shopForm.phone} onChange={e => setFF("phone", e.target.value)} placeholder={PH.phone} />
               </div>
               <div className="form-group">
                 <label className="label">{lang === "en" ? "E-mail" : "E-mail"}</label>
-                <input className="input" type="email" value={shopForm.email} onChange={e => setFF("email", e.target.value)} placeholder="boutique@exemple.com" />
+                <input className="input" type="email" value={shopForm.email} onChange={e => setFF("email", e.target.value)} placeholder={PH.email} />
               </div>
               <div className="form-group">
                 <label className="label">{lang === "en" ? "Owner WhatsApp number" : "WhatsApp du propriétaire"}</label>
-                <input className="input" value={shopForm.whatsapp_number} onChange={e => setFF("whatsapp_number", e.target.value)} placeholder="237XXXXXXXXX" />
+                <input className="input" value={shopForm.whatsapp_number} onChange={e => setFF("whatsapp_number", e.target.value)} placeholder={PH.whatsapp} />
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
                   {lang === "en"
                     ? "Receives the daily report when shifts are closed. Include country code (237 for Cameroon)."
@@ -1309,7 +1311,7 @@ export default function SettingsPage() {
               </div>
               <div className="form-group">
                 <label className="label">{lang === "en" ? "Address" : "Adresse"}</label>
-                <input className="input" value={shopForm.address} onChange={e => setFF("address", e.target.value)} placeholder="Ex: Nouvelle route, Bonaberri" />
+                <input className="input" value={shopForm.address} onChange={e => setFF("address", e.target.value)} placeholder={PH.shopAddress} />
               </div>
               <div className="form-group">
                 <label className="label">{lang === "en" ? "City" : "Ville"}</label>
@@ -2251,7 +2253,7 @@ export default function SettingsPage() {
               {editLoc ? (lang === "en" ? "Edit Location" : "Modifier l'emplacement") : (lang === "en" ? "Add New Location" : "Ajouter un emplacement")}
             </div>
             <div className="form-group"><label className="label">{lang === "en" ? "Name" : "Nom"} *</label>
-              <input className="input" value={locForm.name} onChange={e => setLF("name", e.target.value)} placeholder="Ex: Boutique Akwa..." />
+              <input className="input" value={locForm.name} onChange={e => setLF("name", e.target.value)} placeholder={PH.shopName} />
             </div>
             <div className="form-group"><label className="label">Type</label>
               <select className="input" value={locForm.type} onChange={e => setLF("type", e.target.value)}>
@@ -2260,10 +2262,10 @@ export default function SettingsPage() {
               </select>
             </div>
             <div className="form-group"><label className="label">{lang === "en" ? "Address" : "Adresse"}</label>
-              <input className="input" value={locForm.address} onChange={e => setLF("address", e.target.value)} placeholder="Ex: Rue Joss, Douala" />
+              <input className="input" value={locForm.address} onChange={e => setLF("address", e.target.value)} placeholder={PH.address} />
             </div>
             <div className="form-group"><label className="label">{lang === "en" ? "Phone" : "Téléphone"}</label>
-              <input className="input" value={locForm.phone} onChange={e => setLF("phone", e.target.value)} placeholder="6XXXXXXXX" />
+              <input className="input" value={locForm.phone} onChange={e => setLF("phone", e.target.value)} placeholder={PH.phone} />
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setShowAddLoc(false); setEditLoc(null); }}>{lang === "en" ? "Cancel" : "Annuler"}</button>
@@ -2287,10 +2289,10 @@ export default function SettingsPage() {
               {lang === "en" ? "Staff log in with their phone number and password" : "Le personnel se connecte avec son téléphone et mot de passe"}
             </div>
             <div className="form-group"><label className="label">{lang === "en" ? "Full name" : "Nom complet"} *</label>
-              <input className="input" value={staffForm.full_name} onChange={e => setSF("full_name", e.target.value)} placeholder="Jean Dupont" />
+              <input className="input" value={staffForm.full_name} onChange={e => setSF("full_name", e.target.value)} placeholder={PH.personName} />
             </div>
             <div className="form-group"><label className="label">{lang === "en" ? "Phone number" : "Téléphone"} *</label>
-              <input className="input" value={staffForm.phone} onChange={e => setSF("phone", e.target.value)} placeholder="6XXXXXXXX" />
+              <input className="input" value={staffForm.phone} onChange={e => setSF("phone", e.target.value)} placeholder={PH.phone} />
             </div>
             <div className="form-group">
               <label className="label">{editStaff ? (lang === "en" ? "New password (blank = keep)" : "Nouveau mot de passe (vide = garder)") : (lang === "en" ? "Password *" : "Mot de passe *")}</label>
