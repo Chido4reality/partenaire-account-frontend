@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { isPendingApproval, keepWorkingToast } from "../utils/approval";
-import { useLangStore, useAuthStore } from "../store";
+import { useLangStore, useAuthStore, useSettingsStore } from "../store";
 import api, { formatDate } from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
 import { useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
@@ -128,6 +128,14 @@ export default function ExpenditurePage() {
   const locations = locData?.data || [];
   const totalToday = expenses.reduce((s, e) => s + (+e.amount || 0), 0);
   const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  // LAUNCH-BATCH-2 (day-one): open the form on the location already selected in the top
+  // bar (or the only one), instead of an empty "Select location" the person must fill.
+  const openAdd = () => {
+    const sel = useSettingsStore.getState().selectedLocation;
+    const pre = locations.find(l => l.id === sel?.id)?.id || (locations.length === 1 ? locations[0].id : "");
+    setForm(f => (f.location_id ? f : { ...f, location_id: pre }));
+    setShowAdd(true);
+  };
 
   return (
     <div style={{ padding: 24, maxWidth: 900, margin: "0 auto" }}>
@@ -138,7 +146,7 @@ export default function ExpenditurePage() {
             {lang === "en" ? "Total today:" : "Total aujourd hui:"} {fmt(totalToday)}
           </div>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowAdd(true)}
+        <button className="btn btn-primary" onClick={openAdd}
           disabled={!shiftIsOpen}
           title={!shiftIsOpen ? noShiftHint(lang) : ""}>
           + {lang === "en" ? "New Expense" : "Nouvelle depense"}
@@ -159,7 +167,7 @@ export default function ExpenditurePage() {
         <div className="empty-state">
           <div style={{ fontSize: 28, marginBottom: 12, opacity: 0.4 }}>[ ]</div>
           <div style={{ fontWeight: 600, marginBottom: 6 }}>{lang === "en" ? "No expenses for this date" : "Aucune depense pour cette date"}</div>
-          <button className="btn btn-primary" onClick={() => setShowAdd(true)} style={{ marginTop: 12 }}
+          <button className="btn btn-primary" onClick={openAdd} style={{ marginTop: 12 }}
             disabled={!shiftIsOpen}
             title={!shiftIsOpen ? noShiftHint(lang) : ""}>
             + {lang === "en" ? "Add expense" : "Ajouter une depense"}

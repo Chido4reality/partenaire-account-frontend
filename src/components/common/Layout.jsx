@@ -1270,6 +1270,22 @@ export default function Layout() {
     if (JSON.stringify(fresh) !== JSON.stringify(selectedLocation)) setLocation(fresh);
   }, [_locsResp, selectedLocation, setLocation]);
 
+  // LAUNCH-BATCH-2 (day-one): a shop with ONE place to work in never sees "Select a
+  // location…". Every new sign-up has one shop (+ one warehouse), and nothing chose it,
+  // so the drawer, shift, POS and customer screens all opened on a "Select a location"
+  // banner. When nothing is selected and the person's role has exactly one candidate —
+  // the only shop (owner, manager, cashier, accountant) or the only warehouse (warehouse
+  // staff) — select it. Two or more stay a real choice; a pinned cashier is handled by
+  // the forced-location effect below.
+  useEffect(() => {
+    const list = _locsResp?.data;
+    if (!Array.isArray(list) || list.length === 0 || selectedLocation) return;
+    const active = list.filter(l => l.is_active !== false);
+    const wantType = user?.role === "warehouse" ? "warehouse" : "shop";
+    const candidates = active.length === 1 ? active : active.filter(l => l.type === wantType);
+    if (candidates.length === 1) setLocation(candidates[0]);
+  }, [_locsResp, selectedLocation, setLocation, user?.role]);
+
   // MP-PROPLUS-CASHIER-LOCATION: a Pro Plus cashier pinned to a home location is
   // FORCED onto it. The backend already substitutes the location server-side on
   // every money event, but we also OVERWRITE the device store here (on login +
