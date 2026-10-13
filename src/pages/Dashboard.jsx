@@ -312,7 +312,8 @@ export default function Dashboard() {
           <TileErrorBoundary name="stat-grid-3" fr={lang === 'fr'}><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
             <StatCard icon="📊" label={t('dashboard.todaySales')}
               value={isLoading ? '...' : fmt(s.gross_sales || 0)}
-              sub={`${s.sale_count || 0} ${t('dashboard.transactions')}`}
+              /* LAUNCH-BATCH-2b: refunds on their own line — the profit tile is after them */
+              sub={`${s.sale_count || 0} ${t('dashboard.transactions')}${Number(s.total_refunds) > 0 ? ` · ${lang === 'en' ? 'refunds' : 'remb.'} ${fmt(s.total_refunds)}` : ''}`}
               color="var(--brand-light)" onClick={() => navigate('/reports')} />
             <StatCard icon="💵" label={t('dashboard.cashCollected')}
               value={isLoading ? '...' : fmt(s.cash_collected || 0)}

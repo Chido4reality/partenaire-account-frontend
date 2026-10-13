@@ -335,11 +335,14 @@ export default function ReportsPage() {
     total_expenditure: acc.total_expenditure + (+d.total_expenditure || 0),
     net_profit:        acc.net_profit        + (+d.net_profit || 0),
     sale_count:        acc.sale_count        + (+d.sale_count || 0),
-  }), { gross_sales:0, cash_collected:0, credit_given:0, total_cost:0, gross_profit:0, total_expenditure:0, net_profit:0, sale_count:0 });
+    total_refunds:     acc.total_refunds     + (+d.total_refunds || 0),
+    margin_base:       acc.margin_base       + ((+d.net_sales || 0) - (+d.damaged_net || 0)),
+  }), { gross_sales:0, cash_collected:0, credit_given:0, total_cost:0, gross_profit:0, total_expenditure:0, net_profit:0, sale_count:0, total_refunds:0, margin_base:0 });
 
-  const avgMargin = daily.length > 0
-    ? (daily.reduce((s, d) => s + (+d.profit_margin_pct || 0), 0) / daily.length).toFixed(1)
-    : 0;
+  // LAUNCH-BATCH-2b: margin from the sums (Σ profit / Σ sales kept) — the same rule as
+  // Compare and the server's day summary. It was the plain mean of the daily %s, so a
+  // quiet day counted as much as a busy one.
+  const avgMargin = totals.margin_base > 0 ? (totals.gross_profit * 100 / totals.margin_base).toFixed(1) : 0;
 
   // ── MP-DAY-SUMMARY (Feature A): "Send today's summary" to WhatsApp ──────────
   // Money lines reuse the EXACT on-screen totals/avgMargin (can't disagree with the
@@ -373,6 +376,7 @@ export default function ReportsPage() {
       const text = buildDaySummaryText({
         sales: totals.gross_sales,
         sale_count: totals.sale_count,
+        refunds: totals.total_refunds,
         margin_pct: avgMargin,
         top_staff: ds.top_staff || null,
         net_cash: netCashReal,
@@ -545,8 +549,10 @@ export default function ReportsPage() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 24 }}>
             {[
               { label: lang === "en" ? "Total sales" : "Ventes totales", value: fmt(totals.gross_sales), sub: totals.sale_count + " transactions", color: "var(--brand-light)" },
+              // LAUNCH-BATCH-2b: refunds on their own line; profit is after them.
+              { label: lang === "en" ? "Refunds" : "Remboursements", value: fmt(totals.total_refunds), color: "#f87171" },
               { label: lang === "en" ? "Cash collected" : "Espèces encaissées", value: fmt(totals.cash_collected), color: "#34d399" },
-              { label: lang === "en" ? "Gross profit" : "Bénéfice brut", value: fmt(totals.gross_profit), sub: avgMargin + "% avg", color: "#34d399" },
+              { label: lang === "en" ? "Gross profit" : "Bénéfice brut", value: fmt(totals.gross_profit), sub: avgMargin + (lang === "en" ? "% margin" : "% de marge"), color: "#34d399" },
               { label: lang === "en" ? "Expenses" : "Dépenses", value: fmt(totals.total_expenditure), color: "#f87171" },
               { label: lang === "en" ? "Net profit" : "Bénéfice net", value: fmt(totals.net_profit), color: totals.net_profit >= 0 ? "#34d399" : "#f87171" },
               { label: lang === "en" ? "Credit given today" : "Crédit accordé (jour)", value: fmt(totals.credit_given), color: "#fbbf24",
@@ -576,6 +582,7 @@ export default function ReportsPage() {
                 <thead><tr>
                   <th>Date</th>
                   <th style={{ textAlign: "right" }}>{lang === "en" ? "Sales" : "Ventes"}</th>
+                  <th style={{ textAlign: "right" }}>{lang === "en" ? "Refunds" : "Remboursements"}</th>
                   <th style={{ textAlign: "right" }}>{lang === "en" ? "Cash" : "Espèces"}</th>
                   {isOwner && <th style={{ textAlign: "right" }}>{lang === "en" ? "Cost" : "Coût"}</th>}
                   {isOwner && <th style={{ textAlign: "right" }}>{lang === "en" ? "Gross profit" : "Bénéfice brut"}</th>}
@@ -588,6 +595,7 @@ export default function ReportsPage() {
                     <tr key={i}>
                       <td style={{ fontWeight: 500 }}>{formatDate(d.sale_date, lang)}</td>
                       <td style={{ textAlign: "right" }}>{fmt(d.gross_sales)}<div style={{ fontSize: 10, color: "var(--text-muted)" }}>{d.sale_count} sales</div></td>
+                      <td style={{ textAlign: "right", color: "#f87171" }}>{+d.total_refunds ? fmt(d.total_refunds) : "—"}</td>
                       <td style={{ textAlign: "right", color: "#34d399" }}>{fmt(d.cash_collected)}</td>
                       {isOwner && <td style={{ textAlign: "right", color: "var(--text-secondary)" }}>{fmt(d.total_cost)}</td>}
                       {isOwner && <td style={{ textAlign: "right", color: "#34d399", fontWeight: 500 }}>{fmt(d.gross_profit)}</td>}
@@ -601,6 +609,7 @@ export default function ReportsPage() {
                   <tr style={{ borderTop: "2px solid var(--border)", fontWeight: 700 }}>
                     <td style={{ padding: "12px 16px" }}>TOTAL</td>
                     <td style={{ textAlign: "right", padding: "12px 16px" }}>{fmt(totals.gross_sales)}</td>
+                    <td style={{ textAlign: "right", padding: "12px 16px", color: "#f87171" }}>{fmt(totals.total_refunds)}</td>
                     <td style={{ textAlign: "right", padding: "12px 16px", color: "#34d399" }}>{fmt(totals.cash_collected)}</td>
                     {isOwner && <td style={{ textAlign: "right", padding: "12px 16px", color: "var(--text-secondary)" }}>{fmt(totals.total_cost)}</td>}
                     {isOwner && <td style={{ textAlign: "right", padding: "12px 16px", color: "#34d399" }}>{fmt(totals.gross_profit)}</td>}

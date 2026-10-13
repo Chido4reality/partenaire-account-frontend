@@ -9,7 +9,7 @@
 export function buildDaySummaryText(content, { lang, fmt, shopName, dateLabel }) {
   const en = lang === "en";
   const {
-    sales, sale_count, margin_pct,
+    sales, sale_count, margin_pct, refunds,
     top_staff, net_cash, credit,
     things_to_check, has_daily,
   } = content || {};
@@ -17,6 +17,8 @@ export function buildDaySummaryText(content, { lang, fmt, shopName, dateLabel })
   const L = [`📊 ${shopName || "Stenamo Book"} — ${dateLabel}`];
   if (Number(sale_count) > 0) {
     L.push(`${en ? "Sales" : "Ventes"}: ${fmt(sales)} (${sale_count})`);
+    // LAUNCH-BATCH-2b: refunds on their own line; the margin below is after them.
+    if (Number(refunds) > 0) L.push(`${en ? "Refunds" : "Remboursements"}: ${fmt(refunds)}`);
     L.push(`${en ? "Margin" : "Marge"}: ${margin_pct}%`);
   }
   if (top_staff && top_staff.name) {
