@@ -36,7 +36,9 @@ writeFileSync(resolve(TMP, "store.js"), `
   export const useLangStore = () => ({ lang: globalThis.__LANG || "en" });
 `);
 writeFileSync(resolve(TMP, "api.js"), `export default { get: async () => ({ data: { data: [] } }), post: async () => ({ data: {} }) };`);
-writeFileSync(resolve(TMP, "setLanguage.js"), `export const setLanguageLocalPending = () => {};`);
+writeFileSync(resolve(TMP, "setLanguage.js"), `export const setLanguageLocalPending = () => {};
+export const pendingLanguage = () => null;
+export const adoptServerLanguage = () => {};`);
 
 await build({
   entryPoints: [resolve(ROOT, "src/pages/RegisterPage.jsx")],
