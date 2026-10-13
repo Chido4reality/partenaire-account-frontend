@@ -86,6 +86,7 @@ export default function LoginPage() {
       // (ERR_NETWORK) = connectivity problem, not bad credentials. Say so
       // clearly and fast (6s timeout) instead of a generic error after a hang.
       const f = loginFailure(err, lang);
+      console.warn("[login] failed:", f.code);   // the code for support / logs (hidden on screen)
       setFailure(f);
       toast.error(f.message);
     } finally { setLoading(false); setAttempt(null); }
@@ -138,13 +139,20 @@ export default function LoginPage() {
 }
 
 // Module scope + props-only, so the render check can mount it (useEffect never runs there).
-export function LoginFailure({ failure }) {
+// LAUNCH-BATCH-2b (Peter, 2026-10-13): shop users see the message only — no "HTTP 401".
+// The code stays on the element (data-login-code), in the console, and on screen in a dev
+// build or when the device has localStorage "mp-debug" = "1" (support can switch it on).
+export function loginCodeVisible() {
+  try { if (import.meta.env && import.meta.env.DEV) return true; } catch { /* not a Vite build */ }
+  try { return localStorage.getItem("mp-debug") === "1"; } catch { return false; }
+}
+export function LoginFailure({ failure, showCode = loginCodeVisible() }) {
   if (!failure) return null;
   return (
-    <div data-login-error role="alert" style={{ marginTop: 12, padding: "10px 12px", borderRadius: 10, fontSize: 13, lineHeight: 1.5,
+    <div data-login-error data-login-code={failure.code || undefined} role="alert" style={{ marginTop: 12, padding: "10px 12px", borderRadius: 10, fontSize: 13, lineHeight: 1.5,
       color: "#fca5a5", background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.35)" }}>
       {failure.message}
-      {failure.code && <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4, fontFamily: "monospace" }}>{failure.code}</div>}
+      {showCode && failure.code && <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4, fontFamily: "monospace" }}>{failure.code}</div>}
     </div>
   );
 }

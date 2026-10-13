@@ -140,7 +140,14 @@ try {
   check("401: the server's message", F({ response: { status: 401, data: { message: "Identifiants incorrects" } } }, "fr").message === "Identifiants incorrects");
   check("disabled account: its own bilingual line", F({ response: { status: 401, data: { error: "account_disabled", message_fr: "Compte désactivé", message_en: "Account disabled" } } }, "en").message === "Account disabled");
   const box = r(M.LoginFailure, { failure: net });
-  check("the failure renders ON the screen with its code", box.includes("data-login-error") && box.includes("ERR_NETWORK"));
+  check("the failure renders ON the screen (its code carried on the element)", box.includes("data-login-error") && box.includes("ERR_NETWORK"));
+  // LAUNCH-BATCH-2b: a shop user sees the message, never "HTTP 401"; the code stays on the element.
+  const wrong = F({ response: { status: 401, data: { message_en: "Wrong phone number or password" } } }, "en");
+  const shop = r(M.LoginFailure, { failure: wrong, showCode: false });
+  const shopText = shop.replace(/<[^>]*>/g, "");
+  check("401 for a shop user: the message, no 'HTTP 401' on screen; the code kept in data-login-code",
+    /Wrong phone number or password/.test(shopText) && !/HTTP|401/.test(shopText) && /data-login-code="HTTP 401"/.test(shop), shop);
+  check("…support / dev mode shows the code", r(M.LoginFailure, { failure: wrong, showCode: true }).replace(/<[^>]*>/g, "").includes("HTTP 401"));
   check("no failure → nothing rendered", renderToString(React.createElement(M.LoginFailure, { failure: null })) === "");
 } catch (e) { check("shop bundle", false, e.stack || e.message); }
 finally { try { rmSync(OUT, { force: true }); } catch { /* */ } }

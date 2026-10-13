@@ -439,6 +439,10 @@ export default function ReportsPage() {
     URL.revokeObjectURL(url);
   };
 
+  // LAUNCH-BATCH-2b: what this sale's payment put on old debt (server debt_collected);
+  // an older server without it falls back to the debt line's face value.
+  const debtPaidOn = (sale) => Number(sale.debt_collected ?? sale.debt_payment_amount) || 0;
+
   // Group sales by date for the Sales Detail tab
   const salesByDate = {};
   salesDetail.forEach(sale => {
@@ -711,10 +715,21 @@ export default function ReportsPage() {
                   <div className="stat-value" style={{ color: "#f87171" }}>-{fmt(salesTotals.refunded_total)}</div>
                 </div>
               )}
-              {salesTotals.debt_payment_total > 0 && (
+              {/* LAUNCH-BATCH-2b: "Debt collected" = money received against debt (one
+                  definition, server lib/debtCollected) — not the debt lines' face value,
+                  part of which is carried onto the new sale unpaid. Refunds set against
+                  invoices are their own figure: no money came in. */}
+              {Number(salesTotals.debt_collected ?? salesTotals.debt_payment_total) > 0 && (
                 <div className="stat-card" style={{ flex: 1, minWidth: 140 }}>
                   <div className="stat-label">{lang === "en" ? "Debt collected" : "Dette encaissée"}</div>
-                  <div className="stat-value">{fmt(salesTotals.debt_payment_total)}</div>
+                  <div className="stat-value">{fmt(salesTotals.debt_collected ?? salesTotals.debt_payment_total)}</div>
+                  {Number(salesTotals.refund_credits) > 0 && (
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                      {lang === "en"
+                        ? `+ ${fmt(salesTotals.refund_credits)} settled by refunds (no cash)`
+                        : `+ ${fmt(salesTotals.refund_credits)} réglé par des retours (sans espèces)`}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -828,7 +843,7 @@ export default function ReportsPage() {
                                   <div style={{ fontWeight: 800, fontSize: 15, color: "var(--brand-light)" }}>{fmt(sale.product_net != null ? sale.product_net : sale.total_amount)}</div>
                                 )}
                                 {Number(sale.debt_payment_amount) > 0 && (
-                                  <div style={{ fontSize: 11, color: "#fbbf24" }}>💰 {lang === "en" ? "Debt collected" : "Dette encaissée"}: {fmt(sale.debt_payment_amount)}</div>
+                                  <div style={{ fontSize: 11, color: "#fbbf24" }}>💰 {lang === "en" ? "Debt collected" : "Dette encaissée"}: {fmt(debtPaidOn(sale))}</div>
                                 )}
                                 {sale.balance_due > 0 && <div style={{ fontSize: 11, color: "#f87171" }}>Due: {fmt(sale.balance_due)}</div>}
                               </div>
@@ -955,7 +970,13 @@ export default function ReportsPage() {
                                 {Number(sale.debt_payment_amount) > 0 && (
                                   <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 20px", fontSize: 12, color: "#fbbf24" }}>
                                     <span>💰 {lang === "en" ? "Debt collected (not sales)" : "Dette encaissée (hors ventes)"}</span>
-                                    <span>{fmt(sale.debt_payment_amount)}</span>
+                                    <span>{fmt(debtPaidOn(sale))}</span>
+                                  </div>
+                                )}
+                                {Number(sale.debt_payment_amount) > debtPaidOn(sale) && (
+                                  <div style={{ display: "flex", justifyContent: "space-between", padding: "0 20px 6px", fontSize: 11, color: "var(--text-muted)" }}>
+                                    <span>{lang === "en" ? "Old debt moved onto this sale (still owed)" : "Ancienne dette reportée sur cette vente (toujours due)"}</span>
+                                    <span>{fmt(Number(sale.debt_payment_amount) - debtPaidOn(sale))}</span>
                                   </div>
                                 )}
                                 {(sale.returns || []).length > 0 && (
@@ -1431,6 +1452,10 @@ export default function ReportsPage() {
                       <BlockRow indent label={lang === "en" ? "Cash" : "Espèces"} value={fmt(bl.day_flow.debt_collected.cash)} />
                       <BlockRow indent label={momoLabelShort(fmt.currency, lang === "en")} value={fmt(bl.day_flow.debt_collected.momo)} />
                       <BlockRow indent label={lang === "en" ? "Bank" : "Banque"} value={fmt(bl.day_flow.debt_collected.bank)} />
+                      {/* LAUNCH-BATCH-2b: refunds set against invoices — debt settled, no money in or out. */}
+                      {Number(bl.day_flow.refund_credits_applied) > 0 && (
+                        <BlockRow indent label={lang === "en" ? "Settled by refunds (no cash)" : "Réglé par des retours (sans espèces)"} value={fmt(bl.day_flow.refund_credits_applied)} />
+                      )}
                       <div style={{ height: 8 }} />
                       {/* MP-VOID-PHYSICS: both legs explicit — cash-in on voided sales (+) then the cash-out (−). */}
                       {bl.drawer && Number(bl.drawer.cash_received_on_voided_sales) > 0 && (

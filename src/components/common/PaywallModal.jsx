@@ -14,7 +14,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { useLangStore } from "../../store";
+import { useLangStore, useAuthStore } from "../../store";
+import { planFeatureList } from "../../utils/market";
 import { useCurrency } from "../../utils/useCurrency";
 import api from "../../utils/api";
 import { getCapabilities, hasSection, hasFeature } from "../../utils/planCapabilities";
@@ -176,10 +177,9 @@ export default function PaywallModal({ feature, currentPlan, mpId, onClose }) {
   const whatsappUrl = () => `https://wa.me/${SUPPORT_PHONE}?text=${encodeURIComponent(whatsappMsg())}`;
 
   // Feature chips per plan — tolerate array or JSON-string shape from the API.
-  const planFeatures = (p) =>
-    Array.isArray(p.features)
-      ? p.features
-      : (() => { try { return JSON.parse(p.features || "[]"); } catch { return []; } })();
+  // LAUNCH-BATCH-2b: "Stenamo Market", and only for shops the Market is open to.
+  const org = useAuthStore((s) => s.org);
+  const planFeatures = (p) => planFeatureList(p.features, org);
 
   return (
     <div

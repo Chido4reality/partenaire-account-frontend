@@ -6,3 +6,15 @@ export const MARKET_ROUTES = new Set(["/dozie-listings", "/dozie-orders", "/dozi
 export function marketAvailable(org) {
   return String(org?.currency || "XAF").toUpperCase() === "XAF";
 }
+
+// LAUNCH-BATCH-2b: plan feature chips — "Stenamo Market", never the old "Partenaire Dozie"
+// name, and not offered at all to a shop the Market is closed to. The server does the
+// same (routes/subscriptions.js planFeaturesFor); this covers a server that hasn't yet.
+export function planFeatureList(features, org) {
+  let list = features;
+  if (!Array.isArray(list)) { try { list = JSON.parse(features || "[]"); } catch { list = []; } }
+  const open = marketAvailable(org);
+  return list
+    .map((f) => String(f).replace(/Partenaire Dozie marketplace/gi, "Stenamo Market").replace(/Partenaire Dozie/gi, "Stenamo Market"))
+    .filter((f) => open || !/Stenamo Market|marketplace/i.test(f));
+}
