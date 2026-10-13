@@ -388,12 +388,18 @@ export default function InventoryPage() {
   const totalStockValue = isOwner ? stock.reduce((sum, s) => sum + (+s.quantity * +(s.pa_products?.cost_price || 0)), 0) : 0;
 
   const invalidateAll = () => {
-    qc.invalidateQueries(["stock"]);
-    qc.invalidateQueries(["stock-all"]);
-    qc.invalidateQueries(["products-all"]);
-    qc.invalidateQueries(["stock-alerts"]);
-    qc.invalidateQueries(["mp-availability-inv"]); // MP-MULTIPART: refresh kit availability
-    qc.invalidateQueries(["dozie-migrate-candidates"]); // FU.4 — banner re-evaluates after Apply
+    // LAUNCH-BATCH-2b (a): the v5 OBJECT form. The old array form —
+    // qc.invalidateQueries(["stock"]) — is not a key filter in React Query v5: it
+    // matches EVERY query, so these six lines refetched the whole app six times
+    // (99 requests for one product). The Stock Levels refresh then queued behind
+    // the browser's 6-connection limit and a new shop's first product stayed
+    // missing for seconds after "Product added" (3 s at a 300 ms round trip).
+    qc.invalidateQueries({ queryKey: ["stock"] });
+    qc.invalidateQueries({ queryKey: ["stock-all"] });
+    qc.invalidateQueries({ queryKey: ["products-all"] });
+    qc.invalidateQueries({ queryKey: ["stock-alerts"] });
+    qc.invalidateQueries({ queryKey: ["mp-availability-inv"] }); // MP-MULTIPART: refresh kit availability
+    qc.invalidateQueries({ queryKey: ["dozie-migrate-candidates"] }); // FU.4 — banner re-evaluates after Apply
   };
 
   // MP-PHASE-4 BUG-Y — optimistic UI seed for offline product create.
@@ -420,7 +426,7 @@ export default function InventoryPage() {
   // the eventual server-side id, so the synthetic rows reconcile cleanly
   // against the real rows when the [sync] emit invalidate fires on
   // reconnect.
-  const seedAfterOfflineProductCreate = ({ product, initialLocationId, initialQuantity, initialSlot }) => {
+  const seedAfterOfflineProductCreate = ({ product, initialLocationId, initialQuantity, initialSlot, offlineQueued = true }) => {
     if (!product?.id) return;
     const nowIso = new Date().toISOString();
     // Synthetic pa_products row — fields every consumer reads.
@@ -443,7 +449,7 @@ export default function InventoryPage() {
       image_url:      null,
       created_at:     nowIso,
       updated_at:     nowIso,
-      offline_queued: true,
+      offline_queued: offlineQueued,
     };
     // ["products-all", showArchived] — list slot, prepend.
     qc.setQueriesData(
@@ -520,7 +526,7 @@ export default function InventoryPage() {
           name: (locations.find(l => l.id === initialLocationId)?.name) || null,
           type: null,
         },
-        offline_queued: true,
+        offline_queued: offlineQueued,
       };
       qc.setQueriesData(
         { predicate: (q) => {
@@ -712,6 +718,16 @@ export default function InventoryPage() {
         });
         invalidateAllSkippingOfflineSeed();
       } else {
+        // LAUNCH-BATCH-2b (a): show the new product at once — the same seed the offline
+        // path uses (not marked as pending sync); the targeted refetch below replaces
+        // it with the server's row a moment later.
+        if (snap?.product) seedAfterOfflineProductCreate({
+          product:            snap.product,
+          initialLocationId:  snap.initialLocationId,
+          initialQuantity:    snap.initialQuantity,
+          initialSlot:        snap.initialSlot,
+          offlineQueued:      false,
+        });
         invalidateAll();
       }
     },
@@ -1070,6 +1086,16 @@ export default function InventoryPage() {
         });
         invalidateAllSkippingOfflineSeed();
       } else {
+        // LAUNCH-BATCH-2b (a): show the new product at once — the same seed the offline
+        // path uses (not marked as pending sync); the targeted refetch below replaces
+        // it with the server's row a moment later.
+        if (snap?.product) seedAfterOfflineProductCreate({
+          product:            snap.product,
+          initialLocationId:  snap.initialLocationId,
+          initialQuantity:    snap.initialQuantity,
+          initialSlot:        snap.initialSlot,
+          offlineQueued:      false,
+        });
         invalidateAll();
       }
     },
@@ -2452,8 +2478,8 @@ export default function InventoryPage() {
             // refreshed so a manual `is_active` toggle or a freshly-
             // migrated Dozie pair surfaces.
             if (offlineQueued) {
-              qc.invalidateQueries(["products-all"]);
-              qc.invalidateQueries(["dozie-migrate-candidates"]);
+              qc.invalidateQueries({ queryKey: ["products-all"] });
+              qc.invalidateQueries({ queryKey: ["dozie-migrate-candidates"] });
             } else {
               invalidateAll();
             }
