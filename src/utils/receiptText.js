@@ -20,10 +20,14 @@
 // MP-DAMAGED-GOODS: the marker, the legend and the "any damaged?" test live in
 // ONE place so the three receipt surfaces cannot drift apart on wording.
 import { dmgShort, damagedLegend, hasDamaged } from "./damagedLabel";
+import { currencyShort } from "./currency";
 
 const WIDTH = 35;
 
 const fmtAmt = (n) => (Number(n) || 0).toLocaleString();
+// LAUNCH-BATCH-2: the org's short currency symbol ("F" for XAF, "₦" for NGN) — set by
+// buildMonospaceReceipt for the duration of one (synchronous) build. Was a literal "F".
+let SYM = "F";
 
 // ── Geometry helpers ────────────────────────────────────────────
 
@@ -55,13 +59,13 @@ function kvLine(label, value, w = WIDTH, lwidth = 16) {
   return lab + repeat(" ", right - val.length) + val;
 }
 
-// Item row: "  name × qty            1,200 F"
+// Item row: "  name × qty            1,200 F"  (F = the org's short symbol)
 //   indent (2) + name padded to 15 + " × qty " padded to 6 + amount
 //   right-aligned into the remainder (12). Total = 2 + 15 + 6 + 12 = 35.
 function itemLine(name, qty, amount, w = WIDTH) {
   const left  = "  " + fitWidth(String(name || "?"), 15);
   const mid   = fitWidth(`× ${qty}`, 6);
-  const amt   = `${fmtAmt(amount)} F`;
+  const amt   = `${fmtAmt(amount)} ${SYM}`;
   const right = w - left.length - mid.length;
   if (amt.length >= right) return left + mid + amt.slice(0, right);
   return left + mid + repeat(" ", right - amt.length) + amt;
@@ -71,7 +75,7 @@ function itemLine(name, qty, amount, w = WIDTH) {
 // for totals/paid/balance/refund-total etc.
 function amountLine(label, amount, w = WIDTH, lwidth = 22) {
   const lab = fitWidth(String(label || ""), lwidth);
-  const amt = `${fmtAmt(amount)} F`;
+  const amt = `${fmtAmt(amount)} ${SYM}`;
   const right = w - lwidth;
   if (amt.length >= right) return lab + amt.slice(0, right);
   return lab + repeat(" ", right - amt.length) + amt;
@@ -338,6 +342,7 @@ function bodyVoid(L, data, lang) {
 
 export function buildMonospaceReceipt(eventType, data, lang, org) {
   if (!data) return "";
+  SYM = currencyShort(org?.currency);
   const en = lang === "en";
   const title = (TITLE_BY_TYPE[eventType] || TITLE_BY_TYPE.sale)[en ? "en" : "fr"];
   const ref   = pickReference(eventType, data);

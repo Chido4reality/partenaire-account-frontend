@@ -34,8 +34,25 @@ export function currencySymbol(code) {
 // included) groups identically; no second formatting style is introduced.
 export function formatMoney(amount, code) {
   if (!amount && amount !== 0) return "—";
+  // LAUNCH-BATCH-2 (Nigeria day-one): naira is written the Nigerian way — symbol first,
+  // comma thousands: "₦1,234,567" (was "1 234 567 ₦", the franc layout). XAF unchanged.
+  if (String(code || "").toUpperCase() === "NGN") {
+    const n = Math.round(Number(amount) || 0);
+    return (n < 0 ? "-₦" : "₦") + new Intl.NumberFormat("en-NG").format(Math.abs(n));
+  }
   const grouped = new Intl.NumberFormat("fr-CM")
     .format(Math.round(amount))
     .replace(/ /g, " "); // narrow NBSP -> regular NBSP (visible everywhere)
   return grouped + " " + currencySymbol(code);
+}
+
+// LAUNCH-BATCH-2 (Nigeria day-one): the SHORT symbol for fixed-width text receipts
+// (35-column WhatsApp/thermal blocks, where the amount column is 12 wide). XAF/XOF keep
+// the "F" shorthand Cameroon receipts have always printed (so they are unchanged and big
+// amounts still fit); NGN prints "₦" — it was getting "F". Anything else: its code.
+export function currencyShort(code) {
+  const c = String(code || "").toUpperCase();
+  if (!c || c === "XAF" || c === "XOF") return "F";
+  if (c === "NGN") return "₦";
+  return c;
 }

@@ -401,6 +401,18 @@ api.interceptors.response.use(res => {
 }, async err => {
   const cfg = err.config || {};
 
+  // LAUNCH-BATCH-2 (Nigeria day-one): when the server sends an error in both languages
+  // (message_en / message_fr), every screen's `data.message` toast shows the user's
+  // language — not only the few screens that pick message_en themselves. An English
+  // user was shown "Prix de gros (…) ne peut pas être inférieur…".
+  try {
+    const d = err?.response?.data;
+    if (d && typeof d === "object") {
+      const pick = useLangStore.getState().lang === "en" ? d.message_en : d.message_fr;
+      if (typeof pick === "string" && pick) d.message = pick;
+    }
+  } catch { /* noop */ }
+
   // MP-PEAK-MTN-RESILIENCE: transient network/timeout retry with backoff for SAFE,
   // idempotent requests (GET + login), BEFORE surfacing an error. On a congested
   // peak MTN route the first attempt often aborts; a couple of backed-off retries

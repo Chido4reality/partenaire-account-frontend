@@ -42,6 +42,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useAuthStore, useLangStore, useSettingsStore } from "../../store";
+import { waPhone } from "../../utils/waPhone";
 import api from "../../utils/api";
 import { useCurrency } from "../../utils/useCurrency";
 import { SHOP_TZ } from "../../utils/shopTime"; // MP-REPORT-TZ
@@ -905,7 +906,7 @@ function SendReportPromptModal({ locationId, onClose }) {
   const phoneRaw   = settings?.whatsapp_number || "";
   const phoneDigits = phoneRaw.toString().replace(/\D/g, "");
   const phoneOk    = phoneDigits.length >= 8;
-  const phoneWithCode = phoneDigits.startsWith("237") ? phoneDigits : "237" + phoneDigits;
+  const phoneWithCode = waPhone(phoneDigits, settings || useAuthStore.getState().org);   // LAUNCH-BATCH-2: 234 for Nigeria
 
   // MP-TIMEZONE-CONVERGE: org-LOCAL today (WAT/UTC+1) so the shift-close daily report
   // fetches the same day the money windows use — not the device's UTC date near midnight.

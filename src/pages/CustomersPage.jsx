@@ -5,6 +5,7 @@ import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { isPendingApproval, keepWorkingToast } from "../utils/approval";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
+import { waPhone } from "../utils/waPhone";
 import api, { formatDate } from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
 import { momoLabel } from "../utils/paymentLabels";
@@ -592,8 +593,7 @@ export default function CustomersPage() {
   // A10 — branch-aware WhatsApp reminder: names each branch + amount owed there.
   const sendBranchReminder = (c) => {
     if (!c?.phone) { toast.error(lang === "en" ? "No phone number for this customer" : "Pas de numéro pour ce client"); return; }
-    let phone = String(c.phone).replace(/\s+/g, "").replace(/^0/, "");
-    if (!phone.startsWith("237")) phone = "237" + phone;
+    const phone = waPhone(c.phone, org);   // LAUNCH-BATCH-2: org's dialling code (was always 237)
     const today = new Date().toLocaleDateString(lang === "en" ? "en-GB" : "fr-FR", { day: "2-digit", month: "long", year: "numeric" });
     const orgName = org?.name || (lang === "en" ? "our shop" : "notre boutique");
     const owing = branchByCustomer[c.id]?.branchesOwing || [];
@@ -978,7 +978,7 @@ export default function CustomersPage() {
             </div>
             {/* MP-CUSTOMER-EDIT-DEBT: direct balance edit (audited). */}
             <div className="form-group">
-              <label className="label">{lang === "en" ? "Current debt (XAF)" : "Dette actuelle (XAF)"}</label>
+              <label className="label">{lang === "en" ? `Current debt (${fmt.symbol})` : `Dette actuelle (${fmt.symbol})`}</label>
               <input className="input" type="number" min="0" value={form.total_debt ?? 0}
                 onChange={e => setF("total_debt", e.target.value)} placeholder="0" />
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
@@ -1080,7 +1080,7 @@ export default function CustomersPage() {
               <input className="input" type="number" value={form.credit_limit} onChange={e => setF("credit_limit", e.target.value)} placeholder="0" />
             </div>
             <div className="form-group">
-              <label className="label">{lang === "en" ? "Initial debt (XAF)" : "Dette initiale (XAF)"}</label>
+              <label className="label">{lang === "en" ? `Initial debt (${fmt.symbol})` : `Dette initiale (${fmt.symbol})`}</label>
               <input className="input" type="number" min="0" value={form.total_debt} onChange={e => setF("total_debt", e.target.value)} placeholder="0" />
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
                 {lang === "en"

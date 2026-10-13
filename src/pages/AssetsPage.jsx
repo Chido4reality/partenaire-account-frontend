@@ -6,7 +6,7 @@ import { useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
-import { useLangStore } from "../store";
+import { useLangStore, useAuthStore } from "../store";
 import { hasFeature } from "../utils/planCapabilities";
 import api from "../utils/api";
 
@@ -45,6 +45,8 @@ const firstOfMonth = () => { const d = new Date(); return new Date(d.getFullYear
 
 export default function AssetsPage() {
   const { lang } = useLangStore();
+  // LAUNCH-BATCH-2: a new holding defaults to the org's currency (was always "XAF").
+  const orgCur = useAuthStore(s => s.org?.currency) || "XAF";
   const en = lang === "en";
   const qc = useQueryClient();
 
@@ -56,7 +58,7 @@ export default function AssetsPage() {
   const [selectedId, setSelectedId] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [holdingModal, setHoldingModal] = useState(null); // { mode:'add'|'edit', holding? }
-  const [hForm, setHForm] = useState({ name: "", category: "cash", currency_label: "XAF" });
+  const [hForm, setHForm] = useState({ name: "", category: "cash", currency_label: orgCur });
   const [moveModal, setMoveModal] = useState(null); // { type:'in'|'out'|'transfer' }
   const [mForm, setMForm] = useState({ amount: "", movement_date: new Date().toISOString().slice(0, 10), description: "", from_holding_id: "", to_holding_id: "" });
   const [confirming, setConfirming] = useState(false);
@@ -255,7 +257,7 @@ export default function AssetsPage() {
             </select>
           </div>
           <div className="form-group"><label className="label">{en ? "Currency label (display only)" : "Devise (affichage)"}</label>
-            <input className="input" value={hForm.currency_label} onChange={e => setHForm(f => ({ ...f, currency_label: e.target.value.toUpperCase() }))} placeholder="XAF" />
+            <input className="input" value={hForm.currency_label} onChange={e => setHForm(f => ({ ...f, currency_label: e.target.value.toUpperCase() }))} placeholder={orgCur} />
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
             <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setHoldingModal(null)}>{en ? "Cancel" : "Annuler"}</button>
@@ -505,7 +507,7 @@ export default function AssetsPage() {
       {TabBar}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
         <div style={{ fontWeight: 800, fontSize: 20 }}>💼 {en ? "Assets" : "Avoirs"}</div>
-        <button className="btn btn-primary btn-sm" onClick={() => { setHForm({ name: "", category: "cash", currency_label: "XAF" }); setHoldingModal({ mode: "add" }); }}>＋ {en ? "Add holding" : "Ajouter"}</button>
+        <button className="btn btn-primary btn-sm" onClick={() => { setHForm({ name: "", category: "cash", currency_label: orgCur }); setHoldingModal({ mode: "add" }); }}>＋ {en ? "Add holding" : "Ajouter"}</button>
       </div>
       <div style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 16 }}>
         {en ? "A manual ledger of where your money sits. Separate from POS sales." : "Un registre manuel de l'emplacement de votre argent. Indépendant des ventes."}

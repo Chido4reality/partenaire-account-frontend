@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 import { useLangStore, useAuthStore, useSettingsStore } from "../store";
 import api, { formatDate } from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
+import { waPhone } from "../utils/waPhone";
 import { openWhatsApp } from "../utils/whatsapp"; // MP-DAY-SUMMARY (Feature A)
 import { buildDaySummaryText } from "../utils/daySummaryText"; // MP-DAY-SUMMARY shared engine
 import { momoLabelShort } from "../utils/paymentLabels";
@@ -832,15 +833,17 @@ export default function ReportsPage() {
                                 <button onClick={() => {
                                   const items = sale.pa_sale_items || [];
                                   const total = items.reduce((s,i) => s + itemAmount(i), 0);
-                                  let msg = `🧾 *Reçu*\n📅 ${sale.sale_date}\nN° ${sale.sale_number}\n─────────────────────\n`;
+                                  // LAUNCH-BATCH-2: org currency + the UI language (was "F" and French only).
+                                  const en = lang === "en";
+                                  let msg = `🧾 *${en ? "Receipt" : "Reçu"}*\n📅 ${sale.sale_date}\nN° ${sale.sale_number}\n─────────────────────\n`;
                                   items.forEach(i => {
                                     msg += isDebtItem(i)
-                                      ? `${itemLabel(i, lang)} ... ${itemAmount(i).toLocaleString()} F\n`
-                                      : `${itemLabel(i, lang)}${dmgSuffix(i, lang)} × ${i.quantity} ... ${itemAmount(i).toLocaleString()} F\n`;
+                                      ? `${itemLabel(i, lang)} ... ${itemAmount(i).toLocaleString()} ${fmt.symbol}\n`
+                                      : `${itemLabel(i, lang)}${dmgSuffix(i, lang)} × ${i.quantity} ... ${itemAmount(i).toLocaleString()} ${fmt.symbol}\n`;
                                   });
                                   msg += `─────────────────────\n*Total: ${total.toLocaleString()} ${fmt.symbol}*`;
-                                  if (sale.payment_status === "credit") msg += `\n🔴 CRÉDIT: ${total.toLocaleString()} F DÛ`;
-                                  else if (sale.payment_status === "partial") msg += `\n🟡 PARTIEL — Reste: ${sale.balance_due?.toLocaleString()} F`;
+                                  if (sale.payment_status === "credit") msg += en ? `\n🔴 CREDIT: ${total.toLocaleString()} ${fmt.symbol} OWED` : `\n🔴 CRÉDIT: ${total.toLocaleString()} ${fmt.symbol} DÛ`;
+                                  else if (sale.payment_status === "partial") msg += en ? `\n🟡 PARTIAL — Balance: ${sale.balance_due?.toLocaleString()} ${fmt.symbol}` : `\n🟡 PARTIEL — Reste: ${sale.balance_due?.toLocaleString()} ${fmt.symbol}`;
                                   // MP-SOLD-DATE-NOTE-VISIBILITY: this is a SEPARATE WhatsApp text
                                   // builder from receiptText.js's buildMonospaceReceipt (POS's own
                                   // WhatsApp share) — the note has to be added here independently
@@ -850,7 +853,7 @@ export default function ReportsPage() {
                                       ? `\nNOTE — Sold Date: ${fmtSoldDateBadge(sale.sold_date_note)}${sale.sold_date_note_by_name ? ` (recorded by ${sale.sold_date_note_by_name})` : ""}`
                                       : `\nNOTE — Date de vente : ${fmtSoldDateBadge(sale.sold_date_note)}${sale.sold_date_note_by_name ? ` (saisi par ${sale.sold_date_note_by_name})` : ""}`;
                                   }
-                                  const phone = sale.pa_customers?.phone ? "237" + sale.pa_customers.phone.toString().replace(/^0/,"").replace(/\s/g,"") : "";
+                                  const phone = sale.pa_customers?.phone ? waPhone(sale.pa_customers.phone, orgSettings) : "";   // LAUNCH-BATCH-2: org's dialling code
                                   window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
                                 }} style={{ background: "#25D366", border: "none", color: "#fff", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
                                   📱
@@ -1005,24 +1008,26 @@ export default function ReportsPage() {
                 const paid = todaySales.filter(s => s.payment_status === "paid").reduce((s, sale) => s + parseFloat(sale.total_amount), 0);
                 const credit = todaySales.filter(s => s.payment_status === "credit").reduce((s, sale) => s + parseFloat(sale.total_amount), 0);
                 const partial = todaySales.filter(s => s.payment_status === "partial").reduce((s, sale) => s + parseFloat(sale.balance_due || 0), 0);
-                const today = new Date().toLocaleDateString("fr-FR");
-                let msg = `📊 *Ventes du jour — ${today}*
+                // LAUNCH-BATCH-2: org currency + the UI language (was "F" and French only).
+                const en = lang === "en", sym = fmt.symbol;
+                const today = new Date().toLocaleDateString(en ? "en-GB" : "fr-FR");
+                let msg = `📊 *${en ? "Today's sales" : "Ventes du jour"} — ${today}*
 `;
                 msg += `─────────────────────
 `;
-                items.forEach(i => { msg += `${i.name} × ${i.qty} ${i.unit} ... ${i.total.toLocaleString()} F${i.damaged > 0 ? ` (dont ${i.damaged.toLocaleString()} F abîmé)` : ""}
+                items.forEach(i => { msg += `${i.name} × ${i.qty} ${i.unit} ... ${i.total.toLocaleString()} ${sym}${i.damaged > 0 ? (en ? ` (incl. ${i.damaged.toLocaleString()} ${sym} damaged)` : ` (dont ${i.damaged.toLocaleString()} ${sym} abîmé)`) : ""}
 `; });
                 msg += `─────────────────────
 `;
-                msg += `*Total: ${grandTotal.toLocaleString()} ${fmt.symbol}*
+                msg += `*Total: ${grandTotal.toLocaleString()} ${sym}*
 `;
-                msg += `✅ Encaissé: ${paid.toLocaleString()} F
+                msg += `✅ ${en ? "Collected" : "Encaissé"}: ${paid.toLocaleString()} ${sym}
 `;
-                if (credit > 0) msg += `🔴 Crédit: ${credit.toLocaleString()} F
+                if (credit > 0) msg += `🔴 ${en ? "Credit" : "Crédit"}: ${credit.toLocaleString()} ${sym}
 `;
-                if (partial > 0) msg += `🟡 Restes dus: ${partial.toLocaleString()} F
+                if (partial > 0) msg += `🟡 ${en ? "Balances due" : "Restes dus"}: ${partial.toLocaleString()} ${sym}
 `;
-                msg += `📦 ${todaySales.length} ventes`;
+                msg += `📦 ${todaySales.length} ${en ? "sales" : "ventes"}`;
                 window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
               }} style={{ background: "#25D366", border: "none", color: "#fff", borderRadius: 10, padding: "8px 16px", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
                 📱 {lang === "en" ? "Share WhatsApp" : "Partager WhatsApp"}
@@ -1034,18 +1039,20 @@ export default function ReportsPage() {
                 const grandTotal = dailyProductsTotal;
                 const paid = todaySales.filter(s => s.payment_status === "paid").reduce((s, sale) => s + parseFloat(sale.total_amount), 0);
                 const credit = todaySales.filter(s => s.payment_status === "credit").reduce((s, sale) => s + parseFloat(sale.total_amount), 0);
-                const today = new Date().toLocaleDateString("fr-FR");
+                // LAUNCH-BATCH-2: org currency + the UI language (was "F" and French only).
+                const en = lang === "en", sym = fmt.symbol;
+                const today = new Date().toLocaleDateString(en ? "en-GB" : "fr-FR");
                 const w = window.open("","_blank","width=350,height=600");
                 w.document.write(`<html><head><style>body{font-family:monospace;font-size:12px;width:300px;margin:0 auto}.row{display:flex;justify-content:space-between;margin-bottom:4px}.line{border-top:1px dashed #000;margin:8px 0}.center{text-align:center}.bold{font-weight:bold;font-size:14px}</style></head><body>
-                  <div class="center bold">VENTES DU JOUR</div>
+                  <div class="center bold">${en ? "TODAY'S SALES" : "VENTES DU JOUR"}</div>
                   <div class="center">${today}</div>
                   <div class="line"></div>
-                  ${items.map(i => `<div class="row"><span>${i.name} × ${i.qty} ${i.unit}${i.damaged > 0 ? ` (dont ${i.damaged.toLocaleString()} F abîmé)` : ""}</span><span>${i.total.toLocaleString()} F</span></div>`).join("")}
+                  ${items.map(i => `<div class="row"><span>${i.name} × ${i.qty} ${i.unit}${i.damaged > 0 ? (en ? ` (incl. ${i.damaged.toLocaleString()} ${sym} damaged)` : ` (dont ${i.damaged.toLocaleString()} ${sym} abîmé)`) : ""}</span><span>${i.total.toLocaleString()} ${sym}</span></div>`).join("")}
                   <div class="line"></div>
-                  <div class="row bold"><span>TOTAL</span><span>${grandTotal.toLocaleString()} ${fmt.symbol}</span></div>
-                  <div class="row"><span>✅ Encaissé</span><span>${paid.toLocaleString()} F</span></div>
-                  ${credit > 0 ? `<div class="row" style="color:red"><span>🔴 Crédit</span><span>${credit.toLocaleString()} F</span></div>` : ""}
-                  <div class="row"><span>📦 Nb ventes</span><span>${todaySales.length}</span></div>
+                  <div class="row bold"><span>TOTAL</span><span>${grandTotal.toLocaleString()} ${sym}</span></div>
+                  <div class="row"><span>✅ ${en ? "Collected" : "Encaissé"}</span><span>${paid.toLocaleString()} ${sym}</span></div>
+                  ${credit > 0 ? `<div class="row" style="color:red"><span>🔴 ${en ? "Credit" : "Crédit"}</span><span>${credit.toLocaleString()} ${sym}</span></div>` : ""}
+                  <div class="row"><span>📦 ${en ? "Sales" : "Nb ventes"}</span><span>${todaySales.length}</span></div>
                 </body></html>`);
                 w.document.close(); w.focus(); setTimeout(() => { w.print(); w.close(); }, 300);
               }} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-primary)", borderRadius: 10, padding: "8px 16px", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
@@ -1094,7 +1101,7 @@ export default function ReportsPage() {
                           )}
                         </td>
                         <td style={{ textAlign: "right", fontWeight: 600 }}>{item.qty} {item.unit}</td>
-                        <td style={{ textAlign: "right", fontWeight: 700, color: "var(--brand-light)" }}>{item.total.toLocaleString()} F</td>
+                        <td style={{ textAlign: "right", fontWeight: 700, color: "var(--brand-light)" }}>{fmt(item.total)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1111,9 +1118,9 @@ export default function ReportsPage() {
                     <tr style={{ background: "var(--bg-elevated)" }}>
                       <td colSpan={3} style={{ padding: "8px 16px" }}>
                         <div style={{ display: "flex", gap: 20, flexWrap: "wrap", fontSize: 13 }}>
-                          <span>✅ {lang === "en" ? "Collected:" : "Encaissé:"} <strong style={{ color: "#34d399" }}>{totalPaid.toLocaleString()} F</strong></span>
-                          {totalCredit > 0 && <span>🔴 {lang === "en" ? "Credit:" : "Crédit:"} <strong style={{ color: "#f87171" }}>{totalCredit.toLocaleString()} F</strong></span>}
-                          {totalPartialDue > 0 && <span>🟡 {lang === "en" ? "Partial due:" : "Restes dus:"} <strong style={{ color: "#fbbf24" }}>{totalPartialDue.toLocaleString()} F</strong></span>}
+                          <span>✅ {lang === "en" ? "Collected:" : "Encaissé:"} <strong style={{ color: "#34d399" }}>{fmt(totalPaid)}</strong></span>
+                          {totalCredit > 0 && <span>🔴 {lang === "en" ? "Credit:" : "Crédit:"} <strong style={{ color: "#f87171" }}>{fmt(totalCredit)}</strong></span>}
+                          {totalPartialDue > 0 && <span>🟡 {lang === "en" ? "Partial due:" : "Restes dus:"} <strong style={{ color: "#fbbf24" }}>{fmt(totalPartialDue)}</strong></span>}
                         </div>
                       </td>
                     </tr>

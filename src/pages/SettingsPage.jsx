@@ -173,6 +173,7 @@ export default function SettingsPage() {
   const { selectedLocation, setLocation } = useSettingsStore();
   const qc = useQueryClient();
   const fmt = useCurrency();
+  const orgCur = fmt.currency;   // LAUNCH-BATCH-2: staff salary defaults to the org's currency (was "XAF")
   const isOwner = user?.role === "owner";
   // MP-MANAGER-DELEGATION Phase 3: a manager only sees the staff add/deactivate controls
   // when the owner delegated can_manage_staff (the server enforces it regardless — this
@@ -241,7 +242,7 @@ export default function SettingsPage() {
   // Staff state
   const [showAddStaff, setShowAddStaff] = useState(false);
   const [editStaff, setEditStaff]       = useState(null);
-  const [staffForm, setStaffForm]       = useState({ ...BLANK_STAFF });
+  const [staffForm, setStaffForm]       = useState({ ...BLANK_STAFF, salary_currency: orgCur });
   // Phase 2 — per-staff Activity view (read-only, owner + Pro Plus).
   const [activityPeriod, setActivityPeriod] = useState("this_month");
   // Team attendance (consolidated roster) — owner + Pro Plus. Period values match
@@ -546,7 +547,7 @@ export default function SettingsPage() {
     onSuccess: () => {
       toast.success(lang === "en" ? "Staff member added!" : "Personnel ajouté!");
       setShowAddStaff(false);
-      setStaffForm({ ...BLANK_STAFF });
+      setStaffForm({ ...BLANK_STAFF, salary_currency: orgCur });
       qc.invalidateQueries(["staff"]);
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
@@ -560,7 +561,7 @@ export default function SettingsPage() {
     onSuccess: () => {
       toast.success(lang === "en" ? "Staff updated!" : "Personnel mis à jour!");
       setEditStaff(null);
-      setStaffForm({ ...BLANK_STAFF });
+      setStaffForm({ ...BLANK_STAFF, salary_currency: orgCur });
       qc.invalidateQueries(["staff"]);
     },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
@@ -758,7 +759,7 @@ export default function SettingsPage() {
           employment_type: p.employment_type || "",
           salary_amount: p.salary_amount ?? "",
           salary_period: p.salary_period || "per_month",
-          salary_currency: p.salary_currency || "XAF",
+          salary_currency: p.salary_currency || orgCur,
           emergency_contact_name: p.emergency_contact_name || "",
           emergency_contact_phone: p.emergency_contact_phone || "",
           national_id: p.national_id || "",
@@ -2428,7 +2429,7 @@ export default function SettingsPage() {
                       <option value="per_hour">{lang === "en" ? "/hour" : "/heure"}</option>
                     </select>
                     <input className="input" style={{ flex: 1 }} value={staffForm.salary_currency}
-                      onChange={e => setSF("salary_currency", e.target.value)} placeholder="XAF" />
+                      onChange={e => setSF("salary_currency", e.target.value)} placeholder={orgCur} />
                   </div>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
                     {lang === "en" ? "Stored for your records only — no payroll calculations." : "Conservé pour vos dossiers uniquement — aucun calcul de paie."}

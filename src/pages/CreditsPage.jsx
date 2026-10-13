@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useAuthStore, useLangStore } from "../store";
+import { waPhone } from "../utils/waPhone";
 import api, { formatDate } from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
 import { momoLabel } from "../utils/paymentLabels";
@@ -128,8 +129,7 @@ export default function CreditsPage() {
       return;
     }
 
-    let phone = customer.phone.toString().replace(/\s+/g, "").replace(/^0/, "");
-    if (!phone.startsWith("237")) phone = "237" + phone;
+    const phone = waPhone(customer.phone, org);   // LAUNCH-BATCH-2: org's dialling code (was always 237)
 
     const today = new Date().toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
     const totalDebt = customer.total_debt || 0;

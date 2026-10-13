@@ -20,6 +20,7 @@ const ROOT = resolve(HERE, "..");
 const CHECKS = [
   ["mount-check",   "scripts/mount-check.mjs",           "15 render scenarios — does it MOUNT, not just parse"],
   ["damaged-check", "scripts/receipt-damaged-check.mjs", "regression #10 — the damaged marker on all 3 receipt surfaces"],
+  ["currency",      "scripts/currency-check.mjs",        "LAUNCH-BATCH-2: receipts, money and WhatsApp numbers follow the org (₦ / 234 for Nigeria; Cameroon unchanged)"],
   ["export-check",  "scripts/report-export-check.mjs",   "regression #7 — CSV round-trips through a real spreadsheet parser"],
   ["marketing",     "scripts/marketing-render-check.mjs","admin.html marketing screens RENDER against the real inline script"],
   ["admin-sync",    "scripts/sync-admin-copy.mjs --check","admin/index.html is a generated copy, not a drifting duplicate"],

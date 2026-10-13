@@ -2675,6 +2675,8 @@ function PricingSection({ data, onChange, lang }) {
 // ── RECEIVE ITEM ROW COMPONENT ────────────────────────────────────────────────
 function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemove, canSeePrices, duplicateOf, canExpiry }) {
   const [selected, setSelected] = useState(null);
+  const fmt = useCurrency();   // LAUNCH-BATCH-2: prices in the org's currency (was a literal "F")
+  const en = lang === "en";
 
   const pickProduct = (p) => {
     setSelected(p);
@@ -2751,10 +2753,10 @@ function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemov
               💰 {lang === "en" ? "Update prices — leave blank to keep current" : "Mettre à jour les prix — laisser vide pour garder"}
             </div>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12, padding: "8px 12px", background: "rgba(255,255,255,0.03)", borderRadius: 8, fontSize: 12 }}>
-              <span>Cost: <strong>{Number(selected.cost_price || 0).toLocaleString()} F</strong></span>
-              <span style={{ color: "var(--brand-light)" }}>Walk-in: <strong>{Number(selected.sell_price || 0).toLocaleString()} F</strong></span>
-              <span style={{ color: "#fbbf24" }}>Wholesale: <strong>{Number(selected.wholesale_price || 0).toLocaleString()} F</strong></span>
-              <span style={{ color: "#f87171" }}>Min: <strong>{Number(selected.min_price || 0).toLocaleString()} F</strong></span>
+              <span>{en ? "Cost" : "Coût"}: <strong>{fmt(Number(selected.cost_price || 0))}</strong></span>
+              <span style={{ color: "var(--brand-light)" }}>{en ? "Walk-in" : "Détail"}: <strong>{fmt(Number(selected.sell_price || 0))}</strong></span>
+              <span style={{ color: "#fbbf24" }}>{en ? "Wholesale" : "Gros"}: <strong>{fmt(Number(selected.wholesale_price || 0))}</strong></span>
+              <span style={{ color: "#f87171" }}>Min: <strong>{fmt(Number(selected.min_price || 0))}</strong></span>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
               <div className="form-group">
@@ -2789,7 +2791,7 @@ function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemov
               autoFocus={idx === 0}
               lang={lang}
               placeholder={lang === "en" ? "Type to search or scan barcode..." : "Tapez pour chercher ou scannez..."}
-              renderMeta={canSeePrices ? (p => <span style={{ fontSize: 12, color: "var(--brand-light)", fontWeight: 700 }}>{Number(p.sell_price || 0).toLocaleString()} F</span>) : undefined}
+              renderMeta={canSeePrices ? (p => <span style={{ fontSize: 12, color: "var(--brand-light)", fontWeight: 700 }}>{fmt(Number(p.sell_price || 0))}</span>) : undefined}
             />
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
               {lang === "en" ? "Typo-tolerant — scroll for more matches. No match? Use + Add Product." : "Tolérant aux fautes — défilez pour plus de résultats. Aucun ? + Ajouter produit."}

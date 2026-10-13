@@ -31,6 +31,7 @@ import { buildMonospaceReceipt, wrapMonospaceFence } from "../../utils/receiptTe
 import { buildFactureInner, buildThermalReceipt } from "../../utils/factureReceipt";
 import { advertLines, PLAY_STORE_URL, showDownloadQr, downloadQrCaptionLines } from "../../utils/receiptExtras";
 import { currencySymbol } from "../../utils/currency";
+import { waPhone } from "../../utils/waPhone";
 import { momoLabel } from "../../utils/paymentLabels";
 import { dmgName as dmgNameOf } from "../../utils/damagedLabel"; // MP-DAMAGED-GOODS: pure, so it can be asserted
 import toast from "react-hot-toast";
@@ -238,9 +239,9 @@ function buildBodyLines(eventType, data, lang, org) {
     const dmg = (i) => i.is_damaged ? (en ? " (DAMAGED GOODS)" : " (MARCHANDISE ENDOMMAGÉE)") : "";
     items.forEach(i => {
       if (i.type === "debt_payment") {
-        lines.push(`💰 ${i.name} ........ ${fmtAmt(i.unit_price)} F`);
+        lines.push(`💰 ${i.name} ........ ${fmtAmt(i.unit_price)} ${sym}`);
       } else {
-        lines.push(`${i.name}${dmg(i)} × ${i.quantity} ........ ${fmtAmt(i.quantity * i.unit_price)} F`);
+        lines.push(`${i.name}${dmg(i)} × ${i.quantity} ........ ${fmtAmt(i.quantity * i.unit_price)} ${sym}`);
       }
     });
     // MP-DISCOUNT: NET total is data.total_amount; discount = gross − net.
@@ -317,10 +318,10 @@ function buildBodyLines(eventType, data, lang, org) {
         if (!inv) return;
         const ref = inv.sale_number || inv.sale_id || "?";
         const raw = inv.applied ?? inv.amount ?? inv.applied_amount ?? 0;
-        lines.push(`  ${ref} — ${fmtAmt(raw)} F`);
+        lines.push(`  ${ref} — ${fmtAmt(raw)} ${sym}`);
       });
       if (ghost > 0) {
-        lines.push(`  ${en ? "Outstanding debt (no invoice)" : "Dette en cours (sans facture)"} — ${fmtAmt(ghost)} F`);
+        lines.push(`  ${en ? "Outstanding debt (no invoice)" : "Dette en cours (sans facture)"} — ${fmtAmt(ghost)} ${sym}`);
       }
     }
     lines.push("─────────────────────");
@@ -379,13 +380,13 @@ function buildBodyLines(eventType, data, lang, org) {
     lines.push("─────────────────────");
     (data.items_returned || []).forEach(i => {
       const total = Number(i.qty || 0) * Number(i.unit_price || 0);
-      lines.push(`${isExchange ? (en ? "Returned: " : "Retour : ") : ""}${i.name || "?"} × ${i.qty} ........ ${fmtAmt(total)} F`);
+      lines.push(`${isExchange ? (en ? "Returned: " : "Retour : ") : ""}${i.name || "?"} × ${i.qty} ........ ${fmtAmt(total)} ${sym}`);
     });
     if (isExchange && replacements.length) {
       replacements.forEach(i => {
         const up = Number(i.unit_price != null ? i.unit_price : (i.sell_price || 0));
         const total = Number(i.qty || i.quantity || 0) * up;
-        lines.push(`${en ? "New: " : "Nouveau : "}${i.name || "?"} × ${i.qty || i.quantity} ........ ${fmtAmt(total)} F`);
+        lines.push(`${en ? "New: " : "Nouveau : "}${i.name || "?"} × ${i.qty || i.quantity} ........ ${fmtAmt(total)} ${sym}`);
       });
     }
     lines.push("─────────────────────");
@@ -406,12 +407,12 @@ function buildBodyLines(eventType, data, lang, org) {
       if (credit > 0 && cash > 0) {
         lines.push("");
         lines.push(en
-          ? `↳ ${fmtAmt(credit)} F applied to your account balance, ${fmtAmt(cash)} F returned as cash.`
-          : `↳ ${fmtAmt(credit)} F imputé sur votre solde client, ${fmtAmt(cash)} F restitué en espèces.`);
+          ? `↳ ${fmtAmt(credit)} ${sym} applied to your account balance, ${fmtAmt(cash)} ${sym} returned as cash.`
+          : `↳ ${fmtAmt(credit)} ${sym} imputé sur votre solde client, ${fmtAmt(cash)} ${sym} restitué en espèces.`);
       } else if (credit > 0) {
         lines.push(en
-          ? `↳ ${fmtAmt(credit)} F applied to your account balance.`
-          : `↳ ${fmtAmt(credit)} F imputé sur votre solde client.`);
+          ? `↳ ${fmtAmt(credit)} ${sym} applied to your account balance.`
+          : `↳ ${fmtAmt(credit)} ${sym} imputé sur votre solde client.`);
       }
     }
     if (data.customer_new_balance != null) {
@@ -434,7 +435,7 @@ function buildBodyLines(eventType, data, lang, org) {
       const priorQty = Number(i.qty_already_returned || 0);
       const origQty = Number(i.qty_original || qty);
       if (i.line_type === "debt_payment") {
-        lines.push(`💰 ${i.name || "?"} ........ ${fmtAmt(i.unit_price)} F`);
+        lines.push(`💰 ${i.name || "?"} ........ ${fmtAmt(i.unit_price)} ${sym}`);
         return;
       }
       if (qty <= 0) {
@@ -658,15 +659,10 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
   // Body lines (shared by WhatsApp + print + on-screen summary).
   const bodyLines = buildBodyLines(eventType, data, lang, org);
 
-  // Customer phone for the WhatsApp deeplink. Normalize to 237
-  // prefix the same way the sale receipt's sendWhatsApp does.
+  // Customer phone for the WhatsApp deeplink, in the org's dialling code
+  // (237 Cameroon / 234 Nigeria — LAUNCH-BATCH-2; was always 237).
   const customerPhone = data.customer_phone || data.customer?.phone || null;
-  const normalisedPhone = (() => {
-    if (!customerPhone) return null;
-    let p = String(customerPhone).replace(/\s+/g, "").replace(/^0/, "");
-    if (!p.startsWith("237")) p = "237" + p;
-    return p;
-  })();
+  const normalisedPhone = customerPhone ? (waPhone(customerPhone, org) || null) : null;
 
   // MP-WHATSAPP-RECEIPT-RICH-FORMAT (Path A): WhatsApp receipts are
   // now a fixed-width 35-char monospace block wrapped in a triple-

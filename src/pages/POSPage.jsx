@@ -14,7 +14,7 @@ import { useMyPermissions } from "../utils/useMyPermissions";
 import { useTicketSummary, ticketSummaryKey } from "../utils/useTicketSummary"; // MP-CASHIER-PHASE-1b
 import { printTicketSlipViaBluetooth } from "../utils/btPrint"; // MP-CASHIER-PHASE-1b
 import { useCurrency } from "../utils/useCurrency";
-import { formatMoney, currencySymbol } from "../utils/currency";
+import { formatMoney, currencySymbol, currencyShort } from "../utils/currency";
 import { t } from "../utils/i18n";
 import { cacheData, getCachedData } from "../utils/offlineStore";
 import { useOfflineCachedQuery, cacheKeyFor } from "../utils/offlineQuery";
@@ -2600,7 +2600,7 @@ export default function POSPage() {
                     <button onClick={() => updateQty(item.lineId, item.quantity + 1)} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: "pointer", fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
                     <div style={{ flex: 1, position: "relative" }}>
                       <input type="number" value={item.unit_price} onChange={e => onPriceInput(item.lineId, e.target.value)} onBlur={() => onPriceBlur(item.lineId)} style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "4px 6px 4px 18px", fontSize: 12 }} />
-                      <span style={{ position: "absolute", left: 6, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "var(--text-muted)" }}>F</span>
+                      <span style={{ position: "absolute", left: 6, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "var(--text-muted)" }}>{currencyShort(fmt.currency)}</span>
                     </div>
                     {/* MP-DISCOUNT: line total — struck gross + net when discounted. */}
                     {lineDisc(item) > 0 ? (
@@ -2619,7 +2619,7 @@ export default function POSPage() {
                     <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
                       <button onClick={() => setLineDisc(item.lineId, { discount_type: item.discount_type === "amount" ? "percent" : "amount" })}
                         style={{ width: 30, height: 26, borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)", cursor: "pointer", fontSize: 12, fontWeight: 700 }}
-                        title={lang === "en" ? "Toggle amount / percent" : "Basculer montant / %"}>{item.discount_type === "amount" ? "F" : "%"}</button>
+                        title={lang === "en" ? "Toggle amount / percent" : "Basculer montant / %"}>{item.discount_type === "amount" ? currencyShort(fmt.currency) : "%"}</button>
                       <input type="number" value={item.discount_value ?? ""} placeholder={lang === "en" ? "off" : "remise"}
                         onChange={e => setLineDisc(item.lineId, { discount_value: e.target.value })}
                         style={{ width: 56, background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "3px 6px", fontSize: 12 }} />
@@ -2647,7 +2647,7 @@ export default function POSPage() {
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center", marginBottom: 8 }}>
                   <span style={{ fontSize: 11, color: "var(--text-secondary)", fontWeight: 600 }}>{lang === "en" ? "Sale discount" : "Remise globale"}</span>
                   <button onClick={() => setSaleDiscType(saleDiscType === "amount" ? "percent" : "amount")}
-                    style={{ width: 30, height: 26, borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>{saleDiscType === "amount" ? "F" : "%"}</button>
+                    style={{ width: 30, height: 26, borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>{saleDiscType === "amount" ? currencyShort(fmt.currency) : "%"}</button>
                   <input type="number" value={saleDiscValue} placeholder={lang === "en" ? "off" : "remise"} onChange={e => setSaleDiscValue(e.target.value)}
                     style={{ width: 56, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", padding: "3px 6px", fontSize: 12 }} />
                   <input type="text" value={saleDiscReason} placeholder={lang === "en" ? "reason *" : "raison *"} onChange={e => setSaleDiscReason(e.target.value)}
@@ -3962,7 +3962,7 @@ function HoldTicket({ hold, org, lang, cashierName, onClose }) {
         ${cashierName ? `<div class="center">${HT.cashier}: ${cashierName}</div>` : ""}
         <div class="center">${HT.customer}: ${hold.label || HT.walkin}</div>
         <div class="line"></div>
-        ${items.map(i => `<div class="row"><span>${i.name} ×${i.qty}</span><span>${(Number(i.line_total) || 0).toLocaleString()} F</span></div>`).join("")}
+        ${items.map(i => `<div class="row"><span>${i.name} ×${i.qty}</span><span>${(Number(i.line_total) || 0).toLocaleString()} ${fmt.symbol}</span></div>`).join("")}
         <div class="line"></div>
         <div class="row est"><span>${HT.est}</span><span>${(Number(hold.estimated_total) || 0).toLocaleString()} ${fmt.symbol}</span></div>
         <div class="line"></div>
@@ -3997,13 +3997,13 @@ function HoldTicket({ hold, org, lang, cashierName, onClose }) {
             {items.slice(0, 5).map((i, idx) => (
               <div key={idx} style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                 <span style={{ color: "var(--text-secondary)" }}>{i.name} ×{i.qty}</span>
-                <span style={{ fontWeight: 600 }}>{(Number(i.line_total) || 0).toLocaleString()} F</span>
+                <span style={{ fontWeight: 600 }}>{fmt(Number(i.line_total) || 0)}</span>
               </div>
             ))}
             {items.length > 5 && <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>...+{items.length - 5}</div>}
           </div>
           <div style={{ borderTop: "1px dashed var(--border)", marginTop: 8, paddingTop: 8, display: "flex", justifyContent: "space-between", fontWeight: 800 }}>
-            <span>{HT.est}</span><span style={{ color: "var(--brand-light)" }}>{(Number(hold.estimated_total) || 0).toLocaleString()} F</span>
+            <span>{HT.est}</span><span style={{ color: "var(--brand-light)" }}>{fmt(Number(hold.estimated_total) || 0)}</span>
           </div>
           {codes.qr && (
             <div style={{ borderTop: "1px dashed var(--border)", marginTop: 8, paddingTop: 10, textAlign: "center", background: "#fff", borderRadius: 8, padding: "10px 0" }}>
