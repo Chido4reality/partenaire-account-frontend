@@ -657,11 +657,19 @@ export default function Layout() {
     // (cash preserved, flagged); 'historical'/'current' = correctly re-attributed.
     if (e.type === 'shift_fallback') {
       const en = useLangStore.getState().lang === 'en';
-      if (e.attribution === 'needs_review') {
+      // PHASE-1 item 6: late money never enters a closed drawer. 'held' = no drawer was
+      // open here: recorded, and it joins the next drawer opened at this shop;
+      // 'moved_from_closed' = the drawer it was taken in had closed: filed in the one open now.
+      if (e.attribution === 'held' || e.attribution === 'needs_review') {
         toast(en
-          ? 'A synced debt collection had no open shift — recorded and flagged for review. The cash is safe.'
-          : "Un encaissement synchronisé sans caisse ouverte — enregistré et signalé pour vérification. L'argent est sauf.",
+          ? 'A synced debt collection arrived while no drawer was open — it is recorded and will join the next drawer opened here. The cash is safe.'
+          : "Un encaissement synchronisé est arrivé sans caisse ouverte — il est enregistré et rejoindra la prochaine caisse ouverte ici. L'argent est sauf.",
           { icon: '🛟', duration: 8000 });
+      } else if (e.attribution === 'moved_from_closed') {
+        toast(en
+          ? 'A synced debt collection was taken in a drawer that is now closed — it was added to the drawer open now.'
+          : "Un encaissement synchronisé venait d'une caisse déjà fermée — il a été ajouté à la caisse ouverte maintenant.",
+          { icon: 'ℹ️', duration: 8000 });
       } else {
         toast(en
           ? 'A synced debt collection was matched to the shift open when you collected it.'
