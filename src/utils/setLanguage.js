@@ -113,3 +113,23 @@ export async function syncLanguageOnLogin(serverLanguage) {
   if (isLang(serverLanguage) && serverLanguage !== store.lang) store.setLang(serverLanguage);
   return isLang(serverLanguage) ? serverLanguage : store.lang;
 }
+
+// LAUNCH-BATCH-2 (Nigeria day-one) — sign-up.
+// The language the person EXPLICITLY picked on the pre-auth screens, if any (sent with the
+// registration so the new account is created in it).
+export function pendingLanguage() {
+  const p = read(PENDING_KEY);
+  return isLang(p) ? p : null;
+}
+
+// Right after /auth/register: the server created the account in the person's explicit
+// choice, or else in the country's language (Nigeria English, Cameroon French). Adopt it
+// on this device and mark the device adopted — otherwise syncLanguageOnLogin's "carried
+// over from a pre-fix build" branch would push this device's untouched default ("en")
+// up over a Cameroonian's French, or keep a stale French over a Nigerian's English.
+export function adoptServerLanguage(lang) {
+  if (!isLang(lang)) return;
+  useLangStore.getState().setLang(lang);
+  write(PENDING_KEY, null);
+  write(ADOPTED_KEY, "1");
+}

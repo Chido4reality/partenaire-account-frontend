@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAuthStore, useLangStore } from "../store";
 import api from "../utils/api";
-import { setLanguageLocalPending } from "../utils/setLanguage"; // MP-LANGUAGE-PERSIST
+import { setLanguageLocalPending, pendingLanguage, adoptServerLanguage } from "../utils/setLanguage"; // MP-LANGUAGE-PERSIST
 
 const CATS = [
   { value: "moto_parts",       en: "Motorcycle parts",           fr: "Pièces moto" },
@@ -104,7 +104,11 @@ export default function RegisterPage() {
       // payload explicitly — sending `form` alone would drop it silently and
       // the marketer would lose the attribution the link exists to create.
       const effectivePromo = promoLinked ? linkedCode : form.promo_code;
-      const res = await api.post("/auth/register", { ...form, promo_code: effectivePromo });
+      // LAUNCH-BATCH-2: send the language only if the person picked one here; otherwise the
+      // server uses the country's (Nigeria English, Cameroon French). Adopt what it chose.
+      const chosenLang = pendingLanguage();
+      const res = await api.post("/auth/register", { ...form, promo_code: effectivePromo, ...(chosenLang ? { language: chosenLang } : {}) });
+      adoptServerLanguage(res.data?.user?.language);
       login(res.data.user, res.data.org, res.data.token);
       toast.success(lang === "en" ? "Account created!" : "Compte créé!");
       // MP-PROMO: confirm a valid signup code was captured; a bad code never
