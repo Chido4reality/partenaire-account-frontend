@@ -38,8 +38,9 @@ export const PLAN_CAPABILITIES = {
   lite: {
     label: 'Lite',
     label_fr: 'Lite',
+    // LAUNCH-BATCH-2b: no Transfers on Lite (1 location); past transfers stay viewable.
     sections: ['dashboard', 'sales', 'inventory', 'count', 'labels',
-               'transfers', 'customers', 'credits', 'cashflow', 'reports',
+               'customers', 'credits', 'cashflow', 'reports',
                'online_cart', 'settings'],
     inventory_cap: 100,    // LAUNCH-BATCH-2b: Lite = 1 location / 100 products / 2 users
     staff_cap: 2,

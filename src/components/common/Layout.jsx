@@ -984,7 +984,10 @@ export default function Layout() {
         && item.to !== "/compare";   // MP-COMPARE: owner + granted manager only
       if (!inheritsManager) return false;
     }
-    if (!hasSection(effectivePlan, item.section)) return false;
+    // LAUNCH-BATCH-2b: Lite has no Transfers — but a shop with past transfers still gets
+    // the screen, view-only (the server lets reads through and refuses every change).
+    if (!hasSection(effectivePlan, item.section)
+        && !(item.section === "transfers" && myPlan?.has_transfer_history)) return false;
     if (lite && LITE_HIDDEN_ROUTES.has(item.to)) return false;
     if (MARKET_ROUTES.has(item.to) && !marketAvailable(org)) return false;   // 2b(b): Stenamo Market is XAF-only
     // MP-CASHIER-PHASE-1b: cashier-mode-only entries. ticketNavVisible returns

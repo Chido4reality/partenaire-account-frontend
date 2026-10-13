@@ -3,7 +3,8 @@ import HelpButton from "../components/common/HelpButton";
 import ClearButton from "../components/common/ClearButton";
 import ProductSearchBox from "../components/common/ProductSearchBox";
 import { useState, useEffect, useRef } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
+import { hasSection } from "../utils/planCapabilities";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useLangStore, useAuthStore } from "../store";
@@ -76,6 +77,13 @@ export default function TransfersPage() {
 
   // MP-TRANSFER-RECEIVE-CONFIRM (Phase 1) — who am I + is the two-sided flow on?
   const user = useAuthStore(s => s.user);
+  // LAUNCH-BATCH-2b: Lite has no Transfers. A Lite shop reaches this screen only to see its
+  // past transfers — view-only: no "Transfer stock" (the server refuses every change).
+  const { data: transfersPlan } = useQuery({
+    queryKey: ["my-plan"], queryFn: () => api.get("/subscriptions/my-plan").then(r => r.data),
+    staleTime: 60000, retry: false, networkMode: "always",
+  });
+  const transfersViewOnly = !!transfersPlan?.data && !hasSection(transfersPlan.data.effective_plan, "transfers");
   const myId = user?.id;
   const isOwner = user?.role === "owner"; // owner is ALWAYS exempt from cannot_confirm_own_dispatch
   const { data: settingsData } = useOfflineCachedQuery({
@@ -826,12 +834,21 @@ export default function TransfersPage() {
           <h1 className="page-title" style={{ margin: 0 }}>{lang === "en" ? "Stock Transfers" : "Transferts de stock"}</h1>
           <HelpButton topic="transfer" />
         </div>
+        {!transfersViewOnly && (
         <RestrictedAction>
           <button className="btn btn-primary btn-lg" onClick={() => setMode("new")} style={{ gap: 8 }}>
             + {lang === "en" ? "Transfer Stock" : "Transferer du stock"}
           </button>
         </RestrictedAction>
+        )}
       </div>
+      {transfersViewOnly && (
+        <div data-testid="transfers-view-only" style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 10, background: "rgba(251,197,3,0.10)", border: "1px solid rgba(251,197,3,0.4)", fontSize: 13 }}>
+          {lang === "en"
+            ? "Transfers between locations are part of Pro. Your past transfers are below, view only."
+            : "Les transferts entre emplacements font partie du forfait Pro. Vos transferts passés sont ci-dessous, en lecture seule."}
+        </div>
+      )}
 
       {/* HELD-RECEIPT REMINDERS: the strip, owner/manager only (amber ≥ 8h, red ≥ 24h). */}
       {(isOwner || user?.role === "manager") && <HeldReceiptsBanner variant="strip" en={lang === "en"} />}
