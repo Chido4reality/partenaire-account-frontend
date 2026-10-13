@@ -192,6 +192,8 @@ function normaliseSaleItems(data, en) {
 function buildBodyLines(eventType, data, lang, org) {
   const en = lang === "en";
   const sym = currencySymbol(org?.currency);
+  // LAUNCH-BATCH-2: naira reads "₦10,000" (symbol first); CFA keeps "10,000 FCFA".
+  const money = (v) => (String(org?.currency || "").toUpperCase() === "NGN" ? `₦${fmtAmt(v)}` : `${fmtAmt(v)} ${sym}`);
   const lines = [];
   // MP-PAYMENT-METHOD-LABEL: 'mobile_money' shows as the country's label
   // (NG "Bank Transfer", CM/XAF "Mobile Money"); other methods unchanged.
@@ -239,9 +241,9 @@ function buildBodyLines(eventType, data, lang, org) {
     const dmg = (i) => i.is_damaged ? (en ? " (DAMAGED GOODS)" : " (MARCHANDISE ENDOMMAGÉE)") : "";
     items.forEach(i => {
       if (i.type === "debt_payment") {
-        lines.push(`💰 ${i.name} ........ ${fmtAmt(i.unit_price)} ${sym}`);
+        lines.push(`💰 ${i.name} ........ ${money(i.unit_price)}`);
       } else {
-        lines.push(`${i.name}${dmg(i)} × ${i.quantity} ........ ${fmtAmt(i.quantity * i.unit_price)} ${sym}`);
+        lines.push(`${i.name}${dmg(i)} × ${i.quantity} ........ ${money(i.quantity * i.unit_price)}`);
       }
     });
     // MP-DISCOUNT: NET total is data.total_amount; discount = gross − net.
@@ -252,19 +254,19 @@ function buildBodyLines(eventType, data, lang, org) {
     const balance = total - paid;
     lines.push("─────────────────────");
     if (discount > 0) {
-      lines.push(`${en ? "Subtotal" : "Sous-total"}: ${fmtAmt(grossSum)} ${sym}`);
-      lines.push(`${en ? "Discount" : "Remise"}: −${fmtAmt(discount)} ${sym}`);
+      lines.push(`${en ? "Subtotal" : "Sous-total"}: ${money(grossSum)}`);
+      lines.push(`${en ? "Discount" : "Remise"}: −${money(discount)}`);
     }
-    lines.push(`${en ? "Total" : "Total"}: ${fmtAmt(total)} ${sym}`);
+    lines.push(`${en ? "Total" : "Total"}: ${money(total)}`);
     if (data.payment_status === "paid") {
-      lines.push(`✅ ${en ? "PAID" : "PAYÉ"}: ${fmtAmt(paid)} ${sym}`);
+      lines.push(`✅ ${en ? "PAID" : "PAYÉ"}: ${money(paid)}`);
     } else if (data.payment_status === "credit") {
       lines.push(`🔴 ${en ? "FULL CREDIT — No payment" : "CRÉDIT TOTAL — Aucun paiement"}`);
-      lines.push(`${en ? "Due" : "Dû"}: ${fmtAmt(total)} ${sym}`);
+      lines.push(`${en ? "Due" : "Dû"}: ${money(total)}`);
     } else if (data.payment_status === "partial") {
       lines.push(`🟡 ${en ? "PARTIAL PAYMENT" : "PAIEMENT PARTIEL"}`);
-      lines.push(`${en ? "Paid" : "Payé"}: ${fmtAmt(paid)} ${sym}`);
-      lines.push(`${en ? "Balance due" : "Reste dû"}: ${fmtAmt(balance)} ${sym}`);
+      lines.push(`${en ? "Paid" : "Payé"}: ${money(paid)}`);
+      lines.push(`${en ? "Balance due" : "Reste dû"}: ${money(balance)}`);
     }
     // ── WHAT THE MONEY SETTLED, on a MIXED ticket ──────────────────────────
     // A sale can carry a debt repayment as well as goods (cashier mode made
@@ -282,14 +284,14 @@ function buildBodyLines(eventType, data, lang, org) {
         if (!inv) return;
         const ref = inv.sale_number || inv.sale_id || "?";
         const raw = inv.applied ?? inv.amount ?? inv.applied_amount ?? 0;
-        lines.push(`  ${ref} — ${fmtAmt(raw)} ${sym}`);
+        lines.push(`  ${ref} — ${money(raw)}`);
       });
       // The repayment that had nowhere to go: the customer owed less than the
       // ticket claimed because someone collected in between. Surfaced, never
       // absorbed — the cashier is holding money this sale did not account for.
       const unapplied = Number(data.unapplied_repayment || 0);
       if (unapplied > 0) {
-        lines.push(`  ${en ? "Not applied (already settled)" : "Non imputé (déjà réglé)"} — ${fmtAmt(unapplied)} ${sym}`);
+        lines.push(`  ${en ? "Not applied (already settled)" : "Non imputé (déjà réglé)"} — ${money(unapplied)}`);
       }
     }
   }
@@ -299,7 +301,7 @@ function buildBodyLines(eventType, data, lang, org) {
     const ghost = Number(data.ghost_portion || 0);
     if (customerLine) lines.push(customerLine);
     lines.push("─────────────────────");
-    lines.push(`${en ? "Amount paid" : "Montant payé"}: ${fmtAmt(data.amount)} ${sym}`);
+    lines.push(`${en ? "Amount paid" : "Montant payé"}: ${money(data.amount)}`);
     if (data.payment_method) lines.push(`${en ? "Method" : "Mode"}: ${methodLbl(data.payment_method)}`);
     if (applied.length || ghost) {
       lines.push("─────────────────────");
@@ -318,18 +320,18 @@ function buildBodyLines(eventType, data, lang, org) {
         if (!inv) return;
         const ref = inv.sale_number || inv.sale_id || "?";
         const raw = inv.applied ?? inv.amount ?? inv.applied_amount ?? 0;
-        lines.push(`  ${ref} — ${fmtAmt(raw)} ${sym}`);
+        lines.push(`  ${ref} — ${money(raw)}`);
       });
       if (ghost > 0) {
-        lines.push(`  ${en ? "Outstanding debt (no invoice)" : "Dette en cours (sans facture)"} — ${fmtAmt(ghost)} ${sym}`);
+        lines.push(`  ${en ? "Outstanding debt (no invoice)" : "Dette en cours (sans facture)"} — ${money(ghost)}`);
       }
     }
     lines.push("─────────────────────");
     if (data.debt_before != null) {
-      lines.push(`${en ? "Previous balance" : "Solde précédent"}: ${fmtAmt(data.debt_before)} ${sym}`);
+      lines.push(`${en ? "Previous balance" : "Solde précédent"}: ${money(data.debt_before)}`);
     }
     if (data.debt_after != null) {
-      lines.push(`*${en ? "New balance" : "Nouveau solde"}: ${fmtAmt(data.debt_after)} ${sym}*`);
+      lines.push(`*${en ? "New balance" : "Nouveau solde"}: ${money(data.debt_after)}*`);
     }
   }
 
@@ -339,20 +341,20 @@ function buildBodyLines(eventType, data, lang, org) {
       lines.push(`${en ? "Invoice" : "Facture"}: ${data.sale_number}`);
     }
     lines.push("─────────────────────");
-    lines.push(`${en ? "Amount paid" : "Montant payé"}: ${fmtAmt(data.amount)} ${sym}`);
+    lines.push(`${en ? "Amount paid" : "Montant payé"}: ${money(data.amount)}`);
     if (data.payment_method) lines.push(`${en ? "Method" : "Mode"}: ${methodLbl(data.payment_method)}`);
     lines.push("─────────────────────");
     if (data.sale_total != null) {
-      lines.push(`${en ? "Invoice total" : "Total facture"}: ${fmtAmt(data.sale_total)} ${sym}`);
+      lines.push(`${en ? "Invoice total" : "Total facture"}: ${money(data.sale_total)}`);
     }
     if (data.sale_paid_before != null && data.sale_paid_after != null) {
-      lines.push(`${en ? "Paid before" : "Payé avant"}: ${fmtAmt(data.sale_paid_before)} ${sym}`);
-      lines.push(`${en ? "Paid after" : "Payé après"}: ${fmtAmt(data.sale_paid_after)} ${sym}`);
+      lines.push(`${en ? "Paid before" : "Payé avant"}: ${money(data.sale_paid_before)}`);
+      lines.push(`${en ? "Paid after" : "Payé après"}: ${money(data.sale_paid_after)}`);
     }
     if (data.balance_after != null) {
       const balanceLabel = data.payment_status === "paid"
         ? (en ? "Settled — no balance remaining" : "Soldée — aucun reste dû")
-        : `${en ? "Remaining balance" : "Reste dû"}: ${fmtAmt(data.balance_after)} ${sym}`;
+        : `${en ? "Remaining balance" : "Reste dû"}: ${money(data.balance_after)}`;
       lines.push(data.payment_status === "paid" ? `✅ ${balanceLabel}` : balanceLabel);
     }
     // Customer-level totals (only when a registered customer was
@@ -360,8 +362,8 @@ function buildBodyLines(eventType, data, lang, org) {
     // possible if the original sale predated customer linking).
     if (data.debt_before != null && data.debt_after != null) {
       lines.push("─────────────────────");
-      lines.push(`${en ? "Customer debt before" : "Dette client avant"}: ${fmtAmt(data.debt_before)} ${sym}`);
-      lines.push(`*${en ? "Customer debt after" : "Dette client après"}: ${fmtAmt(data.debt_after)} ${sym}*`);
+      lines.push(`${en ? "Customer debt before" : "Dette client avant"}: ${money(data.debt_before)}`);
+      lines.push(`*${en ? "Customer debt after" : "Dette client après"}: ${money(data.debt_after)}*`);
     }
   }
 
@@ -380,25 +382,25 @@ function buildBodyLines(eventType, data, lang, org) {
     lines.push("─────────────────────");
     (data.items_returned || []).forEach(i => {
       const total = Number(i.qty || 0) * Number(i.unit_price || 0);
-      lines.push(`${isExchange ? (en ? "Returned: " : "Retour : ") : ""}${i.name || "?"} × ${i.qty} ........ ${fmtAmt(total)} ${sym}`);
+      lines.push(`${isExchange ? (en ? "Returned: " : "Retour : ") : ""}${i.name || "?"} × ${i.qty} ........ ${money(total)}`);
     });
     if (isExchange && replacements.length) {
       replacements.forEach(i => {
         const up = Number(i.unit_price != null ? i.unit_price : (i.sell_price || 0));
         const total = Number(i.qty || i.quantity || 0) * up;
-        lines.push(`${en ? "New: " : "Nouveau : "}${i.name || "?"} × ${i.qty || i.quantity} ........ ${fmtAmt(total)} ${sym}`);
+        lines.push(`${en ? "New: " : "Nouveau : "}${i.name || "?"} × ${i.qty || i.quantity} ........ ${money(total)}`);
       });
     }
     lines.push("─────────────────────");
     if (isExchange && diff > 0) {
       // Customer paid the difference — show the amount collected.
-      lines.push(`*${en ? "Collected" : "Différence encaissée"}: ${fmtAmt(diff)} ${sym}*`);
+      lines.push(`*${en ? "Collected" : "Différence encaissée"}: ${money(diff)}*`);
       lines.push(`${en ? "Method" : "Mode"}: ${methodLbl(data.settlement_method || "cash")}`);
     } else if (isExchange && diff === 0) {
       lines.push(`*${en ? "Even exchange — no payment" : "Échange égal — aucun paiement"}*`);
     } else {
       // Pure refund OR cheaper-replacement exchange (refund/credit the diff).
-      lines.push(`*${en ? "Refund total" : "Total remboursé"}: ${fmtAmt(data.refund_amount)} ${sym}*`);
+      lines.push(`*${en ? "Refund total" : "Total remboursé"}: ${money(data.refund_amount)}*`);
       if (data.refund_method && data.refund_method !== "none") {
         lines.push(`${en ? "Method" : "Mode"}: ${methodLbl(data.refund_method)}`);
       }
@@ -407,16 +409,16 @@ function buildBodyLines(eventType, data, lang, org) {
       if (credit > 0 && cash > 0) {
         lines.push("");
         lines.push(en
-          ? `↳ ${fmtAmt(credit)} ${sym} applied to your account balance, ${fmtAmt(cash)} ${sym} returned as cash.`
-          : `↳ ${fmtAmt(credit)} ${sym} imputé sur votre solde client, ${fmtAmt(cash)} ${sym} restitué en espèces.`);
+          ? `↳ ${money(credit)} applied to your account balance, ${money(cash)} returned as cash.`
+          : `↳ ${money(credit)} imputé sur votre solde client, ${money(cash)} restitué en espèces.`);
       } else if (credit > 0) {
         lines.push(en
-          ? `↳ ${fmtAmt(credit)} ${sym} applied to your account balance.`
-          : `↳ ${fmtAmt(credit)} ${sym} imputé sur votre solde client.`);
+          ? `↳ ${money(credit)} applied to your account balance.`
+          : `↳ ${money(credit)} imputé sur votre solde client.`);
       }
     }
     if (data.customer_new_balance != null) {
-      lines.push(`${en ? "New balance" : "Nouveau solde"}: ${fmtAmt(data.customer_new_balance)} ${sym}`);
+      lines.push(`${en ? "New balance" : "Nouveau solde"}: ${money(data.customer_new_balance)}`);
     }
   }
 
@@ -435,7 +437,7 @@ function buildBodyLines(eventType, data, lang, org) {
       const priorQty = Number(i.qty_already_returned || 0);
       const origQty = Number(i.qty_original || qty);
       if (i.line_type === "debt_payment") {
-        lines.push(`💰 ${i.name || "?"} ........ ${fmtAmt(i.unit_price)} ${sym}`);
+        lines.push(`💰 ${i.name || "?"} ........ ${money(i.unit_price)}`);
         return;
       }
       if (qty <= 0) {
@@ -452,9 +454,9 @@ function buildBodyLines(eventType, data, lang, org) {
       lines.push(`${i.name || "?"} × ${qty} ........ ${fmtAmt(total)} F${note}`);
     });
     lines.push("─────────────────────");
-    lines.push(`${en ? "Original total" : "Total d'origine"}: ${fmtAmt(data.original_total_amount)} ${sym}`);
+    lines.push(`${en ? "Original total" : "Total d'origine"}: ${money(data.original_total_amount)}`);
     if (Number(data.original_paid_amount || 0) > 0) {
-      lines.push(`${en ? "Originally paid" : "Initialement payé"}: ${fmtAmt(data.original_paid_amount)} ${sym}`);
+      lines.push(`${en ? "Originally paid" : "Initialement payé"}: ${money(data.original_paid_amount)}`);
     }
     // MP-VOID-CASH-AND-RETURNS-HANDLING Gap 1: surface the cash
     // going back to the customer for THIS void. Effective amount
@@ -463,7 +465,7 @@ function buildBodyLines(eventType, data, lang, org) {
     const cashRefund = Number(data.cash_refund_amount || 0);
     const priorRefundTotal = Number(data.prior_refund_total || 0);
     if (cashRefund > 0) {
-      lines.push(`💵 *${en ? "Cash refund" : "Remboursement espèces"}: ${fmtAmt(cashRefund)} ${sym}*`);
+      lines.push(`💵 *${en ? "Cash refund" : "Remboursement espèces"}: ${money(cashRefund)}*`);
       if (data.cash_refund_method && data.cash_refund_method !== "cash") {
         lines.push(`   ${en ? "Method" : "Mode"}: ${methodLbl(data.cash_refund_method)}`);
       }
@@ -478,7 +480,7 @@ function buildBodyLines(eventType, data, lang, org) {
     }
     if (data.reason) lines.push(`${en ? "Reason" : "Raison"}: ${data.reason}`);
     if (data.customer_new_balance != null) {
-      lines.push(`${en ? "New customer balance" : "Nouveau solde client"}: ${fmtAmt(data.customer_new_balance)} ${sym}`);
+      lines.push(`${en ? "New customer balance" : "Nouveau solde client"}: ${money(data.customer_new_balance)}`);
     }
     lines.push("");
     lines.push(en

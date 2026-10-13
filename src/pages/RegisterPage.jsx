@@ -172,8 +172,8 @@ export default function RegisterPage() {
               </select>
             </div>
             {[
-              { key: "org_name",  en: "Business name",  fr: "Nom de la boutique", type: "text",     ph: "Ex: Moto Parts Akwa" },
-              { key: "full_name", en: "Your full name", fr: "Votre nom complet",  type: "text",     ph: "Jean Dupont" },
+              { key: "org_name",  en: "Business name",  fr: "Nom de la boutique", type: "text",     ph: (form.country === "Nigeria" ? (lang === "en" ? "e.g. Ada Stores Ikeja" : "Ex : Ada Stores Ikeja") : (lang === "en" ? "e.g. Moto Parts Akwa" : "Ex : Moto Parts Akwa")) },   // LAUNCH-BATCH-2: follows the chosen country
+              { key: "full_name", en: "Your full name", fr: "Votre nom complet",  type: "text",     ph: (form.country === "Nigeria" ? "Ada Okafor" : "Jean Dupont") },
               { key: "phone",     en: "Phone number",   fr: "Téléphone",          type: "tel",      ph: "6XXXXXXXX" },
               { key: "password",  en: "Password",       fr: "Mot de passe",       type: "password", ph: lang === "en" ? "Min. 6 characters" : "Min. 6 caractères" },
             ].map(f => {
