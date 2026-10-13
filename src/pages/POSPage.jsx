@@ -10,6 +10,7 @@ import { useLangStore, useSettingsStore, useAuthStore, useDraftCartStore } from 
 // Staff who attempt a sub-min price now get a toast.error explaining
 // why; the backend at sales.js:46-62 is the source of truth either way.
 import api from "../utils/api";
+import { genLocalId } from "../utils/pendingSync"; // PHASE-1 item 5: every debt payment carries an id
 import { useMyPermissions } from "../utils/useMyPermissions";
 import { useTicketSummary, ticketSummaryKey } from "../utils/useTicketSummary"; // MP-CASHIER-PHASE-1b
 import { printTicketSlipViaBluetooth } from "../utils/btPrint"; // MP-CASHIER-PHASE-1b
@@ -268,6 +269,11 @@ export default function POSPage() {
   // boss / cancel) is open — the cashier sees every needed approval at once,
   // never a cascading series of separate prompts.
   const bundledApprovalIdRef = useRef(null);
+  // PHASE-1 item 5: one key per debt-settle checkout ATTEMPT, reused if the cashier taps
+  // again after a failure (the server then records each invoice payment once), cleared on
+  // success. Without a key the server's same-amount backstop could swallow a second
+  // cashier's real payment.
+  const debtPayKeyRef = useRef(null);
   const bundledApprovalTokenRef = useRef(null);
   const [approvalBundle, setApprovalBundle] = useState(null);
   const [sendingToBoss, setSendingToBoss] = useState(false);
@@ -1671,6 +1677,7 @@ export default function POSPage() {
         // Same fix family as commit 4c64605 (CreditsPage), now
         // covering the multi-invoice POS-cart path.
         const responses = [];
+        if (!debtPayKeyRef.current) debtPayKeyRef.current = genLocalId();
         for (const saleId of debtItem.debtSaleIds) {
           if (remaining <= 0) break;
           const inv = debtInvoices.find(i => i.id === saleId);
@@ -1681,11 +1688,15 @@ export default function POSPage() {
           // older API responses that don't carry effective yet.
           const cap = parseFloat(inv.effective_balance_due ?? inv.balance_due);
           const payThis = Math.min(remaining, cap);
-          const r = await api.post(`/sales/${saleId}/payment`, { amount: payThis, payment_method: payMethod, notes: notes || null });
+          const r = await api.post(`/sales/${saleId}/payment`, { amount: payThis, payment_method: payMethod, notes: notes || null,
+            local_id: `${debtPayKeyRef.current}:${saleId}` });
           responses.push(r?.data?.data || {});
           remaining -= payThis;
         }
-        return { isDebt: true, responses, totalPaid: amountToPay };
+        // PHASE-1 item 5: the receipt shows what was RECORDED, not what was typed — a
+        // payment can be capped when another device collected on the same invoice.
+        const recorded = responses.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+        return { isDebt: true, responses, totalPaid: responses.length ? recorded : amountToPay };
       }
 
       const salePayload = {
@@ -1886,7 +1897,13 @@ export default function POSPage() {
       // above. The SW no longer returns the fake offline shape, so
       // any response landing here is a genuine backend response.)
       if (data?.isDebt) {
+        debtPayKeyRef.current = null; // PHASE-1 item 5: next checkout gets a new key
         toast.success(lang === "en" ? "✓ Debt payment recorded!" : "✓ Remboursement enregistré!", { duration: 2000 });
+        // PHASE-1 item 5: a capped payment (only part was still owed — e.g. another device
+        // collected at the same time) must be SEEN: the cashier gives the rest back.
+        for (const r of (data.responses || [])) {
+          if (r && r.capped) toast(lang === "en" ? r.warning_en : r.warning_fr, { icon: "⚠️", duration: 12000 });
+        }
         // MP-POS-COLLECT-DEBT-CART-NO-RECEIPT (Bug A): aggregate
         // per-invoice responses into a debt_collection-shape
         // payload so the shared receipt component renders with

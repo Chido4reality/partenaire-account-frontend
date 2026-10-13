@@ -107,6 +107,9 @@ export default function CreditsPage() {
         return;
       }
       toast.success(lang === "en" ? "✓ Payment recorded!" : "✓ Paiement enregistré!");
+      // PHASE-1 item 5: capped (another device collected on this invoice at the same
+      // time) — say what was really recorded and what to give back.
+      if (d.capped) toast(lang === "en" ? d.warning_en : d.warning_fr, { icon: "⚠️", duration: 12000 });
       // MP-PAYMENT-EVENT-RECEIPTS Bug 2: surface the receipt so the cashier can
       // print/share + the customer gets proof of payment.
       setReceiptEvent({ eventType: "invoice_payment", data: d });
