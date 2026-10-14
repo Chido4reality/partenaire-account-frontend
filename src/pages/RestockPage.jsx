@@ -15,6 +15,7 @@ import { openWhatsApp } from "../utils/whatsapp";
 import { PLAY_STORE_URL } from "../utils/receiptExtras"; // reuse the SAME app-download link the receipt footer uses
 import DateRangeFilter, { inRange, wideRange } from "../components/common/DateRangeFilter";
 import ExpiryFields, { expiryMissing } from "../components/common/ExpiryFields"; // EXPIRY-TRACKING
+import { SHOP_TZ } from "../utils/shopTime";
 
 function toArray(x) {
   if (Array.isArray(x)) return x;
@@ -24,7 +25,7 @@ function toArray(x) {
 }
 function fmtDate(iso, en) {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleDateString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ });
 }
 const RECENT_KEY = "mp_restock_recent_suppliers";
 function loadRecentSuppliers() {

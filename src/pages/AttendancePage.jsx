@@ -11,8 +11,9 @@ import toast from "react-hot-toast";
 import { useLangStore, useSettingsStore } from "../store";
 import { hasFeature } from "../utils/planCapabilities";
 import api from "../utils/api";
+import { SHOP_TZ } from "../utils/shopTime";
 
-function hhmm(iso) { try { return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch { return ""; } }
+function hhmm(iso) { try { return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ }); } catch { return ""; } }
 
 export default function AttendancePage() {
   const { lang } = useLangStore();

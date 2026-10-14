@@ -78,7 +78,7 @@ const CHECKS = [
     (s) => s.startsWith("Sale#|Date|Customer|") && s.length > 20],
   ["Daily summary · header row is non-empty",
     () => (dailyBack[0] || []).join("|"),
-    (s) => s.startsWith("Date|Sales|Cash Collected|") && s.length > 20],
+    (s) => s.startsWith("Date|Sales|Collected (all methods)|") && s.length > 20],
   // 3 sale ITEMS across 2 sales -> 3 data rows. Per line, not per sale.
   ["Sales detail · one line per sale ITEM (3 items -> 3 rows + header)",
     () => String(salesBack.length),

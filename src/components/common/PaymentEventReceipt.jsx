@@ -37,6 +37,7 @@ import { dmgName as dmgNameOf } from "../../utils/damagedLabel"; // MP-DAMAGED-G
 import toast from "react-hot-toast";
 // MP-BT-THERMAL: direct Bluetooth (Classic SPP) ESC/POS printing.
 import { isBtPrintSupported, getSavedPrinter, saveSavedPrinter, listPairedPrinters, printSaleViaBluetooth } from "../../utils/btPrint";
+import { SHOP_TZ } from "../../utils/shopTime";
 
 // MP-VOID-PARTIAL-COMMIT-FIX: scoped error boundary so a render
 // crash in the receipt (bad payload shape, missing field, etc.)
@@ -148,7 +149,7 @@ function nowLocale(lang) {
   const d = new Date();
   return {
     dateStr: d.toLocaleDateString(loc, { day: "2-digit", month: "2-digit", year: "numeric" }),
-    timeStr: d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" }),
+    timeStr: d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ }),
   };
 }
 
@@ -1027,8 +1028,8 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
                 <strong>{fmtSoldDateNote(data.sold_date_note)}</strong>
                 {data.sold_date_note_by_name ? (en ? ` · recorded by ${data.sold_date_note_by_name}` : ` · saisi par ${data.sold_date_note_by_name}`) : ""}
                 {data.sold_date_note_at ? (en
-                  ? ` · recorded ${new Date(data.sold_date_note_at).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`
-                  : ` · enregistré ${new Date(data.sold_date_note_at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`) : ""}
+                  ? ` · recorded ${new Date(data.sold_date_note_at).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })}`
+                  : ` · enregistré ${new Date(data.sold_date_note_at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })}`) : ""}
               </div>
             )}
 

@@ -19,6 +19,7 @@
 import { useAuthStore } from "../store";
 import { currencySymbol } from "./currency";
 import { momoLabelShort } from "./paymentLabels";
+import { SHOP_TZ } from "./shopTime";
 
 const fmt = (x, en) => Number(x || 0).toLocaleString(en ? "en-US" : "fr-FR");
 
@@ -137,7 +138,7 @@ export function buildLedgerTextV2(ledger, lang) {
     { day: "numeric", month: "long", year: "numeric" });
   const tfmt = (iso) => iso
     ? new Date(iso).toLocaleTimeString(en ? "en-GB" : "fr-FR",
-        { hour: "2-digit", minute: "2-digit" })
+        { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })
     : "—";
 
   const L = [];

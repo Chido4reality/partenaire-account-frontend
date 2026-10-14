@@ -19,6 +19,7 @@ import { buildLedgerTextV2 as buildLedgerTextUtil, buildWeeklyText as buildWeekl
 import CollapsibleBlock from "../components/common/CollapsibleBlock";
 import CreditGivenModal from "../components/common/CreditGivenModal"; // MP-CREDIT-DRILLDOWN
 import { SHOP_TZ } from "../utils/shopTime"; // MP-REPORT-TZ: render times in the shop's zone, not the viewer's
+import { saleStatusLabel, saleDue } from "../utils/saleStatus"; // fix 3
 // MP-REPORT-EXPORTS: ONE csv serialiser + the pure row builders, so the three
 // exporters on this page cannot disagree about escaping again.
 import {
@@ -180,6 +181,18 @@ export default function ReportsPage() {
   // breakdown + grand total always equal the Reports→Daily headline, on damaged days
   // too (Top Products excludes damaged by design, so it can't be reused here). Payment
   // split below stays from the sales list. See /reports/daily-product-sales.
+  // Fix 4 (Peter's staging test): ONE definition of "Collected (all methods)" — every payment
+  // received that day (cash + mobile money + bank, debt collections included), exactly the
+  // Daily Summary figure (/reports/daily). Daily Sales used to show its own third number
+  // (the totals of fully-paid sales).
+  const { data: todayDailyData } = useOfflineCachedQuery({
+    queryKey: ["reports-daily", todayStr, todayStr, repLoc],
+    queryFn: () => api.get("/reports/daily?from=" + todayStr + "&to=" + todayStr + locQS).then(r => r.data),
+    enabled: tab === "daily_sales",
+    refetchInterval: 60000
+  });
+  const collectedToday = ((todayDailyData?.data) || []).reduce((a, d) => a + (Number(d.cash_collected) || 0), 0);
+
   const { data: dailyProductsData } = useOfflineCachedQuery({
     queryKey: ["reports-daily-products", todayStr, repLoc],
     queryFn: () => api.get(`/reports/daily-product-sales?from=${todayStr}&to=${todayStr}${locQS}`).then(r => r.data),
@@ -322,7 +335,14 @@ export default function ReportsPage() {
   // damaged carries the per-product damaged-clearance portion so it can be shown folded
   // into the product's row while Σ rows still equals the grand total.
   const dailyProducts = (dailyProductsData?.data || [])
-    .map(p => ({ name: p.name || "?", unit: unitLabel(p.unit || "pce"), qty: Number(p.total_qty) || 0, total: Number(p.total_revenue) || 0, damaged: Number(p.damaged_revenue) || 0 }))
+    // Fix 8: qty/total are NET of goods returned that day (sold − returned), the same day
+    // rule as Daily Summary's refunds; sold/returned stay visible as their own columns.
+    .map(p => {
+      const sold = Number(p.total_qty) || 0, gross = Number(p.total_revenue) || 0;
+      const retQty = Number(p.returned_qty) || 0, retAmt = Number(p.returned_amount) || 0;
+      return { name: p.name || "?", unit: unitLabel(p.unit || "pce"), sold, gross, returnedQty: retQty, returnedAmt: retAmt,
+               qty: +(sold - retQty).toFixed(3), total: +(gross - retAmt).toFixed(2), damaged: Number(p.damaged_revenue) || 0 };
+    })
     .sort((a, b) => b.total - a.total);
   const dailyProductsTotal = dailyProducts.reduce((s, p) => s + p.total, 0);
 
@@ -555,7 +575,7 @@ export default function ReportsPage() {
               { label: lang === "en" ? "Total sales" : "Ventes totales", value: fmt(totals.gross_sales), sub: totals.sale_count + " transactions", color: "var(--brand-light)" },
               // LAUNCH-BATCH-2b: refunds on their own line; profit is after them.
               { label: lang === "en" ? "Refunds" : "Remboursements", value: fmt(totals.total_refunds), color: "#f87171" },
-              { label: lang === "en" ? "Cash collected" : "Espèces encaissées", value: fmt(totals.cash_collected), color: "#34d399" },
+              { label: lang === "en" ? "Collected (all methods)" : "Encaissé (tous moyens)", value: fmt(totals.cash_collected), sub: lang === "en" ? "cash + mobile money + bank" : "espèces + mobile money + banque", color: "#34d399" },
               { label: lang === "en" ? "Gross profit" : "Bénéfice brut", value: fmt(totals.gross_profit), sub: avgMargin + (lang === "en" ? "% margin" : "% de marge"), color: "#34d399" },
               { label: lang === "en" ? "Expenses" : "Dépenses", value: fmt(totals.total_expenditure), color: "#f87171" },
               { label: lang === "en" ? "Net profit" : "Bénéfice net", value: fmt(totals.net_profit), color: totals.net_profit >= 0 ? "#34d399" : "#f87171" },
@@ -587,7 +607,7 @@ export default function ReportsPage() {
                   <th>Date</th>
                   <th style={{ textAlign: "right" }}>{lang === "en" ? "Sales" : "Ventes"}</th>
                   <th style={{ textAlign: "right" }}>{lang === "en" ? "Refunds" : "Remboursements"}</th>
-                  <th style={{ textAlign: "right" }}>{lang === "en" ? "Cash" : "Espèces"}</th>
+                  <th style={{ textAlign: "right" }}>{lang === "en" ? "Collected" : "Encaissé"}</th>
                   {isOwner && <th style={{ textAlign: "right" }}>{lang === "en" ? "Cost" : "Coût"}</th>}
                   {isOwner && <th style={{ textAlign: "right" }}>{lang === "en" ? "Gross profit" : "Bénéfice brut"}</th>}
                   {isOwner && <th style={{ textAlign: "right" }}>Margin</th>}
@@ -799,7 +819,7 @@ export default function ReportsPage() {
                                 <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 2, flexWrap: "wrap" }}>
                                   <span style={{ fontWeight: 700, fontSize: 13, fontFamily: "monospace" }}>{sale.sale_number}</span>
                                   <span style={{ fontSize: 11, padding: "1px 8px", borderRadius: 10, background: statusColor + "20", color: statusColor, fontWeight: 600 }}>
-                                    {sale.payment_status}
+                                    {saleStatusLabel(sale.payment_status, lang)}
                                   </span>
                                   <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{sale.payment_method}</span>
                                   {(sale.has_returns || (sale.returns || []).length > 0) && (
@@ -845,7 +865,7 @@ export default function ReportsPage() {
                                 {Number(sale.debt_payment_amount) > 0 && (
                                   <div style={{ fontSize: 11, color: "#fbbf24" }}>💰 {lang === "en" ? "Debt collected" : "Dette encaissée"}: {fmt(debtPaidOn(sale))}</div>
                                 )}
-                                {sale.balance_due > 0 && <div style={{ fontSize: 11, color: "#f87171" }}>Due: {fmt(sale.balance_due)}</div>}
+                                {saleDue(sale) > 0 && <div style={{ fontSize: 11, color: "#f87171" }}>{lang === "en" ? "Due" : "Reste dû"}: {fmt(saleDue(sale))}</div>}
                               </div>
                                 <div style={{ color: "var(--text-muted)", fontSize: 16, transition: "transform 0.15s", transform: isExpanded ? "rotate(90deg)" : "none" }}>›</div>
                               </div>
@@ -1027,7 +1047,8 @@ export default function ReportsPage() {
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <div>
-              <div style={{ fontWeight: 700, fontSize: 15 }}>📅 {lang === "en" ? "Today's Sales" : "Ventes du jour"} — {new Date().toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })}</div>
+              <div style={{ fontWeight: 700, fontSize: 15 }}>📅 {lang === "en" ? "Today's Sales" : "Ventes du jour"} — {/* fix 6: the user's language; the shop's day (the data's todayStr), not the device's */}
+                {new Date(todayStr + "T12:00:00Z").toLocaleDateString(lang === "en" ? "en-GB" : "fr-FR", { day: "2-digit", month: "long", year: "numeric", timeZone: "UTC" })}</div>
               <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{lang === "en" ? "All items sold today combined" : "Tous les articles vendus aujourd'hui"}</div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
@@ -1037,7 +1058,7 @@ export default function ReportsPage() {
                 // split from the sales list.
                 const items = dailyProducts;
                 const grandTotal = dailyProductsTotal;
-                const paid = todaySales.filter(s => s.payment_status === "paid").reduce((s, sale) => s + parseFloat(sale.total_amount), 0);
+                const paid = collectedToday; // fix 4: same figure as Daily Summary
                 const credit = todaySales.filter(s => s.payment_status === "credit").reduce((s, sale) => s + parseFloat(sale.total_amount), 0);
                 const partial = todaySales.filter(s => s.payment_status === "partial").reduce((s, sale) => s + parseFloat(sale.balance_due || 0), 0);
                 // LAUNCH-BATCH-2: org currency + the UI language (was "F" and French only).
@@ -1053,7 +1074,7 @@ export default function ReportsPage() {
 `;
                 msg += `*Total: ${grandTotal.toLocaleString()} ${sym}*
 `;
-                msg += `✅ ${en ? "Collected" : "Encaissé"}: ${paid.toLocaleString()} ${sym}
+                msg += `✅ ${en ? "Collected (all methods)" : "Encaissé (tous moyens)"}: ${paid.toLocaleString()} ${sym}
 `;
                 if (credit > 0) msg += `🔴 ${en ? "Credit" : "Crédit"}: ${credit.toLocaleString()} ${sym}
 `;
@@ -1069,7 +1090,7 @@ export default function ReportsPage() {
                 // Breakdown + total from the net full-range RPC (same as the WhatsApp share).
                 const items = dailyProducts;
                 const grandTotal = dailyProductsTotal;
-                const paid = todaySales.filter(s => s.payment_status === "paid").reduce((s, sale) => s + parseFloat(sale.total_amount), 0);
+                const paid = collectedToday; // fix 4: same figure as Daily Summary
                 const credit = todaySales.filter(s => s.payment_status === "credit").reduce((s, sale) => s + parseFloat(sale.total_amount), 0);
                 // LAUNCH-BATCH-2: org currency + the UI language (was "F" and French only).
                 const en = lang === "en", sym = fmt.symbol;
@@ -1082,7 +1103,7 @@ export default function ReportsPage() {
                   ${items.map(i => `<div class="row"><span>${i.name} × ${i.qty} ${i.unit}${i.damaged > 0 ? (en ? ` (incl. ${i.damaged.toLocaleString()} ${sym} damaged)` : ` (dont ${i.damaged.toLocaleString()} ${sym} abîmé)`) : ""}</span><span>${i.total.toLocaleString()} ${sym}</span></div>`).join("")}
                   <div class="line"></div>
                   <div class="row bold"><span>TOTAL</span><span>${grandTotal.toLocaleString()} ${sym}</span></div>
-                  <div class="row"><span>✅ ${en ? "Collected" : "Encaissé"}</span><span>${paid.toLocaleString()} ${sym}</span></div>
+                  <div class="row"><span>✅ ${en ? "Collected (all methods)" : "Encaissé (tous moyens)"}</span><span>${paid.toLocaleString()} ${sym}</span></div>
                   ${credit > 0 ? `<div class="row" style="color:red"><span>🔴 ${en ? "Credit" : "Crédit"}</span><span>${credit.toLocaleString()} ${sym}</span></div>` : ""}
                   <div class="row"><span>📦 ${en ? "Sales" : "Nb ventes"}</span><span>${todaySales.length}</span></div>
                 </body></html>`);
@@ -1103,9 +1124,8 @@ export default function ReportsPage() {
             // MP-DAILY-SALES-RPC-TOTAL: product breakdown + grand total = net full-range
             // RPC (dailyProducts/dailyProductsTotal); payment split stays sale-level
             // (from the sales list) so it's correct even on debt-only days.
-            let totalPaid = 0, totalCredit = 0, totalPartialDue = 0;
+            let totalCredit = 0, totalPartialDue = 0;
             todaySales.forEach(sale => {
-              if (sale.payment_status === "paid") totalPaid += parseFloat(sale.total_amount);
               if (sale.payment_status === "credit") totalCredit += parseFloat(sale.total_amount);
               if (sale.payment_status === "partial") totalPartialDue += parseFloat(sale.balance_due || 0);
             });
@@ -1117,8 +1137,10 @@ export default function ReportsPage() {
                   <thead>
                     <tr>
                       <th>{lang === "en" ? "Product" : "Produit"}</th>
-                      <th style={{ textAlign: "right" }}>{lang === "en" ? "Qty sold" : "Qté vendue"}</th>
-                      <th style={{ textAlign: "right" }}>{lang === "en" ? "Total" : "Total"}</th>
+                      <th style={{ textAlign: "right" }}>{lang === "en" ? "Sold" : "Vendu"}</th>
+                      <th style={{ textAlign: "right" }}>{lang === "en" ? "Returned" : "Retourné"}</th>
+                      <th style={{ textAlign: "right" }}>{lang === "en" ? "Net qty" : "Qté nette"}</th>
+                      <th style={{ textAlign: "right" }}>{lang === "en" ? "Net total" : "Total net"}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1132,6 +1154,10 @@ export default function ReportsPage() {
                             </span>
                           )}
                         </td>
+                        <td style={{ textAlign: "right" }}>{item.sold} {item.unit}</td>
+                        <td style={{ textAlign: "right", color: item.returnedQty > 0 ? "#f87171" : "var(--text-muted)" }}>
+                          {item.returnedQty > 0 ? <>−{item.returnedQty} <span style={{ fontSize: 11 }}>({fmt(item.returnedAmt)})</span></> : "—"}
+                        </td>
                         <td style={{ textAlign: "right", fontWeight: 600 }}>{item.qty} {item.unit}</td>
                         <td style={{ textAlign: "right", fontWeight: 700, color: "var(--brand-light)" }}>{fmt(item.total)}</td>
                       </tr>
@@ -1142,15 +1168,15 @@ export default function ReportsPage() {
                       <td style={{ padding: "12px 16px", fontWeight: 700 }}>
                         {todaySales.length} {lang === "en" ? "sales" : "ventes"}
                       </td>
-                      <td></td>
+                      <td colSpan={3}></td>
                       <td style={{ textAlign: "right", padding: "12px 16px", fontWeight: 800, fontSize: 16, color: "var(--brand-light)" }}>
-                        {grandTotal.toLocaleString()} {fmt.symbol}
+                        {fmt(grandTotal)}
                       </td>
                     </tr>
                     <tr style={{ background: "var(--bg-elevated)" }}>
-                      <td colSpan={3} style={{ padding: "8px 16px" }}>
+                      <td colSpan={5} style={{ padding: "8px 16px" }}>
                         <div style={{ display: "flex", gap: 20, flexWrap: "wrap", fontSize: 13 }}>
-                          <span>✅ {lang === "en" ? "Collected:" : "Encaissé:"} <strong style={{ color: "#34d399" }}>{fmt(totalPaid)}</strong></span>
+                          <span>✅ {lang === "en" ? "Collected (all methods):" : "Encaissé (tous moyens) :"} <strong style={{ color: "#34d399" }}>{fmt(collectedToday)}</strong></span>
                           {totalCredit > 0 && <span>🔴 {lang === "en" ? "Credit:" : "Crédit:"} <strong style={{ color: "#f87171" }}>{fmt(totalCredit)}</strong></span>}
                           {totalPartialDue > 0 && <span>🟡 {lang === "en" ? "Partial due:" : "Restes dus:"} <strong style={{ color: "#fbbf24" }}>{fmt(totalPartialDue)}</strong></span>}
                         </div>
@@ -1424,11 +1450,11 @@ export default function ReportsPage() {
                     : `Net du jour: ${fmt(bl.day_flow.net_cash_flow)}`;
                   const shiftsSubtotal = shiftsList.length === 0
                     ? (lang === "en" ? "no shifts" : "aucun poste")
-                    : `${fmt(shiftDrawer)} ${fmt.symbol}`;
+                    : fmt(shiftDrawer); // fix 5: fmt already carries the currency
                   // MP-REPORTS-DEBT-DOUBLECOUNT: the Outstanding headline is the
                   // ACTUAL current receivable (Σ customer debt), not gross credit
                   // issued today. "Debt issued today" stays as a detail row.
-                  const outstandingSubtotal = `${fmt(bl.outstanding.total_customer_debt_all_time)} ${fmt.symbol}`;
+                  const outstandingSubtotal = fmt(bl.outstanding.total_customer_debt_all_time); // fix 5
                   return (
                   <>
                     <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 12, textAlign: "center", letterSpacing: "0.3px" }}>
@@ -1541,7 +1567,7 @@ export default function ReportsPage() {
                     {bl.drawer && (
                       <CollapsibleBlock
                         title={`💵 ${lang === "en" ? "DRAWER" : "CAISSE"}`}
-                        subtotalValue={bl.drawer.expected_drawer}
+                        subtotalValue={fmt(bl.drawer.expected_drawer)}
                         expanded={blockExpanded.drawer}
                         onToggle={toggleBlock("drawer")}>
                         <BlockRow label={lang === "en" ? "Expected drawer" : "Caisse attendue"} value={fmt(bl.drawer.expected_drawer)} bold />

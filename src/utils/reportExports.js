@@ -43,7 +43,7 @@ export function toCsv(rows) {
 
 // ── Daily Summary ───────────────────────────────────────────────────────────
 export const DAILY_SUMMARY_HEADER = [
-  "Date", "Sales", "Cash Collected", "Credit Given", "Cost",
+  "Date", "Sales", "Collected (all methods)", "Credit Given", "Cost",
   "Gross Profit", "Margin%", "Expenses", "Net Profit", "Transactions",
 ];
 

@@ -21,6 +21,7 @@
 // ONE place so the three receipt surfaces cannot drift apart on wording.
 import { dmgShort, damagedLegend, hasDamaged } from "./damagedLabel";
 import { currencyShort } from "./currency";
+import { SHOP_TZ } from "./shopTime";
 
 const WIDTH = 35;
 
@@ -131,7 +132,7 @@ function fmtDateTime(lang, iso) {
   const valid = d instanceof Date && !isNaN(d.getTime());
   const dt = valid ? d : new Date();
   const dateStr = dt.toLocaleDateString(loc, { day: "2-digit", month: "short", year: "numeric" });
-  const timeStr = dt.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
+  const timeStr = dt.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ });
   return `${dateStr}, ${timeStr}`;
 }
 

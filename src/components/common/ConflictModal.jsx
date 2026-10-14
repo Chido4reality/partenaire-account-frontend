@@ -19,6 +19,7 @@ import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useLangStore } from "../../store";
 import { listPending, retry, retryAll, discard, ownerMismatchOf, continueWithConfirm } from "../../utils/pendingSync";
+import { SHOP_TZ } from "../../utils/shopTime";
 
 function parseError(s) {
   if (!s) return { status: null, body: null, raw: null };
@@ -204,7 +205,7 @@ export default function ConflictModal({ onClose }) {
                     <span style={{ fontSize: 10, fontWeight: 800, color: sm.color, border: `1px solid ${sm.color}`, borderRadius: 8, padding: "1px 7px", flexShrink: 0 }}>{sm.label}</span>
                   </div>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>
-                    {new Date(r.created_at).toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                    {new Date(r.created_at).toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })}
                   </div>
                 </div>
                 <div style={{ fontSize: 12, color: canRetry && r.status === "failed_permanent" ? "#f87171" : "var(--text-secondary)", marginBottom: 6 }}>

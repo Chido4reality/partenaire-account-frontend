@@ -19,6 +19,7 @@ import { useCurrency } from "../utils/useCurrency";
 import { formatMoney } from "../utils/currency";
 import { getCachedData } from "../utils/offlineStore";
 import { listPending, subscribe, retry, retryAll } from "../utils/pendingSync";
+import { SHOP_TZ } from "../utils/shopTime";
 
 // Non-hook currency formatter for module-scope helpers. Reads the org's
 // currency from the auth store non-reactively (getState), so it always
@@ -296,7 +297,7 @@ export default function PendingSyncPage() {
 
   const fmtTime = (iso) => {
     if (!iso) return "—";
-    try { return new Date(iso).toLocaleString(fr ? "fr-FR" : "en-GB", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); }
+    try { return new Date(iso).toLocaleString(fr ? "fr-FR" : "en-GB", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ }); }
     catch { return "—"; }
   };
 

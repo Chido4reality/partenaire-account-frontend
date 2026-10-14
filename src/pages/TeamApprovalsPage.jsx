@@ -14,6 +14,7 @@ import ApprovalDetailView from "../components/common/ApprovalDetailView"; // MP-
 import HoldRejectFields, { HOLD_ACTION, holdRejectReady } from "../components/common/HoldRejectFields"; // receive-mismatch gate
 import HoldShortfallFields, { useHoldShortfall, holdShortfallReady, holdShortfallBody, approveBlockedReason } from "../components/common/HoldShortfallFields"; // variance outcomes
 import HeldReceiptsBanner, { HoldTierBadge } from "../components/common/HeldReceiptsBanner"; // held-receipt reminders
+import { SHOP_TZ } from "../utils/shopTime";
 
 const VERB = {
   void:            { en: "cancel a sale",      fr: "annuler une vente" },
@@ -39,7 +40,7 @@ const verb = (a, en) => (VERB[a] ? (en ? VERB[a].en : VERB[a].fr) : a);
 function whenLabel(iso, en) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ });
 }
 
 export default function TeamApprovalsPage() {

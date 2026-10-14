@@ -14,6 +14,7 @@ import useOwnerApproval from "../../hooks/useOwnerApproval";
 import { isPendingApproval, keepWorkingToast } from "../../utils/approval";
 import { useNetworkStatus } from "../../utils/useNetworkStatus";
 import RestrictedAction from "./RestrictedAction";
+import { SHOP_TZ } from "../../utils/shopTime";
 
 /**
  * VoidReturnModal — handles void, refund, exchange
@@ -546,7 +547,7 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
           <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginBottom: sale.sold_date_note ? 8 : 20 }}>
             {lang === "en" ? "Issued " : "Émis le "}
             {new Date(sale.created_at || sale.sale_date).toLocaleString(lang === "en" ? "en-GB" : "fr-FR",
-              { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+              { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })}
           </div>
         )}
         {/* MP-SOLD-DATE-NOTE (Peter, 2026-07-18): full provenance on the return ticket —
@@ -558,8 +559,8 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
             <strong>{(() => { const [y, m, d] = String(sale.sold_date_note).slice(0, 10).split("-"); return (y && m && d) ? `${d}/${m}/${y}` : String(sale.sold_date_note); })()}</strong>
             {sale.sold_date_note_by_name ? (lang === "en" ? ` · recorded by ${sale.sold_date_note_by_name}` : ` · saisi par ${sale.sold_date_note_by_name}`) : ""}
             {sale.sold_date_note_at ? (lang === "en"
-              ? ` · recorded ${new Date(sale.sold_date_note_at).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`
-              : ` · enregistré ${new Date(sale.sold_date_note_at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`) : ""}
+              ? ` · recorded ${new Date(sale.sold_date_note_at).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })}`
+              : ` · enregistré ${new Date(sale.sold_date_note_at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })}`) : ""}
           </div>
         )}
 

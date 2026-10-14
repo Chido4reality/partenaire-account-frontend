@@ -550,7 +550,7 @@ export default function OperationsDashboardPage() {
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                   <span style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
-                    {new Date(a.timestamp).toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                    {new Date(a.timestamp).toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })}
                   </span>
                   <button onClick={() => dismiss(a.id)} style={smallBtnStyle} title={en ? "Dismiss" : "Masquer"}>✓</button>
                 </div>
@@ -657,7 +657,7 @@ export default function OperationsDashboardPage() {
                         <td style={{ ...tdStyleRight, color: "#f87171", fontWeight: 700 }}>{fmt(v.amount)}</td>
                         <td style={tdStyle}>{v.voided_by_name || "—"}</td>
                         <td style={{ ...tdStyle, fontSize: 11, color: "var(--text-muted)" }}>
-                          {v.voided_at ? new Date(v.voided_at).toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"}
+                          {v.voided_at ? new Date(v.voided_at).toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ }) : "—"}
                         </td>
                         <td style={{ ...tdStyle, fontSize: 12 }}>{v.void_reason || "—"}</td>
                       </tr>
@@ -763,7 +763,7 @@ export default function OperationsDashboardPage() {
                       <td style={tdStyle}>{m.cashier_name || "—"}</td>
                       <td style={{ ...tdStyleRight, color: "#10b981", fontWeight: 700 }}>{fmt(m.amount)}</td>
                       <td style={{ ...tdStyle, fontSize: 11, color: "var(--text-muted)" }}>
-                        {m.paid_at ? new Date(m.paid_at).toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
+                        {m.paid_at ? new Date(m.paid_at).toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ }) : "—"}
                       </td>
                     </tr>
                   ))}

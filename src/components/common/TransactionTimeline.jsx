@@ -1,3 +1,4 @@
+import { SHOP_TZ } from "../../utils/shopTime";
 // MP-TXN-HISTORY — read-only full-history timeline of one transaction
 // (sold → returned/swapped → refunded, to any depth). Renders the `history` payload
 // attached to GET /sales/:id (assembled server-side in lib/saleHistory.js). Display-only:
@@ -18,7 +19,7 @@ export default function TransactionTimeline({ history, lang = "fr", fmt }) {
     if (!iso) return "";
     try {
       return new Date(iso).toLocaleString(en ? "en-GB" : "fr-FR",
-        { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+        { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ });
     } catch { return String(iso); }
   };
   const staffOf = (e) => e.staff || (en ? "unknown staff" : "personnel inconnu");

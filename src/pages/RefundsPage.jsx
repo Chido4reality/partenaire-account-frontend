@@ -44,6 +44,8 @@ import CameraScanner from "../components/common/CameraScanner";
 import { normalizeScannedSaleRef } from "../utils/receiptCodeStyle";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 import { ShiftRequiredBlocker, useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
+import { SHOP_TZ } from "../utils/shopTime";
+import { saleStatusLabel } from "../utils/saleStatus"; // fix 3
 
 // Auto-detect the lookup mode from a free-text sale reference.
 // VNT-YYYYMMDD-NNNN → POS sale; anything else (DOZ-…, or future
@@ -516,7 +518,7 @@ export default function RefundsPage() {
                     ? new Date(s.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })
                     : "—";
                   const timeStr = s.created_at
-                    ? new Date(s.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+                    ? new Date(s.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })
                     : "";
                   const statusColor = s.payment_status === "paid"   ? "#34d399"
                                     : s.payment_status === "partial" ? "#fbbf24"
@@ -569,7 +571,7 @@ export default function RefundsPage() {
                       </td>
                       <td>
                         <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: `${statusColor}22`, color: statusColor, fontWeight: 600 }}>
-                          {s.payment_status}
+                          {saleStatusLabel(s.payment_status, lang)}
                         </span>
                         {isVoided && (
                           <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: "rgba(100,100,100,0.15)", color: "var(--text-muted)", fontWeight: 600, marginLeft: 4 }}>

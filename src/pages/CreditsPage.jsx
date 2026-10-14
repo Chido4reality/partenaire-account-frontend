@@ -2,6 +2,8 @@ import { useState, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
+import { warningToast } from "../utils/warningToast";
+import { SHOP_TZ } from "../utils/shopTime";
 import { useAuthStore, useLangStore } from "../store";
 import { waPhone } from "../utils/waPhone";
 import api, { formatDate } from "../utils/api";
@@ -106,10 +108,11 @@ export default function CreditsPage() {
         toast(lang === "en" ? "Already recorded" : "Déjà enregistré");
         return;
       }
-      toast.success(lang === "en" ? "✓ Payment recorded!" : "✓ Paiement enregistré!");
       // PHASE-1 item 5: capped (another device collected on this invoice at the same
-      // time) — say what was really recorded and what to give back.
-      if (d.capped) toast(lang === "en" ? d.warning_en : d.warning_fr, { icon: "⚠️", duration: 12000 });
+      // time) — say what was really recorded and what to give back, as a yellow WARNING
+      // (fix 2: never the green "recorded" toast for a capped payment).
+      if (d.capped) warningToast(lang === "en" ? d.warning_en : d.warning_fr);
+      else toast.success(lang === "en" ? "✓ Payment recorded!" : "✓ Paiement enregistré!");
       // MP-PAYMENT-EVENT-RECEIPTS Bug 2: surface the receipt so the cashier can
       // print/share + the customer gets proof of payment.
       setReceiptEvent({ eventType: "invoice_payment", data: d });
@@ -134,7 +137,7 @@ export default function CreditsPage() {
 
     const phone = waPhone(customer.phone, org);   // LAUNCH-BATCH-2: org's dialling code (was always 237)
 
-    const today = new Date().toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
+    const today = new Date().toLocaleDateString(lang === "en" ? "en-GB" : "fr-FR", { day: "2-digit", month: "long", year: "numeric", timeZone: SHOP_TZ });
     const totalDebt = customer.total_debt || 0;
     const orgName = org?.name || "notre boutique";
 

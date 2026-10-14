@@ -10,6 +10,7 @@ import { useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
 // MP-MY-PERMISSIONS-ONE-SHAPE: shared hook — never re-implement the ["my-permissions"]
 // query locally, a mismatched queryFn shape reads as DENIED.
 import { useMyPermissions } from "../utils/useMyPermissions";
+import { SHOP_TZ } from "../utils/shopTime";
 
 // MP-PAUL-FIX-5B (3 Jun): pa_expenditure_categories.name is stored
 // French-only in the DB (single source of truth). The cashier-facing
@@ -200,7 +201,7 @@ export default function ExpenditurePage() {
                   </td>
                   <td style={{ color: "var(--text-secondary)", fontSize: 12 }}>{e.pa_locations?.name || "-"}</td>
                   <td style={{ color: "var(--text-muted)", fontSize: 12 }}>
-                    {new Date(e.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    {new Date(e.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })}
                   </td>
                   <td style={{ textAlign: "right", fontWeight: 600, color: "#f87171" }}>{fmt(e.amount)}</td>
                   {/* MP-CORRECTIONS: an owner's tap applies; a granted staffer's tap

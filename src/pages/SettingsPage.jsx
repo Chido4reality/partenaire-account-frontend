@@ -15,6 +15,7 @@ import PushAlertsCard from "../components/common/PushAlertsCard"; // MP-PUSH
 import { hasFeature, getCapabilities } from "../utils/planCapabilities";
 import { useLiteMode } from "../hooks/useLiteMode";
 import { useTrialState } from "../hooks/useTrialState";
+import { SHOP_TZ } from "../utils/shopTime";
 
 const ROLES = [
   { value: "cashier",    en: "Cashier",    fr: "Caissier",     color: "#94a3b8" },
@@ -2532,7 +2533,7 @@ export default function SettingsPage() {
                   const at = attendanceData?.data;
                   const entries = at?.entries || [];
                   const sales = at?.activity?.sales_count || 0;
-                  const fmtT = (x) => x ? new Date(x).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null;
+                  const fmtT = (x) => x ? new Date(x).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ }) : null;
                   const fmtD = (x) => x ? new Date(x).toLocaleDateString() : "";
                   return (
                     <>

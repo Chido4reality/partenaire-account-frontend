@@ -25,6 +25,7 @@ import { genLocalId } from "../utils/pendingSync";
 import { useStockCheckSummary, NOT_COUNTED_AMBER_AT } from "../utils/useStockCheckSummary";
 import OptionCard from "../components/common/OptionCard"; // readable option titles
 import { outcomeFromStockCheckSub, outcomeByKey } from "../utils/transferVarianceOutcomes"; // carry "Where did they go?" to the transfer
+import { SHOP_TZ } from "../utils/shopTime";
 
 // MP-STALE-PRODUCT-SCAN: mirrors backend lib/stockChecks.js's STALE_THRESHOLD_DAYS
 // (fixed, not per-org configurable — Peter, 2026-07-14). Display-only.
@@ -114,7 +115,7 @@ const isLegacyCheck = (row) => !!(
 
 function fmtDate(iso, en) {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleDateString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ });
 }
 
 // MP-STOCK-CHECK: normalize ANY list/search response to an array before .map().

@@ -19,6 +19,7 @@ import { useMyRequests } from "../utils/useMyRequests"; // MP-CORRECTIONS-GUARDR
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 import BelowCostLossDetail from "../components/common/BelowCostLossDetail";
 import DiscountApprovalDetail from "../components/common/DiscountApprovalDetail";
+import { SHOP_TZ } from "../utils/shopTime";
 
 const VERB = {
   void:            { en: "cancel a sale",        fr: "annuler une vente" },
@@ -49,7 +50,7 @@ const STATUS = {
 function whenLabel(iso, en) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ });
 }
 
 export default function MyRequestsPage() {

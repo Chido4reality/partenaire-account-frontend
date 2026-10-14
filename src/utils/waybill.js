@@ -1,3 +1,4 @@
+import { SHOP_TZ } from "./shopTime";
 // MP-TRANSFER-WAYBILL — A4 delivery note / bon de livraison for a DISPATCHED
 // transfer. Shown to police at checkpoints during inter-location transport and for
 // the carrier to sign. One dispatcher signature line (receiver acceptance lives in
@@ -33,7 +34,7 @@ function fmtDateTime(iso, en) {
   if (!iso) return "—";
   try {
     return new Date(iso).toLocaleString(en ? "en-GB" : "fr-FR",
-      { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+      { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ });
   } catch { return String(iso); }
 }
 

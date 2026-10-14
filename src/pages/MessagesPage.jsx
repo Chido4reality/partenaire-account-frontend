@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "../utils/api";
 import { useLangStore } from "../store";
+import { SHOP_TZ } from "../utils/shopTime";
 
 const T = {
   title:   { fr: "Messages — Équipe Stenamo", en: "Messages — Stenamo team" },
@@ -35,7 +36,7 @@ export function MessageThread({ messages, lang }) {
         return (
           <div key={m.id} data-from={m.from} style={{ alignSelf: mine ? "flex-end" : "flex-start", maxWidth: "82%" }}>
             <div style={{ fontSize: 11, color: "var(--text-muted)", margin: mine ? "0 6px 3px 0" : "0 0 3px 6px", textAlign: mine ? "right" : "left" }}>
-              {mine ? tr("you", lang) : (m.sender_name || "Équipe Stenamo")} · {new Date(m.created_at).toLocaleString(lang === "en" ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+              {mine ? tr("you", lang) : (m.sender_name || "Équipe Stenamo")} · {new Date(m.created_at).toLocaleString(lang === "en" ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })}
             </div>
             <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 14, lineHeight: 1.5, padding: "10px 12px", borderRadius: 14,
               background: mine ? "rgba(251,197,3,0.16)" : "var(--bg-elevated)", border: "1px solid var(--border)" }}>

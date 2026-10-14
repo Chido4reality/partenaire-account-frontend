@@ -289,7 +289,7 @@ export default function Dashboard() {
               value={isLoading ? '...' : fmt(s.gross_sales || 0)}
               sub={`${s.sale_count || 0} ${t('dashboard.transactions')}`}
               color="var(--brand-light)" onClick={() => navigate('/reports')} />
-            <StatCard icon="💵" label={lang === 'en' ? "Cash collected" : "Espèces encaissées"}
+            <StatCard icon="💵" label={t('dashboard.cashCollected')}
               value={isLoading ? '...' : fmt(s.cash_collected || 0)}
               color="#10b981" />
             <StatCard icon="💳" label={lang === 'en' ? "Credit sales" : "Ventes crédit"}

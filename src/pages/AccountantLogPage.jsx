@@ -481,7 +481,7 @@ export default function AccountantLogPage() {
                 {/* MP-BELOW-COST-CLEAR-WORDING: a below-cost amount is the shortfall,
                     not the sale total — render it labelled, not as a bare number. */}
                 {[!["below_cost_sale", "discount"].includes(a.action_type) && a.amount != null ? fmtCur(Math.abs(Number(a.amount))) : null, metaRef(a), a.branch_name].filter(Boolean).join(" · ")}
-                {" · "}{new Date(a.created_at).toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                {" · "}{new Date(a.created_at).toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })}
               </div>
               {/* MP-APPROVAL-DETAIL: full plain-language why + order for EVERY type, fetched on expand. */}
               <ApprovalDetailView approval={a} />
@@ -772,7 +772,7 @@ export default function AccountantLogPage() {
                   just the inbox card — this modal is where the decision is actually made. */}
               {pinFor.created_at ? (
                 <span style={{ color: "var(--text-muted)" }}>
-                  {" "}({en ? "requested" : "demandé"} {new Date(pinFor.created_at).toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })})
+                  {" "}({en ? "requested" : "demandé"} {new Date(pinFor.created_at).toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })})
                 </span>
               ) : null}
               <br />{en ? "Approving gives the green light — the staff member completes it at the counter." : "Approuver donne le feu vert — l'employé la finalise au comptoir."}
@@ -910,7 +910,89 @@ const ACTION_TEXT = {
   customer_edited_by_cashier:       { en: "Edited a customer",           fr: "Client modifié" },
   debt_collected_no_invoice:        { en: "Collected debt (no bill)",    fr: "Dette encaissée (sans facture)", money: true },
   credit_extended_in_sale:          { en: "Gave credit in a sale",       fr: "Crédit accordé dans une vente",  money: true },
+  offline_sale_recorded_over_rules: { en: "Offline sale to review",      fr: "Vente hors ligne à vérifier",   money: true },
+  transfer_items_edited:            { en: "Changed a transfer",          fr: "Transfert modifié" },
+  late_money_filed:                 { en: "Late money filed",            fr: "Argent arrivé en retard",       money: true },
 };
+
+// Fix 1 (Peter's staging test): the three phase-1 audit rows, readable in the feed, the
+// tap-detail and the Activity Ledger. One source of wording for all three surfaces.
+const OFFLINE_REASON = {
+  oversell:     { fr: "vendu au-delà du stock", en: "sold beyond stock" },
+  below_cost:   { fr: "prix sous le prix minimum", en: "price below the floor" },
+  discount:     { fr: "remise hors limite", en: "discount beyond the limit" },
+  credit:       { fr: "crédit non autorisé", en: "credit not allowed" },
+  credit_limit: { fr: "limite de crédit dépassée", en: "credit limit exceeded" },
+  high_value:   { fr: "montant au-dessus du plafond", en: "amount above the ceiling" },
+  sold_date:    { fr: "date de vente non autorisée", en: "sold date not allowed" },
+  kit_parts:    { fr: "pièces du kit manquantes", en: "kit parts short" },
+};
+const LATE_KIND = {
+  sale:             { en: "sale", fr: "vente" },
+  invoice_payment:  { en: "invoice payment", fr: "paiement de facture" },
+  debt_collection:  { en: "debt collection", fr: "encaissement de dette" },
+  expense:          { en: "expense", fr: "dépense" },
+  approved_void:    { en: "approved cancellation", fr: "annulation approuvée" },
+  approved_refund:  { en: "approved refund", fr: "remboursement approuvé" },
+  approved_expense: { en: "approved expense", fr: "dépense approuvée" },
+};
+function transferItemsLine(items) {
+  return (items || []).map((it) => `${Number(it.quantity) || 0} × ${it.name || "?"}`).join(", ") || "—";
+}
+function phase1ActionText(a, en, d, m) {
+  const has = (v) => v != null && v !== "";
+  if (a === "offline_sale_recorded_over_rules") {
+    const why = (d.reason_types || []).map((t) => (OFFLINE_REASON[t] ? OFFLINE_REASON[t][en ? "en" : "fr"] : t)).join(", ");
+    let s = en ? `made offline sale ${d.sale_number || ""} — recorded over the rules` : `a fait la vente hors ligne ${d.sale_number || ""} — enregistrée malgré les règles`;
+    if (why) s += ` (${why})`;
+    if (has(d.total_amount)) s += ` — ${m(d.total_amount)}`;
+    return s;
+  }
+  if (a === "transfer_items_edited") {
+    const before = transferItemsLine(d.before && d.before.items), after = transferItemsLine(d.items);
+    return en ? `changed transfer ${d.transfer_number || ""}: ${before} → ${after}` : `a modifié le transfert ${d.transfer_number || ""} : ${before} → ${after}`;
+  }
+  if (a === "late_money_filed") {
+    const k = LATE_KIND[d.kind] ? LATE_KIND[d.kind][en ? "en" : "fr"] : (d.kind || "");
+    let s = d.held
+      ? (en ? `late ${k} held for the next drawer (its drawer was closed)` : `${k} arrivé(e) en retard, mis(e) de côté pour la prochaine caisse (sa caisse était fermée)`)
+      : (en ? `late ${k} filed in the drawer open now (its drawer was closed)` : `${k} arrivé(e) en retard, classé(e) dans la caisse ouverte (sa caisse était fermée)`);
+    if (has(d.sale_number)) s += ` — ${d.sale_number}`;
+    if (has(d.amount)) s += ` — ${m(d.amount)}`;
+    return s;
+  }
+  return null;
+}
+function phase1Fields(a, en, d, m) {
+  const has = (v) => v != null && v !== "";
+  const F = [];
+  if (a === "offline_sale_recorded_over_rules") {
+    if (has(d.sale_number)) F.push({ label: en ? "Invoice" : "Facture", value: d.sale_number });
+    if (has(d.total_amount)) F.push({ label: "Total", value: m(d.total_amount) });
+    if (has(d.collected_at)) F.push({ label: en ? "Sold offline at" : "Vendu hors ligne à", value: fmtLedgerWhen(d.collected_at, en) });
+    for (const r of d.reasons || []) {
+      const label = OFFLINE_REASON[r.type] ? OFFLINE_REASON[r.type][en ? "en" : "fr"] : r.type;
+      const lines = (r.items || []).map((it) => (en
+        ? `${it.name || "?"}: sold ${it.need}, ${it.available} in stock`
+        : `${it.name || "?"} : vendu ${it.need}, ${it.available} en stock`));
+      F.push({ label: en ? "Rule broken" : "Règle enfreinte", value: lines.length ? [label, ...lines] : label });
+    }
+  } else if (a === "transfer_items_edited") {
+    if (has(d.transfer_number)) F.push({ label: en ? "Transfer" : "Transfert", value: d.transfer_number });
+    F.push({ label: en ? "Before" : "Avant", value: transferItemsLine(d.before && d.before.items) });
+    F.push({ label: en ? "After" : "Après", value: transferItemsLine(d.items) });
+    if (has(d.actor_name)) F.push({ label: en ? "By" : "Par", value: d.actor_name });
+  } else if (a === "late_money_filed") {
+    if (LATE_KIND[d.kind]) F.push({ label: en ? "What" : "Quoi", value: LATE_KIND[d.kind][en ? "en" : "fr"] });
+    if (has(d.sale_number)) F.push({ label: en ? "Invoice" : "Facture", value: d.sale_number });
+    if (has(d.amount)) F.push({ label: en ? "Amount" : "Montant", value: m(d.amount) });
+    F.push({ label: en ? "Where it went" : "Où il est allé", value: d.held
+      ? (en ? "Held — joins the next drawer opened here" : "Mis de côté — rejoint la prochaine caisse ouverte ici")
+      : (en ? "The drawer open now (never the closed one)" : "La caisse ouverte maintenant (jamais la caisse fermée)") });
+  }
+  return F;
+}
+const LEDGER_TO_ACTION = { offline_flag: "offline_sale_recorded_over_rules", transfer_edit: "transfer_items_edited", late_money: "late_money_filed" };
 // Rich plain-language wording pulled straight from the audit row's new_data.
 // `nd` = new_data; `money` = the org currency formatter (n)=>string. Every piece
 // is gracefully omitted when missing. SHARED by the Phase-2 list, the bell deep-
@@ -980,6 +1062,10 @@ function actionText(a, en, nd, money) {
       if (has(d.reason)) s += ` — ${d.reason}`;
       return s;
     }
+    case "offline_sale_recorded_over_rules":
+    case "transfer_items_edited":
+    case "late_money_filed":
+      return phase1ActionText(a, en, d, m);
     default: {
       const t = ACTION_TEXT[a];
       if (t) return en ? t.en : t.fr;
@@ -1058,6 +1144,11 @@ function detailFields(r, en, money) {
       if (has(d.target_name)) F.push({ label: en ? "Staff member" : "Membre", value: `${d.target_name}${has(d.target_role) ? ` (${d.target_role})` : ""}` });
       if (has(d.actor_name)) F.push({ label: en ? "By" : "Par", value: d.actor_name });
       if (has(d.reason)) F.push({ label: en ? "Reason" : "Motif", value: d.reason });
+      break;
+    case "offline_sale_recorded_over_rules":
+    case "transfer_items_edited":
+    case "late_money_filed":
+      F.push(...phase1Fields(r.action, en, d, m));
       break;
     default:
       break;
@@ -1306,6 +1397,8 @@ function LedgerDetailModal({ row, en, fmt, onClose }) {
         <LedgerDetailRow label={en ? "When" : "Quand"} value={fmtLedgerWhen(row.occurred_at, en)} />
         {row.branch_name && <LedgerDetailRow label={en ? "Branch" : "Boutique"} value={row.branch_name} />}
         {row.amount != null && <LedgerDetailRow label={en ? "Amount" : "Montant"} value={fmt(row.amount)} />}
+        {LEDGER_TO_ACTION[row.activity_type] && phase1Fields(LEDGER_TO_ACTION[row.activity_type], en, row.new_data || {}, (v) => fmt(Math.abs(Number(v) || 0)))
+          .map((f, i) => <LedgerDetailRow key={`${f.label}${i}`} label={f.label} value={Array.isArray(f.value) ? f.value.join(" · ") : f.value} />)}
         {(row.ref_type === "transfer" || row.ref_type === "buffer") && (
           <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 10 }}>
             {en ? "Full transfer/goods detail view is coming next." : "La vue détaillée du transfert/des marchandises arrive bientôt."}

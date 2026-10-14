@@ -15,6 +15,7 @@ import ClearButton from "../components/common/ClearButton";
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 import useOwnerApproval from "../hooks/useOwnerApproval";
 import RestrictedAction from "../components/common/RestrictedAction";
+import { saleStatusLabel } from "../utils/saleStatus"; // fix 3
 
 const PAYMENT_METHODS = [
   { key: "cash",         icon: "💵", en: "Cash",        fr: "Espèces" },
@@ -1025,7 +1026,7 @@ export default function CustomersPage() {
                       background: s.payment_status === "paid" ? "rgba(16,185,129,0.15)" : s.payment_status === "partial" ? "rgba(245,158,11,0.15)" : "rgba(239,68,68,0.15)",
                       color: s.payment_status === "paid" ? "#34d399" : s.payment_status === "partial" ? "#fbbf24" : "#f87171"
                     }}>
-                      {s.payment_status}
+                      {saleStatusLabel(s.payment_status, lang)}
                     </span>
                   </div>
                 </div>

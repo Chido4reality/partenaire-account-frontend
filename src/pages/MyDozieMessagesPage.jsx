@@ -11,6 +11,7 @@ import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useLangStore } from "../store";
 import api from "../utils/api";
+import { SHOP_TZ } from "../utils/shopTime";
 
 export default function MyDozieMessagesPage() {
   const { lang } = useLangStore();
@@ -98,7 +99,7 @@ export default function MyDozieMessagesPage() {
                 <div style={{ background: mine ? "var(--brand)" : "var(--bg-elevated)", color: mine ? "#0f172a" : "var(--text-primary)", padding: "8px 12px", borderRadius: 12, fontSize: 13, wordBreak: "break-word" }}>
                   {m.type === "image" ? <img src={m.content} alt="" style={{ maxWidth: "100%", borderRadius: 8 }} /> : m.content}
                 </div>
-                <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2, textAlign: mine ? "right" : "left" }}>{new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2, textAlign: mine ? "right" : "left" }}>{new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })}</div>
               </div>
             );
           })}

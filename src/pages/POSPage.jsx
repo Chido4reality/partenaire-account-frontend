@@ -4,6 +4,7 @@ import HelpButton from "../components/common/HelpButton";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
+import { warningToast } from "../utils/warningToast";
 import { useLangStore, useSettingsStore, useAuthStore, useDraftCartStore } from "../store";
 // MP-MIN-PRICE-PIN-UX Option B: OwnerPIN import dropped — the PIN
 // override flow was dead code (imported, state set, never rendered).
@@ -38,6 +39,8 @@ import MultipartAvailability from "../components/common/MultipartAvailability";
 import RestrictedAction from "../components/common/RestrictedAction";
 import useOwnerApproval from "../hooks/useOwnerApproval";
 import useExpiryFeature from "../hooks/useExpiryFeature"; // EXPIRY-TRACKING
+import { SHOP_TZ } from "../utils/shopTime";
+import { saleStatusLabel } from "../utils/saleStatus"; // fix 3
 
 const PAYMENT_MODES = [
   { key: "paid",    en: "Full Payment",  fr: "Paiement total",   color: "#10b981", icon: "✓" },
@@ -1898,12 +1901,12 @@ export default function POSPage() {
       // any response landing here is a genuine backend response.)
       if (data?.isDebt) {
         debtPayKeyRef.current = null; // PHASE-1 item 5: next checkout gets a new key
-        toast.success(lang === "en" ? "✓ Debt payment recorded!" : "✓ Remboursement enregistré!", { duration: 2000 });
         // PHASE-1 item 5: a capped payment (only part was still owed — e.g. another device
         // collected at the same time) must be SEEN: the cashier gives the rest back.
-        for (const r of (data.responses || [])) {
-          if (r && r.capped) toast(lang === "en" ? r.warning_en : r.warning_fr, { icon: "⚠️", duration: 12000 });
-        }
+        // Fix 2: a yellow WARNING, and no green "recorded" toast on top of it.
+        const cappedRows = (data.responses || []).filter((r) => r && r.capped);
+        if (!cappedRows.length) toast.success(lang === "en" ? "✓ Debt payment recorded!" : "✓ Remboursement enregistré!", { duration: 2000 });
+        for (const r of cappedRows) warningToast(lang === "en" ? r.warning_en : r.warning_fr);
         // MP-POS-COLLECT-DEBT-CART-NO-RECEIPT (Bug A): aggregate
         // per-invoice responses into a debt_collection-shape
         // payload so the shared receipt component renders with
@@ -3137,7 +3140,7 @@ export default function POSPage() {
                       <div style={{ fontWeight: 700, color: "#f87171", fontSize: 14 }}>
                         {fmt(inv.effective_balance_due ?? inv.balance_due)}
                       </div>
-                      <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{inv.payment_status}</div>
+                      <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{saleStatusLabel(inv.payment_status, lang)}</div>
                     </div>
                   </div>
                 );
@@ -3968,7 +3971,7 @@ function HoldTicket({ hold, org, lang, cashierName, onClose }) {
   const loc = en ? "en-US" : "fr-FR";
   const created = hold.created_at ? new Date(hold.created_at) : new Date();
   const dateStr = created.toLocaleDateString(loc, { day: "2-digit", month: "short", year: "numeric" });
-  const timeStr = created.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
+  const timeStr = created.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ });
   const items = hold.items || [];
   const HT = {
     hold:    en ? "HOLD" : "MISE EN ATTENTE",

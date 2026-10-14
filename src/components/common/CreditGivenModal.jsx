@@ -24,6 +24,7 @@ import { useEffect, useState } from "react";
 import api from "../../utils/api";
 import { useLangStore } from "../../store";
 import { useCurrency } from "../../utils/useCurrency";
+import { SHOP_TZ } from "../../utils/shopTime";
 
 // One row — self-manages its expand + lazy /sales/:id fetch for the item detail.
 function CreditRow({ it, en, fmt }) {
@@ -47,7 +48,7 @@ function CreditRow({ it, en, fmt }) {
 
   const when = it.created_at
     ? new Date(it.created_at).toLocaleString(en ? "en-GB" : "fr-FR",
-        { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+        { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })
     : "—";
 
   // product lines only (exclude the debt-payment pseudo-line).

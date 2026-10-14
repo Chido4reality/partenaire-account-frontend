@@ -33,6 +33,7 @@ import { useMyPermissions } from "../../utils/useMyPermissions";
 // MP-DRAWER-REVEAL
 import { useDrawerReveal, MASK, hideDrawer } from "../../utils/useDrawerReveal";
 import RevealPinModal from "../common/RevealPinModal";
+import { SHOP_TZ } from "../../utils/shopTime";
 
 // ── Row primitives ────────────────────────────────────────────────
 function StaticRow({ label, value, valueColor }) {
@@ -79,7 +80,7 @@ function DetailModal({ kind, shiftId, onClose }) {
       cols:  fr ? ["Heure", "Vente", "Client", "Montant"]
                 : ["Time", "Sale", "Customer", "Amount"],
       row:   r => ({
-        time:    new Date(r.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
+        time:    new Date(r.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ }),
         a:       r.sale_number || "—",
         b:       r.customer_name || (fr ? "Comptoir" : "Walk-in"),
         amount:  Number(r.amount) || 0,
@@ -92,7 +93,7 @@ function DetailModal({ kind, shiftId, onClose }) {
       cols:  fr ? ["Heure", "Vente", "Motif", "Montant"]
                 : ["Time", "Sale", "Reason", "Amount"],
       row:   r => ({
-        time:    new Date(r.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
+        time:    new Date(r.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ }),
         a:       r.sale_number || "—",
         b:       r.refund_reason || (r.customer_name || "—"),
         amount:  Number(r.refund_amount) || 0,
@@ -105,7 +106,7 @@ function DetailModal({ kind, shiftId, onClose }) {
       cols:  fr ? ["Heure", "Catégorie", "Description", "Montant"]
                 : ["Time", "Category", "Description", "Amount"],
       row:   r => ({
-        time:    new Date(r.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
+        time:    new Date(r.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ }),
         a:       r.category_name || "—",
         b:       r.description || (r.recorder_name || "—"),
         amount:  Number(r.amount) || 0,
@@ -497,9 +498,9 @@ export default function DrawerDashboardCard() {
   }
 
   // ── States 2 & 3: shift exists — collapsible card ───────────────
-  const openedAt = new Date(shift.opened_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  const openedAt = new Date(shift.opened_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ });
   const closedAt = closedToday
-    ? new Date(shift.closed_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+    ? new Date(shift.closed_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })
     : null;
 
   const variance      = closedToday ? Number(shift.variance || 0) : null;
