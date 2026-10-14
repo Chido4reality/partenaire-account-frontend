@@ -5312,6 +5312,8 @@
               '<div class="health-card"><div class="health-label">Days since last sale</div><div class="health-value">' + safe(h.days_since_last_sale) + '</div></div>' +
               '<div class="health-card"><div class="health-label">Days since owner login</div><div class="health-value">' + safe(h.days_since_owner_login) + '</div></div>' +
               '<div class="health-card"><div class="health-label">Stock value</div><div class="health-value">' + fmtFCFA(h.stock_value || 0) + '</div></div>' +
+              // GOODS-BUFFER LOCATION: released goods not yet sent to a branch — beside the stock value, like Compare.
+              '<div class="health-card"><div class="health-label">Goods in buffer (not in stock value)</div><div class="health-value">' + fmtFCFA(h.stock_value_in_buffer || 0) + '</div></div>' +
               '<div class="health-card"><div class="health-label">Credits outstanding</div><div class="health-value">' + fmtFCFA(h.credits_total || 0) + '</div></div>' +
             '</div>' +
             '<div class="card" style="background:var(--bg-tertiary)">' +
