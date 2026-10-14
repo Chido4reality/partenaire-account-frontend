@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 const SRC = process.env.CHECK_SRC ? resolve(process.env.CHECK_SRC) : resolve(dirname(fileURLToPath(import.meta.url)), "..", "src"); // CHECK_SRC: teeth run on an older tree
 const files = [];
 (function walk(d) { for (const f of readdirSync(d)) { const p = join(d, f); statSync(p).isDirectory() ? walk(p) : /\.(jsx?|tsx?)$/.test(f) && files.push(p); } })(SRC);
-const read = (rel) => readFileSync(join(SRC, rel), "utf8");
+const read = (rel) => { try { return readFileSync(join(SRC, rel), "utf8"); } catch { return ""; } }; // a missing file fails its checks, never crashes the run
 const lineOf = (text, idx) => text.slice(0, idx).split("\n").length;
 const rel = (f) => f.slice(SRC.length + 1).replace(/\\/g, "/");
 
