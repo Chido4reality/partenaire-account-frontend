@@ -32,7 +32,7 @@ export const SUPPORT_TEL = `+${SUPPORT_PHONE}`;
 // (it replaces both the old 3-3-3 and 2-2-2-2 conventions).
 export const SUPPORT_DISPLAY = "+46 72 286 57 38";
 
-export const SUPPORT_EMAIL = "support@partenairedozie.com";
+export const SUPPORT_EMAIL = "support@stenamo.com";
 
 // Convenience: a ready wa.me deep link with an optional prefilled message.
 export const supportWaLink = (message) =>
