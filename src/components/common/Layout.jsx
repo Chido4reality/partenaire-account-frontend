@@ -40,6 +40,7 @@ import { useMyPermissions } from "../../utils/useMyPermissions";                
 import toast from "react-hot-toast";
 
 import { SUPPORT_PHONE } from "../../utils/support";
+import { isSellableLocation } from "../../utils/locations";                         // GOODS-BUFFER
 // Sprint A: each nav item declares the capability section it belongs to.
 // `section: 'sales'` and `section: 'settings'` are always visible (every
 // tier includes them). Other sections are filtered against the effective
@@ -1266,6 +1267,7 @@ export default function Layout() {
     if (!selectedLocation) return;
     const fresh = list.find(l => l.id === selectedLocation.id);
     if (!fresh) { setLocation(null); return; }   // stale/foreign selection → clear it
+    if (!isSellableLocation(fresh)) { setLocation(null); return; }   // GOODS-BUFFER: never the selling location
     // MP-CASHIER-PHASE-1b: REFRESH the stored object, don't just validate its id.
     //
     // This effect used to only CLEAR a selection whose id was missing, so the
@@ -1294,7 +1296,9 @@ export default function Layout() {
   useEffect(() => {
     const list = _locsResp?.data;
     if (!Array.isArray(list) || list.length === 0 || selectedLocation) return;
-    const active = list.filter(l => l.is_active !== false);
+    // GOODS-BUFFER: the buffer is never a place to work in — filter it before counting, or
+    // every one-shop org would stop being "one candidate".
+    const active = list.filter(isSellableLocation);
     const wantType = user?.role === "warehouse" ? "warehouse" : "shop";
     const candidates = active.length === 1 ? active : active.filter(l => l.type === wantType);
     if (candidates.length === 1) setLocation(candidates[0]);

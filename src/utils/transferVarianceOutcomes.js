@@ -31,14 +31,15 @@ export const VARIANCE_OUTCOMES = [
   { key: "received_late", en: "Received late", fr: "Reçues plus tard",
     hintEn: "They turned up after the count. Added to {dst}'s stock now.",
     hintFr: "Arrivées après le comptage. Ajoutées maintenant au stock de {dst}." },
-  { key: "return_to_source", en: "Never left the warehouse", fr: "Jamais sorties de l'entrepôt",
+  // GOODS-BUFFER: the source is not always a warehouse (the Goods Buffer, a shop) — say "source".
+  { key: "return_to_source", en: "Never left the source", fr: "Jamais sorties de la source",
     hintEn: "The missing goods are still at {src}. Put them back in its stock now.",
     hintFr: "Les marchandises manquantes sont encore à {src}. Les remettre dans son stock maintenant." },
 ];
 
 /** An outcome's description with the real branch names filled in. */
 export function outcomeHint(o, en, { src, dst } = {}) {
-  const s = src || (en ? "the warehouse" : "l'entrepôt");
+  const s = src || (en ? "the source" : "la source");
   const d = dst || (en ? "the shop" : "la boutique");
   return String(en ? o.hintEn : o.hintFr).replaceAll("{src}", s).replaceAll("{dst}", d);
 }

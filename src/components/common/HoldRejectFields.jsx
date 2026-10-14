@@ -20,12 +20,12 @@ export function holdRejectReady(mode, pin) {
 // EVERYTHING back — pa_transfer_hold_return creates the return with the original SENT
 // quantity (verified on prod) — so it now says so.
 export default function HoldRejectFields({ en, mode, setMode, pin, setPin, sourceName }) {
-  const src = sourceName || (en ? "the warehouse" : "l'entrepôt");
+  const src = sourceName || (en ? "the source" : "la source"); // GOODS-BUFFER: not always a warehouse
   const opts = [
     { val: "recount", en: "Send back for a recount", fr: "Faire recompter",
       hintEn: "Ask the shop to count again. Nothing moves until they do.",
       hintFr: "Demander à la boutique de recompter. Rien ne bouge d'ici là." },
-    { val: "return_to_source", en: "Send everything back to the warehouse", fr: "Tout renvoyer à l'entrepôt",
+    { val: "return_to_source", en: `Send everything back to ${src}`, fr: `Tout renvoyer à ${src}`,
       hintEn: `Send the whole line back to ${src} — everything that was sent, counted or missing. ${src} must receive it.`,
       hintFr: `Renvoyer toute la ligne à ${src} — tout ce qui a été envoyé, compté ou manquant. ${src} doit la réceptionner.` },
   ];

@@ -41,6 +41,7 @@ import useOwnerApproval from "../hooks/useOwnerApproval";
 import useExpiryFeature from "../hooks/useExpiryFeature"; // EXPIRY-TRACKING
 import { SHOP_TZ } from "../utils/shopTime";
 import { saleStatusLabel } from "../utils/saleStatus"; // fix 3
+import { isGoodsBuffer, locationLabel, locationTypeLabel } from "../utils/locations"; // GOODS-BUFFER
 
 const PAYMENT_MODES = [
   { key: "paid",    en: "Full Payment",  fr: "Paiement total",   color: "#10b981", icon: "✓" },
@@ -984,7 +985,9 @@ export default function POSPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const locations = locData?.data || [];
+  // GOODS-BUFFER: never a place to sell — left out of the picker (the store refuses it too,
+  // and the server answers goods_buffer_not_sellable).
+  const locations = (locData?.data || []).filter(l => !isGoodsBuffer(l));
 
   // MP-SERVER-SIDE-PRODUCT-SEARCH (Part A.4): when ONLINE, search the catalogue
   // in the DB (scales to thousands of products without caching them all on the
@@ -3285,7 +3288,7 @@ export default function POSPage() {
                 onChange={e => { const loc = locations.find(l => l.id === e.target.value); setLocation(loc || null); }}
                 style={{ marginBottom: 14, borderColor: !selectedLocation ? "#ef4444" : "var(--border)", fontWeight: selectedLocation ? 600 : 400 }}>
                 <option value="">{lang === "en" ? "— Select location —" : "— Choisir emplacement —"}</option>
-                {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
+                {locations.map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)} ({locationTypeLabel(l, lang)})</option>)}
               </select>
             </>
           )}

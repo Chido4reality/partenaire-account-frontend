@@ -232,6 +232,9 @@ export default function ComparePage() {
                     <span>{en ? "Damaged stock (not in capital)" : "Stock abîmé (hors capital)"}</span><span style={{ whiteSpace: "nowrap" }}>{capitalCell(c, "damaged")}</span></div>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13, marginTop: 4 }}>
                     <span>{en ? "Goods in transit (not in capital)" : "Marchandises en transit (hors capital)"}</span><span style={{ whiteSpace: "nowrap" }}>{capitalCell(c, "in_transit")}</span></div>
+                  {/* GOODS-BUFFER: released, priced, not yet sent to a shop — not sellable, so beside capital like transit */}
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13, marginTop: 4 }}>
+                    <span>{en ? "Goods in buffer (not in capital)" : "Marchandises en zone tampon (hors capital)"}</span><span style={{ whiteSpace: "nowrap" }}>{capitalCell(c, "in_buffer")}</span></div>
                 </div>
               );
             })}

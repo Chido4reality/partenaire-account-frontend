@@ -18,6 +18,7 @@ import api from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
 import toast from "react-hot-toast";
 import { safeSetItem } from "../utils/safeStorage";
+import { isSellableLocation } from "../utils/locations"; // GOODS-BUFFER
 
 // Small Levenshtein for the auto-match confidence label. Mirrors the
 // Sprint C FU.4 server-side migration matcher closely enough for the
@@ -250,8 +251,9 @@ export default function OnlineCartPage() {
   // ["locations"] is a cache key shared with POS/Settings; tolerate
   // either the {success,data} envelope or a bare array so a different
   // page priming the cache can't blank this dropdown.
-  const locations = Array.isArray(locData) ? locData
-    : Array.isArray(locData?.data) ? locData.data : [];
+  // GOODS-BUFFER: an online order is never fulfilled from the Goods Buffer.
+  const locations = (Array.isArray(locData) ? locData
+    : Array.isArray(locData?.data) ? locData.data : []).filter(isSellableLocation);
 
   // Cashier-friendly default: keep the store selection if it's still
   // a valid active location, else fall back to the last-used id

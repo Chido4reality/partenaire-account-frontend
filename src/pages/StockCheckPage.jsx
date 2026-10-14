@@ -26,6 +26,7 @@ import { useStockCheckSummary, NOT_COUNTED_AMBER_AT } from "../utils/useStockChe
 import OptionCard from "../components/common/OptionCard"; // readable option titles
 import { outcomeFromStockCheckSub, outcomeByKey } from "../utils/transferVarianceOutcomes"; // carry "Where did they go?" to the transfer
 import { SHOP_TZ } from "../utils/shopTime";
+import { withoutGoodsBuffer } from "../utils/locations"; // GOODS-BUFFER
 
 // MP-STALE-PRODUCT-SCAN: mirrors backend lib/stockChecks.js's STALE_THRESHOLD_DAYS
 // (fixed, not per-org configurable — Peter, 2026-07-14). Display-only.
@@ -1463,7 +1464,8 @@ function WatchProductModal({ en, onClose, onAdded }) {
     queryFn: () => api.get("/locations").then(r => r.data),
   });
   const results = Array.isArray(search.data) ? search.data : [];
-  const locList = Array.isArray(locs.data?.data) ? locs.data.data : [];
+  // GOODS-BUFFER: the buffer is never watched (the server refuses it too).
+  const locList = withoutGoodsBuffer(Array.isArray(locs.data?.data) ? locs.data.data : []);
 
   const add = async () => {
     if (!picked || !locId) return;

@@ -87,7 +87,7 @@ export default function TransferDetailModal({ transferId, onClose, initialReason
       if (res.piled) parts.push(en ? `${res.piled} moved to the Damaged list` : `${res.piled} mises dans la liste Endommagés`);
       if (res.written_off) parts.push(en ? `${res.written_off} removed from stock` : `${res.written_off} retirées du stock`);
       if (res.credited) parts.push(en ? `${res.credited} added to ${t?.to_name || "the shop"}` : `${res.credited} ajoutées à ${t?.to_name || "la boutique"}`);
-      if (res.returned) parts.push(en ? `${res.returned} put back at ${t?.from_name || "the warehouse"}` : `${res.returned} remises à ${t?.from_name || "l'entrepôt"}`);
+      if (res.returned) parts.push(en ? `${res.returned} put back at ${t?.from_name || "the source"}` : `${res.returned} remises à ${t?.from_name || "la source"}`);
       toast.success(res.already ? (en ? "Already closed" : "Déjà clos")
         : `${res.variance_closed ? (en ? "Variance closed" : "Écart clos") : (en ? `${res.later} line(s) left open` : `${res.later} ligne(s) laissée(s) ouverte(s)`)}${parts.length ? " — " + parts.join(", ") : ""}`);
       setAnswers({});

@@ -52,6 +52,7 @@ import CreditGivenModal from "./CreditGivenModal"; // MP-CREDIT-DRILLDOWN
 // MP-DRAWER-REVEAL
 import { useDrawerReveal, MASK } from "../../utils/useDrawerReveal";
 import RevealPinModal from "./RevealPinModal";
+import { isSellableLocation } from "../../utils/locations"; // GOODS-BUFFER
 
 // ── ModalShell — same overlay pattern as the rest of the app ─────
 // zIndex 3500: must clear Vaul's mobile bottom-sheet portal (z:1701)
@@ -139,7 +140,9 @@ export function OpenShiftModal({ open, onClose, onOpened }) {
     queryFn: () => api.get("/locations").then(r => r.data),
     enabled: open,
   });
-  const locations = locsResp?.data || [];
+  // GOODS-BUFFER: no drawer is ever opened at the Goods Buffer — filtered before the
+  // count (a one-shop org must stay "single") and before the alphabetical default.
+  const locations = (locsResp?.data || []).filter(isSellableLocation);
   const multiLoc = locations.length > 1;
   const singleLoc = locations.length === 1;
 

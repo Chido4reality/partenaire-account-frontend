@@ -16,6 +16,7 @@ import { hasFeature, getCapabilities } from "../utils/planCapabilities";
 import { useLiteMode } from "../hooks/useLiteMode";
 import { useTrialState } from "../hooks/useTrialState";
 import { SHOP_TZ } from "../utils/shopTime";
+import { isGoodsBuffer, locationLabel, locationTypeLabel } from "../utils/locations"; // GOODS-BUFFER
 
 const ROLES = [
   { value: "cashier",    en: "Cashier",    fr: "Caissier",     color: "#94a3b8" },
@@ -855,28 +856,31 @@ export default function SettingsPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {locations.map(loc => {
               const isActive = selectedLocation?.id === loc.id;
+              // GOODS-BUFFER: the system location — shown, but never active, edited or removed.
+              const isBuffer = isGoodsBuffer(loc);
               return (
                 <div key={loc.id} style={{ background: "var(--bg-card)", border: `1px solid ${isActive ? "var(--brand)" : "var(--border)"}`, borderRadius: 12, padding: "16px 20px", display: "flex", alignItems: "center", gap: 16 }}>
                   <div style={{ width: 40, height: 40, borderRadius: 10, background: loc.type === "warehouse" ? "rgba(251,197,3,0.15)" : "rgba(16,185,129,0.15)", color: loc.type === "warehouse" ? "var(--brand-light)" : "#34d399", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 16, flexShrink: 0 }}>
                     {loc.name.charAt(0).toUpperCase()}
                   </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>{loc.name}</div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{locationLabel(loc, lang)}</div>
                     <div style={{ fontSize: 12, color: "var(--text-muted)", display: "flex", gap: 10, marginTop: 2, flexWrap: "wrap" }}>
-                      <span style={{ background: loc.type === "warehouse" ? "rgba(251,197,3,0.12)" : "rgba(16,185,129,0.12)", color: loc.type === "warehouse" ? "var(--brand-light)" : "#34d399", padding: "1px 8px", borderRadius: 8, fontSize: 11, fontWeight: 600 }}>{loc.type}</span>
+                      <span style={{ background: loc.type === "warehouse" ? "rgba(251,197,3,0.12)" : "rgba(16,185,129,0.12)", color: loc.type === "warehouse" ? "var(--brand-light)" : "#34d399", padding: "1px 8px", borderRadius: 8, fontSize: 11, fontWeight: 600 }}>{locationTypeLabel(loc, lang)}</span>
+                      {isBuffer && <span>{lang === "en" ? "Goods land here on release · not a selling location" : "La marchandise arrive ici à la libération · pas un lieu de vente"}</span>}
                       {loc.address && <span>{loc.address}</span>}
                       {loc.phone && <span>{loc.phone}</span>}
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    {isActive ? (
+                    {isBuffer ? null : isActive ? (
                       <span style={{ fontSize: 11, background: "rgba(16,185,129,0.15)", color: "#34d399", padding: "4px 12px", borderRadius: 20, fontWeight: 600 }}>✓ {lang === "en" ? "Active" : "Actif"}</span>
                     ) : (
                       <button className="btn btn-secondary btn-sm" onClick={() => setLocation(loc)}>
                         {lang === "en" ? "Set active" : "Activer"}
                       </button>
                     )}
-                    {isOwner && (
+                    {isOwner && !isBuffer && (
                       <button className="btn btn-secondary btn-sm" onClick={() => openEdit(loc)}>
                         {lang === "en" ? "Edit" : "Modifier"}
                       </button>
@@ -2330,7 +2334,7 @@ export default function SettingsPage() {
                 <select className="input" value={staffForm.assigned_location_id || ""}
                   onChange={e => setSF("assigned_location_id", e.target.value)}>
                   <option value="">{lang === "en" ? "— None (org-wide / all branches) —" : "— Aucun (toute l'organisation / toutes les branches) —"}</option>
-                  {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
+                  {locations.filter(l => !isGoodsBuffer(l)).map(l => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
                 </select>
                 {/* MP-TRANSFER-GOVERNANCE Part 2: for a WAREHOUSE keeper this field is not
                     optional — the transfer scope gate fails CLOSED without it, so an

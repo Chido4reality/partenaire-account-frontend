@@ -29,6 +29,7 @@ import MultipartBuilder, { partsToPayload, emptyPart } from "../components/commo
 import MultipartAvailability from "../components/common/MultipartAvailability";
 import { useLiteMode } from "../hooks/useLiteMode";
 import { parseProductImport, buildProductTemplateXlsx } from "../utils/productImport";
+import { isGoodsBuffer, withoutGoodsBuffer, locationLabel, locationTypeLabel } from "../utils/locations"; // GOODS-BUFFER
 
 // Sprint C — shared helper for the 4 product entry paths. Reads a File
 // from the camera/file picker, resizes if larger than 1920px on the
@@ -289,6 +290,9 @@ export default function InventoryPage() {
   const alerts = alertData?.data || [];
   const products = productsData?.data || [];
   const locations = locationsData?.data || [];
+  // GOODS-BUFFER: goods enter the Goods Buffer only by a buffer release — never by Receive
+  // Goods, opening stock, Rapid Entry, import or kit opening stock.
+  const receiveLocations = withoutGoodsBuffer(locations);
   const allStock = allStockData?.data || [];
 
   // MP-STOCK-LOCATION-FILTER: pick a sane default for the in-tab Location
@@ -303,7 +307,7 @@ export default function InventoryPage() {
   useEffect(() => {
     if (locFilterTouchedRef.current) return;
     if (!locations.length) return;
-    const next = selectedLocation?.id || locations[0]?.id || "";
+    const next = selectedLocation?.id || receiveLocations[0]?.id || "";
     setLocStockFilter(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locations.length, selectedLocation?.id]);
@@ -320,7 +324,7 @@ export default function InventoryPage() {
   // selectedLocation, else first location) so the Quantity field is
   // enabled by default and entering a number actually applies. Users
   // who deliberately want to add later can still switch to "Skip".
-  const defaultInitialLocId = selectedLocation?.id || locations[0]?.id || "";
+  const defaultInitialLocId = selectedLocation?.id || receiveLocations[0]?.id || "";
   // Add Product modal: seed when it opens, unless the user has already
   // picked something (in which case respect their choice).
   useEffect(() => {
@@ -388,6 +392,9 @@ export default function InventoryPage() {
   const filteredProducts = search ? products.filter(p => fuzzyMatch(p.name, search) || (p.barcode && p.barcode.includes(search)) || (p.sku && p.sku.toLowerCase().includes(search.toLowerCase()))) : products;
 
   const totalStockValue = isOwner ? stock.reduce((sum, s) => sum + (+s.quantity * +(s.pa_products?.cost_price || 0)), 0) : 0;
+  // GOODS-BUFFER: the part of that value still sitting in the Goods Buffer (released, not yet
+  // transferred to a shop) — shown beside the total, not added to it twice.
+  const bufferStockValue = isOwner ? stock.filter(s => isGoodsBuffer(s.pa_locations)).reduce((sum, s) => sum + (+s.quantity * +(s.pa_products?.cost_price || 0)), 0) : 0;
 
   const invalidateAll = () => {
     // LAUNCH-BATCH-2b (a): the v5 OBJECT form. The old array form —
@@ -1161,7 +1168,7 @@ export default function InventoryPage() {
     if (!file) return;
     setImportFile(file); setImportError(""); setImportResults(null); setImportPreview([]); setImportParsing(true);
     try {
-      const { rows } = await parseProductImport(file, locations);
+      const { rows } = await parseProductImport(file, receiveLocations);
       if (rows.length === 0) {
         setImportError(en ? "No rows found. Fill the 'Products' sheet and try again." : "Aucune ligne trouvée. Remplissez la feuille 'Products' et réessayez.");
       } else {
@@ -1176,7 +1183,7 @@ export default function InventoryPage() {
 
   const downloadTemplate = async () => {
     try {
-      const blob = await buildProductTemplateXlsx(locations, lang === "en");
+      const blob = await buildProductTemplateXlsx(receiveLocations, lang === "en");
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a"); a.href = url; a.download = "mon_partenaire_products_template.xlsx";
       a.click(); URL.revokeObjectURL(url);
@@ -1283,6 +1290,7 @@ export default function InventoryPage() {
           <div style={{ display: "flex", gap: 16, marginTop: 4, flexWrap: "wrap", alignItems: "center" }}>
             {alerts.length > 0 && <div style={{ fontSize: 12, color: "#fbbf24" }}>⚠️ {alerts.length} {lang === "en" ? "items below minimum" : "articles sous le minimum"}</div>}
             {isOwner && <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{lang === "en" ? "Stock value:" : "Valeur stock:"} <strong style={{ color: "var(--brand-light)" }}>{fmt(totalStockValue)}</strong></div>}
+            {isOwner && bufferStockValue > 0 && <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{lang === "en" ? "of which in goods buffer:" : "dont en zone tampon :"} <strong>{fmt(bufferStockValue)}</strong></div>}
             {/* Sprint A: inventory cap usage badge. Hidden on plans with
                 unlimited inventory (Trial/Gold/Premium). */}
             {planCaps.inventory_cap != null && (
@@ -1417,7 +1425,7 @@ export default function InventoryPage() {
             >
               <option value="">📍 {lang === "en" ? "All locations" : "Tous les emplacements"}</option>
               {locations.map(l => (
-                <option key={l.id} value={l.id}>📍 {l.name}</option>
+                <option key={l.id} value={l.id}>📍 {locationLabel(l, lang)}</option>
               ))}
             </select>
           )}
@@ -1507,7 +1515,8 @@ export default function InventoryPage() {
                   // occurrence only to avoid duplicate publish controls.
                   const dozieButtonSeen = new Set();
                   return filtered.map(s => {
-                  const isLow = s.quantity <= s.min_quantity;
+                  // GOODS-BUFFER: alerts off (buffer rows) means never "low", never red.
+                  const isLow = s.quantity <= s.min_quantity && s.alert_enabled !== false;
                   const p = s.pa_products;
                   const dozieListing = dozieListingByProductId.get(s.product_id) || null;
                   const dozieFirst = !dozieButtonSeen.has(s.product_id);
@@ -1519,7 +1528,7 @@ export default function InventoryPage() {
                         {p?.barcode && <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>{p.barcode}</div>}
                       </td>
                       <td style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text-muted)", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis" }}>{p?.sku || "—"}</td>
-                      <td><span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: s.pa_locations?.type === "warehouse" ? "rgba(251,197,3,0.15)" : "rgba(16,185,129,0.15)", color: s.pa_locations?.type === "warehouse" ? "var(--brand-light)" : "#34d399" }}>{s.pa_locations?.name}</span></td>
+                      <td><span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: s.pa_locations?.type === "warehouse" ? "rgba(251,197,3,0.15)" : "rgba(16,185,129,0.15)", color: s.pa_locations?.type === "warehouse" ? "var(--brand-light)" : "#34d399" }}>{locationLabel(s.pa_locations, lang)}</span></td>
                       <td>
                         {s.slot_code ? (
                           <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 6, background: "rgba(251,191,36,0.15)", color: "#fbbf24", fontFamily: "monospace", fontWeight: 700 }}>
@@ -1608,7 +1617,7 @@ export default function InventoryPage() {
                 <tr>
                   <th style={{ minWidth: 160 }}>Product</th>
                   <th>Unit</th>
-                  {locations.map(l => <th key={l.id} style={{ textAlign: "right", minWidth: 110 }}><div>{l.name}</div><div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 400 }}>{l.type}</div></th>)}
+                  {locations.map(l => <th key={l.id} style={{ textAlign: "right", minWidth: 110 }}><div>{locationLabel(l, lang)}</div><div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 400 }}>{locationTypeLabel(l, lang)}</div></th>)}
                   <th style={{ textAlign: "right", color: "var(--brand-light)" }}>TOTAL</th>
                   {isOwner && <th style={{ textAlign: "right", color: "#fbbf24" }}>Value</th>}
                 </tr>
@@ -1830,7 +1839,7 @@ export default function InventoryPage() {
                   🧩 {lang === "en" ? "Multi-part product (kit)" : "Produit multi-pièces (kit)"}
                 </label>
                 {newProduct.is_multipart && (
-                  <MultipartBuilder parts={newParts} setParts={setNewParts} products={products} locations={locations} lang={lang} />
+                  <MultipartBuilder parts={newParts} setParts={setNewParts} products={products} locations={receiveLocations} lang={lang} />
                 )}
               </div>
             )}
@@ -1852,7 +1861,7 @@ export default function InventoryPage() {
                   <label className="label">Location</label>
                   <select className="input" value={newProduct.initial_location_id} onChange={e => setNewProduct(p => ({ ...p, initial_location_id: e.target.value }))}>
                     <option value="">{lang === "en" ? "Skip (add later)" : "Ignorer"}</option>
-                    {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                    {receiveLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                   </select>
                 </div>
                 <div className="form-group">
@@ -1907,7 +1916,7 @@ export default function InventoryPage() {
                 <label className="label">{lang === "en" ? "Destination *" : "Destination *"}</label>
                 <select className="input" value={receiveForm.location_id} onChange={e => setReceiveForm(f => ({ ...f, location_id: e.target.value }))}>
                   <option value="">{lang === "en" ? "Select location" : "Choisir emplacement"}</option>
-                  {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
+                  {receiveLocations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
                 </select>
               </div>
               <div className="form-group">
@@ -2255,7 +2264,7 @@ export default function InventoryPage() {
                   🧩 {lang === "en" ? "Multi-part product (kit)" : "Produit multi-pièces (kit)"}
                 </label>
                 {rapidItem.is_multipart && (
-                  <MultipartBuilder parts={rapidParts} setParts={setRapidParts} products={products} locations={locations} lang={lang} />
+                  <MultipartBuilder parts={rapidParts} setParts={setRapidParts} products={products} locations={receiveLocations} lang={lang} />
                 )}
               </div>
             )}
@@ -2274,7 +2283,7 @@ export default function InventoryPage() {
                   <label className="label">Location</label>
                   <select className="input" value={rapidItem.initial_location_id} onChange={e => setRapidItem(p => ({ ...p, initial_location_id: e.target.value }))}>
                     <option value="">Skip</option>
-                    {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                    {receiveLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                   </select>
                 </div>
                 <div className="form-group">

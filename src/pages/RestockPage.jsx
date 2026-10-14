@@ -4,7 +4,7 @@
 //   Ordered   — past sent orders (date-filtered) → edit + re-send (new dated order)
 //   Unstocked — ignored products (hidden from To Buy) → re-add
 import { useState, useMemo, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "../utils/api";
 import { usePlaceholders } from "../utils/placeholders";
@@ -16,6 +16,7 @@ import { PLAY_STORE_URL } from "../utils/receiptExtras"; // reuse the SAME app-d
 import DateRangeFilter, { inRange, wideRange } from "../components/common/DateRangeFilter";
 import ExpiryFields, { expiryMissing } from "../components/common/ExpiryFields"; // EXPIRY-TRACKING
 import { SHOP_TZ } from "../utils/shopTime";
+import { withoutGoodsBuffer } from "../utils/locations"; // GOODS-BUFFER
 
 function toArray(x) {
   if (Array.isArray(x)) return x;
@@ -173,6 +174,7 @@ export default function RestockPage() {
                   current={r.current_qty} level={r.stock_level}
                   daysOfCover={r.days_of_cover} sold7d={r.sold_7d}
                   byLocation={r.by_location} transferHint={r.transfer_hint}
+                  bufferQty={r.buffer_qty} bufferLocationId={r.buffer_location_id}
                   suggestedQty={r.suggested_qty}
                   checked={st.checked} qty={st.qty}
                   onCheck={v => setLine(r.product_id, { checked: v, qty: st.qty })}
@@ -251,7 +253,7 @@ export default function RestockPage() {
 // MP-RESTOCK-PER-SHOP (hybrid): the collapsed line stays ONE line per product (scannable);
 // tap 🏬 to expand each shop's qty/min/days + which are short + an ADVISORY transfer hint
 // (text only — expanding/reading it moves no stock).
-function ToBuyRow({ en, name, unit, current, level, daysOfCover, sold7d, byLocation, transferHint, suggestedQty, checked, qty, onCheck, onQty, onUnstock, onRemove, manual }) {
+function ToBuyRow({ en, name, unit, current, level, daysOfCover, sold7d, byLocation, transferHint, bufferQty, bufferLocationId, suggestedQty, checked, qty, onCheck, onQty, onUnstock, onRemove, manual }) {
   const [open, setOpen] = useState(false);
   const shops = byLocation || [];
   const multiShop = !manual && shops.length > 1;
@@ -297,6 +299,17 @@ function ToBuyRow({ en, name, unit, current, level, daysOfCover, sold7d, byLocat
           )}
         </div>
       </div>
+      {/* GOODS-BUFFER: released stock still in the buffer is a SOURCE — move it before buying
+          (the server already lowered the quantity to buy by it). */}
+      {!manual && Number(bufferQty) > 0 && (
+        <div style={{ marginTop: 6, padding: "6px 8px", background: "rgba(251,197,3,0.10)", borderRadius: 8, fontSize: 11.5 }}>
+          📦 {bufferLocationId
+            ? <Link to={"/transfers?from=" + bufferLocationId} style={{ color: "var(--brand-light)", fontWeight: 600 }}>
+                {en ? `${Number(bufferQty)} in Goods Buffer — transfer it` : `${Number(bufferQty)} en Zone tampon — transférez-les`}
+              </Link>
+            : (en ? `${Number(bufferQty)} in Goods Buffer — transfer it` : `${Number(bufferQty)} en Zone tampon — transférez-les`)}
+        </div>
+      )}
       {/* MP-RESTOCK-PER-SHOP: expand — per-shop qty/min/days, short shops flagged,
           plus the advisory transfer hint. No action here changes stock. */}
       {multiShop && open && (
@@ -417,7 +430,8 @@ function ReceiveModal({ en, order, onClose, onDone }) {
   // match the queryFn shape every other consumer uses (see StockCheckPage.jsx),
   // or a stale cached envelope from another page leaves this list empty.
   const locs = useQuery({ queryKey: ["locations"], queryFn: () => api.get("/locations").then(r => r.data) });
-  const locList = Array.isArray(locs.data?.data) ? locs.data.data : [];
+  // GOODS-BUFFER: a delivery is never received into (or moved to) the Goods Buffer.
+  const locList = withoutGoodsBuffer(Array.isArray(locs.data?.data) ? locs.data.data : []);
 
   const pending   = items.filter(it => it.received_quantity === null || it.received_quantity === undefined);
   const doneItems = items.filter(it => it.received_quantity !== null && it.received_quantity !== undefined);

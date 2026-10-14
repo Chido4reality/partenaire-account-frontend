@@ -88,12 +88,22 @@ export const useOfflineStore = create(persist(
   { name: "mp-offline", storage: safeJSONStorage }
 ));
 
+// GOODS-BUFFER: the selected location is where sales, tickets, shifts and expenses happen,
+// so it can never be the Goods Buffer — refused on set, and dropped if a device rehydrates
+// one stored before this guard existed.
+const sellableOrNull = (loc) => (loc && loc.kind === "goods_buffer" ? null : loc);
 export const useSettingsStore = create(persist(
   (set) => ({
     selectedLocation: null,
-    setLocation: (loc) => set({ selectedLocation: loc }),
+    setLocation: (loc) => set({ selectedLocation: sellableOrNull(loc) }),
   }),
-  { name: "mp-settings", storage: safeJSONStorage }
+  {
+    name: "mp-settings", storage: safeJSONStorage,
+    merge: (persisted, current) => ({
+      ...current, ...(persisted || {}),
+      selectedLocation: sellableOrNull(persisted && persisted.selectedLocation) || null,
+    }),
+  }
 ));
 
 // MP-POS-CART-PERSIST: keep an in-progress sale alive across navigation,

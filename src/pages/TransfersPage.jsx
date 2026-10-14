@@ -18,6 +18,7 @@ import { useSearchParams } from "react-router-dom";
 import TransferDetailModal from "../components/TransferDetailModal"; // MP-STAFF-ACTIVITY-LEDGER Phase 3
 import { subscribe, listFailedPermanent, ownerMismatchOf, continueWithConfirm, discard } from "../utils/pendingSync"; // owner count refused on replay
 import { ownerShortLocal } from "../utils/ownerMismatch"; // owner short count, checked on the phone
+import { isGoodsBuffer, locationLabel, locationTypeLabel } from "../utils/locations"; // GOODS-BUFFER
 
 export default function TransfersPage() {
   const { lang } = useLangStore();
@@ -39,6 +40,15 @@ export default function TransfersPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [detailTransferId, setDetailTransferId] = useState(searchParams.get("tr") || null);
   useEffect(() => { const tr = searchParams.get("tr"); if (tr) setDetailTransferId(tr); }, [searchParams]);
+  // GOODS-BUFFER: ?from=<location id> opens a NEW transfer with that source already chosen
+  // (the "Transfer" button on the Goods Buffer page and the Restock buffer hint).
+  useEffect(() => {
+    const from = searchParams.get("from");
+    if (!from) return;
+    setEditingId(null); setStep(1); setMode("new"); setFromLoc(from); setToLoc("");
+    searchParams.delete("from"); setSearchParams(searchParams, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
   // VARIANCE OUTCOMES: ?why=<outcome> = what the owner already answered on the
   // stock-check mismatch that sent him here. Carried so it is not lost on the way.
   const handedOffReason = searchParams.get("why") || null;
@@ -66,8 +76,8 @@ export default function TransfersPage() {
     setWaybillBusy(tr.id);
     try {
       const org = settingsData?.data || {};
-      const fromName = locations.find(l => l.id === tr.from_location)?.name || (lang === "en" ? "External" : "Externe");
-      const toName   = locations.find(l => l.id === tr.to_location)?.name || (lang === "en" ? "External" : "Externe");
+      const fromName = locationLabel(locations.find(l => l.id === tr.from_location), lang) || (lang === "en" ? "External" : "Externe");
+      const toName   = locationLabel(locations.find(l => l.id === tr.to_location), lang) || (lang === "en" ? "External" : "Externe");
       const { openWaybill } = await import("../utils/waybill"); // code-split: loads jsPDF only now
       await openWaybill({ org, lang, transfer: tr, fromName, toName });
     } catch (e) {
@@ -557,7 +567,7 @@ export default function TransfersPage() {
               <select className="input" value={fromLoc} onChange={e => { setFromLoc(e.target.value); setPickerSel({}); setPickerOpen(false); }}
                 style={{ fontSize: 15, padding: "12px 14px" }}>
                 <option value="">{lang === "en" ? "Select source location" : "Choisir emplacement source"}</option>
-                {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
+                {locations.map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)} ({locationTypeLabel(l, lang)})</option>)}
               </select>
             </div>
 
@@ -568,7 +578,8 @@ export default function TransfersPage() {
               <select className="input" value={toLoc} onChange={e => setToLoc(e.target.value)}
                 style={{ fontSize: 15, padding: "12px 14px" }}>
                 <option value="">{lang === "en" ? "Select destination" : "Choisir destination"}</option>
-                {locations.filter(l => l.id !== fromLoc).map(l => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
+                {/* GOODS-BUFFER: goods reach the buffer by release or by a return — never as a chosen destination */}
+                {locations.filter(l => l.id !== fromLoc && !isGoodsBuffer(l)).map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)} ({locationTypeLabel(l, lang)})</option>)}
               </select>
             </div>
 
@@ -609,7 +620,7 @@ export default function TransfersPage() {
               {lang === "en" ? "Scan or search items" : "Scanner ou chercher les articles"}
             </div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 20 }}>
-              {locations.find(l => l.id === fromLoc)?.name || "External"} > {locations.find(l => l.id === toLoc)?.name || "External"}
+              {locationLabel(locations.find(l => l.id === fromLoc), lang) || "External"} > {locationLabel(locations.find(l => l.id === toLoc), lang) || "External"}
             </div>
 
             {/* Scan input — rapid: each scan adds 1 (merges) + keeps focus */}
@@ -787,12 +798,12 @@ export default function TransfersPage() {
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, fontSize: 14 }}>
                 <div>
                   <div style={{ color: "var(--text-muted)", fontSize: 11, marginBottom: 4 }}>FROM</div>
-                  <div style={{ fontWeight: 600 }}>{locations.find(l => l.id === fromLoc)?.name || "External"}</div>
+                  <div style={{ fontWeight: 600 }}>{locationLabel(locations.find(l => l.id === fromLoc), lang) || "External"}</div>
                 </div>
                 <div style={{ fontSize: 24, color: "var(--text-muted)" }}>></div>
                 <div style={{ textAlign: "right" }}>
                   <div style={{ color: "var(--text-muted)", fontSize: 11, marginBottom: 4 }}>TO</div>
-                  <div style={{ fontWeight: 600 }}>{locations.find(l => l.id === toLoc)?.name || "External"}</div>
+                  <div style={{ fontWeight: 600 }}>{locationLabel(locations.find(l => l.id === toLoc), lang) || "External"}</div>
                 </div>
               </div>
 
@@ -906,8 +917,8 @@ export default function TransfersPage() {
           )}
           <div style={{ display: "grid", gap: 10 }}>
             {incoming.map(tr => {
-              const fromName = locations.find(l => l.id === tr.from_location)?.name || "External";
-              const toName   = locations.find(l => l.id === tr.to_location)?.name || "External";
+              const fromName = locationLabel(locations.find(l => l.id === tr.from_location), lang) || "External";
+              const toName   = locationLabel(locations.find(l => l.id === tr.to_location), lang) || "External";
               const mine = tr.dispatched_by && tr.dispatched_by === myId;
               return (
                 <div key={tr.id} style={{ border: "1px solid var(--border)", borderLeft: "3px solid #fbbf24", borderRadius: 12, padding: "12px 14px" }}>
@@ -996,8 +1007,8 @@ export default function TransfersPage() {
         <div style={{ display: "grid", gap: 10 }}>
           {transfers.map(tr => {
             const sc = statusColor(tr.status);
-            const fromName = locations.find(l => l.id === tr.from_location)?.name || "External";
-            const toName   = locations.find(l => l.id === tr.to_location)?.name || "External";
+            const fromName = locationLabel(locations.find(l => l.id === tr.from_location), lang) || "External";
+            const toName   = locationLabel(locations.find(l => l.id === tr.to_location), lang) || "External";
             return (
               <div key={tr.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 14, padding: "16px 20px" }}>
                 {/* flexWrap + gap so the action group (flexShrink:0) wraps BELOW the

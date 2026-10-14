@@ -16,6 +16,7 @@ import { useLangStore, useAuthStore } from "../store";
 import { useCurrency } from "../utils/useCurrency";
 import useExpiryFeature from "../hooks/useExpiryFeature";
 import PaywallModal from "../components/common/PaywallModal";
+import { withoutGoodsBuffer } from "../utils/locations"; // GOODS-BUFFER
 
 // Same chip vocabulary as the Filters screen.
 const card = { background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 12 };
@@ -68,7 +69,8 @@ export default function CheckExpiryLowPage() {
   // nothing to show must answer "nothing", not be missing from the list.
   // MP-LOCATIONS-CACHE-FIX: shared ["locations"] key, same queryFn shape as every consumer.
   const locsQ = useQuery({ queryKey: ["locations"], queryFn: () => api.get("/locations").then(r => r.data), enabled: canExpiry });
-  const allLocations = Array.isArray(locsQ.data?.data) ? locsQ.data.data : [];
+  // GOODS-BUFFER: Check Expiry / Low never covers the buffer (the server leaves its rows out).
+  const allLocations = withoutGoodsBuffer(Array.isArray(locsQ.data?.data) ? locsQ.data.data : []);
   const seesValue = expiring.some(r => r.est_value !== null) || canWriteOff;
 
   const refresh = () => {

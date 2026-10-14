@@ -16,6 +16,7 @@ import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 import useOwnerApproval from "../hooks/useOwnerApproval";
 import RestrictedAction from "../components/common/RestrictedAction";
 import { saleStatusLabel } from "../utils/saleStatus"; // fix 3
+import { isSellableLocation } from "../utils/locations"; // GOODS-BUFFER
 
 const PAYMENT_METHODS = [
   { key: "cash",         icon: "💵", en: "Cash",        fr: "Espèces" },
@@ -521,7 +522,9 @@ export default function CustomersPage() {
     queryKey: ["locations"],
     queryFn: () => api.get("/locations").then(r => r.data),
   });
-  const activeLocations = (locResp?.data || []).filter(l => l.is_active !== false);
+  // GOODS-BUFFER: customers buy at branches, never at the buffer — it neither counts as a
+  // branch nor appears in the branch filter.
+  const activeLocations = (locResp?.data || []).filter(isSellableLocation);
   const multiBranch    = activeLocations.length > 1;
   const branchCore     = multiBranch && (effectivePlan === "pro" || effectivePlan === "pro_plus");
   const branchAdvanced = multiBranch && effectivePlan === "pro_plus";

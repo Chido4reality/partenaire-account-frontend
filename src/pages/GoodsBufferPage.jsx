@@ -1,18 +1,23 @@
 // MP-GOODS-BUFFER — pre-register arrived goods (quantity only, NO price). Any staff member
-// captures what landed; the boss (or a permitted staffer) later prices it and RELEASES it
-// into inventory, splitting the quantity across locations. Until release, buffer goods are
-// a display flag only — never stock, never sellable, never in reports/alerts.
+// captures what landed; the boss (or a permitted staffer) later prices it and RELEASES it.
+// Until release, buffer lines are a display flag only — never stock, never sellable.
 //
-// This screen references only the product CATALOGUE (to identify a product) — it has no
-// view of stock. Non-privileged staff never see a price field and never send price params;
-// the release RPC is the real gate.
+// GOODS-BUFFER LOCATION (2026-10-15): on a plan with transfers ("buffer mode", from
+// GET /goods-buffer/access), a release puts ALL the goods into the org's system location
+// "Goods Buffer" / "Zone tampon" — no split — and normal transfers move them out (the
+// "Transfer" button opens a new transfer with From = the buffer). The "In Goods Buffer" tab
+// lists what sits there now (value only for those allowed to see cost) and the returns on
+// their way back. Without transfers (Lite, expired plans) the release splits across
+// locations exactly as before. Non-privileged staff never see a price field; the release
+// RPC is the real gate.
 
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import api from "../utils/api";
 import { useAuthStore, useLangStore, useSettingsStore } from "../store";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
+import { locationLabel } from "../utils/locations"; // GOODS-BUFFER
 import BufferDetailModal from "../components/BufferDetailModal"; // MP-STAFF-ACTIVITY-LEDGER Phase 3
 import { useCurrency } from "../utils/useCurrency";
 import ProductSearchBox from "../components/common/ProductSearchBox";
@@ -75,13 +80,22 @@ export default function GoodsBufferPage() {
   });
   const locsQ = useQuery({ queryKey: ["locations"], queryFn: () => api.get("/locations").then(r => r.data) });
   const locList = Array.isArray(locsQ.data?.data) ? locsQ.data.data : [];
-  const locName = (id) => locList.find(l => l.id === id)?.name || "";
+  const locName = (id) => locationLabel(locList.find(l => l.id === id), lang);
   const canRelease = !!accessQ.data?.can_release;
   const pending = pendingQ.data || [];
+  // GOODS-BUFFER: buffer mode = releases go to the buffer location only.
+  const bufferLoc = accessQ.data?.buffer_mode ? (accessQ.data?.buffer_location || null) : null;
+  const bufferVisible = !!accessQ.data?.buffer_visible && !!accessQ.data?.buffer_location;
+  const [view, setView] = useState("pending"); // pending | stock
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["goods-buffer-pending"] });
     qc.invalidateQueries({ queryKey: ["goods-buffer-count"] });
+    // GOODS-BUFFER: a release changes stock and what the buffer holds.
+    qc.invalidateQueries({ queryKey: ["goods-buffer-stock"] });
+    qc.invalidateQueries({ queryKey: ["goods-buffer-access"] });
+    qc.invalidateQueries({ queryKey: ["stock"] });
+    qc.invalidateQueries({ queryKey: ["transfers"] });
   };
 
   // ── Add-entry form ───────────────────────────────────────────
@@ -186,10 +200,27 @@ export default function GoodsBufferPage() {
         <button className="btn btn-secondary" onClick={sendWhatsApp} title="WhatsApp">💬 {en ? "Share" : "Partager"}</button>
       </div>
       <p style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 0 }}>
-        {en ? "Arrived but not yet in stock. Register what landed (quantity only). The boss prices it and adds it to inventory."
-            : "Arrivé mais pas encore en stock. Enregistrez ce qui est arrivé (quantité seulement). Le patron fixe le prix et l'ajoute à l'inventaire."}
+        {bufferLoc
+          ? (en ? "Arrived but not yet in stock. Register what landed (quantity only). The boss prices it and releases it into the Goods Buffer; a transfer then sends it to a shop."
+                : "Arrivé mais pas encore en stock. Enregistrez ce qui est arrivé (quantité seulement). Le patron fixe le prix et le libère en zone tampon ; un transfert l'envoie ensuite vers une boutique.")
+          : (en ? "Arrived but not yet in stock. Register what landed (quantity only). The boss prices it and adds it to inventory."
+                : "Arrivé mais pas encore en stock. Enregistrez ce qui est arrivé (quantité seulement). Le patron fixe le prix et l'ajoute à l'inventaire.")}
       </p>
 
+      {/* GOODS-BUFFER: Pending | In Goods Buffer */}
+      {bufferVisible && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+          {[{ key: "pending", en: "Pending", fr: "En attente" }, { key: "stock", en: "In Goods Buffer", fr: "En zone tampon" }].map(t => (
+            <button key={t.key} className={`btn ${view === t.key ? "btn-primary" : "btn-secondary"}`} style={{ flex: 1 }} onClick={() => setView(t.key)}>
+              {en ? t.en : t.fr}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {bufferVisible && view === "stock" ? (
+        <BufferStockTab en={en} lang={lang} fmt={fmt} access={accessQ.data} locList={locList} />
+      ) : (<>
       {/* ── B. ADD ENTRY (all staff) ── */}
       <div className="card" style={{ padding: 14, marginBottom: 16 }}>
         <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
@@ -233,7 +264,7 @@ export default function GoodsBufferPage() {
             onChange={e => setQty(e.target.value)} placeholder={en ? "Quantity *" : "Quantité *"} />
           <select className="input" style={{ flex: 1.4 }} value={addLoc} onChange={e => setAddLoc(e.target.value)}>
             <option value="">{en ? "Where it landed" : "Où c'est arrivé"}</option>
-            {locList.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            {locList.map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)}</option>)}
           </select>
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
@@ -250,7 +281,7 @@ export default function GoodsBufferPage() {
         <strong>{en ? "Waiting to be added to stock" : "En attente d'ajout au stock"}</strong>
         <select className="input" style={{ width: 180 }} value={locFilter} onChange={e => setLocFilter(e.target.value)}>
           <option value="">{en ? "All locations" : "Tous les sites"}</option>
-          {locList.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+          {locList.map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)}</option>)}
         </select>
       </div>
 
@@ -300,7 +331,7 @@ export default function GoodsBufferPage() {
                   <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
                     {releasable && (
                       <button className="btn btn-primary" style={{ flex: 1, minWidth: 130 }} onClick={() => setReleaseFor(r)}>
-                        ➕ {en ? "Add to inventory" : "Ajouter au stock"}
+                        ➕ {bufferLoc ? (en ? "Price & release" : "Fixer le prix et libérer") : (en ? "Add to inventory" : "Ajouter au stock")}
                       </button>
                     )}
                     {releasable && (
@@ -320,6 +351,7 @@ export default function GoodsBufferPage() {
           })}
         </div>
       )}
+      </>)}
 
       {/* F-A: DUPLICATE CAPTURE PROMPT — see DuplicateCapturePrompt at module scope. */}
       {dupPrompt && (
@@ -329,6 +361,8 @@ export default function GoodsBufferPage() {
       )}
       {releaseFor && (
         <ReleaseModal row={releaseFor} en={en} lang={lang} fmt={fmt} locList={locList}
+          bufferLoc={bufferLoc} canMoveBuffer={!!accessQ.data?.can_move_buffer}
+          onReleased={invalidate}
           onClose={() => setReleaseFor(null)} onDone={() => { setReleaseFor(null); invalidate(); }} />
       )}
       {closeFor && (
@@ -366,7 +400,7 @@ function SplitRows({ rows, setRows, locList, en }) {
 }
 
 // ── One kit part: existing product OR new inline part + qty-per-unit + its own split ──
-function PartRow({ part, onChange, onRemove, locList, en, lang }) {
+function PartRow({ part, onChange, onRemove, locList, en, lang, bufferKits }) {
   const setSplit = (updater) => onChange({ ...part, assignments: typeof updater === "function" ? updater(part.assignments) : updater });
   return (
     <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 10, marginBottom: 8 }}>
@@ -404,8 +438,15 @@ function PartRow({ part, onChange, onRemove, locList, en, lang }) {
         <input className="input" style={{ width: 90 }} type="number" inputMode="numeric" min="0" value={part.qty_per_unit}
           onChange={e => onChange({ ...part, qty_per_unit: e.target.value })} placeholder="1" />
       </div>
-      <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginBottom: 4 }}>{en ? "Quantity arrived — split across locations:" : "Quantité arrivée — répartir sur les sites :"}</div>
-      <SplitRows rows={part.assignments} setRows={setSplit} locList={locList} en={en} />
+      {bufferKits != null ? (
+        // GOODS-BUFFER: no split — this part's quantity is kits × qty per kit, all to the buffer.
+        <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+          {en ? `${num(bufferKits) * num(part.qty_per_unit)} go to the Goods Buffer` : `${num(bufferKits) * num(part.qty_per_unit)} vont en zone tampon`}
+        </div>
+      ) : (<>
+        <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginBottom: 4 }}>{en ? "Quantity arrived — split across locations:" : "Quantité arrivée — répartir sur les sites :"}</div>
+        <SplitRows rows={part.assignments} setRows={setSplit} locList={locList} en={en} />
+      </>)}
     </div>
   );
 }
@@ -491,8 +532,12 @@ export function DuplicateSiblingWarning({ siblings, en }) {
   );
 }
 
-function ReleaseModal({ row, en, lang, fmt, locList, onClose, onDone }) {
+function ReleaseModal({ row, en, lang, fmt, locList, bufferLoc, canMoveBuffer, onReleased, onClose, onDone }) {
   const remaining = num(row.qty_remaining);
+  const navigate = useNavigate();
+  // GOODS-BUFFER: buffer mode = one quantity (kits for a kit), all of it to the buffer.
+  const [bufQty, setBufQty] = useState(String(remaining));
+  const [released, setReleased] = useState(null); // the release result, shown before closing
   const isNew = !!row.is_new_product;
   const [sell, setSell] = useState("");
   const [cost, setCost] = useState("");
@@ -544,7 +589,7 @@ function ReleaseModal({ row, en, lang, fmt, locList, onClose, onDone }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const assigned = rows.reduce((s, r) => s + num(r.quantity), 0);
+  const assigned = bufferLoc ? num(bufQty) : rows.reduce((s, r) => s + num(r.quantity), 0);
   const left = remaining - assigned;
   const prices = () => ({
     sell_price: num(sell),
@@ -562,7 +607,15 @@ function ReleaseModal({ row, en, lang, fmt, locList, onClose, onDone }) {
 
   const mut = useMutation({
     mutationFn: (body) => api.post(`/goods-buffer/${row.buffer_id}/release`, body).then(r => r.data),
-    onSuccess: () => { toast.success(en ? "Added to inventory ✓" : "Ajouté au stock ✓"); onDone(); },
+    onSuccess: (r) => {
+      if (bufferLoc) {
+        // GOODS-BUFFER: say where it went and offer the next step instead of just closing.
+        toast.success(en ? "Released to the Goods Buffer ✓" : "Libéré en zone tampon ✓");
+        setReleased(r?.data || {}); if (onReleased) onReleased();
+        return;
+      }
+      toast.success(en ? "Added to inventory ✓" : "Ajouté au stock ✓"); onDone();
+    },
     onError: (e) => toast.error(errMsg(e, en)),
   });
 
@@ -575,17 +628,22 @@ function ReleaseModal({ row, en, lang, fmt, locList, onClose, onDone }) {
           const idBit = p.mode === "existing" ? (p.product ? { part_product_id: p.product.id } : null)
                                               : (p.new_name.trim() ? { new_part_name: p.new_name.trim(), unit: p.new_unit.trim() || null } : null);
           if (!idBit) return null;
-          const asg = p.assignments.filter(a => a.location_id && num(a.quantity) > 0).map(a => ({ location_id: a.location_id, quantity: num(a.quantity) }));
+          const asg = bufferLoc
+            ? (num(bufQty) * num(p.qty_per_unit) > 0 ? [{ location_id: bufferLoc.id, quantity: num(bufQty) * num(p.qty_per_unit) }] : [])
+            : p.assignments.filter(a => a.location_id && num(a.quantity) > 0).map(a => ({ location_id: a.location_id, quantity: num(a.quantity) }));
           if (!asg.length || num(p.qty_per_unit) <= 0) return null;
           return { ...idBit, quantity_per_unit: num(p.qty_per_unit), assignments: asg };
         })
         .filter(Boolean);
+      if (bufferLoc && (num(bufQty) <= 0 || num(bufQty) > remaining)) return toast.error(en ? "Enter how many kits to release (up to what's left)" : "Indiquez combien de kits libérer (au plus ce qui reste)");
       if (!kitParts.length) return toast.error(en ? "Add at least one part with qty-per-kit + a location" : "Ajoutez au moins une pièce avec qté/kit + un site");
       mut.mutate({ kit_parts: kitParts, ...prices(), ...newCodes(),
         merge_product_id: (isNew && mergeProduct) ? mergeProduct.id : null, invoice_ref: invoiceRef.trim() || null });
       return;
     }
-    const assignments = rows.filter(r => r.location_id && num(r.quantity) > 0).map(r => ({ location_id: r.location_id, quantity: num(r.quantity) }));
+    const assignments = bufferLoc
+      ? (num(bufQty) > 0 ? [{ location_id: bufferLoc.id, quantity: num(bufQty) }] : [])
+      : rows.filter(r => r.location_id && num(r.quantity) > 0).map(r => ({ location_id: r.location_id, quantity: num(r.quantity) }));
     if (!assignments.length) return toast.error(en ? "Add at least one location + quantity" : "Ajoutez au moins un site + une quantité");
     if (assigned > remaining) return toast.error(en ? "That's more than what's left" : "C'est plus que ce qui reste");
     if (tracked && expiryMissing(true, expDate)) return toast.error(en ? "Enter the expiry date" : "Saisissez la date d'expiration");
@@ -595,10 +653,35 @@ function ReleaseModal({ row, en, lang, fmt, locList, onClose, onDone }) {
 
   const addPart = () => setParts(ps => [...ps, { mode: "existing", product: null, new_name: "", new_unit: "", qty_per_unit: "1", assignments: [{ location_id: "", quantity: "" }] }]);
 
+  if (released) {
+    const bufName = locationLabel(bufferLoc, lang);
+    return (
+      <div className="modal-overlay" onClick={onDone}>
+        <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+          <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 8 }}>✓ {en ? `Now in the ${bufName}` : `Maintenant en ${bufName}`}</div>
+          <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 14, lineHeight: 1.5 }}>
+            {row.product_label} — {released.kits_released != null ? released.kits_released : released.released_now} {en ? "released" : "libéré(s)"}
+            {released.status === "partial" ? (en ? " · the rest stays pending" : " · le reste reste en attente") : ""}.{" "}
+            {en ? "Send it to a shop with a transfer — it can't be sold from the buffer."
+                : "Envoyez-le vers une boutique par un transfert — il ne peut pas être vendu depuis la zone tampon."}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onDone}>{en ? "Later" : "Plus tard"}</button>
+            {canMoveBuffer && (
+              <button className="btn btn-primary" style={{ flex: 1.6 }} onClick={() => { onDone(); navigate("/transfers?from=" + bufferLoc.id); }}>
+                {en ? "Transfer now" : "Transférer maintenant"}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()} style={{ maxHeight: "90vh", overflowY: "auto" }}>
-        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 2 }}>{en ? "Add to inventory" : "Ajouter au stock"}</div>
+        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 2 }}>{bufferLoc ? (en ? "Price & release" : "Fixer le prix et libérer") : (en ? "Add to inventory" : "Ajouter au stock")}</div>
         <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 10 }}>
           {row.product_label} — {remaining} {en ? "to release" : "à libérer"}
           {loadingInfo ? <span style={{ color: "var(--text-muted)" }}> · {en ? "loading prices…" : "chargement des prix…"}</span> : null}
@@ -643,8 +726,13 @@ function ReleaseModal({ row, en, lang, fmt, locList, onClose, onDone }) {
 
         {!kit ? (
           <>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>{en ? "Split across locations" : "Répartir sur les sites"}</div>
-            <SplitRows rows={rows} setRows={setRows} locList={locList} en={en} />
+            {bufferLoc ? (
+              <BufferQtyField en={en} lang={lang} bufferLoc={bufferLoc} value={bufQty} onChange={setBufQty}
+                label={en ? "Quantity to release" : "Quantité à libérer"} />
+            ) : (<>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>{en ? "Split across locations" : "Répartir sur les sites"}</div>
+              <SplitRows rows={rows} setRows={setRows} locList={locList} en={en} />
+            </>)}
             {canExpiry && isNew && !mergeProduct && (
               <TrackExpiryToggle en={en} checked={newTracked} onChange={setNewTracked} />
             )}
@@ -655,7 +743,7 @@ function ReleaseModal({ row, en, lang, fmt, locList, onClose, onDone }) {
             )}
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, marginBottom: 10,
                           color: left < 0 ? "#f87171" : "var(--text-secondary)" }}>
-              <span>{en ? "Assigned" : "Réparti"}: {assigned} / {remaining}</span>
+              <span>{bufferLoc ? (en ? "Releasing" : "Libération") : (en ? "Assigned" : "Réparti")}: {assigned} / {remaining}</span>
               <span>{en ? "Left" : "Reste"}: {left}</span>
             </div>
           </>
@@ -665,8 +753,12 @@ function ReleaseModal({ row, en, lang, fmt, locList, onClose, onDone }) {
               {en ? "The kit itself holds the price and NO stock. The quantities below belong to the parts — each part is stocked and split across locations."
                   : "Le kit lui-même porte le prix et AUCUN stock. Les quantités ci-dessous appartiennent aux pièces — chaque pièce est stockée et répartie sur les sites."}
             </div>
+            {bufferLoc && (
+              <BufferQtyField en={en} lang={lang} bufferLoc={bufferLoc} value={bufQty} onChange={setBufQty}
+                label={en ? "Kits to release" : "Kits à libérer"} />
+            )}
             {parts.map((p, i) => (
-              <PartRow key={i} part={p} locList={locList} en={en} lang={lang}
+              <PartRow key={i} part={p} locList={locList} en={en} lang={lang} bufferKits={bufferLoc ? bufQty : null}
                 onChange={np => setParts(ps => ps.map((x, j) => j === i ? np : x))}
                 onRemove={() => setParts(ps => ps.filter((_, j) => j !== i))} />
             ))}
@@ -680,12 +772,105 @@ function ReleaseModal({ row, en, lang, fmt, locList, onClose, onDone }) {
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onClose}>{en ? "Cancel" : "Annuler"}</button>
           <button className="btn btn-primary" style={{ flex: 2 }}
-            disabled={mut.isPending || num(sell) <= 0 || (!kit && (left < 0 || assigned === 0)) || (kit && parts.length === 0)}
+            disabled={mut.isPending || num(sell) <= 0 || (!kit && (left < 0 || assigned === 0)) || (kit && parts.length === 0)
+              || (kit && bufferLoc && (num(bufQty) <= 0 || num(bufQty) > remaining))}
             onClick={submit}>
-            {mut.isPending ? "…" : (en ? "Add to inventory" : "Ajouter au stock")}
+            {mut.isPending ? "…" : bufferLoc ? (en ? "Release to the Goods Buffer" : "Libérer en zone tampon") : (en ? "Add to inventory" : "Ajouter au stock")}
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// GOODS-BUFFER: buffer mode's single quantity, with where it goes said plainly.
+function BufferQtyField({ en, lang, bufferLoc, value, onChange, label }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginBottom: 6 }}>
+        📦 {en ? "Goes to:" : "Va vers :"} <strong>{locationLabel(bufferLoc, lang)}</strong>
+      </div>
+      <label className="label" style={{ fontSize: 11.5 }}>{label}</label>
+      <input className="input" type="number" inputMode="numeric" min="0" value={value} onChange={e => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+// GOODS-BUFFER: what sits in the buffer now + the returns on their way back to it.
+function BufferStockTab({ en, lang, fmt, access, locList }) {
+  const navigate = useNavigate();
+  const buf = access?.buffer_location;
+  const stockQ = useQuery({
+    queryKey: ["goods-buffer-stock"],
+    queryFn: () => api.get("/goods-buffer/stock").then(r => r.data?.data || null),
+    refetchInterval: 30000,
+  });
+  const incomingQ = useQuery({
+    queryKey: ["transfers", "to-buffer", buf?.id],
+    queryFn: () => api.get(`/transfers?to_location=${buf.id}&status=pending,in_transit`).then(toArr),
+    enabled: !!buf?.id,
+  });
+  const d = stockQ.data || {};
+  const items = (d.items || []).filter(it => num(it.quantity) > 0);
+  const incoming = incomingQ.data || [];
+  const nearest = (it) => (it.expiry || []).filter(e => e.expiry_date).sort((a, b) => String(a.expiry_date).localeCompare(String(b.expiry_date)))[0] || null;
+  const fromName = (id) => locationLabel(locList.find(l => l.id === id), lang) || (en ? "External" : "Externe");
+  const STATUS = { pending: en ? "Waiting to be sent" : "En attente d'envoi", in_transit: en ? "On its way" : "En route" };
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <strong>{en ? `In the ${locationLabel(buf, lang)} now` : `En ${locationLabel(buf, lang)} maintenant`}</strong>
+        {access?.can_move_buffer && items.length > 0 && (
+          <button className="btn btn-primary" onClick={() => navigate("/transfers?from=" + buf.id)}>🚚 {en ? "Transfer" : "Transférer"}</button>
+        )}
+      </div>
+      {stockQ.isLoading ? (
+        <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)" }}>{en ? "Loading…" : "Chargement…"}</div>
+      ) : stockQ.isError ? (
+        <div style={{ padding: 20, textAlign: "center", color: "#f87171" }}>{en ? "Could not load." : "Échec du chargement."}</div>
+      ) : items.length === 0 ? (
+        <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)" }}>{en ? "Nothing in the Goods Buffer." : "Rien en zone tampon."}</div>
+      ) : (
+        <div className="card" style={{ padding: 0, marginBottom: 14 }}>
+          {items.map((it, i) => {
+            const e = nearest(it);
+            return (
+              <div key={it.product_id} style={{ padding: "10px 13px", borderTop: i === 0 ? "none" : "1px solid var(--border)", display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 600 }}>{(en && it.name_en) || it.name}</div>
+                  {e && <div style={{ fontSize: 11.5, color: e.bucket === "expired" || e.bucket === "d30" ? "#f87171" : "var(--text-muted)" }}>
+                    {en ? "Expires" : "Expire le"} {new Date(e.expiry_date).toLocaleDateString(en ? "en-GB" : "fr-FR", { day: "numeric", month: "short", year: "numeric" })}
+                  </div>}
+                </div>
+                <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                  <div style={{ fontWeight: 800 }}>{num(it.quantity)} {it.unit || ""}</div>
+                  {d.can_see_value && it.value != null && <div style={{ fontSize: 11.5, color: "var(--text-muted)" }}>{fmt(it.value)}</div>}
+                </div>
+              </div>
+            );
+          })}
+          {d.can_see_value && d.total_value != null && (
+            <div style={{ padding: "10px 13px", borderTop: "2px solid var(--border)", display: "flex", justifyContent: "space-between", fontWeight: 700 }}>
+              <span>{en ? "Value at cost" : "Valeur au coût"}</span><span>{fmt(d.total_value)}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      <strong style={{ display: "block", margin: "6px 0 8px" }}>{en ? "Incoming returns" : "Retours en route"}</strong>
+      {incoming.length === 0 ? (
+        <div style={{ padding: 14, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>{en ? "No returns on the way." : "Aucun retour en route."}</div>
+      ) : (
+        <div className="card" style={{ padding: 0 }}>
+          {incoming.map((t, i) => (
+            <button key={t.id} onClick={() => navigate(`/transfers?tr=${t.id}`)}
+              style={{ display: "flex", width: "100%", justifyContent: "space-between", gap: 8, padding: "10px 13px", border: "none", borderTop: i === 0 ? "none" : "1px solid var(--border)", background: "transparent", color: "inherit", cursor: "pointer", textAlign: "left", font: "inherit" }}>
+              <span><strong>{t.transfer_number}</strong> · {en ? "from" : "de"} {fromName(t.from_location)}</span>
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{STATUS[t.status] || t.status}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

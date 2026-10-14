@@ -11,6 +11,7 @@ import { useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
 // query locally, a mismatched queryFn shape reads as DENIED.
 import { useMyPermissions } from "../utils/useMyPermissions";
 import { SHOP_TZ } from "../utils/shopTime";
+import { isSellableLocation } from "../utils/locations"; // GOODS-BUFFER
 
 // MP-PAUL-FIX-5B (3 Jun): pa_expenditure_categories.name is stored
 // French-only in the DB (single source of truth). The cashier-facing
@@ -126,7 +127,7 @@ export default function ExpenditurePage() {
 
   const expenses = expData?.data || [];
   const categories = catData?.data || [];
-  const locations = locData?.data || [];
+  const locations = (locData?.data || []).filter(isSellableLocation); // GOODS-BUFFER: no expenses at the buffer
   const totalToday = expenses.reduce((s, e) => s + (+e.amount || 0), 0);
   const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
   // LAUNCH-BATCH-2 (day-one): open the form on the location already selected in the top
