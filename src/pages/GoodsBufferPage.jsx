@@ -86,6 +86,8 @@ export default function GoodsBufferPage() {
   // GOODS-BUFFER: buffer mode = releases go to the buffer location only.
   const bufferLoc = accessQ.data?.buffer_mode ? (accessQ.data?.buffer_location || null) : null;
   const bufferVisible = !!accessQ.data?.buffer_visible && !!accessQ.data?.buffer_location;
+  // The location filter is hidden in buffer mode — never leave one silently applied.
+  useEffect(() => { if (bufferLoc && locFilter) setLocFilter(""); }, [bufferLoc, locFilter]);
   const [view, setView] = useState("pending"); // pending | stock
 
   const invalidate = () => {
@@ -160,7 +162,8 @@ export default function GoodsBufferPage() {
       new_product_name: addNew ? newName.trim() : null,
       new_product_unit: addNew ? (newUnit.trim() || null) : null,
       barcode: addNew ? (newBarcode.trim() || null) : null,
-      location_id: addLoc || null,
+      // GOODS-BUFFER: with transfers on the plan, goods only ever land in the Goods Buffer.
+      location_id: bufferLoc ? bufferLoc.id : (addLoc || null),
       supplier_name: supplier.trim() || null,
       note: note.trim() || null,
       local_id: genLocalId(),
@@ -262,10 +265,12 @@ export default function GoodsBufferPage() {
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <input className="input" style={{ flex: 1 }} type="number" inputMode="numeric" min="0" value={qty}
             onChange={e => setQty(e.target.value)} placeholder={en ? "Quantity *" : "Quantité *"} />
-          <select className="input" style={{ flex: 1.4 }} value={addLoc} onChange={e => setAddLoc(e.target.value)}>
-            <option value="">{en ? "Where it landed" : "Où c'est arrivé"}</option>
-            {locList.map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)}</option>)}
-          </select>
+          {!bufferLoc && (   /* GOODS-BUFFER: in buffer mode the only place is the Goods Buffer */
+            <select className="input" style={{ flex: 1.4 }} value={addLoc} onChange={e => setAddLoc(e.target.value)}>
+              <option value="">{en ? "Where it landed" : "Où c'est arrivé"}</option>
+              {locList.map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)}</option>)}
+            </select>
+          )}
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
           <input className="input" style={{ flex: 1 }} value={supplier} onChange={e => setSupplier(e.target.value)} placeholder={en ? "Supplier (optional)" : "Fournisseur (facultatif)"} />
@@ -279,10 +284,12 @@ export default function GoodsBufferPage() {
       {/* ── A. LIST (all staff) ── */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
         <strong>{en ? "Waiting to be added to stock" : "En attente d'ajout au stock"}</strong>
-        <select className="input" style={{ width: 180 }} value={locFilter} onChange={e => setLocFilter(e.target.value)}>
-          <option value="">{en ? "All locations" : "Tous les sites"}</option>
-          {locList.map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)}</option>)}
-        </select>
+        {!bufferLoc && (   /* GOODS-BUFFER: one place only in buffer mode — nothing to filter */
+          <select className="input" style={{ width: 180 }} value={locFilter} onChange={e => setLocFilter(e.target.value)}>
+            <option value="">{en ? "All locations" : "Tous les sites"}</option>
+            {locList.map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)}</option>)}
+          </select>
+        )}
       </div>
 
       {pendingQ.isLoading ? (
@@ -369,7 +376,7 @@ export default function GoodsBufferPage() {
         <CloseModal row={closeFor} en={en} onClose={() => setCloseFor(null)} onDone={() => { setCloseFor(null); invalidate(); }} />
       )}
       {editFor && (
-        <EditModal row={editFor} en={en} locList={locList} onClose={() => setEditFor(null)} onDone={() => { setEditFor(null); invalidate(); }} />
+        <EditModal row={editFor} en={en} locList={locList} bufferMode={!!bufferLoc} onClose={() => setEditFor(null)} onDone={() => { setEditFor(null); invalidate(); }} />
       )}
     </div>
   );
@@ -919,7 +926,7 @@ function CloseModal({ row, en, onClose, onDone }) {
 }
 
 // ── Edit own pending line (adjust) ──────────────────────────────
-function EditModal({ row, en, locList, onClose, onDone }) {
+export function EditModal({ row, en, locList, bufferMode, onClose, onDone }) {   // exported for scripts/goods-buffer-landing-check.mjs
   const [qty, setQty] = useState(String(num(row.qty_received)));
   const [note, setNote] = useState("");
   const [supplier, setSupplier] = useState("");
@@ -930,7 +937,7 @@ function EditModal({ row, en, locList, onClose, onDone }) {
     mutationFn: () => api.post(`/goods-buffer/${row.buffer_id}/adjust`, {
       new_qty: num(qty), reason: reason.trim() || "edit",
       new_note: note.trim() || null, new_supplier_name: supplier.trim() || null,
-      new_location_id: loc || null, new_product_name: (row.is_new_product && name.trim()) ? name.trim() : null,
+      new_location_id: bufferMode ? null : (loc || null), new_product_name: (row.is_new_product && name.trim()) ? name.trim() : null,
     }).then(r => r.data),
     onSuccess: () => { toast.success(en ? "Saved" : "Enregistré"); onDone(); },
     onError: (e) => toast.error(errMsg(e, en)),
@@ -945,11 +952,13 @@ function EditModal({ row, en, locList, onClose, onDone }) {
         )}
         <div className="form-group"><label className="label">{en ? "Quantity" : "Quantité"}</label>
           <input className="input" type="number" inputMode="numeric" min="0" value={qty} onChange={e => setQty(e.target.value)} /></div>
-        <div className="form-group"><label className="label">{en ? "Location" : "Site"}</label>
-          <select className="input" value={loc} onChange={e => setLoc(e.target.value)}>
-            <option value="">{en ? "—" : "—"}</option>
-            {locList.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-          </select></div>
+        {!bufferMode && (   /* GOODS-BUFFER: in buffer mode the landing place never changes */
+          <div className="form-group"><label className="label">{en ? "Location" : "Site"}</label>
+            <select className="input" value={loc} onChange={e => setLoc(e.target.value)}>
+              <option value="">{en ? "—" : "—"}</option>
+              {locList.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select></div>
+        )}
         <div style={{ display: "flex", gap: 8 }}>
           <input className="input" style={{ flex: 1 }} value={supplier} onChange={e => setSupplier(e.target.value)} placeholder={en ? "Supplier" : "Fournisseur"} />
           <input className="input" style={{ flex: 1 }} value={note} onChange={e => setNote(e.target.value)} placeholder={en ? "Note" : "Note"} />

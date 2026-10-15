@@ -84,6 +84,8 @@ const CHECKS = [
   // deployed and was unreachable, a portal copy two months stale, a label saying
   // "Active" for an account that could do nothing.
   ["fh-portal",     "scripts/fh-portal-check.mjs", "the Family sections are reachable, keep the two identities apart, and both service workers were bumped"],
+  // GOODS-BUFFER LOCATION: in buffer mode the Goods Buffer screen offers no other location.
+  ["gb-landing",    "scripts/goods-buffer-landing-check.mjs", "buffer mode: no 'where it landed' picker, no location filter, no location on edit; Lite keeps them"],
   ["fh-portal-render", "scripts/fh-portal-render-check.mjs", "the Family sections RENDER against the real inline script: no 'Active' on a blocked child, no Approve the server would refuse"],
 ];
 
