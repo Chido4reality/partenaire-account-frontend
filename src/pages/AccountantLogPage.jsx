@@ -11,6 +11,7 @@
 //   • a placeholder detail screen (Phase 2 fills it with the activity feed).
 // NO activity feed, NO approval logic here — those are later phases.
 import { useState, useMemo, useEffect } from "react";
+import { locationNameLabel } from "../utils/locations"; // GOODS-BUFFER: branch names follow the app language
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
@@ -31,6 +32,7 @@ import BufferDetailModal from "../components/BufferDetailModal";
 import { LEDGER_TYPES, LEDGER_TYPE_ORDER, ltLabel, fmtLedgerWhen } from "../utils/ledgerTypes";
 import HelpButton from "../components/common/HelpButton"; // MP-STAFF-ACTIVITY-LEDGER Phase 5
 import HoldRejectFields, { HOLD_ACTION, holdRejectReady } from "../components/common/HoldRejectFields"; // receive-mismatch gate
+import ApproverPasswordInput, { approverPasswordReady, approverPasswordLabel } from "../components/common/ApproverPasswordInput"; // approval password = login
 import HoldShortfallFields, { useHoldShortfall, holdShortfallReady, holdShortfallBody, approveBlockedReason } from "../components/common/HoldShortfallFields"; // variance outcomes
 import HeldReceiptsBanner, { HoldTierBadge } from "../components/common/HeldReceiptsBanner"; // held-receipt reminders
 
@@ -480,7 +482,7 @@ export default function AccountantLogPage() {
               <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 2 }}>
                 {/* MP-BELOW-COST-CLEAR-WORDING: a below-cost amount is the shortfall,
                     not the sale total — render it labelled, not as a bare number. */}
-                {[!["below_cost_sale", "discount"].includes(a.action_type) && a.amount != null ? fmtCur(Math.abs(Number(a.amount))) : null, metaRef(a), a.branch_name].filter(Boolean).join(" · ")}
+                {[!["below_cost_sale", "discount"].includes(a.action_type) && a.amount != null ? fmtCur(Math.abs(Number(a.amount))) : null, metaRef(a), locationNameLabel(a.branch_name, en ? "en" : "fr")].filter(Boolean).join(" · ")}
                 {" · "}{new Date(a.created_at).toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })}
               </div>
               {/* MP-APPROVAL-DETAIL: full plain-language why + order for EVERY type, fetched on expand. */}
@@ -784,15 +786,13 @@ export default function AccountantLogPage() {
                 <HoldShortfallFields en={en} hold={hold} answers={sfAnswers} setAnswers={setSfAnswers} />
               )}
             </div>
-            <div className="form-group"><label className="label">{en ? "Enter your PIN to approve" : "Entrez votre code PIN pour approuver"}</label>
-              <input className="input" type="password" inputMode="numeric" value={pinValue}
-                onChange={e => setPinValue(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                placeholder="••••" autoFocus />
+            <div className="form-group"><label className="label">{approverPasswordLabel(en)}</label>
+              <ApproverPasswordInput value={pinValue} onChange={setPinValue} autoFocus />
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setPinFor(null)}>{en ? "Cancel" : "Annuler"}</button>
               <button className="btn btn-primary" style={{ flex: 2 }}
-                disabled={pinValue.length < 4 || approveMut.isPending
+                disabled={!approverPasswordReady(pinValue) || approveMut.isPending
                   || (pinFor.action_type === HOLD_ACTION && !holdShortfallReady(hold, sfAnswers))}
                 onClick={() => approveMut.mutate({ id: pinFor.id, pin: pinValue,
                   extra: pinFor.action_type === HOLD_ACTION ? holdShortfallBody(hold, sfAnswers) : {} })}>
@@ -1249,7 +1249,7 @@ function buildEvidenceHtml({ data, en, fmt }) {
       + `<td class="c">${esc(r.seq)}${hi ? ' <span class="flag">⚠</span>' : ""}</td>`
       + `<td>${dt(r.created_at)}</td>`
       + `<td>${esc(actionText(r.action, en, r.new_data, fmt))}</td>`
-      + `<td>${esc(r.branch_name) || "—"}</td>`
+      + `<td>${esc(locationNameLabel(r.branch_name, en ? "en" : "fr")) || "—"}</td>`
       + `<td class="r">${amt}</td>`
       + `<td>${esc(r.reason) || "—"}</td>`
       + `<td>${esc(r.approver_name) || "—"}</td></tr>`;
@@ -1395,7 +1395,7 @@ function LedgerDetailModal({ row, en, fmt, onClose }) {
         </div>
         <LedgerDetailRow label={en ? "Who" : "Qui"} value={`${row.actor_name || "—"}${row.actor_role ? ` (${row.actor_role})` : ""}`} />
         <LedgerDetailRow label={en ? "When" : "Quand"} value={fmtLedgerWhen(row.occurred_at, en)} />
-        {row.branch_name && <LedgerDetailRow label={en ? "Branch" : "Boutique"} value={row.branch_name} />}
+        {row.branch_name && <LedgerDetailRow label={en ? "Branch" : "Boutique"} value={locationNameLabel(row.branch_name, en ? "en" : "fr")} />}
         {row.amount != null && <LedgerDetailRow label={en ? "Amount" : "Montant"} value={fmt(row.amount)} />}
         {LEDGER_TO_ACTION[row.activity_type] && phase1Fields(LEDGER_TO_ACTION[row.activity_type], en, row.new_data || {}, (v) => fmt(Math.abs(Number(v) || 0)))
           .map((f, i) => <LedgerDetailRow key={`${f.label}${i}`} label={f.label} value={Array.isArray(f.value) ? f.value.join(" · ") : f.value} />)}
@@ -1500,7 +1500,7 @@ function LedgerView({ staffList, en, onBack }) {
                   {r.ref_number ? <span style={{ color: "var(--text-muted)", fontWeight: 500, fontFamily: "monospace", fontSize: 11, marginLeft: 6 }}>{r.ref_number}</span> : null}
                 </div>
                 <div style={{ fontSize: 11.5, color: "var(--text-secondary)" }}>
-                  👤 {r.actor_name || "—"}{r.actor_role ? ` · ${r.actor_role}` : ""} · {fmtLedgerWhen(r.occurred_at, en)}{r.branch_name ? ` · ${r.branch_name}` : ""}
+                  👤 {r.actor_name || "—"}{r.actor_role ? ` · ${r.actor_role}` : ""} · {fmtLedgerWhen(r.occurred_at, en)}{r.branch_name ? ` · ${locationNameLabel(r.branch_name, en ? "en" : "fr")}` : ""}
                 </div>
               </div>
               {r.amount != null && <div style={{ fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{fmt(r.amount)}</div>}
@@ -1874,7 +1874,7 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                   <div style={{ fontSize: 11, fontWeight: 700, color: cue.dot, marginBottom: 2 }}>{cue.label}</div>
                   <div style={{ fontWeight: 600, fontSize: 14.5, lineHeight: 1.35 }}>{ex.what}</div>
                   <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-                    👤 {ex.staffName} · {timeLabel(r.created_at, en)}{r.branch_name ? ` · ${r.branch_name}` : ""} · {en ? "tap for what to do" : "toucher pour quoi faire"}
+                    👤 {ex.staffName} · {timeLabel(r.created_at, en)}{r.branch_name ? ` · ${locationNameLabel(r.branch_name, en ? "en" : "fr")}` : ""} · {en ? "tap for what to do" : "toucher pour quoi faire"}
                   </div>
                 </div>
                 {amt != null && (
@@ -1948,7 +1948,7 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
               );
             })()}
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 14 }}>
-              {timeLabel(detailRow.created_at, en)}{detailRow.branch_name ? ` · ${detailRow.branch_name}` : ""}
+              {timeLabel(detailRow.created_at, en)}{detailRow.branch_name ? ` · ${locationNameLabel(detailRow.branch_name, en ? "en" : "fr")}` : ""}
               {detailRow.amount != null && detailRow.amount !== "" ? ` · ${fmt(Math.abs(Number(detailRow.amount)))}` : ""}
             </div>
             {(() => {

@@ -2,15 +2,18 @@
 // Shared by the owner's Accountant Log and the managers' Team Approvals so both
 // screens offer exactly the same choice in the same words.
 //   recount           → the lines go back to the destination to be counted again
-//                       (blind, like the first count). No stock moves; no PIN.
+//                       (blind, like the first count). No stock moves; no password.
 //   return_to_source  → a return transfer is created, in transit back to the source,
 //                       which receives it through the normal flow. Goods move, so the
-//                       approver's PIN is required, exactly as for approve.
+//                       approver's password (= login) is required, exactly as for approve.
+import ApproverPasswordInput, { approverPasswordReady, approverPasswordLabel } from "./ApproverPasswordInput";
+import { locationNameLabel } from "../../utils/locations";
+
 export const HOLD_ACTION = "transfer_receive_hold";
 
 export function holdRejectReady(mode, pin) {
   if (mode === "recount") return true;
-  if (mode === "return_to_source") return String(pin || "").length >= 4;
+  if (mode === "return_to_source") return approverPasswordReady(pin); // the login password
   return false;
 }
 
@@ -20,7 +23,7 @@ export function holdRejectReady(mode, pin) {
 // EVERYTHING back — pa_transfer_hold_return creates the return with the original SENT
 // quantity (verified on prod) — so it now says so.
 export default function HoldRejectFields({ en, mode, setMode, pin, setPin, sourceName }) {
-  const src = sourceName || (en ? "the source" : "la source"); // GOODS-BUFFER: not always a warehouse
+  const src = locationNameLabel(sourceName, en ? "en" : "fr") || (en ? "the source" : "la source"); // GOODS-BUFFER: not always a warehouse; name in the app language
   const opts = [
     { val: "recount", en: "Send back for a recount", fr: "Faire recompter",
       hintEn: "Ask the shop to count again. Nothing moves until they do.",
@@ -46,9 +49,8 @@ export default function HoldRejectFields({ en, mode, setMode, pin, setPin, sourc
       </div>
       {mode === "return_to_source" && (
         <div style={{ marginTop: 10 }}>
-          <label className="label">{en ? "Your PIN" : "Votre code PIN"}</label>
-          <input className="input" type="password" inputMode="numeric" maxLength={6} value={pin}
-            onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))} placeholder="••••" />
+          <label className="label">{approverPasswordLabel(en)}</label>
+          <ApproverPasswordInput value={pin} onChange={setPin} />
         </div>
       )}
     </div>

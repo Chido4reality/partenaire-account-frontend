@@ -16,7 +16,7 @@ import { PLAY_STORE_URL } from "../utils/receiptExtras"; // reuse the SAME app-d
 import DateRangeFilter, { inRange, wideRange } from "../components/common/DateRangeFilter";
 import ExpiryFields, { expiryMissing } from "../components/common/ExpiryFields"; // EXPIRY-TRACKING
 import { SHOP_TZ } from "../utils/shopTime";
-import { withoutGoodsBuffer } from "../utils/locations"; // GOODS-BUFFER
+import { withoutGoodsBuffer, locationLabel } from "../utils/locations"; // GOODS-BUFFER
 
 function toArray(x) {
   if (Array.isArray(x)) return x;
@@ -505,7 +505,7 @@ function ReceiveModal({ en, order, onClose, onDone }) {
             <label className="label">{en ? "Delivery location" : "Emplacement de livraison"}</label>
             <select className="input" value={dest} onChange={e => setDest(e.target.value)}>
               <option value="">{en ? "Choose a location…" : "Choisir un emplacement…"}</option>
-              {locList.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              {locList.map(l => <option key={l.id} value={l.id}>{locationLabel(l, en ? "en" : "fr")}</option>)}
             </select>
           </div>
 
@@ -567,7 +567,7 @@ function ReceiveModal({ en, order, onClose, onDone }) {
                         <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                           <select className="input" value={r.vLoc} onChange={e => setRow(it.id, { vLoc: e.target.value })} style={{ flex: 1 }}>
                             <option value="">{en ? "Which location?" : "Quel emplacement ?"}</option>
-                            {locList.filter(l => l.id !== dest).map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                            {locList.filter(l => l.id !== dest).map(l => <option key={l.id} value={l.id}>{locationLabel(l, en ? "en" : "fr")}</option>)}
                           </select>
                           <input className="input" type="number" min="1" max={shortfall} value={r.vQty} style={{ width: 84, textAlign: "center" }}
                             onChange={e => setRow(it.id, { vQty: e.target.value })} />

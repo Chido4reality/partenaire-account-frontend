@@ -19,6 +19,7 @@
 import { useAuthStore } from "../store";
 import { currencySymbol } from "./currency";
 import { momoLabelShort } from "./paymentLabels";
+import { locationNameLabel } from "./locations"; // GOODS-BUFFER: the place reads in the report's language
 import { SHOP_TZ } from "./shopTime";
 
 const fmt = (x, en) => Number(x || 0).toLocaleString(en ? "en-US" : "fr-FR");
@@ -58,7 +59,7 @@ export function buildLedgerText(ledger, lang) {
   const ex   = ledger.expenses         || { total: 0, items: [] };
   const dr   = ledger.drawer || null;
   const tot  = ledger.totals || {};
-  const locName  = ledger.location ? ledger.location.name : (en ? "all locations" : "tous les sites");
+  const locName  = ledger.location ? locationNameLabel(ledger.location.name, en ? "en" : "fr") : (en ? "all locations" : "tous les sites");
   const longDate = new Date(ledger.date + "T00:00:00").toLocaleDateString(en ? "en-GB" : "fr-FR",
     { day: "numeric", month: "long", year: "numeric" });
 
@@ -133,7 +134,7 @@ export function buildLedgerTextV2(ledger, lang) {
   const dr = b.drawer        || {};   // TASK 3 drawer reconciliation
   const sales = df.sales          || {};
   const dcol  = df.debt_collected || {};
-  const locName  = ledger.location ? ledger.location.name : (en ? "all locations" : "tous les sites");
+  const locName  = ledger.location ? locationNameLabel(ledger.location.name, en ? "en" : "fr") : (en ? "all locations" : "tous les sites");
   const longDate = new Date(ledger.date + "T00:00:00").toLocaleDateString(en ? "en-GB" : "fr-FR",
     { day: "numeric", month: "long", year: "numeric" });
   const tfmt = (iso) => iso

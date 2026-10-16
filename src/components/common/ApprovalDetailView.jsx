@@ -25,6 +25,7 @@ import api from "../../utils/api";
 import { useLangStore } from "../../store";
 import { useCurrency } from "../../utils/useCurrency";
 import { transferCountLabel } from "../../utils/transferCount"; // MP-APPROVAL-FULL-DETAIL
+import { locationLabel, locationNameLabel } from "../../utils/locations"; // GOODS-BUFFER: names follow the app language
 
 const num = (x) => Number(x) || 0;
 const has = (v) => v !== null && v !== undefined && v !== "";
@@ -51,7 +52,7 @@ function makeLookup(detail, en) {
     location: (id) => {
       if (!has(id)) return en ? "outside supplier" : "fournisseur externe";
       const l = pick(r.locations, id);
-      if (l && l.name) return l.name;
+      if (l && l.name) return locationLabel(l, en ? "en" : "fr"); // GOODS-BUFFER: in the app language
       return `${en ? "Unknown branch" : "Succursale inconnue"} ${shortId(id)}`;
     },
     customer: (id) => pick(r.customers, id),
@@ -190,7 +191,7 @@ function buildReasons(row, en, fmt, lk) {
       // sent, and is not allowed to credit that on his own. Headline: who, where, and
       // what is in limbo at COST price; then one plain line per held product.
       const items = Array.isArray(p.items) ? p.items : [];
-      const from = p.from_name || lk.location(p.from_location), to = p.to_name || lk.location(p.to_location);
+      const from = locationNameLabel(p.from_name, en ? "en" : "fr") || lk.location(p.from_location), to = locationNameLabel(p.to_name, en ? "en" : "fr") || lk.location(p.to_location);
       out.push({ tone: "warn", text: en
         ? `${p.receiver_name || "The receiver"} counted less than was sent: ${p.transfer_number || ""} ${from} → ${to}`
         : `${p.receiver_name || "Le réceptionnaire"} a compté moins que l'envoi : ${p.transfer_number || ""} ${from} → ${to}` });
@@ -379,7 +380,7 @@ function orderView(row, lk, en) {
     }));
     return { ...base, items,
              title: en ? "Held lines (counted)" : "Lignes en attente (comptées)",
-             where: `${p.from_name || lk.location(p.from_location)} → ${p.to_name || lk.location(p.to_location)}` };
+             where: `${locationNameLabel(p.from_name, en ? "en" : "fr") || lk.location(p.from_location)} → ${locationNameLabel(p.to_name, en ? "en" : "fr") || lk.location(p.to_location)}` };
   }
   if (row.action_type === "transfer") {
     // The payload's own lines carry NO name — resolve each product_id. `note` is

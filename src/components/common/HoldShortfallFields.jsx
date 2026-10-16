@@ -9,6 +9,7 @@
 // without can_cancel_transfers may only answer "Decide later" — it is then chosen
 // for him (nothing to choose between). The server re-checks who may pick what.
 import { useQuery } from "@tanstack/react-query";
+import { approverPasswordReady, approverPasswordMissing } from "./ApproverPasswordInput";
 import api from "../../utils/api";
 import { useAuthStore } from "../../store";
 import { useMyPermissions } from "../../utils/useMyPermissions";
@@ -69,7 +70,7 @@ export function approveBlockedReason({ en, pin, hold, answers }) {
   if (hold && hold.isHold && hold.loading) return en ? "Loading the held lines…" : "Chargement des lignes en attente…";
   if (hold && hold.isHold && !holdShortfallReady(hold, answers))
     return en ? "Choose an option for every line above." : "Choisissez une option pour chaque ligne ci-dessus.";
-  if (!/^\d{4,6}$/.test(String(pin || ""))) return en ? "Enter your PIN (4–6 digits)." : "Saisissez votre PIN (4 à 6 chiffres).";
+  if (!approverPasswordReady(pin)) return approverPasswordMissing(en); // APPROVAL PASSWORD = login
   return null;
 }
 

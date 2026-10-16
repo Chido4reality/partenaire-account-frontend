@@ -26,7 +26,7 @@ import { useStockCheckSummary, NOT_COUNTED_AMBER_AT } from "../utils/useStockChe
 import OptionCard from "../components/common/OptionCard"; // readable option titles
 import { outcomeFromStockCheckSub, outcomeByKey } from "../utils/transferVarianceOutcomes"; // carry "Where did they go?" to the transfer
 import { SHOP_TZ } from "../utils/shopTime";
-import { withoutGoodsBuffer } from "../utils/locations"; // GOODS-BUFFER
+import { withoutGoodsBuffer, locationLabel } from "../utils/locations"; // GOODS-BUFFER
 
 // MP-STALE-PRODUCT-SCAN: mirrors backend lib/stockChecks.js's STALE_THRESHOLD_DAYS
 // (fixed, not per-org configurable — Peter, 2026-07-14). Display-only.
@@ -638,7 +638,7 @@ export default function StockCheckPage() {
                       {p.sku && <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>{p.sku}</span>}
                     </div>
                     <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                      <span>📍 {loc.name || "—"}</span>
+                      <span>📍 {locationLabel(loc, en ? "en" : "fr") || "—"}</span>
                       <span>{damageSourceLabel(r.source_type, en)}</span>
                       {r.source_ref && <span>#{r.source_ref}</span>}
                       <span>{fmtDate(r.created_at, en)}</span>
@@ -699,7 +699,7 @@ export default function StockCheckPage() {
                     {p.sku && <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>{p.sku}</span>}
                   </div>
                   <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <span>📍 {loc.name || "—"}</span>
+                    <span>📍 {locationLabel(loc, en ? "en" : "fr") || "—"}</span>
                     <span>{flaggedLabel(r.flagged_by, en)}</span>
                     <span>{r.movement_type === "receive" ? (en ? "receive" : "réception") : r.movement_type === "transfer" ? (en ? "transfer" : "transfert") : (en ? "manual" : "manuel")}</span>
                     {r.reference && <span>#{r.reference}</span>}
@@ -846,7 +846,7 @@ export default function StockCheckPage() {
                       {p.sku && <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>{p.sku}</span>}
                     </div>
                     <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                      <span>📍 {loc.name || "—"}</span>
+                      <span>📍 {locationLabel(loc, en ? "en" : "fr") || "—"}</span>
                       <span>{en ? `flagged ${days}d ago` : `signalé il y a ${days}j`}</span>
                     </div>
                     <div style={{ fontSize: 12.5, marginTop: 6, display: "flex", gap: 14, flexWrap: "wrap" }}>
@@ -968,7 +968,7 @@ function WatchedSection({ watchList, loading, en, isOwner, onRemoved }) {
             <div key={w.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "7px 10px", background: "var(--bg-elevated)", borderRadius: 8, flexWrap: "wrap" }}>
               <div style={{ minWidth: 0 }}>
                 <span style={{ fontWeight: 600, fontSize: 13.5 }}>{en ? (p.name_en || p.name) : p.name}</span>
-                <span style={{ fontSize: 12, color: "var(--text-muted)", marginLeft: 8 }}>📍 {loc.name || "—"}</span>
+                <span style={{ fontSize: 12, color: "var(--text-muted)", marginLeft: 8 }}>📍 {locationLabel(loc, en ? "en" : "fr") || "—"}</span>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
                   {w.created_by_name ? `${en ? "by" : "par"} ${w.created_by_name} · ` : ""}{fmtDate(w.created_at, en)}
                 </div>
@@ -1030,7 +1030,7 @@ function ResolveModal({ row, en, onCancel, onResolve, busy }) {
       <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 430 }}>
         <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>{en ? "Record count" : "Enregistrer le comptage"}</div>
         <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 14 }}>
-          {en ? (p.name_en || p.name) : p.name} · {(row.pa_locations || {}).name}
+          {en ? (p.name_en || p.name) : p.name} · {locationLabel(row.pa_locations, en ? "en" : "fr")}
         </div>
 
         {/* Both numbers, equally weighted and explicitly labelled — not one number
@@ -1235,7 +1235,7 @@ function ResolveVarianceModal({ row, en, busy, recounting, onCancel, onResolve, 
       <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460, maxHeight: "88vh", overflowY: "auto" }}>
         <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>{en ? "Resolve variance" : "Résoudre l'écart"}</div>
         <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 12 }}>
-          {en ? (p.name_en || p.name) : p.name} · {(row.pa_locations || {}).name}
+          {en ? (p.name_en || p.name) : p.name} · {locationLabel(row.pa_locations, en ? "en" : "fr")}
         </div>
 
         {/* ── THE FOUR NUMBERS, EACH LABELLED BY WHEN IT WAS TRUE ────────────
@@ -1516,7 +1516,7 @@ function WatchProductModal({ en, onClose, onAdded }) {
             <label style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>{en ? "Location to watch" : "Emplacement à surveiller"}</label>
             <select className="input" value={locId} onChange={e => setLocId(e.target.value)} style={{ marginTop: 6 }}>
               <option value="">{en ? "— pick a location —" : "— choisir un emplacement —"}</option>
-              {locList.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              {locList.map(l => <option key={l.id} value={l.id}>{locationLabel(l, en ? "en" : "fr")}</option>)}
             </select>
           </>
         )}
@@ -1549,7 +1549,7 @@ function SellDamagedModal({ row, en, fmt, onCancel, onSell }) {
       <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 380 }}>
         <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>{en ? "Sell damaged item" : "Vendre l'article endommagé"}</div>
         <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 14 }}>
-          {en ? (p.name_en || p.name) : p.name} · {(row.pa_locations || {}).name}
+          {en ? (p.name_en || p.name) : p.name} · {locationLabel(row.pa_locations, en ? "en" : "fr")}
         </div>
         <label style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>
           {en ? "Quantity to sell" : "Quantité à vendre"}
@@ -1590,7 +1590,7 @@ function ScrapDamagedModal({ row, en, busy, onCancel, onScrap }) {
       <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 380 }}>
         <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>🗑️ {en ? "Scrap out" : "Mettre au rebut"}</div>
         <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 10 }}>
-          {en ? (p.name_en || p.name) : p.name} · {(row.pa_locations || {}).name}
+          {en ? (p.name_en || p.name) : p.name} · {locationLabel(row.pa_locations, en ? "en" : "fr")}
         </div>
         <div style={{ fontSize: 12, color: "#f87171", background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: 8, padding: "8px 10px", marginBottom: 12 }}>
           {en
@@ -1716,7 +1716,7 @@ function MarkDamagedModal({ en, onClose, onDone }) {
             <label style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>{en ? "Location" : "Emplacement"}</label>
             <select className="input" value={locId} onChange={e => setLocId(e.target.value)} style={{ marginTop: 6, marginBottom: 12 }}>
               <option value="">{en ? "— pick a location —" : "— choisir un emplacement —"}</option>
-              {locList.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              {locList.map(l => <option key={l.id} value={l.id}>{locationLabel(l, en ? "en" : "fr")}</option>)}
             </select>
             <label style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>{en ? "Damaged quantity" : "Quantité endommagée"}</label>
             <input className="input" type="number" min="1" value={qty} onChange={e => setQty(e.target.value)} style={{ marginTop: 6, marginBottom: 12 }} />

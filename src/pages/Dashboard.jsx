@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { locationLabel } from "../utils/locations"; // GOODS-BUFFER: location names follow the app language
 import { useOfflineCachedQuery } from '../utils/offlineQuery';
 import { useLiteMode } from '../hooks/useLiteMode';
 import { useNavigate } from 'react-router-dom';
@@ -220,7 +221,7 @@ export default function Dashboard() {
             <select value={locFilter} onChange={e => setLocFilter(e.target.value)}
               style={{ fontSize: 12, padding: "5px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)" }}>
               <option value="">{lang === 'en' ? 'All locations' : 'Tous les sites'}</option>
-              {dashLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              {dashLocations.map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)}</option>)}
             </select>
           </div>
           {/* Role badge */}

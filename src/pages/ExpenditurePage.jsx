@@ -11,7 +11,7 @@ import { useActiveShift, noShiftHint } from "../components/common/ShiftWidgets";
 // query locally, a mismatched queryFn shape reads as DENIED.
 import { useMyPermissions } from "../utils/useMyPermissions";
 import { SHOP_TZ } from "../utils/shopTime";
-import { isSellableLocation } from "../utils/locations"; // GOODS-BUFFER
+import { isSellableLocation, locationLabel } from "../utils/locations"; // GOODS-BUFFER
 
 // MP-PAUL-FIX-5B (3 Jun): pa_expenditure_categories.name is stored
 // French-only in the DB (single source of truth). The cashier-facing
@@ -255,7 +255,7 @@ export default function ExpenditurePage() {
               <label className="label">{lang === "en" ? "Location" : "Emplacement"} *</label>
               <select className="input" value={form.location_id} onChange={e => setF("location_id", e.target.value)}>
                 <option value="">{lang === "en" ? "Select location" : "Choisir emplacement"}</option>
-                {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                {locations.map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)}</option>)}
               </select>
             </div>
             <div className="form-group">

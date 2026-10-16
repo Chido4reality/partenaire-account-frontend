@@ -16,7 +16,7 @@ import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 import useOwnerApproval from "../hooks/useOwnerApproval";
 import RestrictedAction from "../components/common/RestrictedAction";
 import { saleStatusLabel } from "../utils/saleStatus"; // fix 3
-import { isSellableLocation } from "../utils/locations"; // GOODS-BUFFER
+import { isSellableLocation, locationLabel } from "../utils/locations"; // GOODS-BUFFER
 
 const PAYMENT_METHODS = [
   { key: "cash",         icon: "💵", en: "Cash",        fr: "Espèces" },
@@ -725,7 +725,7 @@ export default function CustomersPage() {
               <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{lang === "en" ? "Branch:" : "Succursale:"}</span>
               <select className="input" value={branchFilter} onChange={e => setBranchFilter(e.target.value)} style={{ width: 200 }}>
                 <option value="">{lang === "en" ? "All branches" : "Toutes les succursales"}</option>
-                {activeLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                {activeLocations.map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)}</option>)}
               </select>
               {branchAdvanced && (
                 <button className={`btn btn-sm ${showTopDebtors ? "btn-primary" : "btn-secondary"}`} onClick={() => setShowTopDebtors(s => !s)}>

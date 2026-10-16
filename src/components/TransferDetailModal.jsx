@@ -6,6 +6,8 @@ import { useLangStore, useAuthStore } from "../store";
 import { transferCountLabel } from "../utils/transferCount"; // MP-APPROVAL-FULL-DETAIL
 import { useMyPermissions } from "../utils/useMyPermissions";
 import { allowedOutcomes } from "../utils/transferVarianceOutcomes";
+import { fmtShopDateTime } from "../utils/shopTime"; // started = created_at, in shop time
+import { locationNameLabel } from "../utils/locations"; // GOODS-BUFFER: names follow the app language
 import ShortfallLinesPicker, { shortfallMissing, shortfallLinesBody, shortfallAllLater, entriesOf, wholeLine } from "./common/ShortfallLinesPicker";
 
 // ── MP-TRANSFER-VARIANCE-CLOSE (F4) + VARIANCE OUTCOMES (2026-10-10, per line 2026-10-11)
@@ -16,13 +18,8 @@ import ShortfallLinesPicker, { shortfallMissing, shortfallLinesBody, shortfallAl
 
 // MP-STAFF-ACTIVITY-LEDGER Phase 3: the full plain-language transfer chain, reachable from
 // the Transfers list, the Activity Ledger, and search (?tr=<id>). Shop-timezone times.
-function fmtWhen(iso, en) {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleString(en ? "en-GB" : "fr-FR",
-      { timeZone: "Africa/Lagos", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-  } catch { return "—"; }
-}
+// A date-only value is never shown as a time (see shopTime.fmtShopDateTime).
+const fmtWhen = (v, en) => fmtShopDateTime(v, en);
 
 function Step({ icon, label, who, when }) {
   return (
@@ -86,8 +83,8 @@ export default function TransferDetailModal({ transferId, onClose, initialReason
       const parts = [];
       if (res.piled) parts.push(en ? `${res.piled} moved to the Damaged list` : `${res.piled} mises dans la liste Endommagés`);
       if (res.written_off) parts.push(en ? `${res.written_off} removed from stock` : `${res.written_off} retirées du stock`);
-      if (res.credited) parts.push(en ? `${res.credited} added to ${t?.to_name || "the shop"}` : `${res.credited} ajoutées à ${t?.to_name || "la boutique"}`);
-      if (res.returned) parts.push(en ? `${res.returned} put back at ${t?.from_name || "the source"}` : `${res.returned} remises à ${t?.from_name || "la source"}`);
+      if (res.credited) parts.push(en ? `${res.credited} added to ${locationNameLabel(t?.to_name, lang) || "the shop"}` : `${res.credited} ajoutées à ${locationNameLabel(t?.to_name, lang) || "la boutique"}`);
+      if (res.returned) parts.push(en ? `${res.returned} put back at ${locationNameLabel(t?.from_name, lang) || "the source"}` : `${res.returned} remises à ${locationNameLabel(t?.from_name, lang) || "la source"}`);
       toast.success(res.already ? (en ? "Already closed" : "Déjà clos")
         : `${res.variance_closed ? (en ? "Variance closed" : "Écart clos") : (en ? `${res.later} line(s) left open` : `${res.later} ligne(s) laissée(s) ouverte(s)`)}${parts.length ? " — " + parts.join(", ") : ""}`);
       setAnswers({});
@@ -130,11 +127,11 @@ export default function TransferDetailModal({ transferId, onClose, initialReason
           <>
             <div style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text-muted)", marginBottom: 2 }}>📦 {t.transfer_number}</div>
             <div style={{ fontSize: 19, fontWeight: 800, marginBottom: 12 }}>
-              {t.from_name || "—"} <span style={{ color: "var(--brand)" }}>→</span> {t.to_name || (en ? "(no destination)" : "(sans destination)")}
+              {locationNameLabel(t.from_name, lang) || "—"} <span style={{ color: "var(--brand)" }}>→</span> {locationNameLabel(t.to_name, lang) || (en ? "(no destination)" : "(sans destination)")}
             </div>
 
             <div style={{ borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
-              <Step icon="📝" label={en ? "Started by" : "Initié par"} who={t.initiated_by_name} when={fmtWhen(t.transfer_date || t.created_at, en)} />
+              <Step icon="📝" label={en ? "Started by" : "Initié par"} who={t.initiated_by_name} when={fmtWhen(t.created_at || t.transfer_date, en)} />
               {t.dispatched_at && <Step icon="📤" label={en ? "Dispatched by" : "Expédié par"} who={t.dispatched_by_name} when={fmtWhen(t.dispatched_at, en)} />}
               {t.received_at
                 ? <Step icon="📥" label={en ? "Received by" : "Reçu par"} who={t.received_by_name} when={fmtWhen(t.received_at, en)} />

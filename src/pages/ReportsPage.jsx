@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { locationLabel, locationNameLabel } from "../utils/locations"; // GOODS-BUFFER: location names follow the app language
 import HelpButton from "../components/common/HelpButton";
 import CashierOversightTab from "../components/CashierOversightTab"; // MP-CASHIER-OVERSIGHT
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
@@ -505,7 +506,7 @@ export default function ReportsPage() {
         <label className="label" style={{ margin: 0 }}>{lang === "en" ? "Location" : "Site"}</label>
         <select className="input" value={repLoc} onChange={e => setRepLoc(e.target.value)} style={{ width: 180 }}>
           <option value="">{lang === "en" ? "All locations" : "Tous les sites"}</option>
-          {ledgerLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+          {ledgerLocations.map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)}</option>)}
         </select>
       </div>
       {[
@@ -1337,7 +1338,7 @@ export default function ReportsPage() {
             <input type="date" className="input" value={ledgerDate} onChange={e => setLedgerDate(e.target.value)} style={{ width: "auto" }} />
             <select className="input" value={ledgerLoc} onChange={e => setLedgerLoc(e.target.value)} style={{ width: "auto" }}>
               <option value="all">{lang === "en" ? "All locations" : "Tous les sites"}</option>
-              {ledgerLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              {ledgerLocations.map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)}</option>)}
             </select>
             <div style={{ flex: 1 }} />
             <button className="btn btn-primary" onClick={copyLedgerToClipboard} disabled={!ledger}
@@ -1459,7 +1460,7 @@ export default function ReportsPage() {
                   <>
                     <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 12, textAlign: "center", letterSpacing: "0.3px" }}>
                       {lang === "en" ? "DAILY REPORT" : "RAPPORT DU JOUR"}
-                      {ledger.location?.name && <span style={{ color: "var(--text-muted)", fontWeight: 500 }}> — {ledger.location.name}</span>}
+                      {ledger.location?.name && <span style={{ color: "var(--text-muted)", fontWeight: 500 }}> — {locationNameLabel(ledger.location.name, lang)}</span>}
                     </div>
 
                     {/* ── BLOCK 1 — DAY FLOW (default expanded) ─ */}
@@ -1621,7 +1622,7 @@ export default function ReportsPage() {
                   <div style={{ marginBottom: 22, padding: "16px 18px", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 12 }}>
                     <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10, textAlign: "center", letterSpacing: "0.3px" }}>
                       {lang === "en" ? "DAILY REPORT" : "RAPPORT DU JOUR"}
-                      {ledger.location?.name && <span style={{ color: "var(--text-muted)", fontWeight: 500 }}> — {ledger.location.name}</span>}
+                      {ledger.location?.name && <span style={{ color: "var(--text-muted)", fontWeight: 500 }}> — {locationNameLabel(ledger.location.name, lang)}</span>}
                     </div>
                     <SimpleRow label={lang === "en" ? "Amount sold"    : "Ventes du jour"}   value={fmt(ps.total)} />
                     <SimpleRow label={lang === "en" ? "Debt collected" : "Dette encaissée"} value={fmt(dc.total)} />

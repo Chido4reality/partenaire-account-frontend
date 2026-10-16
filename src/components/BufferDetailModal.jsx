@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import api from "../utils/api";
 import { useLangStore } from "../store";
+import { locationNameLabel } from "../utils/locations"; // GOODS-BUFFER: in buffer mode it landed in the buffer
 
 // MP-STAFF-ACTIVITY-LEDGER Phase 3: goods-buffer receipt detail — who captured it, supplier,
 // qty received → who priced+released it, qty released, close reason. Reachable from the
@@ -52,7 +53,7 @@ export default function BufferDetailModal({ bufferId, onClose }) {
             <Row label={en ? "When" : "Quand"} value={fmtWhen(b.created_at, en)} />
             <Row label={en ? "Supplier" : "Fournisseur"} value={b.supplier_name} />
             <Row label={en ? "Quantity received" : "Quantité reçue"} value={`${b.qty_received} ${b.new_product_unit || b.pa_products?.unit || ""}`} />
-            {b.location_name && <Row label={en ? "Branch" : "Boutique"} value={b.location_name} />}
+            {b.location_name && <Row label={en ? "Where it landed" : "Arrivé à"} value={locationNameLabel(b.location_name, lang)} />}
             {b.note && <Row label={en ? "Note" : "Note"} value={b.note} />}
 
             {/* Priced + released */}

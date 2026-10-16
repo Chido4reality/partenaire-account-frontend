@@ -2,6 +2,7 @@
 // Only reachable when the owner turned on staff_can_view_own_activity; the server forces
 // p_user_id = the caller, so this can only ever show the viewer's own actions.
 import { useState } from "react";
+import { locationNameLabel } from "../utils/locations"; // GOODS-BUFFER: branch names follow the app language
 import { useQuery } from "@tanstack/react-query";
 import api from "../utils/api";
 import { useLangStore } from "../store";
@@ -86,7 +87,7 @@ export default function MyActivityPage() {
                         {r.ref_number ? <span style={{ color: "var(--text-muted)", fontWeight: 500, fontFamily: "monospace", fontSize: 11, marginLeft: 6 }}>{r.ref_number}</span> : null}
                       </div>
                       <div style={{ fontSize: 11.5, color: "var(--text-secondary)" }}>
-                        {fmtLedgerWhen(r.occurred_at, en)}{r.branch_name ? ` · ${r.branch_name}` : ""}
+                        {fmtLedgerWhen(r.occurred_at, en)}{r.branch_name ? ` · ${locationNameLabel(r.branch_name, en ? "en" : "fr")}` : ""}
                       </div>
                     </div>
                     {r.amount != null && <div style={{ fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{fmt(r.amount)}</div>}

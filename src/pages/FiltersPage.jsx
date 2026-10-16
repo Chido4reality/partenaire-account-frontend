@@ -18,6 +18,7 @@
 // restricted (a cashier's picker comes back with only themself) — it is NOT
 // the enforcement.
 import { useState } from "react";
+import { locationLabel as labelOfLocation, locationNameLabel } from "../utils/locations"; // GOODS-BUFFER: names follow the app language (the page's own locationLabel is state)
 import { useQuery } from "@tanstack/react-query";
 import { useLangStore, useAuthStore } from "../store";
 import { useCurrency } from "../utils/useCurrency";
@@ -226,7 +227,7 @@ export default function FiltersPage() {
                 {openPicker === "location" && (
                   <PickerPopover onClose={() => setOpenPicker(null)}>
                     {locList.map(l => (
-                      <PickerRow key={l.id} label={l.name} onClick={() => { setLocationId(l.id); setLocationLabel(l.name); setOpenPicker(null); }} />
+                      <PickerRow key={l.id} label={labelOfLocation(l, lang)} onClick={() => { setLocationId(l.id); setLocationLabel(labelOfLocation(l, lang)); setOpenPicker(null); }} />
                     ))}
                     {!locList.length && <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{en ? "No locations" : "Aucun emplacement"}</div>}
                   </PickerPopover>
@@ -511,7 +512,7 @@ function FactRow({ row, fact, en, fmt, onOpenTransaction }) {
     fact === "sales" && row.product_name,
     row.staff_name,
     row.customer_name,
-    row.location_name,
+    locationNameLabel(row.location_name, en ? "en" : "fr"),
     fact === "inventory" && row.status,
     fact === "payment" && row.payment_type,
   ].filter(Boolean).join(" · ");
@@ -554,7 +555,7 @@ function TransactionView({ txQuery, en, fmt, onClose }) {
           <Row label={en ? "Date" : "Date"} value={`${d.date} (${new Date(d.created_at).toLocaleString()})`} />
           <Row label={en ? "Staff" : "Personnel"} value={d.staff_name || "—"} />
           <Row label={en ? "Customer" : "Client"} value={d.customer_name || (en ? "Walk-in" : "Comptant")} />
-          <Row label={en ? "Location" : "Emplacement"} value={d.location_name || "—"} />
+          <Row label={en ? "Location" : "Emplacement"} value={locationNameLabel(d.location_name, en ? "en" : "fr") || "—"} />
           <Row label={en ? "Status" : "Statut"} value={d.status} />
 
           {d.sold_date_note && (

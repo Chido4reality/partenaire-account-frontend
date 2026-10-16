@@ -9,7 +9,8 @@ import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useLangStore, useAuthStore } from "../store";
 import DateRangeFilter, { inRange, wideRange } from "../components/common/DateRangeFilter";
-import api, { formatDate } from "../utils/api";
+import api from "../utils/api";
+import { fmtShopDateTime } from "../utils/shopTime"; // transfer times: created_at in shop time, never a date read as 01:00
 import { useMyPermissions } from "../utils/useMyPermissions";
 import { useReceiveSummary } from "../utils/useReceiveSummary"; // F-C: the override rate
 import HeldReceiptsBanner, { useHeldSummary, ageLabel } from "../components/common/HeldReceiptsBanner"; // held-receipt reminders
@@ -1030,7 +1031,7 @@ export default function TransfersPage() {
                       {fromName} <span style={{ color: "var(--text-muted)" }}>></span> {toName}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                      {formatDate(tr.transfer_date)}
+                      {fmtShopDateTime(tr.created_at || tr.transfer_date, lang === "en")}
                       {tr.pa_transfer_items?.length > 0 && " - " + tr.pa_transfer_items.length + " item(s)"}
                       {tr.notes && " - " + tr.notes}
                     </div>

@@ -10,6 +10,7 @@ import { motion } from "framer-motion";
 import api from "../../utils/api";
 import { useLangStore } from "../../store";
 import { tapHaptic } from "../../utils/haptics";
+import { approverPasswordReady, approverPasswordMissing, approverPasswordWrong } from "./ApproverPasswordInput"; // = login password
 
 export default function OwnerApprovalModal({
   open,
@@ -46,8 +47,8 @@ export default function OwnerApprovalModal({
   const submit = async () => {
     if (submitting) return;
     tapHaptic("light");
-    if (!/^\d{4,6}$/.test(pin)) {
-      setError(lang === "fr" ? "Le PIN doit être 4 à 6 chiffres" : "PIN must be 4-6 digits");
+    if (!approverPasswordReady(pin)) { // APPROVAL PASSWORD = the approver's login password
+      setError(approverPasswordMissing(lang !== "fr"));
       setShake(true); setTimeout(() => setShake(false), 350);
       return;
     }
@@ -71,7 +72,7 @@ export default function OwnerApprovalModal({
         onClose?.();
         return;
       }
-      setError(lang === "fr" ? "PIN incorrect" : "Wrong PIN");
+      setError(approverPasswordWrong(lang !== "fr"));
       setShake(true); setTimeout(() => setShake(false), 350);
       tapHaptic("light");
       setPin("");
@@ -85,10 +86,10 @@ export default function OwnerApprovalModal({
         // 403 is the new bad-PIN response (was 401 pre-APK fix; 401
         // tripped the universal logout interceptor). Keep 401 in the
         // match for any deploys mid-rollout.
-        setError(lang === "fr" ? "PIN incorrect" : "Wrong PIN");
+        setError(approverPasswordWrong(lang !== "fr"));
         setPin("");
       } else if (code === "bad_pin_format") {
-        setError(lang === "fr" ? "Format PIN invalide" : "Invalid PIN format");
+        setError(approverPasswordMissing(lang !== "fr"));
       } else {
         setError(err?.response?.data?.message || (lang === "fr" ? "Échec — réessayez" : "Failed — try again"));
       }
@@ -118,20 +119,19 @@ export default function OwnerApprovalModal({
           </div>
         )}
         <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
-          {lang === "fr" ? "PIN propriétaire / gérant" : "Owner / manager PIN"}
+          {lang === "fr" ? "Mot de passe du propriétaire / gérant" : "Owner / manager password"}
         </label>
         <input
           ref={inputRef}
           type="password"
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          maxLength={6}
+          autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+          maxLength={200}
           value={pin}
-          onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+          onChange={(e) => setPin(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
           placeholder="••••"
           className="input"
-          style={{ width: "100%", textAlign: "center", letterSpacing: "0.5em", fontSize: 20, fontWeight: 700, marginBottom: 10 }}
+          style={{ width: "100%", textAlign: "center", fontSize: 20, fontWeight: 700, marginBottom: 10 }}
         />
         {error && (
           <div style={{ fontSize: 12, color: "#f87171", marginBottom: 10, fontWeight: 600 }}>
@@ -149,7 +149,7 @@ export default function OwnerApprovalModal({
           </button>
           <button
             onClick={submit}
-            disabled={submitting || pin.length < 4}
+            disabled={submitting || !approverPasswordReady(pin)}
             className="btn btn-primary"
             style={{ flex: 2, fontWeight: 700 }}
           >

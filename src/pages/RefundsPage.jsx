@@ -31,6 +31,7 @@
 // (is_voided / has_existing_refund).
 
 import { useState, useEffect } from "react";
+import { locationLabel } from "../utils/locations"; // GOODS-BUFFER: location names follow the app language
 import { useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
@@ -329,7 +330,7 @@ export default function RefundsPage() {
             style={{ width: 240 }}>
             <option value="">{fr ? "Tous les sites" : "All locations"}</option>
             {orgLocations.map(l => (
-              <option key={l.id} value={l.id}>{l.name}</option>
+              <option key={l.id} value={l.id}>{locationLabel(l, lang)}</option>
             ))}
           </select>
         </div>

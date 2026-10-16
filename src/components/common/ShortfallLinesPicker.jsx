@@ -15,6 +15,7 @@
 // there is nothing to choose between. Lines still waiting are NAMED.
 import { useEffect } from "react";
 import { outcomeByKey, outcomeHint, outcomeNoteRequired } from "../../utils/transferVarianceOutcomes";
+import { locationNameLabel } from "../../utils/locations"; // GOODS-BUFFER: branch names follow the app language
 
 export const LATER = "later";
 // Plain words (Peter, 2026-10-11). On the approval the counted units are being
@@ -185,7 +186,7 @@ export default function ShortfallLinesPicker({ en, lines, options, answers, setA
                       </div>
                       {e.reason && (
                         <div style={{ fontSize: 11.5, color: "var(--text-secondary)", marginTop: 4, lineHeight: 1.4 }}>
-                          {hintOf(e.reason, en, { src: sourceName, dst: destName }, context)}
+                          {hintOf(e.reason, en, { src: locationNameLabel(sourceName, en ? "en" : "fr") || sourceName, dst: locationNameLabel(destName, en ? "en" : "fr") || destName }, context)}
                         </div>
                       )}
                       {e.reason && e.reason !== LATER && (

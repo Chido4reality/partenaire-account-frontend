@@ -10,6 +10,7 @@
 import { useQuery } from "@tanstack/react-query";
 import api from "../../utils/api";
 import { useCurrency } from "../../utils/useCurrency";
+import { locationNameLabel } from "../../utils/locations"; // GOODS-BUFFER: names follow the app language
 
 export const HELD_SUMMARY_KEY = ["held-summary"];
 
@@ -68,7 +69,7 @@ export default function HeldReceiptsBanner({ variant = "strip", en, onOpen }) {
         </div>
         {stuck.map(i => (
           <div key={i.approval_id} style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", fontSize: 13, padding: "4px 0", borderTop: "1px solid var(--border)" }}>
-            <span><strong>{i.transfer_number}</strong> · {i.to_name}{i.receiver_name ? ` · ${en ? "counted by" : "compté par"} ${i.receiver_name}` : ""}</span>
+            <span><strong>{i.transfer_number}</strong> · {locationNameLabel(i.to_name, en ? "en" : "fr")}{i.receiver_name ? ` · ${en ? "counted by" : "compté par"} ${i.receiver_name}` : ""}</span>
             <span style={{ color: "#f87171", fontWeight: 700 }}>
               {i.units} {en ? "units" : "unités"}{i.value != null ? ` · ${fmt(i.value)}` : ""} · {ageLabel(i.age_hours, en)}
             </span>

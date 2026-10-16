@@ -17,6 +17,7 @@
 // so the existing landing page survives untouched.
 
 import { useEffect, useMemo, useState } from "react";
+import { locationLabel } from "../utils/locations"; // GOODS-BUFFER: location names follow the app language
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import DateRangeFilter from "../components/common/DateRangeFilter";
 import { Link, useNavigate } from "react-router-dom";
@@ -288,7 +289,7 @@ export default function OperationsDashboardPage() {
         <label className="label" style={{ margin: 0 }}>{en ? "Location" : "Site"}</label>
         <select className="input" value={locId} onChange={e => setLocId(e.target.value)} style={{ width: 200 }}>
           <option value="">{en ? "All locations" : "Tous les sites"}</option>
-          {opsLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+          {opsLocations.map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)}</option>)}
         </select>
       </div>
 

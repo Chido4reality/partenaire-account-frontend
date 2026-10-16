@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { locationLabel, locationNameLabel } from "../utils/locations"; // GOODS-BUFFER: names follow the app language
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
@@ -52,7 +53,7 @@ export default function StockCountPage() {
   const locations = locData?.data || [];
 
   const singleLoc = !!countLocationId;
-  const selectedLocName = locations.find(l => l.id === countLocationId)?.name || "";
+  const selectedLocName = locationLabel(locations.find(l => l.id === countLocationId), lang);
 
   // Scope to the chosen location (one pa_stock row per product), or — for "All
   // locations" — aggregate per product so System qty is the SUM across locations
@@ -98,7 +99,7 @@ export default function StockCountPage() {
       unit: stockItem.pa_products?.unit || "pce",
       location_id: locId,
       location_name: singleLoc
-        ? (stockItem.pa_locations?.name || selectedLocName || "?")
+        ? ((stockItem.pa_locations ? locationLabel(stockItem.pa_locations, lang) : "") || selectedLocName || "?")
         : (lang === "en" ? "All locations (sum)" : "Toutes les boutiques (somme)"),
       slot_code: singleLoc ? (stockItem.slot_code || null) : null,
       system_qty: stockItem.quantity,      // location qty (single) or summed (all)
@@ -184,7 +185,7 @@ export default function StockCountPage() {
           onChange={e => changeCountLocation(e.target.value)}
           style={{ maxWidth: 280 }}>
           <option value="">{lang === "en" ? "All locations (view only)" : "Toutes les boutiques (lecture seule)"}</option>
-          {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+          {locations.map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)}</option>)}
         </select>
         {!singleLoc && (
           <span style={{ fontSize: 11.5, color: "#fbbf24" }}>
@@ -291,7 +292,7 @@ export default function StockCountPage() {
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 600, fontSize: 13 }}>{s.pa_products?.name}</div>
                       <div style={{ fontSize: 11, color: "var(--text-muted)", display: "flex", gap: 8 }}>
-                        <span>{singleLoc ? (s.pa_locations?.name || selectedLocName) : (lang === "en" ? "All shops (sum)" : "Toutes (somme)")}</span>
+                        <span>{singleLoc ? ((s.pa_locations ? locationLabel(s.pa_locations, lang) : "") || selectedLocName) : (lang === "en" ? "All shops (sum)" : "Toutes (somme)")}</span>
                         {singleLoc && s.slot_code && <span style={{ color: "#fbbf24" }}>📍 {s.slot_code}</span>}
                       </div>
                     </div>
@@ -332,7 +333,7 @@ export default function StockCountPage() {
                       <div style={{ flex: 1 }}>
                         <div style={{ fontWeight: 600, fontSize: 13 }}>{item.name}</div>
                         <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                          {item.location_name}
+                          {locationNameLabel(item.location_name, lang)}
                           {item.slot_code && <span style={{ color: "#fbbf24", marginLeft: 6 }}>📍 {item.slot_code}</span>}
                         </div>
                       </div>

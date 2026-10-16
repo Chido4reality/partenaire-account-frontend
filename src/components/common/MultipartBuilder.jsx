@@ -4,6 +4,7 @@
 // shared). quantity_per_unit = how many of that part make one complete set.
 // PRICE lives only on the parent; parts carry no sale price within the kit.
 import { unitLabel } from "../../utils/units";
+import { locationLabel } from "../../utils/locations"; // GOODS-BUFFER: names follow the app language
 
 const rid = () => `p_${Math.random().toString(36).slice(2, 9)}`;
 
@@ -125,7 +126,7 @@ export default function MultipartBuilder({ parts, setParts, products = [], locat
               <select style={inputStyle} value={p.opening_location_id || ""}
                 onChange={e => upd(p._k, { opening_location_id: e.target.value })}>
                 <option value="">{en ? "Location (for stock)" : "Emplacement (pour le stock)"}</option>
-                {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                {locations.map(l => <option key={l.id} value={l.id}>{locationLabel(l, en ? "en" : "fr")}</option>)}
               </select>
             </div>
             {Number(p.opening_qty) > 0 && !p.opening_location_id && (

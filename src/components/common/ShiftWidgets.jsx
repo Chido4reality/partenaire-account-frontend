@@ -52,7 +52,7 @@ import CreditGivenModal from "./CreditGivenModal"; // MP-CREDIT-DRILLDOWN
 // MP-DRAWER-REVEAL
 import { useDrawerReveal, MASK } from "../../utils/useDrawerReveal";
 import RevealPinModal from "./RevealPinModal";
-import { isSellableLocation } from "../../utils/locations"; // GOODS-BUFFER
+import { isSellableLocation, locationLabel } from "../../utils/locations"; // GOODS-BUFFER
 
 // ── ModalShell — same overlay pattern as the rest of the app ─────
 // zIndex 3500: must clear Vaul's mobile bottom-sheet portal (z:1701)
@@ -303,7 +303,7 @@ export function OpenShiftModal({ open, onClose, onOpened }) {
             style={{ fontSize: 15, fontWeight: 700 }}
             autoFocus>
             {sortedLocs.map(l => (
-              <option key={l.id} value={l.id}>{l.name}</option>
+              <option key={l.id} value={l.id}>{locationLabel(l, lang)}</option>
             ))}
           </select>
         ) : (

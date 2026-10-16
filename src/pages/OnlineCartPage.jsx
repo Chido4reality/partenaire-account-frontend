@@ -18,7 +18,7 @@ import api from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
 import toast from "react-hot-toast";
 import { safeSetItem } from "../utils/safeStorage";
-import { isSellableLocation } from "../utils/locations"; // GOODS-BUFFER
+import { isSellableLocation, locationLabel } from "../utils/locations"; // GOODS-BUFFER
 
 // Small Levenshtein for the auto-match confidence label. Mirrors the
 // Sprint C FU.4 server-side migration matcher closely enough for the
@@ -363,7 +363,7 @@ export default function OnlineCartPage() {
             if (loc) safeSetItem(LOC_LS_KEY, loc.id);
           }}>
           <option value="">{t("Select location…", "Choisir un site…")}</option>
-          {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+          {locations.map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)}</option>)}
         </select>
       </div>
 

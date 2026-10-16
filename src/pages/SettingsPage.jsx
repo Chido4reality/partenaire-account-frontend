@@ -16,7 +16,7 @@ import { hasFeature, getCapabilities } from "../utils/planCapabilities";
 import { useLiteMode } from "../hooks/useLiteMode";
 import { useTrialState } from "../hooks/useTrialState";
 import { SHOP_TZ } from "../utils/shopTime";
-import { isGoodsBuffer, locationLabel, locationTypeLabel } from "../utils/locations"; // GOODS-BUFFER
+import { isGoodsBuffer, locationLabel, locationTypeLabel, locationInitial } from "../utils/locations"; // GOODS-BUFFER
 
 const ROLES = [
   { value: "cashier",    en: "Cashier",    fr: "Caissier",     color: "#94a3b8" },
@@ -275,9 +275,6 @@ export default function SettingsPage() {
   // via GET /settings) + the org currency, for the billing toggle label.
   const [waAlertsFee, setWaAlertsFee] = useState(0);
   const [waAlertsCur, setWaAlertsCur] = useState("XAF");
-  const [pinForm, setPinForm]     = useState({ current_pin: "", new_pin: "", confirm_pin: "" });
-  const [showPinSection, setShowPinSection] = useState(false);
-  const [pinError, setPinError]   = useState("");
   const [shopLoaded, setShopLoaded] = useState(false);
   // MP-SETTINGS-DIRTY-TRACKING: the Save must send ONLY fields the owner actually changed,
   // never the whole form. A full-object PATCH let a stale device silently revert an untouched
@@ -496,8 +493,8 @@ export default function SettingsPage() {
     onSuccess: (_r, vars) => {
       setModeConfirm(null);
       toast.success(vars.mode === "cashier"
-        ? (lang === "en" ? `${vars.loc.name}: cashier workflow ON` : `${vars.loc.name} : circuit caissier ACTIVÉ`)
-        : (lang === "en" ? `${vars.loc.name}: direct selling` : `${vars.loc.name} : vente directe`));
+        ? (lang === "en" ? `${locationLabel(vars.loc, lang)}: cashier workflow ON` : `${locationLabel(vars.loc, lang)} : circuit caissier ACTIVÉ`)
+        : (lang === "en" ? `${locationLabel(vars.loc, lang)}: direct selling` : `${locationLabel(vars.loc, lang)} : vente directe`));
       qc.invalidateQueries(["locations"]);
       // The nav gate and both badges read this key; without it the sidebar keeps
       // the old mode until the 60s poll comes round.
@@ -639,21 +636,6 @@ export default function SettingsPage() {
     }
   });
 
-  const pinMutation = useMutation({
-    mutationFn: () => api.post("/settings/set-pin", { current_pin: pinForm.current_pin || null, new_pin: pinForm.new_pin }),
-    onSuccess: () => {
-      toast.success(lang === "en" ? "✓ PIN updated!" : "✓ PIN mis à jour!");
-      setPinForm({ current_pin: "", new_pin: "", confirm_pin: "" });
-      setShowPinSection(false); setPinError("");
-    },
-    onError: (err) => setPinError(err.response?.data?.message || "Error")
-  });
-
-  const handlePinSave = () => {
-    if (!/^\d{4,6}$/.test(pinForm.new_pin)) { setPinError(lang === "en" ? "PIN must be 4-6 digits" : "Le PIN doit contenir 4 à 6 chiffres"); return; }
-    if (pinForm.new_pin !== pinForm.confirm_pin) { setPinError(lang === "en" ? "PINs don't match" : "Les PIN ne correspondent pas"); return; }
-    setPinError(""); pinMutation.mutate();
-  };
 
   // ── DOZIE QUERIES & MUTATIONS ─────────────────────────────────────────────
   const { data: dozieStatusData, isLoading: dozieLoading } = useQuery({
@@ -861,7 +843,7 @@ export default function SettingsPage() {
               return (
                 <div key={loc.id} style={{ background: "var(--bg-card)", border: `1px solid ${isActive ? "var(--brand)" : "var(--border)"}`, borderRadius: 12, padding: "16px 20px", display: "flex", alignItems: "center", gap: 16 }}>
                   <div style={{ width: 40, height: 40, borderRadius: 10, background: loc.type === "warehouse" ? "rgba(251,197,3,0.15)" : "rgba(16,185,129,0.15)", color: loc.type === "warehouse" ? "var(--brand-light)" : "#34d399", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 16, flexShrink: 0 }}>
-                    {loc.name.charAt(0).toUpperCase()}
+                    {locationInitial(loc, lang)}
                   </div>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 14 }}>{locationLabel(loc, lang)}</div>
@@ -949,10 +931,10 @@ export default function SettingsPage() {
               return (
                 <div key={loc.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: "16px 20px", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
                   <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(16,185,129,0.15)", color: "#34d399", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 16, flexShrink: 0 }}>
-                    {loc.name.charAt(0).toUpperCase()}
+                    {locationInitial(loc, lang)}
                   </div>
                   <div style={{ flex: 1, minWidth: 160 }}>
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>{loc.name}</div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{locationLabel(loc, lang)}</div>
                     <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
                       {isCashier
                         ? (lang === "en" ? "Salesperson sends to a cashier" : "Le vendeur envoie au caissier")
@@ -1037,7 +1019,7 @@ export default function SettingsPage() {
                 where the workflow is actually on, so the list is cashier shops. */}
             {locations.filter(l => l.type !== "warehouse" && l.sales_mode === "cashier").map(loc => (
               <div key={loc.id} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px", marginBottom: 10 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{loc.name}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{locationLabel(loc, lang)}</div>
 
                 <div style={{ fontSize: 13, fontWeight: 600 }}>
                   {lang === "en" ? "How the customer reaches the cashier" : "Comment le client rejoint le caissier"}
@@ -1749,51 +1731,9 @@ export default function SettingsPage() {
             )}
           </div>
 
-          {/* Owner PIN */}
-          <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, padding: 24 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: showPinSection ? 20 : 0 }}>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 15 }}>🔐 {lang === "en" ? "Owner PIN" : "PIN propriétaire"}</div>
-                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3 }}>
-                  {lang === "en" ? "Override prices and approve voids/returns" : "Forcer les prix et approuver les annulations"}
-                </div>
-              </div>
-              <button onClick={() => setShowPinSection(!showPinSection)}
-                style={{ padding: "8px 16px", borderRadius: 10, border: "1px solid var(--border)", background: "transparent", color: "var(--text-secondary)", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
-                {showPinSection ? (lang === "en" ? "Cancel" : "Annuler") : (lang === "en" ? "Set PIN" : "Définir PIN")}
-              </button>
-            </div>
-
-            {showPinSection && (
-              <div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-                  <div className="form-group">
-                    <label className="label">{lang === "en" ? "Current PIN" : "PIN actuel"}</label>
-                    <input className="input" type="password" inputMode="numeric" maxLength={6}
-                      value={pinForm.current_pin} onChange={e => setPinForm(f => ({ ...f, current_pin: e.target.value.replace(/\D/g,"").slice(0,6) }))}
-                      placeholder="••••" style={{ textAlign: "center", letterSpacing: 6 }} />
-                  </div>
-                  <div className="form-group">
-                    <label className="label">{lang === "en" ? "New PIN (4-6 digits)" : "Nouveau PIN (4-6 chiffres)"}</label>
-                    <input className="input" type="password" inputMode="numeric" maxLength={6}
-                      value={pinForm.new_pin} onChange={e => setPinForm(f => ({ ...f, new_pin: e.target.value.replace(/\D/g,"").slice(0,6) }))}
-                      placeholder="••••" style={{ textAlign: "center", letterSpacing: 6 }} />
-                  </div>
-                  <div className="form-group">
-                    <label className="label">{lang === "en" ? "Confirm PIN" : "Confirmer"}</label>
-                    <input className="input" type="password" inputMode="numeric" maxLength={6}
-                      value={pinForm.confirm_pin} onChange={e => setPinForm(f => ({ ...f, confirm_pin: e.target.value.replace(/\D/g,"").slice(0,6) }))}
-                      placeholder="••••" style={{ textAlign: "center", letterSpacing: 6 }} />
-                  </div>
-                </div>
-                {pinError && <div style={{ color: "#f87171", fontSize: 12, marginBottom: 12 }}>{pinError}</div>}
-                <button onClick={handlePinSave} disabled={pinMutation.isPending} className="btn btn-primary" style={{ minWidth: 160 }}>
-                  {pinMutation.isPending ? "..." : (lang === "en" ? "Save PIN" : "Sauvegarder PIN")}
-                </button>
-              </div>
-            )}
-          </div>
-
+          {/* OWNER-PIN RETIRED (2026-10-16): the "Owner PIN" card wrote its digits into the
+              owner's LOGIN password (pa_users.pin_hash). Nothing reads a separate PIN any more —
+              every approval asks for the login password — so the card is gone. */}
           {/* Save button */}
           <button onClick={() => saveShopMutation.mutate()}
             disabled={saveShopMutation.isPending || drawerModeBlocked}
@@ -2334,7 +2274,7 @@ export default function SettingsPage() {
                 <select className="input" value={staffForm.assigned_location_id || ""}
                   onChange={e => setSF("assigned_location_id", e.target.value)}>
                   <option value="">{lang === "en" ? "— None (org-wide / all branches) —" : "— Aucun (toute l'organisation / toutes les branches) —"}</option>
-                  {locations.filter(l => !isGoodsBuffer(l)).map(l => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
+                  {locations.filter(l => !isGoodsBuffer(l)).map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)} ({l.type})</option>)}
                 </select>
                 {/* MP-TRANSFER-GOVERNANCE Part 2: for a WAREHOUSE keeper this field is not
                     optional — the transfer scope gate fails CLOSED without it, so an

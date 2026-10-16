@@ -4,6 +4,7 @@
 // FINALIZE — only then does it execute, produce the receipt, and register to the
 // report. Pending / Rejected items are read-only.
 import { useState } from "react";
+import { locationNameLabel } from "../utils/locations"; // GOODS-BUFFER: branch names follow the app language
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
@@ -250,7 +251,7 @@ export default function MyRequestsPage() {
               </div>
               <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 3 }}>
                 {/* MP-BELOW-COST-CLEAR-WORDING: below-cost amount is the shortfall (shown labelled below), not the sale total. */}
-                {[!["below_cost_sale", "discount"].includes(r.action_type) && r.amount != null ? fmt(Math.abs(Number(r.amount))) : null, r.target_ref, r.branch_name].filter(Boolean).join(" · ") || "—"}
+                {[!["below_cost_sale", "discount"].includes(r.action_type) && r.amount != null ? fmt(Math.abs(Number(r.amount))) : null, r.target_ref, locationNameLabel(r.branch_name, en ? "en" : "fr")].filter(Boolean).join(" · ") || "—"}
               </div>
               {r.action_type === "below_cost_sale" && (
                 <BelowCostLossDetail payload={r.payload} shortfall={r.amount} en={en} fmt={fmt} cashier={r.requested_by_name} />

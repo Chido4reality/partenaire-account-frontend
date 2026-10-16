@@ -8,6 +8,7 @@
 import { useState } from "react";
 import { useLangStore } from "../../store";
 import { revealWithPin, REVEAL_MS } from "../../utils/useDrawerReveal";
+import ApproverPasswordInput, { approverPasswordReady, approverPasswordLabel, approverPasswordWrong } from "./ApproverPasswordInput"; // = login password
 
 export default function RevealPinModal({ open, onClose, onRevealed }) {
   const { lang } = useLangStore();
@@ -19,7 +20,7 @@ export default function RevealPinModal({ open, onClose, onRevealed }) {
   if (!open) return null;
 
   const submit = async () => {
-    if (busy || !/^\d{4,6}$/.test(pin)) return;
+    if (busy || !approverPasswordReady(pin)) return;
     setBusy(true); setErr(null);
     const r = await revealWithPin(pin);
     setBusy(false);
@@ -29,7 +30,7 @@ export default function RevealPinModal({ open, onClose, onRevealed }) {
     // reinstall the app.
     setErr(r.rateLimited
       ? (fr ? "Trop de tentatives — attendez 5 minutes." : "Too many attempts — wait 5 minutes.")
-      : (fr ? "Code incorrect." : "Wrong PIN."));
+      : approverPasswordWrong(!fr));
     setPin("");
   };
 
@@ -43,17 +44,14 @@ export default function RevealPinModal({ open, onClose, onRevealed }) {
         </div>
         <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginBottom: 14, lineHeight: 1.5 }}>
           {fr
-            ? `Entrez VOTRE code pour afficher l'argent en caisse. Il se masque à nouveau après ${Math.round(REVEAL_MS / 1000)} secondes, ou dès que vous quittez l'écran.`
-            : `Enter YOUR PIN to show the cash in the drawer. It hides again after ${Math.round(REVEAL_MS / 1000)} seconds, or as soon as you leave this screen.`}
+            ? `Entrez VOTRE mot de passe pour afficher l'argent en caisse. Il se masque à nouveau après ${Math.round(REVEAL_MS / 1000)} secondes, ou dès que vous quittez l'écran.`
+            : `Enter YOUR password to show the cash in the drawer. It hides again after ${Math.round(REVEAL_MS / 1000)} seconds, or as soon as you leave this screen.`}
         </div>
 
-        <input
-          type="password" inputMode="numeric" autoFocus
-          className="input" style={{ width: "100%", textAlign: "center", fontSize: 22, letterSpacing: 6 }}
-          value={pin} maxLength={6}
-          onChange={(e) => { setPin(e.target.value.replace(/\D/g, "")); setErr(null); }}
-          onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
-          placeholder="••••" />
+        <label className="label">{approverPasswordLabel(!fr)}</label>
+        <ApproverPasswordInput value={pin} autoFocus onEnter={submit}
+          onChange={(v) => { setPin(v); setErr(null); }}
+          style={{ width: "100%", textAlign: "center", fontSize: 20 }} />
 
         {err && (
           <div style={{ marginTop: 10, fontSize: 12.5, color: "#f87171" }}>{err}</div>
@@ -63,7 +61,7 @@ export default function RevealPinModal({ open, onClose, onRevealed }) {
           <button className="btn btn-secondary" onClick={onClose} disabled={busy}>
             {fr ? "Annuler" : "Cancel"}
           </button>
-          <button className="btn btn-primary" onClick={submit} disabled={busy || !/^\d{4,6}$/.test(pin)}>
+          <button className="btn btn-primary" onClick={submit} disabled={busy || !approverPasswordReady(pin)}>
             {busy ? "…" : (fr ? "Afficher" : "Show")}
           </button>
         </div>

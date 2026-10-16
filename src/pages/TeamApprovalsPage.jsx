@@ -5,6 +5,7 @@
 // go to the owner). Approving requires the manager's OWN PIN (same check as the owner).
 // The OWNER keeps using the Accountant Log inbox; this surface is for managers.
 import { useState } from "react";
+import { locationNameLabel } from "../utils/locations"; // GOODS-BUFFER: branch names follow the app language
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { useLangStore } from "../store";
@@ -12,6 +13,7 @@ import { useCurrency } from "../utils/useCurrency";
 import api from "../utils/api";
 import ApprovalDetailView from "../components/common/ApprovalDetailView"; // MP-APPROVAL-FULL-DETAIL
 import HoldRejectFields, { HOLD_ACTION, holdRejectReady } from "../components/common/HoldRejectFields"; // receive-mismatch gate
+import ApproverPasswordInput, { approverPasswordReady, approverPasswordLabel } from "../components/common/ApproverPasswordInput"; // approval password = login
 import HoldShortfallFields, { useHoldShortfall, holdShortfallReady, holdShortfallBody, approveBlockedReason } from "../components/common/HoldShortfallFields"; // variance outcomes
 import HeldReceiptsBanner, { HoldTierBadge } from "../components/common/HeldReceiptsBanner"; // held-receipt reminders
 import { SHOP_TZ } from "../utils/shopTime";
@@ -112,8 +114,8 @@ export default function TeamApprovalsPage() {
       <div style={{ fontWeight: 700, fontSize: 20 }}>✅ {en ? "Approvals" : "Approbations"}</div>
       <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 2, marginBottom: 14 }}>
         {en
-          ? "Requests from your team that the owner delegated to you. Approve with your PIN or reject. Below-cost sales still go to the owner."
-          : "Demandes de votre équipe que le propriétaire vous a déléguées. Approuvez avec votre PIN ou rejetez. Les ventes sous le prix plancher restent au propriétaire."}
+          ? "Requests from your team that the owner delegated to you. Approve with your password or reject. Below-cost sales still go to the owner."
+          : "Demandes de votre équipe que le propriétaire vous a déléguées. Approuvez avec votre mot de passe ou rejetez. Les ventes sous le prix plancher restent au propriétaire."}
       </div>
 
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
@@ -138,7 +140,7 @@ export default function TeamApprovalsPage() {
               <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--text-muted)" }}>{whenLabel(r.created_at, en)}</span>
             </div>
             <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 3 }}>
-              {[r.requested_by_name, r.amount != null ? fmt(Math.abs(Number(r.amount))) : null, r.target_ref, r.branch_name].filter(Boolean).join(" · ") || "—"}
+              {[r.requested_by_name, r.amount != null ? fmt(Math.abs(Number(r.amount))) : null, r.target_ref, locationNameLabel(r.branch_name, en ? "en" : "fr")].filter(Boolean).join(" · ") || "—"}
             </div>
             {/* MP-APPROVAL-FULL-DETAIL: a delegated manager decides the same requests the
                 boss does and was equally blind here. Safe by construction — the server
@@ -166,16 +168,14 @@ export default function TeamApprovalsPage() {
         <div className="modal-overlay" onClick={() => { if (!approveMut.isPending) closePin(); }}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 6 }}>
-              {en ? "Enter your PIN to approve" : "Entrez votre PIN pour approuver"}
+              {en ? "Enter your password to approve" : "Entrez votre mot de passe pour approuver"}
             </div>
             <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 12 }}>
               {verb(pinFor.action_type, en)}{pinFor.requested_by_name ? ` · ${pinFor.requested_by_name}` : ""}
             </div>
-            <input className="input" type="password" inputMode="numeric" autoFocus
-              value={pin} maxLength={6}
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
-              placeholder={en ? "4-6 digit PIN" : "PIN 4-6 chiffres"}
-              style={{ width: "100%", marginBottom: 14, textAlign: "center", letterSpacing: 4, fontSize: 18 }} />
+            <label className="label">{approverPasswordLabel(en)}</label>
+            <ApproverPasswordInput value={pin} onChange={setPin} autoFocus
+              style={{ width: "100%", marginBottom: 14, textAlign: "center", fontSize: 18 }} />
             {pinFor.action_type === HOLD_ACTION && (
               <div style={{ marginBottom: 14, maxHeight: "45vh", overflowY: "auto" }}>
                 <HoldShortfallFields en={en} hold={hold} answers={sfAnswers} setAnswers={setSfAnswers} />
@@ -186,7 +186,7 @@ export default function TeamApprovalsPage() {
                 {en ? "Cancel" : "Annuler"}
               </button>
               <button className="btn btn-primary" style={{ flex: 2 }}
-                disabled={approveMut.isPending || !/^\d{4,6}$/.test(pin)
+                disabled={approveMut.isPending || !approverPasswordReady(pin)
                   || (pinFor.action_type === HOLD_ACTION && !holdShortfallReady(hold, sfAnswers))}
                 onClick={() => approveMut.mutate({ id: pinFor.id, pin,
                   extra: pinFor.action_type === HOLD_ACTION ? holdShortfallBody(hold, sfAnswers) : {} })}>

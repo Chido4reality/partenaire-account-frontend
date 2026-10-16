@@ -533,7 +533,7 @@ export default function InventoryPage() {
         },
         pa_locations: {
           name: (locations.find(l => l.id === initialLocationId)?.name) || null,
-          type: null,
+          type: null, kind: (locations.find(l => l.id === initialLocationId)?.kind) || null, // GOODS-BUFFER: labelled by kind
         },
         offline_queued: offlineQueued,
       };
@@ -1861,7 +1861,7 @@ export default function InventoryPage() {
                   <label className="label">Location</label>
                   <select className="input" value={newProduct.initial_location_id} onChange={e => setNewProduct(p => ({ ...p, initial_location_id: e.target.value }))}>
                     <option value="">{lang === "en" ? "Skip (add later)" : "Ignorer"}</option>
-                    {receiveLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                    {receiveLocations.map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)}</option>)}
                   </select>
                 </div>
                 <div className="form-group">
@@ -1916,7 +1916,7 @@ export default function InventoryPage() {
                 <label className="label">{lang === "en" ? "Destination *" : "Destination *"}</label>
                 <select className="input" value={receiveForm.location_id} onChange={e => setReceiveForm(f => ({ ...f, location_id: e.target.value }))}>
                   <option value="">{lang === "en" ? "Select location" : "Choisir emplacement"}</option>
-                  {receiveLocations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
+                  {receiveLocations.map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)} ({l.type})</option>)}
                 </select>
               </div>
               <div className="form-group">
@@ -2283,7 +2283,7 @@ export default function InventoryPage() {
                   <label className="label">Location</label>
                   <select className="input" value={rapidItem.initial_location_id} onChange={e => setRapidItem(p => ({ ...p, initial_location_id: e.target.value }))}>
                     <option value="">Skip</option>
-                    {receiveLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                    {receiveLocations.map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)}</option>)}
                   </select>
                 </div>
                 <div className="form-group">
@@ -2400,7 +2400,7 @@ export default function InventoryPage() {
                           <td>{row.wholesale_price || "—"}</td>
                           <td>{row.min_price || "—"}</td>
                           <td>{row.qty || "—"}</td>
-                          <td style={{ fontSize: 10 }}>{row.location_id ? locations.find(l => l.id === row.location_id)?.name : <span style={{ color: "#f87171" }}>{row.location_name || (en ? "missing" : "manquant")}</span>}</td>
+                          <td style={{ fontSize: 10 }}>{row.location_id ? locationLabel(locations.find(l => l.id === row.location_id), lang) : <span style={{ color: "#f87171" }}>{row.location_name || (en ? "missing" : "manquant")}</span>}</td>
                           <td style={{ fontSize: 10 }}>{row.slot_zone || "—"}</td>
                         </tr>
                       ))}
@@ -3002,7 +3002,7 @@ function AdjustModal({ product, role, requestApproval, lang, onClose, onSuccess 
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 6 }}>{lang === "en" ? "Adjust Stock" : "Ajuster le stock"}</div>
-        <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20 }}>{product.pa_products?.name} — {product.pa_locations?.name}</div>
+        <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20 }}>{product.pa_products?.name} — {locationLabel(product.pa_locations, lang)}</div>
         {/* F-D: the stale-guard refusal. Two exits, both obvious; nothing was
             written, and the screen says so before anything else. */}
         {staleRefusal && (

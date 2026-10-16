@@ -17,7 +17,7 @@ import toast from "react-hot-toast";
 import api from "../utils/api";
 import { useAuthStore, useLangStore, useSettingsStore } from "../store";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { locationLabel } from "../utils/locations"; // GOODS-BUFFER
+import { locationLabel, locationNameLabel } from "../utils/locations"; // GOODS-BUFFER
 import BufferDetailModal from "../components/BufferDetailModal"; // MP-STAFF-ACTIVITY-LEDGER Phase 3
 import { useCurrency } from "../utils/useCurrency";
 import ProductSearchBox from "../components/common/ProductSearchBox";
@@ -188,7 +188,7 @@ export default function GoodsBufferPage() {
     if (!pending.length) return toast.error(en ? "Nothing pending" : "Rien en attente");
     const lines = pending.map(r =>
       `• ${r.product_label} — ${num(r.qty_remaining)}${r.qty_released > 0 ? `/${num(r.qty_received)}` : ""}` +
-      `${r.location_name ? ` @ ${r.location_name}` : ""}${r.created_by_name ? ` (${r.created_by_name})` : ""}`);
+      `${r.location_name ? ` @ ${locationNameLabel(r.location_name, lang)}` : ""}${r.created_by_name ? ` (${r.created_by_name})` : ""}`);
     const header = en ? `Goods waiting to be added to stock — ${org?.name || ""}`
                       : `Marchandises en attente d'ajout au stock — ${org?.name || ""}`;
     openWhatsApp(null, phone, `${header}\n${lines.join("\n")}`);
@@ -320,7 +320,7 @@ export default function GoodsBufferPage() {
                       {r.is_new_product ? <span style={{ fontSize: 11, color: "#60a5fa", marginLeft: 6 }}>{en ? "NEW" : "NOUVEAU"}</span> : null}
                     </div>
                     <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-                      {[r.location_name, r.created_by_name,
+                      {[locationNameLabel(r.location_name, lang), r.created_by_name,
                         r.created_at ? new Date(r.created_at).toLocaleDateString(en ? "en-GB" : "fr-FR", { day: "numeric", month: "short" }) : null
                       ].filter(Boolean).join(" · ")}
                     </div>
@@ -391,7 +391,7 @@ function SplitRows({ rows, setRows, locList, en }) {
         <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
           <select className="input" style={{ flex: 1.6 }} value={r.location_id} onChange={e => setRow(i, { location_id: e.target.value })}>
             <option value="">{en ? "Location" : "Site"}</option>
-            {locList.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            {locList.map(l => <option key={l.id} value={l.id}>{locationLabel(l, en ? "en" : "fr")}</option>)}
           </select>
           <input className="input" style={{ flex: 1 }} type="number" inputMode="numeric" min="0" value={r.quantity}
             onChange={e => setRow(i, { quantity: e.target.value })} placeholder={en ? "Qty" : "Qté"} />
@@ -956,7 +956,7 @@ export function EditModal({ row, en, locList, bufferMode, onClose, onDone }) {  
           <div className="form-group"><label className="label">{en ? "Location" : "Site"}</label>
             <select className="input" value={loc} onChange={e => setLoc(e.target.value)}>
               <option value="">{en ? "—" : "—"}</option>
-              {locList.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              {locList.map(l => <option key={l.id} value={l.id}>{locationLabel(l, en ? "en" : "fr")}</option>)}
             </select></div>
         )}
         <div style={{ display: "flex", gap: 8 }}>

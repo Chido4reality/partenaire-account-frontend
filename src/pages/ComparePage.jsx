@@ -15,6 +15,7 @@
 // grant). The page only renders what the server says, including its refusal.
 // ============================================================================
 import { useState } from "react";
+import { locationLabel, locationNameLabel } from "../utils/locations"; // GOODS-BUFFER: location names follow the app language
 import { useQuery } from "@tanstack/react-query";
 import { useLangStore } from "../store";
 import api from "../utils/api";
@@ -80,7 +81,7 @@ export default function ComparePage() {
     const f = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", timeZone: "UTC" });
     return `${f.format(from)} – ${f.format(to)} ${to.getUTCFullYear()}`;
   };
-  const sideTitle = (side) => `${side.location_name ? side.location_name.trim() : (en ? "All locations" : "Tous les points de vente")}`;
+  const sideTitle = (side) => `${side.location_name ? locationNameLabel(side.location_name.trim(), lang) : (en ? "All locations" : "Tous les points de vente")}`;
   const dateTime = (iso) => new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric",
     hour: "2-digit", minute: "2-digit", timeZone: "Africa/Douala" }).format(new Date(iso));
 
@@ -93,7 +94,7 @@ export default function ComparePage() {
   const LocSelect = ({ value, onChange }) => (
     <select className="form-input" value={value} onChange={(e) => onChange(e.target.value)} style={{ width: "100%" }}>
       <option value="all">{en ? "All locations" : "Tous les points de vente"}</option>
-      {locations.map((l) => <option key={l.id} value={l.id}>{(l.name || "").trim()}</option>)}
+      {locations.map((l) => <option key={l.id} value={l.id}>{locationLabel(l, lang).trim()}</option>)}
     </select>
   );
 
