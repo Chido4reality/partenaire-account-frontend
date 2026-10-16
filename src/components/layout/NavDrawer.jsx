@@ -60,7 +60,8 @@ const SECTIONS = [
   // Accountant Log Phase 1: owner-only oversight surface. Lives next to Settings
   // in the drawer (it inherits Layout's NAV owner+pro_plus gate; listing it here
   // just lets the mobile drawer surface it — same SECTIONS-omission fix pattern).
-  { en: "SETTINGS",   fr: "PARAMÈTRES",        routes: ["/accountant-log", "/settings"] },
+  // CHANGE PASSWORD: My account (every role) sits with Settings (owner/manager).
+  { en: "SETTINGS",   fr: "PARAMÈTRES",        routes: ["/accountant-log", "/settings", "/my-account"] },
   // MP-HELP v1 — mobile drawer entry (Layout NAV + App.jsx also register /help).
   // SUPPORT MESSAGING — the owner's conversation with Équipe Stenamo sits with Help.
   { en: "HELP",       fr: "AIDE",              routes: ["/messages", "/help"] },

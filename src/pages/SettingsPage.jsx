@@ -17,6 +17,7 @@ import { useLiteMode } from "../hooks/useLiteMode";
 import { useTrialState } from "../hooks/useTrialState";
 import { SHOP_TZ } from "../utils/shopTime";
 import { isGoodsBuffer, locationLabel, locationTypeLabel, locationInitial } from "../utils/locations"; // GOODS-BUFFER
+import ChangePasswordCard from "../components/common/ChangePasswordCard"; // change my password
 
 const ROLES = [
   { value: "cashier",    en: "Cashier",    fr: "Caissier",     color: "#94a3b8" },
@@ -1776,6 +1777,9 @@ export default function SettingsPage() {
               💳 {lang === "en" ? "Manage subscription" : "Gérer l'abonnement"}
             </Link>
           </div>
+
+          {/* CHANGE PASSWORD (2026-10-16): replaces the retired Owner PIN card — the login password. */}
+          <div style={{ marginTop: 20 }}><ChangePasswordCard en={lang === "en"} /></div>
 
           {/* MP-PUSH: per-user alert status. On the Account tab (not Shop) because it is
               a PER-DEVICE, PER-USER setting — a cashier needs it as much as the owner.

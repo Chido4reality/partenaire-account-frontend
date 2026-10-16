@@ -163,6 +163,9 @@ const NAV = [
   { to: "/settings",     en: "Settings",   fr: "Paramètres",      icon: "⚙️", roles: ["owner","manager"],                       section: "settings" },
   // MP-HELP v1 — in-app guide (bundled, offline). Everyone can get stuck, so ALL
   // roles; also registered in NavDrawer.jsx SECTIONS (mobile) + App.jsx ROUTE_ACCESS.
+  // CHANGE PASSWORD — every role changes its own password here (Settings is owner/manager).
+  // Also in NavDrawer SECTIONS (mobile) + App.jsx ROUTE_ACCESS.
+  { to: "/my-account",   en: "My account", fr: "Mon compte",      icon: "👤", roles: ["owner","manager","cashier","warehouse","accountant"], section: "settings" },
   { to: "/help",         en: "Help",       fr: "Aide",            icon: "❓", roles: ["owner","manager","cashier","warehouse","accountant"], section: "settings" },
 ];
 

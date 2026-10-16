@@ -17,6 +17,7 @@ import DateRangeFilter, { inRange, wideRange } from "../components/common/DateRa
 import ExpiryFields, { expiryMissing } from "../components/common/ExpiryFields"; // EXPIRY-TRACKING
 import { SHOP_TZ } from "../utils/shopTime";
 import { withoutGoodsBuffer, locationLabel } from "../utils/locations"; // GOODS-BUFFER
+import { restockLineDefault, restockSendItems } from "../utils/restockLines"; // Buy-0 lines start unticked, never sent
 
 function toArray(x) {
   if (Array.isArray(x)) return x;
@@ -81,22 +82,13 @@ export default function RestockPage() {
   });
 
   const buyRows = Array.isArray(toBuy.data) ? toBuy.data : [];
-  // Per-line UI state (default: checked, qty = suggested). Derived so new server rows adopt defaults.
-  const lineState = (pid, suggested) => lines[pid] || { checked: true, qty: suggested };
+  // Per-line UI state (default: ticked when there is something to buy, qty = suggested).
+  // Derived so new server rows adopt defaults.
+  const lineState = (pid, suggested) => lines[pid] || restockLineDefault(suggested);
   const setLine = (pid, patch) => setLines(prev => ({ ...prev, [pid]: { ...(prev[pid] || {}), ...patch } }));
 
   // Collect the CHECKED lines (low-stock + manual) into the send payload.
-  const checkedItems = useMemo(() => {
-    const out = [];
-    for (const r of buyRows) {
-      const st = lines[r.product_id] || { checked: true, qty: r.suggested_qty };
-      if (st.checked && Number(st.qty) > 0) out.push({ product_id: r.product_id, name: en ? (r.name_en || r.name) : r.name, quantity: Number(st.qty) });
-    }
-    for (const m of manual) {
-      if (m.checked && Number(m.qty) > 0) out.push({ product_id: m.product_id, name: m.name, quantity: Number(m.qty) });
-    }
-    return out;
-  }, [buyRows, lines, manual, en]);
+  const checkedItems = useMemo(() => restockSendItems({ buyRows, lines, manual, en }), [buyRows, lines, manual, en]);
 
   const addManual = (p) => {
     if (manual.some(m => m.product_id === p.id) || buyRows.some(r => r.product_id === p.id)) {
