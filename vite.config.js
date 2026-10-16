@@ -27,6 +27,9 @@ const RIG_TARGET = process.env.VITE_RIG_TARGET || null;
 // /admin.html); navigateFallbackDenylist + globIgnores keep this SW off
 // /admin and /api.
 export default defineConfig({
+  // OLD-APP SAFETY: the web build marker sent in X-App-Client (web/<family>/<sha>); Vercel sets
+  // VERCEL_GIT_COMMIT_SHA at build time, a local build sends "dev".
+  define: { __FE_BUILD__: JSON.stringify((process.env.VERCEL_GIT_COMMIT_SHA || "dev").slice(0, 12)) },
   plugins: [
     react(),
     VitePWA({

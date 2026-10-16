@@ -273,5 +273,20 @@ console.log("\n-- 8 Daily Ledger access for accountants --\n");
   check("…and the day's 'Collected' total shows —, never a 0 it was not allowed to read", /collectedToday == null \? "—"/.test(rp) && /paid == null \? "—"/.test(rp));
 }
 
+{
+  console.log("\n§OLD-APP SAFETY — the client marker rides on EVERY request (readiness RC2, 2026-10-16)");
+  const a = read("utils/api.js"), ps = read("utils/pendingSync.js");
+  const vite = readFileSync(resolve(SRC, "../vite.config.js"), "utf8");
+  check("api.js stamps X-App-Client on every request — no /auth/* filter left",
+    /config\.headers\["X-App-Client"\] = appClient\(\);/.test(a) && !/if \(.*\.test\(.*\) config\.headers\["X-App-Client"\]/.test(a));
+  check("…an Android build says android-app/<build>, never a bare 'android-app' (that is what the OLD apps send)",
+    /const BUNDLED_MIN_ANDROID_BUILD = 118;/.test(a) && a.includes("`android-app/${_appBuild || BUNDLED_MIN_ANDROID_BUILD}`") && !a.includes(': "android-app"'));
+  check("…a web tab says web/<family>/<build>, so the server can tell it from an old bundle",
+    a.includes("`web/desktop/${FE_BUILD}`") && a.includes("`web/iphone/${FE_BUILD}`") && a.includes("`web/android/${FE_BUILD}`")
+    && /__FE_BUILD__: JSON\.stringify\(\(process\.env\.VERCEL_GIT_COMMIT_SHA \|\| "dev"\)\.slice\(0, 12\)\)/.test(vite));
+  check("…and an offline replay carries the same marker (else a queued release would read as a legacy app)",
+    /getClient: +\(\) => appClient\(\)/.test(a) && /'X-App-Client': _client\(\)/.test(ps) && /if \(getClient\) _client = getClient;/.test(ps));
+}
+
 console.log(`\n${fails ? `${fails} FAILED` : "all passed"}`);
 process.exit(fails ? 1 : 0);

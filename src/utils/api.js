@@ -22,6 +22,9 @@ const api = axios.create({ baseURL: BASE_URL, timeout: 6000 });
 configureSync({
   baseUrl:      BASE_URL,
   getAuthToken: () => useAuthStore.getState().token,
+  // OLD-APP SAFETY: replays carry the same client marker as live requests (called at replay
+  // time, never during module init — appClient's constants are declared further down).
+  getClient:    () => appClient(),
 });
 startWorker();
 
@@ -154,12 +157,16 @@ function buildOptimisticResponse(endpoint, payload, localId) {
   };
 }
 
-// PLATFORM CAPTURE (2026-10-05): which client this is, sent on /auth/* requests only — they
-// are already preflighted (JSON body / Authorization), so the header costs no extra round
-// trip; a plain GET would gain a preflight. The server stores it as pa_users.last_client so
-// the admin messaging screen can say "iPhone / browser — never reachable by push" as a fact.
-// There is no iOS app: an iPhone is always "web/iphone".
+// PLATFORM CAPTURE (2026-10-05) + OLD-APP SAFETY (2026-10-16): which client this is, sent on
+// EVERY request (was /auth/* only). Authenticated calls are already preflighted because of
+// Authorization, so the header costs no extra round trip there. The server stores the platform
+// as pa_users.last_client, and tells a legacy client (Android < 118, or a web tab on an old
+// bundle — no marker) from this one: e.g. a Goods Buffer release from a legacy app is refused
+// with "please update". There is no iOS app: an iPhone is always "web/iphone".
 let _appBuild = null;
+const BUNDLED_MIN_ANDROID_BUILD = 118;
+// The web build marker: the commit Vercel built from (vite.config define), "dev" locally.
+const FE_BUILD = (typeof __FE_BUILD__ !== "undefined" && /^[0-9a-f]{4,40}$/.test(__FE_BUILD__)) ? __FE_BUILD__ : "dev";
 try {
   if (typeof window !== "undefined" && window.Capacitor?.isNativePlatform?.()) {
     // Only a plain info object crosses the promise boundary — never the plugin proxy.
@@ -168,18 +175,20 @@ try {
 } catch { /* not native */ }
 export function appClient() {
   try {
-    if (window.Capacitor?.isNativePlatform?.()) return _appBuild ? `android-app/${_appBuild}` : "android-app";
+    // This bundle ships in vc118 or later: before App.getInfo resolves, say so — a bare
+    // "android-app" is what the OLD apps send, and would read as legacy.
+    if (window.Capacitor?.isNativePlatform?.()) return `android-app/${_appBuild || BUNDLED_MIN_ANDROID_BUILD}`;
     const ua = navigator.userAgent || "";
-    if (/iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return "web/iphone";
-    if (/Android/i.test(ua)) return "web/android";
-    return "web/desktop";
-  } catch { return "web/desktop"; }
+    if (/iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return `web/iphone/${FE_BUILD}`;
+    if (/Android/i.test(ua)) return `web/android/${FE_BUILD}`;
+    return `web/desktop/${FE_BUILD}`;
+  } catch { return `web/desktop/${FE_BUILD}`; }
 }
 
 api.interceptors.request.use(config => {
   const token = useAuthStore.getState().token;
   if (token) config.headers.Authorization = `Bearer ${token}`;
-  if (/^\/auth\//.test((config.url || "").replace(BASE_URL, "").split("?")[0])) config.headers["X-App-Client"] = appClient();
+  config.headers["X-App-Client"] = appClient();   // OLD-APP SAFETY: every request, not only /auth/*
   // MP-CAPACITOR Slice 3: stamp local_id on every offline-eligible
   // POST regardless of online state. Online → backend dedupes via
   // (org_id, local_id) unique index (Slice 1). Offline → the queue

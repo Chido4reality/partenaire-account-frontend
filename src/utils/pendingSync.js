@@ -89,9 +89,11 @@ let _authToken  = null;
 // Public: api.js calls this once at startup to hand us the baseURL +
 // a getter for the current auth token. Auth changes hot-swap without
 // requiring a worker restart.
-export function configureSync({ baseUrl, getAuthToken }) {
+let _client = null;   // OLD-APP SAFETY: the X-App-Client marker for replays
+export function configureSync({ baseUrl, getAuthToken, getClient }) {
   _apiBaseUrl = baseUrl;
   _authToken  = getAuthToken;
+  if (getClient) _client = getClient;
 }
 
 // ── Public: enqueue ────────────────────────────────────────────
@@ -381,6 +383,8 @@ async function attempt(row) {
         // offline) so the debt-collection endpoint can attribute the drawer shift that
         // was open THEN, and never drop the cash if none resolves now.
         'X-Offline-Replay': '1',
+        // OLD-APP SAFETY: a replay is this app, not a legacy one.
+        ...(typeof _client === 'function' ? { 'X-App-Client': _client() } : {}),
         ...(row.created_at ? { 'X-Collected-At': row.created_at } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
