@@ -254,5 +254,24 @@ console.log("\n-- 7 hide the cash amount: every device, until the password --\n"
   check("the reveal is the viewer's own password (verify-my-pin = the approval-box check)", /\/auth\/verify-my-pin/.test(read("utils/useDrawerReveal.js")));
 }
 
+// ── 8 "Can see the Daily Ledger" (accountants, owner-granted, default off) ────
+console.log("\n-- 8 Daily Ledger access for accountants --\n");
+{
+  const al = read("pages/AccountantLogPage.jsx");
+  const block = al.slice(al.indexOf('staff.role === "accountant" && ('), al.indexOf('staff.role === "accountant" && (') + 2600);
+  check("Permissions screen: an ACCOUNTANT-only toggle 'Can see the Daily Ledger' / 'Peut voir le journal de caisse'",
+    block.includes("Can see the Daily Ledger") && block.includes("Peut voir le journal de caisse") && /can_view_daily_ledger: o\.val/.test(block));
+  check("…with the one-line note, in both languages",
+    block.includes("Lets this person see cash figures (drawer, expected, counted, variance).") && block.includes("montants de caisse"));
+  check("…and the save sends it every time (a save about something else never clears it)", /can_view_daily_ledger: !!perms\.can_view_daily_ledger/.test(al));
+  const rp = read("pages/ReportsPage.jsx");
+  check("Reports: an accountant without the grant gets no Daily Summary / Daily Ledger tab and no cash query",
+    /const ledgerAllowed = !isAccountant \|\| myPerms\?\.can_view_daily_ledger === true/.test(rp)
+    && /TABS\.filter\(t => ledgerAllowed \|\| \(t\.key !== "daily" && t\.key !== "ledger"\)\)/.test(rp)
+    && /enabled: tab === "ledger" && ledgerAllowed/.test(rp) && /enabled: ledgerAllowed && !permsLoading/.test(rp));
+  check("…a clear 'Ask the owner for access' message instead of a blank or an error", rp.includes("Ask the owner for access") && rp.includes("Demandez l'accès au patron"));
+  check("…and the day's 'Collected' total shows —, never a 0 it was not allowed to read", /collectedToday == null \? "—"/.test(rp) && /paid == null \? "—"/.test(rp));
+}
+
 console.log(`\n${fails ? `${fails} FAILED` : "all passed"}`);
 process.exit(fails ? 1 : 0);

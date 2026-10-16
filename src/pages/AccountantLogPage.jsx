@@ -1602,6 +1602,8 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
         can_resolve_stock_checks: !!perms.can_resolve_stock_checks,
         receive_without_count: !!perms.receive_without_count, // F-C
         can_view_compare: !!perms.can_view_compare, // MP-COMPARE
+        // DAILY-LEDGER ACCESS: sent every save, like the flags around it.
+        can_view_daily_ledger: !!perms.can_view_daily_ledger,
         // MP-CASHIER-PHASE-1b: sent on every save like the flags above, so an
         // untouched grant round-trips as itself rather than being cleared by a
         // save that happened to be about something else.
@@ -2397,6 +2399,34 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                       onClick={() => setPerms((p) => ({ ...(p || {}), can_approve: [], branch_scope: "own", can_manage_staff: false, can_cancel_transfers: false, can_resolve_stock_checks: false, receive_without_count: false, can_view_compare: false }))}>
                       {en ? "↺ Remove all delegation" : "↺ Retirer toute délégation"}
                     </button>
+                  </div>
+                )}
+
+                {/* DAILY-LEDGER ACCESS (Peter, 2026-10-16): an ACCOUNTANT sees cash figures only
+                    when the owner grants it, per person. Off by default. Managers are not gated
+                    here (they keep the Daily Ledger, scoped by branch). */}
+                {staff.role === "accountant" && (
+                  <div style={{ marginTop: 10, marginBottom: 8 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 5 }}>
+                      {en ? "Can see the Daily Ledger:" : "Peut voir le journal de caisse :"}
+                    </div>
+                    <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>
+                      {[
+                        { val: false, en: "No", fr: "Non" },
+                        { val: true,  en: "Can see the Daily Ledger", fr: "Peut voir le journal de caisse" },
+                      ].map((o) => (
+                        <button key={String(o.val)} onClick={() => setPerms((p) => ({ ...(p || {}), can_view_daily_ledger: o.val }))}
+                          style={{ flex: 1, padding: "7px 4px", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
+                            background: !!perms.can_view_daily_ledger === o.val ? (o.val ? "rgba(16,185,129,0.9)" : "rgba(239,68,68,0.9)") : "var(--bg-elevated)",
+                            color: !!perms.can_view_daily_ledger === o.val ? (o.val ? "#06281d" : "#fff") : "var(--text-muted)" }}>
+                          {en ? o.en : o.fr}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: "var(--text-muted)", marginTop: 4 }}>
+                      {en ? "Lets this person see cash figures (drawer, expected, counted, variance)."
+                          : "Permet à cette personne de voir les montants de caisse (caisse, attendu, compté, écart)."}
+                    </div>
                   </div>
                 )}
 

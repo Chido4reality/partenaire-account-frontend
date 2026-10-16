@@ -6,6 +6,7 @@ import CashierOversightTab from "../components/CashierOversightTab"; // MP-CASHI
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
 import { useLangStore, useAuthStore, useSettingsStore } from "../store";
+import { useMyPermissions } from "../utils/useMyPermissions"; // DAILY-LEDGER ACCESS
 import api, { formatDate } from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
 import { waPhone } from "../utils/waPhone";
@@ -62,8 +63,17 @@ export default function ReportsPage() {
   const { lang } = useLangStore();
   const { user } = useAuthStore();
   const isOwner = user?.role === "owner";
+  // DAILY-LEDGER ACCESS (Peter, 2026-10-16): an ACCOUNTANT sees cash figures (Daily Summary,
+  // Daily Ledger, the day's collected total) only when the owner granted can_view_daily_ledger;
+  // the server answers 403 otherwise. Owner / manager: unchanged.
+  const isAccountant = user?.role === "accountant";
+  const { perms: myPerms, isLoading: permsLoading } = useMyPermissions({ enabled: isAccountant, staleTime: 60000 });
+  const ledgerAllowed = !isAccountant || myPerms?.can_view_daily_ledger === true;
 
   const [tab, setTab] = useState("daily");
+  useEffect(() => {
+    if (!ledgerAllowed && !permsLoading && (tab === "daily" || tab === "ledger")) setTab("sales");
+  }, [ledgerAllowed, permsLoading, tab]);
   const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().split("T")[0]; });
   const [to, setTo]     = useState(new Date().toISOString().split("T")[0]);
   const [expandedSale, setExpandedSale] = useState(null);
@@ -138,7 +148,8 @@ export default function ReportsPage() {
 
   const { data: dailyData, isLoading: dailyLoading } = useOfflineCachedQuery({
     queryKey: ["reports-daily", from, to, repLoc],
-    queryFn: () => api.get("/reports/daily?from=" + from + "&to=" + to + locQS).then(r => r.data)
+    queryFn: () => api.get("/reports/daily?from=" + from + "&to=" + to + locQS).then(r => r.data),
+    enabled: ledgerAllowed && !permsLoading,   // DAILY-LEDGER ACCESS
   });
 
   // MP-DISCOUNT: Gross → −Discounts → Net + breakdowns + drill-down.
@@ -195,10 +206,11 @@ export default function ReportsPage() {
   const { data: todayDailyData } = useOfflineCachedQuery({
     queryKey: ["reports-daily", todayStr, todayStr, repLoc],
     queryFn: () => api.get("/reports/daily?from=" + todayStr + "&to=" + todayStr + locQS).then(r => r.data),
-    enabled: tab === "daily_sales",
+    enabled: tab === "daily_sales" && ledgerAllowed,   // DAILY-LEDGER ACCESS
     refetchInterval: 60000
   });
-  const collectedToday = ((todayDailyData?.data) || []).reduce((a, d) => a + (Number(d.cash_collected) || 0), 0);
+  // null = not this person's to see (shown as —, never as a 0).
+  const collectedToday = ledgerAllowed ? ((todayDailyData?.data) || []).reduce((a, d) => a + (Number(d.cash_collected) || 0), 0) : null;
 
   const { data: dailyProductsData } = useOfflineCachedQuery({
     queryKey: ["reports-daily-products", todayStr, repLoc],
@@ -223,7 +235,7 @@ export default function ReportsPage() {
   const { data: ledgerData, isLoading: ledgerLoading } = useOfflineCachedQuery({
     queryKey: ["reports-ledger", ledgerDate, ledgerLoc],
     queryFn: () => api.get(`/reports/daily-ledger?date=${ledgerDate}&location_id=${ledgerLoc}`).then(r => r.data),
-    enabled: tab === "ledger"
+    enabled: tab === "ledger" && ledgerAllowed   // DAILY-LEDGER ACCESS
   });
   const ledger = ledgerData?.data || null;
 
@@ -546,13 +558,20 @@ export default function ReportsPage() {
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 4, marginBottom: 24, borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
-        {TABS.map(t => (
+        {TABS.filter(t => ledgerAllowed || (t.key !== "daily" && t.key !== "ledger")).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             style={{ padding: "10px 20px", background: "none", border: "none", borderBottom: tab === t.key ? "2px solid var(--brand)" : "2px solid transparent", color: tab === t.key ? "var(--text-primary)" : "var(--text-muted)", cursor: "pointer", fontSize: 13, fontWeight: tab === t.key ? 600 : 400, marginBottom: -1 }}>
             {lang === "en" ? t.en : t.fr}
           </button>
         ))}
       </div>
+      {!ledgerAllowed && !permsLoading && (
+        <div style={{ margin: "-12px 0 18px", padding: "10px 14px", borderRadius: 10, background: "var(--bg-card)", border: "1px solid var(--border)", fontSize: 13, color: "var(--text-secondary)" }}>
+          🔒 {lang === "en"
+            ? "Daily Summary and Daily Ledger show cash figures. Ask the owner for access (Permissions → Can see the Daily Ledger)."
+            : "Le résumé journalier et le journal de caisse montrent les montants de caisse. Demandez l'accès au patron (Permissions → Peut voir le journal de caisse)."}
+        </div>
+      )}
 
       {/* ── DAILY SUMMARY ── */}
       {/* MP-DAY-SUMMARY (Feature A): editable-recipient + preview before sending. */}
@@ -1083,7 +1102,7 @@ export default function ReportsPage() {
 `;
                 msg += `*Total: ${grandTotal.toLocaleString()} ${sym}*
 `;
-                msg += `✅ ${en ? "Collected (all methods)" : "Encaissé (tous moyens)"}: ${paid.toLocaleString()} ${sym}
+                msg += `✅ ${en ? "Collected (all methods)" : "Encaissé (tous moyens)"}: ${paid == null ? "—" : paid.toLocaleString() + " " + sym}
 `;
                 if (credit > 0) msg += `🔴 ${en ? "Credit" : "Crédit"}: ${credit.toLocaleString()} ${sym}
 `;
@@ -1112,7 +1131,7 @@ export default function ReportsPage() {
                   ${items.map(i => `<div class="row"><span>${i.name} × ${i.qty} ${i.unit}${i.damaged > 0 ? (en ? ` (incl. ${i.damaged.toLocaleString()} ${sym} damaged)` : ` (dont ${i.damaged.toLocaleString()} ${sym} abîmé)`) : ""}</span><span>${i.total.toLocaleString()} ${sym}</span></div>`).join("")}
                   <div class="line"></div>
                   <div class="row bold"><span>TOTAL</span><span>${grandTotal.toLocaleString()} ${sym}</span></div>
-                  <div class="row"><span>✅ ${en ? "Collected (all methods)" : "Encaissé (tous moyens)"}</span><span>${paid.toLocaleString()} ${sym}</span></div>
+                  <div class="row"><span>✅ ${en ? "Collected (all methods)" : "Encaissé (tous moyens)"}</span><span>${paid == null ? "—" : paid.toLocaleString() + " " + sym}</span></div>
                   ${credit > 0 ? `<div class="row" style="color:red"><span>🔴 ${en ? "Credit" : "Crédit"}</span><span>${credit.toLocaleString()} ${sym}</span></div>` : ""}
                   <div class="row"><span>📦 ${en ? "Sales" : "Nb ventes"}</span><span>${todaySales.length}</span></div>
                 </body></html>`);
@@ -1185,7 +1204,7 @@ export default function ReportsPage() {
                     <tr style={{ background: "var(--bg-elevated)" }}>
                       <td colSpan={5} style={{ padding: "8px 16px" }}>
                         <div style={{ display: "flex", gap: 20, flexWrap: "wrap", fontSize: 13 }}>
-                          <span>✅ {lang === "en" ? "Collected (all methods):" : "Encaissé (tous moyens) :"} <strong style={{ color: "#34d399" }}>{fmt(collectedToday)}</strong></span>
+                          <span>✅ {lang === "en" ? "Collected (all methods):" : "Encaissé (tous moyens) :"} <strong style={{ color: "#34d399" }}>{collectedToday == null ? "—" : fmt(collectedToday)}</strong></span>
                           {totalCredit > 0 && <span>🔴 {lang === "en" ? "Credit:" : "Crédit:"} <strong style={{ color: "#f87171" }}>{fmt(totalCredit)}</strong></span>}
                           {totalPartialDue > 0 && <span>🟡 {lang === "en" ? "Partial due:" : "Restes dus:"} <strong style={{ color: "#fbbf24" }}>{fmt(totalPartialDue)}</strong></span>}
                         </div>
