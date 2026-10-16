@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useDrawerMask, DrawerRevealButton } from "../components/common/DrawerMask"; // hide the cash amount — every device
 import { locationLabel, locationNameLabel } from "../utils/locations"; // GOODS-BUFFER: location names follow the app language
 import HelpButton from "../components/common/HelpButton";
 import CashierOversightTab from "../components/CashierOversightTab"; // MP-CASHIER-OVERSIGHT
@@ -99,6 +100,11 @@ export default function ReportsPage() {
     setBlockExpanded(prev => ({ ...prev, [key]: typeof next === "boolean" ? next : !prev[key] }));
 
   const fmt = useCurrency();
+  // HIDE THE CASH AMOUNT (every device): the Daily Ledger SHIFTS + DRAWER blocks, the drawer
+  // summary, and the drawer lines of the shared text / CSV read ••••• until the viewer
+  // re-enters their password. Day flow (sales) is not a drawer figure and stays visible.
+  const { masked: drawerMasked, maskMoney } = useDrawerMask();
+  const fmtD = maskMoney(fmt);
   const PH = usePlaceholders();   // LAUNCH-BATCH-2: placeholders in the UI language + the org's country
 
   // Deep-link from the global order search: /reports?sale=<id>&on=<YYYY-MM-DD>.
@@ -225,7 +231,7 @@ export default function ReportsPage() {
   // shared util so the shift-close prompt in ShiftWidgets produces
   // the same bytes. Page-local wrapper keeps the (ledger, lang)
   // args implicit for the print/copy/WA buttons below.
-  const buildLedgerText = () => buildLedgerTextUtil(ledger, lang);
+  const buildLedgerText = () => buildLedgerTextUtil(ledger, lang, { hideDrawer: drawerMasked });
   // buildWeeklyText is also available from the util (used by the
   // shift-close prompt); ReportsPage doesn't currently render
   // weekly data in the Ledger tab, so we don't expose it here yet.
@@ -274,10 +280,12 @@ export default function ReportsPage() {
     rows.push(["", "ARGENT REÇU", "", "", tot.argent_recu]);
     rows.push(["", "NET CASH (after refunds + expenses)", "", "", tot.net_cash_real]);
     if (dr) {
-      rows.push(["drawer", "Opening float", "", "", dr.opening_float]);
-      rows.push(["drawer", "Expected drawer", "", "", dr.expected]);
-      if (dr.actual != null) rows.push(["drawer", "Actual cash", "", "", dr.actual]);
-      if (dr.variance != null) rows.push(["drawer", "Variance", "", "", dr.variance]);
+      // HIDE THE CASH AMOUNT: the export must not be a way round the password.
+      const dv = (v) => (drawerMasked ? "•••••" : v);
+      rows.push(["drawer", "Opening float", "", "", dv(dr.opening_float)]);
+      rows.push(["drawer", "Expected drawer", "", "", dv(dr.expected)]);
+      if (dr.actual != null) rows.push(["drawer", "Actual cash", "", "", dv(dr.actual)]);
+      if (dr.variance != null) rows.push(["drawer", "Variance", "", "", dv(dr.variance)]);
     }
     // Consolidated onto the shared serialiser — this one was already correct,
     // and that was the problem: three implementations meant two were wrong.
@@ -1451,7 +1459,7 @@ export default function ReportsPage() {
                     : `Net du jour: ${fmt(bl.day_flow.net_cash_flow)}`;
                   const shiftsSubtotal = shiftsList.length === 0
                     ? (lang === "en" ? "no shifts" : "aucun poste")
-                    : fmt(shiftDrawer); // fix 5: fmt already carries the currency
+                    : fmtD(shiftDrawer); // fix 5: fmt already carries the currency
                   // MP-REPORTS-DEBT-DOUBLECOUNT: the Outstanding headline is the
                   // ACTUAL current receivable (Σ customer debt), not gross credit
                   // issued today. "Debt issued today" stays as a detail row.
@@ -1510,6 +1518,7 @@ export default function ReportsPage() {
                                 color={bl.day_flow.net_cash_flow < 0 ? "#f87171" : "#34d399"} />
                     </CollapsibleBlock>
 
+                    <DrawerRevealButton en={lang === "en"} masked={drawerMasked} style={{ margin: "6px 0" }} />
                     {/* ── BLOCK 2 — SHIFTS (default collapsed) ── */}
                     <CollapsibleBlock
                       title={`🗂️ ${lang === "en" ? "SHIFTS" : "POSTES"}`}
@@ -1531,25 +1540,25 @@ export default function ReportsPage() {
                                 ({tfmt(s.opened_at)} → {closed ? tfmt(s.closed_at) : (lang === "en" ? "open" : "ouvert")})
                               </span>
                             </div>
-                            <BlockRow indent label={lang === "en" ? "Opening float" : "Fond d'ouverture"} value={fmt(s.opening_float)} />
-                            <BlockRow indent label={lang === "en" ? "Cash sales" : "Ventes espèces"} value={fmt(s.cash_sales)} />
-                            <BlockRow indent label={lang === "en" ? "Debt collected (cash)" : "Dette encaissée (espèces)"} value={fmt(s.debt_collected_cash)} />
-                            <BlockRow indent label={lang === "en" ? "Cash refunds" : "Remboursements espèces"} value={fmt(s.cash_refunds)} color={s.cash_refunds > 0 ? "#f87171" : undefined} sign={s.cash_refunds > 0 ? "-" : ""} />
+                            <BlockRow indent label={lang === "en" ? "Opening float" : "Fond d'ouverture"} value={fmtD(s.opening_float)} />
+                            <BlockRow indent label={lang === "en" ? "Cash sales" : "Ventes espèces"} value={fmtD(s.cash_sales)} />
+                            <BlockRow indent label={lang === "en" ? "Debt collected (cash)" : "Dette encaissée (espèces)"} value={fmtD(s.debt_collected_cash)} />
+                            <BlockRow indent label={lang === "en" ? "Cash refunds" : "Remboursements espèces"} value={fmtD(s.cash_refunds)} color={s.cash_refunds > 0 ? "#f87171" : undefined} sign={s.cash_refunds > 0 ? "-" : ""} />
                             {((s.exchange_cash_in || 0) > 0 || (s.exchange_cash_out || 0) > 0) && (() => {
                               const exNet = (s.exchange_cash_in || 0) - (s.exchange_cash_out || 0);
-                              return <BlockRow indent label={lang === "en" ? "Exchanges (net)" : "Échanges (net)"} value={fmt(Math.abs(exNet))} color={exNet < 0 ? "#f87171" : exNet > 0 ? "#34d399" : undefined} sign={exNet < 0 ? "-" : ""} />;
+                              return <BlockRow indent label={lang === "en" ? "Exchanges (net)" : "Échanges (net)"} value={fmtD(Math.abs(exNet))} color={exNet < 0 ? "#f87171" : exNet > 0 ? "#34d399" : undefined} sign={exNet < 0 ? "-" : ""} />;
                             })()}
-                            <BlockRow indent label={lang === "en" ? "Expenses" : "Dépenses"} value={fmt(s.expenses)} color={s.expenses > 0 ? "#f87171" : undefined} sign={s.expenses > 0 ? "-" : ""} />
-                            <BlockRow indent label={lang === "en" ? "Expected drawer" : "Caisse attendue"} value={fmt(s.expected_drawer)} bold />
+                            <BlockRow indent label={lang === "en" ? "Expenses" : "Dépenses"} value={fmtD(s.expenses)} color={s.expenses > 0 ? "#f87171" : undefined} sign={s.expenses > 0 ? "-" : ""} />
+                            <BlockRow indent label={lang === "en" ? "Expected drawer" : "Caisse attendue"} value={fmtD(s.expected_drawer)} bold />
                             {closed && s.counted_at_close != null && (
                               <>
-                                <BlockRow indent label={lang === "en" ? "Counted at close" : "Comptée à la clôture"} value={fmt(s.counted_at_close)} />
+                                <BlockRow indent label={lang === "en" ? "Counted at close" : "Comptée à la clôture"} value={fmtD(s.counted_at_close)} />
                                 {s.variance != null && s.variance !== 0 && (
                                   <BlockRow indent
                                     label={s.variance < 0
                                       ? (lang === "en" ? "Variance (short)" : "Écart (manquant)")
                                       : (lang === "en" ? "Variance (surplus)" : "Écart (excédent)")}
-                                    value={`${s.variance > 0 ? "+" : "−"}${fmt(Math.abs(s.variance))}`}
+                                    value={`${s.variance > 0 ? "+" : "−"}${fmtD(Math.abs(s.variance))}`}
                                     color={s.variance < 0 ? "#f87171" : "#fbbf24"} />
                                 )}
                               </>
@@ -1568,19 +1577,19 @@ export default function ReportsPage() {
                     {bl.drawer && (
                       <CollapsibleBlock
                         title={`💵 ${lang === "en" ? "DRAWER" : "CAISSE"}`}
-                        subtotalValue={fmt(bl.drawer.expected_drawer)}
+                        subtotalValue={fmtD(bl.drawer.expected_drawer)}
                         expanded={blockExpanded.drawer}
                         onToggle={toggleBlock("drawer")}>
-                        <BlockRow label={lang === "en" ? "Expected drawer" : "Caisse attendue"} value={fmt(bl.drawer.expected_drawer)} bold />
+                        <BlockRow label={lang === "en" ? "Expected drawer" : "Caisse attendue"} value={fmtD(bl.drawer.expected_drawer)} bold />
                         {bl.drawer.drawer_variance != null && bl.drawer.drawer_variance !== 0 && (
                           // Non-zero variance stands out: red, signed, ⚠.
                           <BlockRow
                             label={lang === "en" ? "Drawer variance" : "Écart de caisse"}
-                            value={`⚠ ${bl.drawer.drawer_variance > 0 ? "+" : "−"}${fmt(Math.abs(bl.drawer.drawer_variance))}`}
+                            value={`⚠ ${bl.drawer.drawer_variance > 0 ? "+" : "−"}${fmtD(Math.abs(bl.drawer.drawer_variance))}`}
                             color="#f87171" bold />
                         )}
                         {bl.drawer.drawer_variance === 0 && (
-                          <BlockRow label={lang === "en" ? "Drawer variance" : "Écart de caisse"} value={fmt(0)} color="#34d399" />
+                          <BlockRow label={lang === "en" ? "Drawer variance" : "Écart de caisse"} value={fmtD(0)} color="#34d399" />
                         )}
                         {bl.drawer.drawer_variance == null && (
                           <BlockRow label={lang === "en" ? "Drawer variance" : "Écart de caisse"}
@@ -1588,7 +1597,7 @@ export default function ReportsPage() {
                         )}
                         {Number(bl.drawer.unattributed_cash) > 0 && (
                           <BlockRow label={lang === "en" ? "Unattributed cash (no shift)" : "Espèces hors caisse (sans quart)"}
-                            value={fmt(bl.drawer.unattributed_cash)} color="#fbbf24" />
+                            value={fmtD(bl.drawer.unattributed_cash)} color="#fbbf24" />
                         )}
                         {bl.drawer.reconciliation_warning && (
                           <div style={{ color: "#f87171", fontSize: 12, padding: "4px 0", fontWeight: 600 }}>
@@ -1944,35 +1953,36 @@ export default function ReportsPage() {
                   return (
                     <div style={{ marginTop: 18, padding: "12px 14px", background: "var(--bg-elevated)", borderRadius: 10, border: "1px solid var(--border)" }}>
                       <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>💼 {heading}</div>
+                      <DrawerRevealButton en={lang === "en"} masked={drawerMasked} style={{ marginBottom: 8 }} />
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
                         <span style={{ color: "var(--text-muted)" }}>{lang === "en" ? "Opening float" : "Solde d'ouverture"}</span>
-                        <span>{fmt(dr.opening_float)}</span>
+                        <span>{fmtD(dr.opening_float)}</span>
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
                         <span style={{ color: "var(--text-muted)" }}>+ {lang === "en" ? "Cash sales this shift" : "Ventes espèces ce poste"}</span>
-                        <span style={{ color: "#34d399" }}>{fmt(sCash)}</span>
+                        <span style={{ color: "#34d399" }}>{fmtD(sCash)}</span>
                       </div>
                       {sRef > 0 && (
                         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
                           <span style={{ color: "var(--text-muted)" }}>− {lang === "en" ? "Refunds this shift" : "Remboursements ce poste"}</span>
-                          <span style={{ color: "#f87171" }}>−{fmt(sRef)}</span>
+                          <span style={{ color: "#f87171" }}>−{fmtD(sRef)}</span>
                         </div>
                       )}
                       {sExp > 0 && (
                         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
                           <span style={{ color: "var(--text-muted)" }}>− {lang === "en" ? "Expenses this shift" : "Dépenses ce poste"}</span>
-                          <span style={{ color: "#f87171" }}>−{fmt(sExp)}</span>
+                          <span style={{ color: "#f87171" }}>−{fmtD(sExp)}</span>
                         </div>
                       )}
                       <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 14, padding: "8px 0 4px", borderTop: "2px solid var(--border)", marginTop: 4 }}>
                         <span>{lang === "en" ? "Expected drawer" : "Caisse attendue"}</span>
-                        <span style={{ color: "var(--brand-light)" }}>{fmt(dr.expected)}</span>
+                        <span style={{ color: "var(--brand-light)" }}>{fmtD(dr.expected)}</span>
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "6px 0 2px" }}>
                         <span style={{ color: "var(--text-muted)" }}>{lang === "en" ? "Actual cash" : "Caisse réelle"}</span>
                         <span style={{ fontWeight: 600 }}>
                           {drIsClosed
-                            ? fmt(dr.actual)
+                            ? fmtD(dr.actual)
                             : <em style={{ color: "var(--text-muted)" }}>— {lang === "en" ? "(count at end of shift)" : "(à compter en fin de poste)"}</em>}
                         </span>
                       </div>
@@ -1981,10 +1991,10 @@ export default function ReportsPage() {
                           <span>{lang === "en" ? "Variance" : "Écart"}</span>
                           <span style={{ color: (dr.variance || 0) === 0 ? "#34d399" : (dr.variance || 0) > 0 ? "#fbbf24" : "#f87171" }}>
                             {(dr.variance || 0) === 0
-                              ? `${fmt(0)} ${lang === "en" ? "(Exact)" : "(Exact)"}`
+                              ? `${fmtD(0)} ${lang === "en" ? "(Exact)" : "(Exact)"}`
                               : (dr.variance || 0) > 0
-                                ? `+${fmt(dr.variance)} ${lang === "en" ? "(Surplus)" : "(Excédent)"}`
-                                : `−${fmt(Math.abs(dr.variance))} ${lang === "en" ? "(Shortage)" : "(Manquant)"}`}
+                                ? `+${fmtD(dr.variance)} ${lang === "en" ? "(Surplus)" : "(Excédent)"}`
+                                : `−${fmtD(Math.abs(dr.variance))} ${lang === "en" ? "(Shortage)" : "(Manquant)"}`}
                           </span>
                         </div>
                       )}

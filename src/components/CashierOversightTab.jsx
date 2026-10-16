@@ -19,6 +19,7 @@ import { Fragment, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
+import { useDrawerMask, DrawerRevealButton } from "./common/DrawerMask"; // hide the cash amount — every device
 import { refusalFromError } from "../utils/ticketDepartures";
 
 const METHODS = [
@@ -54,6 +55,9 @@ const TICKETS_PER_PAGE = 50;
 export default function CashierOversightTab({ from, to, locationId, lang }) {
   const en = lang === "en";
   const fmt = useCurrency();
+  // HIDE THE CASH AMOUNT (every device): the drawer totals read ••••• until the password.
+  const { masked: drawerMasked, maskMoney } = useDrawerMask();
+  const fmtD = maskMoney(fmt);
   const [openId, setOpenId] = useState(null);
   const [page, setPage] = useState(0);
   const qc = useQueryClient();
@@ -277,6 +281,7 @@ export default function CashierOversightTab({ from, to, locationId, lang }) {
         sub={en ? "Read from the same drawer record the Cash register screen shows, so the two can never disagree."
                 : "Lu depuis le même enregistrement de caisse que l'écran Gestion de caisse : les deux ne peuvent pas diverger."}
       >
+        <DrawerRevealButton en={en} masked={drawerMasked} style={{ marginBottom: 8 }} />
         {!d.drawer.available ? (
           <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
             {en ? "The drawer figures could not be read for this period." : "Les montants de caisse n'ont pas pu être lus pour cette période."}
@@ -289,10 +294,10 @@ export default function CashierOversightTab({ from, to, locationId, lang }) {
           <>
             <div style={{ display: "flex", gap: 20, flexWrap: "wrap", marginBottom: 10 }}>
               {[
-                { l: en ? "Expected" : "Attendu",  v: fmt(d.drawer.totals.expected) },
-                { l: en ? "Counted"  : "Compté",   v: fmt(d.drawer.totals.actual) },
-                { l: en ? "Variance" : "Écart",    v: fmt(d.drawer.totals.variance),
-                  c: d.drawer.totals.variance === 0 ? "#34d399" : d.drawer.totals.variance > 0 ? "var(--warning)" : "#f87171" },
+                { l: en ? "Expected" : "Attendu",  v: fmtD(d.drawer.totals.expected) },
+                { l: en ? "Counted"  : "Compté",   v: fmtD(d.drawer.totals.actual) },
+                { l: en ? "Variance" : "Écart",    v: fmtD(d.drawer.totals.variance),
+                  c: drawerMasked ? undefined : d.drawer.totals.variance === 0 ? "#34d399" : d.drawer.totals.variance > 0 ? "var(--warning)" : "#f87171" },
               ].map(x => (
                 <div key={x.l}>
                   <div className="label" style={{ marginBottom: 2 }}>{x.l}</div>
@@ -306,8 +311,8 @@ export default function CashierOversightTab({ from, to, locationId, lang }) {
                 : `${d.drawer.totals.counted_shifts} poste(s) fermé(s) comptés.`}
               {d.drawer.totals.open_shifts > 0 && (
                 <> {en
-                  ? `${d.drawer.totals.open_shifts} shift(s) still open, holding ${fmt(d.drawer.totals.expected_open)} — not counted yet, so deliberately left out of the comparison above.`
-                  : `${d.drawer.totals.open_shifts} poste(s) encore ouvert(s), contenant ${fmt(d.drawer.totals.expected_open)} — pas encore comptés, donc volontairement exclus de la comparaison ci-dessus.`}</>
+                  ? `${d.drawer.totals.open_shifts} shift(s) still open, holding ${fmtD(d.drawer.totals.expected_open)} — not counted yet, so deliberately left out of the comparison above.`
+                  : `${d.drawer.totals.open_shifts} poste(s) encore ouvert(s), contenant ${fmtD(d.drawer.totals.expected_open)} — pas encore comptés, donc volontairement exclus de la comparaison ci-dessus.`}</>
               )}
             </div>
           </>

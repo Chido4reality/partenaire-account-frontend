@@ -21,6 +21,7 @@ import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import api from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
 import { ActiveShiftIndicator } from "../components/common/ShiftWidgets";
+import { useDrawerMask, DrawerRevealButton } from "../components/common/DrawerMask"; // hide the cash amount — every device
 
 const PAGE_LIMIT = 20;
 
@@ -33,6 +34,10 @@ export default function ShiftsPage() {
   const canSeeHistory = isOwner || isManager;
 
   const fmt = useCurrency();
+  // HIDE THE CASH AMOUNT (every device): every drawer figure in the shift history reads
+  // ••••• until the viewer re-enters their password.
+  const { masked: drawerMasked, maskMoney } = useDrawerMask();
+  const fmtD = maskMoney(fmt);
   const locId = selectedLocation?.id || null;
   const [offset, setOffset] = useState(0);
 
@@ -57,9 +62,10 @@ export default function ShiftsPage() {
                 "#f87171";
   const varianceLabel = (v) => {
     if (v == null) return "—";
-    if (v === 0)   return `${fmt(0)} ${lang === "fr" ? "(Exact)"     : "(Exact)"}`;
-    if (v > 0)     return `+${fmt(v)} ${lang === "fr" ? "(Excédent)" : "(Surplus)"}`;
-    return `−${fmt(Math.abs(v))} ${lang === "fr" ? "(Manquant)"      : "(Shortage)"}`;
+    if (drawerMasked) return "•••••"; // "(Exact)" / colour would give the hidden figure away
+    if (v === 0)   return `${fmtD(0)} ${lang === "fr" ? "(Exact)"     : "(Exact)"}`;
+    if (v > 0)     return `+${fmtD(v)} ${lang === "fr" ? "(Excédent)" : "(Surplus)"}`;
+    return `−${fmtD(Math.abs(v))} ${lang === "fr" ? "(Manquant)"      : "(Shortage)"}`;
   };
 
   return (
@@ -113,6 +119,7 @@ export default function ShiftsPage() {
             </div>
           ) : (
             <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+              <div style={{ padding: drawerMasked ? "8px 12px 0" : 0 }}><DrawerRevealButton en={lang === "en"} masked={drawerMasked} /></div>
               <div style={{ overflowX: "auto" }}>
                 <table className="table" style={{ minWidth: 900 }}>
                   <thead>
@@ -136,15 +143,15 @@ export default function ShiftsPage() {
                         <tr key={s.shift_id}>
                           <td style={{ fontWeight: 500 }}>{s.cashier_name || "—"}</td>
                           <td style={{ color: "var(--text-muted)", fontSize: 12 }}>{s.shift_date}</td>
-                          <td style={{ textAlign: "right" }}>{fmt(s.opening_float || 0)}</td>
-                          <td style={{ textAlign: "right" }}>{fmt(s.cash_sales_received || 0)}</td>
-                          <td style={{ textAlign: "right" }}>{fmt(s.cash_refunds || 0)}</td>
-                          <td style={{ textAlign: "right" }}>{fmt(s.cash_expenses || 0)}</td>
-                          <td style={{ textAlign: "right", fontWeight: 600 }}>{fmt(s.expected_drawer || 0)}</td>
+                          <td style={{ textAlign: "right" }}>{fmtD(s.opening_float || 0)}</td>
+                          <td style={{ textAlign: "right" }}>{fmtD(s.cash_sales_received || 0)}</td>
+                          <td style={{ textAlign: "right" }}>{fmtD(s.cash_refunds || 0)}</td>
+                          <td style={{ textAlign: "right" }}>{fmtD(s.cash_expenses || 0)}</td>
+                          <td style={{ textAlign: "right", fontWeight: 600 }}>{fmtD(s.expected_drawer || 0)}</td>
                           <td style={{ textAlign: "right", fontWeight: 600 }}>
-                            {s.actual_cash != null ? fmt(s.actual_cash) : "—"}
+                            {s.actual_cash != null ? fmtD(s.actual_cash) : "—"}
                           </td>
-                          <td style={{ textAlign: "right", fontWeight: 700, color: varianceColor(v), whiteSpace: "nowrap" }}>
+                          <td style={{ textAlign: "right", fontWeight: 700, color: drawerMasked ? "var(--text-muted)" : varianceColor(v), whiteSpace: "nowrap" }}>
                             {varianceLabel(v)}
                           </td>
                           <td>

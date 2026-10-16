@@ -52,6 +52,7 @@ import CreditGivenModal from "./CreditGivenModal"; // MP-CREDIT-DRILLDOWN
 // MP-DRAWER-REVEAL
 import { useDrawerReveal, MASK } from "../../utils/useDrawerReveal";
 import RevealPinModal from "./RevealPinModal";
+import { useDrawerMask, DrawerRevealButton } from "./DrawerMask"; // hide the cash amount — every device
 import { isSellableLocation, locationLabel } from "../../utils/locations"; // GOODS-BUFFER
 
 // ── ModalShell — same overlay pattern as the rest of the app ─────
@@ -378,7 +379,7 @@ export function OpenShiftModal({ open, onClose, onOpened }) {
 // sign auto-prefixed for the four debit categories.
 function CategoryRow({ label, total, count, sign, children, color }) {
   const [open, setOpen] = useState(false);
-  const fmt = useCurrency();
+  const fmt = useDrawerMask().maskMoney(useCurrency()); // HIDE THE CASH AMOUNT: drawer category totals
   const isNeg = sign === "−";
   const amountColor = color
     || (isNeg ? "#f87171" : total > 0 ? "#34d399" : "var(--text-muted)");
@@ -425,6 +426,11 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
   const { user } = useAuthStore();
   const qc = useQueryClient();
   const fmt = useCurrency();
+  // HIDE THE CASH AMOUNT (every device): float, cash in/out, expected AND the variance (the
+  // variance plus the count you typed IS the expected amount) read ••••• until the closer
+  // re-enters their password. Counting and closing still work while hidden.
+  const { masked: drawerMasked, maskMoney } = useDrawerMask();
+  const fmtD = maskMoney(fmt);
 
   const [actual, setActual]         = useState("");
   const [notes, setNotes]           = useState("");
@@ -489,8 +495,8 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
         const msg = v === 0
           ? (lang === "fr" ? "Poste fermé. Caisse exacte ✓" : "Shift closed. Drawer exact ✓")
           : v > 0
-            ? (lang === "fr" ? `Poste fermé. Excédent : +${fmt(v)}` : `Shift closed. Surplus: +${fmt(v)}`)
-            : (lang === "fr" ? `Poste fermé. Manquant : ${fmt(v)}` : `Shift closed. Shortage: ${fmt(v)}`);
+            ? (lang === "fr" ? `Poste fermé. Excédent : +${fmtD(v)}` : `Shift closed. Surplus: +${fmtD(v)}`)
+            : (lang === "fr" ? `Poste fermé. Manquant : ${fmtD(v)}` : `Shift closed. Shortage: ${fmtD(v)}`);
         toast.success(msg);
       }
       qc.invalidateQueries({ queryKey: ["current-shift"] });
@@ -531,14 +537,17 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
   if (amt === null) {
     varText  = lang === "fr" ? "Entrez le solde réel pour voir l'écart" : "Enter actual cash to see variance";
     varColor = "var(--text-muted)";
+  } else if (drawerMasked) {
+    varText  = lang === "fr" ? "Écart masqué — affichez les montants pour le voir" : "Variance hidden — show the amounts to see it";
+    varColor = "var(--text-muted)";
   } else if (variance === 0) {
     varText  = lang === "fr" ? `Écart : 0 ${fmt.symbol} — Caisse exacte` : `Variance: 0 ${fmt.symbol} — Drawer exact`;
     varColor = "#34d399";
   } else if (variance > 0) {
-    varText  = lang === "fr" ? `Écart : +${fmt(variance)} — Excédent` : `Variance: +${fmt(variance)} — Surplus`;
+    varText  = lang === "fr" ? `Écart : +${fmtD(variance)} — Excédent` : `Variance: +${fmtD(variance)} — Surplus`;
     varColor = "#fbbf24";
   } else {
-    varText  = lang === "fr" ? `Écart : −${fmt(Math.abs(variance))} — Manquant` : `Variance: −${fmt(Math.abs(variance))} — Shortage`;
+    varText  = lang === "fr" ? `Écart : −${fmtD(Math.abs(variance))} — Manquant` : `Variance: −${fmtD(Math.abs(variance))} — Shortage`;
     varColor = "#f87171";
   }
 
@@ -570,10 +579,11 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
           : "This is the physical cash box. Only cash counts here — MoMo, bank and credit are real sales but no cash changes hands; they're shown below, not in the drawer."}
       </div>
 
+      <DrawerRevealButton en={!fr} masked={drawerMasked} style={{ marginBottom: 8 }} />
       <div style={{ background: "var(--bg-card)", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
         {/* Opening float — always shown, single line. */}
         <Row label={fr ? "Solde d'ouverture" : "Opening float"}
-             value={fmt(shift.opening_float || 0)} />
+             value={fmtD(shift.opening_float || 0)} />
 
         {/* MP-VOID-AS-RETURN-AND-OWNER-REPORT Unit 3: per-category
             breakdown with expand-on-click drilldowns. Falls back
@@ -588,7 +598,7 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
               {cat.sales_cash.transactions.map(tx => (
                 <div key={tx.payment_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
                   <span>{tx.sale_number || "—"} {tx.customer_name ? `· ${tx.customer_name}` : ""}</span>
-                  <span style={{ fontFamily: "monospace" }}>{fmt(tx.amount)}</span>
+                  <span style={{ fontFamily: "monospace" }}>{fmtD(tx.amount)}</span>
                 </div>
               ))}
             </CategoryRow>
@@ -598,7 +608,7 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
               {cat.debt_collection.transactions.map(tx => (
                 <div key={tx.payment_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
                   <span>{tx.sale_number || "—"} {tx.customer_name ? `· ${tx.customer_name}` : ""}</span>
-                  <span style={{ fontFamily: "monospace" }}>{fmt(tx.amount)}</span>
+                  <span style={{ fontFamily: "monospace" }}>{fmtD(tx.amount)}</span>
                 </div>
               ))}
             </CategoryRow>
@@ -608,7 +618,7 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
               {cat.exchange_in.transactions.map(tx => (
                 <div key={tx.return_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
                   <span>{tx.return_ref || tx.sale_number || "—"} {tx.customer_name ? `· ${tx.customer_name}` : ""}</span>
-                  <span style={{ fontFamily: "monospace" }}>{fmt(tx.price_difference)}</span>
+                  <span style={{ fontFamily: "monospace" }}>{fmtD(tx.price_difference)}</span>
                 </div>
               ))}
             </CategoryRow>
@@ -618,7 +628,7 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
               {cat.refunds.transactions.map(tx => (
                 <div key={tx.return_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
                   <span>{tx.return_ref || "—"} ← {tx.sale_number || "?"} {tx.customer_name ? `· ${tx.customer_name}` : ""}</span>
-                  <span style={{ fontFamily: "monospace" }}>{fmt(tx.refund_amount)}</span>
+                  <span style={{ fontFamily: "monospace" }}>{fmtD(tx.refund_amount)}</span>
                 </div>
               ))}
             </CategoryRow>
@@ -628,7 +638,7 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
               {cat.void_refunds.transactions.map(tx => (
                 <div key={tx.return_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
                   <span>{tx.return_ref || "—"} ← {tx.sale_number || "?"} {tx.customer_name ? `· ${tx.customer_name}` : ""}</span>
-                  <span style={{ fontFamily: "monospace" }}>{fmt(tx.refund_amount)}</span>
+                  <span style={{ fontFamily: "monospace" }}>{fmtD(tx.refund_amount)}</span>
                 </div>
               ))}
             </CategoryRow>
@@ -638,7 +648,7 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
               {cat.exchange_out.transactions.map(tx => (
                 <div key={tx.return_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
                   <span>{tx.return_ref || tx.sale_number || "—"} {tx.customer_name ? `· ${tx.customer_name}` : ""}</span>
-                  <span style={{ fontFamily: "monospace" }}>{fmt(Math.abs(tx.price_difference))}</span>
+                  <span style={{ fontFamily: "monospace" }}>{fmtD(Math.abs(tx.price_difference))}</span>
                 </div>
               ))}
             </CategoryRow>
@@ -648,7 +658,7 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
               {cat.expenses.transactions.map(tx => (
                 <div key={tx.expense_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
                   <span>{tx.category || "—"} {tx.description ? `· ${tx.description}` : ""}</span>
-                  <span style={{ fontFamily: "monospace" }}>{fmt(tx.amount)}</span>
+                  <span style={{ fontFamily: "monospace" }}>{fmtD(tx.amount)}</span>
                 </div>
               ))}
             </CategoryRow>
@@ -659,18 +669,18 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
              modal showed pre-Unit-3. */
           <>
             <Row label={fr ? "+ Ventes en espèces"      : "+ Cash sales"}
-                 value={fmt(shift.cash_sales_received || 0)} positive />
+                 value={fmtD(shift.cash_sales_received || 0)} positive />
             <Row label={fr ? "− Remboursements espèces" : "− Cash refunds"}
-                 value={fmt(shift.cash_refunds || 0)} negative />
+                 value={fmtD(shift.cash_refunds || 0)} negative />
             <Row label={fr ? "− Dépenses espèces"       : "− Cash expenses"}
-                 value={fmt(shift.cash_expenses || 0)} negative />
+                 value={fmtD(shift.cash_expenses || 0)} negative />
           </>
         )}
 
         <div style={{ height: 1, background: "var(--border)", margin: "8px 0" }} />
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontWeight: 700 }}>{fr ? "Caisse attendue" : "Expected drawer"}</span>
-          <strong style={{ fontSize: 18, color: "var(--brand-light)" }}>{fmt(expected)}</strong>
+          <strong style={{ fontSize: 18, color: "var(--brand-light)" }}>{fmtD(expected)}</strong>
         </div>
 
       {/* ── MP-CASHIER-PHASE-1b: HOW THE BOSS KNOWS ────────────────────
@@ -756,8 +766,8 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
             <div style={{ height: 1, background: "var(--border)", margin: "6px 0" }} />
             <div style={{ fontSize: 11.5, color: "var(--text-muted)", lineHeight: 1.5 }}>
               {fr
-                ? `Total ventes ${fmt(totalSalesShift)} = ${fmt(cashSalesInDrawer)} en caisse + ${fmt(notCashTotal)} hors caisse.`
-                : `Total sales ${fmt(totalSalesShift)} = ${fmt(cashSalesInDrawer)} in drawer + ${fmt(notCashTotal)} not cash.`}
+                ? `Total ventes ${fmtD(totalSalesShift)} = ${fmtD(cashSalesInDrawer)} en caisse + ${fmtD(notCashTotal)} hors caisse.`
+                : `Total sales ${fmtD(totalSalesShift)} = ${fmtD(cashSalesInDrawer)} in drawer + ${fmtD(notCashTotal)} not cash.`}
             </div>
           </>
         )}
@@ -771,7 +781,7 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
             {cat.voided_collections.transactions.map(tx => (
               <div key={tx.payment_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", opacity: 0.7, textDecoration: "line-through" }}>
                 <span>{tx.sale_number || "—"} {tx.customer_name ? `· ${tx.customer_name}` : ""}</span>
-                <span style={{ fontFamily: "monospace" }}>{fmt(tx.amount)}</span>
+                <span style={{ fontFamily: "monospace" }}>{fmtD(tx.amount)}</span>
               </div>
             ))}
           </CategoryRow>
@@ -938,6 +948,7 @@ function SendReportPromptModal({ locationId, onClose }) {
   // modal mounts briefly even when self-dismissing — acceptable
   // for the small UX cost; alternative would mean lifting all this
   // logic into the parent.
+  const { masked: drawerMasked } = useDrawerMask(); // hide the cash amount: the shared text masks the drawer too
   useEffect(() => {
     if (settingsLoading || !settings) return;
     if (!autoSendEnabled) {
@@ -962,7 +973,7 @@ function SendReportPromptModal({ locationId, onClose }) {
   if (!autoSendEnabled || !phoneOk) return null;
 
   // Compose the text body. Daily always; weekly appended on Sat.
-  const dailyTxt  = ledger ? buildLedgerText(ledger, lang) : "";
+  const dailyTxt  = ledger ? buildLedgerText(ledger, lang, { hideDrawer: drawerMasked }) : "";
   const weeklyTxt = (isSaturday && weekly) ? buildWeeklyText(weekly, lang) : "";
   const fullText  = dailyTxt + weeklyTxt;
 
@@ -1116,7 +1127,7 @@ export function ActiveShiftIndicator() {
               style={{ fontSize: 12.5, color: "var(--text-muted)", cursor: "pointer" }}>
               🔒 <strong style={{ letterSpacing: 2 }}>{MASK}</strong>
               <span style={{ marginLeft: 6, textDecoration: "underline" }}>
-                {lang === "fr" ? "Afficher" : "Tap to reveal"}
+                {lang === "fr" ? "Afficher" : "Show"}
               </span>
             </span>
           ) : (

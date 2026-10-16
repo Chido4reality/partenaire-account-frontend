@@ -1,4 +1,4 @@
-// MP-DRAWER-REVEAL — the till figure stays masked until the viewer re-enters their PIN.
+// MP-DRAWER-REVEAL — the till figure stays masked until the viewer re-enters their password.
 //
 // THREAT: a lost, stolen, or merely glanced-at phone should not broadcast how much cash
 // is in the drawer. The dashboard used to show "Expected: 12 500" the instant the app
@@ -10,7 +10,9 @@
 // is the actual threat — not exfiltration. Making it stronger means the server withholding
 // the numbers until a reveal token is presented; deliberately not done.
 //
-// MOBILE ONLY. A back-office desktop is a different risk and is left ungated.
+// EVERY DEVICE since 2026-10-16 (was mobile only) — see useDrawerReveal below.
+// The reveal is the viewer's LOGIN password (verify-my-pin = bcrypt vs pa_users.pin_hash),
+// the same check as the approval box; letters and numbers allowed.
 //
 // The reveal is MODULE-LEVEL, not per-component: DrawerDashboardCard and
 // ActiveShiftIndicator can both be mounted at once (Dashboard renders both), and
@@ -81,34 +83,16 @@ if (typeof document !== "undefined") {
   } catch { /* ignore */ }
 }
 
-// Is this a HANDHELD?
-//
-// The gate first shipped keyed on Capacitor isNativePlatform() alone — i.e. the installed
-// APK only. That was wrong: the web app on a phone browser is the SAME handset with the
-// SAME threat, and it is how a good number of users actually run this. The gate missed
-// exactly the people it was written for.
-//
-// Signal = native app, OR (coarse pointer AND narrow viewport):
-//   • `pointer: coarse` is true for touch/stylus, false for a mouse — so a real desktop
-//     stays ungated even when its window is dragged narrow, which is what "desktop
-//     ungated" was asking for. A width check alone would have gated it.
-//   • width < 768 is the SAME breakpoint Layout already uses to decide the mobile shell,
-//     so "mobile" means one thing across the app rather than two.
-// A touch-screen laptop under 768px wide would gate. Acceptable: it is a touch device
-// showing a phone-shaped layout, and the org can switch the setting off.
-function isHandheld() {
-  if (typeof window === "undefined") return false;
-  if (window.Capacitor?.isNativePlatform?.()) return true;
-  const coarse = typeof window.matchMedia === "function"
-    && window.matchMedia("(pointer: coarse)").matches;
-  return coarse && window.innerWidth < 768;
-}
+// EVERY DEVICE (Peter, 2026-10-16). The gate used to apply only to a handheld (native app,
+// or a coarse pointer under 768 px), and Settings said "No effect on computers". Peter's
+// rule: when the owner turns it ON, the amount is hidden on EVERY device — phone, tablet,
+// web/desktop — until the viewer re-enters their password. So the org setting alone decides.
 
-// `gateOn` — is the gate active at all? False ⇒ everything renders unmasked and no PIN is
-// ever asked for (desktop, or an org that switched it off).
+// `gateOn` — is the gate active at all? False ⇒ everything renders unmasked and no password
+// is ever asked for (an org that switched it off).
 export function useDrawerReveal({ enabled = true } = {}) {
   const [, force] = useState(0);
-  const gateOn = enabled && isHandheld();
+  const gateOn = !!enabled;
 
   useEffect(() => {
     const fn = () => force((n) => n + 1);

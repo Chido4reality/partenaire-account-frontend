@@ -1422,12 +1422,12 @@ export default function SettingsPage() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--bg-elevated)", borderRadius: 10 }}>
                   <div style={{ maxWidth: 320 }}>
                     <div style={{ fontWeight: 600, fontSize: 13 }}>
-                      🔒 {lang === "en" ? "Hide the cash amount until PIN" : "Masquer le montant en caisse jusqu'au code"}
+                      🔒 {lang === "en" ? "Hide the cash amount until password" : "Masquer le montant de la caisse jusqu'au mot de passe"}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, lineHeight: 1.45 }}>
                       {lang === "en"
-                        ? "On phones, the drawer amount shows as ••••• until you enter your PIN. It hides again after 90 seconds, or when you leave the screen. Protects you if the phone is lost, stolen or glanced at. No effect on computers."
-                        : "Sur téléphone, le montant en caisse s'affiche ••••• jusqu'à la saisie de votre code. Il se masque après 90 secondes ou dès que vous quittez l'écran. Vous protège si le téléphone est perdu, volé ou regardé. Sans effet sur ordinateur."}
+                        ? "On every device — phone, tablet and computer — the cash amounts (expected drawer, float, counted cash, variance) show as ••••• until you enter your password. They hide again after 90 seconds, or when you leave the screen. Protects you if a phone or computer is lost, stolen or glanced at."
+                        : "Sur tous les appareils — téléphone, tablette et ordinateur — les montants de caisse (caisse attendue, fond, espèces comptées, écart) s'affichent ••••• jusqu'à la saisie de votre mot de passe. Ils se masquent après 90 secondes ou dès que vous quittez l'écran. Vous protège si un téléphone ou un ordinateur est perdu, volé ou regardé."}
                     </div>
                   </div>
                   <label style={{ position: "relative", width: 44, height: 24, cursor: "pointer", flexShrink: 0 }}>

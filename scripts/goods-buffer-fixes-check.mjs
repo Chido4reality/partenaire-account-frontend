@@ -8,6 +8,7 @@
 // (2, To Buy, is server-side: backend goods-buffer-fixes-check + goods-buffer-fixes-probe.)
 //   5. change my password: the card (every role: Settings → Account + /my-account), same rules
 //   6. To Buy: a Buy-0 line starts unticked and is never counted or sent
+//   7. hide the cash amount on EVERY device (was phones only) until the password; text/CSV too
 // Each block re-derives the OLD behaviour and shows it was the bug, so a revert fails.
 import { build } from "esbuild";
 import { renderToString } from "react-dom/server";
@@ -21,13 +22,13 @@ const SRC = resolve(HERE, "../src");
 const OUT = resolve(HERE, "__goods_buffer_fixes.mjs");
 
 const STUBS = {
-  "@tanstack/react-query": `export const useQuery = () => ({ data: null, isLoading: false, isError: false });`,
+  "@tanstack/react-query": `export const useQuery = ({ queryKey }) => ({ data: queryKey && queryKey[0] === "settings" ? globalThis.__SETTINGS : null, isLoading: false, isError: false });`,
   "api": `export default { get: async () => ({ data: {} }), post: async () => ({ data: {} }) };`,
   "store": `const pick = (get) => (sel) => (typeof sel === "function" ? sel(get()) : get());
     export const useLangStore = pick(() => ({ lang: globalThis.__LANG || "en" }));
-    export const useAuthStore = pick(() => ({ user: { role: "owner", id: "u1" }, org: {} }));
+    export const useAuthStore = pick(() => ({ user: { role: "owner", id: "u1" }, org: { currency: "XAF" } }));
+    useAuthStore.getState = () => ({ user: { role: "owner", id: "u1" }, org: { currency: "XAF" } });
     export const useSettingsStore = pick(() => ({}));`,
-  "useDrawerReveal": `export const revealWithPin = async () => ({ ok: true }); export const REVEAL_MS = 30000;`,
 };
 
 await build({
@@ -40,7 +41,14 @@ await build({
       export { locationLabel, locationNameLabel, locationInitial } from "./utils/locations";
       export { fmtShopDateTime, fmtShopDate } from "./utils/shopTime";
       export { default as ChangePasswordCard, newPasswordProblem } from "./components/common/ChangePasswordCard";
-      export { restockLineDefault, restockSendItems } from "./utils/restockLines";`,
+      export { restockLineDefault, restockSendItems } from "./utils/restockLines";
+      export { buildLedgerTextV2 } from "./utils/reportText";
+      export { DrawerRevealButton } from "./components/common/DrawerMask";
+      import { createElement } from "react";
+      import { useDrawerReveal } from "./utils/useDrawerReveal";
+      import { useDrawerMask } from "./components/common/DrawerMask";
+      export function GateProbe({ enabled }) { const g = useDrawerReveal({ enabled }); return createElement("i", null, g.gateOn + "|" + g.revealed); }
+      export function MaskProbe() { const m = useDrawerMask(); return createElement("i", null, m.masked + "|" + m.maskMoney((n) => "X" + n)(5)); }`,
     resolveDir: SRC, loader: "jsx", sourcefile: "gb-fixes-entry.jsx",
   },
   bundle: true, format: "esm", outfile: OUT, jsx: "automatic",
@@ -185,6 +193,56 @@ console.log("\n-- 6 To Buy: a Buy-0 line (buffer covers it) is unticked and neve
   check("…but typing a quantity on it is an honest order line", typed.length === 17 && typed.some((s) => s.product_id === "brake" && s.quantity === 4));
   check("RestockPage uses these rules (no inline 'checked: true' default left)", /restockLineDefault\(/.test(read("pages/RestockPage.jsx"))
     && /restockSendItems\(/.test(read("pages/RestockPage.jsx")) && !/\{ checked: true, qty: (suggested|r\.suggested_qty) \}/.test(read("pages/RestockPage.jsx")));
+}
+
+// ── 7 hide the cash amount on EVERY device (2026-10-16) ─────────────────────
+console.log("\n-- 7 hide the cash amount: every device, until the password --\n");
+{
+  // This check runs in Node: no Capacitor, no touch pointer, no 768px phone — i.e. exactly
+  // what the OLD gate called a "computer" and left unmasked ("No effect on computers").
+  const OLD_IS_HANDHELD = false;
+  check("OLD: on a computer the gate was off (the bug)", (true && OLD_IS_HANDHELD) === false);
+  check("setting ON → the gate is on here too (computer), and masked until the password",
+    render(M.GateProbe, { enabled: true }).includes("true|false"), render(M.GateProbe, { enabled: true }));
+  check("setting OFF → no gate, shown as today", render(M.GateProbe, { enabled: false }).includes("false|true"));
+  globalThis.__SETTINGS = { data: { hide_drawer_amount: true } };
+  check("useDrawerMask: setting ON → every drawer figure reads •••••", render(M.MaskProbe, {}).includes("true|•••••"), render(M.MaskProbe, {}));
+  globalThis.__SETTINGS = { data: { hide_drawer_amount: false } };
+  check("useDrawerMask: setting OFF → the real figure", render(M.MaskProbe, {}).includes("false|X5"), render(M.MaskProbe, {}));
+  globalThis.__SETTINGS = undefined;
+  check("useDrawerMask: setting not loaded yet → hidden (server default ON)", render(M.MaskProbe, {}).includes("true|•••••"));
+  const btn = render(M.DrawerRevealButton, { en: true, masked: true });
+  check("the 'Show' button names what is hidden; nothing when unmasked",
+    btn.includes("Cash amounts hidden") && render(M.DrawerRevealButton, { en: true, masked: false }) === "");
+  // The shared WhatsApp/report text must not be a way round the password.
+  const ledger = { date: "2026-10-16", location: null, blocks: { day_flow: {}, outstanding: {},
+    shifts: [{ cashier_name: "Kusi", opened_at: "2026-10-16T07:00:00Z", closed_at: "2026-10-16T17:00:00Z", opening_float: 5000,
+      cash_sales: 12345, debt_collected_cash: 0, cash_refunds: 0, expenses: 0, expected_drawer: 17345, counted_at_close: 17345, variance: 0 }],
+    drawer: { expected_drawer: 17345, drawer_variance: 0, unattributed_cash: 0 } } };
+  const shown = M.buildLedgerTextV2(ledger, "en");
+  const hidden = M.buildLedgerTextV2(ledger, "en", { hideDrawer: true });
+  const has = (t, n) => new RegExp(String(n).replace(/(\d)(?=(\d{3})+$)/g, "$1[\\s\\u202f\\u00a0,.]?")).test(t);
+  check("shared text, unmasked: expected 17 345 is in it", has(shown, 17345), shown.slice(0, 200));
+  check("shared text, masked: no float, cash sales, expected or counted figure — •••••",
+    !has(hidden, 17345) && !has(hidden, 12345) && !has(hidden, 5000) && hidden.includes("•••••"), hidden.slice(0, 400));
+  // Every drawer surface goes through the mask (a raw fmt() would bypass it).
+  const sw = read("components/common/ShiftWidgets.jsx");
+  const close = sw.slice(sw.indexOf("export function CloseShiftModal"), sw.indexOf("export function", sw.indexOf("export function CloseShiftModal") + 10));
+  check("close-shift: float, cash in/out, expected and variance use the mask", /fmtD\(expected\)/.test(close) && /fmtD\(shift\.opening_float/.test(close)
+    && /Variance hidden/.test(close) && /<DrawerRevealButton/.test(close) && !/\{fmt\(expected\)\}/.test(close));
+  check("close-shift: category totals masked (CategoryRow)", /function CategoryRow[\s\S]{0,200}useDrawerMask\(\)\.maskMoney\(useCurrency\(\)\)/.test(sw));
+  const rp = read("pages/ReportsPage.jsx");
+  check("Daily Ledger: SHIFTS + DRAWER blocks and the drawer summary use the mask; text + CSV too",
+    /value=\{fmtD\(s\.expected_drawer\)\}/.test(rp) && /value=\{fmtD\(bl\.drawer\.expected_drawer\)\}/.test(rp) && /\{fmtD\(dr\.expected\)\}/.test(rp)
+    && /hideDrawer: drawerMasked/.test(rp) && /dv\(dr\.expected\)/.test(rp) && !/value=\{fmt\(s\.expected_drawer\)\}/.test(rp));
+  check("Shifts history: every drawer column uses the mask", /fmtD\(s\.expected_drawer/.test(read("pages/ShiftsPage.jsx")) && !/\{fmt\(s\.expected_drawer/.test(read("pages/ShiftsPage.jsx")));
+  check("Cashier oversight: drawer totals use the mask", /fmtD\(d\.drawer\.totals\.expected\)/.test(read("components/CashierOversightTab.jsx")));
+  check("send-report prompt after close: the text masks the drawer too", /buildLedgerText\(ledger, lang, \{ hideDrawer: drawerMasked \}\)/.test(sw));
+  const st = read("pages/SettingsPage.jsx");
+  check("Settings: 'Hide the cash amount until password', all devices, no 'No effect on computers'",
+    st.includes("Hide the cash amount until password") && st.includes("Masquer le montant de la caisse jusqu'au mot de passe")
+    && !st.includes("No effect on computers") && !st.includes("Sans effet sur ordinateur") && st.includes("On every device"));
+  check("the reveal is the viewer's own password (verify-my-pin = the approval-box check)", /\/auth\/verify-my-pin/.test(read("utils/useDrawerReveal.js")));
 }
 
 console.log(`\n${fails ? `${fails} FAILED` : "all passed"}`);

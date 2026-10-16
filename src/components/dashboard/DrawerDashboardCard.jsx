@@ -388,7 +388,7 @@ export default function DrawerDashboardCard() {
 
   // ── MP-DRAWER-REVEAL ──────────────────────────────────────────────────────
   // Org setting, default TRUE. Read from the same ["settings"] cache other screens
-  // already use, so this adds no request. Gate applies on MOBILE only.
+  // already use, so this adds no request. Gate applies on EVERY device (2026-10-16).
   const { data: orgResp } = useQuery({
     queryKey: ["settings"],
     queryFn: () => api.get("/settings").then((r) => r.data),
@@ -520,7 +520,7 @@ export default function DrawerDashboardCard() {
         style={{ fontSize: 12.5, color: "var(--text-muted)", cursor: "pointer", whiteSpace: "nowrap" }}>
         🔒 <strong style={{ letterSpacing: 2 }}>{MASK}</strong>
         <span style={{ marginLeft: 6, textDecoration: "underline" }}>
-          {fr ? "Afficher" : "Tap to reveal"}
+          {fr ? "Afficher" : "Show"}
         </span>
       </span>
     )
@@ -584,10 +584,10 @@ export default function DrawerDashboardCard() {
               style={{ padding: "18px 14px", textAlign: "center", cursor: "pointer" }}>
               <div style={{ fontSize: 26, letterSpacing: 4, fontWeight: 800, color: "var(--text-muted)" }}>{MASK}</div>
               <div style={{ marginTop: 6, fontSize: 12.5, color: "var(--text-secondary)", textDecoration: "underline" }}>
-                🔒 {fr ? "Touchez pour afficher l'argent en caisse" : "Tap to reveal the cash in the drawer"}
+                🔒 {fr ? "Afficher l'argent en caisse" : "Show the cash in the drawer"}
               </div>
               <div style={{ marginTop: 4, fontSize: 11, color: "var(--text-muted)" }}>
-                {fr ? "Votre code vous sera demandé" : "You'll be asked for your PIN"}
+                {fr ? "Votre mot de passe vous sera demandé" : "You'll be asked for your password"}
               </div>
             </div>
           )}

@@ -120,13 +120,16 @@ export function buildLedgerText(ledger, lang) {
 // Block 3 Outstanding   — today's new debt + all-time customer debt
 //
 // Localisation parallels buildLedgerText.
-export function buildLedgerTextV2(ledger, lang) {
+export function buildLedgerTextV2(ledger, lang, { hideDrawer = false } = {}) {
   if (!ledger) return "";
   if (!ledger.blocks) return buildLedgerText(ledger, lang); // back-compat
   const currency = useAuthStore.getState().org?.currency;
   const sym = currencySymbol(currency);
   const en = lang === "en";
   const n  = (x) => fmt(x, en);
+  // HIDE THE CASH AMOUNT: while the drawer is masked on screen, the shared text masks the
+  // SHIFTS + DRAWER figures too — sharing must not be a way round the password.
+  const nd = hideDrawer ? () => "•••••" : n;
   const b  = ledger.blocks;
   const df = b.day_flow      || {};
   const sh = b.shifts        || [];
@@ -188,24 +191,24 @@ export function buildLedgerTextV2(ledger, lang) {
       const head = `${s.cashier_name || "—"}${s.location_name ? " · " + s.location_name : ""}` +
                    ` (${tfmt(s.opened_at)} → ${closed ? tfmt(s.closed_at) : (en ? "open" : "ouvert")})`;
       L.push(`▸ ${en ? "Shift" : "Poste"} ${i + 1}: ${head}`);
-      L.push(`  ${en ? "Opening float" : "Fond d'ouverture"}: ${n(s.opening_float)} ${sym}`);
-      L.push(`  ${en ? "Cash sales" : "Ventes espèces"}: ${n(s.cash_sales)} ${sym}`);
-      L.push(`  ${en ? "Debt collected (cash)" : "Dette encaissée (espèces)"}: ${n(s.debt_collected_cash)} ${sym}`);
-      L.push(`  ${en ? "Cash refunds" : "Remboursements espèces"}: ${n(s.cash_refunds)} ${sym}`);
+      L.push(`  ${en ? "Opening float" : "Fond d'ouverture"}: ${nd(s.opening_float)} ${sym}`);
+      L.push(`  ${en ? "Cash sales" : "Ventes espèces"}: ${nd(s.cash_sales)} ${sym}`);
+      L.push(`  ${en ? "Debt collected (cash)" : "Dette encaissée (espèces)"}: ${nd(s.debt_collected_cash)} ${sym}`);
+      L.push(`  ${en ? "Cash refunds" : "Remboursements espèces"}: ${nd(s.cash_refunds)} ${sym}`);
       if (s.exchange_cash_in || s.exchange_cash_out) {
-        L.push(`  ${en ? "Exchanges (in / out)" : "Échanges (entrée / sortie)"}: +${n(s.exchange_cash_in || 0)} / −${n(s.exchange_cash_out || 0)} ${sym}`);
+        L.push(`  ${en ? "Exchanges (in / out)" : "Échanges (entrée / sortie)"}: +${nd(s.exchange_cash_in || 0)} / −${nd(s.exchange_cash_out || 0)} ${sym}`);
       }
-      L.push(`  ${en ? "Expenses" : "Dépenses"}: ${n(s.expenses)} ${sym}`);
-      L.push(`  ${en ? "Expected drawer" : "Caisse attendue"}: ${n(s.expected_drawer)} ${sym}`);
+      L.push(`  ${en ? "Expenses" : "Dépenses"}: ${nd(s.expenses)} ${sym}`);
+      L.push(`  ${en ? "Expected drawer" : "Caisse attendue"}: ${nd(s.expected_drawer)} ${sym}`);
       if (closed && s.counted_at_close != null) {
-        L.push(`  ${en ? "Counted at close" : "Comptée à la clôture"}: ${n(s.counted_at_close)} ${sym}`);
+        L.push(`  ${en ? "Counted at close" : "Comptée à la clôture"}: ${nd(s.counted_at_close)} ${sym}`);
         if (s.variance != null) {
           if (s.variance < 0) {
-            L.push(`  ${en ? "Variance (short)" : "Écart (manquant)"}: −${n(Math.abs(s.variance))} ${sym}`);
+            L.push(`  ${en ? "Variance (short)" : "Écart (manquant)"}: −${nd(Math.abs(s.variance))} ${sym}`);
           } else if (s.variance > 0) {
-            L.push(`  ${en ? "Variance (surplus)" : "Écart (excédent)"}: +${n(s.variance)} ${sym}`);
+            L.push(`  ${en ? "Variance (surplus)" : "Écart (excédent)"}: +${nd(s.variance)} ${sym}`);
           } else {
-            L.push(`  ${en ? "Variance" : "Écart"}: 0 ${sym}`);
+            L.push(`  ${en ? "Variance" : "Écart"}: ${nd(0)} ${sym}`);
           }
         }
       } else {
@@ -219,16 +222,16 @@ export function buildLedgerTextV2(ledger, lang) {
   // ── DRAWER — Expected drawer / variance / unattributed cash (TASK 3) ─────────
   if (b.drawer) {
     L.push(`*${en ? "DRAWER" : "CAISSE"}*`);
-    L.push(`${en ? "Expected drawer" : "Caisse attendue"}: ${n(dr.expected_drawer)} ${sym}`);
+    L.push(`${en ? "Expected drawer" : "Caisse attendue"}: ${nd(dr.expected_drawer)} ${sym}`);
     if (dr.drawer_variance != null) {
       const v = Number(dr.drawer_variance) || 0;
       // Sign shown here; the in-app renderer colours it red when non-zero.
-      const line = `${en ? "Drawer variance" : "Écart de caisse"}: ${v > 0 ? "+" : v < 0 ? "-" : ""}${n(Math.abs(v))} ${sym}`;
+      const line = `${en ? "Drawer variance" : "Écart de caisse"}: ${v > 0 ? "+" : v < 0 ? "-" : ""}${nd(Math.abs(v))} ${sym}`;
       L.push(v !== 0 ? `${line} ⚠` : line);
     }
     // Unattributed cash hidden when 0 (approved).
     if (Number(dr.unattributed_cash) > 0)
-      L.push(`${en ? "Unattributed cash (no shift)" : "Espèces hors caisse (sans quart)"}: ${n(dr.unattributed_cash)} ${sym}`);
+      L.push(`${en ? "Unattributed cash (no shift)" : "Espèces hors caisse (sans quart)"}: ${nd(dr.unattributed_cash)} ${sym}`);
     if (dr.reconciliation_warning)
       L.push(`⚠ ${en ? "Reconciliation" : "Rapprochement"}: ${dr.reconciliation_warning}`);
     L.push("");
