@@ -18,6 +18,7 @@ import { useTrialState } from "../hooks/useTrialState";
 import { SHOP_TZ } from "../utils/shopTime";
 import { isGoodsBuffer, locationLabel, locationTypeLabel, locationInitial } from "../utils/locations"; // GOODS-BUFFER
 import ChangePasswordCard from "../components/common/ChangePasswordCard"; // change my password
+import SubscriptionReceiptsCard from "../components/common/SubscriptionReceiptsCard"; // STENAMO-RECEIPTS
 
 const ROLES = [
   { value: "cashier",    en: "Cashier",    fr: "Caissier",     color: "#94a3b8" },
@@ -1777,6 +1778,9 @@ export default function SettingsPage() {
               💳 {lang === "en" ? "Manage subscription" : "Gérer l'abonnement"}
             </Link>
           </div>
+
+          {/* STENAMO-RECEIPTS: owner (or allowed manager) — the card hides itself on 403 */}
+          {(user?.role === "owner" || user?.role === "manager") && <SubscriptionReceiptsCard lang={lang} />}
 
           {/* CHANGE PASSWORD (2026-10-16): replaces the retired Owner PIN card — the login password. */}
           <div style={{ marginTop: 20 }}><ChangePasswordCard en={lang === "en"} /></div>

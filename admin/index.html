@@ -5348,10 +5348,12 @@
             '<div style="font-size:12px;color:var(--text-muted)">Detailed credit list available via Export credits CSV.</div>' +
           '</div>' +
           // History
-          '<div class="detail-pane" data-pane="history">' + renderSubHistoryTable(d.subscription_history || []) + '</div>';
+          '<div class="detail-pane" data-pane="history">' + renderSubHistoryTable(d.subscription_history || []) +
+            '<h4 style="margin:20px 0 8px">Receipts (Stenamo Book)</h4><div data-biz-receipts>Loading receipts…</div></div>';
         const m = $('modal-host').querySelector('.modal-body');
         m.innerHTML = detailHtml;
         wireBizFeaturedCard(m, biz, d.dozie_seller);
+        loadBizReceipts(m.querySelector('[data-biz-receipts]'), biz.id);   // STENAMO-RECEIPTS
         m.querySelectorAll('.detail-tab').forEach(btn => {
           btn.addEventListener('click', () => {
             const t = btn.getAttribute('data-detail-tab');
@@ -5387,6 +5389,34 @@
           '<td>' + escapeHtml(s.payment_method || '—') + '</td></tr>'
         ).join('') + '</tbody></table>';
     }
+    // STENAMO-RECEIPTS (20261017m): any shop's receipts; PDF in EN or FR. Read-only here —
+    // a correction is a credit note (POST /admin/subscription-receipts/:id/credit-note, master_admin).
+    async function loadBizReceipts(el, orgId) {
+      if (!el) return;
+      try {
+        const r = await apiAdmin('GET', '/admin/subscription-receipts?org_id=' + encodeURIComponent(orgId));
+        const rows = r.data || [];
+        if (!rows.length) { el.innerHTML = '<div class="empty" style="padding:16px">No receipts.</div>'; return; }
+        el.innerHTML = '<table class="data"><thead><tr><th>Date</th><th>No.</th><th>Plan</th><th>Months</th><th class="num">Amount</th><th>Method</th><th>Type</th><th>PDF</th></tr></thead><tbody>' +
+          rows.map(x => '<tr><td>' + escapeHtml(x.receipt_date || '') + '</td><td style="font-family:monospace">' + escapeHtml(x.receipt_number) + '</td>' +
+            '<td>' + escapeHtml(x.plan_name || x.plan_id || '—') + '</td><td>' + escapeHtml(String(x.months || '—')) + '</td>' +
+            '<td class="num">' + escapeHtml(Math.round(Number(x.amount) || 0).toLocaleString('en-US') + ' ' + (x.currency || '')) + '</td>' +
+            '<td>' + escapeHtml(x.method || '—') + '</td><td>' + (x.kind === 'credit_note' ? 'Credit note' : 'Receipt') + '</td>' +
+            '<td><button class="btn btn-sm" data-rcpt="' + escapeHtml(x.id) + '" data-lang="en" data-no="' + escapeHtml(x.receipt_number) + '">EN</button> ' +
+            '<button class="btn btn-sm" data-rcpt="' + escapeHtml(x.id) + '" data-lang="fr" data-no="' + escapeHtml(x.receipt_number) + '">FR</button></td></tr>').join('') +
+          '</tbody></table>';
+        el.querySelectorAll('[data-rcpt]').forEach(b => b.addEventListener('click', async () => {
+          const token = localStorage.getItem(TOKEN_KEY);
+          const res = await fetch(API_BASE + '/admin/subscription-receipts/' + b.getAttribute('data-rcpt') + '/pdf?lang=' + b.getAttribute('data-lang'),
+            { headers: { 'Authorization': 'Bearer ' + token } });
+          if (!res.ok) return showToast('Download failed (' + res.status + ')', 'danger');
+          const url = URL.createObjectURL(await res.blob()), a = document.createElement('a');
+          a.href = url; a.download = b.getAttribute('data-no') + '.pdf'; document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 5000);
+        }));
+      } catch (e) { el.innerHTML = '<div class="empty" style="padding:16px">Could not load receipts: ' + escapeHtml(e.message || String(e)) + '</div>'; }
+    }
+
     function renderSubHistoryTable(hist) {
       if (!hist.length) return '<div class="empty" style="padding:32px">No subscription payments yet.</div>';
       return '<table class="data"><thead><tr><th>Date</th><th>Plan</th><th class="num">Amount</th><th>Method</th><th>Status</th></tr></thead><tbody>' +
