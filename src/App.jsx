@@ -47,6 +47,7 @@ import FiltersPage from "./pages/FiltersPage"; // MP-FILTERS — what/who/when c
 import HelpPage from "./pages/HelpPage"; // MP-HELP v1 — bundled offline in-app guide
 import MyAccountPage from "./pages/MyAccountPage"; // change my own password — every role
 import MessagesPage from "./pages/MessagesPage"; // SUPPORT MESSAGING (Phase A) — owner ↔ Équipe Stenamo
+import { pendingPayment, confirmPayment } from "./utils/flwPending"; // FLW-PAY-FIX
 
 // MP-INVALIDATE-AFTER-SALE: refetch stale data when the user returns to
 // the tab/app or reconnects (e.g. after making a sale on another device
@@ -464,6 +465,14 @@ export default function App() {
         const { App: CapApp } = await import("@capacitor/app");
         _appStateHandle = await CapApp.addListener("appStateChange", ({ isActive }) => {
           if (isActive) qc.invalidateQueries();
+          // FLW-PAY-FIX: back from the system browser after paying → confirm it here.
+          const p = isActive ? pendingPayment() : null;
+          if (p) confirmPayment(p.tx_ref).then((s) => {
+            if (s === "approved") {
+              toast.success("✅ Payment confirmed — plan upgraded / Paiement confirmé — plan mis à niveau", { duration: 6000 });
+              qc.invalidateQueries(["my-plan"]);
+            }
+          });
         });
       } catch (_) { /* @capacitor/app not bundled on web; ignore */ }
     })();
@@ -485,17 +494,24 @@ export default function App() {
     // can't re-trigger.
     (() => {
       const params = new URLSearchParams(window.location.search);
-      const txRef = params.get("flw_tx");
+      // FLW-PAY-FIX: no ?flw_tx (e.g. the app re-opened after paying in the system browser) →
+      // fall back to the payment this device left for, if any.
+      const pending = params.get("flw_tx") ? null : pendingPayment();
+      const txRef = params.get("flw_tx") || (pending && pending.tx_ref);
       if (!txRef) return;
       const transactionId = params.get("transaction_id") || params.get("tx_id") || null;
-      window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+      if (!pending) window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
       toast("⏳ Verifying payment… / Vérification du paiement…", { duration: 6000 });
       (async () => {
         try {
-          const r = await api.post("/subscriptions/flw/verify-return", { tx_ref: txRef, transaction_id: transactionId });
-          if (r.data?.success) {
+          // FLW-PAY-FIX: the PUBLIC confirm — works without a login (the Android payer lands here in
+          // the system browser, where the app's session does not exist), 30 s timeout.
+          const s = await confirmPayment(txRef, transactionId);
+          if (s === "approved") {
             toast.success("✅ Payment confirmed — plan upgraded / Paiement confirmé — plan mis à niveau", { duration: 6000 });
-          } else {
+          } else if (s === "not_paid_yet" && !pending) {
+            toast("⏳ No payment received yet — if you paid, your plan will update within minutes / Aucun paiement reçu pour l'instant — si vous avez payé, votre plan sera mis à jour dans quelques minutes", { duration: 8000 });
+          } else if (s !== "unknown" && !pending) {
             // Not settled yet — the webhook / 15-min reconcile sweep will finish it.
             toast("⏳ Payment is still being confirmed — your plan will update shortly / Paiement en cours de confirmation…", { duration: 7000 });
           }

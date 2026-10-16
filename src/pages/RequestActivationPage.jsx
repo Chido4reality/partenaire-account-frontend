@@ -22,6 +22,7 @@ import { isFrenchEnglishOrg } from "../utils/receiptExtras";
 
 import { SUPPORT_PHONE } from "../utils/support";
 import { planFeatureList, planFeatureLabel } from "../utils/market";
+import { rememberPendingPayment } from "../utils/flwPending"; // FLW-PAY-FIX
 // Manual (offline) fallback methods → admin approval, ONLY for paying the owner
 // directly offline. MP-SUB-NO-PHANTOM-PENDING: Mobile Money / Orange are NOT
 // here — those are Flutterwave methods and go through the FW hosted page (the
@@ -126,6 +127,7 @@ export default function RequestActivationPage() {
     mutationFn: () => api.post("/subscriptions/flw/initiate", { plan_id: selected.id, months }),
     onSuccess: (res) => {
       const link = res.data?.data?.link;
+      if (link) rememberPendingPayment(res.data?.data?.tx_ref);   // FLW-PAY-FIX: re-checked on return / app resume
       if (link) window.location.href = link;
       else toast.error(en ? "Could not start payment." : "Impossible de démarrer le paiement.");
     },
