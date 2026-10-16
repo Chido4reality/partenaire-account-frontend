@@ -470,7 +470,7 @@ export default function App() {
           if (p) confirmPayment(p.tx_ref).then((s) => {
             if (s === "approved") {
               toast.success("✅ Payment confirmed — plan upgraded / Paiement confirmé — plan mis à niveau", { duration: 6000 });
-              qc.invalidateQueries(["my-plan"]);
+              qc.invalidateQueries({ queryKey: ["my-plan"] });   // v5 named key (the array form refetches everything)
             }
           });
         });
