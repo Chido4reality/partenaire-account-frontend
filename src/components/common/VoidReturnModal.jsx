@@ -382,7 +382,9 @@ export default function VoidReturnModal({ sale, onClose, lang = "fr", onSuccess 
             const cap = returnableQtyFor(i.product_id);
             const lineMax = cap == null ? Math.floor(Number(i.quantity) || 0) : cap;
             const qty = Math.min(Math.max(Math.floor(Number(i.returnQty) || 0), 0), lineMax);
-            return { product_id: i.product_id, qty,
+            // RC3 item 6: name the sale LINE — a good unit and a damaged unit of the same
+            // product are different lines, and only the damaged one goes back to the pile.
+            return { product_id: i.product_id, qty, ...(i.id ? { sale_item_id: i.id } : {}),
               unit_price: +i.unit_price, reason: i.retReason || "other" };
           })
           .filter(i => i.qty > 0);

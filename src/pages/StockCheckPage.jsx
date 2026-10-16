@@ -753,7 +753,10 @@ export default function StockCheckPage() {
                     // Rendering it in the same reassuring colour as a real resolution
                     // is exactly how a dismissal disguises itself as work done.
                     const dismissed = r.resolution_reason === "not_counted";
-                    const noStockChange = dismissed || r.resolution_reason === "count_wrong" || r.resolution_reason === "confirmed_loss";
+                    // RC3 item 6: a confirmed loss now corrects stock; one resolved before that did not
+                    // (no adjustment movement linked) — say what actually happened to each.
+                    const noStockChange = dismissed || r.resolution_reason === "count_wrong"
+                      || (r.resolution_reason === "confirmed_loss" && !r.adjustment_movement_id);
                     const c = dismissed ? { fg: "#94a3b8", bg: "rgba(148,163,184,0.09)", bd: "rgba(148,163,184,0.28)" }
                                         : { fg: "#34d399", bg: "rgba(52,211,153,0.08)", bd: "rgba(52,211,153,0.2)" };
                     return (
