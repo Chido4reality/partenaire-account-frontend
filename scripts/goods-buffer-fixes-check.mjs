@@ -237,7 +237,16 @@ console.log("\n-- 7 hide the cash amount: every device, until the password --\n"
     && /hideDrawer: drawerMasked/.test(rp) && /dv\(dr\.expected\)/.test(rp) && !/value=\{fmt\(s\.expected_drawer\)\}/.test(rp));
   check("Shifts history: every drawer column uses the mask", /fmtD\(s\.expected_drawer/.test(read("pages/ShiftsPage.jsx")) && !/\{fmt\(s\.expected_drawer/.test(read("pages/ShiftsPage.jsx")));
   check("Cashier oversight: drawer totals use the mask", /fmtD\(d\.drawer\.totals\.expected\)/.test(read("components/CashierOversightTab.jsx")));
-  check("send-report prompt after close: the text masks the drawer too", /buildLedgerText\(ledger, lang, \{ hideDrawer: drawerMasked \}\)/.test(sw));
+  // Peter (2026-10-16): the shift-closed report to the owner ALWAYS carries the real figures,
+  // and asks the server for the CLOSED shift (only its closer may read that ledger).
+  const prompt = sw.slice(sw.indexOf("function SendReportPromptModal"), sw.indexOf("function SendReportPromptModal") + 6000);
+  check("shift-closed report: real figures (no hideDrawer) and the closed shift_id on both fetches",
+    /const dailyTxt  = ledger \? buildLedgerText\(ledger, lang\) : ""/.test(prompt)
+    && (prompt.match(/shift_id=\$\{shiftId\}/g) || []).length === 2 && /setReportPromptShift\(data\?\.shift_id/.test(sw));
+  // A shared drawer the server sends WITHOUT figures (amounts_hidden) is never shown as 0.
+  check("amounts_hidden: banner, drawer card and close-shift say owner/manager only, no password prompt",
+    /data\?\.amounts_hidden \?/.test(sw) && /const roleHidden = !!shift\?\.amounts_hidden/.test(sw)
+    && /const roleHidden = !!current\?\.amounts_hidden/.test(read("components/dashboard/DrawerDashboardCard.jsx")));
   const st = read("pages/SettingsPage.jsx");
   check("Settings: 'Hide the cash amount until password', all devices, no 'No effect on computers'",
     st.includes("Hide the cash amount until password") && st.includes("Masquer le montant de la caisse jusqu'au mot de passe")

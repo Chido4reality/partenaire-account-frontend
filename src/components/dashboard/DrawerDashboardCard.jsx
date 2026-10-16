@@ -397,7 +397,10 @@ export default function DrawerDashboardCard() {
   const hideSetting = orgResp?.data?.hide_drawer_amount !== false;   // absent ⇒ treat as ON
   const { gateOn, revealed } = useDrawerReveal({ enabled: hideSetting });
   const [askPin, setAskPin] = useState(false);
-  const masked = gateOn && !revealed;
+  // DRAWER ACCESS (2026-10-16): the server sends a shared drawer that is not yours WITHOUT
+  // its figures (amounts_hidden) — always masked, and no password prompt (nothing to show).
+  const roleHidden = !!current?.amounts_hidden;
+  const masked = roleHidden || (gateOn && !revealed);
   // One helper for every cash figure on this card, so a new row cannot be added later
   // that forgets to mask — the leak-by-omission failure this feature is about.
   const money = (n) => (masked ? MASK : fmt(Number(n) || 0));
@@ -516,8 +519,8 @@ export default function DrawerDashboardCard() {
   // what to do rather than just showing dots.
   const headline = masked
     ? (
-      <span onClick={(e) => { e.stopPropagation(); setAskPin(true); }}
-        style={{ fontSize: 12.5, color: "var(--text-muted)", cursor: "pointer", whiteSpace: "nowrap" }}>
+      <span onClick={(e) => { e.stopPropagation(); if (!roleHidden) setAskPin(true); }}
+        style={{ fontSize: 12.5, color: "var(--text-muted)", cursor: roleHidden ? "default" : "pointer", whiteSpace: "nowrap" }}>
         🔒 <strong style={{ letterSpacing: 2 }}>{MASK}</strong>
         <span style={{ marginLeft: 6, textDecoration: "underline" }}>
           {fr ? "Afficher" : "Show"}
@@ -580,14 +583,16 @@ export default function DrawerDashboardCard() {
               a column of dots — dots next to every label read as "broken", and a user who
               thinks the screen is broken force-quits rather than taps. */}
           {masked && (
-            <div onClick={() => setAskPin(true)}
-              style={{ padding: "18px 14px", textAlign: "center", cursor: "pointer" }}>
+            <div onClick={() => { if (!roleHidden) setAskPin(true); }}
+              style={{ padding: "18px 14px", textAlign: "center", cursor: roleHidden ? "default" : "pointer" }}>
               <div style={{ fontSize: 26, letterSpacing: 4, fontWeight: 800, color: "var(--text-muted)" }}>{MASK}</div>
               <div style={{ marginTop: 6, fontSize: 12.5, color: "var(--text-secondary)", textDecoration: "underline" }}>
-                🔒 {fr ? "Afficher l'argent en caisse" : "Show the cash in the drawer"}
+                🔒 {roleHidden ? (fr ? "Montant : patron / gérant seulement" : "Amount: owner / manager only")
+                  : (fr ? "Afficher l'argent en caisse" : "Show the cash in the drawer")}
               </div>
               <div style={{ marginTop: 4, fontSize: 11, color: "var(--text-muted)" }}>
-                {fr ? "Votre mot de passe vous sera demandé" : "You'll be asked for your password"}
+                {roleHidden ? (fr ? "Ce n'est pas votre caisse." : "This is not your till.")
+                  : (fr ? "Votre mot de passe vous sera demandé" : "You'll be asked for your password")}
               </div>
             </div>
           )}

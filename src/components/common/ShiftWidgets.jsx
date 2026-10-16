@@ -429,8 +429,11 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
   // HIDE THE CASH AMOUNT (every device): float, cash in/out, expected AND the variance (the
   // variance plus the count you typed IS the expected amount) read ••••• until the closer
   // re-enters their password. Counting and closing still work while hidden.
-  const { masked: drawerMasked, maskMoney } = useDrawerMask();
-  const fmtD = maskMoney(fmt);
+  const { masked: gateMasked } = useDrawerMask();
+  // DRAWER ACCESS: a shared drawer that is not yours arrives without figures — count blind.
+  const roleHidden = !!shift?.amounts_hidden;
+  const drawerMasked = roleHidden || gateMasked;
+  const fmtD = drawerMasked ? Object.assign(() => MASK, { symbol: fmt.symbol, currency: fmt.currency }) : fmt;
 
   const [actual, setActual]         = useState("");
   const [notes, setNotes]           = useState("");
@@ -579,7 +582,12 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
           : "This is the physical cash box. Only cash counts here — MoMo, bank and credit are real sales but no cash changes hands; they're shown below, not in the drawer."}
       </div>
 
-      <DrawerRevealButton en={!fr} masked={drawerMasked} style={{ marginBottom: 8 }} />
+      <DrawerRevealButton en={!fr} masked={drawerMasked && !roleHidden} style={{ marginBottom: 8 }} />
+      {roleHidden && (
+        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
+          🔒 {fr ? "Montants visibles par le patron / gérant. Comptez l'argent et entrez le total." : "Amounts are for the owner / manager. Count the cash and enter the total."}
+        </div>
+      )}
       <div style={{ background: "var(--bg-card)", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
         {/* Opening float — always shown, single line. */}
         <Row label={fr ? "Solde d'ouverture" : "Opening float"}
@@ -904,7 +912,7 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
 // ledger. Opens a wa.me deep link — one-tap design per spec; we do
 // NOT auto-deliver (would require WhatsApp Business API).
 // ─────────────────────────────────────────────────────────────────
-function SendReportPromptModal({ locationId, onClose }) {
+function SendReportPromptModal({ locationId, shiftId, onClose }) {
   const { lang } = useLangStore();
   const fr = lang === "fr";
 
@@ -929,8 +937,8 @@ function SendReportPromptModal({ locationId, onClose }) {
   // Daily ledger (only enabled once we know auto-send is on + phone OK).
   const fetchEnabled = !!locationId && !settingsLoading && autoSendEnabled && phoneOk;
   const { data: ledgerResp, isLoading: ledgerLoading } = useQuery({
-    queryKey: ["report-prompt-daily", today, locationId],
-    queryFn: () => api.get(`/reports/daily-ledger?date=${today}&location_id=${locationId}`).then(r => r.data),
+    queryKey: ["report-prompt-daily", today, locationId, shiftId],
+    queryFn: () => api.get(`/reports/daily-ledger?date=${today}&location_id=${locationId}${shiftId ? `&shift_id=${shiftId}` : ""}`).then(r => r.data),
     enabled: fetchEnabled,
   });
   const ledger = ledgerResp?.data || null;
@@ -938,8 +946,8 @@ function SendReportPromptModal({ locationId, onClose }) {
   // Weekly summary only on Saturdays. Endpoint requires a specific
   // location (no all-shops aggregation).
   const { data: weeklyResp } = useQuery({
-    queryKey: ["report-prompt-weekly", today, locationId],
-    queryFn: () => api.get(`/reports/weekly-ledger?week_ending=${today}&location_id=${locationId}`).then(r => r.data),
+    queryKey: ["report-prompt-weekly", today, locationId, shiftId],
+    queryFn: () => api.get(`/reports/weekly-ledger?week_ending=${today}&location_id=${locationId}${shiftId ? `&shift_id=${shiftId}` : ""}`).then(r => r.data),
     enabled: fetchEnabled && isSaturday,
   });
   const weekly = weeklyResp?.data || null;
@@ -948,7 +956,6 @@ function SendReportPromptModal({ locationId, onClose }) {
   // modal mounts briefly even when self-dismissing — acceptable
   // for the small UX cost; alternative would mean lifting all this
   // logic into the parent.
-  const { masked: drawerMasked } = useDrawerMask(); // hide the cash amount: the shared text masks the drawer too
   useEffect(() => {
     if (settingsLoading || !settings) return;
     if (!autoSendEnabled) {
@@ -973,7 +980,9 @@ function SendReportPromptModal({ locationId, onClose }) {
   if (!autoSendEnabled || !phoneOk) return null;
 
   // Compose the text body. Daily always; weekly appended on Sat.
-  const dailyTxt  = ledger ? buildLedgerText(ledger, lang, { hideDrawer: drawerMasked }) : "";
+  // Peter (2026-10-16): the shift-closed report to the owner ALWAYS carries the real
+  // figures — exempt from the screen mask (other shared / CSV text stays masked).
+  const dailyTxt  = ledger ? buildLedgerText(ledger, lang) : "";
   const weeklyTxt = (isSaturday && weekly) ? buildWeeklyText(weekly, lang) : "";
   const fullText  = dailyTxt + weeklyTxt;
 
@@ -1042,6 +1051,9 @@ export function ActiveShiftIndicator() {
   // the location_id so SendReportPromptModal knows what to fetch.
   // null = no prompt pending.
   const [reportPromptLoc, setReportPromptLoc] = useState(null);
+  // DRAWER ACCESS (2026-10-16): the closed shift, so the closer may fetch the report for it
+  // (the server lets a cashier read the ledger only for a shift THEY just closed).
+  const [reportPromptShift, setReportPromptShift] = useState(null);
 
   // MP-DRAWER-REVEAL: same org setting + same module-level reveal as the drawer card,
   // so ONE unlock covers every drawer surface and one timeout re-hides them all.
@@ -1122,7 +1134,13 @@ export function ActiveShiftIndicator() {
               the second always-visible leak alongside the drawer card's collapsed header,
               and gating only the card would have missed it entirely. stopPropagation
               because the parent row opens the CLOSE modal on click. */}
-          {drawerMasked ? (
+          {data?.amounts_hidden ? (
+            // DRAWER ACCESS (2026-10-16): the server sent this shared drawer WITHOUT its
+            // figures (not your till / your shop) — no password can show what isn't here.
+            <span style={{ fontSize: 12.5, color: "var(--text-muted)" }}>
+              🔒 {lang === "fr" ? "Montant : patron / gérant seulement" : "Amount: owner / manager only"}
+            </span>
+          ) : drawerMasked ? (
             <span onClick={(e) => { e.stopPropagation(); setAskPin(true); }}
               style={{ fontSize: 12.5, color: "var(--text-muted)", cursor: "pointer" }}>
               🔒 <strong style={{ letterSpacing: 2 }}>{MASK}</strong>
@@ -1180,12 +1198,13 @@ export function ActiveShiftIndicator() {
           // prompt after the close succeeds. SendReportPromptModal
           // self-dismisses if auto-send is disabled or the owner
           // phone isn't set.
-          if (locId) setReportPromptLoc(locId);
+          if (locId) { setReportPromptShift(data?.shift_id || null); setReportPromptLoc(locId); }
         }}
       />
       {reportPromptLoc && (
         <SendReportPromptModal
           locationId={reportPromptLoc}
+          shiftId={reportPromptShift}
           onClose={() => setReportPromptLoc(null)}
         />
       )}
