@@ -41,7 +41,8 @@
 // v16: Launch discount (owner only) — one setting for the plan discount; the old Plan discounts link is retired.
 // v17: (90d7601, main) bump only — receipts b63106e, Goods in buffer 90e3d20, Launch discount labels 55eb906 shipped without one.
 // v18: Tutorials (the /learn lessons).
-const VERSION = 'admin-pwa-v18';
+// v19: Tutorials — Members only (🔒 column, toggle, YouTube Unlisted/Public hint).
+const VERSION = 'admin-pwa-v19';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const API_CACHE = `${VERSION}-api`;

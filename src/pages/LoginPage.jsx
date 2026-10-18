@@ -30,6 +30,13 @@ export function loginFailure(err, lang) {
   return { code, message: server || (fr ? "Le serveur a refusé la connexion — réessayez." : "The server refused the sign-in — try again.") };
 }
 
+// "/learn", "/learn/<slug>" or "/learn.html?l=<slug>" → that path; anything else (another host,
+// "//evil", an app route, junk) → null.
+export function learnReturnPath(raw) {
+  if (typeof raw !== "string") return null;
+  return /^\/learn(\/[a-z0-9-]{1,80})?\/?$/.test(raw) || /^\/learn\.html\?l=[a-z0-9-]{1,80}$/.test(raw) ? raw : null;
+}
+
 export default function LoginPage() {
   const { t, lang }             = useLangStore();
 
@@ -81,6 +88,11 @@ export default function LoginPage() {
     try {
       const res = await api.post("/auth/login", { phone, password });
       login(res.data.user, res.data.org, res.data.token);
+      // LEARN: a members-only lesson's "Log in" button sends ?next=/learn/<slug>. Only a /learn page is
+      // followed (never another site or app path), with a full page load — /learn is a static page
+      // outside the app. Anything else goes to the app as before.
+      const next = learnReturnPath(new URLSearchParams(window.location.search).get("next"));
+      if (next) { window.location.assign(next); return; }
       navigate("/");
     } catch (err) {
       // No response / axios timeout (ECONNABORTED) / transport error

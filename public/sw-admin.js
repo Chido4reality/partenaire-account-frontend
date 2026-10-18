@@ -40,7 +40,8 @@
 // v17: (2895d85, main) bump only — admin.html changed after v16 without one: subscription receipts in
 //      business detail (b63106e), Goods in buffer beside the stock value (90e3d20), Launch discount labels (55eb906).
 // v18: Tutorials (the /learn lessons).
-const VERSION = 'admin-pwa-v18';
+// v19: Tutorials — Members only (🔒 column, toggle, YouTube Unlisted/Public hint).
+const VERSION = 'admin-pwa-v19';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const API_CACHE = `${VERSION}-api`;
