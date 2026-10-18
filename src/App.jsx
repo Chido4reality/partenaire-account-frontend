@@ -11,6 +11,7 @@ import { useAuthStore, useOfflineStore } from "./store";
 import api from "./utils/api";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
+import LearnBounce from "./pages/LearnBounce"; // LEARN: stale-shell fallback for /learn
 import Layout from "./components/common/Layout";
 import EnvBanner from "./components/EnvBanner";
 import LockGate from "./components/LockGate";
@@ -576,6 +577,9 @@ export default function App() {
         <Routes>
           <Route path="/login"    element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          {/* LEARN: /learn is static (public/learn.html); this only catches a stale shell. */}
+          <Route path="/learn/*"  element={<LearnBounce />} />
+          <Route path="/learn.html" element={<LearnBounce />} />
           <Route path="/" element={<Guard><LockGate><Layout /></LockGate></Guard>}>
             <Route index               element={<RoleGuard path="/"><Dashboard /></RoleGuard>} />
             <Route path="pos"          element={<RoleGuard path="/pos"><POSPage /></RoleGuard>} />

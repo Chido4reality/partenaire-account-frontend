@@ -4,6 +4,8 @@
     { "source": "/privacy-fr", "destination": "/privacy-fr.html" },
     { "source": "/privacy", "destination": "/privacy.html" },
     { "source": "/suppression-compte", "destination": "/suppression-compte.html" },
+    { "source": "/learn", "destination": "/learn.html" },
+    { "source": "/learn/:slug", "destination": "/learn.html" },
     { "source": "/((?!api/|assets/|sw\\.js|workbox-|registerSW\\.js|manifest\\.webmanifest).*)", "destination": "/index.html" }
   ]
 }

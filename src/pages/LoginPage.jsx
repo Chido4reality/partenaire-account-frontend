@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import { useAuthStore, useLangStore } from "../store";
 import api from "../utils/api";
 import { setLanguageLocalPending } from "../utils/setLanguage"; // MP-LANGUAGE-PERSIST
+import LearnLink from "../components/common/LearnLink"; // LEARN: public video lessons
 
 // LOGIN DIAGNOSTICS (2026-10-05). Paul, on Orange: "the button dims for a few seconds, then
 // returns — no message, over and over". A failed sign-in must say WHY, on the screen itself
@@ -122,6 +123,11 @@ export default function LoginPage() {
           <div style={{ textAlign: "center", marginTop: 18, fontSize: 13, color: "var(--text-secondary)" }}>
             {lang === "en" ? "No account yet? " : "Pas encore de compte? "}
             <Link to="/register" style={{ color: "var(--brand-light)", fontWeight: 500, textDecoration: "none" }}>{t("auth.register")}</Link>
+          </div>
+          <div style={{ textAlign: "center", marginTop: 10, fontSize: 13 }}>
+            <LearnLink style={{ color: "var(--brand-light)", textDecoration: "none" }}>
+              {lang === "en" ? "New here? Watch how it works (videos)" : "Nouveau ? Voir comment ça marche (vidéos)"}
+            </LearnLink>
           </div>
         </div>
         <div style={{ textAlign: "center", marginTop: 16 }}>

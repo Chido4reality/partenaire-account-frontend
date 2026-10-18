@@ -51,9 +51,10 @@ export default defineConfig({
         clientsClaim: true,
         // Never precache the admin portal's standalone shell/assets — it
         // has its own SW; precaching it here would make the two fight.
-        globIgnores: ["**/admin.html", "**/admin-manifest.json", "**/sw-admin.js"],
+        // LEARN: the public lessons page is its own small static file, always fetched fresh.
+        globIgnores: ["**/admin.html", "**/admin-manifest.json", "**/sw-admin.js", "**/learn.html"],
         navigateFallback: "/index.html",
-        navigateFallbackDenylist: [/^\/api/, /^\/admin/, /^\/privacy/, /^\/suppression-compte/],
+        navigateFallbackDenylist: [/^\/api/, /^\/admin/, /^\/privacy/, /^\/suppression-compte/, /^\/learn/],
         runtimeCaching: [
           {
             // API is NEVER cached — pass straight to network so the axios

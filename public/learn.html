@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- LEARN / APPRENDRE (2026-10-18): public video lessons for Stenamo Book. A small static page (no app
+     bundle) so it opens fast on cheap phones and slow data, and so WhatsApp sees these tags without
+     running JavaScript. Served at /learn and /learn/<slug> (vercel.json rewrites); the app's service
+     worker leaves it alone (navigateFallbackDenylist). Lessons come from GET /api/tutorials. -->
+<title>Apprendre Stenamo Book · Learn Stenamo Book</title>
+<meta name="description" content="Vidéos courtes pour démarrer avec Stenamo Book : ventes, caisse, stock, crédit client et rapports. Short videos to get started with Stenamo Book: sales, cash, stock, customer credit and reports.">
+<meta name="theme-color" content="#0f0e17">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Stenamo Book">
+<meta property="og:title" content="Apprendre Stenamo Book · Learn Stenamo Book">
+<meta property="og:description" content="Vidéos courtes : ventes, caisse, stock, crédit client et rapports. Short videos: sales, cash, stock, customer credit and reports.">
+<meta property="og:url" content="https://book.stenamo.com/learn">
+<meta property="og:locale" content="fr_FR">
+<meta property="og:locale:alternate" content="en_GB">
+<meta name="twitter:card" content="summary">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@700&family=DM+Sans:wght@400;500&display=swap">
+<style>
+  /* The Book app's own tokens (src/index.css): dark base, gold highlight, navy tint, Syne + DM Sans. */
+  :root {
+    --brand: #FBC503; --brand-dark: #D9A400; --brand-navy: #152B52; --on-brand: #152B52;
+    --success: #10b981;
+    --bg-base: #0f0e17; --bg-surface: #1a1928; --bg-elevated: #232235;
+    --text-primary: #f4f3ff; --text-secondary: #a09fbe; --text-muted: #6b6a8a;
+    --border: rgba(255,255,255,0.08); --border-hover: rgba(255,255,255,0.16);
+    --radius-md: 10px; --radius-lg: 16px;
+    --font-display: "Syne", system-ui, sans-serif; --font-body: "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color-scheme: dark;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg-base); color: var(--text-primary); font: 15px/1.55 var(--font-body); -webkit-font-smoothing: antialiased; }
+  body { min-height: 100vh; padding-bottom: env(safe-area-inset-bottom, 0px); }
+  a { color: var(--brand); }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  .wrap { max-width: 720px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  h1, h2, .display { font-family: var(--font-display); font-weight: 700; letter-spacing: -0.01em; text-wrap: balance; }
+
+  /* header */
+  .top { position: sticky; top: 0; z-index: 20; background: rgba(15,14,23,0.94); border-bottom: 1px solid var(--border);
+         padding-top: env(safe-area-inset-top, 0px); backdrop-filter: blur(8px); }
+  .top .wrap { display: flex; align-items: center; gap: 10px; min-height: 56px; }
+  .brand { display: flex; align-items: center; gap: 8px; text-decoration: none; color: var(--text-primary); font-family: var(--font-display); font-weight: 700; font-size: 16px; margin-right: auto; min-width: 0; }
+  .brand .mark { width: 28px; height: 28px; border-radius: 8px; background: var(--brand); color: var(--on-brand); display: grid; place-items: center; font-size: 15px; flex-shrink: 0; }
+  .lang { display: inline-flex; border: 1px solid var(--border-hover); border-radius: 999px; overflow: hidden; flex-shrink: 0; }
+  .lang button { background: none; border: 0; padding: 6px 11px; font-size: 12px; font-weight: 500; color: var(--text-secondary); min-height: 32px; }
+  .lang button[aria-pressed="true"] { background: var(--brand); color: var(--on-brand); }
+  .iconbtn { background: none; border: 1px solid var(--border-hover); border-radius: 10px; width: 40px; height: 40px; display: grid; place-items: center; font-size: 18px; flex-shrink: 0; text-decoration: none; color: var(--text-primary); }
+  .lesson-head { flex: 1; min-width: 0; font-family: var(--font-display); font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* progress */
+  .progress { display: grid; gap: 6px; }
+  .progress .bar { height: 8px; border-radius: 999px; background: var(--bg-elevated); overflow: hidden; }
+  .progress .fill { height: 100%; background: var(--brand); border-radius: 999px; width: 0; transition: width .3s ease; }
+  .progress .label { font-size: 13px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+  main { padding-block: 22px 40px; display: grid; gap: 22px; }
+  .hero { display: grid; gap: 14px; }
+  .hero h1 { font-size: 28px; line-height: 1.15; }
+  .hero p { color: var(--text-secondary); max-width: 60ch; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 12px 20px; border-radius: var(--radius-md);
+         border: 1px solid var(--border-hover); background: var(--bg-elevated); color: var(--text-primary); font-weight: 500; font-size: 15px; text-decoration: none; text-align: center; }
+  .btn-primary { background: var(--brand); border-color: var(--brand); color: var(--on-brand); font-weight: 700; }
+  .btn-primary:hover { background: var(--brand-dark); }
+  .btn[disabled] { opacity: .4; cursor: default; }
+  .btn-block { width: 100%; }
+
+  /* course list */
+  .section { display: grid; gap: 6px; }
+  .section-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 0 2px; }
+  .section-head h2 { font-size: 16px; }
+  .section-head .count { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+  .rows { list-style: none; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--bg-surface); }
+  .rows li + li { border-top: 1px solid var(--border); }
+  .row { display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 12px; padding: 13px 14px; text-decoration: none; color: var(--text-primary); min-height: 56px; }
+  .row:hover { background: var(--bg-elevated); }
+  .row .num { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 500; background: var(--bg-elevated); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  .row .title { min-width: 0; overflow-wrap: anywhere; }
+  .row .meta { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .row.done .num { background: rgba(16,185,129,0.18); color: var(--success); }
+  .row.current { background: rgba(251,197,3,0.08); box-shadow: inset 3px 0 0 var(--brand); }
+  .row.current .num { background: var(--brand); color: var(--on-brand); }
+  .row .soon { color: var(--text-muted); font-style: italic; }
+  .tick { color: var(--success); font-weight: 700; }
+
+  .cta { border-radius: var(--radius-lg); background: var(--brand-navy); padding: 22px 18px; display: grid; gap: 12px; text-align: center; }
+  .cta h2 { font-size: 20px; }
+  .cta p { color: #c9d3ea; font-size: 14px; }
+
+  /* lesson */
+  .video { position: relative; width: 100%; aspect-ratio: 16 / 9; max-width: 100%; border-radius: var(--radius-md); overflow: hidden; background: #000; }
+  .video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .thumb { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #000 center / cover no-repeat; display: grid; place-items: center; }
+  .thumb .play { width: 68px; height: 48px; border-radius: 14px; background: rgba(0,0,0,0.72); display: grid; place-items: center; }
+  .thumb .play::before { content: ""; border-left: 18px solid #fff; border-top: 11px solid transparent; border-bottom: 11px solid transparent; margin-left: 4px; }
+  .thumb .hint { position: absolute; bottom: 10px; left: 0; right: 0; font-size: 12px; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+  .soon-box { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 16px; background: var(--bg-surface); color: var(--text-secondary); }
+  .soon-box strong { display: block; font-family: var(--font-display); color: var(--text-primary); font-size: 18px; margin-bottom: 4px; }
+  .note { font-size: 13px; color: var(--text-secondary); background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 12px; }
+  .lesson-title { font-size: 22px; line-height: 1.2; }
+  .lesson-meta { font-size: 13px; color: var(--text-muted); }
+  .summary { color: var(--text-secondary); max-width: 65ch; white-space: pre-line; }
+  .pager { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .pager .btn { min-width: 0; }
+
+  /* drawer */
+  .scrim { position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 40; }
+  .drawer { position: fixed; top: 0; bottom: 0; left: 0; width: min(88vw, 380px); background: var(--bg-base); border-right: 1px solid var(--border); z-index: 41;
+            display: grid; grid-template-rows: auto 1fr; padding-top: env(safe-area-inset-top, 0px); padding-left: env(safe-area-inset-left, 0px); }
+  .drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  .drawer-body { overflow-y: auto; padding: 14px; display: grid; gap: 16px; align-content: start; padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+
+  .state { text-align: center; color: var(--text-secondary); padding: 40px 0; display: grid; gap: 14px; justify-items: center; }
+  .draft-banner { background: rgba(251,197,3,0.12); color: var(--brand); border-bottom: 1px solid rgba(251,197,3,0.3); font-size: 12px; text-align: center; padding: 6px 12px; }
+  .badge-draft { font-size: 11px; color: var(--brand); border: 1px solid rgba(251,197,3,0.4); border-radius: 999px; padding: 1px 7px; margin-left: 6px; }
+  [hidden] { display: none !important; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div id="app"><div class="state" role="status">Chargement… · Loading…</div></div>
+<noscript><div class="wrap state">Activez JavaScript pour voir les leçons. · Turn on JavaScript to see the lessons.</div></noscript>
+<script>
+(function () {
+  'use strict';
+
+  // ── where the lessons come from ─────────────────────────────────────────────
+  // Same split as the app: a local dev server → the local API; a staging or Vercel-preview host →
+  // staging; everything else (book.stenamo.com, pos.partenairedozie.com, the Android app's
+  // https://localhost with no port) → production.
+  var API = (function () {
+    var h = location.hostname, p = location.port;
+    if ((h === 'localhost' || h === '127.0.0.1') && p) {
+      var q = new URLSearchParams(location.search).get('api');
+      return q && /^http:\/\/(localhost|127\.0\.0\.1):\d+\/api$/.test(q) ? q : 'http://localhost:3001/api';
+    }
+    if (h.indexOf('staging') !== -1 || /\.vercel\.app$/.test(h)) return 'https://partenaire-account-server-staging.onrender.com/api';
+    return 'https://api.partenairedozie.com/api';
+  })();
+
+  // ── storage that never throws (private mode, blocked storage) ───────────────
+  var memory = {};
+  function sget(k) { try { var v = localStorage.getItem(k); return v === null ? (k in memory ? memory[k] : null) : v; } catch (e) { return k in memory ? memory[k] : null; } }
+  function sset(k, v) { memory[k] = v; try { localStorage.setItem(k, v); } catch (e) { /* keep it in memory for this visit */ } }
+
+  var LANG_KEY = 'stenamo-learn-lang', WATCHED_KEY = 'stenamo-learn-watched';
+  function initialLang() {
+    var saved = sget(LANG_KEY);
+    if (saved === 'en' || saved === 'fr') return saved;
+    var list = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language || ''];
+    for (var i = 0; i < list.length; i++) {
+      var l = String(list[i] || '').toLowerCase().slice(0, 2);
+      if (l === 'fr' || l === 'en') return l;
+    }
+    return 'fr';
+  }
+  function readWatched() {
+    try { var a = JSON.parse(sget(WATCHED_KEY) || '[]'); return Array.isArray(a) ? a.filter(function (s) { return typeof s === 'string'; }) : []; }
+    catch (e) { return []; }
+  }
+  function signedIn() {
+    try { var a = JSON.parse(sget('mp-auth') || 'null'); return !!(a && a.state && a.state.isAuthenticated && a.state.token); }
+    catch (e) { return false; }
+  }
+
+  var lang = initialLang();
+  var watched = readWatched();
+  var lessons = [];
+  var preview = false;
+  var player = null;
+
+  var T = {
+    en: {
+      courseTitle: 'Learn Stenamo Book', intro: 'Short videos that show you how to run your shop with Stenamo Book. Watch them in order, or jump to what you need.',
+      complete: '% complete', continueBtn: 'Continue', startBtn: 'Start the first lesson', allDone: 'Watch again',
+      lessons: 'lessons', soon: 'Coming soon', soonLong: 'This video is coming soon.',
+      ctaTitle: 'Ready to try it?', ctaText: 'Create your free account in a minute.', ctaBtn: 'Create my free account',
+      backTitle: 'Back to your shop', backText: 'You are signed in.', backBtn: 'Back to app',
+      back: 'Back to the course', menu: 'All lessons', close: 'Close', prev: 'Previous', next: 'Next',
+      play: 'Play the video', tapHint: 'Tap to play', lessonOf: 'Lesson %n of %t',
+      inOther: 'This video is in French. The English version is coming soon.',
+      loading: 'Loading the lessons…', error: 'The lessons could not be loaded. Check your connection and try again.', retry: 'Try again',
+      empty: 'The first lessons are on their way. Come back soon.', notFound: 'This lesson is not available.',
+      draft: 'Draft preview — only admins see unpublished lessons.', draftBadge: 'draft'
+    },
+    fr: {
+      courseTitle: 'Apprendre Stenamo Book', intro: 'De courtes vidéos pour gérer votre boutique avec Stenamo Book. Suivez-les dans l’ordre, ou allez directement à ce dont vous avez besoin.',
+      complete: '% terminé', continueBtn: 'Continuer', startBtn: 'Commencer la première leçon', allDone: 'Revoir',
+      lessons: 'leçons', soon: 'Bientôt disponible', soonLong: 'Cette vidéo sera bientôt disponible.',
+      ctaTitle: 'Prêt à essayer ?', ctaText: 'Créez votre compte gratuit en une minute.', ctaBtn: 'Créer mon compte gratuit',
+      backTitle: 'Retour à votre boutique', backText: 'Vous êtes connecté.', backBtn: 'Retour à l’application',
+      back: 'Retour au cours', menu: 'Toutes les leçons', close: 'Fermer', prev: 'Précédent', next: 'Suivant',
+      play: 'Lire la vidéo', tapHint: 'Touchez pour lire', lessonOf: 'Leçon %n sur %t',
+      inOther: 'Cette vidéo est en anglais. La version française arrive bientôt.',
+      loading: 'Chargement des leçons…', error: 'Impossible de charger les leçons. Vérifiez votre connexion et réessayez.', retry: 'Réessayer',
+      empty: 'Les premières leçons arrivent. Revenez bientôt.', notFound: 'Cette leçon n’est pas disponible.',
+      draft: 'Aperçu brouillon — seuls les administrateurs voient les leçons non publiées.', draftBadge: 'brouillon'
+    }
+  };
+  function t(k) { return T[lang][k]; }
+  function L(row, field) { return row[field + '_' + lang] || row[field + '_' + (lang === 'en' ? 'fr' : 'en')] || ''; }
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function fmtDur(sec) { if (sec == null) return ''; var m = Math.floor(sec / 60), s = sec % 60; return m + ':' + (s < 10 ? '0' : '') + s; }
+  function isWatched(slug) { return watched.indexOf(slug) !== -1; }
+  function markWatched(slug) { if (!isWatched(slug)) { watched.push(slug); sset(WATCHED_KEY, JSON.stringify(watched)); } }
+  function videoFor(row) {
+    var mine = row['youtube_id_' + lang], other = row['youtube_id_' + (lang === 'en' ? 'fr' : 'en')];
+    if (mine) return { id: mine, fallback: false };
+    if (other) return { id: other, fallback: true };
+    return null;
+  }
+  function percent() {
+    if (!lessons.length) return 0;
+    var n = lessons.filter(function (r) { return isWatched(r.slug); }).length;
+    return Math.round(n * 100 / lessons.length);
+  }
+  function nextUnwatched() { for (var i = 0; i < lessons.length; i++) if (!isWatched(lessons[i].slug)) return lessons[i]; return null; }
+
+  // ── routing: /learn and /learn/<slug> (or learn.html?l=<slug> when opened directly) ──
+  function currentSlug() {
+    var m = /^\/learn\/([a-z0-9-]+)\/?$/.exec(location.pathname);
+    if (m) return m[1];
+    var q = new URLSearchParams(location.search).get('l');
+    return q && /^[a-z0-9-]+$/.test(q) ? q : null;
+  }
+  function keepQuery() { return preview ? '?preview=1' : ''; }
+  function hrefFor(slug) {
+    if (location.pathname.indexOf('/learn.html') !== -1) return '/learn.html?' + (slug ? 'l=' + slug + (preview ? '&preview=1' : '') : (preview ? 'preview=1' : ''));
+    return '/learn' + (slug ? '/' + slug : '') + keepQuery();
+  }
+  function go(slug) { history.pushState(null, '', hrefFor(slug)); render(); window.scrollTo(0, 0); }
+
+  // ── shared pieces ───────────────────────────────────────────────────────────
+  var app = document.getElementById('app');
+  function langToggle() {
+    return '<div class="lang" role="group" aria-label="Language / Langue">' +
+      '<button type="button" data-lang="fr" aria-pressed="' + (lang === 'fr') + '">FR</button>' +
+      '<button type="button" data-lang="en" aria-pressed="' + (lang === 'en') + '">EN</button></div>';
+  }
+  function progressHtml() {
+    var p = percent();
+    return '<div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + p + '" aria-label="' + esc(p + t('complete')) + '">' +
+      '<div class="bar"><div class="fill" style="width:' + p + '%"></div></div>' +
+      '<div class="label">' + p + t('complete') + '</div></div>';
+  }
+  function ctaHtml() {
+    return signedIn()
+      ? '<section class="cta"><h2>' + t('backTitle') + '</h2><p>' + t('backText') + '</p><a class="btn btn-primary btn-block" href="/">' + t('backBtn') + '</a></section>'
+      : '<section class="cta"><h2>' + t('ctaTitle') + '</h2><p>' + t('ctaText') + '</p><a class="btn btn-primary btn-block" href="/register">' + t('ctaBtn') + '</a></section>';
+  }
+  function draftBanner() { return preview ? '<div class="draft-banner">' + t('draft') + '</div>' : ''; }
+  // The course list, grouped by section (sections keep their order of first appearance).
+  function courseList(currentSlugHere) {
+    var groups = [], byKey = {};
+    lessons.forEach(function (r, i) {
+      var key = r.section_en + '|' + r.section_fr;
+      if (!byKey[key]) { byKey[key] = { label: L(r, 'section'), rows: [] }; groups.push(byKey[key]); }
+      byKey[key].rows.push({ r: r, n: i + 1 });
+    });
+    var highlight = currentSlugHere || ((nextUnwatched() || {}).slug);
+    return groups.map(function (g) {
+      var done = g.rows.filter(function (x) { return isWatched(x.r.slug); }).length;
+      return '<section class="section"><div class="section-head"><h2>' + esc(g.label) + '</h2>' +
+        '<span class="count">' + done + '/' + g.rows.length + '</span></div>' +
+        '<ul class="rows">' + g.rows.map(function (x) {
+          var r = x.r, w = isWatched(r.slug), v = videoFor(r);
+          var cls = 'row' + (w ? ' done' : '') + (r.slug === highlight ? ' current' : '');
+          var meta = w ? '<span class="tick" aria-label="✓">✓</span>' : (v ? esc(fmtDur(r.duration_sec)) : '<span class="soon">' + t('soon') + '</span>');
+          if (w && v && r.duration_sec != null) meta = esc(fmtDur(r.duration_sec)) + ' <span class="tick">✓</span>';
+          return '<li><a class="' + cls + '" href="' + hrefFor(r.slug) + '" data-slug="' + esc(r.slug) + '"' + (r.slug === highlight ? ' aria-current="step"' : '') + '>' +
+            '<span class="num">' + x.n + '</span>' +
+            '<span class="title">' + esc(L(r, 'title')) + (r.published === false ? '<span class="badge-draft">' + t('draftBadge') + '</span>' : '') + '</span>' +
+            '<span class="meta">' + meta + '</span></a></li>';
+        }).join('') + '</ul></section>';
+    }).join('');
+  }
+
+  // ── views ───────────────────────────────────────────────────────────────────
+  function renderCourse() {
+    document.title = t('courseTitle') + ' · Stenamo Book';
+    var next = nextUnwatched();
+    var cont = lessons.length
+      ? '<a class="btn btn-primary btn-block" href="' + hrefFor((next || lessons[0]).slug) + '" data-slug="' + esc((next || lessons[0]).slug) + '">' +
+          (next ? (watched.length ? t('continueBtn') : t('startBtn')) + ' — ' + esc(L(next, 'title')) : t('allDone')) + '</a>'
+      : '';
+    app.innerHTML = draftBanner() +
+      '<header class="top"><div class="wrap"><a class="brand" href="/learn' + keepQuery() + '"><span class="mark" aria-hidden="true">S</span>Stenamo Book</a>' + langToggle() + '</div></header>' +
+      '<main class="wrap">' +
+        '<section class="hero"><h1>' + t('courseTitle') + '</h1><p>' + t('intro') + '</p>' +
+          (lessons.length ? progressHtml() + cont : '<p class="state">' + t('empty') + '</p>') + '</section>' +
+        courseList(null) + ctaHtml() +
+      '</main>';
+  }
+
+  function renderLesson(slug) {
+    var i = -1;
+    for (var k = 0; k < lessons.length; k++) if (lessons[k].slug === slug) { i = k; break; }
+    if (i < 0) {
+      document.title = t('notFound') + ' · Stenamo Book';
+      app.innerHTML = draftBanner() + '<header class="top"><div class="wrap"><a class="iconbtn" href="' + hrefFor(null) + '" data-slug="" aria-label="' + t('back') + '">←</a>' +
+        '<div class="lesson-head">Stenamo Book</div>' + langToggle() + '</div></header>' +
+        '<main class="wrap"><div class="state"><p>' + t('notFound') + '</p><a class="btn" href="' + hrefFor(null) + '" data-slug="">' + t('back') + '</a></div></main>';
+      return;
+    }
+    var r = lessons[i], v = videoFor(r), title = L(r, 'title');
+    var prev = lessons[i - 1], next = lessons[i + 1];
+    document.title = title + ' · ' + t('courseTitle');
+    var videoHtml = v
+      ? '<div class="video" id="video"><button type="button" class="thumb" id="play" aria-label="' + t('play') + ' — ' + esc(title) + '" ' +
+          'style="background-image:url(\'https://i.ytimg.com/vi/' + esc(v.id) + '/hqdefault.jpg\')"><span class="play" aria-hidden="true"></span><span class="hint">' + t('tapHint') + '</span></button></div>' +
+        (v.fallback ? '<p class="note">' + t('inOther') + '</p>' : '')
+      : '<div class="video"><div class="soon-box"><div><strong>' + t('soon') + '</strong>' + t('soonLong') + '</div></div></div>';
+    var nextBtn = next
+      ? '<a class="btn btn-primary" href="' + hrefFor(next.slug) + '" data-next="' + esc(next.slug) + '">' + t('next') + ' →</a>'
+      : (signedIn()
+          ? '<a class="btn btn-primary" href="/" data-finish="1">' + t('backBtn') + '</a>'
+          : '<a class="btn btn-primary" href="/register" data-finish="1">' + t('ctaBtn') + '</a>');
+    var prevBtn = prev
+      ? '<a class="btn" href="' + hrefFor(prev.slug) + '" data-slug="' + esc(prev.slug) + '">← ' + t('prev') + '</a>'
+      : '<button class="btn" type="button" disabled>← ' + t('prev') + '</button>';
+    app.innerHTML = draftBanner() +
+      '<header class="top"><div class="wrap">' +
+        '<a class="iconbtn" href="' + hrefFor(null) + '" data-slug="" aria-label="' + t('back') + '">←</a>' +
+        '<div class="lesson-head">' + esc(title) + '</div>' +
+        '<button type="button" class="iconbtn" id="menu" aria-label="' + t('menu') + '" aria-expanded="false" aria-controls="drawer">☰</button>' +
+      '</div></header>' +
+      '<main class="wrap">' +
+        progressHtml() + videoHtml +
+        '<div style="display:grid;gap:6px"><div class="lesson-meta">' + t('lessonOf').replace('%n', i + 1).replace('%t', lessons.length) +
+          (r.duration_sec != null && v ? ' · ' + esc(fmtDur(r.duration_sec)) : '') + ' · ' + esc(L(r, 'section')) + '</div>' +
+          '<h1 class="lesson-title">' + esc(title) + '</h1></div>' +
+        (L(r, 'summary') ? '<p class="summary">' + esc(L(r, 'summary')) + '</p>' : '') +
+        '<nav class="pager" aria-label="' + t('prev') + ' / ' + t('next') + '">' + prevBtn + nextBtn + '</nav>' +
+        '<div style="display:flex;justify-content:center">' + langToggle() + '</div>' +
+      '</main>' +
+      '<div class="scrim" id="scrim" hidden></div>' +
+      '<aside class="drawer" id="drawer" hidden aria-label="' + t('menu') + '">' +
+        '<div class="drawer-head"><strong class="display">' + t('menu') + '</strong><button type="button" class="iconbtn" id="close" aria-label="' + t('close') + '">✕</button></div>' +
+        '<div class="drawer-body">' + progressHtml() + courseList(r.slug) + '</div>' +
+      '</aside>';
+    var play = document.getElementById('play');
+    if (play && v) play.addEventListener('click', function () { startVideo(v.id, r.slug); });
+  }
+
+  // ── the video: thumbnail first; the player (and YouTube's API) only on tap ──
+  var apiLoading = null;
+  function loadYouTubeApi() {
+    if (window.YT && window.YT.Player) return Promise.resolve();
+    if (apiLoading) return apiLoading;
+    apiLoading = new Promise(function (resolve) {
+      var prevReady = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = function () { if (prevReady) try { prevReady(); } catch (e) {} resolve(); };
+      var s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api'; s.async = true;
+      s.onerror = function () { resolve(); };   // the video still plays; only "ended" detection is lost
+      document.head.appendChild(s);
+    });
+    return apiLoading;
+  }
+  function startVideo(id, slug) {
+    var box = document.getElementById('video');
+    if (!box) return;
+    var src = 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(id) +
+      '?rel=0&autoplay=1&playsinline=1&modestbranding=1&enablejsapi=1&origin=' + encodeURIComponent(location.origin) + '&hl=' + lang;
+    box.innerHTML = '<iframe id="yt" src="' + src + '" title="' + esc(t('play')) + '" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>';
+    loadYouTubeApi().then(function () {
+      if (!(window.YT && window.YT.Player) || !document.getElementById('yt')) return;
+      try {
+        player = new window.YT.Player('yt', { events: { onStateChange: function (e) {
+          if (e.data === 0 && currentSlug() === slug) { markWatched(slug); refreshProgress(); }
+        } } });
+      } catch (e) { /* the video plays; Next still marks it watched */ }
+    });
+  }
+  function refreshProgress() {
+    var p = percent();
+    document.querySelectorAll('.progress').forEach(function (el) {
+      el.setAttribute('aria-valuenow', p);
+      el.setAttribute('aria-label', p + t('complete'));
+      el.querySelector('.fill').style.width = p + '%';
+      el.querySelector('.label').textContent = p + t('complete');
+    });
+  }
+
+  function render() {
+    player = null;
+    var slug = currentSlug();
+    if (slug) renderLesson(slug); else renderCourse();
+    document.documentElement.lang = lang;
+  }
+
+  // ── events (one listener for the whole page) ────────────────────────────────
+  document.addEventListener('click', function (e) {
+    var el = e.target.closest('[data-lang],[data-slug],[data-next],[data-finish],#menu,#close,#scrim');
+    if (!el) return;
+    if (el.hasAttribute('data-lang')) { lang = el.getAttribute('data-lang'); sset(LANG_KEY, lang); render(); return; }
+    if (el.id === 'menu') { toggleDrawer(true); return; }
+    if (el.id === 'close' || el.id === 'scrim') { toggleDrawer(false); return; }
+    if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) return;   // let "open in new tab" work
+    if (el.hasAttribute('data-next')) {
+      e.preventDefault();
+      var cur = currentSlug(); if (cur) markWatched(cur);
+      go(el.getAttribute('data-next'));
+      return;
+    }
+    if (el.hasAttribute('data-finish')) { var c = currentSlug(); if (c) markWatched(c); return; }   // follow the link
+    if (el.hasAttribute('data-slug')) { e.preventDefault(); go(el.getAttribute('data-slug') || null); }
+  });
+  function toggleDrawer(open) {
+    var d = document.getElementById('drawer'), s = document.getElementById('scrim'), m = document.getElementById('menu');
+    if (!d) return;
+    d.hidden = !open; s.hidden = !open; if (m) m.setAttribute('aria-expanded', String(open));
+    if (open) { var c = d.querySelector('.row.current') || d.querySelector('#close'); if (c) c.focus(); }
+    else if (m) m.focus();
+  }
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') toggleDrawer(false); });
+  window.addEventListener('popstate', render);
+
+  // ── load ────────────────────────────────────────────────────────────────────
+  function showState(html) { app.innerHTML = '<header class="top"><div class="wrap"><a class="brand" href="/learn"><span class="mark" aria-hidden="true">S</span>Stenamo Book</a>' + langToggle() + '</div></header><main class="wrap"><div class="state" role="status">' + html + '</div></main>'; }
+  var previewRefused = false;
+  function load() {
+    showState(t('loading'));
+    // Admin preview (?preview=1 on a site where the admin portal is signed in): drafts too.
+    // If the admin token is refused once, this visit stays on the public list (no retry loop).
+    var adminToken = null;
+    if (!previewRefused && new URLSearchParams(location.search).get('preview') === '1') { adminToken = sget('admin_token'); preview = !!adminToken; }
+    var req = preview
+      ? fetch(API + '/admin/tutorials', { headers: { Authorization: 'Bearer ' + adminToken } })
+      : fetch(API + '/tutorials');
+    req.then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+      .then(function (j) {
+        lessons = (j && j.data) || [];
+        render();
+      })
+      .catch(function () {
+        if (preview) { preview = false; previewRefused = true; return load(); }   // a stale admin token falls back to the public list
+        showState('<p>' + t('error') + '</p><button type="button" class="btn" id="retry">' + t('retry') + '</button>');
+        var b = document.getElementById('retry'); if (b) b.addEventListener('click', load);
+      });
+  }
+  load();
+})();
+</script>
+</body>
+</html>

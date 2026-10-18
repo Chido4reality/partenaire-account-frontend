@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import { useAuthStore, useLangStore } from "../store";
 import api from "../utils/api";
 import { setLanguageLocalPending, pendingLanguage, adoptServerLanguage } from "../utils/setLanguage"; // MP-LANGUAGE-PERSIST
+import LearnLink from "../components/common/LearnLink"; // LEARN: public video lessons
 
 const CATS = [
   { value: "moto_parts",       en: "Motorcycle parts",           fr: "Pièces moto" },
@@ -261,6 +262,11 @@ export default function RegisterPage() {
             <Link to="/login" style={{ color: "var(--brand-light)", textDecoration: "none" }}>
               {lang === "en" ? "Already have an account? Sign in" : "Déjà un compte? Se connecter"}
             </Link>
+          </div>
+          <div style={{ textAlign: "center", marginTop: 10, fontSize: 13 }}>
+            <LearnLink style={{ color: "var(--brand-light)", textDecoration: "none" }}>
+              {lang === "en" ? "New here? Watch how it works (videos)" : "Nouveau ? Voir comment ça marche (vidéos)"}
+            </LearnLink>
           </div>
         </div>
 
