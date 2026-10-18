@@ -39,7 +39,9 @@
 // v14: Support Messaging — Équipe Stenamo ↔ one shop owner, master admin only.
 // v15: Messages hides deleted businesses by default ("Show deactivated", like Businesses).
 // v16: Launch discount (owner only) — one setting for the plan discount; the old Plan discounts link is retired.
-const VERSION = 'admin-pwa-v17';
+// v17: (90d7601, main) bump only — receipts b63106e, Goods in buffer 90e3d20, Launch discount labels 55eb906 shipped without one.
+// v18: Tutorials (the /learn lessons).
+const VERSION = 'admin-pwa-v18';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const API_CACHE = `${VERSION}-api`;

@@ -1048,6 +1048,7 @@
         <a class="sb-link" data-route="launch-discount" id="sb-link-launch-discount" style="display:none"><span class="sb-link-icon">🚀</span><span class="sb-link-label">Launch discount</span></a>
         <a class="sb-link" data-route="promo-codes" id="sb-link-promocodes"><span class="sb-link-icon">🎟️</span><span class="sb-link-label">Promo codes</span></a>
         <a class="sb-link" data-route="loyalty-grants" id="sb-link-loyalty"><span class="sb-link-icon">🎁</span><span class="sb-link-label">Loyalty grants</span></a>
+        <a class="sb-link" data-route="tutorials" id="sb-link-tutorials"><span class="sb-link-icon">🎬</span><span class="sb-link-label">Tutorials</span></a>
         <!-- MP-SUB-CONSOLIDATION (v2): "Sub. requests" tab retired. It read the
              orphaned pa_subscription_requests table (always empty), while the
              app's upgrade requests go to pa_subscription_payments shown in the
@@ -1955,6 +1956,26 @@
       </section>
 
       <!-- PROMO CODES (MP-PROMO) — influencer affiliate codes + payout -->
+      <!-- LEARN (2026-10-18): the lessons on book.stenamo.com/learn. Any admin can see the list;
+           only a master admin can add, edit, publish or reorder (a lesson is public). -->
+      <section class="route" id="route-tutorials">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Tutorials</div>
+            <div class="page-sub">The video lessons on <strong>/learn</strong>. Only <strong>published</strong> lessons are public. Paste any YouTube link (watch, youtu.be or shorts) — only the video id is kept. A lesson with no video shows “Coming soon”.</div>
+          </div>
+          <button class="btn btn-primary" id="tu-new-btn">+ New lesson</button>
+        </div>
+        <div class="card table-wrap" style="padding:0">
+          <table class="data-table" id="tu-table">
+            <thead><tr>
+              <th class="ta-right">#</th><th>Lesson</th><th>Section</th><th>Videos</th><th class="ta-right">Length</th><th>Status</th><th class="ta-right">Actions</th>
+            </tr></thead>
+            <tbody id="tu-tbody"><tr><td colspan="7" class="muted ta-center" style="padding:20px">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
       <section class="route" id="route-promo-codes">
         <div class="page-head">
           <div>
@@ -3012,7 +3033,7 @@
     const VALID_ROUTES = new Set([
       'dashboard', 'live', 'businesses', 'subscriptions', 'subscription-requests', 'mp-finance',
       'marketplace-users', 'verifications', 'dozie-subscriptions', 'orders', 'disputes', 'marketplace-finance',
-      'sell-restrictions', 'subscription-discounts', 'launch-discount', 'promo-codes', 'loyalty-grants',
+      'sell-restrictions', 'subscription-discounts', 'launch-discount', 'promo-codes', 'loyalty-grants', 'tutorials',
       'messages', 'broadcasts', 'admin-team', 'audit-log', 'admin-activity', 'cart-reconcile', 'settings',
       'my-marketing', 'marketers', 'expenses',
       'family-accounts', 'family-approvals', 'family-people'
@@ -3142,6 +3163,7 @@
       if (route === 'launch-discount')    loadLaunchDiscount();
       if (route === 'promo-codes')        loadPromoCodes();
       if (route === 'loyalty-grants')     loadLoyaltyGrants();
+      if (route === 'tutorials')          loadTutorials();
       if (route === 'subscription-requests') loadSubscriptionRequests();
       if (route === 'mp-finance')         loadFinance();
       if (route === 'marketplace-users')  loadDzUsers();
@@ -7683,6 +7705,125 @@
       const who = m ? (m.full_name || m.email) : 'marketer';
       return '<div style="font-size:11px;margin-top:2px"><span class="pill pill-success">'
         + escapeHtml(who) + (c.team_member_id ? ' · team' : '') + '</span></div>';
+    }
+
+    // ────────────────────── TUTORIALS (LEARN, 2026-10-18) ──────────────────────
+    // The lessons on /learn. GET /admin/tutorials for every admin; writes are master_admin only
+    // (the backend refuses anyone else — hiding the buttons is a convenience, not the gate).
+    let _tuRows = [];
+    let _tuCanWrite = false;
+    let _tuBound = false;
+    function tuDur(sec) { if (sec == null) return '—'; const m = Math.floor(sec / 60), s = sec % 60; return m + ':' + (s < 10 ? '0' : '') + s; }
+    function tuOpenUrl(r) { return location.origin + '/learn/' + encodeURIComponent(r.slug) + (r.published ? '' : '?preview=1'); }
+    function tuBind() {
+      if (_tuBound) return; _tuBound = true;
+      $('tu-new-btn').addEventListener('click', function () { tuEdit(null); });
+      $('tu-tbody').addEventListener('click', async function (e) {
+        const b = e.target.closest('[data-tu-action]');
+        if (!b) return;
+        const id = b.getAttribute('data-tu-id');
+        const row = _tuRows.find(function (r) { return r.id === id; });
+        const action = b.getAttribute('data-tu-action');
+        if (action === 'edit') return tuEdit(row);
+        b.disabled = true;
+        try {
+          if (action === 'up' || action === 'down') {
+            const r = await apiAdmin('POST', '/admin/tutorials/' + id + '/move', { direction: action });
+            _tuRows = (r && r.data) || _tuRows; tuRender();
+          } else if (action === 'publish') {
+            const want = !row.published;
+            await apiAdmin('PATCH', '/admin/tutorials/' + id, { published: want });
+            showToast(want ? 'Published — now on /learn' : 'Unpublished — hidden from /learn', 'success');
+            await loadTutorials();
+          }
+        } catch (err) { showToast(err.message || 'Could not save', 'danger'); b.disabled = false; }
+      });
+    }
+    async function loadTutorials() {
+      tuBind();
+      const role = ((currentAdmin && currentAdmin.role) || '').toLowerCase();
+      _tuCanWrite = role === 'master_admin';
+      $('tu-new-btn').style.display = _tuCanWrite ? '' : 'none';
+      const tb = $('tu-tbody');
+      tb.innerHTML = '<tr><td colspan="7" class="muted ta-center" style="padding:20px">Loading…</td></tr>';
+      try {
+        const r = await apiAdmin('GET', '/admin/tutorials');
+        _tuRows = (r && r.data) || [];
+        tuRender();
+      } catch (err) {
+        tb.innerHTML = '<tr><td colspan="7" class="ta-center" style="padding:20px;color:#f87171">Could not load the lessons: ' + escapeHtml(err.message || 'error') + '</td></tr>';
+      }
+    }
+    function tuRender() {
+      const tb = $('tu-tbody');
+      if (!_tuRows.length) { tb.innerHTML = '<tr><td colspan="7" class="muted ta-center" style="padding:20px">No lessons yet.' + (_tuCanWrite ? ' Click “+ New lesson”.' : '') + '</td></tr>'; return; }
+      tb.innerHTML = _tuRows.map(function (r, i) {
+        const vid = function (id, label) {
+          return id ? '<a href="https://www.youtube.com/watch?v=' + escapeHtml(id) + '" target="_blank" rel="noopener" title="' + escapeHtml(id) + '">' + label + ' ✓</a>'
+                    : '<span class="muted">' + label + ' —</span>';
+        };
+        const pill = r.published
+          ? '<span class="badge" style="background:rgba(16,185,129,0.15);color:#34d399">Published</span>'
+          : '<span class="badge" style="background:rgba(148,163,184,0.15);color:#94a3b8">Draft</span>';
+        const write = _tuCanWrite
+          ? '<button class="btn btn-sm" data-tu-action="up" data-tu-id="' + escapeHtml(r.id) + '" title="Move up"' + (i === 0 ? ' disabled' : '') + '>↑</button> '
+            + '<button class="btn btn-sm" data-tu-action="down" data-tu-id="' + escapeHtml(r.id) + '" title="Move down"' + (i === _tuRows.length - 1 ? ' disabled' : '') + '>↓</button> '
+            + '<button class="btn btn-sm" data-tu-action="edit" data-tu-id="' + escapeHtml(r.id) + '">Edit</button> '
+            + '<button class="btn btn-sm" data-tu-action="publish" data-tu-id="' + escapeHtml(r.id) + '">' + (r.published ? 'Unpublish' : 'Publish') + '</button> '
+          : '';
+        return '<tr>'
+          + '<td class="ta-right">' + (i + 1) + '</td>'
+          + '<td><strong>' + escapeHtml(r.title_en) + '</strong><div class="muted" style="font-size:12px">' + escapeHtml(r.title_fr) + '</div><div class="muted" style="font-size:11px">' + escapeHtml(r.slug) + '</div></td>'
+          + '<td>' + escapeHtml(r.section_en) + '<div class="muted" style="font-size:12px">' + escapeHtml(r.section_fr) + '</div></td>'
+          + '<td style="white-space:nowrap">' + vid(r.youtube_id_en, 'EN') + '<br/>' + vid(r.youtube_id_fr, 'FR') + '</td>'
+          + '<td class="ta-right">' + tuDur(r.duration_sec) + '</td>'
+          + '<td>' + pill + '</td>'
+          + '<td class="ta-right" style="white-space:nowrap">' + write
+          + '<a class="btn btn-sm" href="' + escapeHtml(tuOpenUrl(r)) + '" target="_blank" rel="noopener" title="' + (r.published ? 'Open on /learn' : 'Preview the draft on /learn (admins only)') + '">Open on /learn ↗</a></td>'
+          + '</tr>';
+      }).join('');
+    }
+    function tuEdit(row) {
+      if (!_tuCanWrite) return;
+      const v = row || { slug: '', section_en: '', section_fr: '', title_en: '', title_fr: '', summary_en: '', summary_fr: '', youtube_id_en: '', youtube_id_fr: '', duration_sec: null, published: false };
+      const val = function (x) { return escapeHtml(x == null ? '' : x); };
+      const ytUrl = function (id) { return id ? 'https://youtu.be/' + id : ''; };
+      const content =
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">'
+        + '<div class="field"><label>Slug (in the link: /learn/…)</label><input id="tu-f-slug" type="text" placeholder="make-a-sale" value="' + val(v.slug) + '" /></div>'
+        + '<div class="field"><label>Length (m:ss)</label><input id="tu-f-dur" type="text" placeholder="3:20" value="' + val(v.duration_sec == null ? '' : tuDur(v.duration_sec)) + '" /></div>'
+        + '<div class="field"><label>Section — English</label><input id="tu-f-sec-en" type="text" placeholder="Sales" value="' + val(v.section_en) + '" /></div>'
+        + '<div class="field"><label>Section — French</label><input id="tu-f-sec-fr" type="text" placeholder="Ventes" value="' + val(v.section_fr) + '" /></div>'
+        + '<div class="field"><label>Title — English</label><input id="tu-f-title-en" type="text" value="' + val(v.title_en) + '" /></div>'
+        + '<div class="field"><label>Title — French</label><input id="tu-f-title-fr" type="text" value="' + val(v.title_fr) + '" /></div>'
+        + '<div class="field"><label>Summary — English</label><textarea id="tu-f-sum-en">' + val(v.summary_en) + '</textarea></div>'
+        + '<div class="field"><label>Summary — French</label><textarea id="tu-f-sum-fr">' + val(v.summary_fr) + '</textarea></div>'
+        + '<div class="field"><label>YouTube video — English (link or id)</label><input id="tu-f-yt-en" type="text" placeholder="https://youtu.be/…" value="' + val(ytUrl(v.youtube_id_en)) + '" /></div>'
+        + '<div class="field"><label>YouTube video — French (link or id)</label><input id="tu-f-yt-fr" type="text" placeholder="https://youtu.be/…" value="' + val(ytUrl(v.youtube_id_fr)) + '" /></div>'
+        + '</div>'
+        + '<label style="display:flex;align-items:center;gap:8px;margin-top:12px"><input id="tu-f-pub" type="checkbox"' + (v.published ? ' checked' : '') + ' /> Published (visible on /learn)</label>'
+        + '<div class="muted" style="font-size:12px;margin-top:6px">A lesson with no video in one language shows the other language’s video with a note; with no video at all it shows “Coming soon”.</div>'
+        + '<div id="tu-f-err" style="color:#f87171;margin-top:10px;font-size:13px" hidden></div>';
+      openModal({
+        title: row ? 'Edit lesson' : 'New lesson', sub: row ? row.slug : 'Shown on /learn once published', wide: true, content: content,
+        secondary: { label: 'Cancel' },
+        primary: { label: 'Save', onClick: async function (close) {
+          const body = {
+            slug: $('tu-f-slug').value, duration_sec: $('tu-f-dur').value,
+            section_en: $('tu-f-sec-en').value, section_fr: $('tu-f-sec-fr').value,
+            title_en: $('tu-f-title-en').value, title_fr: $('tu-f-title-fr').value,
+            summary_en: $('tu-f-sum-en').value, summary_fr: $('tu-f-sum-fr').value,
+            youtube_id_en: $('tu-f-yt-en').value, youtube_id_fr: $('tu-f-yt-fr').value,
+            published: $('tu-f-pub').checked
+          };
+          const err = $('tu-f-err'); err.hidden = true;
+          try {
+            if (row) await apiAdmin('PATCH', '/admin/tutorials/' + row.id, body);
+            else await apiAdmin('POST', '/admin/tutorials', body);
+            close(); showToast('Lesson saved', 'success'); loadTutorials();
+          } catch (e) { err.textContent = e.message || 'Could not save'; err.hidden = false; }
+        } }
+      });
     }
 
     async function loadPromoCodes() {
