@@ -1,13 +1,21 @@
-// LEARN (2026-10-18): the link to the public video lessons (public/learn.html, served at /learn).
-// On the web it is a plain anchor — a full page load, never a router <Link>, because /learn is a
-// static page outside the React app. In the Android app it points at book.stenamo.com: Capacitor
-// hands any link to another host to Android (Bridge.launchIntent → ACTION_VIEW), so the lessons
-// open in the phone's browser and the app stays where it was.
+// LEARN (2026-10-18): the link to the video lessons (public/learn.html).
+// On the web it is a plain anchor to /learn — a full page load, never a router <Link>, because /learn
+// is a static page outside the React app.
+// In the Android app (vc119+) the lessons open INSIDE the app: Capacitor serves the bundled
+// learn.html from the same origin as the app (https://localhost), so a signed-in member's token is
+// already there and members-only lessons play without a second login. Tested on the WebView: YouTube
+// embeds play (with sound after a tap), Back returns to the screen the user came from. The path must
+// be /learn.html — Capacitor answers an extension-less /learn with the app shell (see LearnBounce).
+// LEARN_URL (the public site) is kept for anything that must point outside the app.
 export const LEARN_URL = "https://book.stenamo.com/learn";
+export const IN_APP_LEARN = "/learn.html";
+
+const isNative = () => {
+  try { return typeof window !== "undefined" && !!window.Capacitor?.isNativePlatform?.(); } catch { return false; }
+};
 
 export function learnHref() {
-  try { if (typeof window !== "undefined" && window.Capacitor?.isNativePlatform?.()) return LEARN_URL; } catch { /* web */ }
-  return "/learn";
+  return isNative() ? IN_APP_LEARN : "/learn";
 }
 
 export default function LearnLink({ children, style, className }) {

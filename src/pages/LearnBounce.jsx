@@ -3,11 +3,11 @@
 //   • a browser still running the PREVIOUS service worker (built before /learn joined its
 //     navigateFallbackDenylist) — ask it to update, then reload once; if that does not help,
 //     load /learn.html directly;
-//   • the Android app (Capacitor serves the shell for every path) — open the lessons in the
-//     phone's browser and go back to the app's home.
+//   • the Android app (Capacitor serves the shell for every extension-less path) — load the bundled
+//     lessons page, /learn.html, inside the app (same origin, so the member's login carries over).
 import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { LEARN_URL } from "../components/common/LearnLink";
+import { IN_APP_LEARN } from "../components/common/LearnLink";
 
 const FLAG = "learn-bounce-tried";
 
@@ -19,8 +19,7 @@ export default function LearnBounce() {
     const slug = m ? m[1] : null;
     const direct = "/learn.html" + (slug ? "?l=" + slug : "");
     if (window.Capacitor?.isNativePlatform?.()) {
-      window.location.href = LEARN_URL + (slug ? "/" + slug : "");
-      navigate("/", { replace: true });
+      window.location.replace(IN_APP_LEARN + (slug ? "?l=" + slug : ""));
       return;
     }
     let tried = false;
