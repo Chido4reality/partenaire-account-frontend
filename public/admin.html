@@ -7714,7 +7714,20 @@
     let _tuCanWrite = false;
     let _tuBound = false;
     function tuDur(sec) { if (sec == null) return '—'; const m = Math.floor(sec / 60), s = sec % 60; return m + ':' + (s < 10 ? '0' : '') + s; }
-    function tuOpenUrl(r) { return location.origin + '/learn/' + encodeURIComponent(r.slug) + (r.published ? '' : '?preview=1'); }
+    // /learn lives in the Book project, which serves this page as /admin.html (pos.partenairedozie.com,
+    // book.stenamo.com, localhost). The admin domain is a separate project serving it at '/', with no /learn,
+    // and its login is stored for that site only — so there a published lesson opens on book.stenamo.com,
+    // and a draft (whose preview needs that login on the same site) can only be previewed from the Book host.
+    const TU_SAME_SITE_LEARN = /\/admin\.html$/.test(location.pathname);
+    function tuOpenUrl(r) {
+      if (!TU_SAME_SITE_LEARN) return r.published ? 'https://book.stenamo.com/learn/' + encodeURIComponent(r.slug) : null;
+      return location.origin + '/learn/' + encodeURIComponent(r.slug) + (r.published ? '' : '?preview=1');
+    }
+    function tuOpenCell(r) {
+      const url = tuOpenUrl(r);
+      if (!url) return '<span class="muted" style="font-size:12px" title="Draft previews need the admin login on the Book site">Preview: pos.partenairedozie.com/admin.html</span>';
+      return '<a class="btn btn-sm" href="' + escapeHtml(url) + '" target="_blank" rel="noopener" title="' + (r.published ? 'Open on /learn' : 'Preview the draft on /learn (admins only)') + '">Open on /learn ↗</a>';
+    }
     function tuBind() {
       if (_tuBound) return; _tuBound = true;
       $('tu-new-btn').addEventListener('click', function () { tuEdit(null); });
@@ -7779,7 +7792,7 @@
           + '<td class="ta-right">' + tuDur(r.duration_sec) + '</td>'
           + '<td>' + pill + '</td>'
           + '<td class="ta-right" style="white-space:nowrap">' + write
-          + '<a class="btn btn-sm" href="' + escapeHtml(tuOpenUrl(r)) + '" target="_blank" rel="noopener" title="' + (r.published ? 'Open on /learn' : 'Preview the draft on /learn (admins only)') + '">Open on /learn ↗</a></td>'
+          + tuOpenCell(r) + '</td>'
           + '</tr>';
       }).join('');
     }
