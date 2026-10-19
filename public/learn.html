@@ -252,7 +252,18 @@
     if (location.pathname.indexOf('/learn.html') !== -1) return '/learn.html?' + (slug ? 'l=' + slug + (preview ? '&preview=1' : '') : (preview ? 'preview=1' : ''));
     return '/learn' + (slug ? '/' + slug : '') + keepQuery();
   }
-  function go(slug) { history.pushState(null, '', hrefFor(slug)); render(); window.scrollTo(0, 0); }
+  // Inside the Android app (Capacitor serves this page at https://localhost, no port) moving between
+  // the course and a lesson REPLACES the history entry, so one Android Back returns to the screen the
+  // user came from (Help, Login) instead of stepping back through lessons; ← and ☰ still reach the list.
+  // On the web each lesson is its own history entry, as before.
+  var IN_APP = (function () {
+    try { if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) return true; } catch (e) {}
+    return location.protocol === 'https:' && location.hostname === 'localhost' && !location.port;
+  })();
+  function go(slug) {
+    if (IN_APP) history.replaceState(null, '', hrefFor(slug)); else history.pushState(null, '', hrefFor(slug));
+    render(); window.scrollTo(0, 0);
+  }
 
   // ── shared pieces ───────────────────────────────────────────────────────────
   var app = document.getElementById('app');
@@ -444,7 +455,29 @@
     else if (m) m.focus();
   }
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') toggleDrawer(false); });
-  window.addEventListener('popstate', render);
+  // Fullscreen video in the app: Android Back walks the WebView history, so without help it would leave
+  // the page instead of just closing fullscreen. Entering fullscreen adds one history entry for this
+  // same page; Back then pops only that entry and we close fullscreen, staying on the lesson. Closing
+  // fullscreen with the player's own button removes the entry again.
+  var fsEntry = false, fsDropping = false;
+  document.addEventListener('fullscreenchange', function () {
+    if (!IN_APP) return;
+    if (document.fullscreenElement) {
+      if (!fsEntry) { fsEntry = true; history.pushState({ learnFs: 1 }, '', location.href); }
+    } else if (fsEntry) {
+      fsEntry = false;
+      if (history.state && history.state.learnFs) { fsDropping = true; history.back(); }
+    }
+  });
+  window.addEventListener('popstate', function () {
+    if (fsDropping) { fsDropping = false; return; }              // our own clean-up after the player's button
+    if (IN_APP && document.fullscreenElement) {                   // Back while in fullscreen: close it, stay here
+      fsEntry = false;
+      try { document.exitFullscreen(); } catch (e) {}
+      return;
+    }
+    render();
+  });
 
   // ── load ────────────────────────────────────────────────────────────────────
   function showState(html) { app.innerHTML = '<header class="top"><div class="wrap"><a class="brand" href="/learn"><span class="mark" aria-hidden="true">S</span>Stenamo Book</a>' + langToggle() + '</div></header><main class="wrap"><div class="state" role="status">' + html + '</div></main>'; }

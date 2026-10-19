@@ -14,6 +14,9 @@ const isNative = () => {
   try { return typeof window !== "undefined" && !!window.Capacitor?.isNativePlatform?.(); } catch { return false; }
 };
 
+// True in the Android app, where the lessons open inside the app (no "opens elsewhere" arrow).
+export function learnOpensInApp() { return isNative(); }
+
 export function learnHref() {
   return isNative() ? IN_APP_LEARN : "/learn";
 }

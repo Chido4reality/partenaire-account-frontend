@@ -9,7 +9,7 @@ import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import { openWhatsApp } from "../utils/whatsapp";
 import api from "../utils/api";
 import { SUPPORT_PHONE, SUPPORT_TEL, SUPPORT_EMAIL } from "../utils/support";
-import LearnLink from "../components/common/LearnLink"; // LEARN: public video lessons
+import LearnLink, { learnOpensInApp } from "../components/common/LearnLink"; // LEARN: public video lessons
 import { HELP_TOPICS } from "../data/helpTopics";
 
 // ONE support line for both countries — see utils/support.js. The previous
@@ -111,11 +111,12 @@ export default function HelpPage() {
             {en ? "Pick a topic for step-by-step help." : "Choisissez un sujet pour une aide pas à pas."}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {/* LEARN: the public video lessons. In the Android app this opens the phone's browser. */}
+            {/* LEARN: the video lessons. On the web /learn (↗: a separate page); in the Android app they
+                open inside the app, so it gets the same › as the other topics. */}
             <LearnLink style={{ display: "flex", alignItems: "center", gap: 12, textAlign: "left", padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(251,197,3,0.35)", background: "rgba(251,197,3,0.08)", color: "var(--text)", fontSize: 15, textDecoration: "none" }}>
               <span style={{ fontSize: 20, width: 26, textAlign: "center" }}>🎬</span>
               <span style={{ fontWeight: 600, flex: 1 }}>{en ? "Video tutorials" : "Tutoriels vidéo"}</span>
-              <span style={{ color: "var(--text-muted)" }}>↗</span>
+              <span style={{ color: "var(--text-muted)" }}>{learnOpensInApp() ? "›" : "↗"}</span>
             </LearnLink>
             {HELP_TOPICS.map(t => (
               <button key={t.id} onClick={() => { setOpenId(t.id); window.scrollTo(0, 0); }}
