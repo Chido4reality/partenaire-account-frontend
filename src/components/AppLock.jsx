@@ -87,6 +87,8 @@ export default function AppLock({ children }) {
       const startDecision = (pol) => lockAtStart({ isArmed: isArmed(pol), hasHash: r, online: online(), lastUnlockAt: lastUnlockAt(),
         now: Date.now(), minutes: pol.lock_after_minutes });
       policyRef.current = p; recRef.current = r;
+      // right after a login the record is still being hashed: look again shortly
+      if (!r) setTimeout(() => { if (alive) hasRecord(user, org).then((v) => { if (alive) recRef.current = v; }); }, 4000);
       setPolicy(p); setBio(b);
       setLocked(startDecision(p));
       const st = native ? await biometricStatus() : { available: false };
@@ -143,7 +145,11 @@ export default function AppLock({ children }) {
   }, [locked, native]);
   useEffect(() => () => { const root = document.getElementById("root"); if (root) { root.inert = false; root.removeAttribute("aria-hidden"); } }, []);
 
-  const unlocked = () => { lastActivity.current = Date.now(); setPwd(""); setMsg(null); setLocked(false); };
+  const unlocked = () => {
+    lastActivity.current = Date.now(); setPwd(""); setMsg(null); setLocked(false);
+    // the first online unlock writes the record: from now on the lock also works offline
+    if (user && org) hasRecord(user, org).then((v) => { recRef.current = v; });
+  };
   const name = (user && (user.full_name || user.name)) || "";
   const first = name.split(" ")[0] || name;
 
