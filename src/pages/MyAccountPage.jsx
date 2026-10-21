@@ -3,6 +3,7 @@
 // manager also have the same card in Settings → Account.
 import { useLangStore, useAuthStore } from "../store";
 import ChangePasswordCard from "../components/common/ChangePasswordCard";
+import AppLockSettingsCard from "../components/AppLockSettingsCard"; // APP LOCK: my fingerprint / face (Android)
 
 export default function MyAccountPage() {
   const { lang } = useLangStore();
@@ -17,6 +18,7 @@ export default function MyAccountPage() {
         </div>
       )}
       <ChangePasswordCard en={en} />
+      <AppLockSettingsCard lang={lang} />
     </div>
   );
 }

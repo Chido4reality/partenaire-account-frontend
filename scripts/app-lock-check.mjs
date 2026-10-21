@@ -53,7 +53,11 @@ console.log("outer layer (wiring)");
 const app = read("src/App.jsx"), lock = read("src/components/AppLock.jsx"), lib = read("src/utils/appLock.js");
 check("App.jsx: Guard → AppLock → LockGate → Layout", app.includes("<Guard><AppLock><LockGate><Layout /></LockGate></AppLock></Guard>"));
 check("AppLock always renders its children; the screen goes through a portal; #root made inert", /\{children\}/.test(lock) && /createPortal\(/.test(lock) && /root\.inert = cover/.test(lock));
-check("no edits to the logout code: Layout.jsx / LoginPage.jsx / api.js untouched by app lock", !read("src/components/common/Layout.jsx").includes("appLock") && !read("src/pages/LoginPage.jsx").includes("appLock") && !read("src/utils/api.js").includes("app-lock"));
+check("no edits to the logout code: Layout.jsx / api.js untouched; LoginPage only shows the ?flash=app_lock message (FR/EN)",
+  !read("src/components/common/Layout.jsx").includes("appLock") && !read("src/utils/api.js").includes("app-lock")
+  && !read("src/pages/LoginPage.jsx").includes("appLock") && /flash === "app_lock"/.test(read("src/pages/LoginPage.jsx"))
+  && /après 5 mots de passe incorrects/.test(read("src/pages/LoginPage.jsx")) && /after 5 wrong passwords/.test(read("src/pages/LoginPage.jsx")));
+check("My account shows the same fingerprint card (cashier / warehouse / accountant reach it there)", /<AppLockSettingsCard lang=\{lang\} \/>/.test(read("src/pages/MyAccountPage.jsx")));
 check("never touches the offline queue or approvals", !/pendingSync|enqueue|approval/i.test(lib.replace(/\/\/.*$/gm, "")));
 check("A2: every logout path is covered by the auth-store subscription + a start-up sweep", /useAuthStore\.subscribe\(/.test(lib) && /export async function sweepOtherUsers/.test(lib) && /wipeUser\(before\)/.test(lib));
 check("the Preferences proxy is never returned from an async function (it is thenable: 'Preferences.then() is not implemented')",
