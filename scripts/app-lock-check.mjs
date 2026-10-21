@@ -56,6 +56,8 @@ check("AppLock always renders its children; the screen goes through a portal; #r
 check("no edits to the logout code: Layout.jsx / LoginPage.jsx / api.js untouched by app lock", !read("src/components/common/Layout.jsx").includes("appLock") && !read("src/pages/LoginPage.jsx").includes("appLock") && !read("src/utils/api.js").includes("app-lock"));
 check("never touches the offline queue or approvals", !/pendingSync|enqueue|approval/i.test(lib.replace(/\/\/.*$/gm, "")));
 check("A2: every logout path is covered by the auth-store subscription + a start-up sweep", /useAuthStore\.subscribe\(/.test(lib) && /export async function sweepOtherUsers/.test(lib) && /wipeUser\(before\)/.test(lib));
+check("the Preferences proxy is never returned from an async function (it is thenable: 'Preferences.then() is not implemented')",
+  /\(await M\(\)\)\.Preferences\.get/.test(lib) && !/return prefs\b/.test(lib) && !/\)\)\.Preferences;\s*return/.test(lib));
 check("A3: the record is kept in Preferences on Android, localStorage on the web", /@capacitor\/preferences/.test(lib) && /localStorage\.setItem\(k, v\)/.test(lib));
 
 console.log(fails ? `\n${fails} FAILED` : "\nall passed");

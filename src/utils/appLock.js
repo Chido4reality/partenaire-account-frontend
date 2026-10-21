@@ -25,24 +25,25 @@ export const isNative = () => { try { return Capacitor.isNativePlatform(); } cat
 export const SESSION_STARTED_AT = Date.now();   // this app process / browser tab
 
 // ── storage ───────────────────────────────────────────────────────────────────────────────────────
-let prefs = null;
-async function P() { if (!prefs) prefs = (await import("@capacitor/preferences")).Preferences; return prefs; }
-// The Preferences plugin is a proxy: only ever called, never returned from these functions.
+// The Preferences plugin is a Capacitor proxy, and a proxy is thenable: an async function must never
+// RETURN it ("Preferences.then() is not implemented"). Keep the MODULE and call .Preferences from it.
+let prefsModule = null;
+async function M() { if (!prefsModule) prefsModule = await import("@capacitor/preferences"); return prefsModule; }
 const store = {
   async get(k) {
-    if (isNative()) { try { const r = await (await P()).get({ key: k }); return r && r.value != null ? r.value : null; } catch { return null; } }
+    if (isNative()) { try { const r = await (await M()).Preferences.get({ key: k }); return r && r.value != null ? r.value : null; } catch { return null; } }
     try { return localStorage.getItem(k); } catch { return null; }
   },
   async set(k, v) {
-    if (isNative()) { try { await (await P()).set({ key: k, value: v }); } catch { /* storage off */ } return; }
+    if (isNative()) { try { await (await M()).Preferences.set({ key: k, value: v }); } catch { /* storage off */ } return; }
     try { localStorage.setItem(k, v); } catch { /* storage off */ }
   },
   async remove(k) {
-    if (isNative()) { try { await (await P()).remove({ key: k }); } catch { /* gone */ } return; }
+    if (isNative()) { try { await (await M()).Preferences.remove({ key: k }); } catch { /* gone */ } return; }
     try { localStorage.removeItem(k); } catch { /* gone */ }
   },
   async keys() {
-    if (isNative()) { try { const r = await (await P()).keys(); return (r && r.keys) || []; } catch { return []; } }
+    if (isNative()) { try { const r = await (await M()).Preferences.keys(); return (r && r.keys) || []; } catch { return []; } }
     try { return Object.keys(localStorage); } catch { return []; }
   },
 };
