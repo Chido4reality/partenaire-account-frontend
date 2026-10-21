@@ -85,7 +85,9 @@ export function activateWaiting(reg = registration, { force = false } = {}) {
 }
 
 function onControllerChange() {
-  if (!hadController) return;            // first install: nothing old to replace
+  // First control of a tab that started uncontrolled (first visit, or a reload that raced an
+  // activation): nothing old to replace — but from now on a new version IS an update for this tab.
+  if (!hadController) { hadController = true; refreshAvailable(); return; }
   if (userAsked) { window.location.reload(); return; }
   if (isHidden()) { reloadWhenIdleHidden(); return; }
   if (asked && freeToReloadVisible() && reloadOnce()) return;
@@ -129,6 +131,12 @@ export function registerAppSW() {
     watchInstalling(reg);
     activateWaiting(reg);                // a version that was already waiting at start-up
     refreshAvailable();
+    // The app's own start-up requests are usually still in flight at this moment, so keep trying
+    // once a second for the rest of the start-up window (cart and requests re-checked each time).
+    const retry = setInterval(() => {
+      if (!inStartup() || asked || !reg.waiting) { clearInterval(retry); return; }
+      activateWaiting(reg);
+    }, 1000);
     setInterval(() => { reg.update().catch(() => { /* offline */ }); }, CHECK_EVERY_MS);
   }).catch((e) => console.warn("[sw] register failed:", e && e.message));
 }
