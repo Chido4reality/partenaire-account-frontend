@@ -41,6 +41,7 @@ import useOwnerApproval from "../hooks/useOwnerApproval";
 import useExpiryFeature from "../hooks/useExpiryFeature"; // EXPIRY-TRACKING
 import { SHOP_TZ } from "../utils/shopTime";
 import { saleStatusLabel } from "../utils/saleStatus"; // fix 3
+import { lineMoney, wholeMoney, paymentStatusFor } from "../utils/money"; // WHOLE-FRANC MONEY
 import { isGoodsBuffer, locationLabel, locationTypeLabel } from "../utils/locations"; // GOODS-BUFFER
 
 const PAYMENT_MODES = [
@@ -1362,7 +1363,7 @@ export default function POSPage() {
         location_id: selectedLocation?.id,
         customer_id: customer?.id || null,
         label: lang === "en" ? "Sale — boss approval" : "Vente — approbation patron",
-        items: lineItems.map(i => ({ product_id: i.product_id, qty: i.quantity, unit_price: i.unit_price, line_total: i.quantity * i.unit_price })),
+        items: lineItems.map(i => ({ product_id: i.product_id, qty: i.quantity, unit_price: i.unit_price, line_total: lineMoney(i.quantity, i.unit_price) })),
         discount_approval_id: approvalId,
       }).then(r => r.data);
       setApprovalBundle(null);
@@ -1412,7 +1413,9 @@ export default function POSPage() {
   }));
   const onDebtLineBlur = (lineId) => setCart(c => c.map(it =>
     it.lineId === lineId && !(Number(it.unit_price) > 0) ? { ...it, unit_price: debtLineMax(it) } : it));
-  const lineGross = (i) => (Number(i.quantity) || 0) * (Number(i.unit_price) || 0);
+  // WHOLE-FRANC MONEY: a line is worth what the server will store (24 × 1,833.333 → 44,000), so
+  // the total and the amount paid match the sale's header to the franc.
+  const lineGross = (i) => lineMoney(i.quantity, i.unit_price);
   const lineDisc  = (i) => isDebtish(i) ? 0 : resolveDisc(i.discount_type, i.discount_value, lineGross(i));
   const grossProducts   = cart.reduce((s, i) => s + (isDebtish(i) ? 0 : lineGross(i)), 0);
   const debtAmt         = cart.reduce((s, i) => s + (isDebtish(i) ? lineGross(i) : 0), 0);
@@ -1450,8 +1453,8 @@ export default function POSPage() {
   // or the debt total for a debt-only cart). Excess tendered is CHANGE — shown,
   // never sent/stored. partialTendered is what the cashier typed; partialChange
   // is the over-amount. Under-payments (partial < due) behave exactly as before.
-  const partialTendered = +paidAmt || 0;
-  const debtTendered     = +debtPayAmt || 0;
+  const partialTendered = wholeMoney(paidAmt);
+  const debtTendered     = wholeMoney(debtPayAmt);
   const paid    = isDebtOnlyCart
     ? (debtPayAmt ? Math.min(debtTendered, total) : total)
     : (payMode === "paid" ? total : payMode === "credit" ? 0 : Math.min(partialTendered, total));
@@ -1975,10 +1978,7 @@ export default function POSPage() {
                 { duration: 7000, style: { background: "#451a03", color: "#fbbf24", border: "1px solid #92400e" } });
             });
         }
-        const paymentStatus =
-          paid >= total ? "paid" :
-          paid > 0      ? "partial" :
-                          "credit";
+        const paymentStatus = paymentStatusFor(total, paid);   // WHOLE-FRANC MONEY
         // saleId already declared above (online-cart link-sale path). Reuse it.
         const saleNumber = data?.data?.sale_number || data?.sale_number || `OFFLINE-${Date.now()}`;
         setLastSale({
@@ -2289,7 +2289,7 @@ export default function POSPage() {
           const qty = Number(i.quantity) || 1;
           const unit = Number(i.unit_price) || 0;
           return { product_id: i.product_id, qty, unit_price: unit,
-                   line_total: qty * unit, notes: i.notes || null };
+                   line_total: lineMoney(qty, unit), notes: i.notes || null };
         });
       if (!items.length) throw new Error("empty");
       const res = await api.post("/held-carts", {

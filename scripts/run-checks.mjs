@@ -20,7 +20,8 @@ const ROOT = resolve(HERE, "..");
 const CHECKS = [
   ["mount-check",   "scripts/mount-check.mjs",           "15 render scenarios — does it MOUNT, not just parse"],
   ["damaged-check", "scripts/receipt-damaged-check.mjs", "regression #10 — the damaged marker on all 3 receipt surfaces"],
-  ["currency",      "scripts/currency-check.mjs",        "LAUNCH-BATCH-2: receipts, money and WhatsApp numbers follow the org (₦ / 234 for Nigeria; Cameroon unchanged)"],
+  ["whole-franc",   "scripts/whole-franc-money-check.mjs", "VNT-20261021-0022: the POS prices lines in whole units like the server — a fully-paid rounded sale is never a 0.008 credit"],
+  ["currency",      "scripts/currency-check.mjs",       "LAUNCH-BATCH-2: receipts, money and WhatsApp numbers follow the org (₦ / 234 for Nigeria; Cameroon unchanged)"],
   ["i18n-keys",     "scripts/i18n-keys-check.mjs",       "LAUNCH-BATCH-2: every t(\"a.b\") key exists in en AND fr (a missing one renders the raw key)"],
   ["refund-receipt-method", "scripts/refund-receipt-method-check.mjs", "LAUNCH-BATCH-2b: a refund wholly against the debt prints 'account', not a cash method"],
   ["plan-features", "scripts/plan-features-check.mjs", "LAUNCH-BATCH-2b: plan cards say Stenamo Market and never offer it to a non-XAF shop"],
