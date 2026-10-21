@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
-import { registerSW } from "virtual:pwa-register";
+import { registerAppSW } from "./utils/swTakeover";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode><App /></React.StrictMode>
@@ -25,8 +25,8 @@ try { sessionStorage.removeItem("mp-boot-reloads"); } catch { /* private mode */
 //     app SW AND delete all caches → self-heals existing bad installs with
 //     NO uninstall required. The admin SW (/sw-admin.js, /admin.html scope)
 //     is left alone.
-//   • WEB/PWA: register with autoUpdate (skipWaiting + clients.claim) — this
-//     is Paul's offline-launch path and still needs the shell precache.
+//   • WEB/PWA: register (utils/swTakeover — when a new version takes over and when tabs
+//     reload) — this is Paul's offline-launch path and still needs the shell precache.
 const _isNative = typeof window !== "undefined" && !!window.Capacitor?.isNativePlatform?.();
 if (_isNative) {
   if ("serviceWorker" in navigator) {
@@ -45,5 +45,5 @@ if (_isNative) {
     }
   }
 } else {
-  registerSW({ immediate: true });
+  registerAppSW();
 }
