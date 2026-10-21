@@ -173,6 +173,7 @@ export default function AppLock({ children }) {
       setBio(b);
       const p = policyRef.current;
       if (b === "on" && bioOk && p && p.biometric_allowed) tryBio();
+      else if (b === "needs_password" && p && p.biometric_allowed) setMsg({ kind: "bio_changed", text: t.bioChanged });
     });
     return () => { alive = false; };
   }, [locked]);  // eslint-disable-line react-hooks/exhaustive-deps
