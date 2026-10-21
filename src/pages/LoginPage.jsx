@@ -53,6 +53,7 @@ export default function LoginPage() {
     if (flash === "session_expired") {
       setFailure({ code: "session_expired", message: lang === "en" ? "Your session expired — please sign in again." : "Votre session a expiré — reconnectez-vous." });
     }
+    if (flash === "app_lock") setFailure({ code: "app_lock", message: lang === "en" ? "You were signed out after 5 wrong passwords." : "Vous avez été déconnecté après 5 mots de passe incorrects." }); // APP LOCK
     // Fix A: the disabled reason arrives reload-proof in the URL (?flash=account_disabled)
     // for a forced logout; the sessionStorage flag is the fallback (e.g. no-reload paths).
     // Either source → the bilingual message. Clear the fallback so it can't double-fire.

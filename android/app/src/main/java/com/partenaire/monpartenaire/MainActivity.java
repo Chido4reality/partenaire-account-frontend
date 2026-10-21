@@ -12,6 +12,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(BluetoothPrinterPlugin.class);
         // MP-PUSH-ASK (vc114): real notification state + a direct way to the settings screen.
         registerPlugin(NotificationSettingsPlugin.class);
+        registerPlugin(BiometricPlugin.class);   // APP LOCK: fingerprint / face unlock (BIOMETRIC_STRONG)
         super.onCreate(savedInstanceState);
     }
 }

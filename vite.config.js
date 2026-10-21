@@ -33,8 +33,11 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: "autoUpdate",   // skipWaiting + clients.claim → fresh shell next load
-      injectRegister: false,        // registration is manual + platform-gated in main.jsx (native skips the SW to avoid stale-install)
+      registerType: "autoUpdate",
+      // Registration is manual + platform-gated in main.jsx (native skips the SW to avoid stale-install).
+      // With injectRegister:false the plugin does NOT turn on skipWaiting: a new version waits until a
+      // page posts SKIP_WAITING — utils/swTakeover decides when (start-up, or a tab in the background).
+      injectRegister: false,
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg}"],
         // MP-BLANK-SCREEN-FIX: the main bundle is ~2.4 MB and Workbox's DEFAULT limit is
@@ -45,9 +48,8 @@ export default defineConfig({
         // precache install is atomic: the new SW takes the whole manifest or none of it,
         // so the cached shell can never reference a bundle the SW doesn't hold.
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
-        // A new SW must take over the CURRENT page, not the one after. registerType
-        // 'autoUpdate' sets skipWaiting, but clientsClaim was absent from the built
-        // sw.js — so an activated SW sat idle for one more load.
+        // A new SW must take over the CURRENT page, not the one after: once it activates (see
+        // utils/swTakeover), clientsClaim lets it control the open tabs at once.
         clientsClaim: true,
         // Never precache the admin portal's standalone shell/assets — it
         // has its own SW; precaching it here would make the two fight.
