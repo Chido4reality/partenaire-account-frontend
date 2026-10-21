@@ -14,6 +14,7 @@ import RegisterPage from "./pages/RegisterPage";
 import LearnBounce from "./pages/LearnBounce"; // LEARN: stale-shell fallback for /learn
 import Layout from "./components/common/Layout";
 import EnvBanner from "./components/EnvBanner";
+import UpdateGate from "./components/UpdateGate"; import WebUpdateBanner from "./components/WebUpdateBanner"; // APP UPDATE
 import LockGate from "./components/LockGate";
 import Dashboard from "./pages/Dashboard";
 import POSPage from "./pages/POSPage";
@@ -571,7 +572,7 @@ export default function App() {
   }
   return (
     <ErrorBoundary>
-    <EnvBanner />
+    <EnvBanner /><UpdateGate /><WebUpdateBanner />
     <QueryClientProvider client={qc}>
       <BrowserRouter>
         <Routes>

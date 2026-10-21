@@ -1,4 +1,4 @@
-// SW TAKEOVER (2026-10-18): how a new web version replaces the running one.
+// SW TAKEOVER (2026-10-18; update banner 2026-10-21): how a new web version replaces the running one.
 //
 // The app's service worker only takes over when a page posts it {type:"SKIP_WAITING"} (Workbox's
 // message handler). vite-plugin-pwa turns on skipWaiting by itself only when it injects its own
@@ -10,13 +10,17 @@
 // took over — including a cashier's visible screen mid-payment — with no loop guard. So the rules
 // here are ours:
 //   • look for a new version at start-up, every 30 min, and when a tab comes back into view;
-//   • a waiting version is told to take over only when nobody is mid-task: during the first 15 s
-//     after this page started (nothing typed yet), or while this tab is in the background;
-//   • when the new version takes control, a tab reloads at once if it asked for it or is in the
-//     background; a tab someone is looking at reloads the next time it is hidden;
+//   • an AUTOMATIC reload happens only when nobody can lose anything:
+//       – the tab is in the background (hidden) and no request is in flight, or
+//       – during the first 15 s after the page started, the POS cart is empty and no request is in
+//         flight (setBusyCheck — utils/appUpdate decides what "busy" means);
+//   • otherwise a tab someone is looking at gets the "New version available — Reload" banner
+//     (components/WebUpdateBanner) and reloads when the user taps it, or the next time it is hidden;
 //   • at most ONE automatic reload per tab per minute (sessionStorage), so a version that keeps
-//     changing can never loop the page.
-// Native (Capacitor) never registers a service worker — see main.jsx.
+//     changing can never loop the page. A tap on Reload is not limited — the user asked for it.
+// The offline queue (IndexedDB) and the POS cart (persisted draft) both survive a reload; nothing here
+// touches either.
+// Native (Capacitor) never registers a service worker — see main.jsx — so none of this runs in the app.
 
 const SW_URL = "/sw.js";
 const STARTUP_MS = 15 * 1000;
@@ -27,11 +31,30 @@ const LOOP_MS = 60 * 1000;
 const startedAt = Date.now();
 let hadController = false;   // a version was already running this page → a takeover is an UPDATE
 let asked = false;           // this tab told the waiting version to take over
-let pendingReload = false;   // took over while visible → reload when hidden
+let userAsked = false;       // …because the user tapped Reload
+let pendingReload = false;   // took over while someone was using the tab → reload when hidden or tapped
 let registration = null;
+
+// Busy = a sale in the cart or a request in flight. Set by utils/appUpdate; until then, assume busy
+// (never reload a visible tab on a guess).
+let busyCheck = () => ({ cart: true, inFlight: 0 });
+export function setBusyCheck(fn) { if (typeof fn === "function") busyCheck = fn; }
+const busy = () => { try { return busyCheck() || { cart: true, inFlight: 0 }; } catch { return { cart: true, inFlight: 0 }; } };
 
 const isHidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
 const inStartup = () => Date.now() - startedAt < STARTUP_MS;
+const freeToReloadVisible = () => { const b = busy(); return !b.cart && !b.inFlight; };
+
+// The banner's state: a new version is ready for this tab.
+const listeners = new Set();
+let available = false;
+function setAvailable(v) {
+  if (available === v) return;
+  available = v;
+  listeners.forEach((cb) => { try { cb(v); } catch { /* a listener must not break the others */ } });
+}
+export function subscribeUpdate(cb) { listeners.add(cb); cb(available); return () => listeners.delete(cb); }
+function refreshAvailable() { setAvailable(!!(hadController && ((registration && registration.waiting) || pendingReload))); }
 
 // Reload once; refuses (returns false) if this tab already auto-reloaded within the last minute.
 export function reloadOnce() {
@@ -43,10 +66,19 @@ export function reloadOnce() {
   return true;
 }
 
-// Tell a waiting version to take over. `force` = the caller knows nobody is mid-task (LearnBounce).
+// A hidden tab reloads once its requests have finished (up to 30 s; then it waits for the next hide).
+function reloadWhenIdleHidden(triesLeft = 15) {
+  if (!isHidden()) { pendingReload = true; refreshAvailable(); return; }
+  if (busy().inFlight && triesLeft > 0) { setTimeout(() => reloadWhenIdleHidden(triesLeft - 1), 2000); return; }
+  if (busy().inFlight) { pendingReload = true; refreshAvailable(); return; }
+  if (!reloadOnce()) { pendingReload = true; refreshAvailable(); }
+}
+
+// Tell a waiting version to take over. `force` = the caller knows nobody is mid-task (LearnBounce, or
+// the user tapped Reload).
 export function activateWaiting(reg = registration, { force = false } = {}) {
   if (!reg || !reg.waiting || !hadController) return false;
-  if (!force && !inStartup() && !isHidden()) return false;
+  if (!force && !isHidden() && !(inStartup() && freeToReloadVisible())) { refreshAvailable(); return false; }
   asked = true;
   reg.waiting.postMessage({ type: "SKIP_WAITING" });
   return true;
@@ -54,14 +86,29 @@ export function activateWaiting(reg = registration, { force = false } = {}) {
 
 function onControllerChange() {
   if (!hadController) return;            // first install: nothing old to replace
-  if (asked || isHidden()) { reloadOnce(); return; }
-  pendingReload = true;                  // someone is looking at this tab — wait until it is hidden
+  if (userAsked) { window.location.reload(); return; }
+  if (isHidden()) { reloadWhenIdleHidden(); return; }
+  if (asked && freeToReloadVisible() && reloadOnce()) return;
+  pendingReload = true;                  // someone is using this tab — banner, or reload when hidden
+  refreshAvailable();
 }
 
 function watchInstalling(reg) {
   const sw = reg.installing;
   if (!sw) return;
-  sw.addEventListener("statechange", () => { if (sw.state === "installed") activateWaiting(reg); });
+  sw.addEventListener("statechange", () => { if (sw.state === "installed") activateWaiting(reg); refreshAvailable(); });
+}
+
+// The banner's Reload button.
+export function applyUpdateNow() {
+  userAsked = true;
+  if (registration && registration.waiting && hadController) {
+    asked = true;
+    registration.waiting.postMessage({ type: "SKIP_WAITING" });
+    setTimeout(() => window.location.reload(), 5000);   // in case controllerchange never comes
+    return;
+  }
+  window.location.reload();
 }
 
 export function registerAppSW() {
@@ -70,7 +117,7 @@ export function registerAppSW() {
   navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
   document.addEventListener("visibilitychange", () => {
     if (isHidden()) {
-      if (pendingReload) { pendingReload = false; reloadOnce(); return; }
+      if (pendingReload) { pendingReload = false; reloadWhenIdleHidden(); return; }
       activateWaiting();
     } else if (registration) {
       registration.update().catch(() => { /* offline */ });
@@ -81,6 +128,7 @@ export function registerAppSW() {
     reg.addEventListener("updatefound", () => watchInstalling(reg));
     watchInstalling(reg);
     activateWaiting(reg);                // a version that was already waiting at start-up
+    refreshAvailable();
     setInterval(() => { reg.update().catch(() => { /* offline */ }); }, CHECK_EVERY_MS);
   }).catch((e) => console.warn("[sw] register failed:", e && e.message));
 }
@@ -108,7 +156,6 @@ export async function takeOverAndReload() {
       navigator.serviceWorker.addEventListener("controllerchange", () => res(true), { once: true });
       setTimeout(() => res(false), 5000);
     });
-    // onControllerChange already reloads (asked = true); this covers a page that had no controller.
     if (!took) return reloadOnce();
     return true;
   }
