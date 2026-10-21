@@ -168,11 +168,13 @@ export default function AppLock({ children }) {
   useEffect(() => {
     if (locked !== true || !user) return undefined;
     let alive = true;
-    biometricState(user.id).then((b) => {
+    // ask the sensor status here too: at a cold start the screen locks before the start-up status read
+    // has answered, and skipping the prompt then would also miss a key cancelled by a new enrolment
+    Promise.all([biometricState(user.id), native ? biometricStatus() : Promise.resolve({ available: false })]).then(([b, st]) => {
       if (!alive) return;
-      setBio(b);
+      setBio(b); setBioOk(st.available);
       const p = policyRef.current;
-      if (b === "on" && bioOk && p && p.biometric_allowed) tryBio();
+      if (b === "on" && st.available && p && p.biometric_allowed) tryBio();
       else if (b === "needs_password" && p && p.biometric_allowed) setMsg({ kind: "bio_changed", text: t.bioChanged });
     });
     return () => { alive = false; };
