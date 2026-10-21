@@ -18,6 +18,7 @@ import { useTrialState } from "../hooks/useTrialState";
 import { SHOP_TZ } from "../utils/shopTime";
 import { isGoodsBuffer, locationLabel, locationTypeLabel, locationInitial } from "../utils/locations"; // GOODS-BUFFER
 import ChangePasswordCard from "../components/common/ChangePasswordCard"; // change my password
+import AppLockSettingsCard from "../components/AppLockSettingsCard"; // APP LOCK: owner setting + my fingerprint/face
 import SubscriptionReceiptsCard from "../components/common/SubscriptionReceiptsCard"; // STENAMO-RECEIPTS
 
 const ROLES = [
@@ -1789,6 +1790,7 @@ export default function SettingsPage() {
               a PER-DEVICE, PER-USER setting — a cashier needs it as much as the owner.
               Hidden entirely on the web build, where push doesn't exist. */}
           <PushAlertsCard lang={lang} />
+          <AppLockSettingsCard lang={lang} />
         </div>
       )}
 

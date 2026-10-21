@@ -16,6 +16,7 @@ import Layout from "./components/common/Layout";
 import EnvBanner from "./components/EnvBanner";
 import UpdateGate from "./components/UpdateGate"; import WebUpdateBanner from "./components/WebUpdateBanner"; // APP UPDATE
 import LockGate from "./components/LockGate";
+import AppLock from "./components/AppLock"; // APP LOCK: outer layer, the app underneath never unmounts
 import Dashboard from "./pages/Dashboard";
 import POSPage from "./pages/POSPage";
 import OnlineCartPage from "./pages/OnlineCartPage";
@@ -581,7 +582,7 @@ export default function App() {
           {/* LEARN: /learn is static (public/learn.html); this only catches a stale shell. */}
           <Route path="/learn/*"  element={<LearnBounce />} />
           <Route path="/learn.html" element={<LearnBounce />} />
-          <Route path="/" element={<Guard><LockGate><Layout /></LockGate></Guard>}>
+          <Route path="/" element={<Guard><AppLock><LockGate><Layout /></LockGate></AppLock></Guard>}>
             <Route index               element={<RoleGuard path="/"><Dashboard /></RoleGuard>} />
             <Route path="pos"          element={<RoleGuard path="/pos"><POSPage /></RoleGuard>} />
             <Route path="online-cart"  element={<RoleGuard path="/online-cart"><PlanGuard path="/online-cart"><OnlineCartPage /></PlanGuard></RoleGuard>} />
