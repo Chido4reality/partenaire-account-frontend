@@ -163,9 +163,18 @@ export default function AppLock({ children }) {
     else if (r.code === "lockout" || r.code === "lockout_permanent") setMsg({ kind: "bio_lockout", text: t.bioLockout });
   }, [busy, t]);  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // offer the fingerprint/face prompt once each time the screen locks
+  // each time the screen locks: read the person's fingerprint/face setting afresh (it may have been turned
+  // on or off in Settings since start-up) and offer the prompt once
   useEffect(() => {
-    if (locked === true && bio === "on" && bioOk && policy && policy.biometric_allowed) tryBio();
+    if (locked !== true || !user) return undefined;
+    let alive = true;
+    biometricState(user.id).then((b) => {
+      if (!alive) return;
+      setBio(b);
+      const p = policyRef.current;
+      if (b === "on" && bioOk && p && p.biometric_allowed) tryBio();
+    });
+    return () => { alive = false; };
   }, [locked]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = async (e) => {
