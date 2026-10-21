@@ -25,6 +25,30 @@
 //
 // Backoff: 1s, 5s, 30s, 5m, 30m, then failed_permanent.
 //
+// SYNC-AFTER-LOGOUT (2026-10-21): a logout used to strand queued sales. On the login page the worker
+// kept replaying with NO token → 401 "Token manquant" → the generic 4xx branch → failed_permanent, so
+// the sale waited for a manual "Tout réessayer". And whoever logged in next replayed the row with THEIR
+// token, so the server booked another cashier's sale to them. Now:
+//   - each row records its AUTHOR (user + org from the session token) and that author's token;
+//   - no session → nothing is sent (rows keep their status);
+//   - the author's own session → sent with it; another user's session → sent with the author's stored
+//     token, so the server books it to the original cashier; that token expired or refused → the row
+//     waits for its author to log in again;
+//   - a session 401 ("Token manquant" / "Token invalide") is retry-later, never failed_permanent;
+//   - rows a logout already stranded (failed_permanent, 401 "Token manquant") go back to the queue once
+//     a session exists — only that cause; every other failed_permanent rule is unchanged;
+//   - the stored token is cleared as soon as the row is sent.
+// Follow-up (Peter, 2026-10-21):
+//   - the stored token is ALSO cleared on "Token manquant"/"Token invalide", account_disabled, ANY
+//     permanent failure, and after OWNER_TOKEN_MAX_AGE_MS (72 h); list functions never return it;
+//   - a queued SALE whose author was refused as account_disabled, or that has waited for its author
+//     more than AUTHOR_WAIT_MS (24 h), can be sent by the owner / a staff-managing manager "on behalf
+//     of" the author (sendOnBehalf → POST /sales { on_behalf_of_user_id }); the server books it to the
+//     author and judges every approval as the author;
+//   - a queued SALE with no recorded author (queued before this fix) is never sent by itself: the
+//     owner / staff-managing manager sends it as themself (sendAuthorUnknown) or discards it
+//     (discardAuthorUnknown — the server is asked first whether it already has that local_id).
+//
 // Worker triggers:
 //   - online event (from utils/network.onNetworkChange)
 //   - app foreground (@capacitor/app appStateChange or page
@@ -47,6 +71,10 @@ const BACKOFF_MS  = [1_000, 5_000, 30_000, 300_000, 1_800_000];
 const MAX_ATTEMPTS = BACKOFF_MS.length;
 const POLL_INTERVAL_MS = 30_000;
 const SENT_RETENTION_MS = 5 * 60_000;
+// SYNC-AFTER-LOGOUT follow-up: a stored author token is kept at most 72 h; a sale waiting for its author
+// more than 24 h can be sent on the author's behalf.
+export const OWNER_TOKEN_MAX_AGE_MS = 72 * 3600_000;
+export const AUTHOR_WAIT_MS = 24 * 3600_000;
 
 // ── uuid ────────────────────────────────────────────────────────
 // Minimal RFC4122 v4-shaped id — fine for client-stamped local_id.
@@ -96,11 +124,83 @@ export function configureSync({ baseUrl, getAuthToken, getClient }) {
   if (getClient) _client = getClient;
 }
 
+// ── SYNC-AFTER-LOGOUT: whose session, and whose row ───────────────
+// The session token is a JWT; its claims (sub = user, org_id, exp) are read here without trusting them
+// for anything but routing — the server verifies every request as before.
+function tokenClaims(tok) {
+  if (typeof tok !== 'string') return null;
+  const part = tok.split('.')[1];
+  if (!part) return null;
+  try {
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(b64 + '==='.slice((b64.length + 3) % 4)));
+  } catch { return null; }
+}
+const currentToken = () => (typeof _authToken === 'function' ? _authToken() : _authToken) || null;
+const tokenExpired = (tok, now = Date.now()) => { const c = tokenClaims(tok); return !c || (c.exp && c.exp * 1000 <= now); };
+
+const isSaleCreate = (ep) => /^\/sales\/?$/.test(ep || '');
+const rowAgeMs = (row, now) => { const t = Date.parse(row.created_at || ''); return Number.isNaN(t) ? 0 : now - t; };
+// The author's stored token is usable while it is present, not expired, and not older than 72 h.
+const ownerTokenUsable = (row, now) => !!row.owner_token && !tokenExpired(row.owner_token, now)
+  && rowAgeMs(row, now) < OWNER_TOKEN_MAX_AGE_MS;
+
+// Which token replays this row now →
+//   { token, asOwner?, sendAs? } | { wait: 'no_session' | 'author' | 'author_unknown' | 'sender' }
+export function tokenForRow(row, sessionToken = currentToken(), now = Date.now()) {
+  if (!sessionToken) return { wait: 'no_session' };
+  const me = tokenClaims(sessionToken);
+  // Sent on purpose by an owner / staff-managing manager: only with THAT person's session.
+  if (row.send_as) return me && me.sub === row.send_as_user_id ? { token: sessionToken, sendAs: row.send_as } : { wait: 'sender' };
+  if (!row.owner_user_id) {
+    // A sale queued before authors were recorded: whose it is cannot be known — never sent by itself.
+    // Other queued actions keep the earlier behaviour (sent with the session).
+    return isSaleCreate(row.endpoint) ? { wait: 'author_unknown' } : { token: sessionToken };
+  }
+  if (me && me.sub === row.owner_user_id) return { token: sessionToken };
+  if (ownerTokenUsable(row, now)) return { token: row.owner_token, asOwner: true };
+  return { wait: 'author' };
+}
+
+// What the owner / a staff-managing manager may do with this row now (the sync screen's buttons) →
+//   { kind: 'on_behalf', reason: 'account_disabled'|'author_waiting', author_name }
+//   { kind: 'author_unknown' }
+//   { kind: 'waiting_author', author_name }      (shown, no button yet)
+//   null
+export function rowAction(row, sessionToken = currentToken(), now = Date.now()) {
+  if (!row || row.status === 'sent' || !isSaleCreate(row.endpoint)) return null;
+  if (row.send_as) {
+    // Already being sent by the person signed in → nothing to offer. Marked by someone who has since
+    // signed out → offered again to whoever is signed in now (the server still decides who may).
+    const me = tokenClaims(sessionToken);
+    if (me && me.sub === row.send_as_user_id) return null;
+    row = { ...row, send_as: null, send_as_user_id: null };
+  }
+  if (!row.owner_user_id) return { kind: 'author_unknown' };
+  const name = row.owner_name || null;
+  if (row.owner_refused === 'account_disabled') return { kind: 'on_behalf', reason: 'account_disabled', author_name: name };
+  const pick = tokenForRow(row, sessionToken, now);
+  if (pick.wait !== 'author') return null;
+  return rowAgeMs(row, now) > AUTHOR_WAIT_MS
+    ? { kind: 'on_behalf', reason: 'author_waiting', author_name: name }
+    : { kind: 'waiting_author', author_name: name };
+}
+
+// A refusal that means "this author's account is disabled".
+const isAccountDisabled = (status, body) => status === 401 && body && body.error === 'account_disabled';
+
+// A 401 that means "this session is missing / no longer valid" — never a business refusal
+// (approval / PIN errors carry an `error` code; a disabled account keeps its own handling).
+const isSession401 = (status, body) => status === 401 && !(body && body.error)
+  && /Token manquant|Token invalide/.test(String((body && body.message) || ''));
+
 // ── Public: enqueue ────────────────────────────────────────────
 
 export async function enqueue({ endpoint, method = 'POST', payload }) {
   const local_id = payload?.local_id || genLocalId();
   const stamped  = { ...payload, local_id };
+  const sessionToken = currentToken();
+  const claims = tokenClaims(sessionToken);
   const row = {
     id:          genLocalId(),
     local_id,
@@ -113,12 +213,17 @@ export async function enqueue({ endpoint, method = 'POST', payload }) {
     server_id:   null,
     created_at:  new Date().toISOString(),
     last_attempted_at: null,
+    owner_user_id: (claims && claims.sub) || null,
+    owner_org_id:  (claims && claims.org_id) || null,
+    owner_token:   claims ? sessionToken : null,
+    owner_name:    (claims && claims.name) || null,     // for "Envoyer au nom de <author>"
   };
   await exec(
-    `INSERT INTO pending_sync (id, local_id, endpoint, method, payload_json, status, attempts, last_error, server_id, created_at, last_attempted_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO pending_sync (id, local_id, endpoint, method, payload_json, status, attempts, last_error, server_id, created_at, last_attempted_at, owner_user_id, owner_org_id, owner_token, owner_name)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [row.id, row.local_id, row.endpoint, row.method, row.payload_json,
-     row.status, row.attempts, row.last_error, row.server_id, row.created_at, row.last_attempted_at]
+     row.status, row.attempts, row.last_error, row.server_id, row.created_at, row.last_attempted_at,
+     row.owner_user_id, row.owner_org_id, row.owner_token, row.owner_name]
   );
   notify();
   // Best-effort immediate flush — if we're online, the user expects
@@ -249,6 +354,8 @@ async function purgeOnlineOnlyOps() {
 // retries the instant connectivity returns, instead of waiting out the timer.
 async function flushIfOnline(force = false) {
   if (_workerRunning) return;
+  await purgeExpiredOwnerTokens();    // every tick, signed in or not: a stored author token never outlives 72 h
+  if (!currentToken()) return;        // SYNC-AFTER-LOGOUT: signed out → nothing is sent; rows wait as they are
   const net = await getNetworkStatus();
   if (!net.connected) return;
   _workerRunning = true;
@@ -259,10 +366,40 @@ async function flushIfOnline(force = false) {
   }
 }
 
+// SYNC-AFTER-LOGOUT recovery: rows an earlier logout stranded — failed_permanent ONLY because they were
+// replayed with no session (401 "Token manquant") — go back to the queue. Nothing else is touched.
+export function strandedByLogout(row) {
+  if (!row || row.status !== 'failed_permanent') return false;
+  let err = null; try { err = JSON.parse(row.last_error || 'null'); } catch { err = null; }
+  return !!(err && err.status === 401 && err.body && !err.body.error && /Token manquant/.test(String(err.body.message || '')));
+}
+// A stored author token older than 72 h is deleted (the row then waits for its author, and after 24 h
+// the owner can send it on the author's behalf).
+export async function purgeExpiredOwnerTokens(now = Date.now()) {
+  try {
+    const rows = await query(`SELECT * FROM pending_sync`);
+    for (const r of rows) {
+      if (r.owner_token && rowAgeMs(r, now) >= OWNER_TOKEN_MAX_AGE_MS) {
+        await exec(`UPDATE pending_sync SET owner_token = ? WHERE id = ?`, [null, r.id]);
+      }
+    }
+  } catch { /* best effort — tokenForRow ignores an over-age token anyway */ }
+}
+
+async function recoverStrandedByLogout() {
+  try {
+    const rows = await query(`SELECT * FROM pending_sync WHERE status = ?`, ['failed_permanent']);
+    for (const r of rows.filter(strandedByLogout)) {
+      await exec(`UPDATE pending_sync SET status = ?, last_error = ?, attempts = ? WHERE id = ?`, ['queued', null, 0, r.id]);
+    }
+  } catch { /* best effort — the manual Retry stays available */ }
+}
+
 async function flushOnce(force = false) {
   // MP-REFUNDS-ONLINE-ONLY: belt-and-suspenders — never attempt a refund/
   // exchange/void op from the queue (they're online-only). Drop them first.
   await purgeOnlineOnlyOps();
+  await recoverStrandedByLogout();
   // MP-PAUL-FIX-2 (3 Jun): watchdog log for stale 'sending' rows. If a
   // row has been in 'sending' for >2 min, attempt() probably crashed
   // mid-fetch in a way recoverStranded didn't catch (or the device
@@ -338,8 +475,10 @@ async function flushOnce(force = false) {
   // don't freeze even the sales subset forever on it — let them
   // attempt, fail NO_OPEN_SHIFT, and surface alongside it in
   // ConflictModal for the cashier to resolve together.
+  // SYNC-AFTER-LOGOUT: a shift-open that is WAITING (for its author, or for a sender) is not trying —
+  // it must not hold every sale behind it.
   const shiftStillTrying = all.some(r =>
-    isShiftOpen(r.endpoint) && r.status !== 'sent' && r.status !== 'failed_permanent');
+    isShiftOpen(r.endpoint) && r.status !== 'sent' && r.status !== 'failed_permanent' && !tokenForRow(r).wait);
   for (const r of elig.filter(r => !isShiftOpen(r.endpoint))) {
     if (shiftStillTrying && isSaleRow(r.endpoint)) continue;
     await attempt(r);
@@ -358,6 +497,10 @@ async function attempt(row) {
     console.warn('[pendingSync] no baseUrl configured; skipping');
     return;
   }
+  // SYNC-AFTER-LOGOUT: no session, or another user's session with the author's token gone → the row
+  // waits (status unchanged) — it is never sent without a session nor booked to the wrong cashier.
+  const pick = tokenForRow(row);
+  if (pick.wait) return;
   await exec(
     `UPDATE pending_sync SET status = ?, attempts = ?, last_attempted_at = ? WHERE id = ?`,
     ['sending', (Number(row.attempts) || 0) + 1, new Date().toISOString(), row.id]
@@ -366,9 +509,21 @@ async function attempt(row) {
 
   let payload;
   try { payload = JSON.parse(row.payload_json); } catch { payload = {}; }
+  // Sent on purpose by the owner / a staff-managing manager (the queued payload itself is unchanged).
+  if (pick.sendAs === 'on_behalf') {
+    payload = { ...payload, on_behalf_of_user_id: row.owner_user_id, on_behalf_reason: row.send_as_reason || 'author_waiting' };
+  } else if (pick.sendAs === 'author_unknown' && isSaleCreate(row.endpoint)) {
+    payload = { ...payload, author_unknown: true };
+  }
 
   const url = `${_apiBaseUrl}${row.endpoint}`;
-  const token = typeof _authToken === 'function' ? _authToken() : _authToken;
+  const token = pick.token;
+  // A refusal ends this row's use of the stored author token, and an on-purpose send goes back to the
+  // owner's screen (another permitted person may try).
+  const clearOnRefusal = async () => {
+    await exec(`UPDATE pending_sync SET owner_token = ?, send_as = ?, send_as_user_id = ?, send_as_reason = ? WHERE id = ?`,
+      [null, null, null, null, row.id]);
+  };
 
   let res, body;
   try {
@@ -404,8 +559,8 @@ async function attempt(row) {
     // outcome from the queue's perspective: the row is on the server.
     const serverId = body?.data?.server_id || body?.data?.id || null;
     await exec(
-      `UPDATE pending_sync SET status = ?, server_id = ?, last_error = ? WHERE id = ?`,
-      ['sent', serverId, null, row.id]
+      `UPDATE pending_sync SET status = ?, server_id = ?, last_error = ?, owner_token = ? WHERE id = ?`,
+      ['sent', serverId, null, null, row.id]
     );
     // MP-OFFLINE-COLLECT-NEVER-DROP: a synced debt collection that needed shift
     // FALLBACK (attributed to the shift open at collection time / current) or that had
@@ -423,6 +578,7 @@ async function attempt(row) {
   if (res.status === 409) {
     // Server-side conflict (stock / debt / shift). Cashier must
     // resolve manually — surface via ConflictModal.
+    await clearOnRefusal();
     await exec(
       `UPDATE pending_sync SET status = ?, last_error = ? WHERE id = ?`,
       ['failed_permanent', JSON.stringify({ status: 409, body }), row.id]
@@ -437,10 +593,25 @@ async function attempt(row) {
     return;
   }
 
+  if (isSession401(res.status, body)) {
+    // SYNC-AFTER-LOGOUT: the session (or the author's stored token) is missing or no longer valid —
+    // retry later with a valid one, never failed_permanent. The stored token is dropped either way, so
+    // the row waits for its author's next login instead of being re-sent with it.
+    await exec(`UPDATE pending_sync SET owner_token = ? WHERE id = ?`, [null, row.id]);
+    await markTransient(row, `401 ${body?.message || ''} (waiting for a valid session)`);
+    return;
+  }
+
   if (res.status >= 400 && res.status < 500) {
     // Other 4xx (validation, auth, plan gate). These won't get better
     // by replaying. Surface as failed_permanent so the cashier sees
     // the actual server message.
+    await clearOnRefusal();
+    // The AUTHOR's account is disabled: remembered (a Retry clears last_error), so the owner's
+    // "send on behalf" stays offered for this sale.
+    if (isAccountDisabled(res.status, body) && !pick.sendAs) {
+      await exec(`UPDATE pending_sync SET owner_refused = ? WHERE id = ?`, ['account_disabled', row.id]);
+    }
     await exec(
       `UPDATE pending_sync SET status = ?, last_error = ? WHERE id = ?`,
       ['failed_permanent', JSON.stringify({ status: res.status, body }), row.id]
@@ -512,11 +683,20 @@ export async function discard(rowId) {
   notify();
 }
 
+// SYNC-AFTER-LOGOUT: no screen ever receives a stored author token — every list goes through this.
+// The row's owner action (rowAction) is attached here, while the token is still known.
+function forScreen(r, session = currentToken(), now = Date.now()) {
+  const queue_action = rowAction(r, session, now);
+  const { owner_token: _drop, ...rest } = r;
+  return { ...rest, queue_action };
+}
+
 export async function listFailedPermanent() {
-  return query(
+  const rows = await query(
     `SELECT * FROM pending_sync WHERE status = ? ORDER BY created_at DESC`,
     ['failed_permanent']
   );
+  return rows.map((r) => forScreen(r));
 }
 
 // Every row that is NOT yet confirmed-on-server, for the visible sync queue
@@ -539,7 +719,70 @@ export async function listPending() {
       const ra = rank[a.status] ?? 9, rb = rank[b.status] ?? 9;
       if (ra !== rb) return ra - rb;
       return String(a.created_at).localeCompare(String(b.created_at));
+    })
+    .map((r) => forScreen(r));
+}
+
+// ── SYNC-AFTER-LOGOUT: the owner / a staff-managing manager acts on a queued sale ──────────────────
+// The server is the gate (403 for anyone else); these only mark the row and let the worker send it with
+// the CURRENT session — and only that person's session (tokenForRow: send_as_user_id).
+async function markSendAs(rowId, kind, allowed) {
+  const me = tokenClaims(currentToken());
+  if (!me || !me.sub) return false;
+  const rows = await query(`SELECT * FROM pending_sync WHERE id = ?`, [rowId]);
+  const row = rows && rows[0];
+  const action = row && rowAction(row);
+  if (!row || !action || !allowed(action)) return false;
+  await exec(
+    `UPDATE pending_sync SET send_as = ?, send_as_user_id = ?, send_as_reason = ?, status = ?, last_error = ?, attempts = ? WHERE id = ?`,
+    [kind, me.sub, action.reason || null, 'queued', null, 0, rowId]
+  );
+  notify();
+  flushIfOnline(true);
+  return true;
+}
+// "Envoyer au nom de <author>": booked to the author, judged as the author (server side).
+export const sendOnBehalf = (rowId) => markSendAs(rowId, 'on_behalf', (a) => a.kind === 'on_behalf');
+// "Auteur inconnu — envoyer": booked to the person sending it, audited.
+export const sendAuthorUnknown = (rowId) => markSendAs(rowId, 'author_unknown', (a) => a.kind === 'author_unknown');
+
+// "Auteur inconnu — supprimer": ask the server first. If it already has this local_id the sale is NOT
+// deleted (it is marked sent); otherwise the server audits the discard and the row is deleted.
+// → { discarded: true } | { kept: true, sale_number } | { error }
+export async function discardAuthorUnknown(rowId) {
+  const session = currentToken();
+  if (!session || !_apiBaseUrl) return { error: 'no_session' };
+  const rows = await query(`SELECT * FROM pending_sync WHERE id = ?`, [rowId]);
+  const row = rows && rows[0];
+  const action = row && rowAction(row);
+  if (!row || !action || action.kind !== 'author_unknown') return { error: 'not_author_unknown' };
+  let payload = {}; try { payload = JSON.parse(row.payload_json || '{}'); } catch { payload = {}; }
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  let res, body;
+  try {
+    res = await fetch(`${_apiBaseUrl}/sales/queue/discard-check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session}`,
+        ...(typeof _client === 'function' ? { 'X-App-Client': _client() } : {}) },
+      body: JSON.stringify({ local_id: row.local_id, item_count: items.length, collected_at: row.created_at || null,
+        total: items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0) }),
     });
+    body = await res.json().catch(() => ({}));
+  } catch {
+    return { error: 'offline' };                          // cannot check → never delete
+  }
+  if (!(res.status >= 200 && res.status < 300) || !body?.data) {
+    return { error: body?.message_en || body?.message || `HTTP ${res.status}`, status: res.status, body };
+  }
+  if (body.data.exists) {
+    await exec(`UPDATE pending_sync SET status = ?, server_id = ?, last_error = ?, owner_token = ?, last_attempted_at = ? WHERE id = ?`,
+      ['sent', body.data.server_id || null, null, null, new Date().toISOString(), rowId]);
+    notify();
+    return { kept: true, sale_number: body.data.sale_number || null };
+  }
+  await exec(`DELETE FROM pending_sync WHERE id = ?`, [rowId]);
+  notify();
+  return { discarded: true };
 }
 
 // Re-queue every failed row (permanent + transient) in one shot for "Retry
