@@ -25,6 +25,20 @@
 //
 // Backoff: 1s, 5s, 30s, 5m, 30m, then failed_permanent.
 //
+// SYNC-AFTER-LOGOUT (2026-10-21): a logout used to strand queued sales. On the login page the worker
+// kept replaying with NO token → 401 "Token manquant" → the generic 4xx branch → failed_permanent, so
+// the sale waited for a manual "Tout réessayer". And whoever logged in next replayed the row with THEIR
+// token, so the server booked another cashier's sale to them. Now:
+//   - each row records its AUTHOR (user + org from the session token) and that author's token;
+//   - no session → nothing is sent (rows keep their status);
+//   - the author's own session → sent with it; another user's session → sent with the author's stored
+//     token, so the server books it to the original cashier; that token expired or refused → the row
+//     waits for its author to log in again;
+//   - a session 401 ("Token manquant" / "Token invalide") is retry-later, never failed_permanent;
+//   - rows a logout already stranded (failed_permanent, 401 "Token manquant") go back to the queue once
+//     a session exists — only that cause; every other failed_permanent rule is unchanged;
+//   - the stored token is cleared as soon as the row is sent.
+//
 // Worker triggers:
 //   - online event (from utils/network.onNetworkChange)
 //   - app foreground (@capacitor/app appStateChange or page
@@ -96,11 +110,43 @@ export function configureSync({ baseUrl, getAuthToken, getClient }) {
   if (getClient) _client = getClient;
 }
 
+// ── SYNC-AFTER-LOGOUT: whose session, and whose row ───────────────
+// The session token is a JWT; its claims (sub = user, org_id, exp) are read here without trusting them
+// for anything but routing — the server verifies every request as before.
+function tokenClaims(tok) {
+  if (typeof tok !== 'string') return null;
+  const part = tok.split('.')[1];
+  if (!part) return null;
+  try {
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(b64 + '==='.slice((b64.length + 3) % 4)));
+  } catch { return null; }
+}
+const currentToken = () => (typeof _authToken === 'function' ? _authToken() : _authToken) || null;
+const tokenExpired = (tok, now = Date.now()) => { const c = tokenClaims(tok); return !c || (c.exp && c.exp * 1000 <= now); };
+
+// Which token replays this row now → { token } | { wait: 'no_session' | 'author' }
+export function tokenForRow(row, sessionToken = currentToken(), now = Date.now()) {
+  if (!sessionToken) return { wait: 'no_session' };
+  const me = tokenClaims(sessionToken);
+  if (!row.owner_user_id) return { token: sessionToken };                     // a row queued before this fix
+  if (me && me.sub === row.owner_user_id) return { token: sessionToken };
+  if (row.owner_token && !tokenExpired(row.owner_token, now)) return { token: row.owner_token, asOwner: true };
+  return { wait: 'author' };
+}
+
+// A 401 that means "this session is missing / no longer valid" — never a business refusal
+// (approval / PIN errors carry an `error` code; a disabled account keeps its own handling).
+const isSession401 = (status, body) => status === 401 && !(body && body.error)
+  && /Token manquant|Token invalide/.test(String((body && body.message) || ''));
+
 // ── Public: enqueue ────────────────────────────────────────────
 
 export async function enqueue({ endpoint, method = 'POST', payload }) {
   const local_id = payload?.local_id || genLocalId();
   const stamped  = { ...payload, local_id };
+  const sessionToken = currentToken();
+  const claims = tokenClaims(sessionToken);
   const row = {
     id:          genLocalId(),
     local_id,
@@ -113,12 +159,16 @@ export async function enqueue({ endpoint, method = 'POST', payload }) {
     server_id:   null,
     created_at:  new Date().toISOString(),
     last_attempted_at: null,
+    owner_user_id: (claims && claims.sub) || null,
+    owner_org_id:  (claims && claims.org_id) || null,
+    owner_token:   claims ? sessionToken : null,
   };
   await exec(
-    `INSERT INTO pending_sync (id, local_id, endpoint, method, payload_json, status, attempts, last_error, server_id, created_at, last_attempted_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO pending_sync (id, local_id, endpoint, method, payload_json, status, attempts, last_error, server_id, created_at, last_attempted_at, owner_user_id, owner_org_id, owner_token)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [row.id, row.local_id, row.endpoint, row.method, row.payload_json,
-     row.status, row.attempts, row.last_error, row.server_id, row.created_at, row.last_attempted_at]
+     row.status, row.attempts, row.last_error, row.server_id, row.created_at, row.last_attempted_at,
+     row.owner_user_id, row.owner_org_id, row.owner_token]
   );
   notify();
   // Best-effort immediate flush — if we're online, the user expects
@@ -249,6 +299,7 @@ async function purgeOnlineOnlyOps() {
 // retries the instant connectivity returns, instead of waiting out the timer.
 async function flushIfOnline(force = false) {
   if (_workerRunning) return;
+  if (!currentToken()) return;        // SYNC-AFTER-LOGOUT: signed out → nothing is sent; rows wait as they are
   const net = await getNetworkStatus();
   if (!net.connected) return;
   _workerRunning = true;
@@ -259,10 +310,27 @@ async function flushIfOnline(force = false) {
   }
 }
 
+// SYNC-AFTER-LOGOUT recovery: rows an earlier logout stranded — failed_permanent ONLY because they were
+// replayed with no session (401 "Token manquant") — go back to the queue. Nothing else is touched.
+export function strandedByLogout(row) {
+  if (!row || row.status !== 'failed_permanent') return false;
+  let err = null; try { err = JSON.parse(row.last_error || 'null'); } catch { err = null; }
+  return !!(err && err.status === 401 && err.body && !err.body.error && /Token manquant/.test(String(err.body.message || '')));
+}
+async function recoverStrandedByLogout() {
+  try {
+    const rows = await query(`SELECT * FROM pending_sync WHERE status = ?`, ['failed_permanent']);
+    for (const r of rows.filter(strandedByLogout)) {
+      await exec(`UPDATE pending_sync SET status = ?, last_error = ?, attempts = ? WHERE id = ?`, ['queued', null, 0, r.id]);
+    }
+  } catch { /* best effort — the manual Retry stays available */ }
+}
+
 async function flushOnce(force = false) {
   // MP-REFUNDS-ONLINE-ONLY: belt-and-suspenders — never attempt a refund/
   // exchange/void op from the queue (they're online-only). Drop them first.
   await purgeOnlineOnlyOps();
+  await recoverStrandedByLogout();
   // MP-PAUL-FIX-2 (3 Jun): watchdog log for stale 'sending' rows. If a
   // row has been in 'sending' for >2 min, attempt() probably crashed
   // mid-fetch in a way recoverStranded didn't catch (or the device
@@ -358,6 +426,10 @@ async function attempt(row) {
     console.warn('[pendingSync] no baseUrl configured; skipping');
     return;
   }
+  // SYNC-AFTER-LOGOUT: no session, or another user's session with the author's token gone → the row
+  // waits (status unchanged) — it is never sent without a session nor booked to the wrong cashier.
+  const pick = tokenForRow(row);
+  if (pick.wait) return;
   await exec(
     `UPDATE pending_sync SET status = ?, attempts = ?, last_attempted_at = ? WHERE id = ?`,
     ['sending', (Number(row.attempts) || 0) + 1, new Date().toISOString(), row.id]
@@ -368,7 +440,7 @@ async function attempt(row) {
   try { payload = JSON.parse(row.payload_json); } catch { payload = {}; }
 
   const url = `${_apiBaseUrl}${row.endpoint}`;
-  const token = typeof _authToken === 'function' ? _authToken() : _authToken;
+  const token = pick.token;
 
   let res, body;
   try {
@@ -404,8 +476,8 @@ async function attempt(row) {
     // outcome from the queue's perspective: the row is on the server.
     const serverId = body?.data?.server_id || body?.data?.id || null;
     await exec(
-      `UPDATE pending_sync SET status = ?, server_id = ?, last_error = ? WHERE id = ?`,
-      ['sent', serverId, null, row.id]
+      `UPDATE pending_sync SET status = ?, server_id = ?, last_error = ?, owner_token = ? WHERE id = ?`,
+      ['sent', serverId, null, null, row.id]
     );
     // MP-OFFLINE-COLLECT-NEVER-DROP: a synced debt collection that needed shift
     // FALLBACK (attributed to the shift open at collection time / current) or that had
@@ -434,6 +506,17 @@ async function attempt(row) {
     if (body?.code === 'owner_mismatch_confirm') {
       emitSyncEvent({ type: 'owner_mismatch', rowId: row.id, ...ownerMismatchOf({ ...row, last_error: JSON.stringify({ status: 409, body }) }) });
     }
+    return;
+  }
+
+  if (isSession401(res.status, body)) {
+    // SYNC-AFTER-LOGOUT: the session (or the author's stored token) is missing or no longer valid —
+    // retry later with a valid one, never failed_permanent. A refused stored token is dropped, so the
+    // row waits for its author's next login instead of being re-sent with it.
+    if (pick.asOwner) {
+      await exec(`UPDATE pending_sync SET owner_token = ? WHERE id = ?`, [null, row.id]);
+    }
+    await markTransient(row, `401 ${body?.message || ''} (waiting for a valid session)`);
     return;
   }
 

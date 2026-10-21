@@ -18,6 +18,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "..");
 
 const CHECKS = [
+  ["sync-after-logout", "scripts/sync-after-logout-check.mjs", "a logout never strands or mis-attributes a queued sale: no send without a session, 401 retry-later, author token, stranded-row recovery"],
   ["mount-check",   "scripts/mount-check.mjs",           "15 render scenarios — does it MOUNT, not just parse"],
   ["damaged-check", "scripts/receipt-damaged-check.mjs", "regression #10 — the damaged marker on all 3 receipt surfaces"],
   ["whole-franc",   "scripts/whole-franc-money-check.mjs", "VNT-20261021-0022: the POS prices lines in whole units like the server — a fully-paid rounded sale is never a 0.008 credit"],
