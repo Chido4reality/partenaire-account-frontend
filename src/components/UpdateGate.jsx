@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useLangStore } from "../store";
+import { useLangStore, useDraftCartStore } from "../store";
 import {
   isNative, fetchVersionPolicy, decideAndroid, appVersionCode, playUpdateInfo,
   cartHasItems, pendingCount, reminderDue, markReminderShown,
@@ -58,7 +58,9 @@ const T = {
   },
 };
 
-async function plugin() { return (await import("@capawesome/capacitor-app-update")).AppUpdate; }
+// The plugin object is a Capacitor proxy, and a proxy is thenable: an async function that RETURNS it
+// never settles. Always return the module and reach AppUpdate from it.
+const updateModule = () => import("@capawesome/capacitor-app-update");
 
 export default function UpdateGate() {
   const lang = useLangStore((s) => s.lang);
@@ -72,6 +74,15 @@ export default function UpdateGate() {
   const checking = useRef(false);
   const cartSince = useRef(0);
   const cartTimer = useRef(null);
+  useDraftCartStore((s) => s.drafts);              // re-render when the cart changes (cartHold reads it)
+
+  // A cart in progress holds the required screen back — also one already up (it stepped aside offline
+  // and a sale was started) — for at most CART_GRACE_MS from when the cart was first seen.
+  const cartHold = () => {
+    if (!cartHasItems()) { cartSince.current = 0; return false; }
+    if (!cartSince.current) cartSince.current = Date.now();
+    return Date.now() - cartSince.current < CART_GRACE_MS;
+  };
 
   const check = useCallback(async () => {
     if (!isNative() || checking.current) return;
@@ -86,15 +97,11 @@ export default function UpdateGate() {
       if (decision === "required" && play.status === "not_available") decision = "reminder";
       const base = { play, note: (lang === "fr" ? policy.note_fr : policy.note_en) || null, storeUrl: policy.store_url };
       if (decision === "required") {
-        if (cartHasItems()) {
-          if (!cartSince.current) cartSince.current = Date.now();
-          if (Date.now() - cartSince.current < CART_GRACE_MS) {
-            clearTimeout(cartTimer.current);
-            cartTimer.current = setTimeout(() => { check(); }, 20000);
-            return;
-          }
+        if (cartHold()) {
+          clearTimeout(cartTimer.current);
+          cartTimer.current = setTimeout(() => { check(); }, 20000);
+          return;
         }
-        cartSince.current = 0;
         setView({ kind: "required", ...base });
         return;
       }
@@ -130,16 +137,20 @@ export default function UpdateGate() {
   useEffect(() => {
     if (!isNative()) return undefined;
     let handle = null, alive = true;
-    plugin().then((p) => p.addListener("onFlexibleUpdateStateChange", (s) => {
+    updateModule().then((m) => m.AppUpdate.addListener("onFlexibleUpdateStateChange", (s) => {
       if (s && s.installStatus === 11) setView({ kind: "downloaded" });   // FlexibleUpdateInstallStatus.DOWNLOADED
     })).then((h) => { if (alive) handle = h; else { try { h.remove(); } catch { /* ignore */ } } })
       .catch(() => { /* no plugin */ });
     return () => { alive = false; try { handle && handle.remove(); } catch { /* ignore */ } };
   }, []);
 
-  // While the required screen is up: watch the offline queue (read only) — the normal sync drains it.
+  // Offline → never block; a cart in progress → wait (see cartHold).
+  const requiredShown = !!view && view.kind === "required" && online && !cartHold();
+
+  // While the required screen is on screen: watch the offline queue (read only) — the normal sync drains
+  // it. The 30 s "sending" wait starts each time the screen actually appears.
   useEffect(() => {
-    if (!view || view.kind !== "required") return undefined;
+    if (!requiredShown) return undefined;
     let alive = true;
     setQueueWaitDone(false);
     const poll = async () => { const n = await pendingCount(); if (alive) setQueue(n); };
@@ -147,10 +158,10 @@ export default function UpdateGate() {
     const id = setInterval(poll, 2000);
     const wait = setTimeout(() => { if (alive) setQueueWaitDone(true); }, 30000);
     return () => { alive = false; clearInterval(id); clearTimeout(wait); };
-  }, [view && view.kind]);
+  }, [requiredShown]);
 
   const openStore = async (storeUrl) => {
-    try { await (await plugin()).openAppStore(); }
+    try { await (await updateModule()).AppUpdate.openAppStore(); }
     catch { if (storeUrl) window.open(storeUrl, "_blank"); }
   };
 
@@ -159,7 +170,7 @@ export default function UpdateGate() {
     setBusy(true);
     try {
       if (view.play && view.play.status === "available" && view.play.immediateAllowed) {
-        await (await plugin()).performImmediateUpdate();   // Play's own full screen; on success the app restarts
+        await (await updateModule()).AppUpdate.performImmediateUpdate();   // Play's own full screen; on success the app restarts
       } else {
         await openStore(view.storeUrl);
       }
@@ -171,20 +182,20 @@ export default function UpdateGate() {
     const v = view;
     setView(null);
     try {
-      if (v.play && v.play.status === "available" && v.play.flexibleAllowed) { await (await plugin()).startFlexibleUpdate(); return; }
+      if (v.play && v.play.status === "available" && v.play.flexibleAllowed) { await (await updateModule()).AppUpdate.startFlexibleUpdate(); return; }
     } catch { /* fall through to the store */ }
     await openStore(v.storeUrl);
   };
 
   const doRestart = async () => {
     if (cartHasItems()) return;
-    try { await (await plugin()).completeFlexibleUpdate(); } catch { /* Play will install on next start */ }
+    try { await (await updateModule()).AppUpdate.completeFlexibleUpdate(); } catch { /* Play will install on next start */ }
   };
 
   if (!view) return null;
 
   if (view.kind === "required") {
-    if (!online) return null;                       // offline → never block
+    if (!requiredShown) return null;                // offline, or a cart in progress
     const n = queue;
     const waiting = n != null && n > 0 && !queueWaitDone;
     return (
