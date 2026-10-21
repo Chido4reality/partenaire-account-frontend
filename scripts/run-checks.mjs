@@ -19,6 +19,7 @@ const ROOT = resolve(HERE, "..");
 
 const CHECKS = [
   ["app-lock",      "scripts/app-lock-check.mjs", "APP LOCK: lock rules, 5-wrong sign-out, PBKDF2 record bound to user+org, outer-layer wiring"],
+  ["update-gate-wording", "scripts/update-gate-wording-check.mjs", "every update screen says 'send pending sales before updating' (an old app's queued sale is held for the owner after it)"],
   ["mount-check",   "scripts/mount-check.mjs",           "15 render scenarios — does it MOUNT, not just parse"],
   ["damaged-check", "scripts/receipt-damaged-check.mjs", "regression #10 — the damaged marker on all 3 receipt surfaces"],
   ["whole-franc",   "scripts/whole-franc-money-check.mjs", "VNT-20261021-0022: the POS prices lines in whole units like the server — a fully-paid rounded sale is never a 0.008 credit"],

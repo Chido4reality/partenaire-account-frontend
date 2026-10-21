@@ -20,7 +20,9 @@ import {
 // A cart in progress is respected even for a required update: the screen waits until the cart is empty
 // (re-checked every 20 s), at most 15 minutes, so a customer at the counter can still be served.
 // Before updating, the screen shows the offline queue (read-only) and lets the normal sync send it. An
-// update from Play keeps the app's data, so anything still queued is kept and sent afterwards.
+// update from Play keeps the app's data, so anything still queued is kept — but a SALE queued by the old
+// app has no recorded author and is held for the owner after the update (SYNC-AFTER-LOGOUT), so every
+// update screen says "send pending sales before updating".
 const CART_GRACE_MS = 15 * 60 * 1000;
 
 const T = {
@@ -29,9 +31,10 @@ const T = {
     reqBody: "Cette version de Stenamo Book n'est plus prise en charge. Installez la mise à jour pour continuer.",
     update: "Mettre à jour",
     openStore: "Ouvrir le Play Store",
-    sending: (n) => `Envoi de ${n} élément${n > 1 ? "s" : ""} en attente…`,
+    sending: (n) => `Envoyez vos ventes en attente avant de mettre à jour — envoi de ${n} élément${n > 1 ? "s" : ""}…`,
     allSent: "Toutes vos données sont envoyées.",
-    kept: (n) => `${n > 1 ? `Vos ${n} éléments en attente sont gardés et seront envoyés` : "Votre élément en attente est gardé et sera envoyé"} après la mise à jour — ne désinstallez pas l'application.`,
+    kept: (n) => `Envoyez vos ventes en attente avant de mettre à jour : ${n > 1 ? `${n} éléments ne sont` : "1 élément n'est"} pas encore ${n > 1 ? "partis" : "parti"}. Restez connecté jusqu'à leur envoi. Ce qui reste est gardé, mais une vente faite avant la mise à jour devra peut-être être validée par le propriétaire. Ne désinstallez pas l'application.`,
+    pendingBefore: (n) => `Envoyez vos ventes en attente avant de mettre à jour (${n} en attente).`,
     remTitle: "Nouvelle version disponible",
     remBody: "Une mise à jour de Stenamo Book est prête.",
     later: "Plus tard",
@@ -45,9 +48,10 @@ const T = {
     reqBody: "This version of Stenamo Book is no longer supported. Install the update to continue.",
     update: "Update now",
     openStore: "Open Play Store",
-    sending: (n) => `Sending ${n} pending item${n > 1 ? "s" : ""}…`,
+    sending: (n) => `Send pending sales before updating — sending ${n} item${n > 1 ? "s" : ""}…`,
     allSent: "All your data has been sent.",
-    kept: (n) => `${n > 1 ? `Your ${n} pending items are` : "Your pending item is"} kept and will be sent after the update — do not uninstall the app.`,
+    kept: (n) => `Send pending sales before updating: ${n > 1 ? `${n} items have` : "1 item has"} not gone yet. Stay online until they are sent. Anything left is kept, but a sale made before the update may need the owner's approval to be sent. Do not uninstall the app.`,
+    pendingBefore: (n) => `Send pending sales before updating (${n} pending).`,
     remTitle: "New version available",
     remBody: "An update to Stenamo Book is ready.",
     later: "Later",
@@ -149,6 +153,17 @@ export default function UpdateGate() {
 
   // While the required screen is on screen: watch the offline queue (read only) — the normal sync drains
   // it. The 30 s "sending" wait starts each time the screen actually appears.
+  // SYNC-AFTER-LOGOUT: the optional sheets (reminder / downloaded) watch it too — a sale queued before the
+  // update and left behind is held for the owner afterwards, so "send pending sales before updating".
+  const sheetShown = !!view && (view.kind === "reminder" || view.kind === "downloaded");
+  useEffect(() => {
+    if (!sheetShown) return undefined;
+    let alive = true;
+    const poll = async () => { const n = await pendingCount(); if (alive) setQueue(n); };
+    poll();
+    const id = setInterval(poll, 2000);
+    return () => { alive = false; clearInterval(id); };
+  }, [sheetShown]);
   useEffect(() => {
     if (!requiredShown) return undefined;
     let alive = true;
@@ -222,6 +237,7 @@ export default function UpdateGate() {
       <div role="dialog" data-update-gate="reminder" style={S.sheet}>
         <div style={{ fontWeight: 800, fontSize: 15 }}>{t.remTitle}</div>
         <div style={{ fontSize: 13.5, opacity: 0.9 }}>{view.note || t.remBody}</div>
+        {queue > 0 && <div style={{ fontSize: 13, color: "#FBC503", fontWeight: 600 }} data-update-queue="pending-before">{t.pendingBefore(queue)}</div>}
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
           <button type="button" style={S.ghost} onClick={() => setView(null)}>{t.later}</button>
           <button type="button" style={S.btnSm} onClick={doReminder}>{t.update}</button>
@@ -236,6 +252,7 @@ export default function UpdateGate() {
     <div role="dialog" data-update-gate="downloaded" style={S.sheet}>
       <div style={{ fontWeight: 800, fontSize: 15 }}>{t.ready}</div>
       {cart && <div style={{ fontSize: 13.5, opacity: 0.9 }}>{t.finishSale}</div>}
+      {queue > 0 && <div style={{ fontSize: 13, color: "#FBC503", fontWeight: 600 }} data-update-queue="pending-before">{t.pendingBefore(queue)}</div>}
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
         <button type="button" style={S.ghost} onClick={() => setView(null)}>{t.later}</button>
         <button type="button" style={{ ...S.btnSm, opacity: cart ? 0.6 : 1 }} disabled={cart} onClick={doRestart}>{t.restart}</button>
