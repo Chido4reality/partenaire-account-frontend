@@ -19,6 +19,7 @@ import { useCurrency } from "../utils/useCurrency";
 import { formatMoney } from "../utils/currency";
 import { getCachedData } from "../utils/offlineStore";
 import { listPending, subscribe, retry, retryAll } from "../utils/pendingSync";
+import QueueOwnerActions from "../components/common/QueueOwnerActions"; // SYNC-AFTER-LOGOUT
 import { SHOP_TZ } from "../utils/shopTime";
 
 // Non-hook currency formatter for module-scope helpers. Reads the org's
@@ -366,6 +367,7 @@ export default function PendingSyncPage() {
                     {err && (
                       <div style={{ fontSize: 11, color: "#f87171", marginTop: 4, wordBreak: "break-word", paddingLeft: 12 }}>⚠ {err}</div>
                     )}
+                    <div style={{ paddingLeft: 12 }}><QueueOwnerActions row={r} lang={lang} onDone={refresh} /></div>
                   </div>
                   <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 10, background: badge.bg, color: badge.fg, whiteSpace: "nowrap" }}>
                     {badge.text}

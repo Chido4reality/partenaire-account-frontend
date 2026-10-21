@@ -105,7 +105,11 @@ try {
     }
     return { status: 409, json: async () => ({ success: false, code: "STOCK_CONFLICT" }) };   // an unrelated conflict
   };
-  Q.configureSync({ baseUrl: "http://rig/api", getAuthToken: () => "t" });
+  // A real session is a JWT naming its user: since SYNC-AFTER-LOGOUT a queued sale records that user as
+  // its author, and a sale with NO recorded author is never sent by itself (it waits for the owner).
+  const b64u = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+  const SESSION = `${b64u({ alg: "HS256" })}.${b64u({ sub: "owner-1", org_id: "org-1", exp: Math.floor(Date.now() / 1000) + 3600 })}.sig`;
+  Q.configureSync({ baseUrl: "http://rig/api", getAuthToken: () => SESSION });
   const events = []; Q.onSyncEvent(e => events.push(e));
   await Q.enqueue({ endpoint: "/transfers/T1/confirm-receipt", payload: { lines: [{ item_id: "a", received_quantity: 5 }], transfer_number: "TRF-20261004-0042", local_id: "L-1" } });
   await tick();

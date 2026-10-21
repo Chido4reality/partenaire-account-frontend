@@ -19,6 +19,7 @@ import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useLangStore } from "../../store";
 import { listPending, retry, retryAll, discard, ownerMismatchOf, continueWithConfirm } from "../../utils/pendingSync";
+import QueueOwnerActions from "./QueueOwnerActions"; // SYNC-AFTER-LOGOUT
 import { SHOP_TZ } from "../../utils/shopTime";
 
 function parseError(s) {
@@ -196,7 +197,9 @@ export default function ConflictModal({ onClose }) {
             const om = ownerMismatchOf(r);
             // An owner short count is answered, never retried as-is (it would be refused forever).
             const canRetry = !om && (r.status === "failed_permanent" || r.status === "failed_transient");
-            const canDiscard = r.status !== "sending";
+            // SYNC-AFTER-LOGOUT: an author-unknown sale is discarded only through QueueOwnerActions,
+            // which asks the server first — never by this plain delete.
+            const canDiscard = r.status !== "sending" && r.queue_action?.kind !== "author_unknown";
             return (
               <div key={r.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 14px", marginBottom: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, gap: 8 }}>
@@ -216,6 +219,7 @@ export default function ConflictModal({ onClose }) {
                     ⏳ {en ? "Held until the shift-open syncs (then sends automatically)" : "En attente de l'ouverture de poste (envoi automatique ensuite)"}
                   </div>
                 )}
+                <QueueOwnerActions row={r} lang={lang} onDone={reload} />
                 <details style={{ marginBottom: 8 }}>
                   <summary style={{ fontSize: 11, color: "var(--text-muted)", cursor: "pointer" }}>
                     {en ? "View payload + server response" : "Afficher la requête + réponse"}
