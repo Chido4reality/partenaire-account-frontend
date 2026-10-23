@@ -29,7 +29,7 @@ import MultipartBuilder, { partsToPayload, emptyPart } from "../components/commo
 import MultipartAvailability from "../components/common/MultipartAvailability";
 import { useLiteMode } from "../hooks/useLiteMode";
 import { parseProductImport, buildProductTemplateXlsx } from "../utils/productImport";
-import { priceOrderText, PRICE_FIELDS } from "../utils/priceRules"; // PRICE ORDER (server = src/lib/priceRules.js)
+import { priceOrderText, PRICE_FIELDS, editablePrices } from "../utils/priceRules"; // PRICE ORDER (server = src/lib/priceRules.js)
 import PriceHistoryList from "../components/common/PriceHistoryList";
 import { isGoodsBuffer, withoutGoodsBuffer, locationLabel, locationTypeLabel } from "../utils/locations"; // GOODS-BUFFER
 
@@ -782,7 +782,7 @@ export default function InventoryPage() {
   // 0 = not set, the owner included. Shown under the price boxes BEFORE submit, and blocks the
   // submit; the server refuses it again on every write path. Returns the message or null.
   const pickPrices = (f) => Object.fromEntries(PRICE_FIELDS.map((k) => [k, +(f && f[k]) || 0]));
-  const priceOrderError = (form, opts = {}) => priceOrderText(pickPrices(form), { lang, fmt, ...opts });
+  const priceOrderError = (form, opts = {}) => priceOrderText(pickPrices(form), { lang, fmt, editable: editablePrices(role, "product-create"), ...opts });
 
   const handleAddProduct = () => {
     setDupeProduct(null);
@@ -974,9 +974,10 @@ export default function InventoryPage() {
   // a PATCH per product first, then the stock). The server checks each product's whole price set
   // before anything is written, so a refused price never leaves half a delivery behind, and an
   // offline replay keeps the stock and skips only the bad price. Which prices a role may change
-  // here is unchanged from the old PATCH: owner all four, manager / accountant cost + sell +
-  // wholesale, warehouse the cost only (its PATCH was a 403).
-  const receivePriceFields = isOwner ? PRICE_FIELDS : (isWarehouse ? ["cost_price"] : ["cost_price", "wholesale_price", "sell_price"]);
+  // here (Peter, 2026-10-23): owner + MANAGER all four (a cost rise above min must not leave a
+  // manager stuck); accountant cost + walk-in + wholesale; warehouse the cost only. The server
+  // enforces the same table (editablePrices) and tells the others to ask the owner or a manager.
+  const receivePriceFields = editablePrices(role, "receive-goods");
   const receivePriceChanges = (item) => {
     const u = {};
     for (const k of receivePriceFields) if (+item[k] > 0) u[k] = +item[k];
@@ -985,7 +986,7 @@ export default function InventoryPage() {
   const receiveCurrent = (item) => (item.currentPrices ? { cost_price: item.currentPrices.cost, min_price: item.currentPrices.min,
     wholesale_price: item.currentPrices.wholesale, sell_price: item.currentPrices.sell } : null);
   const receivePriceError = (item) => (item.product_id
-    ? priceOrderText(receivePriceChanges(item), { lang, fmt, current: receiveCurrent(item), newCost: true }) : null);
+    ? priceOrderText(receivePriceChanges(item), { lang, fmt, current: receiveCurrent(item), newCost: true, editable: receivePriceFields }) : null);
 
   const receiveMutation = useMutation({
     mutationFn: async () => {
@@ -2101,7 +2102,7 @@ export default function InventoryPage() {
               </div>
             </div>
 
-            <PricingSection data={editProduct} onChange={(k, v) => setEditProduct(p => ({ ...p, [k]: v }))} lang={lang} error={priceOrderError(editProduct, { current: editBase })} />
+            <PricingSection data={editProduct} onChange={(k, v) => setEditProduct(p => ({ ...p, [k]: v }))} lang={lang} error={priceOrderError(editProduct, { current: editBase, editable: editablePrices(role, "product-edit") })} />
             {isOwner && <PriceHistoryList productId={editProduct.id} lang={lang} />}
 
             {/* MP-INVENTORY-DOZIE-CONTROLS — product photo (same POST
@@ -2183,7 +2184,7 @@ export default function InventoryPage() {
 
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setShowEditProduct(false); setEditProduct(null); }}>{lang === "en" ? "Cancel" : "Annuler"}</button>
-              <button className="btn btn-primary" style={{ flex: 2 }} disabled={!editProduct.name || !editProduct.sell_price || editProductMutation.isPending} onClick={() => { const e = priceOrderError(editProduct, { current: editBase }); if (e) { toast.error(e); return; } editProductMutation.mutate(); }}>
+              <button className="btn btn-primary" style={{ flex: 2 }} disabled={!editProduct.name || !editProduct.sell_price || editProductMutation.isPending} onClick={() => { const e = priceOrderError(editProduct, { current: editBase, editable: editablePrices(role, "product-edit") }); if (e) { toast.error(e); return; } editProductMutation.mutate(); }}>
                 {editProductMutation.isPending ? "..." : (lang === "en" ? "✓ Save Changes" : "✓ Enregistrer")}
               </button>
             </div>
@@ -2765,7 +2766,7 @@ function PricingSection({ data, onChange, lang, error }) {
         🔒 {lang === "en" ? "Min floor: staff cannot sell below this price. Owner PIN to override." : "Prix min: le personnel ne peut pas vendre en dessous. PIN propriétaire pour forcer."}
       </div>
       <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-        {lang === "en" ? "Order: Cost ≤ Min ≤ Wholesale ≤ Sell (walk-in). Leave a box empty if not used." : "Ordre : achat ≤ minimum ≤ gros ≤ vente (détail). Laissez vide si non utilisé."}
+        {lang === "en" ? "Order: Cost ≤ Min ≤ Wholesale ≤ Walk-in. Leave a box empty if not used." : "Ordre : achat ≤ minimum ≤ gros ≤ détail. Laissez vide si non utilisé."}
       </div>
     </div>
   );
@@ -2775,7 +2776,7 @@ function PricingSection({ data, onChange, lang, error }) {
 function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemove, canSeePrices, duplicateOf, canExpiry, priceFields = [], priceError = null }) {
   // PRICE ORDER: a price this role may not change here is shown but locked (it was silently dropped before).
   const locked = (k) => !priceFields.includes(k);
-  const lockTitle = lang === "en" ? "Only the owner can change this price" : "Seul le propriétaire peut modifier ce prix";
+  const lockTitle = lang === "en" ? "Only the owner or a manager can change this price" : "Seul le propriétaire ou un gérant peut modifier ce prix";
   const [selected, setSelected] = useState(null);
   const fmt = useCurrency();   // LAUNCH-BATCH-2: prices in the org's currency (was a literal "F")
   const PH = usePlaceholders();   // LAUNCH-BATCH-2: placeholders in the UI language + the org's country

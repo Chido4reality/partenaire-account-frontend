@@ -11,7 +11,7 @@ const FIELD = {
   cost_price:      { en: "Cost",      fr: "Achat" },
   min_price:       { en: "Min",       fr: "Minimum" },
   wholesale_price: { en: "Wholesale", fr: "Gros" },
-  sell_price:      { en: "Sell",      fr: "Vente" },
+  sell_price:      { en: "Walk-in",   fr: "Détail" },
 };
 const SOURCE = {
   "product-create":       { en: "Add product",     fr: "Ajout produit" },

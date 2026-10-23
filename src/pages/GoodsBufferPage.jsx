@@ -730,7 +730,7 @@ function ReleaseModal({ row, en, lang, fmt, locList, bufferLoc, canMoveBuffer, o
 
         {/* Prices — apply to the product, or the KIT PARENT in kit mode */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
-          <PriceInput label={en ? "Selling price *" : "Prix de vente *"} value={sell} onChange={setSell} sym={fmt.symbol} />
+          <PriceInput label={en ? "Walk-in price *" : "Prix détail *"} value={sell} onChange={setSell} sym={fmt.symbol} />
           <PriceInput label={en ? "Cost price" : "Prix d'achat"} value={cost} onChange={setCost} sym={fmt.symbol} />
           <PriceInput label={en ? "Min price" : "Prix min"} value={min} onChange={setMin} sym={fmt.symbol} />
           <PriceInput label={en ? "Wholesale" : "Gros"} value={wholesale} onChange={setWholesale} sym={fmt.symbol} />

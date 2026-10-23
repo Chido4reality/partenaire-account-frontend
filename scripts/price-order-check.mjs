@@ -46,6 +46,24 @@ try {
     m.en === "New cost 15000 is above Min 14000. Raise Min (and Wholesale if needed) to at least 15000 in this form, then save.", m.en);
   check("…FR", m.fr === "Le nouveau prix d'achat (15000) est supérieur au prix minimum (14000). Augmentez le prix minimum (et le prix de gros si besoin) à au moins 15000 dans ce formulaire, puis enregistrez.", m.fr);
 
+  console.log("\nwho can make the fix (Peter, 2026-10-23) — same strings as the backend test");
+  const { editablePrices: E } = R;
+  check("Receive Goods rights: owner + manager all four, accountant cost/wholesale/walk-in, warehouse cost",
+    E("manager", "receive-goods").length === 4 && E("accountant", "receive-goods").join() === "cost_price,wholesale_price,sell_price"
+    && E("warehouse", "receive-goods").join() === "cost_price" && E("owner", "receive-goods").length === 4);
+  const rise = mergePrices(P(13400, 14000, 14500, 16000), { cost_price: 15000 });
+  m = M(V(rise), { fmt: String, newCost: true, prices: rise, editable: E("warehouse", "receive-goods") });
+  check("warehouse on a cost rise: ask the owner or a manager (EN)",
+    m.en === "New cost 15000 is above Min 14000. Ask the owner or a manager to raise Min (and Wholesale if needed) to at least 15000 first, then receive again.", m.en);
+  check("…FR", m.fr === "Le nouveau prix d'achat (15000) est supérieur au prix minimum (14000). Demandez au propriétaire ou à un gérant d'augmenter d'abord le prix minimum (et le prix de gros si besoin) à au moins 15000, puis réceptionnez à nouveau.", m.fr);
+  m = M(V(rise), { fmt: String, newCost: true, prices: rise, editable: E("manager", "receive-goods") });
+  check("manager on a cost rise: 'Raise Min … in this form'", /Raise Min \(and Wholesale if needed\) to at least 15000 in this form, then save\.$/.test(m.en), m.en);
+  m = M(V(P(13400, 14000, 14500, 5000)), { fmt: String });
+  check("labels: 'Walk-in' / 'prix détail'", /^Walk-in 5000 is below Wholesale 14500\./.test(m.en) && /^Le prix détail \(5000\)/.test(m.fr), `${m.en} | ${m.fr}`);
+  const inv0 = readFileSync(resolve(SRC, "pages/InventoryPage.jsx"), "utf8");
+  check("Receive Goods screen uses the same rights table (manager may set Min there)", /const receivePriceFields = editablePrices\(role, "receive-goods"\);/.test(inv0)
+    && /newCost: true, editable: receivePriceFields/.test(inv0));
+
   console.log("\npriceOrderText — what the boxes show");
   const brake = P(400, 450, 100, 1000);
   check("Edit: the stored broken prices re-sent unchanged (name edit) → no message", T({ ...brake }, { lang: "en", fmt, current: brake }) === null);
@@ -67,8 +85,8 @@ try {
   const row = (n) => rows.find((r) => r._rowNum === n);
   check("row 2 (Brake) not ok: 'Wholesale 100 is below Min 450. Raise Wholesale to at least 450.'",
     row(2) && !row(2).ok && row(2).errors.some((e) => e.en === "Wholesale 100 is below Min 450. Raise Wholesale to at least 450."), JSON.stringify(row(2) && row(2).errors));
-  check("row 3 (Tyre) not ok, FR names prix de vente / prix minimum",
-    row(3) && !row(3).ok && row(3).errors.some((e) => /^Le prix de vente \(5000\) est inférieur au prix minimum \(14000\)/.test(e.fr)), JSON.stringify(row(3) && row(3).errors));
+  check("row 3 (Tyre) not ok, FR names prix détail / prix minimum (the box's own words)",
+    row(3) && !row(3).ok && row(3).errors.some((e) => /^Le prix détail \(5000\) est inférieur au prix minimum \(14000\)/.test(e.fr)), JSON.stringify(row(3) && row(3).errors));
   check("row 4 (good) ok", row(4) && row(4).ok, JSON.stringify(row(4) && row(4).errors));
 
   console.log("\nwiring");
@@ -76,7 +94,7 @@ try {
   const buf = readFileSync(resolve(SRC, "pages/GoodsBufferPage.jsx"), "utf8");
   check("Add: handleAddProduct refuses on priceOrderError", /const handleAddProduct = \(\) => \{[\s\S]{0,120}priceOrderError\(newProduct\)/.test(inv));
   check("Rapid Entry: the mutation refuses before POST (button + both Enter keys)", /const rapidMutation[\s\S]{0,900}priceOrderError\(rapidItem\)[\s\S]{0,300}api\.post\("\/products"/.test(inv));
-  check("Edit: the save button checks against the prices as stored (editBase)", /priceOrderError\(editProduct, \{ current: editBase \}\); if \(e\) \{ toast\.error\(e\); return; \}/.test(inv));
+  check("Edit: the save button checks against the prices as stored (editBase)", /priceOrderError\(editProduct, \{ current: editBase, editable: editablePrices\(role, "product-edit"\) \}\); if \(e\) \{ toast\.error\(e\); return; \}/.test(inv));
   check("all three price boxes show the message live", (inv.match(/<PricingSection [^\n]*error=\{priceOrderError\(/g) || []).length === 3);
   const recv = inv.slice(inv.indexOf("const receiveMutation"), inv.indexOf("// ── RAPID ENTRY MUTATION"));
   check("Receive Goods: ONE request — the per-product PATCH is gone, prices ride the arrival",
