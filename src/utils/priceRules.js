@@ -98,8 +98,11 @@ export function checkPriceWrite(current, changes) {
  *  current = the product as stored (null for a new one): with it, only a REAL price change is
  *  checked, exactly like the server — an untouched broken product never blocks a name edit.
  *  newCost = Receive Goods / buffer release, where the cost arrives with the stock. */
-export function priceOrderText(changes, { lang = "fr", fmt, current = null, newCost = false, editable = PRICE_FIELDS } = {}) {
-  const viol = current ? checkPriceWrite(current, changes) : priceOrderViolation(changes);
+export function priceOrderText(changes, { lang = "fr", fmt, current = null, newCost = false, editable = PRICE_FIELDS, always = false } = {}) {
+  // always = Receive Goods / buffer release: the WHOLE price set is checked even when nothing
+  // changed — stock is never received under broken prices (Edit keeps the change-only check).
+  const viol = always ? priceOrderViolation(mergePrices(current, changes))
+    : current ? checkPriceWrite(current, changes) : priceOrderViolation(changes);
   if (!viol) return null;
   const isNewCost = newCost && "cost_price" in (changes || {}) && priceValue(changes.cost_price) !== priceValue(current && current.cost_price);
   const m = priceOrderMessage(viol, { fmt, newCost: isNewCost, prices: mergePrices(current, changes), editable });

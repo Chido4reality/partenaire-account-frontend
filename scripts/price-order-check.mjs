@@ -73,6 +73,16 @@ try {
   check("…and raising min + wholesale in the same form clears it",
     T({ cost_price: 15000, min_price: 15000, wholesale_price: 15500 }, { lang: "en", fmt, current: P(13400, 14000, 14500, 16000), newCost: true }) === null);
   check("Add (no current row): a good ladder → null", T(P(400, 450, 600, 1000), { lang: "en", fmt }) === null);
+  // BUG 2026-10-23 (Peter's live test): "Upper arm" 200/350/300/400 released with its prefilled, unchanged prices
+  const upper = P(200, 350, 300, 400);
+  check("Release / Receive (always): an already-broken product with UNCHANGED prices → the message",
+    T({ ...upper }, { lang: "en", fmt, current: upper, newCost: true, always: true }) === "Wholesale 300 FCFA is below Min 350 FCFA. Raise Wholesale to at least 350 FCFA, or lower Min to 300 FCFA or less.");
+  check("…and with NO price sent at all (blank boxes)", /^Wholesale 300 FCFA is below Min 350 FCFA/.test(T({}, { lang: "en", fmt, current: upper, always: true }) || ""));
+  check("…fixed in the same window → null", T({ ...upper, wholesale_price: 350 }, { lang: "en", fmt, current: upper, always: true }) === null);
+  check("Edit keeps the change-only check (name edit on a broken product saves)", T({ ...upper }, { lang: "en", fmt, current: upper }) === null);
+  const gbp = readFileSync(resolve(SRC, "pages/GoodsBufferPage.jsx"), "utf8"), invp = readFileSync(resolve(SRC, "pages/InventoryPage.jsx"), "utf8");
+  check("the release window and Receive Goods both use always: true", /current: releaseCurrent, newCost: true, always: true/.test(gbp)
+    && /editable: receivePriceFields, always: true/.test(invp));
 
   console.log("\nimport — a bad row is listed with the fix and never sent");
   const csv = ["name,cost_price,walk_in_price,wholesale_price,min_price,qty,location",

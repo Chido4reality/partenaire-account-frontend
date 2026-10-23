@@ -612,7 +612,7 @@ function ReleaseModal({ row, en, lang, fmt, locList, bufferLoc, canMoveBuffer, o
   // the merge target, else the line's product, else a new one. A new product has no current prices.
   const releaseCurrent = isNew ? (!kit && mergeProduct ? mergeProduct.prices || null : null) : curPrices;
   const priceErr = priceOrderText(Object.fromEntries(Object.entries(prices()).filter(([, v]) => v !== null)),
-    { lang: en ? "en" : "fr", fmt, current: releaseCurrent, newCost: true });
+    { lang: en ? "en" : "fr", fmt, current: releaseCurrent, newCost: true, always: true });
   const newCodes = () => (isNew ? { sku: sku.trim() || null, barcode: barcode.trim() || null } : {});
   // Tracked = the existing product's switch, the merge target's, or the new-product toggle.
   const tracked = canExpiry && !kit && (isNew ? (mergeProduct ? !!mergeProduct.track_expiry : newTracked) : productTracked);

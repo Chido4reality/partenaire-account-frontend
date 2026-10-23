@@ -986,7 +986,7 @@ export default function InventoryPage() {
   const receiveCurrent = (item) => (item.currentPrices ? { cost_price: item.currentPrices.cost, min_price: item.currentPrices.min,
     wholesale_price: item.currentPrices.wholesale, sell_price: item.currentPrices.sell } : null);
   const receivePriceError = (item) => (item.product_id
-    ? priceOrderText(receivePriceChanges(item), { lang, fmt, current: receiveCurrent(item), newCost: true, editable: receivePriceFields }) : null);
+    ? priceOrderText(receivePriceChanges(item), { lang, fmt, current: receiveCurrent(item), newCost: true, editable: receivePriceFields, always: true }) : null);
 
   const receiveMutation = useMutation({
     mutationFn: async () => {
