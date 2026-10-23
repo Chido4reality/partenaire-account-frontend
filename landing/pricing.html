@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Pricing — Partenaire Dozie</title>
-<meta name="description" content="Buying on Partenaire Dozie is free — pay only for what you order. Shops choose a Mon Partenaire plan, from Free to Pro Plus at 13,000 FCFA / month." />
+<title>Pricing — Stenamo Digital Services</title>
+<meta name="description" content="Buying on Stenamo Market is free and shops pay no commission. Stenamo Book plans: 30-day free trial, then Lite 8,000 FCFA / ₦25,000, Pro 10,000 FCFA / ₦35,000, Pro Plus 13,000 FCFA / ₦45,000 per month." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -49,7 +49,7 @@
   .nav{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;max-width:var(--maxw);margin:0 auto;}
   .brand{display:flex;align-items:center;gap:11px;font-family:"Sora",sans-serif;font-weight:700;color:var(--navy);font-size:1.12rem;text-decoration:none;}
   .mark{
-    width:34px;height:34px;border-radius:9px;display:grid;place-items:center;
+    width:34px;height:34px;flex:none;border-radius:9px;display:grid;place-items:center;
     background:linear-gradient(150deg,var(--navy),var(--navy-2));color:var(--gold);
     font-family:"Sora",sans-serif;font-weight:800;font-size:1.05rem;
   }
@@ -116,6 +116,11 @@
   /* pricing */
   .price-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;}
   @media(max-width:780px){.price-grid{grid-template-columns:1fr;}}
+  .plan-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;margin-top:26px;}
+  @media(max-width:1000px){.plan-grid{grid-template-columns:1fr 1fr;}}
+  @media(max-width:560px){.plan-grid{grid-template-columns:1fr;}}
+  .plan-grid .price{padding:24px;}
+  .plan-grid .price .amt{font-size:1.45rem;}
   .price{border:1px solid var(--line);border-radius:16px;padding:30px;background:#fff;}
   .price.featured{border:1.5px solid var(--gold);box-shadow:0 10px 30px rgba(16,35,71,.07);}
   .price h3{font-size:1.2rem;}
@@ -158,7 +163,7 @@
 
 <header class="site">
   <div class="nav">
-    <a class="brand" href="/"><span class="mark">PD</span> Partenaire&nbsp;Dozie</a>
+    <a class="brand" href="/"><span class="mark">SD</span> Stenamo Digital Services</a>
     <nav class="nav-links">
       <a href="/about">About</a>
       <a href="/how-it-works">How it works</a>
@@ -192,24 +197,79 @@
           <li>Raise a dispute if something&rsquo;s wrong</li>
         </ul>
       </div>
-      <div class="price featured">
-        <h3>For shops &mdash; Mon Partenaire</h3>
-        <div class="amt">Plans from Free &middot; Pro Plus 13,000 FCFA / month</div>
-        <p style="color:var(--slate);margin:0;">Point-of-sale and business management.</p>
+      <div class="price">
+        <h3>For shops selling on Stenamo Market</h3>
+        <div class="amt">No commission</div>
+        <p style="color:var(--slate);margin:0;">Stenamo takes no commission on Market sales.</p>
         <ul>
-          <li>Record sales &amp; track inventory</li>
-          <li>Customer credit &amp; reminders</li>
-          <li>Receive online orders from Partenaire Dozie</li>
-          <li>Staff, assets &amp; AI assistant on Pro Plus</li>
+          <li>The buyer pays the order price &mdash; no extra fee is added</li>
+          <li>The shop receives the amount Flutterwave settles, less Flutterwave&rsquo;s payment-processing fee and, where a transfer is used, Flutterwave&rsquo;s transfer fee</li>
+          <li>No delivery fee &mdash; buyers collect from the shop (<a href="/delivery">details</a>)</li>
         </ul>
       </div>
     </div>
   </div>
 </section>
+<section>
+  <div class="wrap">
+    <h2 style="font-size:clamp(1.4rem,2.8vw,1.9rem);">Stenamo Book plans</h2>
+    <p style="color:var(--slate);max-width:62ch;margin-top:.6rem;">Point-of-sale and business management for shops. Prices are per month, in FCFA for shops in Cameroon and in Naira for shops in Nigeria. Pay for 1, 3, 6 or 12 months at a time &mdash; there is no automatic renewal.</p>
+    <div class="plan-grid">
+      <div class="price">
+        <h3>Free trial</h3>
+        <div class="amt">30 days</div>
+        <p style="color:var(--slate);margin:0;">Free &mdash; no payment to start.</p>
+        <ul>
+          <li>Every Pro feature for 30 days from sign-up</li>
+          <li>After 30 days, choose a paid plan to keep working; until then the account is read-only</li>
+        </ul>
+      </div>
+      <div class="price">
+        <h3>Lite</h3>
+        <div class="amt">8,000 FCFA <small style="font-size:.55em;font-weight:600;">/ month</small></div>
+        <p style="color:var(--slate);margin:0;">in Cameroon &middot; &#8358;25,000 / month in Nigeria</p>
+        <ul>
+          <li>1 location, up to 100 products, 2 users (owner included)</li>
+          <li>Sales, inventory, stock count &amp; labels</li>
+          <li>Customers &amp; customer credit</li>
+          <li>Cash flow &amp; reports</li>
+          <li>Online orders from Stenamo Market (selected cities)</li>
+        </ul>
+      </div>
+      <div class="price featured">
+        <h3>Pro</h3>
+        <div class="amt">10,000 FCFA <small style="font-size:.55em;font-weight:600;">/ month</small></div>
+        <p style="color:var(--slate);margin:0;">in Cameroon &middot; &#8358;35,000 / month in Nigeria</p>
+        <ul>
+          <li>Everything in Lite</li>
+          <li>Unlimited locations, products and users</li>
+          <li>Stock transfers between locations</li>
+          <li>Product import/export (CSV) &amp; branded receipts</li>
+          <li>Cashier workflow, Compare, expiry tracking</li>
+          <li>Sell on Stenamo Market in all cities</li>
+        </ul>
+      </div>
+      <div class="price">
+        <h3>Pro Plus</h3>
+        <div class="amt">13,000 FCFA <small style="font-size:.55em;font-weight:600;">/ month</small></div>
+        <p style="color:var(--slate);margin:0;">in Cameroon &middot; &#8358;45,000 / month in Nigeria</p>
+        <ul>
+          <li>Everything in Pro</li>
+          <li>AI assistant for the owner</li>
+          <li>Staff records &amp; staff home locations</li>
+          <li>Asset &amp; cash ledger</li>
+          <li>Accountant log (owner oversight of staff)</li>
+          <li>Export filtered results to CSV / PDF</li>
+        </ul>
+      </div>
+    </div>
+    <p style="color:var(--slate);max-width:62ch;margin-top:22px;">Subscriptions are paid online through Flutterwave. For cancellation and refunds, see our <a href="/refund">Refund Policy</a>.</p>
+  </div>
+</section>
 
 <footer class="site">
   <div class="wrap">
-    <a class="brand" href="/" style="text-decoration:none;"><span class="mark">PD</span> Partenaire&nbsp;Dozie</a>
+    <a class="brand" href="/" style="text-decoration:none;"><span class="mark">SD</span> Stenamo Digital Services</a>
     <div class="foot-links">
       <a href="/">Home</a>
       <a href="/about">About</a>
@@ -218,14 +278,15 @@
       <a href="/pricing">Pricing</a>
       <a href="https://book.stenamo.com/learn">Learn</a>
       <a href="/refund">Refund</a>
+      <a href="/delivery">Delivery</a>
       <a href="/privacy">Privacy</a>
       <a href="/terms">Terms</a>
       <a href="/contact">Contact</a>
     </div>
     <div class="foot-legal">
-      <b>Partenaire Dozie</b> &mdash; online marketplace &amp; business software, operated by Peter Okafor, serving Cameroon and Nigeria.<br/>
+      <b>Stenamo Digital Services</b> &mdash; registered business name, CAC Nigeria No.&nbsp;9959105 &mdash; operated by Peter Okafor, serving Cameroon and Nigeria.<br/>
       Registered address: 24 Igwe Menekaya Street, Ojobi, Umunya, Oyi LGA, Anambra State, Nigeria.<br/>
-      Contact: +237&nbsp;621&nbsp;840&nbsp;952 &middot; <a href="mailto:support@stenamo.com">support@stenamo.com</a> &middot; &copy; 2026 Partenaire Dozie. All rights reserved.
+      Contact: +237&nbsp;621&nbsp;840&nbsp;952 &middot; +46&nbsp;72&nbsp;286&nbsp;57&nbsp;38 (WhatsApp) &middot; <a href="mailto:support@stenamo.com">support@stenamo.com</a> &middot; &copy; 2026 Stenamo Digital Services. All rights reserved.
     </div>
   </div>
 </footer>
