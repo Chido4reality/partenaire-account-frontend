@@ -44,7 +44,7 @@ try {
     "Sirop E,,500,900,10,Boutique Marché,yes,31/02/2027,",        // row 6 — impossible
     "Sirop F,,500,900,10,Boutique Marché,yes,04/30/2027,",        // row 7 — US-style
     "Sirop G,,500,900,5,Boutique Marché,yes,,",                    // row 8 — tracked, blank
-    "Savon H,007,1 200,250.5,3,Boutique Marché,no,,",              // row 9 — untracked
+    "Savon H,007,250.5,1 200,3,Boutique Marché,no,,",              // row 9 — untracked (cost ≤ sell: PRICE ORDER)
   ].join("\n") + "\n";
   // Written as Excel's "CSV UTF-8" writes it: with a byte-order mark. (UTF-8 WITHOUT a BOM —
   // Google Sheets / LibreOffice — garbles accented location names; separate, pre-existing, loud.)
@@ -61,7 +61,7 @@ try {
   check("tracked row with a blank expiry → REJECTED, and it is row 8", r(8).ok === false && /expiry_date is required/.test(err(8)) && r(8)._rowNum === 8, `ok=${r(8).ok} ${err(8)}`);
   check("track_expiry 'oui' counts as tracked", r(3).track_expiry === true);
   check("untracked row imports with no date", r(9).ok === true && r(9).track_expiry === false && r(9).expiry_date === "", `ok=${r(9).ok}`);
-  check("number columns still parse from text: '1 200' → 1200, '250.5' → 250.5", r(9).cost_price === 1200 && r(9).sell_price === 250.5, `${r(9).cost_price} / ${r(9).sell_price}`);
+  check("number columns still parse from text: '250.5' → 250.5, '1 200' → 1200", r(9).cost_price === 250.5 && r(9).sell_price === 1200, `${r(9).cost_price} / ${r(9).sell_price}`);
   check("barcode '007' keeps its leading zeros", r(9).barcode === "007", JSON.stringify(r(9).barcode));
   check("batch number carried through", r(2).batch_no === "L1", JSON.stringify(r(2).batch_no));
 

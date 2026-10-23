@@ -24,6 +24,7 @@ import ProductSearchBox from "../components/common/ProductSearchBox";
 import { openWhatsApp } from "../utils/whatsapp";
 import ExpiryFields, { TrackExpiryToggle, expiryMissing } from "../components/common/ExpiryFields"; // EXPIRY-TRACKING
 import useExpiryFeature from "../hooks/useExpiryFeature";
+import { priceOrderText } from "../utils/priceRules"; // PRICE ORDER (server = src/lib/priceRules.js)
 
 const genLocalId = () => {
   try { return crypto.randomUUID(); } catch { return `gb-${Date.now()}-${Math.floor(Math.random() * 1e6)}`; }
@@ -550,6 +551,7 @@ function ReleaseModal({ row, en, lang, fmt, locList, bufferLoc, canMoveBuffer, o
   const [cost, setCost] = useState("");
   const [min, setMin] = useState("");
   const [wholesale, setWholesale] = useState("");
+  const [curPrices, setCurPrices] = useState(null); // PRICE ORDER: an existing product's prices as stored
   const [invoiceRef, setInvoiceRef] = useState("");
   const [mergeProduct, setMergeProduct] = useState(null); // {id,name} for a staged NEW product
   const [rows, setRows] = useState([{ location_id: "", quantity: "" }]);
@@ -580,6 +582,7 @@ function ReleaseModal({ row, en, lang, fmt, locList, bufferLoc, canMoveBuffer, o
           setCost(p.cost_price != null ? String(p.cost_price) : "");
           setMin(p.min_price != null ? String(p.min_price) : "");
           setWholesale(p.wholesale_price != null ? String(p.wholesale_price) : "");
+          setCurPrices({ cost_price: p.cost_price, min_price: p.min_price, wholesale_price: p.wholesale_price, sell_price: p.sell_price });
           setProductTracked(!!p.track_expiry);
         } else if (info && info.is_new_product) {
           setSku(genSku());
@@ -604,6 +607,12 @@ function ReleaseModal({ row, en, lang, fmt, locList, bufferLoc, canMoveBuffer, o
     min_price: min !== "" ? num(min) : null,
     wholesale_price: wholesale !== "" ? num(wholesale) : null,
   });
+  // PRICE ORDER (client copy of the server rule): the product these goods land on, after the release.
+  // The server works the target out the same way: kit → the line's product or a new one; otherwise
+  // the merge target, else the line's product, else a new one. A new product has no current prices.
+  const releaseCurrent = isNew ? (!kit && mergeProduct ? mergeProduct.prices || null : null) : curPrices;
+  const priceErr = priceOrderText(Object.fromEntries(Object.entries(prices()).filter(([, v]) => v !== null)),
+    { lang: en ? "en" : "fr", fmt, current: releaseCurrent, newCost: true });
   const newCodes = () => (isNew ? { sku: sku.trim() || null, barcode: barcode.trim() || null } : {});
   // Tracked = the existing product's switch, the merge target's, or the new-product toggle.
   const tracked = canExpiry && !kit && (isNew ? (mergeProduct ? !!mergeProduct.track_expiry : newTracked) : productTracked);
@@ -628,6 +637,7 @@ function ReleaseModal({ row, en, lang, fmt, locList, bufferLoc, canMoveBuffer, o
 
   const submit = () => {
     if (num(sell) <= 0) return toast.error(en ? "Set a selling price" : "Fixez un prix de vente");
+    if (priceErr) return toast.error(priceErr);
     if (kit) {
       // Kit: the parent holds the price + ZERO stock; the arrival lands on the PARTS.
       const kitParts = parts
@@ -712,7 +722,8 @@ function ReleaseModal({ row, en, lang, fmt, locList, bufferLoc, canMoveBuffer, o
               </div>
             ) : (
               <ProductSearchBox lang={lang} placeholder={en ? "…or merge into an existing product (optional)" : "…ou fusionner dans un produit existant (facultatif)"}
-                onSelect={(p) => setMergeProduct({ id: p.id, name: p.name, track_expiry: !!p.track_expiry })} clearOnSelect />
+                onSelect={(p) => setMergeProduct({ id: p.id, name: p.name, track_expiry: !!p.track_expiry,
+                  prices: { cost_price: p.cost_price, min_price: p.min_price, wholesale_price: p.wholesale_price, sell_price: p.sell_price } })} clearOnSelect />
             )}
           </div>
         )}
@@ -724,6 +735,11 @@ function ReleaseModal({ row, en, lang, fmt, locList, bufferLoc, canMoveBuffer, o
           <PriceInput label={en ? "Min price" : "Prix min"} value={min} onChange={setMin} sym={fmt.symbol} />
           <PriceInput label={en ? "Wholesale" : "Gros"} value={wholesale} onChange={setWholesale} sym={fmt.symbol} />
         </div>
+        {/* PRICE ORDER: the refusal, live, before release — fix it in the boxes above */}
+        {priceErr && (
+          <div data-price-order-error style={{ fontSize: 12, fontWeight: 600, color: "#f87171", background: "rgba(248,113,113,0.1)",
+            border: "1px solid rgba(248,113,113,0.4)", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>⚠️ {priceErr}</div>
+        )}
 
         {/* Kit toggle */}
         <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, fontSize: 13, cursor: "pointer" }}>

@@ -29,6 +29,8 @@ import MultipartBuilder, { partsToPayload, emptyPart } from "../components/commo
 import MultipartAvailability from "../components/common/MultipartAvailability";
 import { useLiteMode } from "../hooks/useLiteMode";
 import { parseProductImport, buildProductTemplateXlsx } from "../utils/productImport";
+import { priceOrderText, PRICE_FIELDS } from "../utils/priceRules"; // PRICE ORDER (server = src/lib/priceRules.js)
+import PriceHistoryList from "../components/common/PriceHistoryList";
 import { isGoodsBuffer, withoutGoodsBuffer, locationLabel, locationTypeLabel } from "../utils/locations"; // GOODS-BUFFER
 
 // Sprint C — shared helper for the 4 product entry paths. Reads a File
@@ -182,6 +184,10 @@ export default function InventoryPage() {
 
   const [selectedStockRow, setSelectedStockRow] = useState(null);
   const [editProduct, setEditProduct] = useState(null);
+  // PRICE ORDER: the prices as stored when the edit modal opened — like the server, only a REAL
+  // price change is checked, so a name edit on an already-broken product still saves.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const editBase = useMemo(() => (editProduct ? Object.fromEntries(PRICE_FIELDS.map((k) => [k, editProduct[k]])) : null), [editProduct?.id]);
   // MP-INVENTORY-DOZIE-CONTROLS — edit-modal Sell-on-Dozie state.
   const [dozieEnabled, setDozieEnabled] = useState(false);
   const [doziePrice, setDoziePrice] = useState(0);
@@ -274,6 +280,16 @@ export default function InventoryPage() {
     queryKey: ["products-all", showArchived],
     queryFn: () => api.get("/products?limit=500" + (showArchived ? "&include_archived=true" : "")).then(r => r.data),
   });
+
+  // PRICES TO CHECK (owner): products whose STORED prices break cost ≤ min ≤ wholesale ≤ sell.
+  // From the server (the product list above is capped at 500); nothing is fixed automatically.
+  const [priceCheckOnly, setPriceCheckOnly] = useState(false);
+  const { data: priceCheckData } = useOfflineCachedQuery({
+    queryKey: ["products-price-check"],
+    queryFn: () => api.get("/products/price-check").then(r => r.data),
+    enabled: isOwner,
+  });
+  const priceCheck = (isOwner && priceCheckData?.data) || [];
 
   const { data: locationsData } = useOfflineCachedQuery({
     queryKey: ["locations"],
@@ -406,6 +422,8 @@ export default function InventoryPage() {
     qc.invalidateQueries({ queryKey: ["stock"] });
     qc.invalidateQueries({ queryKey: ["stock-all"] });
     qc.invalidateQueries({ queryKey: ["products-all"] });
+    qc.invalidateQueries({ queryKey: ["products-price-check"] }); // PRICE ORDER: a fixed product leaves the list
+    qc.invalidateQueries({ queryKey: ["product-price-history"] });
     qc.invalidateQueries({ queryKey: ["stock-alerts"] });
     qc.invalidateQueries({ queryKey: ["mp-availability-inv"] }); // MP-MULTIPART: refresh kit availability
     qc.invalidateQueries({ queryKey: ["dozie-migrate-candidates"] }); // FU.4 — banner re-evaluates after Apply
@@ -667,6 +685,7 @@ export default function InventoryPage() {
         sell_price: +newProduct.sell_price,
         wholesale_price: +newProduct.wholesale_price || 0,
         min_price: +newProduct.min_price || 0,
+        price_source: "product-create",   // PRICE HISTORY: which screen (a body field survives the offline queue)
         description: newProduct.description || null,
         // MP-MULTIPART: a kit is sold as one line; its parts build the BOM.
         ...(newProduct.is_multipart ? { is_multipart: true, parts: partsToPayload(newParts) } : {}),
@@ -759,31 +778,15 @@ export default function InventoryPage() {
   // MP-PRODUCT-DEDUP: client-side pre-check (barcode-first, else normalized
   // name) against the loaded list for instant feedback; the backend 409 above
   // is the authoritative guard (covers list>500 / offline replay / race).
-  // PRICE LADDER (client mirror of the backend guard): enforce
-  // cost_price <= min_price <= wholesale_price <= sell_price, comparing only
-  // present (>0) values. Returns a localized message naming the out-of-order
-  // value, or null. This is what blocks "wholesale below min" (Nora's entry).
-  const priceLadderError = (form) => {
-    const steps = [
-      { v: +form.cost_price || 0,      en: "Cost price",      fr: "Prix d'achat" },
-      { v: +form.min_price || 0,       en: "Min price",       fr: "Prix minimum" },
-      { v: +form.wholesale_price || 0, en: "Wholesale price", fr: "Prix de gros" },
-      { v: +form.sell_price || 0,      en: "Sell price",      fr: "Prix de vente" },
-    ].filter(s => s.v > 0);
-    for (let i = 1; i < steps.length; i++) {
-      if (steps[i].v < steps[i - 1].v) {
-        const lo = steps[i], hi = steps[i - 1];
-        return lang === "en"
-          ? `${lo.en} (${lo.v.toLocaleString()} ${fmt.symbol}) can't be below ${hi.en} (${hi.v.toLocaleString()} ${fmt.symbol}).`
-          : `${lo.fr} (${lo.v.toLocaleString()} ${fmt.symbol}) ne peut pas être inférieur au ${hi.fr} (${hi.v.toLocaleString()} ${fmt.symbol}).`;
-      }
-    }
-    return null;
-  };
+  // PRICE ORDER (client copy of the server rule, utils/priceRules.js): cost ≤ min ≤ wholesale ≤ sell,
+  // 0 = not set, the owner included. Shown under the price boxes BEFORE submit, and blocks the
+  // submit; the server refuses it again on every write path. Returns the message or null.
+  const pickPrices = (f) => Object.fromEntries(PRICE_FIELDS.map((k) => [k, +(f && f[k]) || 0]));
+  const priceOrderError = (form, opts = {}) => priceOrderText(pickPrices(form), { lang, fmt, ...opts });
 
   const handleAddProduct = () => {
     setDupeProduct(null);
-    const ladderErr = priceLadderError(newProduct);
+    const ladderErr = priceOrderError(newProduct);
     if (ladderErr) { toast.error(ladderErr); return; }
     // EXPIRY-TRACKING: a tracked product's initial stock needs its expiry date —
     // checked BEFORE the product is created, so a refusal never leaves it half-made.
@@ -828,6 +831,7 @@ export default function InventoryPage() {
         sell_price: +editProduct.sell_price,
         wholesale_price: +editProduct.wholesale_price || 0,
         min_price: +editProduct.min_price || 0,
+        price_source: "product-edit",
         // EXPIRY-TRACKING: only sent on Pro, never for a kit parent — and ONLY when the
         // form actually holds a value. The Stock Levels / Alerts rows open this modal with
         // a SLIM product (no track_expiry); sending !!undefined would silently switch a
@@ -966,59 +970,48 @@ export default function InventoryPage() {
   }, [receiveForm.items]);
 
   // ── RECEIVE GOODS MUTATION ──────────────────────────────────────────────────
+  // PRICE ORDER (2026-10-23): the new prices now travel WITH the delivery in ONE request (they were
+  // a PATCH per product first, then the stock). The server checks each product's whole price set
+  // before anything is written, so a refused price never leaves half a delivery behind, and an
+  // offline replay keeps the stock and skips only the bad price. Which prices a role may change
+  // here is unchanged from the old PATCH: owner all four, manager / accountant cost + sell +
+  // wholesale, warehouse the cost only (its PATCH was a 403).
+  const receivePriceFields = isOwner ? PRICE_FIELDS : (isWarehouse ? ["cost_price"] : ["cost_price", "wholesale_price", "sell_price"]);
+  const receivePriceChanges = (item) => {
+    const u = {};
+    for (const k of receivePriceFields) if (+item[k] > 0) u[k] = +item[k];
+    return u;
+  };
+  const receiveCurrent = (item) => (item.currentPrices ? { cost_price: item.currentPrices.cost, min_price: item.currentPrices.min,
+    wholesale_price: item.currentPrices.wholesale, sell_price: item.currentPrices.sell } : null);
+  const receivePriceError = (item) => (item.product_id
+    ? priceOrderText(receivePriceChanges(item), { lang, fmt, current: receiveCurrent(item), newCost: true }) : null);
+
   const receiveMutation = useMutation({
     mutationFn: async () => {
       const validItems = receiveForm.items.filter(i => i.product_id && i.quantity);
       if (!validItems.length) throw new Error("No valid items");
-
-      // Update prices for each product first. canReceiveGoods includes
-      // warehouse, but PATCH /products/:id is owner/manager/accountant only
-      // (warehouse has no product-edit access anywhere else in the app either)
-      // — a 403 here must not block the stock add that follows, which IS a
-      // warehouse-allowed action. Any OTHER failure (network, 500) still
-      // aborts the whole submission as before; only permission-denied is
-      // treated as "skip this item's price, keep going."
-      const priceSkipped = [];
-      for (const item of validItems) {
-        const priceUpdate = {};
-        if (item.cost_price) priceUpdate.cost_price = +item.cost_price;
-        if (item.sell_price) priceUpdate.sell_price = +item.sell_price;
-        if (item.wholesale_price) priceUpdate.wholesale_price = +item.wholesale_price;
-        if (item.min_price) priceUpdate.min_price = +item.min_price;
-        if (Object.keys(priceUpdate).length > 0) {
-          try {
-            await api.patch(`/products/${item.product_id}`, priceUpdate);
-          } catch (err) {
-            if (err.response?.status === 403) { priceSkipped.push(item.product_name || item.product_id); continue; }
-            throw err;
-          }
-        }
+      const bad = validItems.map(i => [i, receivePriceError(i)]).filter(([, e]) => e);
+      if (bad.length) {
+        const msg = bad.map(([i, e]) => `${i.product_name}: ${e}`).join(" · ");
+        throw Object.assign(new Error(msg), { response: { data: { message: msg } } });
       }
-
-      // Then add stock
       const res = await api.post("/stock/arrivals", {
         location_id: receiveForm.location_id,
         supplier_name: receiveForm.supplier_name || null,
         invoice_ref: receiveForm.invoice_ref || null,
         notes: receiveForm.notes || null,
         flag_recount: !!receiveForm.flag_recount, // MP-STOCK-CHECK: boss re-count flag
+        price_source: "receive-goods",            // PRICE HISTORY
         items: validItems.map(i => ({ product_id: i.product_id, quantity: +i.quantity, slot_code: i.slot_code || null, cost_price: +i.cost_price || 0,
+          ...receivePriceChanges(i),
           // EXPIRY-TRACKING: the delivery's expiry date + optional batch (tracked products).
           ...(canExpiry && (i.expiry_date || i.batch_no) ? { expiry_date: i.expiry_date || null, batch_no: i.batch_no || null } : {}) }))
       });
-      return { ...res, _priceSkipped: priceSkipped };
+      return res;
     },
-    onSuccess: (res) => {
-      const skipped = res?._priceSkipped || [];
-      if (skipped.length) {
-        toast.success(lang === "en" ? "✓ Stock received" : "✓ Stock reçu");
-        toast(lang === "en"
-          ? `Price changes need manager/owner — not applied for: ${skipped.join(", ")}`
-          : `Les changements de prix nécessitent gérant/propriétaire — non appliqués pour : ${skipped.join(", ")}`,
-          { duration: 6000 });
-      } else {
-        toast.success(lang === "en" ? "✓ Stock received & prices updated!" : "✓ Stock reçu et prix mis à jour!");
-      }
+    onSuccess: () => {
+      toast.success(lang === "en" ? "✓ Stock received & prices updated!" : "✓ Stock reçu et prix mis à jour!");
       setShowReceive(false);
       setReceiveForm({ location_id: "", supplier_name: "", invoice_ref: "", notes: "", flag_recount: false, items: [{ product_id: "", product_name: "", quantity: "", cost_price: "", sell_price: "", wholesale_price: "", min_price: "", currentPrices: null }] });
       invalidateAll();
@@ -1040,12 +1033,16 @@ export default function InventoryPage() {
         const msg = en ? "Enter the expiry date of the initial stock." : "Saisissez la date d'expiration du stock initial.";
         throw Object.assign(new Error(msg), { response: { data: { message: msg } } });
       }
+      // PRICE ORDER: same for the prices (button and both Enter keys land here).
+      const priceErr = priceOrderError(rapidItem);
+      if (priceErr) throw Object.assign(new Error(priceErr), { response: { data: { message: priceErr } } });
       const res = await api.post("/products", {
         name: rapidItem.name, barcode: rapidItem.barcode || null, unit: rapidItem.unit,
         sku: (rapidItem.sku || "").trim() || null,
         sku_auto: rapidSkuAuto,
         cost_price: +rapidItem.cost_price || 0, sell_price: +rapidItem.sell_price,
         wholesale_price: +rapidItem.wholesale_price || 0, min_price: +rapidItem.min_price || 0,
+        price_source: "rapid-entry",
         ...(rapidItem.is_multipart ? { is_multipart: true, parts: partsToPayload(rapidParts) } : {}),
         ...(canExpiry && !rapidItem.is_multipart && rapidItem.track_expiry ? { track_expiry: true } : {}),
       });
@@ -1134,6 +1131,7 @@ export default function InventoryPage() {
             name: row.name, barcode: row.barcode || null, sku: (row.sku || "").trim() || null, unit: row.unit || "pce",
             cost_price: +row.cost_price || 0, sell_price: +row.sell_price,
             wholesale_price: +row.wholesale_price || 0, min_price: +row.min_price || 0,
+            price_source: "import",
             ...(canExpiry && row.track_expiry ? { track_expiry: true } : {}),
           });
           const product = res.data.data;
@@ -1242,7 +1240,7 @@ export default function InventoryPage() {
   const TABS = [
     { key: "stock",    en: "Stock Levels",  fr: "Niveaux de stock" },
     { key: "overview", en: "Overview",      fr: "Vue ensemble" },
-    { key: "products", en: "Products",      fr: "Produits" },
+    { key: "products", en: `Products${priceCheck.length ? ` ⚠️ ${priceCheck.length}` : ""}`, fr: `Produits${priceCheck.length ? ` ⚠️ ${priceCheck.length}` : ""}` },
     { key: "alerts",   en: `Alerts (${alerts.length})`, fr: `Alertes (${alerts.length})` },
   ];
 
@@ -1666,13 +1664,54 @@ export default function InventoryPage() {
         // Min floor / Edit) is reachable on phone viewports.
         <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "auto" }}>
           {/* ARCHIVE-RESTORE-UI: include is_active=false rows when ON */}
-          <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", padding: "10px 16px", borderBottom: "1px solid var(--border)" }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "10px 16px", borderBottom: "1px solid var(--border)" }}>
+            {/* PRICES TO CHECK (owner): stored prices out of order — fix each one in Edit */}
+            {isOwner && (priceCheck.length > 0 || priceCheckOnly) && (
+              <button data-price-check-filter className="btn btn-secondary btn-sm" onClick={() => setPriceCheckOnly(v => !v)}
+                style={{ color: "#f87171", borderColor: priceCheckOnly ? "#f87171" : undefined, fontWeight: 700 }}>
+                ⚠️ {lang === "en" ? `Prices to check (${priceCheck.length})` : `Prix à vérifier (${priceCheck.length})`}{priceCheckOnly ? " ✕" : ""}
+              </button>
+            )}
             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>
               <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
               {lang === "en" ? "Show archived" : "Afficher les archivés"}
             </label>
           </div>
-          {filteredProducts.length === 0 ? (
+          {priceCheckOnly && isOwner ? (
+            priceCheck.length === 0 ? (
+              <div className="empty-state"><div style={{ fontWeight: 600, color: "#34d399" }}>✓ {lang === "en" ? "All prices are in order." : "Tous les prix sont dans l'ordre."}</div></div>
+            ) : (
+              <table className="table" style={{ minWidth: 700 }}>
+                <thead><tr>
+                  <th>Product</th>
+                  <th style={{ textAlign: "right" }}>Cost</th><th style={{ textAlign: "right" }}>Min floor</th>
+                  <th style={{ textAlign: "right" }}>Wholesale</th><th style={{ textAlign: "right" }}>Walk-in</th><th>Edit</th>
+                </tr></thead>
+                <tbody>
+                  {priceCheck.map(pc => {
+                    const full = products.find(x => x.id === pc.id);
+                    const cell = (k) => <td style={{ textAlign: "right", color: k === pc.field ? "#f87171" : undefined, fontWeight: k === pc.field ? 700 : undefined }}>{+pc[k] > 0 ? fmt(pc[k]) : "—"}</td>;
+                    return (
+                      <tr key={pc.id}>
+                        <td style={{ fontWeight: 500 }}>
+                          <div>{pc.name}</div>
+                          <div style={{ fontSize: 11, color: "#f87171", marginTop: 2, whiteSpace: "normal", maxWidth: 360 }}>{lang === "en" ? pc.message_en : pc.message_fr}</div>
+                        </td>
+                        {cell("cost_price")}{cell("min_price")}{cell("wholesale_price")}{cell("sell_price")}
+                        <td><button className="btn btn-secondary btn-sm" onClick={async () => {
+                          // past the 500-row list: load the whole product, so the edit never blanks its barcode / unit
+                          let p = full;
+                          if (!p) { try { p = (await api.get(`/products/${pc.id}`)).data?.data; } catch { p = null; } }
+                          if (!p) { toast.error(lang === "en" ? "Could not open this product — try again." : "Impossible d'ouvrir ce produit — réessayez."); return; }
+                          setEditProduct({ ...p }); setShowEditProduct(true);
+                        }} style={{ color: "var(--brand-light)" }}>✏️ Edit</button></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )
+          ) : filteredProducts.length === 0 ? (
             <div className="empty-state">
               <div style={{ fontWeight: 600, marginBottom: 6 }}>{search ? `No products matching "${search}"` : (lang === "en" ? "No products yet" : "Aucun produit")}</div>
               {!search && canAddProduct && <button className="btn btn-primary" onClick={() => guardAdd(() => setShowAddProduct(true))} style={{ marginTop: 12, opacity: atInventoryCap ? 0.55 : 1 }}>+ {lang === "en" ? "Add product" : "Ajouter"}{atInventoryCap ? " 🔒" : ""}</button>}
@@ -1828,7 +1867,7 @@ export default function InventoryPage() {
               )}
             </div>
 
-            <PricingSection data={newProduct} onChange={(k, v) => setNewProduct(p => ({ ...p, [k]: v }))} lang={lang} />
+            <PricingSection data={newProduct} onChange={(k, v) => setNewProduct(p => ({ ...p, [k]: v }))} lang={lang} error={priceOrderError(newProduct)} />
 
             {/* MP-MULTIPART: kit toggle + parts builder (Pro / Pro Plus). */}
             {canMultipart && (
@@ -1978,6 +2017,7 @@ export default function InventoryPage() {
                 canSeePrices={canSeePrices}
                 duplicateOf={receiveDuplicates.firstLineOf[idx]}
                 canExpiry={canExpiry}
+                priceFields={receivePriceFields} priceError={receivePriceError(item)}
               />
             ))}
 
@@ -2061,7 +2101,8 @@ export default function InventoryPage() {
               </div>
             </div>
 
-            <PricingSection data={editProduct} onChange={(k, v) => setEditProduct(p => ({ ...p, [k]: v }))} lang={lang} />
+            <PricingSection data={editProduct} onChange={(k, v) => setEditProduct(p => ({ ...p, [k]: v }))} lang={lang} error={priceOrderError(editProduct, { current: editBase })} />
+            {isOwner && <PriceHistoryList productId={editProduct.id} lang={lang} />}
 
             {/* MP-INVENTORY-DOZIE-CONTROLS — product photo (same POST
                 /products/:id/photo flow as the backfill modal). */}
@@ -2142,7 +2183,7 @@ export default function InventoryPage() {
 
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setShowEditProduct(false); setEditProduct(null); }}>{lang === "en" ? "Cancel" : "Annuler"}</button>
-              <button className="btn btn-primary" style={{ flex: 2 }} disabled={!editProduct.name || !editProduct.sell_price || editProductMutation.isPending} onClick={() => { const e = priceLadderError(editProduct); if (e) { toast.error(e); return; } editProductMutation.mutate(); }}>
+              <button className="btn btn-primary" style={{ flex: 2 }} disabled={!editProduct.name || !editProduct.sell_price || editProductMutation.isPending} onClick={() => { const e = priceOrderError(editProduct, { current: editBase }); if (e) { toast.error(e); return; } editProductMutation.mutate(); }}>
                 {editProductMutation.isPending ? "..." : (lang === "en" ? "✓ Save Changes" : "✓ Enregistrer")}
               </button>
             </div>
@@ -2251,7 +2292,7 @@ export default function InventoryPage() {
               </div>
             </div>
 
-            <PricingSection data={rapidItem} onChange={(k, v) => setRapidItem(p => ({ ...p, [k]: v }))} lang={lang} />
+            <PricingSection data={rapidItem} onChange={(k, v) => setRapidItem(p => ({ ...p, [k]: v }))} lang={lang} error={priceOrderError(rapidItem)} />
 
             {/* MP-RAPID-ENTRY-PARITY: multi-part kit toggle + builder, same as Add
                 New Product — collapsed unless ticked, so the rapid path stays fast
@@ -2414,6 +2455,17 @@ export default function InventoryPage() {
                       ? `${badCount} row(s) marked ⚠️ will be skipped (hover the ⚠️ for the reason). The ${okCount} good rows still import.`
                       : `${badCount} ligne(s) ⚠️ seront ignorées (survolez le ⚠️ pour la raison). Les ${okCount} bonnes lignes s'importent quand même.`}
                   </div>
+                )}
+                {/* PRICE ORDER: every row to fix, with its reason in full (a hover title is invisible on a phone) */}
+                {badCount > 0 && (
+                  <ul data-import-bad-rows style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: 12, color: "#f87171", maxHeight: 160, overflowY: "auto" }}>
+                    {importPreview.filter(r => !r.ok).map((row) => (
+                      <li key={row._rowNum}>
+                        <strong>{lang === "en" ? "Row" : "Ligne"} {row._rowNum}{row.name ? ` — ${row.name}` : ""}:</strong>{" "}
+                        {row.errors.map(e => (en ? e.en : e.fr)).join(" ")}
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </div>
               );
@@ -2679,7 +2731,7 @@ export default function InventoryPage() {
 }
 
 // ── SHARED PRICING SECTION COMPONENT ─────────────────────────────────────────
-function PricingSection({ data, onChange, lang }) {
+function PricingSection({ data, onChange, lang, error }) {
   const fmt = useCurrency();
   return (
     <div style={{ background: "var(--bg-elevated)", borderRadius: 12, padding: 16, marginBottom: 14 }}>
@@ -2704,15 +2756,26 @@ function PricingSection({ data, onChange, lang }) {
           <input className="input" type="number" value={data.min_price || ""} onChange={e => onChange("min_price", e.target.value)} placeholder="0" />
         </div>
       </div>
+      {/* PRICE ORDER: the refusal, live, before submit (the save button refuses it too) */}
+      {error && (
+        <div data-price-order-error style={{ fontSize: 12, fontWeight: 600, color: "#f87171", background: "rgba(248,113,113,0.1)",
+          border: "1px solid rgba(248,113,113,0.4)", borderRadius: 8, padding: "8px 10px", marginTop: 6 }}>⚠️ {error}</div>
+      )}
       <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
         🔒 {lang === "en" ? "Min floor: staff cannot sell below this price. Owner PIN to override." : "Prix min: le personnel ne peut pas vendre en dessous. PIN propriétaire pour forcer."}
+      </div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+        {lang === "en" ? "Order: Cost ≤ Min ≤ Wholesale ≤ Sell (walk-in). Leave a box empty if not used." : "Ordre : achat ≤ minimum ≤ gros ≤ vente (détail). Laissez vide si non utilisé."}
       </div>
     </div>
   );
 }
 
 // ── RECEIVE ITEM ROW COMPONENT ────────────────────────────────────────────────
-function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemove, canSeePrices, duplicateOf, canExpiry }) {
+function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemove, canSeePrices, duplicateOf, canExpiry, priceFields = [], priceError = null }) {
+  // PRICE ORDER: a price this role may not change here is shown but locked (it was silently dropped before).
+  const locked = (k) => !priceFields.includes(k);
+  const lockTitle = lang === "en" ? "Only the owner can change this price" : "Seul le propriétaire peut modifier ce prix";
   const [selected, setSelected] = useState(null);
   const fmt = useCurrency();   // LAUNCH-BATCH-2: prices in the org's currency (was a literal "F")
   const PH = usePlaceholders();   // LAUNCH-BATCH-2: placeholders in the UI language + the org's country
@@ -2805,17 +2868,25 @@ function ReceiveItemRow({ idx, item, products, lang, onSelect, onChange, onRemov
               </div>
               <div className="form-group">
                 <label className="label" style={{ fontSize: 10, color: "var(--brand-light)" }}>New Walk-in</label>
-                <input className="input" type="number" value={item.sell_price} onChange={e => onChange("sell_price", e.target.value)} placeholder={selected.sell_price || "0"} />
+                <input className="input" type="number" value={item.sell_price} onChange={e => onChange("sell_price", e.target.value)} placeholder={selected.sell_price || "0"}
+                  disabled={locked("sell_price")} title={locked("sell_price") ? lockTitle : undefined} />
               </div>
               <div className="form-group">
                 <label className="label" style={{ fontSize: 10, color: "#fbbf24" }}>New Wholesale</label>
-                <input className="input" type="number" value={item.wholesale_price} onChange={e => onChange("wholesale_price", e.target.value)} placeholder={selected.wholesale_price || "0"} />
+                <input className="input" type="number" value={item.wholesale_price} onChange={e => onChange("wholesale_price", e.target.value)} placeholder={selected.wholesale_price || "0"}
+                  disabled={locked("wholesale_price")} title={locked("wholesale_price") ? lockTitle : undefined} />
               </div>
               <div className="form-group">
                 <label className="label" style={{ fontSize: 10, color: "#f87171" }}>New Min floor</label>
-                <input className="input" type="number" value={item.min_price} onChange={e => onChange("min_price", e.target.value)} placeholder={selected.min_price || "0"} />
+                <input className="input" type="number" value={item.min_price} onChange={e => onChange("min_price", e.target.value)} placeholder={selected.min_price || "0"}
+                  disabled={locked("min_price")} title={locked("min_price") ? lockTitle : undefined} />
               </div>
             </div>
+            {/* PRICE ORDER: the refusal, live, before Confirm — fix it in the boxes above */}
+            {priceError && (
+              <div data-price-order-error style={{ fontSize: 12, fontWeight: 600, color: "#f87171", background: "rgba(248,113,113,0.1)",
+                border: "1px solid rgba(248,113,113,0.4)", borderRadius: 8, padding: "8px 10px", marginTop: 4 }}>⚠️ {priceError}</div>
+            )}
           </div>
         </div>
       ) : (

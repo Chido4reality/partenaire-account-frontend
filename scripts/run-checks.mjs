@@ -23,6 +23,7 @@ const CHECKS = [
   ["sync-after-logout", "scripts/sync-after-logout-check.mjs", "a logout never strands or mis-attributes a queued sale: no send without a session, 401 retry-later, author token, stranded-row recovery"],
   ["mount-check",   "scripts/mount-check.mjs",           "15 render scenarios — does it MOUNT, not just parse"],
   ["damaged-check", "scripts/receipt-damaged-check.mjs", "regression #10 — the damaged marker on all 3 receipt surfaces"],
+  ["price-order",   "scripts/price-order-check.mjs", "cost ≤ min ≤ wholesale ≤ sell on every price form, the same words as the server; Receive Goods is one request; import lists bad rows"],
   ["whole-franc",   "scripts/whole-franc-money-check.mjs", "VNT-20261021-0022: the POS prices lines in whole units like the server — a fully-paid rounded sale is never a 0.008 credit"],
   ["currency",      "scripts/currency-check.mjs",       "LAUNCH-BATCH-2: receipts, money and WhatsApp numbers follow the org (₦ / 234 for Nigeria; Cameroon unchanged)"],
   ["i18n-keys",     "scripts/i18n-keys-check.mjs",       "LAUNCH-BATCH-2: every t(\"a.b\") key exists in en AND fr (a missing one renders the raw key)"],

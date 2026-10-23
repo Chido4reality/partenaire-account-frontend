@@ -14,6 +14,7 @@
 //
 // SheetJS is dynamically imported so it is code-split out of the main bundle.
 import { unitValue } from "./units";
+import { priceOrderViolation, priceOrderMessage } from "./priceRules";
 
 // Canonical header order shown in the template.
 export const TEMPLATE_HEADERS = [
@@ -153,6 +154,12 @@ export async function parseProductImport(file, locations) {
     if (cost == null || Number.isNaN(cost)) errors.push({ en: "cost_price is required and must be a number.", fr: "cost_price est requis et doit être un nombre." });
     if (sell == null || Number.isNaN(sell)) errors.push({ en: "walk_in_price is required and must be a number.", fr: "walk_in_price est requis et doit être un nombre." });
     if (qty == null || Number.isNaN(qty)) errors.push({ en: "qty is required and must be a number.", fr: "qty est requis et doit être un nombre." });
+    // PRICE ORDER: cost ≤ min ≤ wholesale ≤ sell (blank = not set) — the row is listed with the
+    // fix instead of being sent for the server to refuse.
+    {
+      const pv = priceOrderViolation({ cost_price: cost, min_price: minp, wholesale_price: wholesale, sell_price: sell });
+      if (pv) errors.push(priceOrderMessage(pv));
+    }
 
     const locRaw = String(rec.location == null ? "" : rec.location).trim();
     let loc = null;
