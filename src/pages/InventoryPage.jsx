@@ -1156,7 +1156,16 @@ export default function InventoryPage() {
       toast.success(en ? `✓ ${ok} imported${fail ? `, ${fail} skipped` : ""}` : `✓ ${ok} importés${fail ? `, ${fail} ignorés` : ""}`, { duration: 4000 });
       setImportResults(results);
       invalidateAll();
-      if (fail === 0) { setShowImport(false); setImportFile(null); setImportPreview([]); setImportResults(null); }
+      if (fail === 0) { setShowImport(false); setImportFile(null); setImportPreview([]); setImportResults(null); return; }
+      // Partial import: drop the imported rows from the preview so they can't be
+      // re-sent, and turn server refusals into ⚠️ rows so only fixable rows remain.
+      const byRow = new Map(results.map(r => [r.rowNum, r]));
+      setImportPreview(prev => prev
+        .filter(row => !byRow.get(row._rowNum)?.success)
+        .map(row => {
+          const r = byRow.get(row._rowNum);
+          return row.ok && r && !r.success ? { ...row, ok: false, errors: [{ en: r.reason, fr: r.reason }] } : row;
+        }));
     },
     onError: (err) => toast.error(err.message || "Import failed")
   });
@@ -2366,8 +2375,20 @@ export default function InventoryPage() {
       {/* ── MODAL: CSV IMPORT ── */}
       {/* ══════════════════════════════════════════════════════════════════════ */}
       {showImport && (
-        <div className="modal-overlay" onClick={() => setShowImport(false)}>
+        <div className="modal-overlay" onClick={() => { setShowImport(false); setImportFile(null); setImportPreview([]); setImportResults(null); }}>
           <div className="modal" style={{ maxWidth: 680, maxHeight: "90vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+            {/* Partial-import outcome — persistent (the toast is easy to miss); cleared on close or a new file. */}
+            {importResults && importResults.some(r => !r.success) && (() => {
+              const ok = importResults.filter(r => r.success).length;
+              const fail = importResults.length - ok;
+              return (
+                <div data-import-summary style={{ background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.4)", color: "#10b981", borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 13, fontWeight: 600 }}>
+                  {lang === "en"
+                    ? `✓ ${ok} ${ok === 1 ? "product" : "products"} imported. ${fail} ${fail === 1 ? "row" : "rows"} skipped. Fix them in your file and upload it again.`
+                    : `✓ ${ok} ${ok === 1 ? "produit importé" : "produits importés"}. ${fail} ${fail === 1 ? "ligne ignorée" : "lignes ignorées"}. Corrigez-les dans votre fichier et importez-le à nouveau.`}
+                </div>
+              );
+            })()}
             <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 4 }}>📊 {lang === "en" ? "Import from CSV/Excel" : "Importer depuis CSV/Excel"}</div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 20 }}>{lang === "en" ? "Best for initial setup with 50+ products. Download template, fill it, upload." : "Idéal pour la configuration initiale avec 50+ produits."}</div>
 
@@ -2453,8 +2474,8 @@ export default function InventoryPage() {
                 {badCount > 0 && (
                   <div style={{ color: "#f87171", fontSize: 12, marginTop: 8 }}>
                     ⚠️ {lang === "en"
-                      ? `${badCount} row(s) marked ⚠️ will be skipped (hover the ⚠️ for the reason). The ${okCount} good rows still import.`
-                      : `${badCount} ligne(s) ⚠️ seront ignorées (survolez le ⚠️ pour la raison). Les ${okCount} bonnes lignes s'importent quand même.`}
+                      ? `${badCount} row(s) marked ⚠️ will be skipped (hover the ⚠️ for the reason).${okCount ? ` The ${okCount} good rows still import.` : ""}`
+                      : `${badCount} ligne(s) ⚠️ seront ignorées (survolez le ⚠️ pour la raison).${okCount ? ` Les ${okCount} bonnes lignes s'importent quand même.` : ""}`}
                   </div>
                 )}
                 {/* PRICE ORDER: every row to fix, with its reason in full (a hover title is invisible on a phone) */}
@@ -2472,20 +2493,6 @@ export default function InventoryPage() {
               );
             })()}
 
-            {/* Import result — per-row outcome (kept open when some rows were skipped). */}
-            {importResults && importResults.some(r => !r.success) && (
-              <div style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 12, padding: 16, marginBottom: 16 }}>
-                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>
-                  {lang === "en" ? `Skipped rows (${importResults.filter(r => !r.success).length})` : `Lignes ignorées (${importResults.filter(r => !r.success).length})`}
-                </div>
-                {importResults.filter(r => !r.success).map((r, i) => (
-                  <div key={i} style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 3 }}>
-                    <b>{lang === "en" ? `Row ${r.rowNum}` : `Ligne ${r.rowNum}`}{r.name ? ` (${r.name})` : ""}:</b> {r.reason}
-                  </div>
-                ))}
-              </div>
-            )}
-
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setShowImport(false); setImportFile(null); setImportPreview([]); setImportResults(null); }}>
                 {lang === "en" ? "Close" : "Fermer"}
@@ -2493,7 +2500,9 @@ export default function InventoryPage() {
               <button className="btn btn-primary" style={{ flex: 2 }}
                 disabled={importPreview.filter(r => r.ok).length === 0 || importMutation.isPending}
                 onClick={() => importMutation.mutate()}>
-                {importMutation.isPending ? `⏳ ${lang === "en" ? "Importing..." : "Importation..."}` : (lang === "en" ? `✓ Import ${importPreview.filter(r => r.ok).length} products` : `✓ Importer ${importPreview.filter(r => r.ok).length} produits`)}
+                {importMutation.isPending ? `⏳ ${lang === "en" ? "Importing..." : "Importation..."}`
+                  : importResults && importPreview.filter(r => r.ok).length === 0 ? (lang === "en" ? "Nothing left to import" : "Plus rien à importer")
+                  : (lang === "en" ? `✓ Import ${importPreview.filter(r => r.ok).length} products` : `✓ Importer ${importPreview.filter(r => r.ok).length} produits`)}
               </button>
             </div>
           </div>
