@@ -350,14 +350,14 @@ export default function DrawerDashboardCard() {
     queryKey: ["current-shift", locId],
     queryFn: () => api.get(`/shifts/current?location_id=${locId}`).then(r => r.data?.data),
     enabled: !!locId,
-    // MP-DRAWER-FRESHNESS: 30s → 3s so the drawer reflects a float/expense change
-    // promptly. NOTE this runs against MP-PEAK-MTN-RESILIENCE, which deliberately
-    // RAISED poll intervals (7s/15s → 60s) because congested peak-hour MTN routes were
-    // aborting requests. This is 10x the request rate on that same network.
-    // The targeted invalidations (here + ExpenditurePage) are what actually fix the lag;
-    // this interval is belt-and-braces and is the first thing to put back up if the
-    // request volume bites.
-    refetchInterval: 3000,
+    // MP-DRAWER-FRESHNESS: was 3s; back to 30s (2026-10-26). At 3s this one query was
+    // ~300 requests per 15 min per open dashboard — a third of the per-user rate limit
+    // (1000/15 min, shared by all of that user's devices), and it starved a CSV import.
+    // Same-device freshness comes from the targeted updates, not this interval: the POS
+    // cash bump + post-sale invalidation, shift open/close, expenses (ExpenditurePage),
+    // debt payments (CustomersPage), corrections (onDone below). The interval only
+    // picks up changes made on OTHER devices.
+    refetchInterval: 30000,
   });
 
   // For state 3 — peek at the most recent closed shift to see if it

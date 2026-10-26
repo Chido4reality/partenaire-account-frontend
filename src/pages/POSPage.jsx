@@ -2070,6 +2070,9 @@ export default function POSPage() {
             k === "recent-sales" || k === "daily-summary" || k === "overdue-credits" ||
             k === "pos-customers" || k === "customer-debt" || k === "credits" ||
             k === "customers" || k === "customer-summary" ||
+            // Online only (the queued branch above skips it): the drawer card polls
+            // every 30s now, so the server's drawer figures refresh here after a sale.
+            k === "current-shift" ||
             k.startsWith("reports-")
           );
         }
