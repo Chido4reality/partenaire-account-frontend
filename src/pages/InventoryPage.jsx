@@ -1119,36 +1119,72 @@ export default function InventoryPage() {
   // ── IMPORT MUTATION ─────────────────────────────────────────────────────────
   // Only the VALID rows are sent; invalid rows are reported as skips (never
   // silently dropped). Each product also seeds its stock row (qty + slot_code).
+  // BULK IMPORT: up to 50 rows per request to POST /products/import, where each row
+  // (product + its stock + expiry) is saved whole or not at all — 3 requests for a
+  // 120-row file instead of 240. An older backend without the route answers 404:
+  // then the rest of the file goes through the per-row path below, as before.
+  const IMPORT_CHUNK = 50;
+  const importRowOneByOne = async (row) => {
+    try {
+      const res = await api.post("/products", {
+        name: row.name, barcode: row.barcode || null, sku: (row.sku || "").trim() || null, unit: row.unit || "pce",
+        cost_price: +row.cost_price || 0, sell_price: +row.sell_price,
+        wholesale_price: +row.wholesale_price || 0, min_price: +row.min_price || 0,
+        price_source: "import",
+        ...(canExpiry && row.track_expiry ? { track_expiry: true } : {}),
+      });
+      const product = res.data.data;
+      if (row.location_id && row.qty !== "" && +row.qty > 0) {
+        await api.post("/stock/arrivals", {
+          location_id: row.location_id,
+          items: [{ product_id: product.id, quantity: +row.qty, cost_price: +row.cost_price || 0, slot_code: row.slot_zone || null,
+                    ...(canExpiry && (row.expiry_date || row.batch_no) ? { expiry_date: row.expiry_date || null, batch_no: row.batch_no || null } : {}) }]
+        });
+      }
+      return { rowNum: row._rowNum, name: row.name, success: true };
+    } catch (e) {
+      return { rowNum: row._rowNum, name: row.name, success: false, reason: e.response?.data?.message || (en ? "server error" : "erreur serveur") };
+    }
+  };
+  const importRowBody = (row) => ({
+    rowNum: row._rowNum, name: row.name, barcode: row.barcode || null, sku: (row.sku || "").trim() || null, unit: row.unit || "pce",
+    cost_price: +row.cost_price || 0, sell_price: +row.sell_price, wholesale_price: +row.wholesale_price || 0, min_price: +row.min_price || 0,
+    qty: row.qty === "" ? 0 : +row.qty, location_id: row.location_id || null, slot_zone: row.slot_zone || null,
+    ...(canExpiry ? { track_expiry: !!row.track_expiry, expiry_date: row.expiry_date || null, batch_no: row.batch_no || null } : {}),
+  });
   const importMutation = useMutation({
     mutationFn: async () => {
       const results = [];
+      const okRows = [];
       for (const row of importPreview) {
         if (!row.ok) {
           results.push({ rowNum: row._rowNum, name: row.name, success: false, reason: (en ? row.errors[0]?.en : row.errors[0]?.fr) });
           continue;
         }
+        okRows.push(row);
+      }
+      let bulk = true;
+      for (let i = 0; i < okRows.length; i += IMPORT_CHUNK) {
+        const chunk = okRows.slice(i, i + IMPORT_CHUNK);
+        if (!bulk) {
+          for (const row of chunk) results.push(await importRowOneByOne(row));
+          continue;
+        }
         try {
-          const res = await api.post("/products", {
-            name: row.name, barcode: row.barcode || null, sku: (row.sku || "").trim() || null, unit: row.unit || "pce",
-            cost_price: +row.cost_price || 0, sell_price: +row.sell_price,
-            wholesale_price: +row.wholesale_price || 0, min_price: +row.min_price || 0,
-            price_source: "import",
-            ...(canExpiry && row.track_expiry ? { track_expiry: true } : {}),
-          });
-          const product = res.data.data;
-          if (row.location_id && row.qty !== "" && +row.qty > 0) {
-            await api.post("/stock/arrivals", {
-              location_id: row.location_id,
-              items: [{ product_id: product.id, quantity: +row.qty, cost_price: +row.cost_price || 0, slot_code: row.slot_zone || null,
-                        ...(canExpiry && (row.expiry_date || row.batch_no) ? { expiry_date: row.expiry_date || null, batch_no: row.batch_no || null } : {}) }]
-            });
+          const res = await api.post("/products/import", { rows: chunk.map(importRowBody) });
+          for (const r of res.data?.data?.results || []) {
+            results.push({ rowNum: r.rowNum, name: r.name, success: !!r.success,
+              ...(r.success ? {} : { reason: (en ? r.reason_en : r.reason_fr) || r.reason || (en ? "server error" : "erreur serveur") }) });
           }
-          results.push({ rowNum: row._rowNum, name: row.name, success: true });
         } catch (e) {
-          results.push({ rowNum: row._rowNum, name: row.name, success: false, reason: e.response?.data?.message || (en ? "server error" : "erreur serveur") });
+          if (e.response?.status === 404) { bulk = false; i -= IMPORT_CHUNK; continue; }   // older backend: redo this chunk row by row
+          // Nothing in this chunk was answered (offline, rate limit, server down) — its rows stay to retry.
+          const d = e.response?.data;
+          const reason = (d && ((en ? d.message_en : d.message_fr) || d.message)) || (en ? "server error" : "erreur serveur");
+          for (const row of chunk) results.push({ rowNum: row._rowNum, name: row.name, success: false, reason });
         }
       }
-      return results;
+      return results.sort((a, b) => a.rowNum - b.rowNum);
     },
     onSuccess: (results) => {
       const ok = results.filter(r => r.success).length;
