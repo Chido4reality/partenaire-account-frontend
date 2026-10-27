@@ -19,6 +19,7 @@ const ROOT = resolve(HERE, "..");
 
 const CHECKS = [
   ["app-lock",      "scripts/app-lock-check.mjs", "APP LOCK: lock rules, 5-wrong sign-out, PBKDF2 record bound to user+org, outer-layer wiring"],
+  ["transfer-availability", "scripts/transfer-availability-check.mjs", "TRANSFER RESERVATION: picker + Goods Buffer stock show in stock · assigned · available; limits use available; refusals in the reader's language"],
   ["boot-selfheal", "scripts/boot-selfheal-check.mjs", "BOOT SELF-HEAL: a chunk failing after mount reloads at most once per tab per minute (was every ~1.5 s, forever)"],
   ["app-lock-settings", "scripts/app-lock-settings-check.mjs", "APP LOCK settings: save only from the server (failure restores), status line, saved policy reaches the lock, fingerprint audit retried"],
   ["update-gate-wording", "scripts/update-gate-wording-check.mjs", "every update screen says 'send pending sales before updating' (an old app's queued sale is held for the owner after it)"],

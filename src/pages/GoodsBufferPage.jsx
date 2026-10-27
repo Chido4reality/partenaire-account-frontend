@@ -18,6 +18,8 @@ import api from "../utils/api";
 import { useAuthStore, useLangStore, useSettingsStore } from "../store";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { locationLabel, locationNameLabel } from "../utils/locations"; // GOODS-BUFFER
+import { availabilityOf } from "../utils/transferAvailability"; // TRANSFER RESERVATION
+import { useReservedAt, AvailabilityLine } from "../components/common/TransferAvailability";
 import BufferDetailModal from "../components/BufferDetailModal"; // MP-STAFF-ACTIVITY-LEDGER Phase 3
 import { useCurrency } from "../utils/useCurrency";
 import ProductSearchBox from "../components/common/ProductSearchBox";
@@ -924,6 +926,9 @@ function BufferStockTab({ en, lang, fmt, access, locList }) {
     queryFn: () => api.get(`/transfers?to_location=${buf.id}&status=pending,in_transit`).then(toArr),
     enabled: !!buf?.id,
   });
+  // TRANSFER RESERVATION: units already on a pending transfer out of the buffer (a Send to, say)
+  // are not free to transfer again — each line says "In stock X · assigned Y · available Z".
+  const reserved = useReservedAt(buf?.id);
   const d = stockQ.data || {};
   const items = (d.items || []).filter(it => num(it.quantity) > 0);
   const incoming = incomingQ.data || [];
@@ -952,6 +957,7 @@ function BufferStockTab({ en, lang, fmt, access, locList }) {
               <div key={it.product_id} style={{ padding: "10px 13px", borderTop: i === 0 ? "none" : "1px solid var(--border)", display: "flex", justifyContent: "space-between", gap: 8 }}>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 600 }}>{(en && it.name_en) || it.name}</div>
+                  <AvailabilityLine a={availabilityOf(it.quantity, reserved, it.product_id)} en={en} />
                   {e && <div style={{ fontSize: 11.5, color: e.bucket === "expired" || e.bucket === "d30" ? "#f87171" : "var(--text-muted)" }}>
                     {en ? "Expires" : "Expire le"} {new Date(e.expiry_date).toLocaleDateString(en ? "en-GB" : "fr-FR", { day: "numeric", month: "short", year: "numeric" })}
                   </div>}

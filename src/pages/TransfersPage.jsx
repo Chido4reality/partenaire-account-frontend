@@ -20,6 +20,8 @@ import TransferDetailModal from "../components/TransferDetailModal"; // MP-STAFF
 import { subscribe, listFailedPermanent, ownerMismatchOf, continueWithConfirm, discard } from "../utils/pendingSync"; // owner count refused on replay
 import { ownerShortLocal } from "../utils/ownerMismatch"; // owner short count, checked on the phone
 import { isGoodsBuffer, locationLabel, locationTypeLabel } from "../utils/locations"; // GOODS-BUFFER
+import { availabilityOf, serverMessage } from "../utils/transferAvailability"; // TRANSFER RESERVATION
+import { useReservedAt, AvailabilityLine } from "../components/common/TransferAvailability";
 
 export default function TransfersPage() {
   const { lang } = useLangStore();
@@ -193,8 +195,13 @@ export default function TransfersPage() {
     }
   };
 
+  // TRANSFER RESERVATION: what pending transfers out of the source already hold. Available =
+  // stock − that (the transfer being edited does not count against itself). The server refuses
+  // anything over it; this sets the limits and shows "In stock X · assigned Y · available Z".
+  const reserved = useReservedAt(fromLoc);
+  const availInfo = (product) => availabilityOf(product?.stock?.quantity, reserved, product?.id, editingId);
   // Available stock at the SOURCE location for a product (null = unknown/external).
-  const availOf = (product) => (product?.stock?.quantity ?? null);
+  const availOf = (product) => (product?.stock?.quantity == null ? null : availInfo(product).available);
 
   // Add a product to the transfer list. MERGES on duplicate (increments qty) and
   // CLAMPS each line to the available stock at source (when known).
@@ -267,7 +274,7 @@ export default function TransfersPage() {
     return u;
   });
   const setPickQty = (p, qty) => setPickerSel(prev => {
-    const max = p.stock?.quantity ?? Infinity;
+    const max = availOf(p) ?? Infinity;
     return { ...prev, [p.id]: Math.max(1, Math.min(qty || 1, max)) };
   });
   const addPicked = () => {
@@ -292,9 +299,11 @@ export default function TransfersPage() {
       toast.success(lang === "en" ? "Transfer created!" : "Transfert cree!");
       setMode("list"); setStep(1); setFromLoc(""); setToLoc(""); setNotes(""); setScannedItems([]); setFlagRecount(false);
       setPickerSel({}); setPickerSearch(""); setPickerOpen(false);
-      qc.invalidateQueries(["transfers"]);
+      qc.invalidateQueries(["transfers"]); qc.invalidateQueries({ queryKey: ["transfers-reserved"] });
     },
-    onError: (err) => toast.error(err.response?.data?.message || "Error")
+    // TRANSFER RESERVATION: "Only N available — M already assigned to TRF-… (pending)", in the
+    // reader's language (it used to show `message`, i.e. French, to everyone); refresh the figures.
+    onError: (err) => { toast.error(serverMessage(err.response?.data, lang === "en"), { duration: 8000 }); qc.invalidateQueries({ queryKey: ["transfers-reserved"] }); }
   });
 
   const completeMutation = useMutation({
@@ -317,9 +326,10 @@ export default function TransfersPage() {
     mutationFn: (id) => api.post(`/transfers/${id}/dispatch`, {}),
     onSuccess: () => {
       toast.success(lang === "en" ? "Dispatched — awaiting confirmation" : "Envoyé — en attente de confirmation");
-      qc.invalidateQueries(["transfers"]); qc.invalidateQueries(["transfers-incoming"]); qc.invalidateQueries(["stock"]);
+      qc.invalidateQueries(["transfers"]); qc.invalidateQueries(["transfers-incoming"]); qc.invalidateQueries(["stock"]); qc.invalidateQueries({ queryKey: ["transfers-reserved"] });
     },
-    onError: (err) => toast.error(err.response?.data?.message || "Error")
+    // names product, needed, in stock and the TRF that took the units (FR/EN)
+    onError: (err) => toast.error(serverMessage(err.response?.data, lang === "en"), { duration: 8000 })
   });
   // Receiver confirms (one-tap, all correct): in_transit→completed (trigger credits DEST).
   // ONE-TAP (no lines) → dest gets sent qty. ADJUST ({lines:[{item_id,received_quantity}]})
@@ -402,7 +412,7 @@ export default function TransfersPage() {
       })));
       setPickerSel({}); setPickerSearch(""); setPickerOpen(false); setSearchQty(1);
       setMode("new"); setStep(2);
-    } catch (err) { toast.error(err.response?.data?.message || "Error"); }
+    } catch (err) { toast.error(serverMessage(err.response?.data, lang === "en")); }
   };
 
   // (B) SAVE edits to a pending transfer — replaces its items (status stays pending).
@@ -414,9 +424,9 @@ export default function TransfersPage() {
     onSuccess: () => {
       toast.success(lang === "en" ? "Transfer updated!" : "Transfert mis à jour!");
       resetNew();
-      qc.invalidateQueries(["transfers"]);
+      qc.invalidateQueries(["transfers"]); qc.invalidateQueries({ queryKey: ["transfers-reserved"] });
     },
-    onError: (err) => toast.error(err.response?.data?.message || "Error")
+    onError: (err) => { toast.error(serverMessage(err.response?.data, lang === "en"), { duration: 8000 }); qc.invalidateQueries({ queryKey: ["transfers-reserved"] }); }
   });
 
   // (B) CANCEL/REVERSE a pending or fully-un-received in-transit transfer. MP-TRANSFER-
@@ -428,10 +438,10 @@ export default function TransfersPage() {
       toast.success(res?.data?.reversed_source
         ? (lang === "en" ? "Transfer cancelled — stock returned to source" : "Transfert annulé — stock rendu à la source")
         : (lang === "en" ? "Transfer cancelled" : "Transfert annulé"));
-      qc.invalidateQueries(["transfers"]);
+      qc.invalidateQueries(["transfers"]); qc.invalidateQueries({ queryKey: ["transfers-reserved"] });   // a cancel frees the reservation
       qc.invalidateQueries({ queryKey: ["transfers-incoming"] });
     },
-    onError: (err) => toast.error(err.response?.data?.message || "Error")
+    onError: (err) => toast.error(serverMessage(err.response?.data, lang === "en"))
   });
   // MP-TRANSFER-GOVERNANCE: who may cancel — the OWNER, or a MANAGER the boss granted
   // can_cancel_transfers. (The server is authoritative; this only decides button visibility.)
@@ -694,15 +704,16 @@ export default function TransfersPage() {
                         </div>
                       ) : pickerFiltered.map(p => {
                         const checked = pickerSel[p.id] != null;
-                        const avail = p.stock?.quantity ?? 0;
+                        const info = availInfo(p);   // TRANSFER RESERVATION
+                        const avail = info.available;
                         return (
-                          <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderBottom: "1px solid var(--border)", background: checked ? "rgba(251,197,3,0.06)" : "transparent" }}>
-                            <label style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, cursor: "pointer", minWidth: 0 }}>
-                              <input type="checkbox" checked={checked} onChange={() => togglePick(p)}
+                          <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderBottom: "1px solid var(--border)", background: checked ? "rgba(251,197,3,0.06)" : "transparent", opacity: avail <= 0 && !checked ? 0.55 : 1 }}>
+                            <label style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, cursor: avail <= 0 && !checked ? "not-allowed" : "pointer", minWidth: 0 }}>
+                              <input type="checkbox" checked={checked} onChange={() => togglePick(p)} disabled={avail <= 0 && !checked}
                                 style={{ width: 18, height: 18, accentColor: "var(--brand)", flexShrink: 0 }} />
                               <span style={{ minWidth: 0 }}>
                                 <span style={{ fontSize: 13, fontWeight: 500, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
-                                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "en" ? "Available:" : "Disponible:"} {avail} {p.unit}</span>
+                                <AvailabilityLine a={info} en={lang === "en"} />
                               </span>
                             </label>
                             {checked && (
