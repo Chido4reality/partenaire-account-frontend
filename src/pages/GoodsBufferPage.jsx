@@ -568,6 +568,14 @@ function ReleaseModal({ row, en, lang, fmt, locList, bufferLoc, canMoveBuffer, o
   const [newTracked, setNewTracked] = useState(false);         // switch for a NEW product
   const [expDate, setExpDate] = useState("");
   const [expBatch, setExpBatch] = useState("");
+  // GB-SEND-TO: optional destinations — one pending transfer per row is created after the release.
+  const [sendRows, setSendRows] = useState([]);
+  const [sentTo, setSentTo] = useState(false);   // the release asked for transfers (old-backend check)
+  const sendLocs = bufferLoc ? locList.filter(l => l.id !== bufferLoc.id && l.kind !== "goods_buffer" && l.is_active !== false) : [];
+  const sendTo = sendRows.filter(r => r.location_id && num(r.quantity) > 0).map(r => ({ location_id: r.location_id, quantity: num(r.quantity) }));
+  const sending = sendRows.reduce((s, r) => s + num(r.quantity), 0);
+  const staysInBuffer = num(bufQty) - sending;   // kits for a kit, units otherwise
+  const sendBody = () => (bufferLoc && sendTo.length ? { send_to: sendTo } : {});
 
   // Prefill: EXISTING product → its current prices (a blank re-save would overwrite the
   // real price). NEW product → generate an SKU + prefill the barcode staff scanned at add.
@@ -638,6 +646,8 @@ function ReleaseModal({ row, en, lang, fmt, locList, bufferLoc, canMoveBuffer, o
   const submit = () => {
     if (num(sell) <= 0) return toast.error(en ? "Set a selling price" : "Fixez un prix de vente");
     if (priceErr) return toast.error(priceErr);
+    if (bufferLoc && staysInBuffer < 0) return toast.error(en ? "You are sending more than you release" : "Vous envoyez plus que vous ne libérez");
+    setSentTo(bufferLoc ? sendTo.length > 0 : false);
     if (kit) {
       // Kit: the parent holds the price + ZERO stock; the arrival lands on the PARTS.
       const kitParts = parts
@@ -654,7 +664,7 @@ function ReleaseModal({ row, en, lang, fmt, locList, bufferLoc, canMoveBuffer, o
         .filter(Boolean);
       if (bufferLoc && (num(bufQty) <= 0 || num(bufQty) > remaining)) return toast.error(en ? "Enter how many kits to release (up to what's left)" : "Indiquez combien de kits libérer (au plus ce qui reste)");
       if (!kitParts.length) return toast.error(en ? "Add at least one part with qty-per-kit + a location" : "Ajoutez au moins une pièce avec qté/kit + un site");
-      mut.mutate({ kit_parts: kitParts, ...prices(), ...newCodes(),
+      mut.mutate({ kit_parts: kitParts, ...prices(), ...newCodes(), ...sendBody(),
         merge_product_id: (isNew && mergeProduct) ? mergeProduct.id : null, invoice_ref: invoiceRef.trim() || null });
       return;
     }
@@ -664,7 +674,7 @@ function ReleaseModal({ row, en, lang, fmt, locList, bufferLoc, canMoveBuffer, o
     if (!assignments.length) return toast.error(en ? "Add at least one location + quantity" : "Ajoutez au moins un site + une quantité");
     if (assigned > remaining) return toast.error(en ? "That's more than what's left" : "C'est plus que ce qui reste");
     if (tracked && expiryMissing(true, expDate)) return toast.error(en ? "Enter the expiry date" : "Saisissez la date d'expiration");
-    mut.mutate({ assignments, ...prices(), ...newCodes(), ...expiryBody(),
+    mut.mutate({ assignments, ...prices(), ...newCodes(), ...expiryBody(), ...sendBody(),
       merge_product_id: (isNew && mergeProduct) ? mergeProduct.id : null, invoice_ref: invoiceRef.trim() || null });
   };
 
@@ -679,9 +689,11 @@ function ReleaseModal({ row, en, lang, fmt, locList, bufferLoc, canMoveBuffer, o
           <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 14, lineHeight: 1.5 }}>
             {row.product_label} — {released.kits_released != null ? released.kits_released : released.released_now} {en ? "released" : "libéré(s)"}
             {released.status === "partial" ? (en ? " · the rest stays pending" : " · le reste reste en attente") : ""}.{" "}
-            {en ? "Send it to a shop with a transfer — it can't be sold from the buffer."
-                : "Envoyez-le vers une boutique par un transfert — il ne peut pas être vendu depuis la zone tampon."}
+            {!sentTo && (en ? "Send it to a shop with a transfer — it can't be sold from the buffer."
+                : "Envoyez-le vers une boutique par un transfert — il ne peut pas être vendu depuis la zone tampon.")}
           </div>
+          {sentTo && <SendToResult transfers={released.transfers} en={en} kit={released.kits_released != null}
+            onOpen={(id) => { onDone(); navigate(`/transfers?tr=${id}`); }} />}
           <div style={{ display: "flex", gap: 8 }}>
             <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onDone}>{en ? "Later" : "Plus tard"}</button>
             {canMoveBuffer && (
@@ -789,6 +801,26 @@ function ReleaseModal({ row, en, lang, fmt, locList, bufferLoc, canMoveBuffer, o
           </>
         )}
 
+        {/* GB-SEND-TO: optional — one pending transfer per destination, made after the release */}
+        {bufferLoc && canMoveBuffer && (
+          <div data-send-to style={{ marginBottom: 10, padding: 10, border: "1px solid var(--border)", borderRadius: 8 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 2 }}>🚚 {en ? "Send to (optional)" : "Envoyer vers (facultatif)"}</div>
+            <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginBottom: 6 }}>
+              {kit ? (en ? "In kits — each shop gets the parts of its kits." : "En kits — chaque boutique reçoit les pièces de ses kits.")
+                   : (en ? "One transfer per shop, waiting to be dispatched." : "Un transfert par boutique, en attente d'envoi.")}
+            </div>
+            {sendRows.length === 0 ? (
+              <button type="button" className="btn btn-secondary" style={{ fontSize: 12 }}
+                onClick={() => setSendRows([{ location_id: "", quantity: "" }])}>+ {en ? "Send to a shop" : "Envoyer vers une boutique"}</button>
+            ) : (<>
+              <SplitRows rows={sendRows} setRows={setSendRows} locList={sendLocs} en={en} />
+              <div data-stays-in-buffer style={{ fontSize: 13, fontWeight: 700, color: staysInBuffer < 0 ? "#f87171" : "var(--text-secondary)" }}>
+                {en ? `Stays in ${locationLabel(bufferLoc, lang)}` : `Reste en ${locationLabel(bufferLoc, lang)}`}: {staysInBuffer}{kit ? (en ? " kits" : " kits") : ""}
+              </div>
+            </>)}
+          </div>
+        )}
+
         <input className="input" style={{ marginBottom: 10 }} value={invoiceRef} onChange={e => setInvoiceRef(e.target.value)}
           placeholder={en ? "Invoice ref (optional)" : "Réf. facture (facultatif)"} />
 
@@ -796,7 +828,7 @@ function ReleaseModal({ row, en, lang, fmt, locList, bufferLoc, canMoveBuffer, o
           <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onClose}>{en ? "Cancel" : "Annuler"}</button>
           <button className="btn btn-primary" style={{ flex: 2 }}
             disabled={mut.isPending || num(sell) <= 0 || (!kit && (left < 0 || assigned === 0)) || (kit && parts.length === 0)
-              || (kit && bufferLoc && (num(bufQty) <= 0 || num(bufQty) > remaining))}
+              || (kit && bufferLoc && (num(bufQty) <= 0 || num(bufQty) > remaining)) || (bufferLoc && staysInBuffer < 0)}
             onClick={submit}>
             {mut.isPending ? "…" : bufferLoc ? (en ? "Release to the Goods Buffer" : "Libérer en zone tampon") : (en ? "Add to inventory" : "Ajouter au stock")}
           </button>
@@ -815,6 +847,46 @@ function BufferQtyField({ en, lang, bufferLoc, value, onChange, label }) {
       </div>
       <label className="label" style={{ fontSize: 11.5 }}>{label}</label>
       <input className="input" type="number" inputMode="numeric" min="0" value={value} onChange={e => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+// GB-SEND-TO: what the release did with "Send to". Module scope + plain props (see the F-A note
+// above): it only appears after a mutation, so a render check must be able to reach it directly.
+// `transfers` missing = the server is older than this screen and created nothing.
+export function SendToResult({ transfers, en, kit, onOpen }) {
+  const box = { borderRadius: 8, padding: "8px 10px", marginBottom: 8, fontSize: 12.5, lineHeight: 1.45 };
+  if (!transfers) {
+    return (
+      <div data-send-to-result="not-created" style={{ ...box, background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.4)" }}>
+        ⚠️ {en ? "The transfers were NOT created — the goods are all in the Goods Buffer. Create them from Transfers."
+               : "Les transferts n'ont PAS été créés — toute la marchandise est en zone tampon. Créez-les depuis Transferts."}
+      </div>
+    );
+  }
+  const unit = kit ? (en ? " kits" : " kits") : "";
+  const created = transfers.created || [], waiting = transfers.awaiting_approval || [], failed = transfers.failed || [];
+  return (
+    <div data-send-to-result style={{ marginBottom: 6 }}>
+      {created.map((t) => (
+        <button key={t.location_id} type="button" data-send-created onClick={() => onOpen && onOpen(t.transfer_id)}
+          style={{ ...box, display: "flex", width: "100%", justifyContent: "space-between", gap: 8, border: "1px solid var(--border)",
+                   background: "transparent", color: "inherit", cursor: "pointer", textAlign: "left", font: "inherit" }}>
+          <span><strong>{t.transfer_number}</strong> → {t.location_name} · {t.quantity}{unit}</span>
+          <span style={{ color: "var(--text-muted)", whiteSpace: "nowrap" }}>{en ? "Awaiting dispatch ›" : "En attente d'envoi ›"}</span>
+        </button>
+      ))}
+      {waiting.map((t) => (
+        <div key={t.location_id} data-send-awaiting style={{ ...box, border: "1px solid rgba(245,158,11,0.4)", background: "rgba(245,158,11,0.08)" }}>
+          ⏳ {t.location_name} · {t.quantity}{unit} — {en ? "waiting for the boss's approval; the transfer is made once approved."
+                                                    : "en attente de l'accord du patron ; le transfert sera créé après accord."}
+        </div>
+      ))}
+      {failed.map((t) => (
+        <div key={t.location_id} data-send-failed style={{ ...box, border: "1px solid rgba(248,113,113,0.4)", background: "rgba(248,113,113,0.1)", color: "#f87171" }}>
+          ✕ {t.location_name} · {t.quantity}{unit} — {en ? t.message_en : t.message_fr}
+        </div>
+      ))}
     </div>
   );
 }
