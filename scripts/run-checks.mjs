@@ -19,6 +19,7 @@ const ROOT = resolve(HERE, "..");
 
 const CHECKS = [
   ["app-lock",      "scripts/app-lock-check.mjs", "APP LOCK: lock rules, 5-wrong sign-out, PBKDF2 record bound to user+org, outer-layer wiring"],
+  ["app-lock-settings", "scripts/app-lock-settings-check.mjs", "APP LOCK settings: save only from the server (failure restores), status line, saved policy reaches the lock, fingerprint audit retried"],
   ["update-gate-wording", "scripts/update-gate-wording-check.mjs", "every update screen says 'send pending sales before updating' (an old app's queued sale is held for the owner after it)"],
   ["sync-after-logout", "scripts/sync-after-logout-check.mjs", "a logout never strands or mis-attributes a queued sale: no send without a session, 401 retry-later, author token, stranded-row recovery"],
   ["mount-check",   "scripts/mount-check.mjs",           "15 render scenarios — does it MOUNT, not just parse"],
