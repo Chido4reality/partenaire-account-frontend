@@ -694,14 +694,8 @@ function ReleaseModal({ row, en, lang, fmt, locList, bufferLoc, canMoveBuffer, o
           </div>
           {sentTo && <SendToResult transfers={released.transfers} en={en} kit={released.kits_released != null}
             onOpen={(id) => { onDone(); navigate(`/transfers?tr=${id}`); }} />}
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onDone}>{en ? "Later" : "Plus tard"}</button>
-            {canMoveBuffer && (
-              <button className="btn btn-primary" style={{ flex: 1.6 }} onClick={() => { onDone(); navigate("/transfers?from=" + bufferLoc.id); }}>
-                {en ? "Transfer now" : "Transférer maintenant"}
-              </button>
-            )}
-          </div>
+          <ReleaseResultActions en={en} canMoveBuffer={canMoveBuffer} stays={staysAfterRelease(released, sentTo)}
+            onLater={onDone} onTransfer={() => { onDone(); navigate("/transfers?from=" + bufferLoc.id); }} />
         </div>
       </div>
     );
@@ -847,6 +841,31 @@ function BufferQtyField({ en, lang, bufferLoc, value, onChange, label }) {
       </div>
       <label className="label" style={{ fontSize: 11.5 }}>{label}</label>
       <input className="input" type="number" inputMode="numeric" min="0" value={value} onChange={e => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+// GB-SEND-TO: how much of THIS release is still in the Goods Buffer (kits for a kit). Created and
+// awaiting-approval transfers are spoken for; failed ones and an old backend (no `transfers`) are not.
+export function staysAfterRelease(released, sentTo) {
+  const total = Number((released.kits_released != null ? released.kits_released : released.released_now) || 0);
+  if (!sentTo || !released.transfers) return total;
+  const t = released.transfers;
+  const out = [...(t.created || []), ...(t.awaiting_approval || [])].reduce((s, x) => s + Number(x.quantity || 0), 0);
+  return total - out;
+}
+
+// "Transfer now" only when something of this release stays in the buffer — after Send to took
+// everything it would only invite a second, duplicate transfer. Module scope for the render check.
+export function ReleaseResultActions({ en, canMoveBuffer, stays, onLater, onTransfer }) {
+  return (
+    <div style={{ display: "flex", gap: 8 }}>
+      <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onLater}>{en ? "Later" : "Plus tard"}</button>
+      {canMoveBuffer && stays > 0 && (
+        <button className="btn btn-primary" style={{ flex: 1.6 }} data-transfer-now onClick={onTransfer}>
+          {en ? "Transfer now" : "Transférer maintenant"}
+        </button>
+      )}
     </div>
   );
 }

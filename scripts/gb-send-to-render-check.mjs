@@ -43,7 +43,7 @@ const STUBS = {
 
 await build({
   stdin: {
-    contents: `export { SendToResult } from "./pages/GoodsBufferPage";`,
+    contents: `export { SendToResult, ReleaseResultActions, staysAfterRelease } from "./pages/GoodsBufferPage";`,
     resolveDir: SRC, loader: "jsx", sourcefile: "gbs-entry.jsx",
   },
   bundle: true, format: "esm", outfile: OUT, jsx: "automatic",
@@ -117,6 +117,33 @@ const T = {
 {
   const h = render({ transfers: { created: [], awaiting_approval: [], failed: [] }, en: true, kit: false });
   check("an empty result renders no rows (and no false 'not created')", !h.includes("NOT created") && !h.includes("data-send-created"));
+}
+
+console.log("\n-- GB-SEND-TO: 'Transfer now' only while something stays in the buffer --\n");
+{
+  const act = (released, sentTo, canMoveBuffer = true) => unescape(renderToString(React.createElement(M.ReleaseResultActions,
+    { en: true, canMoveBuffer, stays: M.staysAfterRelease(released, sentTo), onLater() {}, onTransfer() {} })));
+  const now = (h) => h.includes("data-transfer-now") && h.includes("Transfer now");
+  const tr = (created, awaiting = [], failed = []) => ({ created: created.map((q, i) => ({ location_id: "c" + i, quantity: q })),
+    awaiting_approval: awaiting.map((q, i) => ({ location_id: "a" + i, quantity: q })), failed: failed.map((q, i) => ({ location_id: "f" + i, quantity: q })) });
+  const cases = [
+    ["no Send to: 8 released, all stay → shown", { released_now: 8 }, false, true],
+    ["Send to took everything (5+3 of 8) → hidden", { released_now: 8, transfers: tr([5, 3]) }, true, false],
+    ["Send to left 1 (5+2 of 8) → shown", { released_now: 8, transfers: tr([5, 2]) }, true, true],
+    ["awaiting approval counts as sent (5 created + 3 awaiting of 8) → hidden", { released_now: 8, transfers: tr([5], [3]) }, true, false],
+    ["a FAILED destination stays in the buffer (5 created, 3 failed of 8) → shown", { released_now: 8, transfers: tr([5], [], [3]) }, true, true],
+    ["old backend (no transfers key) created nothing → shown", { released_now: 8 }, true, true],
+    ["kit: all 4 kits sent → hidden", { kits_released: 4, transfers: tr([3, 1]) }, true, false],
+    ["kit: 3 of 4 kits sent → shown", { kits_released: 4, transfers: tr([3]) }, true, true],
+  ];
+  for (const [label, released, sentTo, want] of cases) {
+    const h = act(released, sentTo);
+    check(label, now(h) === want, `stays ${M.staysAfterRelease(released, sentTo)}`);
+    check("…'Later' is always there", h.includes("Later"));
+  }
+  check("no buffer-move right → never shown, even with goods left", !now(act({ released_now: 8 }, false, false)));
+  const fr = unescape(renderToString(React.createElement(M.ReleaseResultActions, { en: false, canMoveBuffer: true, stays: 1 })));
+  check("French label", fr.includes("Transférer maintenant") && fr.includes("Plus tard"));
 }
 
 try { rmSync(OUT); } catch { /* leave it */ }

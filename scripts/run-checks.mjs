@@ -50,7 +50,7 @@ const CHECKS = [
   // (a mutation's onError, a fetch in useEffect) and neither runs under
   // renderToString — which is why they are module-scope props-only components.
   ["buffer-dup-ui",  "scripts/buffer-duplicate-warning-check.mjs", "the duplicate prompt and the release warning render, in both languages"],
-  ["gb-send-to-ui", "scripts/gb-send-to-render-check.mjs", "GB-SEND-TO: the release result names each transfer, approval and failure (both languages); old backend = NOT created"],
+  ["gb-send-to-ui", "scripts/gb-send-to-render-check.mjs", "GB-SEND-TO: the release result names each transfer, approval and failure (both languages); old backend = NOT created; Transfer now only while something stays in the buffer"],
   // F-C: is the receive screen actually BLIND? The root cause of 1,108 uncounted
   // lines was a PREFILL (String(it.quantity) into the count input), which is a
   // rendering fact — invisible to the API gates and to `vite build`, since esbuild
