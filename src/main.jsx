@@ -8,12 +8,11 @@ ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode><App /></React.StrictMode>
 );
 
-// MP-BLANK-SCREEN-FIX: we got here, so the bundle loaded and React mounted (this also
-// replaced the inline #mp-boot screen). Clear the boot-recovery counter set by the
-// inline handler in index.html — otherwise the ONE allowed auto-reload would stay
-// spent for the rest of the tab's life and a later chunk failure would go straight to
-// the manual retry instead of self-healing.
-try { sessionStorage.removeItem("mp-boot-reloads"); } catch { /* private mode */ }
+// MP-BLANK-SCREEN-FIX: the boot self-heal in index.html is capped by TIME (one automatic
+// reload per tab per minute). Mounting must NOT reset that cap (2026-10-27): it used to clear
+// a counter here, so a chunk that failed after mount reloaded the tab every ~1.5 s, forever.
+// The cap expires on its own after 60 s of clean running. Only the old counter is dropped.
+try { sessionStorage.removeItem("mp-boot-reloads"); } catch { /* private mode — legacy key from before 2026-10-27 */ }
 
 // MP-SW-LIFECYCLE (3 Jun): the PWA service worker is REDUNDANT on native
 // (Capacitor serves the app shell from the local APK bundle) and was the

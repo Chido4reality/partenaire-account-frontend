@@ -100,15 +100,19 @@
          to handle. Three layers:
            1. vite:preloadError / script-load failure  -> ONE automatic recovery reload
            2. a hard sessionStorage cap                -> a permanently missing asset can
-              never become a reload loop (worse than a blank screen)
+              never become a reload loop (worse than a blank screen): at most ONE automatic
+              reload per tab per minute, by TIME (2026-10-27). It used to be a counter that
+              main.jsx cleared on every mount, so a failure AFTER mount (a lazy chunk) reloaded
+              the tab every ~1.5 s with no end. Nothing resets the timestamp; it expires by itself
+              after 60 s of clean running.
            3. a 12s watchdog                           -> offers a manual retry, which is
               the hard-refresh phones don't have
          The retry unregisters the app SW and clears Cache Storage, so a user already
          stranded on a stale shell self-heals without switching browser. -->
     <script>
       (function () {
-        var RELOAD_KEY = "mp-boot-reloads";
-        var MAX_AUTO_RELOADS = 1;
+        var RELOAD_AT_KEY = "mp-boot-reload-at";   // when this tab last self-healed (ms)
+        var RELOAD_GAP_MS = 60000;                 // at most one automatic reload per minute
         var WATCHDOG_MS = 12000;
         var handled = false;
 
@@ -147,15 +151,16 @@
         function recover() {
           if (handled) return;
           handled = true;
-          var n = 0;
-          try { n = parseInt(sessionStorage.getItem(RELOAD_KEY) || "0", 10) || 0; } catch (e) { n = MAX_AUTO_RELOADS; }
+          var now = Date.now(), last = 0;
+          // storage unreadable → no automatic reload at all (it could not be capped)
+          try { last = parseInt(sessionStorage.getItem(RELOAD_AT_KEY) || "0", 10) || 0; } catch (e) { last = now; }
 
           // OFFLINE GUARD: never wipe the precache while the device is offline — that
           // cache IS the offline app. Offer a manual retry instead and leave it intact.
           if (typeof navigator !== "undefined" && navigator.onLine === false) { showRetry(); return; }
 
-          if (n >= MAX_AUTO_RELOADS) { showRetry(); return; }
-          try { sessionStorage.setItem(RELOAD_KEY, String(n + 1)); } catch (e) {}
+          if (now - last < RELOAD_GAP_MS) { showRetry(); return; }
+          try { sessionStorage.setItem(RELOAD_AT_KEY, String(now)); } catch (e) { showRetry(); return; }
           selfHeal().then(function () { window.location.reload(); });
         }
 
@@ -180,7 +185,7 @@
         if (btn) btn.addEventListener("click", function () {
           btn.disabled = true;
           btn.textContent = "…";
-          try { sessionStorage.removeItem(RELOAD_KEY); } catch (e) {}
+          // the person asked: always reload — but leave the automatic cap's timestamp alone
           selfHeal().then(function () { window.location.reload(); });
         });
       })();
