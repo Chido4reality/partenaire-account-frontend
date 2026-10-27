@@ -20,6 +20,7 @@ import { nukeClientState, hardRedirectToLogin } from "./authReset";
 import { revokeOnLogout } from "./push";
 import { DEFAULT_POLICY, makeRecord, checkRecord, recordMatchesSession, afterWrong } from "./appLockCore";
 import { createBiometricKey, deleteBiometricKey, biometricUnlock, biometricStatus } from "./biometric";
+import { makeEventQueue } from "./appLockSettings";
 
 export const isNative = () => { try { return Capacitor.isNativePlatform(); } catch { return false; } };
 export const SESSION_STARTED_AT = Date.now();   // this app process / browser tab
@@ -51,6 +52,7 @@ const getJSON = async (k) => { try { const v = await store.get(k); return v ? JS
 const K = {
   rec: (u) => `mp-applock-rec-${u}`, fails: (u) => `mp-applock-fails-${u}`, bio: (u) => `mp-applock-bio-${u}`,
   policy: (o) => `mp-applock-policy-${o}`, device: "mp-device-id", pending: "mp-applock-pending-event",
+  bioEvents: "mp-applock-bio-events",   // F5: fingerprint on/off audit events not yet received by the server
 };
 const USER_KEY = /^mp-applock-(rec|fails|bio)-(.+)$/;
 
@@ -97,6 +99,12 @@ export async function refreshPolicy(orgId) {
     await store.set(K.policy(orgId), JSON.stringify(keep));
     return { ...DEFAULT_POLICY, ...keep };
   } catch { return null; }
+}
+// F2 (2026-10-27): a saved setting reaches the running lock at once (AppLock listens), not at the next resume.
+export const POLICY_EVENT = "mp-app-lock-policy";
+export async function announcePolicy(orgId, d) {
+  await savePolicyCopy(orgId, d);
+  try { window.dispatchEvent(new CustomEvent(POLICY_EVENT, { detail: { orgId, policy: await savedPolicy(orgId) } })); } catch { /* no window */ }
 }
 export async function savePolicyCopy(orgId, d) {
   if (!orgId || !d) return;
@@ -146,6 +154,7 @@ api.interceptors.response.use((res) => {
       writeRecord(user, org, password);
       setFails(user.id, 0);
       flushPendingEvent(user.id);
+      setTimeout(() => flushBioEvents(user.id), 2000);   // F5: a fingerprint event the server never got
       if (res.data.org && res.data.org.id) refreshPolicyLater(org.id);
     } else if (/\/auth\/change-password$/.test(url) && res.data && res.data.success !== false) {
       const { new_password } = bodyOf(res.config);
@@ -177,6 +186,46 @@ async function flushPendingEvent(userId) {
 export async function reportEvent(event, extra = {}) {
   try { await api.post("/app-lock/event", { event, device_id: await deviceId(), platform: isNative() ? "android" : "web", ...extra }, { timeout: 8000 }); return true; }
   catch { return false; }
+}
+
+// ── F5 (2026-10-27): the personal fingerprint switch's audit event is kept until the server has it ─
+// (it used to be fire-and-forget: a switch flipped offline left no audit row). Retried at the next
+// login, app start / resume, when the connection comes back, and on a short timer while the app runs.
+const bioQueue = makeEventQueue({
+  get: () => getJSON(K.bioEvents),
+  set: (list) => (list.length ? store.set(K.bioEvents, JSON.stringify(list)) : store.remove(K.bioEvents)),
+  send: async (ev) => {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return false;
+    const { user } = useAuthStore.getState();
+    if (!user || user.id !== ev.user_id) return false;     // only that user's own session reports it
+    await api.post("/app-lock/event", { event: ev.event, device_id: ev.device_id, platform: ev.platform, occurred_at: ev.occurred_at,
+      offline: ev.tries > 0, ...(ev.reason ? { reason: ev.reason } : {}) }, { timeout: 8000 });
+    return true;
+  },
+});
+const RETRY_MS = [30000, 120000, 600000];
+let retryTimer = null;
+export async function flushBioEvents(userId, attempt = 0) {
+  if (!userId) return { sent: 0, left: 0 };
+  const r = await bioQueue.flush(userId).catch(() => ({ sent: 0, left: 1 }));
+  if (r.left > 0 && attempt < RETRY_MS.length && !retryTimer)
+    retryTimer = setTimeout(() => { retryTimer = null; flushBioEvents(userId, attempt + 1); }, RETRY_MS[attempt]);
+  return r;
+}
+async function recordBioEvent(userId, event, extra = {}) {
+  const ev = { event, user_id: userId, device_id: await deviceId(), platform: isNative() ? "android" : "web",
+    occurred_at: new Date().toISOString(), tries: 0, ...extra };
+  const r = await bioQueue.add(ev).catch(() => ({ left: 1 }));
+  if (r.left > 0) {
+    // mark what is still waiting as "sent later" (offline: true) and schedule the retries
+    const list = (await getJSON(K.bioEvents)) || [];
+    await store.set(K.bioEvents, JSON.stringify(list.map((e) => ({ ...e, tries: (e.tries || 0) + 1 }))));
+    flushBioEvents(userId);
+  }
+  return r;
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("online", () => { const u = useAuthStore.getState().user; if (u) flushBioEvents(u.id); });
 }
 
 // ── unlocking ─────────────────────────────────────────────────────────────────────────────────────
@@ -240,7 +289,7 @@ export async function enableBiometric(texts) {
   const r = await biometricUnlock(user.id, texts);
   if (!r.ok) { await deleteBiometricKey(user.id); return r; }
   await store.set(K.bio(user.id), "on");
-  reportEvent("biometric_enabled");
+  recordBioEvent(user.id, "biometric_enabled");
   return { ok: true };
 }
 export async function disableBiometric(reason) {
@@ -248,7 +297,7 @@ export async function disableBiometric(reason) {
   if (!user) return;
   await store.remove(K.bio(user.id));
   await deleteBiometricKey(user.id);
-  reportEvent("biometric_disabled", reason ? { reason } : {});
+  recordBioEvent(user.id, "biometric_disabled", reason ? { reason } : {});
 }
 // → { ok } | { ok:false, code }   code "invalidated": a new finger/face was enrolled → password needed
 export async function unlockWithBiometric(texts) {

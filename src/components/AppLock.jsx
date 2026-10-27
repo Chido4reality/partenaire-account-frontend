@@ -6,6 +6,7 @@ import { armed, lockAtStart, lockAfterIdle } from "../utils/appLockCore";
 import {
   isNative, SESSION_STARTED_AT, lastUnlockAt, savedPolicy, refreshPolicy, hasRecord, sweepOtherUsers,
   unlockWithPassword, unlockWithBiometric, biometricState, biometricStatus, disableBiometric, signOut,
+  POLICY_EVENT, flushBioEvents,
 } from "../utils/appLock";
 
 // APP LOCK (2026-10-21) — an outer layer: Guard → AppLock → LockGate → Layout.
@@ -78,6 +79,7 @@ export default function AppLock({ children }) {
     let alive = true;
     (async () => {
       sweepOtherUsers();
+      flushBioEvents(user.id);   // F5: a fingerprint on/off the server never got
       // Decide at once from the copy kept on the device (a few ms of cover, never a network wait);
       // the server's current policy is read in the background.
       const p = await savedPolicy(org.id);
@@ -117,7 +119,10 @@ export default function AppLock({ children }) {
     const touch = () => { if (lockedRef.current === false) lastActivity.current = Date.now(); };
     ACTIVITY.forEach((ev) => window.addEventListener(ev, touch, { passive: true, capture: true }));
     const id = setInterval(checkIdle, 15000);
-    const onVis = () => { if (document.visibilityState === "visible") { checkIdle(); if (org) refreshPolicy(org.id).then((p) => { if (p) { policyRef.current = p; setPolicy(p); } }); } };
+    const onVis = () => { if (document.visibilityState === "visible") { checkIdle(); if (org) refreshPolicy(org.id).then((p) => { if (p) { policyRef.current = p; setPolicy(p); } }); if (user) flushBioEvents(user.id); } };
+    // F2: the owner just saved in Settings → the new minutes / platforms apply now, not at the next resume
+    const onSaved = (e) => { const d = e && e.detail; if (d && org && d.orgId === org.id && d.policy) { policyRef.current = d.policy; setPolicy(d.policy); } };
+    window.addEventListener(POLICY_EVENT, onSaved);
     document.addEventListener("visibilitychange", onVis);
     let handle = null, alive = true;
     if (native) {
@@ -127,7 +132,7 @@ export default function AppLock({ children }) {
     return () => {
       alive = false;
       ACTIVITY.forEach((ev) => window.removeEventListener(ev, touch, { capture: true }));
-      clearInterval(id); document.removeEventListener("visibilitychange", onVis);
+      clearInterval(id); document.removeEventListener("visibilitychange", onVis); window.removeEventListener(POLICY_EVENT, onSaved);
       try { handle && handle.remove(); } catch { /* ignore */ }
     };
   }, [checkIdle, native, org && org.id]);  // eslint-disable-line react-hooks/exhaustive-deps
