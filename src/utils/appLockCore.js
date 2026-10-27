@@ -46,6 +46,16 @@ export function afterWrong({ deviceFails, serverLeft = null, serverLogout = fals
   return { left, logout: !!serverLogout || deviceFails >= MAX_WRONG || left === 0 };
 }
 
+// Why POST /app-lock/verify did not answer ok/wrong (2026-10-27). Only the lock's OWN limit
+// (429 code app_lock_rate_limited) is "too many attempts"; any other 429 or a 5xx is the server
+// being busy — never a wrong password; no response at all is the offline path (device check).
+//   → "limit" | "busy" | "offline"
+export function verifyFailureKind(status, code) {
+  if (status === 429 && code === "app_lock_rate_limited") return "limit";
+  if (status === 429 || (status >= 500 && status <= 599)) return "busy";
+  return "offline";
+}
+
 // The stored unlock record must belong to the signed-in user AND org (A3); anything else is refused.
 export function recordMatchesSession(rec, user, org) {
   return !!(rec && user && org && rec.v === 1 && rec.user_id === user.id && rec.org_id === org.id

@@ -29,6 +29,7 @@ const T = {
     bioCancel: "Mot de passe", notYou: (n) => `Pas ${n} ? Se déconnecter`,
     wrong: (k) => `Mot de passe incorrect. Encore ${k} essai${k > 1 ? "s" : ""} avant la déconnexion.`,
     wait: (m) => `Trop d'essais. Patientez ${m} min.`, offlineNoRecord: "Connectez-vous à Internet pour déverrouiller.",
+    busy: "Serveur occupé — réessayez dans un instant.",
     bioChanged: "Les empreintes ou visages de ce téléphone ont changé. Saisissez votre mot de passe.",
     bioLockout: "Trop d'essais d'empreinte. Saisissez votre mot de passe.", signingOut: "Déconnexion…",
     notice: (d) => `À partir du ${d}, Stenamo Book demandera votre mot de passe à l'ouverture.`, ok: "Compris",
@@ -39,6 +40,7 @@ const T = {
     bioCancel: "Password", notYou: (n) => `Not ${n}? Sign out`,
     wrong: (k) => `Wrong password. ${k} more ${k > 1 ? "tries" : "try"} before you are signed out.`,
     wait: (m) => `Too many attempts. Wait ${m} min.`, offlineNoRecord: "Connect to the internet to unlock.",
+    busy: "Server busy — try again in a moment.",
     bioChanged: "The fingerprints or faces on this phone have changed. Enter your password.",
     bioLockout: "Too many fingerprint attempts. Enter your password.", signingOut: "Signing out…",
     notice: (d) => `From ${d}, Stenamo Book will ask for your password when it opens.`, ok: "Got it",
@@ -193,6 +195,7 @@ export default function AppLock({ children }) {
     if (r.ok) { setBusy(false); setBio(await biometricState(user.id)); unlocked(); return; }
     setPwd("");
     if (r.rateLimited) { setBusy(false); setMsg({ kind: "wait", text: t.wait(Math.max(1, Math.ceil(r.retryAfter / 60))) }); return; }
+    if (r.serverBusy) { setBusy(false); setMsg({ kind: "busy", text: t.busy }); return; }   // never a wrong try
     if (r.cannotCheck) { setBusy(false); setMsg({ kind: "offline_no_record", text: t.offlineNoRecord }); return; }
     if (r.logout) {
       setMsg({ kind: "signing_out", text: t.signingOut });

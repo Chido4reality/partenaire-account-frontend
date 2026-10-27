@@ -64,5 +64,24 @@ check("the Preferences proxy is never returned from an async function (it is the
   /\(await M\(\)\)\.Preferences\.get/.test(lib) && !/return prefs\b/.test(lib) && !/\)\)\.Preferences;\s*return/.test(lib));
 check("A3: the record is kept in Preferences on Android, localStorage on the web", /@capacitor\/preferences/.test(lib) && /localStorage\.setItem\(k, v\)/.test(lib));
 
+console.log("verify failures (2026-10-27): only the lock's own limit is 'too many attempts'");
+check("429 app_lock_rate_limited → limit", C.verifyFailureKind(429, "app_lock_rate_limited") === "limit");
+check("429 rate_limited (a general limiter) → busy, not the lock's limit", C.verifyFailureKind(429, "rate_limited") === "busy");
+check("429 with no code → busy", C.verifyFailureKind(429, undefined) === "busy");
+check("500 / 502 / 503 → busy", ["500", 502, 503].every((s) => C.verifyFailureKind(Number(s)) === "busy"));
+check("no response (offline, timeout) → offline (the device's own check)", C.verifyFailureKind(undefined) === "offline");
+{
+  const fn = lib.slice(lib.indexOf("export async function unlockWithPassword"), lib.indexOf("async function onUnlocked"));
+  const busyBranch = fn.slice(fn.indexOf('if (kind === "busy")'), fn.indexOf("// network error, timeout"));
+  check("busy: a matching record still unlocks; otherwise serverBusy — and setFails is NEVER called there",
+    /=== "match"\) \{ await onUnlocked/.test(busyBranch) && /serverBusy: true/.test(busyBranch) && !/setFails/.test(busyBranch));
+  check("only the 'limit' kind returns rateLimited", /if \(kind === "limit"\) \{[^}]*rateLimited: true/.test(fn) && (fn.match(/rateLimited: true/g) || []).length === 1);
+  const screen = read("src/components/AppLock.jsx");
+  check("lock screen: serverBusy shows the neutral busy text (FR + EN), info style",
+    /r\.serverBusy\) \{ setBusy\(false\); setMsg\(\{ kind: "busy", text: t\.busy \}\)/.test(screen)
+    && screen.includes("Serveur occupé — réessayez dans un instant.") && screen.includes("Server busy — try again in a moment.")
+    && /msg\.kind === "wrong" \|\| msg\.kind === "wait" \? S\.warn : S\.info/.test(screen));
+}
+
 console.log(fails ? `\n${fails} FAILED` : "\nall passed");
 process.exit(fails ? 1 : 0);

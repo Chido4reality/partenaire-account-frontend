@@ -18,7 +18,7 @@ import api from "./api";
 import { useAuthStore } from "../store";
 import { nukeClientState, hardRedirectToLogin } from "./authReset";
 import { revokeOnLogout } from "./push";
-import { DEFAULT_POLICY, makeRecord, checkRecord, recordMatchesSession, afterWrong } from "./appLockCore";
+import { DEFAULT_POLICY, makeRecord, checkRecord, recordMatchesSession, afterWrong, verifyFailureKind } from "./appLockCore";
 import { createBiometricKey, deleteBiometricKey, biometricUnlock, biometricStatus } from "./biometric";
 import { makeEventQueue } from "./appLockSettings";
 
@@ -232,6 +232,7 @@ if (typeof window !== "undefined") {
 // → { ok: true }
 //   { ok: false, left, logout }                 a wrong password
 //   { ok: false, rateLimited: true, retryAfter } the server's limit (A1) — not counted on the device
+//   { ok: false, serverBusy: true }             another 429 / a 5xx and no matching record — not counted
 //   { ok: false, cannotCheck: true }            offline with no record on this device
 export async function unlockWithPassword(password) {
   const { user, org } = useAuthStore.getState();
@@ -250,11 +251,19 @@ export async function unlockWithPassword(password) {
       }
     } catch (e) {
       const st = e && e.response && e.response.status;
-      if (st === 429) {
+      const kind = verifyFailureKind(st, e && e.response && e.response.data && e.response.data.code);
+      if (kind === "limit") {
         const ra = Number(e.response.data && e.response.data.retry_after) || 60;
         return { ok: false, rateLimited: true, retryAfter: ra };
       }
-      // network error, timeout, 5xx → the device's own check below
+      if (kind === "busy") {
+        // the server is busy (another 429, a 5xx): a matching record on the device still unlocks;
+        // anything else waits for the server — NEVER counted as a wrong password
+        const rec = await getJSON(K.rec(user.id));
+        if ((await checkRecord(rec, { password, user, org })) === "match") { await onUnlocked(user, org, null); return { ok: true }; }
+        return { ok: false, serverBusy: true };
+      }
+      // network error, timeout → the device's own check below
     }
   }
   const rec = await getJSON(K.rec(user.id));
