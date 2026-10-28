@@ -17,7 +17,7 @@ import toast from "react-hot-toast";
 import api from "../utils/api";
 import { useAuthStore, useLangStore, useSettingsStore } from "../store";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { locationLabel, locationNameLabel } from "../utils/locations"; // GOODS-BUFFER
+import { locationLabel, locationNameLabel, transferEndLabel } from "../utils/locations"; // GOODS-BUFFER
 import { availabilityOf } from "../utils/transferAvailability"; // TRANSFER RESERVATION
 import { useReservedAt, AvailabilityLine } from "../components/common/TransferAvailability";
 import BufferDetailModal from "../components/BufferDetailModal"; // MP-STAFF-ACTIVITY-LEDGER Phase 3
@@ -933,7 +933,7 @@ function BufferStockTab({ en, lang, fmt, access, locList }) {
   const items = (d.items || []).filter(it => num(it.quantity) > 0);
   const incoming = incomingQ.data || [];
   const nearest = (it) => (it.expiry || []).filter(e => e.expiry_date).sort((a, b) => String(a.expiry_date).localeCompare(String(b.expiry_date)))[0] || null;
-  const fromName = (id) => locationLabel(locList.find(l => l.id === id), lang) || (en ? "External" : "Externe");
+  const fromName = (tr) => transferEndLabel(tr, "from", locList, lang) || (en ? "External" : "Externe"); // WAREHOUSE MODE: names a hidden shop too
   const STATUS = { pending: en ? "Waiting to be sent" : "En attente d'envoi", in_transit: en ? "On its way" : "En route" };
   return (
     <div>
@@ -985,7 +985,7 @@ function BufferStockTab({ en, lang, fmt, access, locList }) {
           {incoming.map((t, i) => (
             <button key={t.id} onClick={() => navigate(`/transfers?tr=${t.id}`)}
               style={{ display: "flex", width: "100%", justifyContent: "space-between", gap: 8, padding: "10px 13px", border: "none", borderTop: i === 0 ? "none" : "1px solid var(--border)", background: "transparent", color: "inherit", cursor: "pointer", textAlign: "left", font: "inherit" }}>
-              <span><strong>{t.transfer_number}</strong> · {en ? "from" : "de"} {fromName(t.from_location)}</span>
+              <span><strong>{t.transfer_number}</strong> · {en ? "from" : "de"} {fromName(t)}</span>
               <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{STATUS[t.status] || t.status}</span>
             </button>
           ))}

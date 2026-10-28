@@ -45,7 +45,7 @@ export function useWorkModeAvailable() {
 
 // GET endpoints the server filters by ?view=warehouse (real shops left out). The API client adds
 // the parameter only to these, only in Warehouse Mode; every other request is untouched.
-const VIEW_PATHS = /^\/(locations|stock|stock-checks(\/(stale|damaged|watches))?|expiry\/check|restock\/to-buy)\/?$/;
+const VIEW_PATHS = /^\/(locations|stock|stock-checks(\/(stale|damaged|watches))?|expiry\/check|restock\/to-buy(-count)?|transfers(\/incoming)?)\/?$/;
 export const takesWarehouseView = (path) => VIEW_PATHS.test(String(path || ""));
 
 // The colour switch: index.css swaps the --brand tokens under :root[data-work-mode="warehouse"].
@@ -55,4 +55,3 @@ export function applyWorkModeAttribute(mode) {
   else document.documentElement.removeAttribute("data-work-mode");
 }
 
-export const isVirtualLocation = (l) => !!l && l.kind === "virtual";

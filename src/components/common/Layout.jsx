@@ -41,7 +41,7 @@ import toast from "react-hot-toast";
 
 import { SUPPORT_PHONE } from "../../utils/support";
 import { isSellableLocation } from "../../utils/locations";                         // GOODS-BUFFER
-import { WAREHOUSE_HIDDEN_ROUTES, useWorkMode, useWorkModeAvailable, effectiveWorkMode, applyWorkModeAttribute } from "../../utils/workMode"; // WAREHOUSE MODE
+import { WAREHOUSE_HIDDEN_ROUTES, useWorkMode, effectiveWorkMode, applyWorkModeAttribute } from "../../utils/workMode"; // WAREHOUSE MODE
 import WorkModeButton from "./WorkModeButton";                                          // WAREHOUSE MODE
 // Sprint A: each nav item declares the capability section it belongs to.
 // `section: 'sales'` and `section: 'settings'` are always visible (every
@@ -961,18 +961,20 @@ export default function Layout() {
   // 'silver' if my-plan hasn't loaded yet (defensive — better to hide
   // sections briefly than flash them then yank them away on load).
   const effectivePlan = myPlan?.effective_plan || "silver";
-  // WAREHOUSE MODE: the owner (Settings) or Stenamo (admin portal) may switch the button on or off
-  // while this device is open. Re-read the server's view of this person when the app comes back
-  // to the front — at most every 5 minutes, Pro Plus non-cashiers only (no request otherwise).
-  const wmAvailable = useWorkModeAvailable();
+  // WAREHOUSE MODE: the owner (Settings) or Stenamo (admin portal) may switch the button OFF (or
+  // change the plan) while this device is open. Re-read the server's view of this person when the
+  // app comes back to the front — at most every 5 minutes, and ONLY for a business that has
+  // Warehouse Mode switched on (Peter, 2026-10-28): every other business makes no extra call. A
+  // business switched ON elsewhere shows the button at the next app start or login.
   const { data: meWm } = useQuery({
     queryKey: ["me-work-mode"],
     queryFn: () => api.get("/auth/me").then(r => r.data?.user || null),
-    enabled: role !== "cashier" && (effectivePlan === "pro_plus" || wmAvailable),
+    enabled: role !== "cashier" && org?.warehouse_mode_enabled === true,
     staleTime: 300000, refetchOnWindowFocus: true, retry: false,
   });
   useEffect(() => {
     if (!meWm) return;
+    if (meWm.pa_organisations) useAuthStore.getState().patchOrg({ warehouse_mode_enabled: meWm.pa_organisations.warehouse_mode_enabled === true });
     const nextMode = meWm.work_mode === "warehouse" ? "warehouse" : "pos";
     const nextAvail = meWm.warehouse_mode_available === true;
     const u = useAuthStore.getState().user;

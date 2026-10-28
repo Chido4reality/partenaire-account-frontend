@@ -19,7 +19,7 @@ import { useSearchParams } from "react-router-dom";
 import TransferDetailModal from "../components/TransferDetailModal"; // MP-STAFF-ACTIVITY-LEDGER Phase 3
 import { subscribe, listFailedPermanent, ownerMismatchOf, continueWithConfirm, discard } from "../utils/pendingSync"; // owner count refused on replay
 import { ownerShortLocal } from "../utils/ownerMismatch"; // owner short count, checked on the phone
-import { isGoodsBuffer, isVirtualStore, locationLabel, locationTypeLabel } from "../utils/locations"; // GOODS-BUFFER
+import { isGoodsBuffer, isVirtualStore, locationLabel, locationTypeLabel, transferEndLabel } from "../utils/locations"; // GOODS-BUFFER
 import NewVirtualStoreButton from "../components/common/NewVirtualStoreButton"; // WAREHOUSE MODE
 import { useIsWarehouseMode } from "../utils/workMode"; // WAREHOUSE MODE
 import { availabilityOf, serverMessage } from "../utils/transferAvailability"; // TRANSFER RESERVATION
@@ -81,8 +81,8 @@ export default function TransfersPage() {
     setWaybillBusy(tr.id);
     try {
       const org = settingsData?.data || {};
-      const fromName = locationLabel(locations.find(l => l.id === tr.from_location), lang) || (lang === "en" ? "External" : "Externe");
-      const toName   = locationLabel(locations.find(l => l.id === tr.to_location), lang) || (lang === "en" ? "External" : "Externe");
+      const fromName = transferEndLabel(tr, "from", locations, lang) || (lang === "en" ? "External" : "Externe");
+      const toName   = transferEndLabel(tr, "to", locations, lang) || (lang === "en" ? "External" : "Externe");
       const { openWaybill } = await import("../utils/waybill"); // code-split: loads jsPDF only now
       await openWaybill({ org, lang, transfer: tr, fromName, toName });
     } catch (e) {
@@ -952,8 +952,8 @@ export default function TransfersPage() {
           )}
           <div style={{ display: "grid", gap: 10 }}>
             {incoming.map(tr => {
-              const fromName = locationLabel(locations.find(l => l.id === tr.from_location), lang) || "External";
-              const toName   = locationLabel(locations.find(l => l.id === tr.to_location), lang) || "External";
+              const fromName = transferEndLabel(tr, "from", locations, lang) || "External";
+              const toName   = transferEndLabel(tr, "to", locations, lang) || "External";
               const mine = tr.dispatched_by && tr.dispatched_by === myId;
               return (
                 <div key={tr.id} style={{ border: "1px solid var(--border)", borderLeft: "3px solid #fbbf24", borderRadius: 12, padding: "12px 14px" }}>
@@ -1042,8 +1042,8 @@ export default function TransfersPage() {
         <div style={{ display: "grid", gap: 10 }}>
           {transfers.map(tr => {
             const sc = statusColor(tr.status);
-            const fromName = locationLabel(locations.find(l => l.id === tr.from_location), lang) || "External";
-            const toName   = locationLabel(locations.find(l => l.id === tr.to_location), lang) || "External";
+            const fromName = transferEndLabel(tr, "from", locations, lang) || "External";
+            const toName   = transferEndLabel(tr, "to", locations, lang) || "External";
             return (
               <div key={tr.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 14, padding: "16px 20px" }}>
                 {/* flexWrap + gap so the action group (flexShrink:0) wraps BELOW the

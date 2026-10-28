@@ -2287,11 +2287,19 @@ export default function SettingsPage() {
                 <label className="label">
                   {lang === "en" ? "Assigned location (Pro Plus)" : "Emplacement assigné (Pro Plus)"}
                 </label>
+                {/* WAREHOUSE MODE: the real shops are not in this list, so an assignment to one can neither
+                    be shown nor changed here — say so, read-only, and keep the saved value (never "None"). */}
+                {wh && staffForm.assigned_location_id && locations.length > 0 && !locations.some(l => l.id === staffForm.assigned_location_id) ? (
+                  <div className="input" aria-readonly="true" style={{ color: "var(--text-muted)", cursor: "not-allowed" }}>
+                    {lang === "en" ? "Set in POS Mode" : "À définir en Mode Caisse"}
+                  </div>
+                ) : (
                 <select className="input" value={staffForm.assigned_location_id || ""}
                   onChange={e => setSF("assigned_location_id", e.target.value)}>
                   <option value="">{lang === "en" ? "— None (org-wide / all branches) —" : "— Aucun (toute l'organisation / toutes les branches) —"}</option>
                   {locations.filter(l => !isGoodsBuffer(l) && !isVirtualStore(l)).map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)} ({l.type})</option>)}
                 </select>
+                )}
                 {/* MP-TRANSFER-GOVERNANCE Part 2: for a WAREHOUSE keeper this field is not
                     optional — the transfer scope gate fails CLOSED without it, so an
                     unpinned keeper cannot move stock anywhere. Say so plainly rather than

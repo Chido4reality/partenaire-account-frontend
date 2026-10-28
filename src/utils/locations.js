@@ -46,3 +46,19 @@ export const locationTypeLabel = (l, lang) => {
 // Locations that may RECEIVE goods directly (arrivals, opening stock, restock delivery,
 // import): everything except the buffer.
 export const withoutGoodsBuffer = (list) => (Array.isArray(list) ? list.filter((l) => !isGoodsBuffer(l) && !isVirtualStore(l)) : []);
+
+// WAREHOUSE MODE: the name of one end of a transfer ("from" | "to"). From the screen's own location
+// list when it holds it; otherwise from the server's `<end>_location_info` (GET /transfers and
+// /transfers/incoming) — a virtual store seen in POS Mode is named and labelled "virtual", a shop
+// seen in Warehouse Mode is named. "" when neither knows it (a true external source).
+export const transferEndLabel = (tr, end, list, lang) => {
+  const id = tr && (end === "from" ? tr.from_location : tr.to_location);
+  if (!id) return "";
+  const hit = (list || []).find((l) => l.id === id);
+  if (hit) return locationLabel(hit, lang);
+  const info = tr[`${end}_location_info`];
+  if (!info || !info.name) return "";
+  if (info.kind === GOODS_BUFFER) return bufferWord(lang);
+  if (info.kind === "virtual") return `${info.name} (${lang === "en" ? "virtual" : "virtuel"})`;
+  return info.name;
+};
