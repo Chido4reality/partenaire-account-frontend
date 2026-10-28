@@ -16,7 +16,9 @@ import { hasFeature, getCapabilities } from "../utils/planCapabilities";
 import { useLiteMode } from "../hooks/useLiteMode";
 import { useTrialState } from "../hooks/useTrialState";
 import { SHOP_TZ } from "../utils/shopTime";
-import { isGoodsBuffer, locationLabel, locationTypeLabel, locationInitial } from "../utils/locations"; // GOODS-BUFFER
+import { isGoodsBuffer, isVirtualStore, locationLabel, locationTypeLabel, locationInitial } from "../utils/locations"; // GOODS-BUFFER
+import { WarehouseModeOrgSwitch, VirtualStoresSection } from "../components/settings/WarehouseModeSettings"; // WAREHOUSE MODE
+import { useIsWarehouseMode } from "../utils/workMode"; // WAREHOUSE MODE
 import ChangePasswordCard from "../components/common/ChangePasswordCard"; // change my password
 import AppLockSettingsCard from "../components/AppLockSettingsCard"; // APP LOCK: owner setting + my fingerprint/face
 import SubscriptionReceiptsCard from "../components/common/SubscriptionReceiptsCard"; // STENAMO-RECEIPTS
@@ -183,6 +185,7 @@ export default function SettingsPage() {
   const fmt = useCurrency();
   const orgCur = fmt.currency;   // LAUNCH-BATCH-2: staff salary defaults to the org's currency (was "XAF")
   const isOwner = user?.role === "owner";
+  const wh = useIsWarehouseMode(); // WAREHOUSE MODE: virtual stores section on the locations tab
   // MP-MANAGER-DELEGATION Phase 3: a manager only sees the staff add/deactivate controls
   // when the owner delegated can_manage_staff (the server enforces it regardless — this
   // just hides buttons that would 403). Owner always can.
@@ -839,7 +842,8 @@ export default function SettingsPage() {
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {locations.map(loc => {
+            {/* WAREHOUSE MODE: virtual stores get their own section below (they are not places to work in) */}
+            {locations.filter(l => !isVirtualStore(l)).map(loc => {
               const isActive = selectedLocation?.id === loc.id;
               // GOODS-BUFFER: the system location — shown, but never active, edited or removed.
               const isBuffer = isGoodsBuffer(loc);
@@ -875,6 +879,7 @@ export default function SettingsPage() {
               );
             })}
           </div>
+          {wh && <VirtualStoresSection lang={lang} locations={locations} />}
         </div>
       )}
 
@@ -1800,6 +1805,7 @@ export default function SettingsPage() {
           so a misclick doesn't silently demote a Pro user. */}
       {tab === "mode" && isOwner && (
         <div>
+          <WarehouseModeOrgSwitch lang={lang} effectivePlan={effectivePlan} />
           <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, marginBottom: 20 }}>
             <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 8 }}>
               {lang === "en" ? "App Mode" : "Mode de l'application"}
@@ -2284,7 +2290,7 @@ export default function SettingsPage() {
                 <select className="input" value={staffForm.assigned_location_id || ""}
                   onChange={e => setSF("assigned_location_id", e.target.value)}>
                   <option value="">{lang === "en" ? "— None (org-wide / all branches) —" : "— Aucun (toute l'organisation / toutes les branches) —"}</option>
-                  {locations.filter(l => !isGoodsBuffer(l)).map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)} ({l.type})</option>)}
+                  {locations.filter(l => !isGoodsBuffer(l) && !isVirtualStore(l)).map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)} ({l.type})</option>)}
                 </select>
                 {/* MP-TRANSFER-GOVERNANCE Part 2: for a WAREHOUSE keeper this field is not
                     optional — the transfer scope gate fails CLOSED without it, so an

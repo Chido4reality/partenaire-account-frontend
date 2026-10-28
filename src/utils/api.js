@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 import { useAuthStore, useLangStore } from "../store";
 import { enqueue, configureSync, startWorker, genLocalId } from "./pendingSync";
 import { getNetworkStatus, recordWriteFailure, recordWriteSuccess } from "./network";
+import { currentWorkMode, takesWarehouseView } from "./workMode"; // WAREHOUSE MODE
 
 // Default 6s timeout for reads + auth so a dropped/partial network surfaces
 // fast instead of hanging. (The old 15s was "generous" to let a now-DELETED
@@ -203,6 +204,11 @@ api.interceptors.request.use(config => {
   // server-side once it lands. genLocalId() is UUID-v4-shaped (crypto.randomUUID
   // or a v4-shaped fallback), matching the backend's id regex.
   const _path = (config.url || "").replace(BASE_URL, "").split("?")[0];
+  // WAREHOUSE MODE: the stock lists come back without real shops (and with virtual stores) —
+  // only these GETs, only in Warehouse Mode. POS Mode sends exactly today's requests.
+  if ((config.method || "get").toLowerCase() === "get" && takesWarehouseView(_path) && currentWorkMode() === "warehouse") {
+    config.params = { ...(config.params || {}), view: "warehouse" };
+  }
   if (/^\/shifts\/open\/?$/.test(_path) && config.data && typeof config.data === "object" && !config.data.id) {
     config.data = { ...config.data, id: genLocalId() };
   }

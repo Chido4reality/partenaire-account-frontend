@@ -41,6 +41,8 @@ import toast from "react-hot-toast";
 
 import { SUPPORT_PHONE } from "../../utils/support";
 import { isSellableLocation } from "../../utils/locations";                         // GOODS-BUFFER
+import { WAREHOUSE_HIDDEN_ROUTES, useWorkMode, useWorkModeAvailable, effectiveWorkMode, applyWorkModeAttribute } from "../../utils/workMode"; // WAREHOUSE MODE
+import WorkModeButton from "./WorkModeButton";                                          // WAREHOUSE MODE
 // Sprint A: each nav item declares the capability section it belongs to.
 // `section: 'sales'` and `section: 'settings'` are always visible (every
 // tier includes them). Other sections are filtered against the effective
@@ -933,6 +935,11 @@ export default function Layout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notifData]);
   const role = user?.role || "cashier";
+  // WAREHOUSE MODE: read here, ABOVE visibleNav (TDZ). POS Mode = today's app exactly.
+  const workMode = useWorkMode();
+  const isWarehouseMode = workMode === "warehouse";
+  // Cleanup puts the gold back when the shell unmounts (logout → login screen is never green).
+  useEffect(() => { applyWorkModeAttribute(workMode); return () => applyWorkModeAttribute("pos"); }, [workMode]);
 
   // ── MP-CASHIER-PHASE-1b: the nav gate's inputs ────────────────────────────
   // Read HERE, above visibleNav, and via a zustand selector rather than the
@@ -954,6 +961,27 @@ export default function Layout() {
   // 'silver' if my-plan hasn't loaded yet (defensive — better to hide
   // sections briefly than flash them then yank them away on load).
   const effectivePlan = myPlan?.effective_plan || "silver";
+  // WAREHOUSE MODE: the owner (Settings) or Stenamo (admin portal) may switch the button on or off
+  // while this device is open. Re-read the server's view of this person when the app comes back
+  // to the front — at most every 5 minutes, Pro Plus non-cashiers only (no request otherwise).
+  const wmAvailable = useWorkModeAvailable();
+  const { data: meWm } = useQuery({
+    queryKey: ["me-work-mode"],
+    queryFn: () => api.get("/auth/me").then(r => r.data?.user || null),
+    enabled: role !== "cashier" && (effectivePlan === "pro_plus" || wmAvailable),
+    staleTime: 300000, refetchOnWindowFocus: true, retry: false,
+  });
+  useEffect(() => {
+    if (!meWm) return;
+    const nextMode = meWm.work_mode === "warehouse" ? "warehouse" : "pos";
+    const nextAvail = meWm.warehouse_mode_available === true;
+    const u = useAuthStore.getState().user;
+    if (!u || (u.work_mode === nextMode && u.warehouse_mode_available === nextAvail)) return;
+    const before = effectiveWorkMode(u);
+    useAuthStore.getState().patchUser({ work_mode: nextMode, warehouse_mode_available: nextAvail });
+    if (effectiveWorkMode(useAuthStore.getState().user) !== before) { navigate("/"); queryClient.resetQueries(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meWm]);
   const isGrace        = !!myPlan?.is_grace;
   const trialDaysLeft  = myPlan?.days_remaining_in_trial;
   const graceDaysLeft  = myPlan?.days_remaining_in_grace;
@@ -1001,6 +1029,7 @@ export default function Layout() {
     if (!hasSection(effectivePlan, item.section)
         && !(item.section === "transfers" && myPlan?.has_transfer_history)) return false;
     if (lite && LITE_HIDDEN_ROUTES.has(item.to)) return false;
+    if (isWarehouseMode && WAREHOUSE_HIDDEN_ROUTES.has(item.to)) return false;   // WAREHOUSE MODE: POS screens hidden
     if (MARKET_ROUTES.has(item.to) && !marketAvailable(org)) return false;   // 2b(b): Stenamo Market is XAF-only
     // MP-CASHIER-PHASE-1b: cashier-mode-only entries. ticketNavVisible returns
     // false for every direct-mode location without ever reading a permission
@@ -1714,9 +1743,12 @@ export default function Layout() {
           </div>
         </div>
 
+        {/* WAREHOUSE MODE: the receipt / order search opens sales screens — hidden there. */}
+        {!isWarehouseMode && (
         <div style={{ background: "var(--bg-surface)", borderBottom: "1px solid var(--border)", padding: "8px 16px", flexShrink: 0, position: "relative" }}>
           <OrderSearchBox idSuffix="m" />
         </div>
+        )}
 
         <main style={{ flex: 1, overflowY: "auto", background: "var(--bg-base)" }}>
           {restrictedBlock ? <RestrictedLock lang={lang} hasPending={hasPendingRequest} onRequest={() => navigate("/request-activation")} /> : <>{restrictedBanner}{messagesStrip}<Outlet /></>}
@@ -1841,7 +1873,12 @@ export default function Layout() {
           </div>
         )}
 
-        {!collapsed && (
+        {/* WAREHOUSE MODE: the two-way switch, top-left under the business header. */}
+        {/* Renders NOTHING (no wrapper either) when the button is not available — POS Mode for
+            an org without it is pixel-for-pixel today's sidebar. */}
+        <WorkModeButton compact={collapsed} wrapStyle={{ padding: collapsed ? "8px 6px" : "8px 12px" }} />
+
+        {!collapsed && !isWarehouseMode && (
           <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>
             <OrderSearchBox idSuffix="d" />
           </div>

@@ -27,6 +27,7 @@ import OptionCard from "../components/common/OptionCard"; // readable option tit
 import { outcomeFromStockCheckSub, outcomeByKey } from "../utils/transferVarianceOutcomes"; // carry "Where did they go?" to the transfer
 import { SHOP_TZ } from "../utils/shopTime";
 import { withoutGoodsBuffer, locationLabel } from "../utils/locations"; // GOODS-BUFFER
+import { useIsWarehouseMode } from "../utils/workMode"; // WAREHOUSE MODE
 
 // MP-STALE-PRODUCT-SCAN: mirrors backend lib/stockChecks.js's STALE_THRESHOLD_DAYS
 // (fixed, not per-org configurable — Peter, 2026-07-14). Display-only.
@@ -157,6 +158,7 @@ export default function StockCheckPage() {
   const navigate = useNavigate();
   const role = useAuthStore(s => s.user?.role);
   const isOwner = role === "owner";
+  const wh = useIsWarehouseMode(); // WAREHOUSE MODE: nothing is sold from here (no "Sell" on damaged goods)
   // MP-STOCKCHECK-DELEGATION: a manager may resolve/recount a mismatch only with the
   // explicit grant. Read through the SHARED hook, never a fresh useQuery on the same
   // key — two shapes on one key is what hid the Cancel button on TransfersPage for a
@@ -652,9 +654,11 @@ export default function StockCheckPage() {
                     </div>
                   </div>
                   <div style={{ alignSelf: "center", display: "flex", gap: 6 }}>
+                    {!wh && (
                     <button onClick={() => setSellFor(r)} className="btn btn-success" style={{ fontWeight: 700, whiteSpace: "nowrap" }}>
                       🛒 {en ? "Sell" : "Vendre"}
                     </button>
+                    )}
                     {/* MP-DAMAGED-GOODS-SCRAP-OUT: owner-only — beyond selling, a total loss. */}
                     {isOwner && (
                       <button onClick={() => setScrapFor({ ...r, _local_id: genLocalId() })} className="btn btn-secondary" style={{ fontWeight: 700, whiteSpace: "nowrap", color: "#f87171", borderColor: "#f87171" }}>

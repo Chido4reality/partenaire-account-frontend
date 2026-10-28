@@ -15,7 +15,7 @@ import { locationNameLabel } from "../utils/locations"; // GOODS-BUFFER: branch 
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
-import { useLangStore } from "../store";
+import { useLangStore, useAuthStore } from "../store"; // WAREHOUSE MODE: useAuthStore for the org switch
 import { hasFeature } from "../utils/planCapabilities";
 import { useCurrency } from "../utils/useCurrency";
 import { SHOP_TZ } from "../utils/shopTime"; // MP-REPORT-TZ
@@ -913,6 +913,7 @@ const ACTION_TEXT = {
   offline_sale_recorded_over_rules: { en: "Offline sale to review",      fr: "Vente hors ligne à vérifier",   money: true },
   transfer_items_edited:            { en: "Changed a transfer",          fr: "Transfert modifié" },
   late_money_filed:                 { en: "Late money filed",            fr: "Argent arrivé en retard",       money: true },
+  virtual_store_created:            { en: "Created a virtual store",     fr: "Magasin virtuel créé" },        // WAREHOUSE MODE
 };
 
 // Fix 1 (Peter's staging test): the three phase-1 audit rows, readable in the feed, the
@@ -1066,6 +1067,9 @@ function actionText(a, en, nd, money) {
     case "transfer_items_edited":
     case "late_money_filed":
       return phase1ActionText(a, en, d, m);
+    // WAREHOUSE MODE: logged for every creator, the owner included.
+    case "virtual_store_created":
+      return en ? `created virtual store ${d.name || ""}`.trim() : `a créé le magasin virtuel ${d.name || ""}`.trim();
     default: {
       const t = ACTION_TEXT[a];
       if (t) return en ? t.en : t.fr;
@@ -1149,6 +1153,11 @@ function detailFields(r, en, money) {
     case "transfer_items_edited":
     case "late_money_filed":
       F.push(...phase1Fields(r.action, en, d, m));
+      break;
+    case "virtual_store_created": // WAREHOUSE MODE
+      if (has(d.name)) F.push({ label: en ? "Virtual store" : "Magasin virtuel", value: d.name });
+      F.push({ label: en ? "Stock" : "Stock", value: en ? "Keeps no stock — transfers to it complete at once" : "Aucun stock — les transferts vers lui se terminent aussitôt" });
+      if (has(d.by_name)) F.push({ label: en ? "By" : "Par", value: `${d.by_name}${has(d.role) ? ` (${d.role})` : ""}` });
       break;
     default:
       break;
@@ -1602,6 +1611,7 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
         can_resolve_stock_checks: !!perms.can_resolve_stock_checks,
         receive_without_count: !!perms.receive_without_count, // F-C
         can_view_compare: !!perms.can_view_compare, // MP-COMPARE
+        can_create_virtual_stores: !!perms.can_create_virtual_stores, // WAREHOUSE MODE: sent every save, like the flags around it
         // DAILY-LEDGER ACCESS: sent every save, like the flags around it.
         can_view_daily_ledger: !!perms.can_view_daily_ledger,
         // MP-CASHIER-PHASE-1b: sent on every save like the flags above, so an
@@ -2394,9 +2404,31 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                       {en ? "Month-to-month and shop-to-shop figures, including capital (stock at cost)."
                           : "Chiffres mois contre mois et boutique contre boutique, capital compris (stock au coût)."}
                     </div>
+                    {/* WAREHOUSE MODE: may this MANAGER create virtual stores? Off by default; shown
+                        while the business has Warehouse Mode switched on. Owner always can. */}
+                    {useAuthStore.getState().org?.warehouse_mode_enabled === true && (<>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 12, marginBottom: 5 }}>{en ? "Virtual stores:" : "Magasins virtuels :"}</div>
+                    <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>
+                      {[
+                        { val: false, en: "No", fr: "Non" },
+                        { val: true,  en: "Can create virtual stores", fr: "Peut créer des magasins virtuels" },
+                      ].map((o) => (
+                        <button key={String(o.val)} onClick={() => setPerms((p) => ({ ...(p || {}), can_create_virtual_stores: o.val }))}
+                          style={{ flex: 1, padding: "7px 4px", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
+                            background: !!perms.can_create_virtual_stores === o.val ? (o.val ? "rgba(16,185,129,0.9)" : "rgba(239,68,68,0.9)") : "var(--bg-elevated)",
+                            color: !!perms.can_create_virtual_stores === o.val ? (o.val ? "#06281d" : "#fff") : "var(--text-muted)" }}>
+                          {en ? o.en : o.fr}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: "var(--text-muted)", marginTop: 4 }}>
+                      {en ? "In Warehouse Mode: adds names to send goods to (they keep no stock). Every creation is logged here with their name."
+                          : "En Mode Entrepôt : ajoute des noms vers lesquels envoyer la marchandise (sans stock). Chaque création est enregistrée ici à son nom."}
+                    </div>
+                    </>)}
                     </>)}
                     <button className="btn btn-secondary" style={{ width: "100%", marginTop: 10 }}
-                      onClick={() => setPerms((p) => ({ ...(p || {}), can_approve: [], branch_scope: "own", can_manage_staff: false, can_cancel_transfers: false, can_resolve_stock_checks: false, receive_without_count: false, can_view_compare: false }))}>
+                      onClick={() => setPerms((p) => ({ ...(p || {}), can_approve: [], branch_scope: "own", can_manage_staff: false, can_cancel_transfers: false, can_resolve_stock_checks: false, receive_without_count: false, can_view_compare: false, can_create_virtual_stores: false }))}>
                       {en ? "↺ Remove all delegation" : "↺ Retirer toute délégation"}
                     </button>
                   </div>

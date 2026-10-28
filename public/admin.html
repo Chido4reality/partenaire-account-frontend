@@ -5330,6 +5330,7 @@
           '<div class="detail-pane active" data-pane="overview">' +
             renderEffectivePlanCard(d.effective_plan, d) +
             renderBizFeaturedCard(d.dozie_seller) +
+            renderBizWarehouseModeCard(d) +   // WAREHOUSE MODE
             '<div class="health-grid">' +
               '<div class="health-card"><div class="health-label">Days since last sale</div><div class="health-value">' + safe(h.days_since_last_sale) + '</div></div>' +
               '<div class="health-card"><div class="health-label">Days since owner login</div><div class="health-value">' + safe(h.days_since_owner_login) + '</div></div>' +
@@ -5375,6 +5376,7 @@
         const m = $('modal-host').querySelector('.modal-body');
         m.innerHTML = detailHtml;
         wireBizFeaturedCard(m, biz, d.dozie_seller);
+        wireBizWarehouseModeCard(m, biz);   // WAREHOUSE MODE
         loadBizReceipts(m.querySelector('[data-biz-receipts]'), biz.id);   // STENAMO-RECEIPTS
         m.querySelectorAll('.detail-tab').forEach(btn => {
           btn.addEventListener('click', () => {
@@ -6165,6 +6167,45 @@
         } catch (e) {
           showToast(e.message, 'danger');
           save.disabled = false; save.textContent = 'Save';
+        }
+      });
+    }
+
+    // WAREHOUSE MODE (2026-10-28): the per-business switch for the "Warehouse Mode" button.
+    // Default OFF. The button shows to owner / manager / warehouse / accountant (never cashiers)
+    // only while this is ON *and* the business is on Pro Plus. Turning it OFF sends everyone back
+    // to POS Mode. The owner has the same switch in Settings → Mode. Server-gated + audited.
+    function renderBizWarehouseModeCard(d) {
+      const on = d.warehouse_mode_enabled === true;
+      const shown = d.warehouse_mode_button_shown === true;
+      const can = adminCanMutate();
+      return '' +
+        '<div class="card" style="margin-top:12px;background:var(--bg-tertiary)" data-wh-card>' +
+          '<div class="settings-card-sub">Warehouse Mode button</div>' +
+          '<div style="font-size:14px;margin:4px 0 6px"><b>' + (on ? 'ON' : 'OFF') + '</b>' +
+            (on && !shown ? ' <span style="color:var(--text-muted);font-size:12px">— saved, but not shown: the business is not on Pro Plus right now</span>' : '') +
+            (on && shown ? ' <span style="color:var(--text-muted);font-size:12px">— shown to owner, managers, warehouse staff and accountants (never cashiers)</span>' : '') +
+          '</div>' +
+          '<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Turning it off sends everyone in this business back to POS Mode.</div>' +
+          (can
+            ? '<button class="btn ' + (on ? '' : 'btn-primary') + '" id="bzwh-toggle" data-next="' + (on ? 'false' : 'true') + '">' + (on ? 'Turn off' : 'Turn on') + '</button>'
+            : '<div style="font-style:italic;color:var(--text-muted);font-size:13px">Admin only</div>') +
+        '</div>';
+    }
+
+    function wireBizWarehouseModeCard(m, biz) {
+      const btn = m.querySelector('#bzwh-toggle');
+      if (!btn) return;
+      btn.addEventListener('click', async () => {
+        const enabled = btn.getAttribute('data-next') === 'true';
+        btn.disabled = true; btn.textContent = 'Saving…';
+        try {
+          const r = await apiAdmin('PATCH', '/admin/businesses/' + biz.id + '/warehouse-mode', { enabled });
+          showToast(r && r.message ? r.message : 'Saved', 'success');
+          openBizDetail(biz); // re-fetch so the card shows what the server stored
+        } catch (e) {
+          showToast(e.message, 'danger');
+          btn.disabled = false; btn.textContent = enabled ? 'Turn on' : 'Turn off';
         }
       });
     }

@@ -323,7 +323,9 @@ export default function InventoryPage() {
   useEffect(() => {
     if (locFilterTouchedRef.current) return;
     if (!locations.length) return;
-    const next = selectedLocation?.id || receiveLocations[0]?.id || "";
+    // WAREHOUSE MODE: the top-bar shop is not in the warehouse list — fall back to the first one.
+    const selVisible = selectedLocation?.id && receiveLocations.some(l => l.id === selectedLocation.id);
+    const next = (selVisible ? selectedLocation.id : null) || receiveLocations[0]?.id || "";
     setLocStockFilter(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locations.length, selectedLocation?.id]);

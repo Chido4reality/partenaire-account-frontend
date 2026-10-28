@@ -51,6 +51,7 @@ import HelpPage from "./pages/HelpPage"; // MP-HELP v1 — bundled offline in-ap
 import MyAccountPage from "./pages/MyAccountPage"; // change my own password — every role
 import MessagesPage from "./pages/MessagesPage"; // SUPPORT MESSAGING (Phase A) — owner ↔ Équipe Stenamo
 import { pendingPayment, confirmPayment } from "./utils/flwPending"; // FLW-PAY-FIX
+import { isHiddenInWarehouse, effectiveWorkMode } from "./utils/workMode"; // WAREHOUSE MODE
 
 // MP-INVALIDATE-AFTER-SALE: refetch stale data when the user returns to
 // the tab/app or reconnects (e.g. after making a sale on another device
@@ -215,6 +216,11 @@ function RoleGuard({ path, children }) {
         </div>
       </div>
     );
+  }
+  // WAREHOUSE MODE: a POS screen typed by hand (or a bookmark) goes back to the dashboard. A
+  // cashier is never in Warehouse Mode (effectiveWorkMode needs warehouse_mode_available).
+  if (effectiveWorkMode(user) === "warehouse" && isHiddenInWarehouse(path)) {
+    return <Navigate to="/" replace />;
   }
   return children;
 }
@@ -406,7 +412,12 @@ export default function App() {
           // UI. Layout's sync effect watches user.language and reconciles from this.
           // Doing it here (rather than only in the login response) means the fix works
           // against the CURRENTLY DEPLOYED backend, with no deploy required.
-          patchUser({ full_name: fresh.full_name, name: fresh.full_name, role: fresh.role, has_seen_onboarding: !!fresh.has_seen_onboarding, language: fresh.language || null });
+          patchUser({ full_name: fresh.full_name, name: fresh.full_name, role: fresh.role, has_seen_onboarding: !!fresh.has_seen_onboarding, language: fresh.language || null,
+            // WAREHOUSE MODE: the EFFECTIVE mode + whether the button shows (server-computed:
+            // Pro Plus + org switched on + role). Absent (older backend) → POS, today's app.
+            work_mode: fresh.work_mode === "warehouse" ? "warehouse" : "pos",
+            warehouse_mode_available: fresh.warehouse_mode_available === true });
+          if (fresh.pa_organisations) useAuthStore.getState().patchOrg({ warehouse_mode_enabled: fresh.pa_organisations.warehouse_mode_enabled === true });
         }
       } catch (_) { /* offline / transient — keep the cached name */ }
     })();

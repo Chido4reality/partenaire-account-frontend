@@ -19,7 +19,9 @@ import { useSearchParams } from "react-router-dom";
 import TransferDetailModal from "../components/TransferDetailModal"; // MP-STAFF-ACTIVITY-LEDGER Phase 3
 import { subscribe, listFailedPermanent, ownerMismatchOf, continueWithConfirm, discard } from "../utils/pendingSync"; // owner count refused on replay
 import { ownerShortLocal } from "../utils/ownerMismatch"; // owner short count, checked on the phone
-import { isGoodsBuffer, locationLabel, locationTypeLabel } from "../utils/locations"; // GOODS-BUFFER
+import { isGoodsBuffer, isVirtualStore, locationLabel, locationTypeLabel } from "../utils/locations"; // GOODS-BUFFER
+import NewVirtualStoreButton from "../components/common/NewVirtualStoreButton"; // WAREHOUSE MODE
+import { useIsWarehouseMode } from "../utils/workMode"; // WAREHOUSE MODE
 import { availabilityOf, serverMessage } from "../utils/transferAvailability"; // TRANSFER RESERVATION
 import { useReservedAt, AvailabilityLine } from "../components/common/TransferAvailability";
 
@@ -99,6 +101,7 @@ export default function TransfersPage() {
   const transfersViewOnly = !!transfersPlan?.data && !hasSection(transfersPlan.data.effective_plan, "transfers");
   const myId = user?.id;
   const isOwner = user?.role === "owner"; // owner is ALWAYS exempt from cannot_confirm_own_dispatch
+  const wh = useIsWarehouseMode(); // WAREHOUSE MODE: held receipts are a sales matter — not shown
   const { data: settingsData } = useOfflineCachedQuery({
     queryKey: ["org-settings"], queryFn: () => api.get("/settings").then(r => r.data), staleTime: 60000,
   });
@@ -295,8 +298,12 @@ export default function TransfersPage() {
       flag_recount: !!flagRecount, // MP-STOCK-CHECK: boss re-count flag (destination)
       items: scannedItems.map(i => ({ product_id: i.product_id, quantity: Math.max(1, Number(i.quantity) || 1) }))
     }),
-    onSuccess: () => {
-      toast.success(lang === "en" ? "Transfer created!" : "Transfert cree!");
+    onSuccess: (res) => {
+      // WAREHOUSE MODE: a transfer to a virtual store is sent and closed in the same request.
+      if (res?.data?.virtual) {
+        toast.success(lang === "en" ? "Sent — the goods left the warehouse. Transfer complete." : "Envoyé — la marchandise a quitté l'entrepôt. Transfert terminé.");
+        qc.invalidateQueries({ queryKey: ["stock"] });
+      } else toast.success(lang === "en" ? "Transfer created!" : "Transfert cree!");
       setMode("list"); setStep(1); setFromLoc(""); setToLoc(""); setNotes(""); setScannedItems([]); setFlagRecount(false);
       setPickerSel({}); setPickerSearch(""); setPickerOpen(false);
       qc.invalidateQueries(["transfers"]); qc.invalidateQueries({ queryKey: ["transfers-reserved"] });
@@ -482,6 +489,10 @@ export default function TransfersPage() {
   // A1: client-side date filter across ALL tabs (rows carry created_at).
   const transfers = (transferData?.data || []).filter(tr => inRange(tr.created_at, range.from, range.to));
   const locations = locData?.data || [];
+  // WAREHOUSE MODE: in Warehouse Mode the server lists every warehouse, the Goods Buffer and the
+  // virtual stores (no real shops) — warehouse → warehouse stays a NORMAL transfer (dispatch, in
+  // transit, receive). Only a virtual destination completes at once.
+  const toLocObj = locations.find(l => l.id === toLoc) || null;
 
   const statusColor = (s) => {
     if (s === "completed") return { bg: "rgba(16,185,129,0.15)", color: "#34d399" };
@@ -578,7 +589,8 @@ export default function TransfersPage() {
               <select className="input" value={fromLoc} onChange={e => { setFromLoc(e.target.value); setPickerSel({}); setPickerOpen(false); }}
                 style={{ fontSize: 15, padding: "12px 14px" }}>
                 <option value="">{lang === "en" ? "Select source location" : "Choisir emplacement source"}</option>
-                {locations.map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)} ({locationTypeLabel(l, lang)})</option>)}
+                {/* WAREHOUSE MODE: a virtual store keeps no stock — never a source */}
+                {locations.filter(l => !isVirtualStore(l)).map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)} ({locationTypeLabel(l, lang)})</option>)}
               </select>
             </div>
 
@@ -592,6 +604,17 @@ export default function TransfersPage() {
                 {/* GOODS-BUFFER: goods reach the buffer by release or by a return — never as a chosen destination */}
                 {locations.filter(l => l.id !== fromLoc && !isGoodsBuffer(l)).map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)} ({locationTypeLabel(l, lang)})</option>)}
               </select>
+              {/* WAREHOUSE MODE: what a virtual destination means, and (owner / allowed manager) creating one. */}
+              {isVirtualStore(toLocObj) && (
+                <div style={{ marginTop: 8, fontSize: 12.5, color: "var(--text-muted)", padding: "8px 10px", border: "1px dashed var(--border-hover)", borderRadius: 8 }}>
+                  {lang === "en"
+                    ? "A virtual store keeps no stock. The goods leave the source now and the transfer completes at once — nobody receives it."
+                    : "Un magasin virtuel ne garde aucun stock. La marchandise quitte la source maintenant et le transfert se termine aussitôt — personne ne le réceptionne."}
+                </div>
+              )}
+              <div style={{ marginTop: 8 }}>
+                <NewVirtualStoreButton en={lang === "en"} onCreated={(loc) => setToLoc(loc.id)} />
+              </div>
             </div>
 
             <div className="form-group">
@@ -601,7 +624,7 @@ export default function TransfersPage() {
             </div>
 
             {/* MP-STOCK-CHECK: boss flags this transfer's destination lines for a re-count. */}
-            {canStockCheck && toLoc && (
+            {canStockCheck && toLoc && !isVirtualStore(toLocObj) && (
               <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", cursor: "pointer", fontSize: 13 }}>
                 <input type="checkbox" checked={flagRecount} onChange={e => setFlagRecount(e.target.checked)} />
                 <span>🔍 {lang === "en" ? "Flag for re-count at destination (Stock Check)" : "Signaler pour recomptage à destination (Vérification de stock)"}</span>
@@ -874,7 +897,7 @@ export default function TransfersPage() {
       )}
 
       {/* HELD-RECEIPT REMINDERS: the strip, owner/manager only (amber ≥ 8h, red ≥ 24h). */}
-      {(isOwner || user?.role === "manager") && <HeldReceiptsBanner variant="strip" en={lang === "en"} />}
+      {(isOwner || user?.role === "manager") && !wh && <HeldReceiptsBanner variant="strip" en={lang === "en"} />}
 
       {/* OWNER count refused on replay — NOT recorded. Same two answers as the live prompt. */}
       {queuedMismatch.map(x => (

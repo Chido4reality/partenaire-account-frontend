@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { locationLabel } from "../utils/locations"; // GOODS-BUFFER: location names follow the app language
 import { useOfflineCachedQuery } from '../utils/offlineQuery';
 import { useLiteMode } from '../hooks/useLiteMode';
+import { useIsWarehouseMode } from '../utils/workMode'; // WAREHOUSE MODE
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore, useLangStore } from '../store';
 import api, { formatDate, getGreeting } from '../utils/api';
@@ -70,6 +71,11 @@ export default function Dashboard() {
   const isManager = role === 'manager';
   const isCashier = role === 'cashier';
   const isWarehouse = role === 'warehouse';
+  // WAREHOUSE MODE: no sales on this screen — the sales queries do not even run, and the
+  // owner / manager / accountant get the warehouse view. POS Mode is exactly today's dashboard.
+  const wh = useIsWarehouseMode();
+  const showWarehouseView = isWarehouse || wh;
+  const showOwnerView = (isOwner || isManager) && !wh;
 
   const today = new Date().toLocaleDateString(lang === 'fr' ? 'fr-CM' : 'en-GB', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
@@ -85,6 +91,7 @@ export default function Dashboard() {
       const res = await api.get(`/sales/today/summary${params}`);
       return res.data;
     },
+    enabled: !wh,
     refetchInterval: 60000
   });
 
@@ -98,6 +105,7 @@ export default function Dashboard() {
   const { data: recentSales } = useOfflineCachedQuery({
     queryKey: ['recent-sales'],
     queryFn: async () => api.get('/sales?limit=8').then(r => r.data),
+    enabled: !wh,
     refetchInterval: 30000
   });
 
@@ -107,7 +115,7 @@ export default function Dashboard() {
   const { data: overdue } = useOfflineCachedQuery({
     queryKey: ['overdue-count'],
     queryFn: async () => api.get('/dashboard/overdue-count').then(r => r.data),
-    enabled: isOwner || isManager
+    enabled: (isOwner || isManager) && !wh
   });
 
   // MP-VOIDS-TILE: void activity for the SAME scope the tiles use — today,
@@ -123,7 +131,7 @@ export default function Dashboard() {
       if (locFilter) params.set('location_id', locFilter);
       return api.get(`/dashboard/voids?${params.toString()}`).then(r => r.data?.data || null);
     },
-    enabled: isOwner || isManager,
+    enabled: (isOwner || isManager) && !wh,
     refetchInterval: 60000,
   });
   const voidCount = voidsToday?.totals?.count || 0;
@@ -138,11 +146,11 @@ export default function Dashboard() {
     queryFn: () => api.get('/dozie-listings').then(r => r.data?.data || []),
     // MP-LITE-MODE-PHASE-1: Marketplace banner hidden in Lite, no need
     // to fetch listing state.
-    enabled: !lite && (isOwner || isManager),
+    enabled: !lite && (isOwner || isManager) && !wh,
     staleTime: 60000,
     fallback: [],
   });
-  const hasZeroDozieListings = !lite && (isOwner || isManager) && Array.isArray(dozieListings) && dozieListings.length === 0;
+  const hasZeroDozieListings = !lite && (isOwner || isManager) && !wh && Array.isArray(dozieListings) && dozieListings.length === 0;
 
   const s = summary?.data || {};
   const overdueCount = overdue?.data?.count || 0;
@@ -158,9 +166,11 @@ export default function Dashboard() {
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
       {/* MP-CASH-SHIFTS-UI: live indicator. Uses the global
           selectedLocation; hosts the open/close modals internally. */}
+      {!wh && (
       <div style={{ marginBottom: 16 }}>
         <ActiveShiftIndicator />
       </div>
+      )}
 
       {/* MP-DOZIE-INVENTORY-PUBLISH-UI: zero-listings nudge. Owners
           who haven't published anything yet land here with no signal
@@ -200,11 +210,13 @@ export default function Dashboard() {
           drilldowns into cash sales / refunds / expenses. Shares the
           ["current-shift", locId] cache with the indicator so they
           stay in sync without a duplicate request. */}
+      {!wh && (
       <div style={{ marginBottom: 24 }}>
         <TileErrorBoundary name="drawer-card" fr={lang === 'fr'}>
           <DrawerDashboardCard />
         </TileErrorBoundary>
       </div>
+      )}
 
       {/* Header */}
       <div className="page-header" style={{ marginBottom: 28 }}>
@@ -217,6 +229,7 @@ export default function Dashboard() {
           {/* MP-DASHBOARD-REPORT-CONSISTENCY: location filter (default
               All) — same options/semantics as Reports so the numbers
               agree. */}
+          {!wh && (
           <div style={{ marginTop: 8 }}>
             <select value={locFilter} onChange={e => setLocFilter(e.target.value)}
               style={{ fontSize: 12, padding: "5px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)" }}>
@@ -224,6 +237,7 @@ export default function Dashboard() {
               {dashLocations.map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)}</option>)}
             </select>
           </div>
+          )}
           {/* Role badge */}
           <div style={{ marginTop: 6 }}>
             <span style={{ fontSize: 11, padding: "3px 10px", borderRadius: 20, fontWeight: 600, background: isOwner ? "rgba(251,191,36,0.15)" : isManager ? "rgba(251,197,3,0.15)" : isWarehouse ? "rgba(52,211,153,0.15)" : "rgba(148,163,184,0.15)", color: isOwner ? "#fbbf24" : isManager ? "var(--brand-light)" : isWarehouse ? "#34d399" : "#94a3b8" }}>
@@ -231,7 +245,7 @@ export default function Dashboard() {
             </span>
           </div>
         </div>
-        {!isWarehouse && (
+        {!isWarehouse && !wh && (
           <button className="btn btn-primary" onClick={() => navigate('/pos')} style={{ gap: 8 }}>
             🛒 {t('nav.sales')}
           </button>
@@ -239,7 +253,7 @@ export default function Dashboard() {
       </div>
 
       {/* HELD-RECEIPT REMINDERS: red banner once a held receipt has waited a week. */}
-      {(isOwner || isManager) && <HeldReceiptsBanner variant="dashboard" en={lang === 'en'} onOpen={() => navigate(isOwner ? '/accountant-log' : '/team-approvals')} />}
+      {showOwnerView && <HeldReceiptsBanner variant="dashboard" en={lang === 'en'} onOpen={() => navigate(isOwner ? '/accountant-log' : '/team-approvals')} />}
 
       {/* Alerts — only for owner/manager */}
       {(isOwner || isManager) && (lowStockCount > 0 || overdueCount > 0) && (
@@ -258,7 +272,7 @@ export default function Dashboard() {
       )}
 
       {/* ── WAREHOUSE VIEW ── */}
-      {isWarehouse && (
+      {showWarehouseView && (
         <div>
           <TileErrorBoundary name="stat-grid-1" fr={lang === 'fr'}><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
             <StatCard icon="📦" label={lang === 'en' ? "Low stock items" : "Articles stock bas"}
@@ -275,8 +289,8 @@ export default function Dashboard() {
             <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>{lang === 'en' ? "Warehouse Dashboard" : "Tableau de bord entrepôt"}</div>
             <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>{lang === 'en' ? "Manage stock, receive goods and process transfers." : "Gérez le stock, réceptionnez les marchandises et traitez les transferts."}</div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-              <button className="btn btn-primary" onClick={() => navigate('/inventory')}>📦 Inventory</button>
-              <button className="btn btn-secondary" onClick={() => navigate('/transfers')}>🔄 Transfers</button>
+              <button className="btn btn-primary" onClick={() => navigate('/inventory')}>📦 {lang === 'en' ? 'Inventory' : 'Inventaire'}</button>
+              <button className="btn btn-secondary" onClick={() => navigate('/transfers')}>🔄 {lang === 'en' ? 'Transfers' : 'Transferts'}</button>
             </div>
           </div>
         </div>
@@ -307,7 +321,7 @@ export default function Dashboard() {
       )}
 
       {/* ── OWNER / MANAGER VIEW ── */}
-      {(isOwner || isManager) && (
+      {showOwnerView && (
         <div>
           {/* Stats grid */}
           <TileErrorBoundary name="stat-grid-3" fr={lang === 'fr'}><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>

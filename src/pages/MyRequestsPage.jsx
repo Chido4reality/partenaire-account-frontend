@@ -21,6 +21,7 @@ import PaymentEventReceipt from "../components/common/PaymentEventReceipt";
 import BelowCostLossDetail from "../components/common/BelowCostLossDetail";
 import DiscountApprovalDetail from "../components/common/DiscountApprovalDetail";
 import { SHOP_TZ } from "../utils/shopTime";
+import { useIsWarehouseMode } from "../utils/workMode"; // WAREHOUSE MODE
 
 const VERB = {
   void:            { en: "cancel a sale",        fr: "annuler une vente" },
@@ -63,6 +64,7 @@ export default function MyRequestsPage() {
   const [finalizingId, setFinalizingId] = useState(null);
   const [cancelFor, setCancelFor] = useState(null); // request row pending a cancel confirm
   const navigate = useNavigate();
+  const wh = useIsWarehouseMode(); // WAREHOUSE MODE: "Change the order" opens the till — hidden
   // MP-SCOPED-GRANT: refusals live in localStorage (see utils/requestRefusals.js
   // for why), mirrored into state so the row re-renders the moment one lands.
   const [refusals, setRefusals] = useState(() => getRefusals());
@@ -318,7 +320,7 @@ export default function MyRequestsPage() {
                       onClick={() => { setResendingId(r.id); resendMut.mutate(r); }}>
                       {resendingId === r.id ? "..." : (en ? "Send again to the boss" : "Renvoyer au patron")}
                     </button>
-                    {["bundled_sale", "discount", "credit_sale", "oversell"].includes(r.action_type) && (
+                    {!wh && ["bundled_sale", "discount", "credit_sale", "oversell"].includes(r.action_type) && (
                       <button className="btn btn-secondary" style={{ flex: 1 }}
                         onClick={() => navigate("/pos")}>
                         {en ? "Change the order" : "Modifier la commande"}

@@ -37,6 +37,8 @@ export const useAuthStore = create(persist(
     // into the cached user without a re-login, so receipts / "served by" reflect
     // the current pa_users.full_name. No-op when logged out.
     patchUser: (patch) => set((s) => (s.user ? { user: { ...s.user, ...patch } } : {})),
+    // WAREHOUSE MODE: same idea for the cached org (the owner's on/off switch, /auth/me refresh).
+    patchOrg: (patch) => set((s) => (s.org ? { org: { ...s.org, ...patch } } : {})),
     // Refresh the tripwire on every CONFIRMED-active server response. maxHrs (from the
     // X-MP-Max-Offline-Hours header) propagates a boss's window change on next contact.
     markVerified: (maxHrs) => set((s) => ({
@@ -91,7 +93,8 @@ export const useOfflineStore = create(persist(
 // GOODS-BUFFER: the selected location is where sales, tickets, shifts and expenses happen,
 // so it can never be the Goods Buffer — refused on set, and dropped if a device rehydrates
 // one stored before this guard existed.
-const sellableOrNull = (loc) => (loc && loc.kind === "goods_buffer" ? null : loc);
+// WAREHOUSE MODE: a virtual store is never a place to work in either.
+const sellableOrNull = (loc) => (loc && (loc.kind === "goods_buffer" || loc.kind === "virtual") ? null : loc);
 export const useSettingsStore = create(persist(
   (set) => ({
     selectedLocation: null,

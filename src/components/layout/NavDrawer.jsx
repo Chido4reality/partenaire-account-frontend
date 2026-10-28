@@ -20,6 +20,7 @@ import { setLanguage } from "../../utils/setLanguage"; // MP-LANGUAGE-PERSIST
 
 import { SUPPORT_PHONE } from "../../utils/support";
 import { useNavigate } from "react-router-dom";
+import WorkModeButton from "../common/WorkModeButton"; // WAREHOUSE MODE
 export const DRAWER_WIDTH = 280;
 
 // Section grouping by route path. Items not listed in any section are
@@ -207,6 +208,8 @@ export default function NavDrawer({
                   </span>
                 </div>
               )}
+              {/* WAREHOUSE MODE: the two-way switch, under the name (hidden when not available). */}
+              <WorkModeButton onSwitched={onClose} wrapStyle={{ marginTop: 12 }} />
             </div>
 
             {/* Sections */}

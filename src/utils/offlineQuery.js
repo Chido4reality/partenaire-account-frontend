@@ -38,9 +38,13 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { cacheData, getCachedData } from "./offlineStore";
+import { currentWorkMode } from "./workMode";
 
+// WAREHOUSE MODE: the same query key returns a different list in Warehouse Mode (no real shops),
+// so it gets its own slot — an offline POS screen must never be served a warehouse list. POS
+// Mode keys are exactly today's.
 function deriveCacheKey(queryKey) {
-  return "oq_" + queryKey.map(v => v == null ? "" : String(v)).join("|");
+  return "oq_" + queryKey.map(v => v == null ? "" : String(v)).join("|") + (currentWorkMode() === "warehouse" ? "|wh" : "");
 }
 
 // MP-DEBT-MODAL-PREFETCH (Issue 2): exposed so callers can manually
@@ -55,12 +59,12 @@ export function cacheKeyFor(queryKey) {
 }
 
 export function useOfflineCachedQuery({ queryKey, queryFn, fallback, ...opts }) {
-  const cacheKey = deriveCacheKey(queryKey);
   const empty = fallback !== undefined ? fallback : null;
   return useQuery({
     queryKey,
     networkMode: "always",
     queryFn: async () => {
+      const cacheKey = deriveCacheKey(queryKey);   // read at fetch time: the mode may have changed
       try {
         const r = await queryFn();
         // Cache on the success path. cacheData is a thin localStorage wrapper

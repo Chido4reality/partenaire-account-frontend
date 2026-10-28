@@ -8,7 +8,12 @@ export const GOODS_BUFFER = "goods_buffer";
 export const isGoodsBuffer = (l) => !!l && l.kind === GOODS_BUFFER;
 
 // A location a sale, ticket, shift, cart or expense may happen at.
-export const isSellableLocation = (l) => !!l && !isGoodsBuffer(l) && l.is_active !== false;
+// WAREHOUSE MODE: a VIRTUAL store (kind 'virtual') is only a transfer destination — it keeps no
+// stock and nothing is sold or counted there, so it is neither sellable nor a stock location.
+// (The server never lists one outside Warehouse Mode; this keeps the warehouse lists honest.)
+export const isVirtualStore = (l) => !!l && l.kind === "virtual";
+
+export const isSellableLocation = (l) => !!l && !isGoodsBuffer(l) && !isVirtualStore(l) && l.is_active !== false;
 
 // The buffer's stored name follows the ORG language; the label follows the USER's.
 // (Peter, 2026-10-16) EVERY place a location name renders goes through one of these two.
@@ -34,9 +39,10 @@ export const locationInitial = (l, lang) => (locationLabel(l, lang).trim().charA
 export const locationTypeLabel = (l, lang) => {
   if (!l) return "";
   if (isGoodsBuffer(l)) return lang === "en" ? "System" : "Système";
+  if (isVirtualStore(l)) return lang === "en" ? "Virtual · keeps no stock" : "Virtuel · aucun stock";
   return l.type || "";
 };
 
 // Locations that may RECEIVE goods directly (arrivals, opening stock, restock delivery,
 // import): everything except the buffer.
-export const withoutGoodsBuffer = (list) => (Array.isArray(list) ? list.filter((l) => !isGoodsBuffer(l)) : []);
+export const withoutGoodsBuffer = (list) => (Array.isArray(list) ? list.filter((l) => !isGoodsBuffer(l) && !isVirtualStore(l)) : []);
