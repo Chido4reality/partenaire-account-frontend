@@ -334,7 +334,9 @@ export default function AccountantLogPage() {
     mutationFn: ({ id, pin, extra }) => api.post(`/staff/approvals/${id}/approve`, { pin, ...(extra || {}) }),
     onSuccess: (res) => {
       // A held receipt executes on approve (no finalize) — say what actually happened.
-      toast.success(res?.data?.status === "executed"
+      toast.success(res?.data?.virtual
+        ? (en ? "Approved — the goods left the warehouse. Transfer complete." : "Approuvé — la marchandise a quitté l'entrepôt. Transfert terminé.")
+        : res?.data?.status === "executed"
         ? (en ? "Approved — the counted goods are now in stock" : "Approuvé — les marchandises comptées sont en stock")
         : (en ? "Approved — staff will complete it" : "Approuvé — le personnel le finalisera"));
       const sf = res?.data?.shortfall;
@@ -350,7 +352,12 @@ export default function AccountantLogPage() {
       qc.invalidateQueries({ queryKey: ["staff-approvals-awaiting"] });
       qc.invalidateQueries({ queryKey: ["accountant-log-watched"] });
     },
-    onError: (e) => toast.error(e?.response?.data?.message || (en ? "Could not approve" : "Échec de l'approbation")),
+    onError: (e) => {
+      const d = e?.response?.data || {};
+      toast.error((en ? (d.message_en || d.message) : (d.message_fr || d.message)) || (en ? "Could not approve" : "Échec de l'approbation"), { duration: 8000 });
+      // WAREHOUSE MODE: a virtual transfer that could not run is now 'failed' — refresh the queue.
+      if (d.virtual) { setPinFor(null); setPinValue(""); qc.invalidateQueries({ queryKey: ["staff-approvals-pending"] }); }
+    },
   });
   const rejectMut = useMutation({
     mutationFn: ({ id, note, mode, pin }) => api.post(`/staff/approvals/${id}/reject`, { note, ...(mode ? { mode, pin } : {}) }),

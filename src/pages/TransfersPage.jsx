@@ -303,8 +303,11 @@ export default function TransfersPage() {
       items: scannedItems.map(i => ({ product_id: i.product_id, quantity: Math.max(1, Number(i.quantity) || 1) }))
     }),
     onSuccess: (res) => {
+      // Parked for the owner (a virtual destination, or an 'approve' transfer policy): nothing moved yet.
+      if (res?.data?.pending_approval) {
+        toast.success(res.data[lang === "en" ? "message_en" : "message_fr"] || (lang === "en" ? "Sent to the owner for approval." : "Envoyé au propriétaire pour approbation."), { duration: 6000 });
       // WAREHOUSE MODE: a transfer to a virtual store is sent and closed in the same request.
-      if (res?.data?.virtual) {
+      } else if (res?.data?.virtual) {
         toast.success(lang === "en" ? "Sent — the goods left the warehouse. Transfer complete." : "Envoyé — la marchandise a quitté l'entrepôt. Transfert terminé.");
         qc.invalidateQueries({ queryKey: ["stock"] });
       } else toast.success(lang === "en" ? "Transfer created!" : "Transfert cree!");
@@ -615,6 +618,14 @@ export default function TransfersPage() {
                   {lang === "en"
                     ? "A virtual store keeps no stock. The goods leave the source now and the transfer completes at once — nobody receives it."
                     : "Un magasin virtuel ne garde aucun stock. La marchandise quitte la source maintenant et le transfert se termine aussitôt — personne ne le réceptionne."}
+                  {/* Owner / permitted manager go straight through (canNewVirtual = the same rule). */}
+                  {!canNewVirtual && (
+                    <div style={{ marginTop: 4, fontWeight: 600 }}>
+                      {lang === "en"
+                        ? "This transfer goes to the owner for approval first. Nothing leaves until it is approved."
+                        : "Ce transfert part d'abord chez le patron pour approbation. Rien ne sort avant son accord."}
+                    </div>
+                  )}
                 </div>
               )}
               {/* Only the dropdown option opens the name field — no second "+ New virtual store" button here. */}

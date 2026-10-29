@@ -73,7 +73,9 @@ export default function TeamApprovalsPage() {
   const approveMut = useMutation({
     mutationFn: ({ id, pin, extra }) => api.post(`/staff/approvals/${id}/approve`, { pin, ...(extra || {}) }).then((r) => r.data),
     onSuccess: (res) => {
-      toast.success(res?.status === "executed"
+      toast.success(res?.virtual
+        ? (en ? "Approved — the goods left the warehouse. Transfer complete." : "Approuvé — la marchandise a quitté l'entrepôt. Transfert terminé.")
+        : res?.status === "executed"
         ? (en ? "Approved — the counted goods are now in stock." : "Approuvé — les marchandises comptées sont en stock.")
         : (en ? "Approved — the staffer can now complete it." : "Approuvé — l'employé peut maintenant finaliser."));
       const sf = res?.shortfall;
@@ -89,6 +91,7 @@ export default function TeamApprovalsPage() {
       // keep the modal open on a wrong-PIN so they can retry; close on structural errors
       if (d.error !== "invalid_pin" && d.error !== "bad_pin_format") closePin();
       else setPin("");
+      if (d.virtual) qc.invalidateQueries({ queryKey: ["team-approvals"] });   // WAREHOUSE MODE: now 'failed'
     },
   });
 
