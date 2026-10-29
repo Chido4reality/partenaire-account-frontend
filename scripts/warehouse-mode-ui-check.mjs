@@ -136,5 +136,32 @@ check("…button, confirm line and toast all go through it (no hard-coded 'no sa
   && /toast\.success\(cancelWords\(vars\?\.action_type, en\)\.done\)/.test(al)
   && (al.match(/Cancel request \(no sale\)/g) || []).length === 1);
 
+// ── LOW-STOCK BANNER (Peter, prod hand test 2026-10-29): the Inventory header count follows the
+// Stock Levels location picker and says where it counted, FR/EN, in POS and Warehouse Mode alike.
+console.log("\nLow-stock banner follows the location picker");
+const { lowStockBannerText } = await import(pathToFileURL(resolve(SRC, "utils/locations.js")).href);
+const PM = { id: "pm", name: "Principal Magazine", type: "warehouse", kind: null };
+const BUF = { id: "buf", name: "Zone tampon", type: "warehouse", kind: "goods_buffer" };
+check("EN at a location: '3 items below minimum at Principal Magazine'", lowStockBannerText(3, PM, "en") === "3 items below minimum at Principal Magazine", lowStockBannerText(3, PM, "en"));
+check("FR at a location: '3 articles sous le minimum à Principal Magazine'", lowStockBannerText(3, PM, "fr") === "3 articles sous le minimum à Principal Magazine", lowStockBannerText(3, PM, "fr"));
+check("EN all locations: '13 items below minimum — all locations'", lowStockBannerText(13, null, "en") === "13 items below minimum — all locations", lowStockBannerText(13, null, "en"));
+check("FR all locations: '13 articles sous le minimum — tous les emplacements'", lowStockBannerText(13, null, "fr") === "13 articles sous le minimum — tous les emplacements", lowStockBannerText(13, null, "fr"));
+check("the Goods Buffer is named the way every list names it", lowStockBannerText(1, BUF, "en").endsWith(" at Goods Buffer") && lowStockBannerText(1, BUF, "fr").includes(" à "), `${lowStockBannerText(1, BUF, "en")} | ${lowStockBannerText(1, BUF, "fr")}`);
+const inv = read("pages/InventoryPage.jsx");
+check("a picked location is counted by the SERVER for that location (low_only + location_id)",
+  /queryKey: \["stock-alerts", "loc", locStockFilter\],\s*queryFn: \(\) => api\.get\("\/stock\?low_only=true&location_id=" \+ encodeURIComponent\(locStockFilter\)\)/.test(inv)
+  && /enabled: !!locStockFilter,/.test(inv));
+check("…the number and the words come from the SAME choice (bannerLocation)",
+  /const bannerLocation = locStockFilter \? locations\.find\(l => l\.id === locStockFilter\) \|\| null : null;/.test(inv)
+  && /const bannerAlerts = bannerLocation \? \(locAlertData\?\.data \|\| \[\]\) : alerts;/.test(inv)
+  && /\{bannerAlerts\.length > 0 && <div data-testid="low-stock-banner"[^>]*>⚠️ \{lowStockBannerText\(bannerAlerts\.length, bannerLocation, lang\)\}<\/div>\}/.test(inv));
+check("…and the OLD org-wide banner (alerts.length, no place) is gone",
+  !/\{alerts\.length > 0 && <div style=\{\{ fontSize: 12, color: "#fbbf24" \}\}>⚠️ \{alerts\.length\}/.test(inv));
+check("the Alerts tab keeps the org-wide list (unchanged)", /Alerts \(\$\{alerts\.length\}\)/.test(inv) && /\{alerts\.map\(\(a, i\) =>/.test(inv));
+check("an offline stock adjust never seeds another location's row into a one-location banner slot",
+  /q\.queryKey\?\.\[0\] === "stock-alerts"\s*&& !\(q\.queryKey\?\.\[1\] === "loc" && q\.queryKey\?\.\[2\] !== product\.location_id\)/.test(inv));
+check("the banner query takes the Warehouse Mode view like every /stock read (VIEW_PATHS covers /stock)",
+  /locations\|stock\|/.test(read("utils/workMode.js")));
+
 console.log(`\n${fails ? `${fails} FAILED` : "all passed"}`);
 process.exit(fails ? 1 : 0);

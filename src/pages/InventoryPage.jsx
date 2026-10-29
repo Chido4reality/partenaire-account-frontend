@@ -31,7 +31,7 @@ import { useLiteMode } from "../hooks/useLiteMode";
 import { parseProductImport, buildProductTemplateXlsx } from "../utils/productImport";
 import { priceOrderText, PRICE_FIELDS, editablePrices } from "../utils/priceRules"; // PRICE ORDER (server = src/lib/priceRules.js)
 import PriceHistoryList from "../components/common/PriceHistoryList";
-import { isGoodsBuffer, withoutGoodsBuffer, withoutVirtualStores, locationLabel, locationTypeLabel } from "../utils/locations"; // GOODS-BUFFER
+import { isGoodsBuffer, withoutGoodsBuffer, withoutVirtualStores, locationLabel, locationTypeLabel, lowStockBannerText } from "../utils/locations"; // GOODS-BUFFER
 import { useIsWarehouseMode } from "../utils/workMode"; // WAREHOUSE MODE
 
 // Sprint C — shared helper for the 4 product entry paths. Reads a File
@@ -277,6 +277,15 @@ export default function InventoryPage() {
     queryFn: () => api.get("/stock?low_only=true").then(r => r.data),
     refetchInterval: 60000
   });
+  // LOW-STOCK BANNER: the header count follows the Stock Levels location picker. The server
+  // already scopes low_only by location_id (same rule: not never-placed, qty <= min, alert on,
+  // never the Goods Buffer; Warehouse Mode drops real shops). "All locations" reuses alerts above.
+  const { data: locAlertData } = useOfflineCachedQuery({
+    queryKey: ["stock-alerts", "loc", locStockFilter],
+    queryFn: () => api.get("/stock?low_only=true&location_id=" + encodeURIComponent(locStockFilter)).then(r => r.data),
+    enabled: !!locStockFilter,
+    refetchInterval: 60000
+  });
 
   const { data: productsData } = useOfflineCachedQuery({
     queryKey: ["products-all", showArchived],
@@ -308,6 +317,10 @@ export default function InventoryPage() {
   const alerts = alertData?.data || [];
   const products = productsData?.data || [];
   const locations = withoutVirtualStores(locationsData?.data || []);   // WAREHOUSE MODE: a virtual store holds no stock
+  // LOW-STOCK BANNER: a picked location that is not in the list (yet) reads as "all locations",
+  // so the number and the words always describe the same set.
+  const bannerLocation = locStockFilter ? locations.find(l => l.id === locStockFilter) || null : null;
+  const bannerAlerts = bannerLocation ? (locAlertData?.data || []) : alerts;
   // GOODS-BUFFER: goods enter the Goods Buffer only by a buffer release — never by Receive
   // Goods, opening stock, Rapid Entry, import or kit opening stock.
   const receiveLocations = withoutGoodsBuffer(locations);
@@ -1336,7 +1349,7 @@ export default function InventoryPage() {
             <HelpButton topic="receive-goods" title="Receive Goods / Réceptionner" />
           </div>
           <div style={{ display: "flex", gap: 16, marginTop: 4, flexWrap: "wrap", alignItems: "center" }}>
-            {alerts.length > 0 && <div style={{ fontSize: 12, color: "#fbbf24" }}>⚠️ {alerts.length} {lang === "en" ? "items below minimum" : "articles sous le minimum"}</div>}
+            {bannerAlerts.length > 0 && <div data-testid="low-stock-banner" style={{ fontSize: 12, color: "#fbbf24" }}>⚠️ {lowStockBannerText(bannerAlerts.length, bannerLocation, lang)}</div>}
             {isOwner && <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{lang === "en" ? "Stock value:" : "Valeur stock:"} <strong style={{ color: "var(--brand-light)" }}>{fmt(totalStockValue)}</strong></div>}
             {isOwner && bufferStockValue > 0 && <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{lang === "en" ? "of which in goods buffer:" : "dont en zone tampon :"} <strong>{fmt(bufferStockValue)}</strong></div>}
             {/* Sprint A: inventory cap usage badge. Hidden on plans with
@@ -3021,8 +3034,10 @@ function AdjustModal({ product, role, requestApproval, lang, onClose, onSuccess 
     // ["stock-alerts"] — re-derive membership. Below min + alert on →
     // include; otherwise remove. Update in place if it stays.
     const shouldAlert = newQty < newMin && newAlertEnabled;
+    // A banner slot ["stock-alerts","loc",id] holds ONE location — never seed another one's row into it.
     qc.setQueriesData(
-      { predicate: (q) => q.queryKey?.[0] === "stock-alerts" },
+      { predicate: (q) => q.queryKey?.[0] === "stock-alerts"
+          && !(q.queryKey?.[1] === "loc" && q.queryKey?.[2] !== product.location_id) },
       (old) => {
         if (!old) return old;
         const arr = Array.isArray(old) ? old : (old.data || []);

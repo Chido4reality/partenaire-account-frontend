@@ -74,3 +74,12 @@ export const transferEndLabel = (tr, end, list, lang) => {
   if (info.kind === "virtual") return `${info.name} (${lang === "en" ? "virtual" : "virtuel"})`;
   return info.name;
 };
+
+// LOW-STOCK BANNER (Inventory header): the count and WHERE it was counted, in one sentence —
+// "3 items below minimum at Principal Magazine" / "… — all locations" (location = null).
+export const lowStockBannerText = (count, location, lang) => {
+  const en = lang === "en";
+  const head = `${count} ${en ? "items below minimum" : "articles sous le minimum"}`;
+  if (!location) return `${head} — ${en ? "all locations" : "tous les emplacements"}`;
+  return `${head} ${en ? "at" : "à"} ${locationLabel(location, lang)}`;
+};
