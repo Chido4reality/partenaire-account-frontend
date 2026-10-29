@@ -17,6 +17,7 @@ import ApproverPasswordInput, { approverPasswordReady, approverPasswordLabel } f
 import HoldShortfallFields, { useHoldShortfall, holdShortfallReady, holdShortfallBody, approveBlockedReason } from "../components/common/HoldShortfallFields"; // variance outcomes
 import HeldReceiptsBanner, { HoldTierBadge } from "../components/common/HeldReceiptsBanner"; // held-receipt reminders
 import { SHOP_TZ } from "../utils/shopTime";
+import { useWorkMode } from "../utils/workMode"; // WAREHOUSE MODE
 
 const VERB = {
   void:            { en: "cancel a sale",      fr: "annuler une vente" },
@@ -60,8 +61,9 @@ export default function TeamApprovalsPage() {
   const hold = useHoldShortfall(pinFor);
   const rejectHold = useHoldShortfall(rejectFor); // its source branch name, for the reject wording
 
+  const workMode = useWorkMode();
   const { data: resp, isLoading, isError } = useQuery({
-    queryKey: ["team-approvals"],
+    queryKey: ["team-approvals", workMode],   // WAREHOUSE MODE: the warehouse view lists fewer (one cache per mode)
     queryFn: () => api.get("/staff/approvals?status=pending").then((r) => r.data),
     refetchInterval: 7000,
   });

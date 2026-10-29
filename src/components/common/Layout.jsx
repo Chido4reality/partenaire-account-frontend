@@ -1122,7 +1122,9 @@ export default function Layout() {
   // away before the next tick). Same key → the page's own invalidation now
   // refreshes the sidebar badge immediately too.
   const { data: apprPending } = useQuery({
-    queryKey: ["staff-approvals-pending"],
+    // WAREHOUSE MODE: keyed by mode, like AccountantLogPage (same shape): the warehouse view's
+    // badge counts what that view lists (POS approvals / hidden shops left out by the server).
+    queryKey: ["staff-approvals-pending", workMode],
     queryFn: () => api.get("/staff/approvals?status=pending").then(r => r.data),
     refetchInterval: 60000, // MP-PEAK-MTN-RESILIENCE (was 7s)
     enabled: role === "owner" && hasFeature(effectivePlan, "accountant_log"),

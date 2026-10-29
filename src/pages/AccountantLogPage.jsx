@@ -19,6 +19,7 @@ import { useLangStore, useAuthStore } from "../store"; // WAREHOUSE MODE: useAut
 import { hasFeature } from "../utils/planCapabilities";
 import { useCurrency } from "../utils/useCurrency";
 import { SHOP_TZ } from "../utils/shopTime"; // MP-REPORT-TZ
+import { useWorkMode } from "../utils/workMode"; // WAREHOUSE MODE: approval lists per mode
 import api from "../utils/api";
 import { usePlaceholders } from "../utils/placeholders";
 import { formatLastSeen, isRecentlyActive } from "../utils/lastSeen";
@@ -201,8 +202,12 @@ export default function AccountantLogPage() {
 
   // ── Phase 5b: pending approvals (owner inbox) ──
   const fmtCur = useCurrency();
+  // WAREHOUSE MODE: the server leaves out POS approvals / hidden shops in the warehouse view, so
+  // each mode has its own cache entry (a switch never shows the other mode's list). Same key
+  // shape as Layout's menu badge; invalidations by ["staff-approvals-pending"] cover both.
+  const workMode = useWorkMode();
   const { data: approvalsResp } = useQuery({
-    queryKey: ["staff-approvals-pending"],
+    queryKey: ["staff-approvals-pending", workMode],
     queryFn: () => api.get("/staff/approvals?status=pending").then((r) => r.data),
     enabled: entitled,
     refetchInterval: 30000, // keep the owner's inbox fresh
@@ -220,7 +225,7 @@ export default function AccountantLogPage() {
   // pending queue — nothing here needs a decision, so it must not read as a second
   // pile of work or the boss will start ignoring both.
   const { data: awaitingResp } = useQuery({
-    queryKey: ["staff-approvals-awaiting"],
+    queryKey: ["staff-approvals-awaiting", workMode],
     queryFn: () => api.get("/staff/approvals?status=approved").then((r) => r.data),
     enabled: entitled,
     refetchInterval: 30000,
@@ -395,11 +400,11 @@ export default function AccountantLogPage() {
     },
     onError: (e) => toast.error(e?.response?.data?.message || (en ? "Could not reject" : "Échec du rejet")),
   });
-  // MP-APPROVAL-CANCEL: drop a request that's no longer needed — no sale recorded.
+  // MP-APPROVAL-CANCEL: drop a request that's no longer needed — nothing is recorded.
   const cancelMut = useMutation({
     mutationFn: ({ id }) => api.post(`/staff/approvals/${id}/cancel`),
-    onSuccess: () => {
-      toast.success(en ? "Request cancelled — no sale recorded" : "Demande annulée — aucune vente");
+    onSuccess: (_res, vars) => {
+      toast.success(cancelWords(vars?.action_type, en).done);
       setCancelFor(null);
       qc.invalidateQueries({ queryKey: ["staff-approvals-pending"] });
     },
@@ -526,10 +531,10 @@ export default function AccountantLogPage() {
                   ✓ {en ? "Approve" : "Approuver"}
                 </button>
               </div>
-              {/* MP-APPROVAL-CANCEL: drop a no-longer-needed request outright (no sale). */}
+              {/* MP-APPROVAL-CANCEL: drop a no-longer-needed request outright (no sale / no transfer). */}
               <button className="btn" style={{ width: "100%", marginTop: 6, fontSize: 12.5, color: "var(--text-muted)", background: "transparent", border: "1px solid var(--border)" }}
                 onClick={() => setCancelFor(a)}>
-                {en ? "Cancel request (no sale)" : "Annuler la demande (sans vente)"}
+                {cancelWords(a.action_type, en).button}
               </button>
             </div>
           ))}
@@ -883,13 +888,13 @@ export default function AccountantLogPage() {
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 8 }}>{en ? "Cancel this request?" : "Annuler cette demande ?"}</div>
             <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 16 }}>
-              {en ? "No sale will be recorded." : "Aucune vente ne sera enregistrée."}
+              {cancelWords(cancelFor.action_type, en).confirm}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} disabled={cancelMut.isPending}
                 onClick={() => setCancelFor(null)}>{en ? "Keep it" : "Garder"}</button>
               <button className="btn btn-primary" style={{ flex: 2 }} disabled={cancelMut.isPending}
-                onClick={() => cancelMut.mutate({ id: cancelFor.id })}>
+                onClick={() => cancelMut.mutate({ id: cancelFor.id, action_type: cancelFor.action_type })}>
                 {cancelMut.isPending ? "..." : (en ? "Yes, cancel" : "Oui, annuler")}
               </button>
             </div>
@@ -955,6 +960,17 @@ const ACTION_TEXT = {
   late_money_filed:                 { en: "Late money filed",            fr: "Argent arrivé en retard",       money: true },
   virtual_store_created:            { en: "Created a virtual store",     fr: "Magasin virtuel créé" },        // WAREHOUSE MODE
 };
+
+// MP-APPROVAL-CANCEL wording by what the request was: a transfer request records no transfer,
+// not "no sale" (Peter's hand test 2026-10-29). Every other type keeps today's words.
+function cancelWords(actionType, en) {
+  if (actionType === "transfer") return en
+    ? { button: "Cancel request (no transfer)", confirm: "No transfer will be made.", done: "Request cancelled — no transfer made" }
+    : { button: "Annuler la demande (sans transfert)", confirm: "Aucun transfert ne sera fait.", done: "Demande annulée — aucun transfert" };
+  return en
+    ? { button: "Cancel request (no sale)", confirm: "No sale will be recorded.", done: "Request cancelled — no sale recorded" }
+    : { button: "Annuler la demande (sans vente)", confirm: "Aucune vente ne sera enregistrée.", done: "Demande annulée — aucune vente" };
+}
 
 // Fix 1 (Peter's staging test): the three phase-1 audit rows, readable in the feed, the
 // tap-detail and the Activity Ledger. One source of wording for all three surfaces.

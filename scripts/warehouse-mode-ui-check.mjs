@@ -111,5 +111,30 @@ check("virtual-store transfer: 'sends the goods out now' with the real names, FR
   && /Approuver fait sortir la marchandise maintenant : le stock quitte \$\{from\} immédiatement\. \$\{to\} est un magasin virtuel et ne garde aucun stock\./.test(al)
   && /pinFor\.virtual_destination === true/.test(al) && /pinFor\.virtual_transfer\?\.from_name/.test(al));
 
+// ── 7. Accountant Log approval lists in Warehouse Mode (Peter's hand test 2026-10-29) ──
+const lay = read("components/common/Layout.jsx");
+check("the approval lists take the warehouse view (server leaves out POS approvals / hidden shops)",
+  takesWarehouseView("/staff/approvals") && !takesWarehouseView("/staff/approvals/abc/approve") && !takesWarehouseView("/staff/my-requests"));
+check("one cache per mode: page pending + awaiting, menu badge, Team Approvals",
+  /queryKey: \["staff-approvals-pending", workMode\],/.test(al) && /queryKey: \["staff-approvals-awaiting", workMode\],/.test(al)
+  && /queryKey: \["staff-approvals-pending", workMode\],/.test(lay) && /queryKey: \["team-approvals", workMode\],/.test(ta)
+  && !/queryKey: \["staff-approvals-pending"\],/.test(al + lay));
+check("…the page and the menu badge share ONE key shape (same queryFn, same [key, mode])",
+  /queryKey: \["staff-approvals-pending", workMode\],\s*queryFn: \(\) => api\.get\("\/staff\/approvals\?status=pending"\)/.test(lay)
+  && /queryKey: \["staff-approvals-pending", workMode\],\s*queryFn: \(\) => api\.get\("\/staff\/approvals\?status=pending"\)/.test(al));
+// cancelWords is plain JS inside the page: take it from the source and run it.
+const cwSrc = /function cancelWords\(actionType, en\) \{[\s\S]*?\n\}\n/.exec(al);
+const cancelWords = cwSrc ? new Function(`${cwSrc[0]}; return cancelWords;`)() : () => ({});
+check("a transfer request: 'Cancel request (no transfer)' / 'Annuler la demande (sans transfert)'",
+  cancelWords("transfer", true).button === "Cancel request (no transfer)" && cancelWords("transfer", false).button === "Annuler la demande (sans transfert)"
+  && /transfer/i.test(cancelWords("transfer", true).confirm) && /transfert/.test(cancelWords("transfer", false).done));
+check("…every other type keeps today's words ('no sale')",
+  ["bundled_sale", "credit_sale", "void", "refund", "stock_adjust"].every((t) => cancelWords(t, true).button === "Cancel request (no sale)"
+    && cancelWords(t, false).confirm === "Aucune vente ne sera enregistrée."));
+check("…button, confirm line and toast all go through it (no hard-coded 'no sale' left)",
+  /\{cancelWords\(a\.action_type, en\)\.button\}/.test(al) && /\{cancelWords\(cancelFor\.action_type, en\)\.confirm\}/.test(al)
+  && /toast\.success\(cancelWords\(vars\?\.action_type, en\)\.done\)/.test(al)
+  && (al.match(/Cancel request \(no sale\)/g) || []).length === 1);
+
 console.log(`\n${fails ? `${fails} FAILED` : "all passed"}`);
 process.exit(fails ? 1 : 0);
