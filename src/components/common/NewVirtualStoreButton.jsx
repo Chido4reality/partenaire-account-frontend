@@ -25,7 +25,8 @@ export function useCanCreateVirtualStore() {
 }
 
 // `open` / `onOpenChange` (optional): let a form open the name field itself — the New Transfer
-// destination dropdown's "+ New virtual store" option. Without them the button keeps its own state.
+// destination dropdown's "+ New virtual store" option (that form mounts this only while open, so
+// it shows no button). Without them the button keeps its own state.
 export default function NewVirtualStoreButton({ en, onCreated, label, open: openProp, onOpenChange }) {
   const qc = useQueryClient();
   const allowed = useCanCreateVirtualStore();

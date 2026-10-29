@@ -617,9 +617,12 @@ export default function TransfersPage() {
                     : "Un magasin virtuel ne garde aucun stock. La marchandise quitte la source maintenant et le transfert se termine aussitôt — personne ne le réceptionne."}
                 </div>
               )}
-              <div style={{ marginTop: 8 }}>
-                <NewVirtualStoreButton en={lang === "en"} onCreated={(loc) => setToLoc(loc.id)} open={newVirtualOpen} onOpenChange={setNewVirtualOpen} />
-              </div>
+              {/* Only the dropdown option opens the name field — no second "+ New virtual store" button here. */}
+              {newVirtualOpen && (
+                <div style={{ marginTop: 8 }}>
+                  <NewVirtualStoreButton en={lang === "en"} onCreated={(loc) => setToLoc(loc.id)} open={newVirtualOpen} onOpenChange={setNewVirtualOpen} />
+                </div>
+              )}
             </div>
 
             <div className="form-group">
