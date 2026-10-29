@@ -153,7 +153,9 @@ export default function Dashboard() {
   const hasZeroDozieListings = !lite && (isOwner || isManager) && !wh && Array.isArray(dozieListings) && dozieListings.length === 0;
 
   const s = summary?.data || {};
-  const overdueCount = overdue?.data?.count || 0;
+  // WAREHOUSE MODE: customer credit is POS. The query is already off in Warehouse Mode, but the
+  // offline cache still hands back the last POS count — so the alert is suppressed here too.
+  const overdueCount = wh ? 0 : (overdue?.data?.count || 0);
   const lowStockCount = alerts?.data?.length || 0;
 
   const statusColor = (status) => {

@@ -35,6 +35,7 @@
    set by utils/workMode.applyWorkModeAttribute. Hard-coded gold literals stay gold for now. */
 :root[data-work-mode="warehouse"]{
   --brand:#7BE0A5;--brand-light:#A6EEC4;--brand-dark:#4FC07F;--on-brand:#0B1A12;
+  --nav-active-bg:rgba(123,224,165,0.2);   /* active menu item; never set in POS Mode (falls back to today's yellow) */
 }
 html,body,#root{height:100%;background:var(--bg-base);color:var(--text-primary);font-family:var(--font-body);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased;}
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--border-hover);border-radius:4px}

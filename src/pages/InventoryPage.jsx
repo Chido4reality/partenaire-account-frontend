@@ -32,6 +32,7 @@ import { parseProductImport, buildProductTemplateXlsx } from "../utils/productIm
 import { priceOrderText, PRICE_FIELDS, editablePrices } from "../utils/priceRules"; // PRICE ORDER (server = src/lib/priceRules.js)
 import PriceHistoryList from "../components/common/PriceHistoryList";
 import { isGoodsBuffer, withoutGoodsBuffer, locationLabel, locationTypeLabel } from "../utils/locations"; // GOODS-BUFFER
+import { useIsWarehouseMode } from "../utils/workMode"; // WAREHOUSE MODE
 
 // Sprint C — shared helper for the 4 product entry paths. Reads a File
 // from the camera/file picker, resizes if larger than 1920px on the
@@ -102,6 +103,7 @@ export default function InventoryPage() {
   // hide Sell-on-Dozie controls in Lite. Multi-location stock display +
   // simple Receive Goods flow stay (per directive amendment).
   const lite = useLiteMode();
+  const wh = useIsWarehouseMode();   // WAREHOUSE MODE: no Stenamo Market selling from the warehouse view
 
   const role = user?.role || "cashier";
   const isOwner = role === "owner";
@@ -1611,7 +1613,8 @@ export default function InventoryPage() {
                                 rows. Owner+manager only (gated upstream
                                 via canAdjustStock OR explicit isOwner). */}
                             {/* MP-LITE-MODE-PHASE-1: Sell-on-Stenamo Market button hidden in Lite. */}
-                            {!lite && dozieFirst && (isOwner || user?.role === "manager") && (
+                            {/* WAREHOUSE MODE: hidden too — selling on the Market is POS. */}
+                            {!lite && !wh && dozieFirst && (isOwner || user?.role === "manager") && (
                               <button
                                 className="btn btn-secondary btn-sm"
                                 onClick={() => setDoziePublishCtx({

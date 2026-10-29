@@ -1895,7 +1895,7 @@ export default function Layout() {
                 justifyContent: collapsed ? "center" : "flex-start",
                 color: isActive ? "#fff" : "var(--text-secondary)",
                 textDecoration: "none",
-                background: isActive ? "rgba(251,197,3,0.2)" : "transparent",
+                background: isActive ? "var(--nav-active-bg, rgba(251,197,3,0.2))" : "transparent",   // WAREHOUSE MODE: green there, unset (= today) in POS
                 borderLeft: isActive ? "3px solid var(--brand)" : "3px solid transparent",
                 fontSize: 13, fontWeight: isActive ? 600 : 400,
                 transition: "all 0.15s"
