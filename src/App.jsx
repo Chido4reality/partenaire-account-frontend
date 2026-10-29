@@ -128,6 +128,9 @@ const ROUTE_ACCESS = {
   "/operations":   ["owner", "manager"],
   "/stock-check":  ["owner", "manager", "warehouse"],
   "/check-expiry-low": ["owner", "manager", "warehouse"], // EXPIRY-TRACKING
+  // MP-RESTOCK: was missing here, so it fell back to owner-only while the menu showed it to
+  // managers (and accountants, who inherit manager routes in RoleGuard) → "Access Restricted".
+  "/restock":      ["owner", "manager"],
   // MP-GOODS-BUFFER: every staff role can pre-register arrived goods (pricing/release
   // is gated inside the RPCs by pa_staff_permissions.buffer_access, not by route).
   "/goods-buffer": ["owner", "manager", "cashier", "warehouse", "accountant"],

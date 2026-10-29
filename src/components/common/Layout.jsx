@@ -1175,7 +1175,7 @@ export default function Layout() {
     queryFn: () => api.get("/restock/to-buy-count").then(r => r.data),
     refetchInterval: 60000,
     enabled: hasSection(effectivePlan, "restock") &&
-      (role === "owner" || role === "manager"),
+      (role === "owner" || role === "manager" || role === "accountant"),   // MP-RESTOCK: everyone the menu shows Restock to
     retry: 1,
     onError: () => {}
   });
