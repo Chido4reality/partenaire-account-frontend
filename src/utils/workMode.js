@@ -45,8 +45,9 @@ export function useWorkModeAvailable() {
 
 // GET endpoints the server filters by ?view=warehouse (real shops left out). The API client adds
 // the parameter only to these, only in Warehouse Mode; every other request is untouched.
-// stock-checks/summary + expiry/badge = the Stock Check and Check Expiry/Low menu badges.
-const VIEW_PATHS = /^\/(locations|stock|stock-checks(\/(stale|damaged|watches|summary))?|expiry\/(check|badge)|restock\/to-buy(-count)?|transfers(\/incoming)?)\/?$/;
+// stock-checks/summary + expiry/badge = the Stock Check and Check Expiry/Low menu badges;
+// notifications = the bell (POS-only alert types left out there).
+const VIEW_PATHS = /^\/(locations|stock|stock-checks(\/(stale|damaged|watches|summary))?|expiry\/(check|badge)|restock\/to-buy(-count)?|transfers(\/incoming)?|notifications)\/?$/;
 export const takesWarehouseView = (path) => VIEW_PATHS.test(String(path || ""));
 
 // The colour switch: index.css swaps the --brand tokens under :root[data-work-mode="warehouse"].

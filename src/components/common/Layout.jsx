@@ -41,7 +41,7 @@ import toast from "react-hot-toast";
 
 import { SUPPORT_PHONE } from "../../utils/support";
 import { isSellableLocation } from "../../utils/locations";                         // GOODS-BUFFER
-import { WAREHOUSE_HIDDEN_ROUTES, useWorkMode, effectiveWorkMode, applyWorkModeAttribute } from "../../utils/workMode"; // WAREHOUSE MODE
+import { WAREHOUSE_HIDDEN_ROUTES, useWorkMode, effectiveWorkMode, applyWorkModeAttribute, currentWorkMode } from "../../utils/workMode"; // WAREHOUSE MODE
 import WorkModeButton from "./WorkModeButton";                                          // WAREHOUSE MODE
 // Sprint A: each nav item declares the capability section it belongs to.
 // `section: 'sales'` and `section: 'settings'` are always visible (every
@@ -910,7 +910,10 @@ export default function Layout() {
   });
 
   const markAllReadMutation = useMutation({
-    mutationFn: () => api.post("/notifications/mark-all-read"),
+    // WAREHOUSE MODE: the bell there leaves out POS-only alerts, so "mark all read" must not
+    // silently read them either. POS Mode: exactly today's request.
+    mutationFn: () => api.post("/notifications/mark-all-read", undefined,
+      currentWorkMode() === "warehouse" ? { params: { view: "warehouse" } } : undefined),
     onSuccess: () => {
       qc.invalidateQueries(["notifications"]);
       toast.success(lang === "en" ? "All alerts marked as read" : "Toutes les alertes marquées comme lues");
