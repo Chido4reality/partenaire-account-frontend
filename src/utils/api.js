@@ -277,6 +277,10 @@ api.interceptors.request.use(config => {
     const _p = (config.url || "").replace(BASE_URL, "").split("?")[0];
     if (/^\/auth\//.test(_p)) config.timeout = 30000;                 // login / me / refresh
     else if ((config.method || "get").toLowerCase() === "get") config.timeout = 20000; // reads
+    // An approval decision can carry out the action itself (a held receipt, a transfer to a
+    // virtual store: ~5 s on staging). At 6 s the app gave up while the server finished, so the
+    // dialog stayed open and the next tap read "no longer pending" (Peter's hand test 2026-10-29).
+    else if (/^\/staff\/approvals\/[^/]+\/(approve|reject|finalize)\/?$/.test(_p)) config.timeout = 30000;
   }
   return config;
 });

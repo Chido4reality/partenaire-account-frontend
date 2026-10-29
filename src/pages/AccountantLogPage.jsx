@@ -10,7 +10,7 @@
 //     starting PIN restricted to letters+numbers only)
 //   • a placeholder detail screen (Phase 2 fills it with the activity feed).
 // NO activity feed, NO approval logic here — those are later phases.
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { locationNameLabel } from "../utils/locations"; // GOODS-BUFFER: branch names follow the app language
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -330,8 +330,22 @@ export default function AccountantLogPage() {
       ? (en ? `${counts[label]} items ${label}` : `${counts[label]} articles ${label}`) : label).join(", ");
   };
 
+  // One decision per request: a double-click (before the button re-renders disabled) must not send
+  // a second approve. Cleared when the request settles.
+  const approveInFlight = useRef(false);
+  const submitApprove = (vars) => {
+    if (approveInFlight.current) return;
+    approveInFlight.current = true;
+    approveMut.mutate(vars);
+  };
+  const closeApproveDialog = () => {
+    setPinFor(null); setPinValue("");
+    qc.invalidateQueries({ queryKey: ["staff-approvals-pending"] });
+    qc.invalidateQueries({ queryKey: ["staff-approvals-awaiting"] });
+  };
   const approveMut = useMutation({
     mutationFn: ({ id, pin, extra }) => api.post(`/staff/approvals/${id}/approve`, { pin, ...(extra || {}) }),
+    onSettled: () => { approveInFlight.current = false; },
     onSuccess: (res) => {
       // A held receipt executes on approve (no finalize) — say what actually happened.
       toast.success(res?.data?.virtual
@@ -354,9 +368,19 @@ export default function AccountantLogPage() {
     },
     onError: (e) => {
       const d = e?.response?.data || {};
+      // Already decided by an earlier tap (or another device): not a failure.
+      if (d.error === "not_pending" && (d.status === "executed" || d.status === "approved")) {
+        toast.success(d.status === "executed" ? (en ? "Already approved and done" : "Déjà approuvé et exécuté")
+          : (en ? "Already approved" : "Déjà approuvé"));
+        qc.invalidateQueries({ queryKey: ["transfers"] });
+        closeApproveDialog();
+        return;
+      }
       toast.error((en ? (d.message_en || d.message) : (d.message_fr || d.message)) || (en ? "Could not approve" : "Échec de l'approbation"), { duration: 8000 });
-      // WAREHOUSE MODE: a virtual transfer that could not run is now 'failed' — refresh the queue.
-      if (d.virtual) { setPinFor(null); setPinValue(""); qc.invalidateQueries({ queryKey: ["staff-approvals-pending"] }); }
+      // WAREHOUSE MODE: a virtual transfer that could not run is now 'failed'; and with no answer at
+      // all (timeout) the server may have finished anyway — refresh the queue either way.
+      if (d.virtual || d.error === "not_pending") closeApproveDialog();
+      else if (!e?.response) qc.invalidateQueries({ queryKey: ["staff-approvals-pending"] });
     },
   });
   const rejectMut = useMutation({
@@ -784,7 +808,16 @@ export default function AccountantLogPage() {
                   {" "}({en ? "requested" : "demandé"} {new Date(pinFor.created_at).toLocaleString(en ? "en-GB" : "fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ })})
                 </span>
               ) : null}
-              <br />{en ? "Approving gives the green light — the staff member completes it at the counter." : "Approuver donne le feu vert — l'employé la finalise au comptoir."}
+              <br />{pinFor.virtual_destination === true
+                ? (() => {
+                    // WAREHOUSE MODE: approving a transfer to a virtual store carries it out now.
+                    const from = pinFor.virtual_transfer?.from_name || (en ? "the source" : "la source");
+                    const to = pinFor.virtual_transfer?.to_name || (en ? "The destination" : "La destination");
+                    return en
+                      ? `Approving sends the goods out now: stock leaves ${from} immediately. ${to} is a virtual store and keeps no stock.`
+                      : `Approuver fait sortir la marchandise maintenant : le stock quitte ${from} immédiatement. ${to} est un magasin virtuel et ne garde aucun stock.`;
+                  })()
+                : (en ? "Approving gives the green light — the staff member completes it at the counter." : "Approuver donne le feu vert — l'employé la finalise au comptoir.")}
             </div>
             {/* MP-APPROVAL-DETAIL: show the full why + order right where he decides (auto-open). */}
             <div style={{ marginBottom: 14 }}>
@@ -801,7 +834,7 @@ export default function AccountantLogPage() {
               <button className="btn btn-primary" style={{ flex: 2 }}
                 disabled={!approverPasswordReady(pinValue) || approveMut.isPending
                   || (pinFor.action_type === HOLD_ACTION && !holdShortfallReady(hold, sfAnswers))}
-                onClick={() => approveMut.mutate({ id: pinFor.id, pin: pinValue,
+                onClick={() => submitApprove({ id: pinFor.id, pin: pinValue,
                   extra: pinFor.action_type === HOLD_ACTION ? holdShortfallBody(hold, sfAnswers) : {} })}>
                 {approveMut.isPending ? "..." : (en ? "Approve & do it" : "Approuver et exécuter")}
               </button>

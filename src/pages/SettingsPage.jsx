@@ -2287,12 +2287,25 @@ export default function SettingsPage() {
                 <label className="label">
                   {lang === "en" ? "Assigned location (Pro Plus)" : "Emplacement assigné (Pro Plus)"}
                 </label>
-                {/* WAREHOUSE MODE: the real shops are not in this list, so an assignment to one can neither
-                    be shown nor changed here — say so, read-only, and keep the saved value (never "None"). */}
+                {/* WAREHOUSE MODE: the real shops are not in this list. A staff member assigned to one keeps
+                    it (shown as the first option, never silently "None"); the owner may move him to a
+                    WAREHOUSE here. Any other change (another shop, none) is made in POS Mode. */}
                 {wh && staffForm.assigned_location_id && locations.length > 0 && !locations.some(l => l.id === staffForm.assigned_location_id) ? (
-                  <div className="input" aria-readonly="true" style={{ color: "var(--text-muted)", cursor: "not-allowed" }}>
-                    {lang === "en" ? "Set in POS Mode" : "À définir en Mode Caisse"}
-                  </div>
+                  <>
+                    <select className="input" data-testid="wh-assign-from-shop" value={staffForm.assigned_location_id}
+                      onChange={e => setSF("assigned_location_id", e.target.value)}>
+                      <option value={staffForm.assigned_location_id}>
+                        {(editStaff?.assigned_location_name || (lang === "en" ? "A shop" : "Une boutique"))
+                          + (lang === "en" ? " — shop (keep)" : " — boutique (garder)")}
+                      </option>
+                      {locations.filter(l => l.type === "warehouse" && !isGoodsBuffer(l) && !isVirtualStore(l)).map(l =>
+                        <option key={l.id} value={l.id}>{locationLabel(l, lang)} ({locationTypeLabel(l, lang)})</option>)}
+                    </select>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                      {lang === "en" ? "You can move them to a warehouse here. To choose another shop or none, use POS Mode."
+                        : "Vous pouvez l'affecter à un entrepôt ici. Pour une autre boutique ou aucune, passez en Mode Caisse."}
+                    </div>
+                  </>
                 ) : (
                 <select className="input" value={staffForm.assigned_location_id || ""}
                   onChange={e => setSF("assigned_location_id", e.target.value)}>

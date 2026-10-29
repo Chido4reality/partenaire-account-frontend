@@ -51,6 +51,13 @@ export const withoutGoodsBuffer = (list) => (Array.isArray(list) ? list.filter((
 // Buffer release). A virtual store keeps no stock, so it is only ever a transfer destination
 // (and listed in Settings → Locations). In POS Mode the server never lists one, so this is a no-op.
 export const withoutVirtualStores = (list) => (Array.isArray(list) ? list.filter((l) => !isVirtualStore(l)) : []);
+// New Transfer source list: never a virtual store, and — when the server has answered
+// GET /transfers/allowed-sources — only the ids it allows this user to send from. No answer
+// (null: offline, older server) → today's list; the server still decides at Confirm.
+export const allowedSourceLocations = (list, allowedIds) => {
+  const allowed = Array.isArray(allowedIds) ? new Set(allowedIds.map(String)) : null;
+  return withoutVirtualStores(list).filter((l) => !allowed || allowed.has(String(l.id)));
+};
 
 // WAREHOUSE MODE: the name of one end of a transfer ("from" | "to"). From the screen's own location
 // list when it holds it; otherwise from the server's `<end>_location_info` (GET /transfers and

@@ -86,6 +86,14 @@ export default function TeamApprovalsPage() {
     },
     onError: (e) => {
       const d = e?.response?.data || {};
+      // Already decided by an earlier tap (or another device): not a failure.
+      if (d.error === "not_pending" && (d.status === "executed" || d.status === "approved")) {
+        toast.success(d.status === "executed" ? (en ? "Already approved and done." : "Déjà approuvé et exécuté.")
+          : (en ? "Already approved." : "Déjà approuvé."));
+        closePin();
+        qc.invalidateQueries({ queryKey: ["team-approvals"] });
+        return;
+      }
       toast.error((en ? (d.message_en || d.message) : (d.message_fr || d.message))
         || (en ? "Could not approve." : "Impossible d'approuver."));
       // keep the modal open on a wrong-PIN so they can retry; close on structural errors

@@ -19,7 +19,7 @@ import { useSearchParams } from "react-router-dom";
 import TransferDetailModal from "../components/TransferDetailModal"; // MP-STAFF-ACTIVITY-LEDGER Phase 3
 import { subscribe, listFailedPermanent, ownerMismatchOf, continueWithConfirm, discard } from "../utils/pendingSync"; // owner count refused on replay
 import { ownerShortLocal } from "../utils/ownerMismatch"; // owner short count, checked on the phone
-import { isGoodsBuffer, isVirtualStore, locationLabel, locationTypeLabel, transferEndLabel } from "../utils/locations"; // GOODS-BUFFER
+import { isGoodsBuffer, isVirtualStore, locationLabel, locationTypeLabel, transferEndLabel, allowedSourceLocations } from "../utils/locations"; // GOODS-BUFFER
 import NewVirtualStoreButton, { useCanCreateVirtualStore } from "../components/common/NewVirtualStoreButton"; // WAREHOUSE MODE
 import { useIsWarehouseMode } from "../utils/workMode"; // WAREHOUSE MODE
 import { availabilityOf, serverMessage } from "../utils/transferAvailability"; // TRANSFER RESERVATION
@@ -252,6 +252,13 @@ export default function TransfersPage() {
   const { data: locData } = useOfflineCachedQuery({
     queryKey: ["locations"],
     queryFn: () => api.get("/locations").then(r => r.data)
+  });
+  // The locations THIS user may send from (the server's own source rules), so a refusal such as
+  // "You can only transfer FROM your own location" can't come at the last step. Unanswered
+  // (offline, older server) → today's list; the server still decides at Confirm.
+  const { data: srcData } = useOfflineCachedQuery({
+    queryKey: ["transfers-allowed-sources", wh ? "wh" : "pos"],
+    queryFn: () => api.get("/transfers/allowed-sources").then(r => r.data),
   });
 
   // (A) all SOURCE-location products (same /products data source, filtered to
@@ -500,6 +507,12 @@ export default function TransfersPage() {
   // virtual stores (no real shops) — warehouse → warehouse stays a NORMAL transfer (dispatch, in
   // transit, receive). Only a virtual destination completes at once.
   const toLocObj = locations.find(l => l.id === toLoc) || null;
+  // Where this user may send from (never a virtual store — it keeps no stock).
+  const allowedSrcIds = Array.isArray(srcData?.data?.location_ids) ? srcData.data.location_ids : null;
+  const sourceLocations = allowedSourceLocations(locations, allowedSrcIds);
+  // WAREHOUSE MODE: assigned to a real shop (hidden here) and nothing else to send from → explain,
+  // instead of an empty form.
+  const assignedShopHidden = wh && !!srcData?.data?.assigned_hidden && !!allowedSrcIds && sourceLocations.length === 0;
 
   const statusColor = (s) => {
     if (s === "completed") return { bg: "rgba(16,185,129,0.15)", color: "#34d399" };
@@ -584,8 +597,16 @@ export default function TransfersPage() {
           </div>
         </div>
 
+        {/* WAREHOUSE MODE: assigned to a shop → nothing to send from here; say why and what to do. */}
+        {step === 1 && assignedShopHidden && (
+          <div data-testid="wh-assigned-shop" style={{ padding: 16, border: "1px solid var(--border-hover)", borderRadius: 12, fontSize: 14, lineHeight: 1.5 }}>
+            {lang === "en"
+              ? `Your assigned location${srcData.data.assigned_location?.name ? ` (${srcData.data.assigned_location.name})` : ""} is a shop. Ask the owner to assign you to a warehouse, or switch to POS Mode.`
+              : `Votre emplacement assigné${srcData.data.assigned_location?.name ? ` (${srcData.data.assigned_location.name})` : ""} est une boutique. Demandez au patron de vous affecter à un entrepôt, ou passez en Mode Caisse.`}
+          </div>
+        )}
         {/* STEP 1: Choose locations */}
-        {step === 1 && (
+        {step === 1 && !assignedShopHidden && (
           <div style={{ animation: "fadeUp 0.2s ease both" }}>
             <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 20 }}>
               {lang === "en" ? "Where are you moving stock?" : "Ou deplacez-vous le stock?"}
@@ -596,8 +617,8 @@ export default function TransfersPage() {
               <select className="input" value={fromLoc} onChange={e => { setFromLoc(e.target.value); setPickerSel({}); setPickerOpen(false); }}
                 style={{ fontSize: 15, padding: "12px 14px" }}>
                 <option value="">{lang === "en" ? "Select source location" : "Choisir emplacement source"}</option>
-                {/* WAREHOUSE MODE: a virtual store keeps no stock — never a source */}
-                {locations.filter(l => !isVirtualStore(l)).map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)} ({locationTypeLabel(l, lang)})</option>)}
+                {/* Only where this user may send from (no virtual store, own location rule, …) */}
+                {sourceLocations.map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)} ({locationTypeLabel(l, lang)})</option>)}
               </select>
             </div>
 
