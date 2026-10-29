@@ -24,10 +24,14 @@ export function useCanCreateVirtualStore() {
   return role === "manager" && !!perms && perms.can_create_virtual_stores === true;
 }
 
-export default function NewVirtualStoreButton({ en, onCreated, label }) {
+// `open` / `onOpenChange` (optional): let a form open the name field itself — the New Transfer
+// destination dropdown's "+ New virtual store" option. Without them the button keeps its own state.
+export default function NewVirtualStoreButton({ en, onCreated, label, open: openProp, onOpenChange }) {
   const qc = useQueryClient();
   const allowed = useCanCreateVirtualStore();
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
+  const setOpen = (v) => { setOpenState(v); if (onOpenChange) onOpenChange(v); };
   const [name, setName] = useState("");
 
   const create = useMutation({

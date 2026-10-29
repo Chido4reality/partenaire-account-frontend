@@ -17,7 +17,7 @@ import toast from "react-hot-toast";
 import api from "../utils/api";
 import { useAuthStore, useLangStore, useSettingsStore } from "../store";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { locationLabel, locationNameLabel, transferEndLabel } from "../utils/locations"; // GOODS-BUFFER
+import { locationLabel, locationNameLabel, transferEndLabel, withoutVirtualStores } from "../utils/locations"; // GOODS-BUFFER
 import { availabilityOf } from "../utils/transferAvailability"; // TRANSFER RESERVATION
 import { useReservedAt, AvailabilityLine } from "../components/common/TransferAvailability";
 import BufferDetailModal from "../components/BufferDetailModal"; // MP-STAFF-ACTIVITY-LEDGER Phase 3
@@ -82,7 +82,8 @@ export default function GoodsBufferPage() {
     staleTime: 60000,
   });
   const locsQ = useQuery({ queryKey: ["locations"], queryFn: () => api.get("/locations").then(r => r.data) });
-  const locList = Array.isArray(locsQ.data?.data) ? locsQ.data.data : [];
+  // WAREHOUSE MODE: releases put goods INTO stock — a virtual store is never a release destination.
+  const locList = withoutVirtualStores(Array.isArray(locsQ.data?.data) ? locsQ.data.data : []);
   const locName = (id) => locationLabel(locList.find(l => l.id === id), lang);
   const canRelease = !!accessQ.data?.can_release;
   const pending = pendingQ.data || [];

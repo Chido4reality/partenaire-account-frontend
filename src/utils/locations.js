@@ -47,6 +47,11 @@ export const locationTypeLabel = (l, lang) => {
 // import): everything except the buffer.
 export const withoutGoodsBuffer = (list) => (Array.isArray(list) ? list.filter((l) => !isGoodsBuffer(l) && !isVirtualStore(l)) : []);
 
+// WAREHOUSE MODE: every stock / inventory location picker (Inventory, Count, Stock Check, Goods
+// Buffer release). A virtual store keeps no stock, so it is only ever a transfer destination
+// (and listed in Settings → Locations). In POS Mode the server never lists one, so this is a no-op.
+export const withoutVirtualStores = (list) => (Array.isArray(list) ? list.filter((l) => !isVirtualStore(l)) : []);
+
 // WAREHOUSE MODE: the name of one end of a transfer ("from" | "to"). From the screen's own location
 // list when it holds it; otherwise from the server's `<end>_location_info` (GET /transfers and
 // /transfers/incoming) — a virtual store seen in POS Mode is named and labelled "virtual", a shop

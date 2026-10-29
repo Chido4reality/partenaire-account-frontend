@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { locationLabel, locationNameLabel } from "../utils/locations"; // GOODS-BUFFER: names follow the app language
+import { locationLabel, locationNameLabel, withoutVirtualStores } from "../utils/locations"; // GOODS-BUFFER: names follow the app language
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
 import toast from "react-hot-toast";
@@ -50,7 +50,7 @@ export default function StockCountPage() {
   });
 
   const stock = stockData?.data || [];
-  const locations = locData?.data || [];
+  const locations = withoutVirtualStores(locData?.data || []);   // WAREHOUSE MODE: never count a virtual store
 
   const singleLoc = !!countLocationId;
   const selectedLocName = locationLabel(locations.find(l => l.id === countLocationId), lang);

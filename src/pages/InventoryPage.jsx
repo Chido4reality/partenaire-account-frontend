@@ -31,7 +31,7 @@ import { useLiteMode } from "../hooks/useLiteMode";
 import { parseProductImport, buildProductTemplateXlsx } from "../utils/productImport";
 import { priceOrderText, PRICE_FIELDS, editablePrices } from "../utils/priceRules"; // PRICE ORDER (server = src/lib/priceRules.js)
 import PriceHistoryList from "../components/common/PriceHistoryList";
-import { isGoodsBuffer, withoutGoodsBuffer, locationLabel, locationTypeLabel } from "../utils/locations"; // GOODS-BUFFER
+import { isGoodsBuffer, withoutGoodsBuffer, withoutVirtualStores, locationLabel, locationTypeLabel } from "../utils/locations"; // GOODS-BUFFER
 import { useIsWarehouseMode } from "../utils/workMode"; // WAREHOUSE MODE
 
 // Sprint C — shared helper for the 4 product entry paths. Reads a File
@@ -307,7 +307,7 @@ export default function InventoryPage() {
   const stock = stockData?.data || [];
   const alerts = alertData?.data || [];
   const products = productsData?.data || [];
-  const locations = locationsData?.data || [];
+  const locations = withoutVirtualStores(locationsData?.data || []);   // WAREHOUSE MODE: a virtual store holds no stock
   // GOODS-BUFFER: goods enter the Goods Buffer only by a buffer release — never by Receive
   // Goods, opening stock, Rapid Entry, import or kit opening stock.
   const receiveLocations = withoutGoodsBuffer(locations);

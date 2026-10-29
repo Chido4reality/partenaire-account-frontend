@@ -20,7 +20,7 @@ import TransferDetailModal from "../components/TransferDetailModal"; // MP-STAFF
 import { subscribe, listFailedPermanent, ownerMismatchOf, continueWithConfirm, discard } from "../utils/pendingSync"; // owner count refused on replay
 import { ownerShortLocal } from "../utils/ownerMismatch"; // owner short count, checked on the phone
 import { isGoodsBuffer, isVirtualStore, locationLabel, locationTypeLabel, transferEndLabel } from "../utils/locations"; // GOODS-BUFFER
-import NewVirtualStoreButton from "../components/common/NewVirtualStoreButton"; // WAREHOUSE MODE
+import NewVirtualStoreButton, { useCanCreateVirtualStore } from "../components/common/NewVirtualStoreButton"; // WAREHOUSE MODE
 import { useIsWarehouseMode } from "../utils/workMode"; // WAREHOUSE MODE
 import { availabilityOf, serverMessage } from "../utils/transferAvailability"; // TRANSFER RESERVATION
 import { useReservedAt, AvailabilityLine } from "../components/common/TransferAvailability";
@@ -33,6 +33,10 @@ export default function TransfersPage() {
   const [step, setStep]             = useState(1);      // 1=locations, 2=scan items, 3=confirm
   const [fromLoc, setFromLoc]       = useState("");
   const [toLoc, setToLoc]           = useState("");
+  // WAREHOUSE MODE: "+ New virtual store" as the destination dropdown's last option (owner / allowed manager).
+  const canNewVirtual = useCanCreateVirtualStore();
+  const [newVirtualOpen, setNewVirtualOpen] = useState(false);
+  const NEW_VIRTUAL = "__new_virtual_store__";
   const [notes, setNotes]           = useState("");
   const [scannedItems, setScannedItems] = useState([]);
   const [searchQty, setSearchQty]   = useState(1);      // quick-entry qty for the name search
@@ -598,11 +602,12 @@ export default function TransfersPage() {
 
             <div className="form-group">
               <label className="label">{lang === "en" ? "TO (destination)" : "VERS (destination)"}</label>
-              <select className="input" value={toLoc} onChange={e => setToLoc(e.target.value)}
+              <select className="input" value={toLoc} onChange={e => { if (e.target.value === NEW_VIRTUAL) setNewVirtualOpen(true); else setToLoc(e.target.value); }}
                 style={{ fontSize: 15, padding: "12px 14px" }}>
                 <option value="">{lang === "en" ? "Select destination" : "Choisir destination"}</option>
                 {/* GOODS-BUFFER: goods reach the buffer by release or by a return — never as a chosen destination */}
                 {locations.filter(l => l.id !== fromLoc && !isGoodsBuffer(l)).map(l => <option key={l.id} value={l.id}>{locationLabel(l, lang)} ({locationTypeLabel(l, lang)})</option>)}
+                {canNewVirtual && <option value={NEW_VIRTUAL}>+ {lang === "en" ? "New virtual store" : "Nouveau magasin virtuel"}</option>}
               </select>
               {/* WAREHOUSE MODE: what a virtual destination means, and (owner / allowed manager) creating one. */}
               {isVirtualStore(toLocObj) && (
@@ -613,7 +618,7 @@ export default function TransfersPage() {
                 </div>
               )}
               <div style={{ marginTop: 8 }}>
-                <NewVirtualStoreButton en={lang === "en"} onCreated={(loc) => setToLoc(loc.id)} />
+                <NewVirtualStoreButton en={lang === "en"} onCreated={(loc) => setToLoc(loc.id)} open={newVirtualOpen} onOpenChange={setNewVirtualOpen} />
               </div>
             </div>
 

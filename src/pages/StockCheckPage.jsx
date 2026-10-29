@@ -26,7 +26,7 @@ import { useStockCheckSummary, NOT_COUNTED_AMBER_AT } from "../utils/useStockChe
 import OptionCard from "../components/common/OptionCard"; // readable option titles
 import { outcomeFromStockCheckSub, outcomeByKey } from "../utils/transferVarianceOutcomes"; // carry "Where did they go?" to the transfer
 import { SHOP_TZ } from "../utils/shopTime";
-import { withoutGoodsBuffer, locationLabel } from "../utils/locations"; // GOODS-BUFFER
+import { withoutGoodsBuffer, withoutVirtualStores, locationLabel } from "../utils/locations"; // GOODS-BUFFER
 import { useIsWarehouseMode } from "../utils/workMode"; // WAREHOUSE MODE
 
 // MP-STALE-PRODUCT-SCAN: mirrors backend lib/stockChecks.js's STALE_THRESHOLD_DAYS
@@ -1659,7 +1659,7 @@ function MarkDamagedModal({ en, onClose, onDone }) {
     queryFn: () => api.get("/locations").then(r => r.data),
   });
   const results = Array.isArray(search.data) ? search.data : [];
-  const locList = Array.isArray(locs.data?.data) ? locs.data.data : [];
+  const locList = withoutVirtualStores(Array.isArray(locs.data?.data) ? locs.data.data : []);   // WAREHOUSE MODE
 
   // Sensible default: with only one location there's nothing to choose.
   useEffect(() => {

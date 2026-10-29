@@ -33,6 +33,7 @@ const CHECKS = [
   ["refund-receipt-method", "scripts/refund-receipt-method-check.mjs", "LAUNCH-BATCH-2b: a refund wholly against the debt prints 'account', not a cash method"],
   ["plan-features", "scripts/plan-features-check.mjs", "LAUNCH-BATCH-2b: plan cards say Stenamo Market and never offer it to a non-XAF shop"],
   ["plan-caps-parity", "scripts/plan-caps-parity-check.mjs", "LAUNCH-BATCH-2b: the app's plan limits = the server's (Lite 1/100/2, trial 30 days)"],
+  ["warehouse-mode-ui", "scripts/warehouse-mode-ui-check.mjs", "WAREHOUSE MODE: no virtual store in any stock picker; '+ New virtual store' inside the New Transfer destination dropdown"],
   ["goods-buffer-fixes", "scripts/goods-buffer-fixes-check.mjs", "GOODS-BUFFER staging fixes: approval boxes take the login password, the buffer's name follows the app language, 'Started' = created_at in shop time"],
   ["phase1-display", "scripts/phase1-display-check.mjs", "PHASE-1 staging test: Accountant Log names the new rows, capped = yellow warning, translated status, one 'Collected', no FCFA FCFA, shop time"],
   ["debt-pay-key", "scripts/debt-payment-key-check.mjs", "PHASE-1: every invoice debt payment carries a local_id (a second cashier's payment was swallowed)"],
