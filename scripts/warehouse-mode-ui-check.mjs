@@ -147,6 +147,14 @@ check("FR at a location: '3 articles sous le minimum à Principal Magazine'", lo
 check("EN all locations: '13 items below minimum — all locations'", lowStockBannerText(13, null, "en") === "13 items below minimum — all locations", lowStockBannerText(13, null, "en"));
 check("FR all locations: '13 articles sous le minimum — tous les emplacements'", lowStockBannerText(13, null, "fr") === "13 articles sous le minimum — tous les emplacements", lowStockBannerText(13, null, "fr"));
 check("the Goods Buffer is named the way every list names it", lowStockBannerText(1, BUF, "en").endsWith(" at Goods Buffer") && lowStockBannerText(1, BUF, "fr").includes(" à "), `${lowStockBannerText(1, BUF, "en")} | ${lowStockBannerText(1, BUF, "fr")}`);
+check("singular for 1: '1 item below minimum at Magasin Test' / '1 article sous le minimum à Magasin Test'",
+  lowStockBannerText(1, { id: "mt", name: "Magasin Test", type: "warehouse", kind: null }, "en") === "1 item below minimum at Magasin Test"
+  && lowStockBannerText(1, { id: "mt", name: "Magasin Test", type: "warehouse", kind: null }, "fr") === "1 article sous le minimum à Magasin Test",
+  `${lowStockBannerText(1, { name: "Magasin Test" }, "en")} | ${lowStockBannerText(1, { name: "Magasin Test" }, "fr")}`);
+check("…and on All locations: '1 item below minimum — all locations' / '1 article sous le minimum — tous les emplacements'",
+  lowStockBannerText(1, null, "en") === "1 item below minimum — all locations" && lowStockBannerText(1, null, "fr") === "1 article sous le minimum — tous les emplacements");
+check("plural from 2: '2 items' / '2 articles'",
+  lowStockBannerText(2, null, "en") === "2 items below minimum — all locations" && lowStockBannerText(2, null, "fr") === "2 articles sous le minimum — tous les emplacements");
 const inv = read("pages/InventoryPage.jsx");
 check("a picked location is counted by the SERVER for that location (low_only + location_id)",
   /queryKey: \["stock-alerts", "loc", locStockFilter\],\s*queryFn: \(\) => api\.get\("\/stock\?low_only=true&location_id=" \+ encodeURIComponent\(locStockFilter\)\)/.test(inv)
