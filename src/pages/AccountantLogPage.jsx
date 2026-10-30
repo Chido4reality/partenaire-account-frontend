@@ -18,6 +18,7 @@ import toast from "react-hot-toast";
 import { useLangStore, useAuthStore } from "../store"; // WAREHOUSE MODE: useAuthStore for the org switch
 import { hasFeature } from "../utils/planCapabilities";
 import { useCurrency } from "../utils/useCurrency";
+import { refreshStaffLists } from "../utils/staffLists";
 import { SHOP_TZ } from "../utils/shopTime"; // MP-REPORT-TZ
 import { useWorkMode } from "../utils/workMode"; // WAREHOUSE MODE: approval lists per mode
 import api from "../utils/api";
@@ -195,7 +196,7 @@ export default function AccountantLogPage() {
         ? (en ? "Reactivated" : "Réactivé")
         : (en ? "Deactivated" : "Désactivé"));
       setConfirmKill(null);
-      qc.invalidateQueries({ queryKey: ["accountant-log-watched"] });
+      refreshStaffLists(qc);
     },
     onError: (e) => toast.error(e?.response?.data?.message || (en ? "Error" : "Erreur")),
   });

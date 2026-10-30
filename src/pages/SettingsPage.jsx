@@ -6,6 +6,7 @@ import { useAuthStore, useLangStore, useSettingsStore } from "../store";
 import api from "../utils/api";
 import { useMyPermissions } from "../utils/useMyPermissions";
 import { useCurrency } from "../utils/useCurrency";
+import { refreshStaffLists } from "../utils/staffLists";
 import { usePlaceholders } from "../utils/placeholders";
 import { marketAvailable } from "../utils/market";
 import { setLanguage } from "../utils/setLanguage"; // MP-LANGUAGE-PERSIST
@@ -253,6 +254,7 @@ export default function SettingsPage() {
   // Staff state
   const [showAddStaff, setShowAddStaff] = useState(false);
   const [editStaff, setEditStaff]       = useState(null);
+  const [confirmDeactivate, setConfirmDeactivate] = useState(null); // the staff row awaiting "Deactivate this person?"
   const [staffForm, setStaffForm]       = useState({ ...BLANK_STAFF, salary_currency: orgCur });
   // Phase 2 — per-staff Activity view (read-only, owner + Pro Plus).
   const [activityPeriod, setActivityPeriod] = useState("this_month");
@@ -581,7 +583,7 @@ export default function SettingsPage() {
   // so a refused non-delegated manager / non-cashier target sees exactly why.
   const deactivateStaffMutation = useMutation({
     mutationFn: (id) => api.patch("/auth/users/" + id, { is_active: false }),
-    onSuccess: () => { toast.success(lang === "en" ? "Staff deactivated!" : "Personnel désactivé!"); qc.invalidateQueries(["staff"]); },
+    onSuccess: () => { toast.success(lang === "en" ? "Staff deactivated!" : "Personnel désactivé!"); setConfirmDeactivate(null); refreshStaffLists(qc); },
     onError: (err) => {
       const d = err.response?.data || {};
       toast.error((lang === "en" ? (d.message_en || d.message) : (d.message_fr || d.message)) || "Error");
@@ -590,7 +592,7 @@ export default function SettingsPage() {
 
   const reactivateStaffMutation = useMutation({
     mutationFn: (id) => api.patch("/auth/users/" + id, { is_active: true }),
-    onSuccess: () => { toast.success(lang === "en" ? "Staff reactivated!" : "Personnel réactivé!"); qc.invalidateQueries(["staff"]); },
+    onSuccess: () => { toast.success(lang === "en" ? "Staff reactivated!" : "Personnel réactivé!"); refreshStaffLists(qc); },
     onError: (err) => toast.error(err.response?.data?.message || "Error")
   });
 
@@ -1198,7 +1200,7 @@ export default function SettingsPage() {
                           <button className="btn btn-secondary btn-sm" onClick={() => openEditStaff(s)}>
                             {lang === "en" ? "Edit" : "Modifier"}
                           </button>
-                          <button onClick={() => deactivateStaffMutation.mutate(s.id)}
+                          <button onClick={() => setConfirmDeactivate(s)}
                             style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12 }}>
                             {lang === "en" ? "Deactivate" : "Désactiver"}
                           </button>
@@ -2234,6 +2236,27 @@ export default function SettingsPage() {
               <button className="btn btn-primary" style={{ flex: 2 }} disabled={!locForm.name || addLocMutation.isPending || updateLocMutation.isPending}
                 onClick={() => editLoc ? updateLocMutation.mutate() : addLocMutation.mutate()}>
                 {(addLocMutation.isPending || updateLocMutation.isPending) ? "..." : (lang === "en" ? "Save" : "Enregistrer")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ DEACTIVATE CONFIRM (same dialog as Accountant Log's kill switch) ═══ */}
+      {confirmDeactivate && (
+        <div className="modal-overlay" onClick={() => setConfirmDeactivate(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 10 }}>
+              {lang === "en" ? "Deactivate this person?" : "Désactiver cette personne ?"}
+            </div>
+            <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 18 }}>
+              {lang === "en" ? `${confirmDeactivate.full_name} will be logged out and blocked from the app until you reactivate them.` : `${confirmDeactivate.full_name} sera déconnecté et bloqué jusqu'à réactivation.`}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setConfirmDeactivate(null)}>{lang === "en" ? "Cancel" : "Annuler"}</button>
+              <button className="btn btn-primary" style={{ flex: 2 }} disabled={deactivateStaffMutation.isPending}
+                onClick={() => deactivateStaffMutation.mutate(confirmDeactivate.id)}>
+                {deactivateStaffMutation.isPending ? "..." : (lang === "en" ? "Deactivate" : "Désactiver")}
               </button>
             </div>
           </div>
