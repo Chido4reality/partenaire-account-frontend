@@ -8,7 +8,7 @@ import toast from "react-hot-toast";
 import api from "../../utils/api";
 import { openWhatsApp } from "../../utils/whatsapp";
 
-const API_BASE = import.meta.env.VITE_API_URL || "/api";
+import { getApiBase } from "../../utils/apiHost"; // ORANGE FALLBACK: the current address
 const fmtDate = (d) => { if (!d) return "—"; const [y, m, day] = String(d).slice(0, 10).split("-"); return `${day}/${m}/${y}`; };
 const fmtMoney = (n, cur, en) => `${Math.round(Number(n) || 0).toLocaleString(en ? "en-US" : "fr-FR").replace(/ /g, " ")} ${cur}`;
 const METHOD = { flutterwave: "Flutterwave", campay: "Mobile Money", momo: "Mobile Money", mtn_momo: "MTN MoMo",
@@ -60,7 +60,7 @@ export default function SubscriptionReceiptsCard({ lang }) {
   };
 
   const share = (e, r) => {
-    const link = new URL(`${API_BASE}${r.share_path}?lang=${en ? "en" : "fr"}`, window.location.origin).href;
+    const link = new URL(`${getApiBase()}${r.share_path}?lang=${en ? "en" : "fr"}`, window.location.origin).href;
     const title = r.kind === "credit_note" ? (en ? "Credit note" : "Avoir") : (en ? "Receipt" : "Reçu");
     const text = [
       `Stenamo Book — ${title} ${r.receipt_number}`,

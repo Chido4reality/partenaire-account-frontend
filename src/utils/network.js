@@ -1,3 +1,4 @@
+import { getApiBase } from './apiHost'; // ORANGE FALLBACK: ping whichever address is current
 // MP-CAPACITOR-AND-OFFLINE-FIRST-ARCHITECTURE Slice 2
 //
 // Network status — one unified API across native (Capacitor) and
@@ -62,7 +63,9 @@ const IS_NATIVE = typeof window !== 'undefined'
 let _cachedOnline = typeof navigator !== 'undefined' ? !!navigator.onLine : true;
 let _webListenersWired = false;
 const _subs = new Set();                                   // onNetworkChange web subscribers
-const HEALTH_URL = (import.meta.env.VITE_API_URL || '/api') + '/health';
+// ORANGE FALLBACK: ping whichever address is CURRENT — pinging only the direct
+// one would show an Orange user "offline" forever while the fallback works.
+const healthUrl = () => getApiBase() + '/health';
 let _healthTimer = null;
 const PING_TIMEOUT_MS    = 6000;
 const PING_INTERVAL_MS   = 10000;
@@ -206,7 +209,7 @@ async function pingHealth() {
   try {
     const c = new AbortController();
     const tid = setTimeout(() => c.abort(), PING_TIMEOUT_MS);
-    await fetch(HEALTH_URL, { method: 'HEAD', cache: 'no-store', signal: c.signal });
+    await fetch(healthUrl(), { method: 'HEAD', cache: 'no-store', signal: c.signal });
     clearTimeout(tid);
     _consecutiveFails = 0;
     // MP-DEGRADED-ROUTING: a successful ping clears the degraded signal

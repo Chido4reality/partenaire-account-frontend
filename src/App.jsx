@@ -52,6 +52,7 @@ import MyAccountPage from "./pages/MyAccountPage"; // change my own password —
 import MessagesPage from "./pages/MessagesPage"; // SUPPORT MESSAGING (Phase A) — owner ↔ Équipe Stenamo
 import { pendingPayment, confirmPayment } from "./utils/flwPending"; // FLW-PAY-FIX
 import { isHiddenInWarehouse, effectiveWorkMode } from "./utils/workMode"; // WAREHOUSE MODE
+import { getApiBase } from "./utils/apiHost"; // ORANGE FALLBACK
 
 // MP-INVALIDATE-AFTER-SALE: refetch stale data when the user returns to
 // the tab/app or reconnects (e.g. after making a sale on another device
@@ -307,7 +308,7 @@ async function consumeImpersonateToken() {
   const legacyToken   = params.get("impersonate_token");
   if (!exchangeToken && !legacyToken) return false;
 
-  const apiBase = import.meta.env.VITE_API_URL || "https://api.partenairedozie.com/api";
+  const apiBase = getApiBase(); // ORANGE FALLBACK: the current address
 
   // Strip ASAP so a refresh doesn't re-trigger and the URL bar doesn't
   // display the token; also avoids accidental copy-paste leakage.
@@ -557,7 +558,7 @@ export default function App() {
     // api.js and pendingSync.js for the cases where the user IS faster
     // than the warm-up or the container goes cold mid-session.
     try {
-      const apiBase = import.meta.env.VITE_API_URL || "/api";
+      const apiBase = getApiBase(); // ORANGE FALLBACK: the current address
       fetch(apiBase + "/health", { method: "HEAD", cache: "no-store" })
         .catch(() => { /* fire-and-forget */ });
     } catch (_) { /* SSR / no fetch — ignore */ }

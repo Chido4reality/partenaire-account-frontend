@@ -14,6 +14,7 @@ import api from "./api";
 import { getStats } from "./pendingSync";
 import { useAuthStore, useDraftCartStore } from "../store";
 import { setBusyCheck } from "./swTakeover";
+import { getApiBase } from "./apiHost"; // ORANGE FALLBACK
 
 const DRAFT_TTL_MS = 24 * 60 * 60 * 1000;   // same as the store's: an older draft is not restored
 const POLICY_TIMEOUT_MS = 8000;
@@ -43,7 +44,7 @@ export function decideAndroid(versionCode, policy) {
 
 export async function fetchVersionPolicy() {
   if (typeof navigator !== "undefined" && navigator.onLine === false) return null;
-  const base = import.meta.env.VITE_API_URL || "/api";
+  const base = getApiBase(); // ORANGE FALLBACK: the current address
   const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
   const timer = setTimeout(() => { try { ctrl && ctrl.abort(); } catch { /* ignore */ } }, POLICY_TIMEOUT_MS);
   try {

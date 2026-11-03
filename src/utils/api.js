@@ -4,6 +4,7 @@ import { useAuthStore, useLangStore } from "../store";
 import { enqueue, configureSync, startWorker, genLocalId } from "./pendingSync";
 import { getNetworkStatus, recordWriteFailure, recordWriteSuccess } from "./network";
 import { currentWorkMode, takesWarehouseView } from "./workMode"; // WAREHOUSE MODE
+import { getApiBase, stripApiBase, noteRequestFailure, maybeRetryPrimary } from "./apiHost"; // ORANGE FALLBACK
 
 // Default 6s timeout for reads + auth so a dropped/partial network surfaces
 // fast instead of hanging. (The old 15s was "generous" to let a now-DELETED
@@ -22,6 +23,9 @@ const api = axios.create({ baseURL: BASE_URL, timeout: 6000 });
 // is idempotent — calling it on every module load is fine.
 configureSync({
   baseUrl:      BASE_URL,
+  // ORANGE FALLBACK: replays follow the CURRENT address (apiHost), so a write
+  // queued while the direct address was blocked lands through the fallback.
+  getBaseUrl:   getApiBase,
   getAuthToken: () => useAuthStore.getState().token,
   // OLD-APP SAFETY: replays carry the same client marker as live requests (called at replay
   // time, never during module init — appClient's constants are declared further down).
@@ -112,7 +116,7 @@ const FAST_FIRST_ATTEMPT = [
 
 function isFirstAttemptFast(url) {
   if (!url) return false;
-  const path = url.replace(BASE_URL, "").split("?")[0];
+  const path = stripApiBase(url).split("?")[0];
   return FAST_FIRST_ATTEMPT.some((rx) => rx.test(path));
 }
 
@@ -120,7 +124,7 @@ function isOfflineEligible(method, url) {
   if (!url) return false;
   const m = (method || "GET").toUpperCase();
   // Strip query string + leading baseURL if axios resolved it.
-  const path = url.replace(BASE_URL, "").split("?")[0];
+  const path = stripApiBase(url).split("?")[0];
   return OFFLINE_ELIGIBLE.some(e => e.method === m && e.rx.test(path));
 }
 
@@ -187,6 +191,10 @@ export function appClient() {
 }
 
 api.interceptors.request.use(config => {
+  // ORANGE FALLBACK: the address is chosen per request (apiHost.js), and while
+  // away from the direct one it is re-tried in the background every few hours.
+  config.baseURL = getApiBase();
+  maybeRetryPrimary();
   const token = useAuthStore.getState().token;
   if (token) config.headers.Authorization = `Bearer ${token}`;
   config.headers["X-App-Client"] = appClient();   // OLD-APP SAFETY: every request, not only /auth/*
@@ -203,7 +211,7 @@ api.interceptors.request.use(config => {
   // open's replay is dedup-safe and the sales rung against this shift resolve
   // server-side once it lands. genLocalId() is UUID-v4-shaped (crypto.randomUUID
   // or a v4-shaped fallback), matching the backend's id regex.
-  const _path = (config.url || "").replace(BASE_URL, "").split("?")[0];
+  const _path = stripApiBase(config.url || "").split("?")[0];
   // WAREHOUSE MODE: the stock lists come back without real shops (and with virtual stores) —
   // only these GETs, only in Warehouse Mode. POS Mode sends exactly today's requests.
   if ((config.method || "get").toLowerCase() === "get" && takesWarehouseView(_path) && currentWorkMode() === "warehouse") {
@@ -274,7 +282,7 @@ api.interceptors.request.use(config => {
   // reads a much longer ceiling so a marginal connection can finish; only genuinely
   // dead links still time out. Writes keep their 45s offline-queue ceiling above.
   else {
-    const _p = (config.url || "").replace(BASE_URL, "").split("?")[0];
+    const _p = stripApiBase(config.url || "").split("?")[0];
     if (/^\/auth\//.test(_p)) config.timeout = 30000;                 // login / me / refresh
     else if ((config.method || "get").toLowerCase() === "get") config.timeout = 20000; // reads
     // An approval decision can carry out the action itself (a held receipt, a transfer to a
@@ -328,7 +336,7 @@ function mpDiag(text) {
 const _originalAdapter = axios.getAdapter(api.defaults.adapter);
 api.defaults.adapter = async function offlineAwareAdapter(config) {
   if (isOfflineEligible(config.method, config.url)) {
-    const _diagPath = `${(config.method || "POST").toUpperCase()} ${(config.url || "").replace(BASE_URL, "").split("?")[0]}`;
+    const _diagPath = `${(config.method || "POST").toUpperCase()} ${stripApiBase(config.url || "").split("?")[0]}`;
     let net;
     try {
       net = await getNetworkStatus();
@@ -351,7 +359,7 @@ api.defaults.adapter = async function offlineAwareAdapter(config) {
       const localId = payload.local_id || genLocalId();
       payload.local_id = localId;
       payload.is_offline = true;   // audit flag: this write was queued offline (survives replay verbatim)
-      const endpoint = (config.url || "").replace(BASE_URL, "");
+      const endpoint = stripApiBase(config.url || "");
       try {
         await enqueue({ endpoint, method: (config.method || "POST").toUpperCase(), payload });
         // MP-DIAG: hypothesis (b) FALSE — the native queue write succeeded.
@@ -427,6 +435,10 @@ api.interceptors.response.use(res => {
   } catch { /* noop */ }
   return res;
 }, async err => {
+  // ORANGE FALLBACK: a CONNECTION failure (no response at all) starts a probe of
+  // the other addresses — for LATER requests. Not awaited, and this request is
+  // never re-sent from here: it continues below exactly as before (queue/error).
+  noteRequestFailure(err);
   const cfg = err.config || {};
 
   // LAUNCH-BATCH-2 (Nigeria day-one): when the server sends an error in both languages
@@ -449,7 +461,7 @@ api.interceptors.response.use(res => {
   // HTTP status (401 wrong-PIN, 400 validation, 5xx) is NOT retried here. Offline-
   // eligible writes are handled by the queue below, never here.
   {
-    const _path = (cfg.url || "").replace(BASE_URL, "").split("?")[0];
+    const _path = stripApiBase(cfg.url || "").split("?")[0];
     const method = (cfg.method || "get").toLowerCase();
     const isNetworkish = !err.response || err.code === "ECONNABORTED" || err.code === "ERR_NETWORK";
     // Retry ONLY auth + core-load requests (login, session, the data the app needs to
@@ -495,7 +507,7 @@ api.interceptors.response.use(res => {
         const localId = payload.local_id || genLocalId();
         payload.local_id = localId;
         payload.is_offline = true;   // real network failed → queued; tag for audit
-        const endpoint = (cfg.url || "").replace(BASE_URL, "");
+        const endpoint = stripApiBase(cfg.url || "");
         await enqueue({ endpoint, method: (cfg.method || "POST").toUpperCase(), payload });
         // MP-DEGRADED-ROUTING: the real network just failed on an
         // offline-eligible write. Increment the degraded counter so
@@ -515,7 +527,7 @@ api.interceptors.response.use(res => {
         // trail. Capture before fall-through so the next failure is
         // actionable from Chrome devtools WebView debugging.
         console.error("[response-interceptor enqueue threw]", {
-          endpoint: (cfg.url || "").replace(BASE_URL, ""),
+          endpoint: stripApiBase(cfg.url || ""),
           method: cfg.method,
           original_error: err?.message || String(err),
           enqueue_error: e?.message || String(e),
@@ -523,7 +535,7 @@ api.interceptors.response.use(res => {
         });
         // MP-DIAG: both pre-flight AND safety-net enqueue threw → the
         // cashier sees "Network error. Retry." Native storage is the cause.
-        mpDiag(`RESP-FALLBACK ${(cfg.method || "").toUpperCase()} ${(cfg.url || "").replace(BASE_URL, "")}\nnetwork err: ${err?.message}\n=> ENQUEUE THREW ✗: ${e?.name}: ${e?.message}\n(THIS IS THE BUG — native SQLite/storage layer)`);
+        mpDiag(`RESP-FALLBACK ${(cfg.method || "").toUpperCase()} ${stripApiBase(cfg.url || "")}\nnetwork err: ${err?.message}\n=> ENQUEUE THREW ✗: ${e?.name}: ${e?.message}\n(THIS IS THE BUG — native SQLite/storage layer)`);
         /* fall through to error bubble */
       }
     }

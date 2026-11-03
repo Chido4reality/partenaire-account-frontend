@@ -112,16 +112,23 @@ let _lastStatsCache = { queued: 0, sending: 0, failed_transient: 0, failed_perma
 // Lazily resolved on first send to keep this module decoupled from
 // axios/api.js (otherwise we'd circular-import).
 let _apiBaseUrl = null;
+let _getBaseUrl = null;   // ORANGE FALLBACK: the CURRENT address, read per send
 let _authToken  = null;
 
 // Public: api.js calls this once at startup to hand us the baseURL +
 // a getter for the current auth token. Auth changes hot-swap without
 // requiring a worker restart.
 let _client = null;   // OLD-APP SAFETY: the X-App-Client marker for replays
-export function configureSync({ baseUrl, getAuthToken, getClient }) {
+export function configureSync({ baseUrl, getBaseUrl, getAuthToken, getClient }) {
   _apiBaseUrl = baseUrl;
+  _getBaseUrl = typeof getBaseUrl === "function" ? getBaseUrl : null;
   _authToken  = getAuthToken;
   if (getClient) _client = getClient;
+}
+// The address a send goes to NOW — after a switch, a queued row replays through
+// the fallback; before any switch it is the configured base, as always.
+function currentBase() {
+  try { return (_getBaseUrl && _getBaseUrl()) || _apiBaseUrl; } catch { return _apiBaseUrl; }
 }
 
 // ── SYNC-AFTER-LOGOUT: whose session, and whose row ───────────────
@@ -516,7 +523,7 @@ async function attempt(row) {
     payload = { ...payload, author_unknown: true };
   }
 
-  const url = `${_apiBaseUrl}${row.endpoint}`;
+  const url = `${currentBase()}${row.endpoint}`;
   const token = pick.token;
   // A refusal ends this row's use of the stored author token, and an on-purpose send goes back to the
   // owner's screen (another permitted person may try).
@@ -760,7 +767,7 @@ export async function discardAuthorUnknown(rowId) {
   const items = Array.isArray(payload.items) ? payload.items : [];
   let res, body;
   try {
-    res = await fetch(`${_apiBaseUrl}/sales/queue/discard-check`, {
+    res = await fetch(`${currentBase()}/sales/queue/discard-check`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session}`,
         ...(typeof _client === 'function' ? { 'X-App-Client': _client() } : {}) },
