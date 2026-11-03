@@ -33,6 +33,7 @@ import { priceOrderText, PRICE_FIELDS, editablePrices } from "../utils/priceRule
 import PriceHistoryList from "../components/common/PriceHistoryList";
 import { isGoodsBuffer, withoutGoodsBuffer, withoutVirtualStores, locationLabel, locationTypeLabel, lowStockBannerText } from "../utils/locations"; // GOODS-BUFFER
 import { useIsWarehouseMode } from "../utils/workMode"; // WAREHOUSE MODE
+import { compressPhoto } from "../utils/photoCompress"; // ORANGE FALLBACK: every product photo ≤ ~1 MB JPEG
 
 // Sprint C — shared helper for the 4 product entry paths. Reads a File
 // from the camera/file picker, resizes if larger than 1920px on the
@@ -48,26 +49,9 @@ async function readPhotoToDataUrl(file, lang) {
     const msg = lang === "en" ? "Image too large (max 8MB before resize)" : "Image trop grande (8MB max)";
     throw new Error(msg);
   }
-  const reader = new FileReader();
-  const dataUrl = await new Promise((resolve, reject) => {
-    reader.onload  = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error("Read failed"));
-    reader.readAsDataURL(file);
-  });
-  // Resize via canvas to cap long-side at 1920px (keeps storage costs
-  // sane). Skip if already small enough.
-  const img = new Image();
-  await new Promise((resolve) => { img.onload = resolve; img.src = dataUrl; });
-  const maxSide = 1920;
-  if (img.width <= maxSide && img.height <= maxSide && file.size < 1_500_000) return dataUrl;
-  const ratio = Math.min(maxSide / img.width, maxSide / img.height, 1);
-  const w = Math.round(img.width * ratio);
-  const h = Math.round(img.height * ratio);
-  const canvas = document.createElement("canvas");
-  canvas.width = w; canvas.height = h;
-  canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-  const mime = file.type === "image/png" ? "image/png" : "image/jpeg";
-  return canvas.toDataURL(mime, 0.85);
+  // ORANGE FALLBACK: always re-encoded — JPEG, ≤ 1600 px, ~1 MB — so the upload fits
+  // through the Vercel proxy (body limit ~4.5 MB). See utils/photoCompress.js.
+  return compressPhoto(file, lang);
 }
 
 function fuzzyMatch(str, pattern) {

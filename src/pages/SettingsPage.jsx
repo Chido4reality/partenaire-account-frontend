@@ -118,6 +118,9 @@ const BLANK_STAFF = {
   photo_url: "", _photoData: "", _photoRemove: false,
 };
 
+// A shop logo is a 320 px PNG (tens of KB); anything near this is not a logo we made.
+const LOGO_MAX_CHARS = 1_000_000;
+
 const EMP_TYPES = [
   { value: "full_time", en: "Full-time", fr: "Temps plein" },
   { value: "part_time", en: "Part-time", fr: "Temps partiel" },
@@ -788,10 +791,14 @@ export default function SettingsPage() {
         const canvas = document.createElement("canvas");
         canvas.width = w; canvas.height = h;
         canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-        try { setFF("logo_url", canvas.toDataURL("image/png")); }
-        catch { setFF("logo_url", ev.target.result); }
+        // ORANGE FALLBACK: never the picked file as-is (any size) — through the Vercel
+        // proxy a body over ~4.5 MB is refused. A 320 px PNG is tens of KB.
+        let url = null;
+        try { url = canvas.toDataURL("image/png"); } catch { url = null; }
+        if (url && url.length <= LOGO_MAX_CHARS) setFF("logo_url", url);
+        else toast.error(lang === "en" ? "This logo could not be prepared — try another image." : "Ce logo n'a pas pu être préparé — essayez une autre image.");
       };
-      img.onerror = () => setFF("logo_url", ev.target.result);
+      img.onerror = () => toast.error(lang === "en" ? "This image could not be opened" : "Impossible d'ouvrir cette image");
       img.src = ev.target.result;
     };
     reader.readAsDataURL(file);
