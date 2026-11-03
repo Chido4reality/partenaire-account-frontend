@@ -4,7 +4,7 @@ import { useAuthStore, useLangStore } from "../store";
 import { enqueue, configureSync, startWorker, genLocalId } from "./pendingSync";
 import { getNetworkStatus, recordWriteFailure, recordWriteSuccess } from "./network";
 import { currentWorkMode, takesWarehouseView } from "./workMode"; // WAREHOUSE MODE
-import { getApiBase, stripApiBase, noteRequestFailure, maybeRetryPrimary } from "./apiHost"; // ORANGE FALLBACK
+import { getApiBase, stripApiBase, noteRequestFailure, maybeRetryPrimary, isOnFallback } from "./apiHost"; // ORANGE FALLBACK
 
 // Default 6s timeout for reads + auth so a dropped/partial network surfaces
 // fast instead of hanging. (The old 15s was "generous" to let a now-DELETED
@@ -113,6 +113,14 @@ const FAST_FIRST_ATTEMPT = [
   /^\/products\/[^/]+\/?$/,
   /^\/stock\/adjust\/?$/,
 ];
+
+// The first attempt's ceiling for the routes above. ORANGE FALLBACK (2026-11-03): on the
+// direct address it stays 8 s; through the Vercel proxy it is 20 s — Paul's first Orange
+// sale was committed by the server but missed 8 s through Vercel, so the cashier got an
+// OFFLINE receipt for a sale that had gone through. Past either ceiling the write is
+// queued exactly as before (same local_id; the DB constraint collapses the replay).
+const FIRST_ATTEMPT_MS = { direct: 8000, fallback: 20000 };
+export function firstAttemptMs() { return isOnFallback() ? FIRST_ATTEMPT_MS.fallback : FIRST_ATTEMPT_MS.direct; }
 
 function isFirstAttemptFast(url) {
   if (!url) return false;
@@ -274,7 +282,7 @@ api.interceptors.request.use(config => {
     // collapse to one row — enforced by a DB constraint, not a client check and
     // not a bare lookup (which would race). See FAST_FIRST_ATTEMPT above for the
     // constraint backing each one, and for what is excluded and why.
-    config.timeout = isFirstAttemptFast(config.url) ? 8000 : 45000;
+    config.timeout = isFirstAttemptFast(config.url) ? firstAttemptMs() : 45000;
   }
   // MP-PEAK-MTN-RESILIENCE: the old blanket 6s timeout aborted requests that were
   // slow-but-alive on a congested peak-hour MTN route (Camtel, faster, completed) —

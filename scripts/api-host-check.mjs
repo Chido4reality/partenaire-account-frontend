@@ -179,10 +179,12 @@ try {
   console.log("\n-- B. through the real api.js --\n");
   const axios = (await import("axios")).default;
   const sent = [];                 // every request the TRANSPORT saw
+  const timeouts = new Map();      // "METHOD /path" → the timeout axios actually ran it with
   let plan = () => ({ status: 200 });
   axios.defaults.adapter = async (config) => {
     const base = config.baseURL, url = config.url, method = (config.method || "get").toUpperCase();
     sent.push(`${method} ${base}${url}`);
+    timeouts.set(`${method} ${url}`, config.timeout);
     const p = plan(base, url, method);
     if (p.code) { const e = new axios.AxiosError(p.code, p.code, config, {}); throw e; }
     const response = { data: p.data || { success: true }, status: p.status, statusText: "", headers: {}, config, request: {} };
@@ -243,6 +245,28 @@ try {
   plan = () => ({ status: 200 });
   await webApi.get("/locations");
   check("C1 web starts on the DIRECT address", sent[0] === `GET ${DIRECT}/locations`, sent.join(" | "));
+
+  // The 15 offline-eligible writes: 12 fast-first (8 s direct / 20 s on the fallback),
+  // 3 held at 45 s. EVERY one is sent through the real interceptor — not a sample.
+  const WRITES = [
+    ["POST", "/sales", "fast"], ["POST", "/sales/9f2/payment", "fast"], ["POST", "/expenditures", "fast"],
+    ["POST", "/transfers", "fast"], ["POST", "/transfers/77/dispatch", "fast"], ["POST", "/transfers/77/confirm-receipt", "fast"],
+    ["POST", "/stock/arrivals", "fast"], ["POST", "/customers/12/collect-debt", "fast"], ["POST", "/stock-checks/55/resolve", "fast"],
+    ["POST", "/products", "fast"], ["PATCH", "/products/42", "fast"], ["PATCH", "/stock/adjust", "fast"],
+    ["POST", "/shifts/open", "slow"], ["POST", "/shifts/abc/close", "slow"], ["POST", "/stock/count", "slow"],
+  ];
+  const timeoutsFor = async (want) => {
+    const wrong = [];
+    for (const [m, u, kind] of WRITES) {
+      timeouts.delete(`${m} ${u}`);
+      await webApi.request({ method: m, url: u, data: { x: 1 } }).catch(() => {});
+      const got = timeouts.get(`${m} ${u}`), exp = kind === "fast" ? want : 45000;
+      if (got !== exp) wrong.push(`${m} ${u}: want ${exp} got ${got}`);
+    }
+    return wrong;
+  };
+  const dWrong = await timeoutsFor(8000);
+  check("D1 on the DIRECT address: all 12 fast-first writes get 8 s, the 3 others 45 s (as before)", dWrong.length === 0, dWrong.join(" | "));
   sent.length = 0; plan = (base) => (base === DIRECT ? { code: "ERR_NETWORK" } : { status: 201 });
   await webApi.post("/sales", { total: 500 }).catch(() => {});
   await new Promise((r) => setTimeout(r, 50));
@@ -254,6 +278,15 @@ try {
   await webApi.get("/locations");
   check("C4 the next request goes to \"/api\" on the page's own site", sent[0] === "GET /api/locations", sent.join(" | "));
   check("C5 the queue replays against \"/api\" now", globalThis.__sync?.getBaseUrl?.() === "/api", globalThis.__sync?.getBaseUrl?.());
+  const fWrong = await timeoutsFor(20000);
+  check("D2 on the FALLBACK (/api): all 12 fast-first writes get 20 s; the 3 others stay 45 s", fWrong.length === 0, fWrong.join(" | "));
+  sent.length = 0; __q.length = 0; plan = () => ({ code: "ECONNABORTED" });
+  await webApi.post("/sales", { total: 700 }).catch(() => {});
+  await new Promise((r) => setTimeout(r, 20));
+  check("D3 a sale that still times out on the fallback: sent ONCE, queued ONCE with its local_id (no duplicate)",
+    sent.filter((s) => s.includes("/sales")).length === 1 && __q.length === 1 && !!(__q[0].payload || {}).local_id,
+    `${sent.join(" | ")} · ${__q.length} queued`);
+  plan = () => ({ status: 200 });
 
   // ── Part S: static ────────────────────────────────────────────────────────
   console.log("\n-- S. one address source --\n");

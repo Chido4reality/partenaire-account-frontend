@@ -105,6 +105,9 @@ function setCurrent(base) {
 }
 
 export function getApiBase() { return _current; }
+// On a fallback (the Vercel proxy) every request takes an extra hop, and on Orange the
+// link is slow too — api.js gives the fast-first writes more time there (FIRST_ATTEMPT_MS).
+export function isOnFallback() { return _current !== API_CANDIDATES[0]; }
 export function onApiBaseChange(fn) { _subs.add(fn); return () => _subs.delete(fn); }
 
 // Any known base at the start of a URL → stripped (api.js matches endpoint
