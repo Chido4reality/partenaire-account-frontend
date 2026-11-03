@@ -78,9 +78,11 @@ try {
     "timeout": H.isConnectionFailure(netErr("ECONNABORTED")),
     "etimedout": H.isConnectionFailure(netErr("ETIMEDOUT")),
     "no-response": H.isConnectionFailure(netErr("ERR_NETWORK")),
+    // No response either, but the APP gave up (page left, request superseded) — not a block.
+    "canceled": H.isConnectionFailure(netErr("ERR_CANCELED")),
   };
-  check("A2 a connection failure is ONLY 'no response at all' — not 4xx, 5xx or a timeout",
-    !verdict["4xx"] && !verdict["5xx"] && !verdict.timeout && !verdict.etimedout && verdict["no-response"], JSON.stringify(verdict));
+  check("A2 a connection failure is ONLY 'no response at all' — not 4xx, 5xx, a timeout or a cancel",
+    !verdict["4xx"] && !verdict["5xx"] && !verdict.timeout && !verdict.etimedout && !verdict.canceled && verdict["no-response"], JSON.stringify(verdict));
   for (const e of [netErr("ERR_BAD_REQUEST", { status: 403 }), netErr("ERR_BAD_RESPONSE", { status: 500 }), netErr("ECONNABORTED")]) {
     check(`A3 ${e.code}${e.response ? " " + e.response.status : ""} → no probe, no switch`, H.noteRequestFailure(e) === null && log.length === 0 && H.getApiBase() === DIRECT);
   }
