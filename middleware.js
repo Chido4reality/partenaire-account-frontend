@@ -13,7 +13,7 @@ export const config = { matcher: "/api/:path*" };
 
 const STAGING_API = "https://partenaire-account-server-staging.onrender.com";
 const DROP = ["host", "x-forwarded-for", "x-vercel-forwarded-for", "x-real-ip", "forwarded",
-  "x-forwarded-host", "x-stenamo-proxy"];   // TEETH: caller's x-stenamo-client-ip kept
+  "x-forwarded-host", "x-stenamo-proxy", "x-stenamo-client-ip"];
 
 export default function middleware(request) {
   const url = new URL(request.url);
@@ -23,7 +23,7 @@ export default function middleware(request) {
   const ip = request.headers.get("x-real-ip") || "";
   const out = new Headers(request.headers);
   for (const k of DROP) out.delete(k);
-  if (!out.has("x-stenamo-client-ip")) out.set("x-stenamo-client-ip", ip);   // TEETH: caller wins
+  out.set("x-stenamo-client-ip", ip);
   out.set("x-vercel-forwarded-for", ip);
   out.set("x-real-ip", ip);   // PROBE: does a non-XFF header set here reach the API unforged?
   out.set("x-stenamo-proxy", process.env.STENAMO_PROXY_SECRET || "");
