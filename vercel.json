@@ -1,10 +1,4 @@
 {
-  "proxy": {
-    "entrypoint": "middleware.js",
-    "matcher": [
-      "/api/:path*"
-    ]
-  },
   "routes": [
     {
       "src": "/api/(.*)",
