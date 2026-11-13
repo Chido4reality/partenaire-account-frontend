@@ -25,6 +25,7 @@ export default function middleware(request) {
   for (const k of DROP) out.delete(k);
   out.set("x-stenamo-client-ip", ip);
   out.set("x-vercel-forwarded-for", ip);
+  out.set("x-real-ip", ip);   // PROBE: does a non-XFF header set here reach the API unforged?
   out.set("x-stenamo-proxy", process.env.STENAMO_PROXY_SECRET || "");
 
   // Marker on the RESPONSE so a caller can see the middleware ran (no address in it).
