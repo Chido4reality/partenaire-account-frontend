@@ -130,5 +130,15 @@ console.log("\n  the first attempt through the proxy");
   check("api.js takes its base from apiBase", /const BASE_URL = API_BASE;/.test(api) && !/\.replace\(BASE_URL/.test(api));
 }
 
+console.log("\n  the health ping through the proxy");
+{
+  const net = readFileSync(resolve(ROOT, "src/utils/network.js"), "utf8");
+  check("PING_INTERVAL_MS = 30 s through the proxy, 10 s otherwise",
+    /export const PING_INTERVAL_MS = VIA_SAME_SITE_PROXY \? 30000 : 10000;/.test(net));
+  check("the web health monitor uses it", /setInterval\(tick, PING_INTERVAL_MS\)/.test(net));
+  check("network.js takes VIA_SAME_SITE_PROXY from apiBase",
+    /import \{ API_BASE, VIA_SAME_SITE_PROXY \} from "\.\/apiBase"/.test(net));
+}
+
 console.log(`\n${fails ? `FAIL — ${fails} check(s) failed` : "all api-base checks pass"}\n`);
 process.exit(fails ? 1 : 0);

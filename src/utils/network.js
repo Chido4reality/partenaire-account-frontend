@@ -1,4 +1,4 @@
-import { API_BASE } from "./apiBase"; // ORANGE STEP 3a: the one API address
+import { API_BASE, VIA_SAME_SITE_PROXY } from "./apiBase"; // ORANGE STEP 3a: the one API address
 // MP-CAPACITOR-AND-OFFLINE-FIRST-ARCHITECTURE Slice 2
 //
 // Network status — one unified API across native (Capacitor) and
@@ -66,7 +66,9 @@ const _subs = new Set();                                   // onNetworkChange we
 const HEALTH_URL = API_BASE + '/health'; // ORANGE STEP 3a: the one API address
 let _healthTimer = null;
 const PING_TIMEOUT_MS    = 6000;
-const PING_INTERVAL_MS   = 10000;
+// ORANGE STEP 3a: every 30 s through the Vercel proxy (web on book./pos.) — each ping is a Vercel
+// request, per open tab. Everywhere else (staging, dev) it stays 10 s; native never runs this monitor.
+export const PING_INTERVAL_MS = VIA_SAME_SITE_PROXY ? 30000 : 10000;
 const OFFLINE_FAIL_THRESHOLD = 3; // consecutive ping fails required to
                                    // override navigator-says-online
 let _consecutiveFails = 0;
