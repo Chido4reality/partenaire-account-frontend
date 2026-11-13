@@ -38,6 +38,8 @@ const CHECKS = [
   ["phase1-display", "scripts/phase1-display-check.mjs", "PHASE-1 staging test: Accountant Log names the new rows, capped = yellow warning, translated status, one 'Collected', no FCFA FCFA, shop time"],
   ["debt-pay-key", "scripts/debt-payment-key-check.mjs", "PHASE-1: every invoice debt payment carries a local_id (a second cashier's payment was swallowed)"],
   // ORANGE: through the Vercel middleware a request body over ~4.5 MB is refused.
+  // ORANGE PROXY: /api goes through middleware.js, which carries the caller's edge address in x-stenamo-client-ip.
+  ["proxy-middleware", "scripts/proxy-middleware-check.mjs", "book./pos. → prod API, staging/previews → staging; caller address headers dropped, edge address in x-stenamo-client-ip; secret from env; vercel.json in rewrites form"],
   ["photo-upload",  "scripts/photo-upload-check.mjs", "every product photo is re-encoded (JPEG, ≤1600 px, ~1 MB); nothing over the hard cap is sent; no upload sends the picked file as-is"],
   ["staff-deactivate-confirm", "scripts/staff-deactivate-confirm-check.mjs", "Settings → Staff asks before deactivating (same dialog as Accountant Log); a flip on either screen refreshes both staff lists"],
   ["query-invalidate", "scripts/query-invalidation-check.mjs", "LAUNCH-BATCH-2b: Inventory names its query keys (v5 array form refetched the whole app); the rest may only shrink"],

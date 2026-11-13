@@ -1,82 +1,11 @@
 {
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "has": [
-        {
-          "type": "host",
-          "value": "^(book\\.stenamo\\.com|pos\\.partenairedozie\\.com)$"
-        }
-      ],
-      "dest": "https://api.partenairedozie.com/api/$1",
-      "headers": {
-        "x-vercel-enable-rewrite-caching": "0"
-      },
-      "transforms": [
-        {
-          "type": "request.headers",
-          "op": "delete",
-          "target": {
-            "key": "x-forwarded-for"
-          }
-        },
-        {
-          "type": "request.headers",
-          "op": "delete",
-          "target": {
-            "key": "x-vercel-forwarded-for"
-          }
-        },
-        {
-          "type": "request.headers",
-          "op": "delete",
-          "target": {
-            "key": "x-real-ip"
-          }
-        },
-        {
-          "type": "request.headers",
-          "op": "set",
-          "target": {
-            "key": "x-stenamo-proxy"
-          },
-          "args": "$STENAMO_PROXY_SECRET",
-          "env": [
-            "STENAMO_PROXY_SECRET"
-          ]
-        }
-      ]
-    },
-    {
-      "src": "/privacy-en",
-      "dest": "/privacy-en.html"
-    },
-    {
-      "src": "/privacy-fr",
-      "dest": "/privacy-fr.html"
-    },
-    {
-      "src": "/privacy",
-      "dest": "/privacy.html"
-    },
-    {
-      "src": "/suppression-compte",
-      "dest": "/suppression-compte.html"
-    },
-    {
-      "src": "/learn",
-      "dest": "/learn.html"
-    },
-    {
-      "src": "/learn/([^/]+)",
-      "dest": "/learn.html"
-    },
-    {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/((?!api/|assets/|sw\\.js|workbox-|registerSW\\.js|manifest\\.webmanifest).*)",
-      "dest": "/index.html"
-    }
+  "rewrites": [
+    { "source": "/privacy-en", "destination": "/privacy-en.html" },
+    { "source": "/privacy-fr", "destination": "/privacy-fr.html" },
+    { "source": "/privacy", "destination": "/privacy.html" },
+    { "source": "/suppression-compte", "destination": "/suppression-compte.html" },
+    { "source": "/learn", "destination": "/learn.html" },
+    { "source": "/learn/:slug", "destination": "/learn.html" },
+    { "source": "/((?!api/|assets/|sw\\.js|workbox-|registerSW\\.js|manifest\\.webmanifest).*)", "destination": "/index.html" }
   ]
 }
