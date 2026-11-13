@@ -8,7 +8,7 @@ import toast from "react-hot-toast";
 import api from "../../utils/api";
 import { openWhatsApp } from "../../utils/whatsapp";
 
-const API_BASE = import.meta.env.VITE_API_URL || "/api";
+import { API_BASE } from "../../utils/apiBase"; // ORANGE STEP 3a: the one API address
 const fmtDate = (d) => { if (!d) return "—"; const [y, m, day] = String(d).slice(0, 10).split("-"); return `${day}/${m}/${y}`; };
 const fmtMoney = (n, cur, en) => `${Math.round(Number(n) || 0).toLocaleString(en ? "en-US" : "fr-FR").replace(/ /g, " ")} ${cur}`;
 const METHOD = { flutterwave: "Flutterwave", campay: "Mobile Money", momo: "Mobile Money", mtn_momo: "MTN MoMo",

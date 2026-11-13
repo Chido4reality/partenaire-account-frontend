@@ -1,3 +1,4 @@
+import { API_BASE } from "./apiBase"; // ORANGE STEP 3a: the one API address
 // MP-CAPACITOR-AND-OFFLINE-FIRST-ARCHITECTURE Slice 2
 //
 // Network status — one unified API across native (Capacitor) and
@@ -62,7 +63,7 @@ const IS_NATIVE = typeof window !== 'undefined'
 let _cachedOnline = typeof navigator !== 'undefined' ? !!navigator.onLine : true;
 let _webListenersWired = false;
 const _subs = new Set();                                   // onNetworkChange web subscribers
-const HEALTH_URL = (import.meta.env.VITE_API_URL || '/api') + '/health';
+const HEALTH_URL = API_BASE + '/health'; // ORANGE STEP 3a: the one API address
 let _healthTimer = null;
 const PING_TIMEOUT_MS    = 6000;
 const PING_INTERVAL_MS   = 10000;

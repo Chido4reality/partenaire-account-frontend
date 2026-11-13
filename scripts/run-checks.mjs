@@ -98,6 +98,8 @@ const CHECKS = [
   ["fh-portal",     "scripts/fh-portal-check.mjs", "the Family sections are reachable, keep the two identities apart, and both service workers were bumped"],
   // GOODS-BUFFER LOCATION: in buffer mode the Goods Buffer screen offers no other location.
   ["gb-landing",    "scripts/goods-buffer-landing-check.mjs", "buffer mode: no 'where it landed' picker, no location filter, no location on edit; Lite keeps them"],
+  // ORANGE STEP 3a: the web on the prod sites calls the same-site /api; the APK keeps its direct address.
+  ["api-base", "scripts/api-base-check.mjs", "web on book./pos. → same-site /api; Android, staging, previews, dev keep their built address; one place decides; learn.html same rule; 20 s first attempt only via the proxy"],
   ["fh-portal-render", "scripts/fh-portal-render-check.mjs", "the Family sections RENDER against the real inline script: no 'Active' on a blocked child, no Approve the server would refuse"],
 ];
 

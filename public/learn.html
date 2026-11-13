@@ -149,6 +149,9 @@
       return q && /^http:\/\/(localhost|127\.0\.0\.1):\d+\/api$/.test(q) ? q : 'http://localhost:3001/api';
     }
     if (h.indexOf('staging') !== -1 || /\.vercel\.app$/.test(h)) return 'https://partenaire-account-server-staging.onrender.com/api';
+    // ORANGE STEP 3a: on the prod web sites, the same site's /api (Vercel proxy) — same rule as
+    // src/utils/apiBase.js. The Android app (https://localhost) keeps the direct address below.
+    if (h === 'book.stenamo.com' || h === 'pos.partenairedozie.com') return '/api';
     return 'https://api.partenairedozie.com/api';
   })();
 

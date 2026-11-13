@@ -39,7 +39,8 @@ const slice = (startMarker, endMarker) => {
   if (a < 0 || b < 0) throw new Error("could not slice " + startMarker);
   return api.slice(a, b + endMarker.length);
 };
-const ctx = { BASE_URL: "" };
+// stripApiBase (ORANGE STEP 3a) with an empty base is the identity — the same as BASE_URL "" here.
+const ctx = { BASE_URL: "", stripApiBase: (u) => String(u || "") };
 vm.createContext(ctx);
 // `const` at the top level of a vm Script lands in the declarative environment,
 // NOT on the context object — so each list is explicitly published to globalThis.
