@@ -15,27 +15,6 @@
       "transforms": [
         {
           "type": "request.headers",
-          "op": "delete",
-          "target": {
-            "key": "x-forwarded-for"
-          }
-        },
-        {
-          "type": "request.headers",
-          "op": "delete",
-          "target": {
-            "key": "x-vercel-forwarded-for"
-          }
-        },
-        {
-          "type": "request.headers",
-          "op": "delete",
-          "target": {
-            "key": "x-real-ip"
-          }
-        },
-        {
-          "type": "request.headers",
           "op": "set",
           "target": {
             "key": "x-stenamo-proxy"
