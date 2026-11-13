@@ -27,7 +27,8 @@ export default function middleware(request) {
   out.set("x-vercel-forwarded-for", ip);
   out.set("x-stenamo-proxy", process.env.STENAMO_PROXY_SECRET || "");
 
-  const res = new Headers({ "x-middleware-rewrite": STAGING_API + url.pathname + url.search });
+  // Marker on the RESPONSE so a caller can see the middleware ran (no address in it).
+  const res = new Headers({ "x-middleware-rewrite": STAGING_API + url.pathname + url.search, "x-stenamo-mw": "1" });
   const keys = [];
   for (const [k, v] of out) { res.set("x-middleware-request-" + k, v); keys.push(k); }
   res.set("x-middleware-override-headers", keys.join(","));
