@@ -18,7 +18,6 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "..");
 const SRC = resolve(ROOT, "src");
 const OUT = resolve(HERE, "__bar_mode_step1_mounted.mjs");
-const BASE = process.env.BAR_BASE || "origin/main";
 
 let fails = 0;
 const check = (label, ok, detail = "") => {
@@ -29,6 +28,16 @@ console.log("\n── BAR MODE step 1 (frontend) ──────────�
 
 // ── 1. menus / routes / nav: byte-identical to BASE ─────────────────────────────
 const git = (...a) => execFileSync("git", a, { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+// BASE = the tree just BEFORE the Bar Mode step-1 commit on THIS branch (main or the staging branch,
+// whose App.jsx differs from main for Orange reasons), unless BAR_BASE is given.
+let BASE = process.env.BAR_BASE || "";
+if (!BASE) {
+  try {
+    const c = git("log", "-1", "--format=%H", "--grep=^Bar Mode step 1 (frontend)", "HEAD").trim();
+    if (c) BASE = c + "^";
+  } catch { /* no git */ }
+}
+if (!BASE) BASE = "origin/main";
 let baseOk = true;
 try { git("rev-parse", "--verify", BASE); } catch { baseOk = false; }
 if (!baseOk) {
