@@ -19,6 +19,7 @@ import { useTrialState } from "../hooks/useTrialState";
 import { SHOP_TZ } from "../utils/shopTime";
 import { isGoodsBuffer, isVirtualStore, locationLabel, locationTypeLabel, locationInitial } from "../utils/locations"; // GOODS-BUFFER
 import { WarehouseModeOrgSwitch, VirtualStoresSection } from "../components/settings/WarehouseModeSettings"; // WAREHOUSE MODE
+import { BarModeOrgSwitch } from "../components/settings/BarModeSettings"; // BAR MODE step 1 (owner + Pro Plus only)
 import { useIsWarehouseMode } from "../utils/workMode"; // WAREHOUSE MODE
 import ChangePasswordCard from "../components/common/ChangePasswordCard"; // change my password
 import AppLockSettingsCard from "../components/AppLockSettingsCard"; // APP LOCK: owner setting + my fingerprint/face
@@ -1815,6 +1816,7 @@ export default function SettingsPage() {
       {tab === "mode" && isOwner && (
         <div>
           <WarehouseModeOrgSwitch lang={lang} effectivePlan={effectivePlan} />
+          <BarModeOrgSwitch lang={lang} effectivePlan={effectivePlan} isOwner={isOwner} locations={locations} />
           <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, marginBottom: 20 }}>
             <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 8 }}>
               {lang === "en" ? "App Mode" : "Mode de l'application"}

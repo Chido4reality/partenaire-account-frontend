@@ -41,6 +41,9 @@ const CHECKS = [
   // 4xx/5xx/timeout), never re-send a request, only to a server of the same env; queue + ping follow it.
   ["api-host",      "scripts/api-host-check.mjs", "API address: direct first, switch only on connection failure, no re-send, same-env fallback only, queue + health ping follow the current address, CORS DIAG"],
   // ORANGE FALLBACK: through the Vercel proxy a body over ~4.5 MB is refused.
+  // ORANGE: through the Vercel middleware a request body over ~4.5 MB is refused.
+  // BAR MODE step 1: the switches, all OFF — menus unchanged, the Settings card only for owner + Pro Plus.
+  ["bar-mode-step1", "scripts/bar-mode-step1-check.mjs", "BAR MODE step 1: menu/route/nav files identical to main, Settings +2 lines; card + its fetch only for owner on Pro Plus; ON lists real shops only"],
   ["photo-upload",  "scripts/photo-upload-check.mjs", "every product photo is re-encoded (JPEG, ≤1600 px, ~1 MB); nothing over the hard cap is sent; no upload sends the picked file as-is"],
   ["staff-deactivate-confirm", "scripts/staff-deactivate-confirm-check.mjs", "Settings → Staff asks before deactivating (same dialog as Accountant Log); a flip on either screen refreshes both staff lists"],
   ["query-invalidate", "scripts/query-invalidation-check.mjs", "LAUNCH-BATCH-2b: Inventory names its query keys (v5 array form refetched the whole app); the rest may only shrink"],
