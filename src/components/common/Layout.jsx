@@ -111,6 +111,8 @@ const NAV = [
   // gate. Also registered in NavDrawer.jsx SECTIONS (mobile) + App.jsx routes.
   { to: "/cashier", en: "Cashier", fr: "Caissier", icon: "💵", roles: ["owner","manager","cashier"], section: "sales", badge: "cashier_queue",  gate: "can_receive_payment" },
   { to: "/pickup",  en: "Pickup",  fr: "Retrait",  icon: "📤", roles: ["owner","manager","cashier","warehouse"], section: "sales", badge: "cashier_pickup", gate: "can_release_goods" },
+  // BAR MODE step 2: shown ONLY when GET /bar/mine lists a bar for this person (barOnly below).
+  { to: "/bar",     en: "Bar",     fr: "Bar",      icon: "🍺", roles: ["owner","manager","cashier"], section: "sales", barOnly: true },
   // MP-STAFF-ACTIVITY-LEDGER Phase 4: a staff member's OWN activity. Non-owner roles only
   // (the owner has the full Accountant Log), and only when the org opted in (requiresStaffActivity).
   { to: "/my-activity", en: "My Activity", fr: "Mon activité", icon: "📒", roles: ["manager","cashier","warehouse","accountant"], section: "sales", requiresStaffActivity: true },
@@ -1018,7 +1020,18 @@ export default function Layout() {
   // Reports etc. stay — per directive amendment, multi-location and
   // basic Transfers remain first-class in Lite.
   const LITE_HIDDEN_ROUTES = new Set(["/online-cart", "/operations"]);
+  // BAR MODE step 2: which bars may this person work at? Asked ONLY on Pro Plus, only for the three
+  // roles that work a bar, and not when the org is already known to have Bar Mode off — every other
+  // business makes no extra call. A failed read hides the entry (fail closed).
+  const { data: barMine } = useQuery({
+    queryKey: ["bar-mine"],
+    queryFn: () => api.get("/bar/mine").then(r => r.data?.data || { bars: [] }),
+    enabled: effectivePlan === "pro_plus" && ["owner", "manager", "cashier"].includes(role) && org?.bar_mode_enabled !== false,
+    staleTime: 60000, retry: false,
+  });
+  const barNavVisible = (barMine?.bars || []).length > 0;
   const visibleNav = NAV.filter(item => {
+    if (item.barOnly && !barNavVisible) return false;   // BAR MODE: no bar → no entry (before any role rule)
     if (!item.roles.includes(role)) {
       // Accountant Log Phase 1: the 'accountant' role gets the MANAGER's broad
       // OPERATIONAL nav (sales, inventory, customers, reports, etc.) — but never

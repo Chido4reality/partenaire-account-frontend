@@ -13,6 +13,7 @@ import { rmSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { undoMenuEdits } from "./bar-mode-menu-edits.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "..");
@@ -49,7 +50,11 @@ if (!baseOk) {
     let base = null; try { base = git("show", `${BASE}:${f}`); } catch { /* not in base */ }
     let now = null; try { now = readFileSync(resolve(ROOT, f), "utf8"); } catch { /* absent */ }
     if (base === null && now === null) continue;
-    check(`${f} byte-identical to ${BASE} (menus / routes cannot change)`, base === now, base === now ? "" : "DIFFERS");
+    // Later Bar Mode steps may add ONLY the exact entries listed in bar-mode-menu-edits.mjs; with
+    // those undone the file must still be byte-identical to the base.
+    const undone = now === null ? null : undoMenuEdits(f, now).text;
+    const same = base === now || base === undone;
+    check(`${f} byte-identical to ${BASE}${base === now ? "" : " once the listed Bar Mode menu entries are undone"} (menus / routes cannot change)`, same, same ? "" : "DIFFERS");
   }
   const d = git("diff", "--unified=0", BASE, "--", "src/pages/SettingsPage.jsx");
   const added = d.split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++"));

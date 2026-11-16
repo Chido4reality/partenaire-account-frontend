@@ -38,6 +38,7 @@ import CheckExpiryLowPage from "./pages/CheckExpiryLowPage"; // EXPIRY-TRACKING:
 import RestockPage from "./pages/RestockPage"; // MP-RESTOCK
 import GoodsBufferPage from "./pages/GoodsBufferPage"; // MP-GOODS-BUFFER
 import TicketListPage from "./pages/TicketListPage"; // MP-CASHIER-PHASE-1b
+import BarPage from "./pages/BarPage"; // BAR MODE step 2
 import MyActivityPage from "./pages/MyActivityPage"; // MP-STAFF-ACTIVITY-LEDGER Phase 4
 import PendingSyncPage from "./pages/PendingSyncPage"; // MP-PENDING-SYNC-SCREEN
 import AssistantPage from "./pages/AssistantPage"; // Pro Plus Feature 1 — AI Assistant chat UI
@@ -143,6 +144,9 @@ const ROUTE_ACCESS = {
   // cashier workflow — which is the honest answer, not a 404.
   "/cashier":      ["owner", "manager", "cashier"],
   "/pickup":       ["owner", "manager", "cashier", "warehouse"],
+  // BAR MODE step 2: the server refuses every /bar action outside a bar location; the menu entry
+  // shows only when GET /bar/mine lists a bar for this person.
+  "/bar":          ["owner", "manager", "cashier"],
   // MP-STAFF-ACTIVITY-LEDGER Phase 4: a staff member's OWN activity. Any role may reach the
   // route; the page 403-guards when the org setting is off, and the nav entry only shows when on.
   "/my-activity":  ["owner", "manager", "cashier", "warehouse", "accountant"],
@@ -628,6 +632,7 @@ export default function App() {
                 workflow is operational and the server gates it by sales_mode. */}
             <Route path="cashier" element={<RoleGuard path="/cashier"><TicketListPage variant="queue" /></RoleGuard>} />
             <Route path="pickup"  element={<RoleGuard path="/pickup"><TicketListPage variant="pickup" /></RoleGuard>} />
+            <Route path="bar"     element={<RoleGuard path="/bar"><BarPage /></RoleGuard>} />
             <Route path="my-activity" element={<RoleGuard path="/my-activity"><MyActivityPage /></RoleGuard>} />
             {/* MP-REFUNDS-STAFF-ACCESS: no PlanGuard — refunds are
                 operational and must work on every plan tier. */}
