@@ -13,6 +13,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "../utils/api";
 import { useAuthStore, useLangStore } from "../store";
 import { useNetworkStatus } from "../utils/useNetworkStatus";
+import { SHOP_TZ } from "../utils/shopTime";
 
 const L = (lang, en, fr) => (lang === "en" ? en : fr);
 const errText = (lang, e) => {
@@ -20,7 +21,8 @@ const errText = (lang, e) => {
   if (d) return (lang === "en" ? d.message_en : d.message_fr) || d.message || L(lang, "Refused.", "Refusé.");
   return L(lang, "No connection — try again.", "Pas de connexion — réessayez.");
 };
-const hhmm = (iso) => { try { return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch { return ""; } };
+// shop time (WAT), never the device's zone
+const hhmm = (iso) => { try { return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ }); } catch { return ""; } };
 
 const card = { background: "var(--card-bg, rgba(255,255,255,0.04))", border: "1px solid var(--border, rgba(255,255,255,0.12))", borderRadius: 12, padding: 14 };
 const btn = { padding: "8px 14px", borderRadius: 8, border: "1px solid var(--border, rgba(255,255,255,0.2))", background: "transparent", color: "inherit", cursor: "pointer", fontWeight: 600 };
