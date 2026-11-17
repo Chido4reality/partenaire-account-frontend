@@ -1,6 +1,9 @@
-// BAR MODE — build step 2 of 11 (docs/bar-mode-spec.md): the bar floor.
+// BAR MODE — build steps 2 + 3a (docs/bar-mode-spec.md): the bar floor.
 // Zones + tables (owner / manager set them up), table tabs and named counter tabs.
-// Open → close → pay only: NO rounds and NO stock effect yet, so every tab is 0 F.
+// 3a: ROUNDS on an open tab (TabPanel): send a round of products, the bartender SERVES it whole
+// (that reserves the stock) or it is cancelled while still waiting. The tab's total is what was
+// served. Close → pay with ONE tender (cash or mobile money); the stock leaves the shelf at pay.
+// A tab with nothing served still ends cancelled.
 //
 // Reached only from the "Bar" menu entry, which shows only when GET /bar/mine lists a bar for this
 // person (Bar Mode on + Pro Plus + a location ticked as a bar). Every action is refused by the
@@ -24,6 +27,10 @@ const errText = (lang, e) => {
 // shop time (WAT), never the device's zone
 const hhmm = (iso) => { try { return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZone: SHOP_TZ }); } catch { return ""; } };
 
+const money = (v) => `${(Number(v) || 0).toLocaleString("fr-FR")} F`;
+// one key per round draft: a retry of the SAME draft can never make a second round (server: one round per key per tab)
+const newKey = () => (globalThis.crypto && globalThis.crypto.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`);
+
 const card = { background: "var(--card-bg, rgba(255,255,255,0.04))", border: "1px solid var(--border, rgba(255,255,255,0.12))", borderRadius: 12, padding: 14 };
 const btn = { padding: "8px 14px", borderRadius: 8, border: "1px solid var(--border, rgba(255,255,255,0.2))", background: "transparent", color: "inherit", cursor: "pointer", fontWeight: 600 };
 const btnMain = { ...btn, background: "var(--accent, #f59e0b)", color: "#111", border: "none" };
@@ -37,6 +44,8 @@ export default function BarPage() {
   const [msg, setMsg] = useState(null);       // { ok, text }
   const [counterName, setCounterName] = useState("");
   const [setup, setSetup] = useState(false);
+  const [openTab, setOpenTab] = useState(null);   // { id, title } — the tab whose rounds are shown
+  const [tender, setTender] = useState({});       // tab id → "cash" | "mobile_money"
 
   const mine = useQuery({ queryKey: ["bar-mine"], queryFn: () => api.get("/bar/mine").then((r) => r.data?.data || { bars: [] }), staleTime: 60000 });
   const bars = mine.data?.bars || [];
@@ -90,13 +99,25 @@ export default function BarPage() {
   if (mine.isError) return <div style={{ padding: 20 }}>{L(lang, "Could not load the bar. Check the connection.", "Impossible de charger le bar. Vérifiez la connexion.")}</div>;
   if (!bars.length) return <div style={{ padding: 20 }}>{L(lang, "No bar is set up for you.", "Aucun bar n'est configuré pour vous.")}</div>;
 
-  const tabActions = (tab) => {
+  const tabActions = (tab, title) => {
     if (!tab) return null;
     const ver = tab.pa_sales?.version;
+    const total = Number(tab.pa_sales?.total_amount) || 0;
+    const tnd = tender[tab.id] || "cash";
     return tab.status === "open"
-      ? <button style={btn} disabled={busy} onClick={() => act.mutate({ kind: "close", path: `/bar/tabs/${tab.id}/close` })}>{L(lang, "Close tab", "Fermer la note")}</button>
-      : <button style={btnMain} disabled={busy} onClick={() => act.mutate({ kind: "pay", path: `/bar/tabs/${tab.id}/pay`, body: { version: ver } })}>{L(lang, "Take payment", "Encaisser")}</button>;
+      ? <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
+          <button style={btn} disabled={busy} onClick={() => setOpenTab({ id: tab.id, title })}>{L(lang, "Rounds", "Tournées")}</button>
+          <button style={btn} disabled={busy} onClick={() => act.mutate({ kind: "close", path: `/bar/tabs/${tab.id}/close` })}>{L(lang, "Close tab", "Fermer la note")}</button>
+        </span>
+      : <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          {total > 0 && <select value={tnd} onChange={(e) => setTender((m) => ({ ...m, [tab.id]: e.target.value }))} style={{ padding: 6, borderRadius: 8 }}>
+            <option value="cash">{L(lang, "Cash", "Espèces")}</option>
+            <option value="mobile_money">{L(lang, "Mobile money", "Mobile money")}</option>
+          </select>}
+          <button style={btnMain} disabled={busy} onClick={() => act.mutate({ kind: "pay", path: `/bar/tabs/${tab.id}/pay`, body: { version: ver, payment_method: tnd } })}>{L(lang, "Take payment", "Encaisser")}</button>
+        </span>;
   };
+  const totalOf = (tab) => (Number(tab?.pa_sales?.total_amount) > 0 ? ` · ${money(tab.pa_sales.total_amount)}` : "");
   const statusWord = (s) => s === "open" ? L(lang, "open", "ouverte") : L(lang, "closed — to pay", "fermée — à encaisser");
 
   const tableCard = (t) => (
@@ -105,9 +126,9 @@ export default function BarPage() {
       {t.tab ? (
         <>
           <div style={{ fontSize: 12, opacity: 0.8, margin: "4px 0 8px" }}>
-            {statusWord(t.tab.status)} · {t.tab.waiter_name || t.tab.opened_by_name || "?"} · {hhmm(t.tab.opened_at)}
+            {statusWord(t.tab.status)} · {t.tab.waiter_name || t.tab.opened_by_name || "?"} · {hhmm(t.tab.opened_at)}{totalOf(t.tab)}
           </div>
-          {tabActions(t.tab)}
+          {tabActions(t.tab, t.label)}
         </>
       ) : (
         <>
@@ -147,12 +168,9 @@ export default function BarPage() {
         {L(lang, "Offline — tabs cannot be opened, closed or paid until the connection is back.", "Hors ligne — impossible d'ouvrir, fermer ou encaisser une note avant le retour de la connexion.")}
       </div>}
       {msg && <div role="status" style={{ ...card, borderColor: msg.ok ? "#22c55e" : "#ef4444", color: msg.ok ? "#4ade80" : "#f87171" }}>{msg.text}</div>}
-      <div style={{ fontSize: 12, opacity: 0.7 }}>
-        {L(lang, "Rounds (drinks on a tab) come in the next step — for now a tab is opened, closed and paid at 0 F.",
-          "Les tournées (boissons sur une note) arrivent à l'étape suivante — pour l'instant une note s'ouvre, se ferme et s'encaisse à 0 F.")}
-      </div>
-
       {setup && canSetup && <SetupPanel lang={lang} barId={barId} zones={zones} busy={busy} act={act} />}
+      {openTab && <TabPanel key={openTab.id} lang={lang} tabId={openTab.id} title={openTab.title} barId={barId}
+        canServe={mine.data?.can_serve === true} isOnline={isOnline} onClose={() => setOpenTab(null)} onChanged={refresh} />}
 
       {floor.isLoading && <div>{L(lang, "Loading…", "Chargement…")}</div>}
       {floor.isError && <div style={{ color: "#f87171" }}>{errText(lang, floor.error)}</div>}
@@ -185,8 +203,8 @@ export default function BarPage() {
                 <span style={{ fontSize: 12, opacity: dup ? 1 : 0.7, color: dup ? "var(--accent, #f59e0b)" : undefined }}>
                   {dup && "⚠ "}{t.waiter_name || t.opened_by_name || "?"} · {hhmm(t.opened_at)}
                 </span>
-                <span style={{ fontSize: 12, opacity: 0.7 }}>{statusWord(t.status)}</span>
-                <span style={{ marginLeft: "auto" }}>{tabActions(t)}</span>
+                <span style={{ fontSize: 12, opacity: 0.7 }}>{statusWord(t.status)}{totalOf(t)}</span>
+                <span style={{ marginLeft: "auto" }}>{tabActions(t, t.name)}</span>
               </div>
             );
           })}
@@ -194,6 +212,119 @@ export default function BarPage() {
       )}
       {role === "cashier" && <div style={{ fontSize: 12, opacity: 0.6 }}>{L(lang, "Taking payment needs your till open at this bar.", "Encaisser demande votre caisse ouverte dans ce bar.")}</div>}
     </div>
+  );
+}
+
+// ── ROUNDS on one tab (3a) ───────────────────────────────────────────────────────────────────
+// Send: a draft of products + whole quantities, one idempotency key per draft (a retry of the same
+// draft can never become a second round; any edit to the draft takes a new key). Prices are the
+// server's. Serve: the WHOLE round, only for a person the owner allowed (can_serve). Cancel: only
+// while the round is still waiting. Online only, like every tab action.
+function TabPanel({ lang, tabId, title, barId, canServe, isOnline, onClose, onChanged }) {
+  const qc = useQueryClient();
+  const [search, setSearch] = useState("");
+  const [draft, setDraft] = useState([]);          // [{ id, name, price, qty }]
+  const [key, setKey] = useState(newKey);
+  const [note, setNote] = useState(null);          // { ok, text }
+  const tabQ = useQuery({ queryKey: ["bar-tab", tabId], queryFn: () => api.get(`/bar/tabs/${tabId}`).then((r) => r.data?.data), refetchInterval: 15000 });
+  const term = search.trim();
+  const found = useQuery({
+    queryKey: ["bar-products", barId, term], enabled: term.length >= 2, staleTime: 30000,
+    queryFn: () => api.get(`/products?search=${encodeURIComponent(term)}&location_id=${barId}`).then((r) => r.data?.data || r.data || []),
+  });
+  const reload = () => { qc.invalidateQueries({ queryKey: ["bar-tab", tabId] }); onChanged(); };
+  const run = useMutation({
+    mutationFn: async ({ path, body }) => {
+      if (!isOnline) { const e = new Error("offline"); e.offline = true; throw e; }
+      return api.post(path, body).then((r) => r.data?.data);
+    },
+    onSuccess: (_d, v) => { setNote({ ok: true, text: v.okText }); if (v.sent) { setDraft([]); setKey(newKey()); setSearch(""); } reload(); },
+    onError: (e) => { setNote({ ok: false, text: e.offline ? L(lang, "No connection — nothing was sent. Try again when you are online.", "Pas de connexion — rien n'a été envoyé. Réessayez une fois en ligne.") : errText(lang, e) }); reload(); },
+  });
+  const editDraft = (fn) => { setDraft(fn); setKey(newKey()); };   // a changed draft is a different round
+  const add = (p) => editDraft((d) => d.some((x) => x.id === p.id) ? d.map((x) => x.id === p.id ? { ...x, qty: Math.min(999, x.qty + 1) } : x)
+    : [...d, { id: p.id, name: p.name, price: Number(p.sell_price) || 0, qty: 1 }]);
+  const setQty = (id, q) => editDraft((d) => d.map((x) => x.id === id ? { ...x, qty: Math.max(1, Math.min(999, q)) } : x));
+  const drop = (id) => editDraft((d) => d.filter((x) => x.id !== id));
+
+  const T = tabQ.data;
+  const saleV = T?.pa_sales?.version;
+  const rounds = T?.rounds || [];
+  const isOpen = T?.status === "open";
+  const draftTotal = draft.reduce((s, x) => s + x.price * x.qty, 0);
+  const words = { sent: L(lang, "waiting at the bar", "en attente au bar"), served: L(lang, "served", "servie"), cancelled: L(lang, "cancelled", "annulée") };
+
+  return (
+    <section style={{ ...card, display: "grid", gap: 10, borderColor: "var(--accent, #f59e0b)" }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <h3 style={{ margin: 0 }}>{title}</h3>
+        {T && <span style={{ fontWeight: 700 }}>{money(T.pa_sales?.total_amount)}</span>}
+        <button style={{ ...btn, marginLeft: "auto" }} onClick={onClose}>{L(lang, "Back to the floor", "Retour à la salle")}</button>
+      </div>
+      {note && <div role="status" style={{ fontSize: 13, color: note.ok ? "#4ade80" : "#f87171" }}>{note.text}</div>}
+      {tabQ.isLoading && <div>{L(lang, "Loading…", "Chargement…")}</div>}
+      {tabQ.isError && <div style={{ color: "#f87171" }}>{errText(lang, tabQ.error)}</div>}
+
+      {rounds.map((rd) => (
+        <div key={rd.id} style={{ borderTop: "1px solid var(--border, rgba(255,255,255,0.08))", paddingTop: 8, opacity: rd.status === "cancelled" ? 0.5 : 1 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <strong>{L(lang, "Round", "Tournée")} {rd.round_no}</strong>
+            <span style={{ fontSize: 12, color: rd.status === "sent" ? "var(--accent, #f59e0b)" : undefined }}>{words[rd.status] || rd.status}</span>
+            <span style={{ fontSize: 12, opacity: 0.7 }}>{money(rd.total)}{rd.served_by_name ? ` · ${rd.served_by_name}` : ""}</span>
+            {rd.status === "sent" && (
+              <span style={{ marginLeft: "auto", display: "inline-flex", gap: 6 }}>
+                {canServe && <button style={btnMain} disabled={run.isPending} onClick={() => run.mutate({ path: `/bar/rounds/${rd.id}/serve`,
+                  body: { version: rd.version, sale_version: saleV }, okText: L(lang, "Round served.", "Tournée servie.") })}>{L(lang, "Serve", "Servir")}</button>}
+                <button style={btn} disabled={run.isPending} onClick={() => run.mutate({ path: `/bar/rounds/${rd.id}/cancel`,
+                  body: { version: rd.version }, okText: L(lang, "Round cancelled.", "Tournée annulée.") })}>{L(lang, "Cancel", "Annuler")}</button>
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 13, opacity: 0.85 }}>
+            {(rd.pa_bar_round_items || []).map((i) => `${Number(i.quantity)} × ${(lang === "en" && i.pa_products?.name_en) || i.pa_products?.name || "?"}`).join(", ")}
+          </div>
+        </div>
+      ))}
+      {T && !rounds.length && <div style={{ opacity: 0.6, fontSize: 13 }}>{L(lang, "No round yet.", "Pas encore de tournée.")}</div>}
+      {T && !canServe && rounds.some((r) => r.status === "sent") && <div style={{ fontSize: 12, opacity: 0.7 }}>
+        {L(lang, "A bartender serves waiting rounds.", "Un barman sert les tournées en attente.")}</div>}
+
+      {T && isOpen && (
+        <div style={{ display: "grid", gap: 8, borderTop: "1px solid var(--border, rgba(255,255,255,0.12))", paddingTop: 10 }}>
+          <strong>{L(lang, "New round", "Nouvelle tournée")}</strong>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={L(lang, "Find a product (2 letters or more)", "Chercher un produit (2 lettres ou plus)")}
+            style={{ padding: 8, borderRadius: 8 }} />
+          {term.length >= 2 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {(found.data || []).slice(0, 12).map((p) => (
+                <button key={p.id} style={{ ...btn, fontSize: 13, padding: "6px 10px" }} disabled={p.is_multipart === true}
+                  title={p.is_multipart ? L(lang, "Kits and shots: at the till for now", "Ensembles et shots : à la caisse pour l'instant") : undefined}
+                  onClick={() => add(p)}>+ {(lang === "en" && p.name_en) || p.name} · {money(p.sell_price)}</button>
+              ))}
+              {found.data && !found.data.length && <span style={{ fontSize: 13, opacity: 0.6 }}>{L(lang, "No product found.", "Aucun produit trouvé.")}</span>}
+            </div>
+          )}
+          {draft.map((x) => (
+            <div key={x.id} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button style={{ ...btn, padding: "2px 10px" }} onClick={() => setQty(x.id, x.qty - 1)}>−</button>
+              <span style={{ minWidth: 24, textAlign: "center" }}>{x.qty}</span>
+              <button style={{ ...btn, padding: "2px 10px" }} onClick={() => setQty(x.id, x.qty + 1)}>+</button>
+              <span>{x.name}</span>
+              <span style={{ opacity: 0.7, fontSize: 13 }}>{money(x.price * x.qty)}</span>
+              <button style={{ ...btn, padding: "2px 8px", marginLeft: "auto" }} onClick={() => drop(x.id)}>✕</button>
+            </div>
+          ))}
+          {draft.length > 0 && (
+            <button style={btnMain} disabled={run.isPending} onClick={() => run.mutate({ path: `/bar/tabs/${tabId}/rounds`, sent: true,
+              body: { idempotency_key: key, items: draft.map((x) => ({ product_id: x.id, quantity: x.qty })) },
+              okText: L(lang, "Round sent to the bar.", "Tournée envoyée au bar.") })}>
+              {L(lang, "Send round", "Envoyer la tournée")} · {money(draftTotal)}
+            </button>
+          )}
+        </div>
+      )}
+      {T && !isOpen && <div style={{ fontSize: 13, opacity: 0.7 }}>{L(lang, "This tab is closed — take payment from the floor.", "Cette note est fermée — encaissez depuis la salle.")}</div>}
+    </section>
   );
 }
 

@@ -1584,6 +1584,8 @@ function LedgerView({ staffList, en, onBack }) {
 
 function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
   const fmt = useCurrency();
+  // BAR MODE 3a: /bar/mine lists a bar only when Bar Mode is on (Layout already asked; read its answer, no new call)
+  const barOn = ((useQueryClient().getQueryData(["bar-mine"]) || {}).bars || []).length > 0;
   // Deep-linked from a tapped alert → land on that entry's day so it's visible.
   const [range, setRange] = useState(initialDay ? "day" : "today"); // today | week | day
   const [pickedDay, setPickedDay] = useState(() => initialDay || new Date().toISOString().slice(0, 10));
@@ -1676,6 +1678,8 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
         // save that happened to be about something else.
         can_receive_payment: !!perms.can_receive_payment,
         can_release_goods: !!perms.can_release_goods,
+        // BAR MODE 3a: the bartender grant — sent only for a Bar Mode business, so a shop's save is unchanged.
+        ...(barOn ? { can_serve_bar: !!perms.can_serve_bar } : {}),
       };
       PERM_ACTIONS.forEach((a) => {
         const v = perms[a.key];
@@ -2309,6 +2313,22 @@ function StaffActivityView({ staff, en, onBack, initialDay, highlightId }) {
                           : "Les deux n'ont aucun effet dans une boutique en vente directe. Basculez d'abord la boutique dans Paramètres → Circuit de vente."}
                     </div>
                   </div>
+                )}
+
+                {/* BAR MODE 3a: the bartender grant. Only for a Bar Mode business; owners and managers
+                    always serve, so they are not offered it (a box that cannot be unticked is a lie). */}
+                {staff.role !== "owner" && staff.role !== "manager" && barOn && (
+                  <label style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "6px 0", cursor: "pointer", marginBottom: 8 }}>
+                    <input type="checkbox" checked={!!perms.can_serve_bar} style={{ marginTop: 3 }}
+                      onChange={(e) => setPerms((p) => ({ ...(p || {}), can_serve_bar: e.target.checked }))} />
+                    <span>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{en ? "Bartender — can serve rounds" : "Barman — peut servir les tournées"}</span>
+                      <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)" }}>
+                        {en ? "Serving a round holds its drinks for that tab; they leave the stock when the tab is paid."
+                            : "Servir une tournée réserve ses boissons pour la note ; elles sortent du stock quand la note est encaissée."}
+                      </span>
+                    </span>
+                  </label>
                 )}
 
                 {/* MP-MANAGER-DELEGATION Phase 3 — "Delegate as manager": only shown for a
