@@ -86,6 +86,8 @@ const STUBS = {
 await build({
   stdin: { contents: `export { default, CounterTabsPanel, TableSide } from "./pages/BarPage";`, resolveDir: SRC, loader: "jsx", sourcefile: "bar2-entry.jsx" },
   bundle: true, format: "esm", outfile: OUT, jsx: "automatic", external: ["react", "react/jsx-runtime"], logLevel: "silent", platform: "node",
+  // BAR LAYOUT: the page now uses the real zustand stores, whose CommonJS deps require("react")
+  banner: { js: `import { createRequire as __cr } from "module"; const require = __cr(import.meta.url);` },
   plugins: [{ name: "stubs", setup(b) {
     b.onResolve({ filter: /.*/ }, (a) => { for (const k of Object.keys(STUBS)) if (a.path === k || a.path.endsWith("/" + k)) return { path: k, namespace: "stub" }; return null; });
     b.onLoad({ filter: /.*/, namespace: "stub" }, (a) => ({ contents: STUBS[a.path], loader: "js" }));

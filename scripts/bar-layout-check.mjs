@@ -35,6 +35,7 @@ async function bundle(entryContents, out, stubs = {}) {
     stdin: { contents: entryContents, resolveDir: SRC, loader: "jsx", sourcefile: "bar-layout-entry.jsx" },
     bundle: true, format: "esm", outfile: out, jsx: "automatic", external: ["react", "react/jsx-runtime", "react-dom", "react-dom/server"],
     logLevel: "silent", platform: "node",
+    define: { "import.meta.env": JSON.stringify({ MODE: "test", DEV: false, PROD: true }) },   // Vite-only object
     banner: { js: `import { createRequire as __cr } from "module"; const require = __cr(import.meta.url);` },
     plugins: [{ name: "stubs", setup(b) {
       b.onResolve({ filter: /.*/ }, (a) => { for (const k of Object.keys(stubs)) if (a.path === k || a.path.endsWith("/" + k)) return { path: k, namespace: "stub" }; return null; });
@@ -126,7 +127,18 @@ const POS_STUBS = {
 };
 if (!baseOk) check(`B base ${BASE} available`, false, "git show failed");
 else {
-  const M = await bundle(`export { default as NowPOS } from "./pages/POSPage"; export { default as BasePOS } from "./pages/__base_POSPage";`, resolve(HERE, "__bar_layout_pos.mjs"), POS_STUBS);
+  // TEETH for B: BAR_LAYOUT_TEETH_B=1 drops ONE embed guard in a copy of today's POSPage (the bar's
+  // button row applied to New Sale too) — B must go red.
+  let nowEntry = "./pages/POSPage";
+  if (process.env.BAR_LAYOUT_TEETH_B) {
+    const nowFile = resolve(SRC, "pages/__now_POSPage.jsx");
+    const src = readFileSync(resolve(SRC, "pages/POSPage.jsx"), "utf8");
+    const bad = src.replace(`flexDirection: embed ? "row-reverse" : "column", gap: 8`, `flexDirection: "row-reverse", gap: 8`);
+    check("B-TEETH the mutation landed", bad !== src);
+    writeFileSync(nowFile, bad); tmp.push(nowFile); nowEntry = "./pages/__now_POSPage";
+    console.log("  !!  TEETH B: one embed guard removed in a COPY of POSPage");
+  }
+  const M = await bundle(`export { default as NowPOS } from "${nowEntry}"; export { default as BasePOS } from "./pages/__base_POSPage";`, resolve(HERE, "__bar_layout_pos.mjs"), POS_STUBS);
   const render = (C, cfg, props = {}) => { globalThis.window = globalThis.window || { innerWidth: 1280, addEventListener(){}, removeEventListener(){}, matchMedia: () => ({ matches: false, addEventListener(){} }), location: { search: "", pathname: "/pos" } };
     globalThis.__S = { lang: "en", role: "cashier", q: {}, ...cfg }; return renderToString(React.createElement(C, props)); };
   const PRODUCTS = { data: [{ id: "p1", name: "Castel", sell_price: 1500, stock: { quantity: 20 }, unit: "piece" }, { id: "p2", name: "Water", sell_price: 500, stock: { quantity: 3 }, unit: "piece" }] };
@@ -140,6 +152,11 @@ else {
     let a = "", b = "", err = "";
     try { a = render(M.NowPOS, cfg); b = render(M.BasePOS, cfg); } catch (e) { err = e.message; }
     check(`B New Sale (${name}): identical HTML to ${BASE.slice(0, 26)} (${a.length} chars)`, !err && a.length > 1000 && a === b, err || (a === b ? "" : `differs at char ${[...a].findIndex((c, i) => c !== b[i])}`));
+    // not a fallback: the real New Sale screen — title, location picker, search, both cart buttons
+    const fr = cfg.lang === "fr";
+    check(`B … and it IS the New Sale screen (title, Proceed, Hold)`,
+      a.includes(fr ? "Nouvelle vente" : "New Sale") && a.includes(fr ? "Paiement →" : "Proceed to Payment →") && a.includes(fr ? "Mettre en attente" : "Hold Sale"),
+      a.slice(0, 160));
   }
   // C — the embed
   let h = "", err = "";
