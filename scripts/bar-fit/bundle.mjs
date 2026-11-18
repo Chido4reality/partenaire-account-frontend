@@ -29,3 +29,10 @@ export async function bundleApp(ROOT, OUTDIR) {
   writeFileSync(resolve(OUTDIR, "index.html"), html);
   return OUTDIR;
 }
+
+// CLI: node scripts/bar-fit/bundle.mjs → builds into <tmp>/bar-fit-app (then BAR_FIT_PREBUILT=1 for shots.mjs)
+if (process.argv[1] && process.argv[1].split(String.fromCharCode(92)).join("/").endsWith("scripts/bar-fit/bundle.mjs")) {
+  const os = await import("node:os"); const { fileURLToPath } = await import("node:url");
+  const root = resolve(fileURLToPath(import.meta.url), "../../..");
+  console.log("built", await bundleApp(root, resolve(os.tmpdir(), "bar-fit-app")));
+}

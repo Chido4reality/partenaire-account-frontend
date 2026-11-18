@@ -113,7 +113,9 @@ function assertAll(vp, tag, m, { panel = true, buttons = true, H }) {
 }
 
 // a light build (esbuild + the project's PostCSS) served statically; /bar falls back to index.html
-const APP = await bundleApp(ROOT, resolve(os.tmpdir(), "bar-fit-app"));
+const APP_DIR = resolve(os.tmpdir(), "bar-fit-app");
+// BAR_FIT_PREBUILT=1: use the bundle a separate `node scripts/bar-fit/bundle.mjs` run made (keeps the bundler's memory out of the browser run)
+const APP = process.env.BAR_FIT_PREBUILT && existsSync(resolve(APP_DIR, "bundle.js")) ? APP_DIR : await bundleApp(ROOT, APP_DIR);
 const TYPES = { ".js": "text/javascript", ".css": "text/css", ".html": "text/html", ".png": "image/png", ".svg": "image/svg+xml", ".json": "application/json", ".webmanifest": "application/manifest+json", ".ico": "image/x-icon", ".woff2": "font/woff2" };
 const serveFile = (f) => { try { return statSync(f).isFile() ? f : null; } catch { return null; } };
 const server = createServer((req, res) => {

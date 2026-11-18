@@ -1,5 +1,5 @@
 {
-  "when": "2026-11-18T12:03:58.333Z",
+  "when": "2026-11-18T13:59:06.242Z",
   "lang": "en",
   "results": [
     {
@@ -580,9 +580,9 @@
     },
     {
       "vp": "768x1024",
-      "label": "Home: the cart strip is on screen (bottom 964px)",
+      "label": "Home: the cart strip is on screen (bottom 1024px)",
       "pass": true,
-      "detail": "{\"inView\":true,\"bottom\":964}"
+      "detail": "{\"inView\":true,\"bottom\":1024}"
     },
     {
       "vp": "768x1024",
@@ -706,9 +706,9 @@
     },
     {
       "vp": "800x1280",
-      "label": "Home: the cart strip is on screen (bottom 1220px)",
+      "label": "Home: the cart strip is on screen (bottom 1280px)",
       "pass": true,
-      "detail": "{\"inView\":true,\"bottom\":1220}"
+      "detail": "{\"inView\":true,\"bottom\":1280}"
     },
     {
       "vp": "800x1280",
@@ -760,7 +760,7 @@
     },
     {
       "vp": "800x1280",
-      "label": "Table T1: panel fully inside the viewport (12→788 × 753→1268, 97% wide)",
+      "label": "Table T1: panel fully inside the viewport (12→788 × 689→1268, 97% wide)",
       "pass": true,
       "detail": ""
     },
