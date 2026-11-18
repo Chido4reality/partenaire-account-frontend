@@ -43,6 +43,7 @@ import { SUPPORT_PHONE } from "../../utils/support";
 import { isSellableLocation } from "../../utils/locations";                         // GOODS-BUFFER
 import { WAREHOUSE_HIDDEN_ROUTES, useWorkMode, effectiveWorkMode, applyWorkModeAttribute, currentWorkMode } from "../../utils/workMode"; // WAREHOUSE MODE
 import WorkModeButton from "./WorkModeButton";                                          // WAREHOUSE MODE
+import { useBarChrome } from "../../store/barChrome";                                   // BAR LAYOUT: /bar hides the sidebar
 // Sprint A: each nav item declares the capability section it belongs to.
 // `section: 'sales'` and `section: 'settings'` are always visible (every
 // tier includes them). Other sections are filtered against the effective
@@ -645,6 +646,10 @@ export default function Layout() {
   const navigate  = useNavigate();
   const location  = useLocation();
   const qc        = useQueryClient();
+  // BAR LAYOUT: on /bar the desktop sidebar is hidden unless the bar's menu button opened it; leaving /bar closes it.
+  const barMenuOpen = useBarChrome((s) => s.menuOpen);
+  const barFullWidth = location.pathname === "/bar" && !barMenuOpen;
+  useEffect(() => { if (location.pathname !== "/bar") useBarChrome.getState().setMenuOpen(false); }, [location.pathname]);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -1814,7 +1819,7 @@ export default function Layout() {
       <ImpersonationBanner />
       <BroadcastBanner /><RestrictedBanner />
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
-      <aside style={{ width: collapsed ? 60 : 220, flexShrink: 0, height: "100%", background: "var(--bg-surface)", borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", transition: "width 0.2s ease", position: "sticky", top: 0, overflow: "hidden" }}>
+      <aside style={{ width: collapsed ? 60 : 220, flexShrink: 0, height: "100%", background: "var(--bg-surface)", borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", transition: "width 0.2s ease", position: "sticky", top: 0, overflow: "hidden", ...(barFullWidth ? { display: "none" } : {}) }}>
 
         <div style={{ padding: "16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", minHeight: 60 }}>
           {!collapsed && (

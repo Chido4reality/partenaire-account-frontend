@@ -1,5 +1,6 @@
 // v12 - receipt payment status fix
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom"; // BAR LAYOUT: customer search inside the bar cart card
 import HelpButton from "../components/common/HelpButton";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -109,8 +110,15 @@ function customerMatchScore(c, q) {
 }
 const CUSTOMER_RESULT_CAP = 25;
 
-export default function POSPage() {
+// BAR LAYOUT (Peter 2026-11-18): /bar's Home is THIS page embedded — the same cart, Hold, payment,
+// customer and offline queue. `embed` = { renderLeft(api), showAll } swaps only the left side (the
+// quick-sell grid; the search + scanner below when "All items" is open), drops the page title and
+// location picker (the bar's branch picker drives selectedLocation), shows the customer search inside
+// the cart card, and relabels two buttons. With no `embed` prop (New Sale) the render is identical —
+// scripts/bar-layout-check.mjs renders both and compares.
+export default function POSPage({ embed = null } = {}) {
   const { lang } = useLangStore();
+  const [embedSlot, setEmbedSlot] = useState(null);   // BAR LAYOUT: where the customer search shows in the embed
   const { selectedLocation, setLocation } = useSettingsStore();
   const { user } = useAuthStore();
   const qc = useQueryClient();
@@ -2818,10 +2826,10 @@ export default function POSPage() {
                 None of them exist in one panel computing both.
                 Cashier mode changes exactly ONE thing: the last button. */}
             {!showPayment ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div className={embed ? "bar-pay-row" : undefined} style={{ display: "flex", flexDirection: embed ? "row-reverse" : "column", gap: 8 }}>
                 <RestrictedAction block>
                   <button className="btn btn-primary btn-block" disabled={cart.length === 0 || !selectedLocation} onClick={() => setShowPayment(true)} style={{ height: 44, fontSize: 14, fontWeight: 700, borderRadius: 12 }}>
-                    {!selectedLocation ? (lang === "en" ? "Select location first" : "Choisir emplacement") : hasDebt ? (lang === "en" ? "Collect Payment →" : "Encaisser →") : (lang === "en" ? "Proceed to Payment →" : "Paiement →")}
+                    {!selectedLocation ? (lang === "en" ? "Select location first" : "Choisir emplacement") : hasDebt ? (lang === "en" ? "Collect Payment →" : "Encaisser →") : embed ? (lang === "en" ? "Take payment" : "Encaisser") : (lang === "en" ? "Proceed to Payment →" : "Paiement →")}
                   </button>
                 </RestrictedAction>
                 {/* MP-HOLD-DEBT-GATE: hide Hold only for a DEBT-ONLY cart (nothing holdable) —
@@ -2831,7 +2839,7 @@ export default function POSPage() {
                 {!isDebtOnlyCart && (
                   <button disabled={cart.length === 0 || !selectedLocation} onClick={() => { setHoldLabel(""); setHoldNotes(""); setShowHold(true); }}
                     style={{ height: 40, fontSize: 13, fontWeight: 700, borderRadius: 12, cursor: cart.length === 0 ? "not-allowed" : "pointer", background: "transparent", border: "1.5px solid rgba(245,158,11,0.5)", color: cart.length === 0 ? "var(--text-muted)" : "#fbbf24", opacity: cart.length === 0 || !selectedLocation ? 0.5 : 1 }}>
-                    ⏸ {lang === "en" ? "Hold Sale" : "Mettre en attente"}
+                    ⏸ {lang === "en" ? (embed ? "Hold" : "Hold Sale") : "Mettre en attente"}
                   </button>
                 )}
               </div>
@@ -3253,6 +3261,7 @@ export default function POSPage() {
             (cart non-empty OR holds present). */}
         <div style={{ flex: 1, padding: mobile ? 12 : 20, paddingBottom: mobile && (cart.length > 0 || activeHolds.length > 0) ? 84 : (mobile ? 12 : 20), overflowY: "auto", borderRight: mobile ? "none" : "1px solid var(--border)" }}>
 
+          {!embed && (<>{/* BAR LAYOUT: no title / location picker in the bar embed */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -3295,8 +3304,10 @@ export default function POSPage() {
               </select>
             </>
           )}
+          </>)}
 
-          {/* ── CUSTOMER SEARCH ── */}
+          {/* ── CUSTOMER SEARCH ── (BAR LAYOUT: in the embed it shows inside the cart card) */}
+          {(el => (embed ? (embedSlot ? createPortal(el, embedSlot) : null) : el))(
           <div style={{ marginBottom: 14, position: "relative" }}>
             <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", display: "block", marginBottom: 5 }}>
               👤 {lang === "en" ? "Customer (optional)" : "Client (optionnel)"}
@@ -3379,6 +3390,10 @@ export default function POSPage() {
               </>
             )}
           </div>
+          )}
+
+          {/* BAR LAYOUT: the quick-sell grid replaces the search on the left until "All items" is open */}
+          {embed && embed.renderLeft({ addToCart, products: allProducts?.data || [], cart, fmt, priceOf: (p) => priceForTier(p, tierForCustomer(customer)) })}
 
           {/* ── SCANNER + RESULTS WRAP ───────────────────────────
               MP-MOBILE-UI: when the mobile cart strip is visible (cart
@@ -3401,6 +3416,7 @@ export default function POSPage() {
               sheet's peek bar — Peter's "search dead after debt-line
               auto-added" repro on the APK. Always column = search input
               stays where the cashier expects it. */}
+          {(!embed || embed.showAll) && (<>
           <div style={{ display: "flex", flexDirection: "column" }}>
           {/* ── SCANNER SECTION ── */}
           <div style={{ marginBottom: 14 }}>
@@ -3546,6 +3562,7 @@ export default function POSPage() {
               {lang === "en" ? `No products matching "${search}"` : `Aucun produit pour "${search}"`}
             </div>
           )}
+          </>)}
         </div>
 
         {/* ██ RIGHT PANEL — Cart (DESKTOP ONLY) ████████████████████████
@@ -3555,7 +3572,8 @@ export default function POSPage() {
             cashier gets a proper bottom-sheet UX instead of a half-
             height squished pane. */}
         {!mobile && (
-          <div style={{ width: 340, display: "flex", flexDirection: "column", background: "var(--bg-surface)", maxHeight: "100%" }}>
+          <div className={embed ? "bar-cart" : undefined} style={{ width: embed ? "clamp(340px, 34%, 460px)" : 340, display: "flex", flexDirection: "column", background: "var(--bg-surface)", maxHeight: "100%" }}>
+            {embed && <div ref={setEmbedSlot} />}
             {cartPaneInner}
           </div>
         )}
@@ -3578,6 +3596,7 @@ export default function POSPage() {
           formatTotal={fmt}
           lang={lang}
         >
+          {embed && <div ref={setEmbedSlot} />}
           {cartPaneInner}
         </MobileCartSheet>
       )}

@@ -24,6 +24,14 @@ export const MENU_EDITS = [
   const barNavVisible = (barMine?.bars || []).length > 0;\n`, null],
   ["src/components/common/Layout.jsx", `    if (item.barOnly && !barNavVisible) return false;   // BAR MODE: no bar → no entry (before any role rule)\n`, null],
   ["src/components/layout/NavDrawer.jsx", `"/pickup", "/bar", "/online-cart"`, null, `"/pickup", "/online-cart"`],
+  // BAR LAYOUT (Peter 2026-11-18): /bar is full width — the desktop sidebar hides ONLY on /bar until the
+  // bar's menu button opens it. These three edits are the whole Layout change; every other page is identical.
+  ["src/components/common/Layout.jsx", `import { useBarChrome } from "../../store/barChrome";                                   // BAR LAYOUT: /bar hides the sidebar\n`, null],
+  ["src/components/common/Layout.jsx", `  // BAR LAYOUT: on /bar the desktop sidebar is hidden unless the bar's menu button opened it; leaving /bar closes it.
+  const barMenuOpen = useBarChrome((s) => s.menuOpen);
+  const barFullWidth = location.pathname === "/bar" && !barMenuOpen;
+  useEffect(() => { if (location.pathname !== "/bar") useBarChrome.getState().setMenuOpen(false); }, [location.pathname]);\n`, null],
+  ["src/components/common/Layout.jsx", `, ...(barFullWidth ? { display: "none" } : {}) }}>`, null, ` }}>`],
 ];
 
 /** The current text of `file` with every listed Bar Mode edit undone. Returns { text, missing }. */
