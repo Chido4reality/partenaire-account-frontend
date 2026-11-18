@@ -119,6 +119,15 @@ const CUSTOMER_RESULT_CAP = 25;
 export default function POSPage({ embed = null } = {}) {
   const { lang } = useLangStore();
   const [embedSlot, setEmbedSlot] = useState(null);   // BAR LAYOUT: where the customer search shows in the embed
+  // BAR FIT: in the bar the side cart vs bottom sheet is chosen by WIDTH (≥ 900px = side cart), not by
+  // "is it Android" — a landscape Android tablet gets the side cart. Follows rotation. New Sale: unused.
+  const [embedVw, setEmbedVw] = useState(() => window.innerWidth);
+  useEffect(() => {
+    if (!embed) return undefined;
+    const onResize = () => setEmbedVw(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [embed]);
   const { selectedLocation, setLocation } = useSettingsStore();
   const { user } = useAuthStore();
   const qc = useQueryClient();
@@ -2562,7 +2571,7 @@ export default function POSPage({ embed = null } = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const mobile = isMobile();
+  const mobile = embed ? embedVw < 900 : isMobile();   // BAR FIT: width rule in the bar only
 
   // MP-MOBILE-UI-PHASE-2A: the cart-pane inner JSX, captured once so
   // it can be reused by both the desktop right-pane and the mobile
@@ -3243,9 +3252,9 @@ export default function POSPage({ embed = null } = {}) {
           vertical space cashiers need to see the cart. Desktop keeps
           the inline indicator. */}
       <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--bg-base)" }}>
-        <div style={{ padding: mobile ? "8px 14px 0 14px" : "10px 14px 0 14px" }}>
+        {!embed && (<div style={{ padding: mobile ? "8px 14px 0 14px" : "10px 14px 0 14px" }}>
           {mobile ? <MobileShiftChip /> : <ActiveShiftIndicator />}
-        </div>
+        </div>)}{/* BAR FIT: in the bar the shift line sits at the top of the left column, so the cart runs full height */}
         <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: mobile ? "column" : "row" }}>
 
         {/* ██ LEFT PANEL ████████████████████████████████████████
@@ -3259,7 +3268,10 @@ export default function POSPage({ embed = null } = {}) {
             dropdown right where the strip lives. Add 72px of
             paddingBottom only when the strip is actually showing
             (cart non-empty OR holds present). */}
-        <div style={{ flex: 1, padding: mobile ? 12 : 20, paddingBottom: mobile && (cart.length > 0 || activeHolds.length > 0) ? 84 : (mobile ? 12 : 20), overflowY: "auto", borderRight: mobile ? "none" : "1px solid var(--border)" }}>
+        <div className={embed ? "bar-pos-left" : undefined} style={embed
+          ? { flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", padding: mobile ? "8px 12px" : "4px 14px 12px 16px", paddingBottom: mobile && (cart.length > 0 || activeHolds.length > 0) ? 84 : 12 }
+          : { flex: 1, padding: mobile ? 12 : 20, paddingBottom: mobile && (cart.length > 0 || activeHolds.length > 0) ? 84 : (mobile ? 12 : 20), overflowY: "auto", borderRight: mobile ? "none" : "1px solid var(--border)" }}>
+          {embed && <div className="bar-shift">{mobile ? <MobileShiftChip /> : <ActiveShiftIndicator />}</div>}
 
           {!embed && (<>{/* BAR LAYOUT: no title / location picker in the bar embed */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
@@ -3572,8 +3584,8 @@ export default function POSPage({ embed = null } = {}) {
             cashier gets a proper bottom-sheet UX instead of a half-
             height squished pane. */}
         {!mobile && (
-          <div className={embed ? "bar-cart" : undefined} style={{ width: embed ? "clamp(340px, 34%, 460px)" : 340, display: "flex", flexDirection: "column", background: "var(--bg-surface)", maxHeight: "100%" }}>
-            {embed && <div ref={setEmbedSlot} />}
+          <div className={embed ? "bar-cart" : undefined} style={{ width: embed ? undefined : 340, display: "flex", flexDirection: "column", background: "var(--bg-surface)", maxHeight: "100%" }}>
+            {embed && <div ref={setEmbedSlot} className="bar-cart-customer" />}
             {cartPaneInner}
           </div>
         )}
@@ -3596,7 +3608,7 @@ export default function POSPage({ embed = null } = {}) {
           formatTotal={fmt}
           lang={lang}
         >
-          {embed && <div ref={setEmbedSlot} />}
+          {embed && <div ref={setEmbedSlot} className="bar-cart-customer" />}
           {cartPaneInner}
         </MobileCartSheet>
       )}

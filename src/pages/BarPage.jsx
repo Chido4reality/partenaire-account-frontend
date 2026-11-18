@@ -158,10 +158,12 @@ export default function BarPage() {
           : <span className="bar-select" style={{ cursor: "default" }}>{bars[0].name}</span>}
         <div className="bar-top-right">
           <button type="button" className="bar-outline-btn is-accent" aria-pressed={counterOpen} onClick={() => { setCounterOpen((x) => !x); setSetup(false); }}>
-            {L(lang, "Counter tabs", "Notes au comptoir")}
+            <span className="bar-lbl-long">{L(lang, "Counter tabs", "Notes au comptoir")}</span>
+            <span className="bar-lbl-short" aria-hidden="true">{L(lang, "Tabs", "Notes")}</span>{/* BAR FIT: phone = short labels, one header line */}
           </button>
-          {canSetup && <button type="button" className="bar-outline-btn" aria-pressed={setup} onClick={() => { setSetup((x) => !x); setCounterOpen(false); }}>
-            {setup ? L(lang, "Done", "Terminé") : L(lang, "Set up tables", "Configurer les tables")}</button>}
+          {canSetup && <button type="button" className="bar-outline-btn" aria-pressed={setup} aria-label={setup ? undefined : L(lang, "Set up tables", "Configurer les tables")}
+            onClick={() => { setSetup((x) => !x); setCounterOpen(false); }}>
+            {setup ? L(lang, "Done", "Terminé") : <><span className="bar-lbl-long">{L(lang, "Set up tables", "Configurer les tables")}</span><span className="bar-lbl-short" aria-hidden="true">⚙</span></>}</button>}
         </div>
       </header>
 
@@ -174,8 +176,8 @@ export default function BarPage() {
       </div>}
       {msg && <div role="status" className="bar-msg" style={{ borderColor: msg.ok ? "#22c55e" : "#ef4444", color: msg.ok ? "#86efac" : "#fca5a5" }}>{msg.text}</div>}
       {floor.isError && <div className="bar-msg" style={{ borderColor: "#ef4444", color: "#fca5a5" }}>{errText(lang, floor.error)}</div>}
-      {setup && canSetup && <div style={{ margin: "10px 16px 0" }}><SetupPanel lang={lang} barId={barId} zones={zones} tables={tables} busy={busy} act={act} patch={patch} /></div>}
-      {counterOpen && F && <div style={{ margin: "10px 16px 0" }}>
+      {setup && canSetup && <div className="bar-panel"><SetupPanel lang={lang} barId={barId} zones={zones} tables={tables} busy={busy} act={act} patch={patch} /></div>}
+      {counterOpen && F && <div className="bar-panel">
         <CounterTabsPanel lang={lang} barId={barId} named={named} busy={busy} act={act} tender={tender} setTender={setTender}
           onRounds={(t) => { dispatch({ type: "named", tabId: t.id }); setCounterOpen(false); setShowAll(false); }} />
       </div>}
@@ -338,7 +340,8 @@ export function TableSide({ lang, barId, userId, tabId, table, title, products, 
         )}
       </div>
 
-      <section className="bar-card" style={{ width: "clamp(320px, 34%, 460px)", flex: "none" }}>
+      {/* BAR FIT: head fixed, rounds + draft scroll in the middle, Send round / Total / actions ALWAYS visible at the bottom */}
+      <section className="bar-card bar-side-card">
         <div className="bar-card-head">
           <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 8h6M9 12h6M9 16h4" /></svg>
           <span>{title}</span>
@@ -348,7 +351,6 @@ export function TableSide({ lang, barId, userId, tabId, table, title, products, 
           {!tabId && table && (
             <>
               <div style={{ opacity: 0.7 }}>{L(lang, "This table is free.", "Cette table est libre.")}</div>
-              <button className="bar-cmain" disabled={busy} onClick={() => act.mutate({ kind: "open", path: `/bar/${barId}/tabs`, body: { table_id: table.id } })}>{L(lang, "Open tab", "Ouvrir une note")}</button>
             </>
           )}
           {tabId && tabQ.isLoading && <div>{L(lang, "Loading…", "Chargement…")}</div>}
@@ -384,7 +386,7 @@ export function TableSide({ lang, barId, userId, tabId, table, title, products, 
                   <strong>{L(lang, "Next round", "Prochaine tournée")}</strong>
                   {!draft.length && <div style={{ fontSize: 14, opacity: 0.6 }}>{L(lang, "Tap products on the left to add them.", "Touchez les produits à gauche pour les ajouter.")}</div>}
                   {draft.map((x) => (
-                    <div key={x.id} className="bar-line">
+                    <div key={x.id} className="bar-line bar-draft-line">
                       <button className="bar-cbtn" style={{ padding: "2px 10px" }} aria-label="−" onClick={() => setQty(x.id, x.qty - 1)}>−</button>
                       <input type="number" min={1} max={999} value={x.qty} aria-label={L(lang, "Quantity", "Quantité")}
                         onChange={(e) => setQty(x.id, Math.floor(Number(e.target.value) || 1))} style={{ width: 56, textAlign: "center" }} />
@@ -394,20 +396,27 @@ export function TableSide({ lang, barId, userId, tabId, table, title, products, 
                       <button className="bar-cbtn" style={{ padding: "2px 8px" }} aria-label={L(lang, "Remove", "Retirer")} onClick={() => drop(x.id)}>✕</button>
                     </div>
                   ))}
-                  {draft.length > 0 && (
-                    <button className="bar-cmain" disabled={run.isPending || !roundKey} onClick={() => run.mutate({ path: `/bar/tabs/${tabId}/rounds`, sent: true,
-                      body: { idempotency_key: roundKey, items: draft.map((x) => ({ product_id: x.id, quantity: x.qty })) },
-                      okText: L(lang, "Round sent to the bar.", "Tournée envoyée au bar.") })}>
-                      {L(lang, "Send round", "Envoyer la tournée")} · {fmt(draftTotal)}
-                    </button>
-                  )}
                 </div>
               )}
-              <div className="bar-total"><span>{L(lang, "Total", "Total")}</span><b>{fmt(Number(T.pa_sales?.total_amount) || 0)}</b></div>
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <TabActions lang={lang} tab={floorTab} busy={busy} act={act} tender={tender} setTender={setTender} />
-              </div>
             </>
+          )}
+        </div>
+        <div className="bar-card-foot">
+          {!tabId && table && (
+            <button className="bar-cmain" disabled={busy} onClick={() => act.mutate({ kind: "open", path: `/bar/${barId}/tabs`, body: { table_id: table.id } })}>{L(lang, "Open tab", "Ouvrir une note")}</button>
+          )}
+          {T && !foreign && isOpen && draft.length > 0 && (
+            <button className="bar-cmain" disabled={run.isPending || !roundKey} onClick={() => run.mutate({ path: `/bar/tabs/${tabId}/rounds`, sent: true,
+              body: { idempotency_key: roundKey, items: draft.map((x) => ({ product_id: x.id, quantity: x.qty })) },
+              okText: L(lang, "Round sent to the bar.", "Tournée envoyée au bar.") })}>
+              {L(lang, "Send round", "Envoyer la tournée")} · {fmt(draftTotal)}
+            </button>
+          )}
+          {T && !foreign && (
+            <div className="bar-foot-row">
+              <div className="bar-total"><span>{L(lang, "Total", "Total")}</span><b>{fmt(Number(T.pa_sales?.total_amount) || 0)}</b></div>
+              <TabActions lang={lang} tab={floorTab} busy={busy} act={act} tender={tender} setTender={setTender} />
+            </div>
           )}
         </div>
       </section>

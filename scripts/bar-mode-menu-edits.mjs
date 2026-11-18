@@ -32,6 +32,10 @@ export const MENU_EDITS = [
   const barFullWidth = location.pathname === "/bar" && !barMenuOpen;
   useEffect(() => { if (location.pathname !== "/bar") useBarChrome.getState().setMenuOpen(false); }, [location.pathname]);\n`, null],
   ["src/components/common/Layout.jsx", `, ...(barFullWidth ? { display: "none" } : {}) }}>`, null, ` }}>`],
+  // BAR FIT (Peter 2026-11-18): on /bar only, the desktop shell gets a class so the bar's own CSS can use
+  // 100dvh (the VISIBLE height on a tablet with the address bar showing); every other page keeps 100vh.
+  ["src/components/common/Layout.jsx", `<div className={location.pathname === "/bar" ? "bar-shell" : undefined} style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>`, null,
+    `<div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>`],
 ];
 
 /** The current text of `file` with every listed Bar Mode edit undone. Returns { text, missing }. */

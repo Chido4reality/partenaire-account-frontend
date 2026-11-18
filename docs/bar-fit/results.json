@@ -1,0 +1,938 @@
+{
+  "when": "2026-11-18T12:03:58.333Z",
+  "lang": "en",
+  "results": [
+    {
+      "vp": "1024x768",
+      "label": "Home: no horizontal overflow (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1024x768",
+      "label": "Home: no page scroll (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1024x768",
+      "label": "Home: panel fully inside the viewport (684→1012 × 133→756, 32% wide)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1024x768",
+      "label": "Home: nothing cropped sideways inside the panel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1024x768",
+      "label": "Home: “Take payment|Encaisser” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"Take payment|Encaisser\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[835,698,996,742]}"
+    },
+    {
+      "vp": "1024x768",
+      "label": "Home: “^⏸ (Hold|Mettre en attente)$” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^⏸ (Hold|Mettre en attente)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[700,698,827,738]}"
+    },
+    {
+      "vp": "1024x768",
+      "label": "Home: cart is the side panel — expected side panel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1024x768",
+      "label": "grid columns 3 (expected 3)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1024x768",
+      "label": "names ≤ 2 lines, price pill inside every box (12 boxes)",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "vp": "1024x768",
+      "label": "header 52px (6.7%) + tables row 52px (6.7%) compact (each ≤ 10%)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1024x768",
+      "label": "Table T1: no horizontal overflow (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1024x768",
+      "label": "Table T1: no page scroll (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1024x768",
+      "label": "Table T1: panel fully inside the viewport (693→1012 × 137→756, 31% wide)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1024x768",
+      "label": "Table T1: nothing cropped sideways inside the panel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1024x768",
+      "label": "Table T1: “^(Send round|Envoyer la tournée)” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[711,640,994,685]}"
+    },
+    {
+      "vp": "1024x768",
+      "label": "Table T1: “^(Close tab|Fermer la note)$” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[904,701,994,734]}"
+    },
+    {
+      "vp": "1024x768",
+      "label": "Table: names ≤ 2 lines, price pill inside every box (12 boxes, 3 columns)",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "vp": "1024x768",
+      "label": "no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1180x820",
+      "label": "Home: no horizontal overflow (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1180x820",
+      "label": "Home: no page scroll (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1180x820",
+      "label": "Home: panel fully inside the viewport (790→1168 × 137→808, 32% wide)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1180x820",
+      "label": "Home: nothing cropped sideways inside the panel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1180x820",
+      "label": "Home: “Take payment|Encaisser” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"Take payment|Encaisser\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[966,750,1152,794]}"
+    },
+    {
+      "vp": "1180x820",
+      "label": "Home: “^⏸ (Hold|Mettre en attente)$” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^⏸ (Hold|Mettre en attente)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[806,750,958,790]}"
+    },
+    {
+      "vp": "1180x820",
+      "label": "Home: cart is the side panel — expected side panel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1180x820",
+      "label": "grid columns 3 (expected 3)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1180x820",
+      "label": "names ≤ 2 lines, price pill inside every box (12 boxes)",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "vp": "1180x820",
+      "label": "header 54px (6.6%) + tables row 54px (6.5%) compact (each ≤ 10%)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1180x820",
+      "label": "Table T1: no horizontal overflow (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1180x820",
+      "label": "Table T1: no page scroll (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1180x820",
+      "label": "Table T1: panel fully inside the viewport (799→1168 × 141→808, 31% wide)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1180x820",
+      "label": "Table T1: nothing cropped sideways inside the panel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1180x820",
+      "label": "Table T1: “^(Send round|Envoyer la tournée)” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[817,687,1150,732]}"
+    },
+    {
+      "vp": "1180x820",
+      "label": "Table T1: “^(Close tab|Fermer la note)$” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[1060,751,1150,784]}"
+    },
+    {
+      "vp": "1180x820",
+      "label": "Table: names ≤ 2 lines, price pill inside every box (12 boxes, 3 columns)",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "vp": "1180x820",
+      "label": "no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1280x800",
+      "label": "Home: no horizontal overflow (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1280x800",
+      "label": "Home: no page scroll (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1280x800",
+      "label": "Home: panel fully inside the viewport (858→1268 × 137→788, 32% wide)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1280x800",
+      "label": "Home: nothing cropped sideways inside the panel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1280x800",
+      "label": "Home: “Take payment|Encaisser” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"Take payment|Encaisser\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[1050,730,1252,774]}"
+    },
+    {
+      "vp": "1280x800",
+      "label": "Home: “^⏸ (Hold|Mettre en attente)$” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^⏸ (Hold|Mettre en attente)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[874,730,1042,770]}"
+    },
+    {
+      "vp": "1280x800",
+      "label": "Home: cart is the side panel — expected side panel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1280x800",
+      "label": "grid columns 3 (expected 3)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1280x800",
+      "label": "names ≤ 2 lines, price pill inside every box (12 boxes)",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "vp": "1280x800",
+      "label": "header 53px (6.6%) + tables row 55px (6.8%) compact (each ≤ 10%)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1280x800",
+      "label": "Table T1: no horizontal overflow (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1280x800",
+      "label": "Table T1: no page scroll (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1280x800",
+      "label": "Table T1: panel fully inside the viewport (867→1268 × 141→788, 31% wide)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1280x800",
+      "label": "Table T1: nothing cropped sideways inside the panel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1280x800",
+      "label": "Table T1: “^(Send round|Envoyer la tournée)” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[885,664,1250,709]}"
+    },
+    {
+      "vp": "1280x800",
+      "label": "Table T1: “^(Close tab|Fermer la note)$” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[1160,729,1250,762]}"
+    },
+    {
+      "vp": "1280x800",
+      "label": "Table: names ≤ 2 lines, price pill inside every box (12 boxes, 3 columns)",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "vp": "1280x800",
+      "label": "no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1366x1024",
+      "label": "Home: no horizontal overflow (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1366x1024",
+      "label": "Home: no page scroll (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1366x1024",
+      "label": "Home: panel fully inside the viewport (917→1354 × 153→1012, 32% wide)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1366x1024",
+      "label": "Home: nothing cropped sideways inside the panel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1366x1024",
+      "label": "Home: “Take payment|Encaisser” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"Take payment|Encaisser\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[1122,954,1338,998]}"
+    },
+    {
+      "vp": "1366x1024",
+      "label": "Home: “^⏸ (Hold|Mettre en attente)$” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^⏸ (Hold|Mettre en attente)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[933,954,1114,994]}"
+    },
+    {
+      "vp": "1366x1024",
+      "label": "Home: cart is the side panel — expected side panel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1366x1024",
+      "label": "grid columns 4 (expected 4)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1366x1024",
+      "label": "names ≤ 2 lines, price pill inside every box (12 boxes)",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "vp": "1366x1024",
+      "label": "header 60px (5.8%) + tables row 63px (6.2%) compact (each ≤ 10%)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1366x1024",
+      "label": "Table T1: no horizontal overflow (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1366x1024",
+      "label": "Table T1: no page scroll (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1366x1024",
+      "label": "Table T1: panel fully inside the viewport (926→1354 × 157→1012, 31% wide)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1366x1024",
+      "label": "Table T1: nothing cropped sideways inside the panel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1366x1024",
+      "label": "Table T1: “^(Send round|Envoyer la tournée)” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[944,886,1336,931]}"
+    },
+    {
+      "vp": "1366x1024",
+      "label": "Table T1: “^(Close tab|Fermer la note)$” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[1246,952,1336,985]}"
+    },
+    {
+      "vp": "1366x1024",
+      "label": "Table: names ≤ 2 lines, price pill inside every box (12 boxes, 4 columns)",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "vp": "1366x1024",
+      "label": "no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1920x1080",
+      "label": "Home: no horizontal overflow (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1920x1080",
+      "label": "Home: no page scroll (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1920x1080",
+      "label": "Home: panel fully inside the viewport (1468→1908 × 155→1068, 23% wide)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1920x1080",
+      "label": "Home: nothing cropped sideways inside the panel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1920x1080",
+      "label": "Home: “Take payment|Encaisser” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"Take payment|Encaisser\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[1675,1010,1892,1054]}"
+    },
+    {
+      "vp": "1920x1080",
+      "label": "Home: “^⏸ (Hold|Mettre en attente)$” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^⏸ (Hold|Mettre en attente)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[1484,1010,1667,1050]}"
+    },
+    {
+      "vp": "1920x1080",
+      "label": "Home: cart is the side panel — expected side panel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1920x1080",
+      "label": "grid columns 4 (expected 4)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1920x1080",
+      "label": "names ≤ 2 lines, price pill inside every box (12 boxes)",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "vp": "1920x1080",
+      "label": "header 61px (5.6%) + tables row 64px (6.0%) compact (each ≤ 10%)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1920x1080",
+      "label": "Table T1: no horizontal overflow (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1920x1080",
+      "label": "Table T1: no page scroll (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1920x1080",
+      "label": "Table T1: panel fully inside the viewport (1468→1908 × 159→1068, 23% wide)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1920x1080",
+      "label": "Table T1: nothing cropped sideways inside the panel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "1920x1080",
+      "label": "Table T1: “^(Send round|Envoyer la tournée)” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[1486,939,1890,984]}"
+    },
+    {
+      "vp": "1920x1080",
+      "label": "Table T1: “^(Close tab|Fermer la note)$” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[1800,1007,1890,1040]}"
+    },
+    {
+      "vp": "1920x1080",
+      "label": "Table: names ≤ 2 lines, price pill inside every box (12 boxes, 4 columns)",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "vp": "1920x1080",
+      "label": "no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "768x1024",
+      "label": "Home: no horizontal overflow (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "768x1024",
+      "label": "Home: no page scroll (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "768x1024",
+      "label": "Home: cart is the bottom sheet (narrow) — expected bottom sheet",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "768x1024",
+      "label": "grid columns 2 (expected 2)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "768x1024",
+      "label": "names ≤ 2 lines, price pill inside every box (12 boxes)",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "vp": "768x1024",
+      "label": "header 60px (5.8%) + tables row 60px (5.9%) compact (each ≤ 10%)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "768x1024",
+      "label": "Home: the cart strip is on screen (bottom 964px)",
+      "pass": true,
+      "detail": "{\"inView\":true,\"bottom\":964}"
+    },
+    {
+      "vp": "768x1024",
+      "label": "Home sheet open: no horizontal overflow (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "768x1024",
+      "label": "Home sheet open: no page scroll (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "768x1024",
+      "label": "Home sheet open: panel fully inside the viewport (0→768 × 82→1024, 100% wide)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "768x1024",
+      "label": "Home sheet open: nothing cropped sideways inside the panel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "768x1024",
+      "label": "Home sheet open: “Take payment|Encaisser” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"Take payment|Encaisser\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[68,966,752,1010]}"
+    },
+    {
+      "vp": "768x1024",
+      "label": "Home sheet open: “^⏸ (Hold|Mettre en attente)$” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^⏸ (Hold|Mettre en attente)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[16,966,60,1006]}"
+    },
+    {
+      "vp": "768x1024",
+      "label": "Table T1: no horizontal overflow (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "768x1024",
+      "label": "Table T1: no page scroll (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "768x1024",
+      "label": "Table T1: panel fully inside the viewport (12→756 × 513→1012, 97% wide)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "768x1024",
+      "label": "Table T1: nothing cropped sideways inside the panel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "768x1024",
+      "label": "Table T1: “^(Send round|Envoyer la tournée)” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[30,896,738,941]}"
+    },
+    {
+      "vp": "768x1024",
+      "label": "Table T1: “^(Close tab|Fermer la note)$” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[648,957,738,990]}"
+    },
+    {
+      "vp": "768x1024",
+      "label": "Table: names ≤ 2 lines, price pill inside every box (12 boxes, 2 columns)",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "vp": "768x1024",
+      "label": "no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "800x1280",
+      "label": "Home: no horizontal overflow (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "800x1280",
+      "label": "Home: no page scroll (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "800x1280",
+      "label": "Home: cart is the bottom sheet (narrow) — expected bottom sheet",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "800x1280",
+      "label": "grid columns 2 (expected 2)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "800x1280",
+      "label": "names ≤ 2 lines, price pill inside every box (12 boxes)",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "vp": "800x1280",
+      "label": "header 61px (4.8%) + tables row 62px (4.8%) compact (each ≤ 10%)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "800x1280",
+      "label": "Home: the cart strip is on screen (bottom 1220px)",
+      "pass": true,
+      "detail": "{\"inView\":true,\"bottom\":1220}"
+    },
+    {
+      "vp": "800x1280",
+      "label": "Home sheet open: no horizontal overflow (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "800x1280",
+      "label": "Home sheet open: no page scroll (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "800x1280",
+      "label": "Home sheet open: panel fully inside the viewport (0→800 × 102→1280, 100% wide)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "800x1280",
+      "label": "Home sheet open: nothing cropped sideways inside the panel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "800x1280",
+      "label": "Home sheet open: “Take payment|Encaisser” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"Take payment|Encaisser\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[68,1222,784,1266]}"
+    },
+    {
+      "vp": "800x1280",
+      "label": "Home sheet open: “^⏸ (Hold|Mettre en attente)$” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^⏸ (Hold|Mettre en attente)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[16,1222,60,1262]}"
+    },
+    {
+      "vp": "800x1280",
+      "label": "Table T1: no horizontal overflow (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "800x1280",
+      "label": "Table T1: no page scroll (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "800x1280",
+      "label": "Table T1: panel fully inside the viewport (12→788 × 753→1268, 97% wide)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "800x1280",
+      "label": "Table T1: nothing cropped sideways inside the panel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "800x1280",
+      "label": "Table T1: “^(Send round|Envoyer la tournée)” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[30,1152,770,1197]}"
+    },
+    {
+      "vp": "800x1280",
+      "label": "Table T1: “^(Close tab|Fermer la note)$” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[680,1213,770,1246]}"
+    },
+    {
+      "vp": "800x1280",
+      "label": "Table: names ≤ 2 lines, price pill inside every box (12 boxes, 2 columns)",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "vp": "800x1280",
+      "label": "no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "390x844",
+      "label": "Home: no horizontal overflow (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "390x844",
+      "label": "Home: no page scroll (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "390x844",
+      "label": "Home: cart is the bottom sheet (narrow) — expected bottom sheet",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "390x844",
+      "label": "grid columns 2 (expected 2)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "390x844",
+      "label": "names ≤ 2 lines, price pill inside every box (12 boxes)",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "vp": "390x844",
+      "label": "header 52px (6.2%) + tables row 49px (5.7%) compact (each ≤ 10%)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "390x844",
+      "label": "Home: the cart strip is on screen (bottom 784px)",
+      "pass": true,
+      "detail": "{\"inView\":true,\"bottom\":784}"
+    },
+    {
+      "vp": "390x844",
+      "label": "Home sheet open: no horizontal overflow (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "390x844",
+      "label": "Home sheet open: no page scroll (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "390x844",
+      "label": "Home sheet open: panel fully inside the viewport (0→390 × 68→844, 100% wide)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "390x844",
+      "label": "Home sheet open: nothing cropped sideways inside the panel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "390x844",
+      "label": "Home sheet open: “Take payment|Encaisser” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"Take payment|Encaisser\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[65,786,374,830]}"
+    },
+    {
+      "vp": "390x844",
+      "label": "Home sheet open: “^⏸ (Hold|Mettre en attente)$” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^⏸ (Hold|Mettre en attente)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[16,786,57,826]}"
+    },
+    {
+      "vp": "390x844",
+      "label": "Table T1: no horizontal overflow (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "390x844",
+      "label": "Table T1: no page scroll (page 0, main 0, bar 0)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "390x844",
+      "label": "Table T1: panel fully inside the viewport (12→378 × 457→753, 94% wide)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "390x844",
+      "label": "Table T1: nothing cropped sideways inside the panel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "vp": "390x844",
+      "label": "Table T1: “^(Send round|Envoyer la tournée)” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[30,638,360,683]}"
+    },
+    {
+      "vp": "390x844",
+      "label": "Table T1: “^(Close tab|Fermer la note)$” visible, in the viewport and on top",
+      "pass": true,
+      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[270,699,360,732]}"
+    },
+    {
+      "vp": "390x844",
+      "label": "Table: names ≤ 2 lines, price pill inside every box (12 boxes, 2 columns)",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "vp": "390x844",
+      "label": "no page errors",
+      "pass": true,
+      "detail": ""
+    }
+  ],
+  "unknownApi": [
+    "/health",
+    "/broadcasts/active",
+    "/subscriptions/my-plan",
+    "/customers",
+    "/sales/tickets/summary",
+    "/staff/my-permissions",
+    "/goods-buffer/pending",
+    "/messages/unread",
+    "/dozie/seller/attention",
+    "/dozie/seller/notif-counts",
+    "/app-lock/policy",
+    "/settings"
+  ]
+}

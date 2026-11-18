@@ -1804,7 +1804,7 @@ export default function Layout() {
 
   // ── DESKTOP LAYOUT ────────────────────────────────────────────────────────────
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
+    <div className={location.pathname === "/bar" ? "bar-shell" : undefined} style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
       {showOnboarding && user?.id && (
         <OnboardingGuide userId={user.id} lang={lang} onClose={() => setShowOnboarding(false)} />
       )}

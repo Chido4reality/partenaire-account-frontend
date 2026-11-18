@@ -66,7 +66,7 @@ export default function QuickGrid({ lang, barId, products, busy, onTap, priceTex
                 aria-label={`${name} · ${priceText(p)}`}>
                 <ProductPicture p={p} />
                 <span className="bar-box-text">
-                  <span className="bar-box-name">{name}</span>
+                  <span className={`bar-box-name${String(name).length > 22 ? " is-long" : ""}`}>{name}</span>{/* BAR FIT: a long name gets a smaller font */}
                   <span className="bar-box-price">{priceText(p)}</span>
                 </span>
               </button>
