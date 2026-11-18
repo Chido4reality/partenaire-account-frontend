@@ -46,6 +46,7 @@ const CHECKS = [
   ["bar-mode-step1", "scripts/bar-mode-step1-check.mjs", "BAR MODE step 1: menu/route/nav files identical to main, Settings +2 lines; card + its fetch only for owner on Pro Plus; ON lists real shops only"],
   ["bar-mode-step2", "scripts/bar-mode-step2-check.mjs", "BAR MODE step 2: menu files = base + exactly the listed Bar entries; /bar/mine asked only on Pro Plus by owner/manager/cashier; bar page renders tables, tabs, duplicate-name hint, offline refusal"],
   ["bar-layout", "scripts/bar-layout-check.mjs", "BAR LAYOUT: branch switch carries nothing across; drafts per person x branch x tab; grid order holds still; New Sale renders byte-identical to before; sidebar hides only on /bar"],
+  ["customer-pick", "scripts/customer-pick-check.mjs", "PAYMENT PANEL CUSTOMER PICK: the Customers page Add Customer modal, moved to a shared component, renders byte-identical (EN/FR, with/without the same-phone match); same create body, 409 and cache refreshes"],
   ["photo-upload",  "scripts/photo-upload-check.mjs", "every product photo is re-encoded (JPEG, ≤1600 px, ~1 MB); nothing over the hard cap is sent; no upload sends the picked file as-is"],
   ["staff-deactivate-confirm", "scripts/staff-deactivate-confirm-check.mjs", "Settings → Staff asks before deactivating (same dialog as Accountant Log); a flip on either screen refreshes both staff lists"],
   ["query-invalidate", "scripts/query-invalidation-check.mjs", "LAUNCH-BATCH-2b: Inventory names its query keys (v5 array form refetched the whole app); the rest may only shrink"],

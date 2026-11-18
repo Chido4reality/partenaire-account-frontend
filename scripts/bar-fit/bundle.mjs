@@ -28,7 +28,9 @@ export async function bundleApp(ROOT, OUTDIR, { mutate = [] } = {}) {
       const idx = mutate.map((m, i) => (m.file.test(a.path.split(String.fromCharCode(92)).join("/")) ? i : -1)).filter((i) => i >= 0);
       if (!idx.length) return undefined;
       let src = readFileSync(a.path, "utf8");
-      for (const i of idx) { const n = src.split(mutate[i].from).length - 1;
+      for (const i of idx) {
+        if (mutate[i].whole !== undefined) { src = mutate[i].whole; hits[i]++; continue; }   // a whole file (a BASE build)
+        const n = src.split(mutate[i].from).length - 1;
         if (n !== 1) throw new Error(`teeth mutation ${i} expected 1 copy in ${a.path}, found ${n}`);
         src = src.replace(mutate[i].from, mutate[i].to); hits[i]++; }
       return { contents: src, loader: "jsx" };
@@ -56,5 +58,20 @@ if (process.argv[1] && process.argv[1].split(String.fromCharCode(92)).join("/").
   const t = process.env.BAR_CART_TEETH;
   const mutate = t ? (await import("./cart-teeth.mjs")).CART_TEETH[t] : [];
   if (t && !mutate) throw new Error(`unknown BAR_CART_TEETH=${t}`);
-  console.log("built", await bundleApp(root, resolve(os.tmpdir(), t ? `bar-fit-app-teeth${t}` : "bar-fit-app"), { mutate }));
+  let out = t ? `bar-fit-app-teeth${t}` : "bar-fit-app";
+  // BAR_PICK_TEETH=1 → the payment panel's customer pick broken (pick-teeth.mjs) → <tmp>/bar-fit-app-pickteeth
+  if (process.env.BAR_PICK_TEETH) { mutate.push(...(await import("./pick-teeth.mjs")).PICK_TEETH); out = "bar-fit-app-pickteeth"; }
+  // BAR_FIT_BASE=<git ref> → every src file that differs from <ref> is bundled AS IT IS AT <ref> → <tmp>/bar-fit-app-base
+  if (process.env.BAR_FIT_BASE) {
+    const { execFileSync } = await import("node:child_process");
+    const ref = process.env.BAR_FIT_BASE, git = (...a) => execFileSync("git", a, { cwd: root, encoding: "utf8", maxBuffer: 64 << 20 });
+    const changed = git("diff", "--name-only", ref, "--", "src").split("\n").filter(Boolean);
+    for (const f of changed) {
+      let whole; try { whole = git("show", `${ref}:${f}`); } catch { continue; }   // new since <ref>: the base never imports it
+      mutate.push({ file: new RegExp(f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$"), whole });
+    }
+    console.log(`base ${ref}: ${mutate.length} file(s) as at ${ref}: ${changed.join(", ")}`);
+    out = "bar-fit-app-base";
+  }
+  console.log("built", await bundleApp(root, resolve(os.tmpdir(), out), { mutate }));
 }

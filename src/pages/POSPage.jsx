@@ -44,6 +44,7 @@ import { SHOP_TZ } from "../utils/shopTime";
 import { saleStatusLabel } from "../utils/saleStatus"; // fix 3
 import { lineMoney, wholeMoney, paymentStatusFor } from "../utils/money"; // WHOLE-FRANC MONEY
 import { isGoodsBuffer, locationLabel, locationTypeLabel } from "../utils/locations"; // GOODS-BUFFER
+import AddCustomerModal from "../components/common/AddCustomerModal"; // payment panel "+ New customer" (the Customers page's own modal)
 
 const PAYMENT_MODES = [
   { key: "paid",    en: "Full Payment",  fr: "Paiement total",   color: "#10b981", icon: "✓" },
@@ -243,6 +244,9 @@ export default function POSPage({ embed = null } = {}) {
   const soldDateAllowed = user?.role === "owner" || (myPerms && myPerms.sold_date_policy !== "block");
   const [custSearch, setCustSearch]       = useState("");
   const [showCustDrop, setShowCustDrop]   = useState(false);
+  // payment panel: "Choose customer" open inside the credit/partial warning; "+ New customer" modal
+  const [payCustOpen, setPayCustOpen]     = useState(false);
+  const [showNewCust, setShowNewCust]     = useState(false);
   const [payMode, setPayMode]             = useState("paid");
   // MP-POS-SILENT-FULLPAY-GUARD (BUG 1): payMode defaults to "paid". When a
   // customer is attached the cashier MUST consciously pick Paid/Partial/Credit
@@ -448,6 +452,7 @@ export default function POSPage({ embed = null } = {}) {
     showReceipt, showHold, showResume, debtReceiptEvent,
     blockModal, oversellModal, validateModal, showOpenShift,
     creditLimitModal, cancelTarget, approvalBundle, showDebtModal,
+    showNewCust,   // the payment panel's "+ New customer" (AddCustomerModal) — the THIRTEENTH
   ].some(Boolean);
   useEffect(() => {
     if (anyRootOverlay) setSheetOpen(false);
@@ -1079,6 +1084,10 @@ export default function POSPage({ embed = null } = {}) {
     .sort((a, b) => customerMatchScore(b, custSearch) - customerMatchScore(a, custSearch))
     .slice(0, CUSTOMER_RESULT_CAP);
   const customerMatchOverflow = Math.max(0, _custMatches.length - CUSTOMER_RESULT_CAP);
+  // ONE way to pick the sale's customer — the top Customer field AND the payment panel's
+  // "Choose customer" (Peter 2026-11-18) both call this, so they always show the same customer.
+  const pickCustomer = (c) => { setCustomer(c); setCustSearch(""); setShowCustDrop(false); setPayCustOpen(false); };
+  useEffect(() => { if (!showPayment) setPayCustOpen(false); }, [showPayment]);   // Back → the picker starts closed next time
 
   // ── PRICE TIER: auto-apply by customer type ─────────────────────────────────
   // MP-CUSTOMER-TIER-PRICING: price ladder per product is
@@ -3019,6 +3028,48 @@ export default function POSPage({ embed = null } = {}) {
                   {(payMode === "credit" || payMode === "partial") && !customer && (
                     <div style={{ padding: "8px 12px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, fontSize: 12, color: "#f87171", marginBottom: 8 }}>
                       ⚠️ {lang === "en" ? "A registered customer is required for credit or partial sales." : "Un client enregistré est requis pour les ventes à crédit ou partielles."}
+                      {/* Peter 2026-11-18: pick the customer RIGHT HERE (like "Open shift" in the shift bar) —
+                          the same search text, the same ["pos-customers"] list and the same pickCustomer as the
+                          top Customer field; "+ New customer" is the Customers page's own Add Customer modal. */}
+                      {!payCustOpen ? (
+                        <button type="button" className="pay-cust-choose" onClick={() => { setPayCustOpen(true); setCustSearch(""); }}
+                          style={{ display: "block", marginTop: 8, width: "100%", padding: "8px 10px", borderRadius: 8, border: "1.5px solid var(--brand)", background: "rgba(251,197,3,0.12)", color: "var(--brand-light, var(--brand))", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                          👤 {lang === "en" ? "Choose customer" : "Choisir un client"}
+                        </button>
+                      ) : (
+                        <div className="pay-cust-pick" style={{ marginTop: 8 }}>
+                          <input className="input" autoFocus value={custSearch} onChange={e => setCustSearch(e.target.value)}
+                            aria-label={lang === "en" ? "Search customer" : "Rechercher un client"}
+                            placeholder={lang === "en" ? "Type name or phone..." : "Nom ou téléphone..."} style={{ marginBottom: 6 }} />
+                          {filteredCustomers.length > 0 && (
+                            <div style={{ maxHeight: 200, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 8, background: "var(--bg-elevated)", color: "var(--text-primary, inherit)" }}>
+                              {filteredCustomers.map(c => (
+                                <button type="button" key={c.id} className="pay-cust-row" onClick={() => pickCustomer(c)}
+                                  style={{ display: "flex", width: "100%", alignItems: "center", gap: 8, padding: "8px 10px", border: "none", borderBottom: "1px solid var(--border)", background: "transparent", color: "inherit", cursor: "pointer", textAlign: "left" }}>
+                                  <span style={{ flex: 1, minWidth: 0 }}>
+                                    <span style={{ display: "block", fontSize: 13, fontWeight: 600 }}>{c.name}</span>
+                                    {c.phone && <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)" }}>{c.phone}</span>}
+                                  </span>
+                                  {c.total_debt > 0 && <span style={{ fontSize: 11, color: "#f87171", fontWeight: 700 }}>{fmt(c.total_debt)}</span>}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          {custSearch.length > 0 && filteredCustomers.length === 0 && (
+                            <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "4px 2px" }}>{lang === "en" ? "No customer found" : "Aucun client trouvé"}</div>
+                          )}
+                          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                            <button type="button" className="pay-cust-new" onClick={() => setShowNewCust(true)}
+                              style={{ flex: 2, padding: "7px 10px", borderRadius: 8, border: "1.5px solid var(--brand)", background: "var(--brand)", color: "#152B52", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>
+                              + {lang === "en" ? "New customer" : "Nouveau client"}
+                            </button>
+                            <button type="button" onClick={() => { setPayCustOpen(false); setCustSearch(""); }}
+                              style={{ flex: 1, padding: "7px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "transparent", color: "var(--text-muted)", fontWeight: 600, fontSize: 12.5, cursor: "pointer" }}>
+                              {lang === "en" ? "Cancel" : "Annuler"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -3145,6 +3196,20 @@ export default function POSPage({ embed = null } = {}) {
               {lang === "en" ? "Cancel" : "Annuler"}
             </button>
           </div>
+        </div>
+      )}
+      {/* ── NEW CUSTOMER (payment panel → "+ New customer") ─────────────────────
+          The Customers page's own Add Customer modal (components/common/AddCustomerModal). A ROOT
+          overlay like the others: registered in anyRootOverlay (the phone sheet closes so taps reach it)
+          and lifted to z:3000 by a ROOT_OVERLAY wrapper. A created customer — or the existing one the
+          same-phone check offers — goes through pickCustomer, exactly like the top field; on a phone the
+          sheet reopens on the payment panel afterwards. */}
+      {showNewCust && (
+        <div style={{ ...ROOT_OVERLAY, zIndex: 3000 }}>
+          <AddCustomerModal knownCustomers={allCustomers?.data || []} existingVerb="use"
+            onClose={() => { setShowNewCust(false); if (mobile) setSheetOpen(true); }}
+            onCreated={(c) => { setShowNewCust(false); if (c) pickCustomer(c); if (mobile) setSheetOpen(true); }}
+            onExisting={(m) => { setShowNewCust(false); pickCustomer((allCustomers?.data || []).find(x => x.id === m.id) || m); if (mobile) setSheetOpen(true); }} />
         </div>
       )}
       {/* ── DEBT MODAL ─────────────────────────────────────── */}
@@ -3395,7 +3460,7 @@ export default function POSPage({ embed = null } = {}) {
                 {showCustDrop && filteredCustomers.length > 0 && (
                   <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50, background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", overflowY: "auto", maxHeight: "min(60vh, 420px)", marginTop: 4, boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}>
                     {filteredCustomers.map(c => (
-                      <div key={c.id} onMouseDown={() => { setCustomer(c); setCustSearch(""); setShowCustDrop(false); }}
+                      <div key={c.id} onMouseDown={() => pickCustomer(c)}
                         style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, transition: "background 0.1s" }}
                         onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
                         onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
