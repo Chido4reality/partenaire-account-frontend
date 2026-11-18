@@ -44,6 +44,7 @@ import { isSellableLocation } from "../../utils/locations";                     
 import { WAREHOUSE_HIDDEN_ROUTES, useWorkMode, effectiveWorkMode, applyWorkModeAttribute, currentWorkMode } from "../../utils/workMode"; // WAREHOUSE MODE
 import WorkModeButton from "./WorkModeButton";                                          // WAREHOUSE MODE
 import { useBarChrome } from "../../store/barChrome";                                   // BAR LAYOUT: /bar hides the sidebar
+import BarModeButton from "./BarModeButton";                                             // BAR MODE BUTTON (above Warehouse Mode)
 // Sprint A: each nav item declares the capability section it belongs to.
 // `section: 'sales'` and `section: 'settings'` are always visible (every
 // tier includes them). Other sections are filtered against the effective
@@ -112,8 +113,6 @@ const NAV = [
   // gate. Also registered in NavDrawer.jsx SECTIONS (mobile) + App.jsx routes.
   { to: "/cashier", en: "Cashier", fr: "Caissier", icon: "💵", roles: ["owner","manager","cashier"], section: "sales", badge: "cashier_queue",  gate: "can_receive_payment" },
   { to: "/pickup",  en: "Pickup",  fr: "Retrait",  icon: "📤", roles: ["owner","manager","cashier","warehouse"], section: "sales", badge: "cashier_pickup", gate: "can_release_goods" },
-  // BAR MODE step 2: shown ONLY when GET /bar/mine lists a bar for this person (barOnly below).
-  { to: "/bar",     en: "Bar",     fr: "Bar",      icon: "🍺", roles: ["owner","manager","cashier"], section: "sales", barOnly: true },
   // MP-STAFF-ACTIVITY-LEDGER Phase 4: a staff member's OWN activity. Non-owner roles only
   // (the owner has the full Accountant Log), and only when the org opted in (requiresStaffActivity).
   { to: "/my-activity", en: "My Activity", fr: "Mon activité", icon: "📒", roles: ["manager","cashier","warehouse","accountant"], section: "sales", requiresStaffActivity: true },
@@ -1027,16 +1026,15 @@ export default function Layout() {
   const LITE_HIDDEN_ROUTES = new Set(["/online-cart", "/operations"]);
   // BAR MODE step 2: which bars may this person work at? Asked ONLY on Pro Plus, only for the three
   // roles that work a bar, and not when the org is already known to have Bar Mode off — every other
-  // business makes no extra call. A failed read hides the entry (fail closed).
-  const { data: barMine } = useQuery({
+  // business makes no extra call. A failed read hides the Bar Mode button (fail closed); the button
+  // (BarModeButton) reads this answer from the shared cache and never fetches itself.
+  useQuery({
     queryKey: ["bar-mine"],
     queryFn: () => api.get("/bar/mine").then(r => r.data?.data || { bars: [] }),
     enabled: effectivePlan === "pro_plus" && ["owner", "manager", "cashier"].includes(role) && org?.bar_mode_enabled !== false,
     staleTime: 60000, retry: false,
   });
-  const barNavVisible = (barMine?.bars || []).length > 0;
   const visibleNav = NAV.filter(item => {
-    if (item.barOnly && !barNavVisible) return false;   // BAR MODE: no bar → no entry (before any role rule)
     if (!item.roles.includes(role)) {
       // Accountant Log Phase 1: the 'accountant' role gets the MANAGER's broad
       // OPERATIONAL nav (sales, inventory, customers, reports, etc.) — but never
@@ -1898,6 +1896,8 @@ export default function Layout() {
           </div>
         )}
 
+        {/* BAR MODE BUTTON: above Warehouse Mode; renders NOTHING unless /bar/mine lists a bar. */}
+        <BarModeButton compact={collapsed} wrapStyle={{ padding: collapsed ? "8px 6px 0" : "8px 12px 0" }} />
         {/* WAREHOUSE MODE: the two-way switch, top-left under the business header. */}
         {/* Renders NOTHING (no wrapper either) when the button is not available — POS Mode for
             an org without it is pixel-for-pixel today's sidebar. */}

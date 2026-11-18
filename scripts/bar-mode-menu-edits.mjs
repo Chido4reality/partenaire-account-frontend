@@ -10,20 +10,18 @@ export const MENU_EDITS = [
   // shows only when GET /bar/mine lists a bar for this person.
   "/bar":          ["owner", "manager", "cashier"],\n`, null],
   ["src/App.jsx", `            <Route path="bar"     element={<RoleGuard path="/bar"><BarPage /></RoleGuard>} />\n`, null],
-  ["src/components/common/Layout.jsx", `  // BAR MODE step 2: shown ONLY when GET /bar/mine lists a bar for this person (barOnly below).
-  { to: "/bar",     en: "Bar",     fr: "Bar",      icon: "🍺", roles: ["owner","manager","cashier"], section: "sales", barOnly: true },\n`, null],
+  // (BAR MODE BUTTON 2026-11-18: the plain "Bar" NAV entry, its barOnly filter and NavDrawer's "/bar" were
+  // REMOVED — the Bar Mode button below replaces them; the query stays, the button reads its answer.)
   ["src/components/common/Layout.jsx", `  // BAR MODE step 2: which bars may this person work at? Asked ONLY on Pro Plus, only for the three
   // roles that work a bar, and not when the org is already known to have Bar Mode off — every other
-  // business makes no extra call. A failed read hides the entry (fail closed).
-  const { data: barMine } = useQuery({
+  // business makes no extra call. A failed read hides the Bar Mode button (fail closed); the button
+  // (BarModeButton) reads this answer from the shared cache and never fetches itself.
+  useQuery({
     queryKey: ["bar-mine"],
     queryFn: () => api.get("/bar/mine").then(r => r.data?.data || { bars: [] }),
     enabled: effectivePlan === "pro_plus" && ["owner", "manager", "cashier"].includes(role) && org?.bar_mode_enabled !== false,
     staleTime: 60000, retry: false,
-  });
-  const barNavVisible = (barMine?.bars || []).length > 0;\n`, null],
-  ["src/components/common/Layout.jsx", `    if (item.barOnly && !barNavVisible) return false;   // BAR MODE: no bar → no entry (before any role rule)\n`, null],
-  ["src/components/layout/NavDrawer.jsx", `"/pickup", "/bar", "/online-cart"`, null, `"/pickup", "/online-cart"`],
+  });\n`, null],
   // BAR LAYOUT (Peter 2026-11-18): /bar is full width — the desktop sidebar hides ONLY on /bar until the
   // bar's menu button opens it. These three edits are the whole Layout change; every other page is identical.
   ["src/components/common/Layout.jsx", `import { useBarChrome } from "../../store/barChrome";                                   // BAR LAYOUT: /bar hides the sidebar\n`, null],
@@ -36,6 +34,15 @@ export const MENU_EDITS = [
   // 100dvh (the VISIBLE height on a tablet with the address bar showing); every other page keeps 100vh.
   ["src/components/common/Layout.jsx", `<div className={location.pathname === "/bar" ? "bar-shell" : undefined} style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>`, null,
     `<div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>`],
+  // BAR MODE BUTTON (Peter 2026-11-18): a Bar Mode button ABOVE the Warehouse Mode button (sidebar + phone
+  // drawer). BarModeButton renders NOTHING unless /bar/mine lists a bar, so for every other business
+  // the menu is what it was; with these four insertions undone every menu file is the base again.
+  ["src/components/common/Layout.jsx", `import BarModeButton from "./BarModeButton";                                             // BAR MODE BUTTON (above Warehouse Mode)\n`, null],
+  ["src/components/common/Layout.jsx", `        {/* BAR MODE BUTTON: above Warehouse Mode; renders NOTHING unless /bar/mine lists a bar. */}
+        <BarModeButton compact={collapsed} wrapStyle={{ padding: collapsed ? "8px 6px 0" : "8px 12px 0" }} />\n`, null],
+  ["src/components/layout/NavDrawer.jsx", `import BarModeButton from "../common/BarModeButton"; // BAR MODE BUTTON (above Warehouse Mode)\n`, null],
+  ["src/components/layout/NavDrawer.jsx", `              {/* BAR MODE BUTTON: above Warehouse Mode; renders NOTHING unless /bar/mine lists a bar. */}
+              <BarModeButton onNavigate={onClose} wrapStyle={{ marginTop: 12 }} />\n`, null],
 ];
 
 /** The current text of `file` with every listed Bar Mode edit undone. Returns { text, missing }. */

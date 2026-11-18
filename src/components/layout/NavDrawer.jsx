@@ -21,6 +21,7 @@ import { setLanguage } from "../../utils/setLanguage"; // MP-LANGUAGE-PERSIST
 import { SUPPORT_PHONE } from "../../utils/support";
 import { useNavigate } from "react-router-dom";
 import WorkModeButton from "../common/WorkModeButton"; // WAREHOUSE MODE
+import BarModeButton from "../common/BarModeButton"; // BAR MODE BUTTON (above Warehouse Mode)
 export const DRAWER_WIDTH = 280;
 
 // Section grouping by route path. Items not listed in any section are
@@ -43,7 +44,7 @@ const SECTIONS = [
   // stock-check fixes above (the desktop sidebar maps visibleNav flat, so web
   // would have shown them and only phones would have lost them). They inherit
   // Layout's NAV gate, which hides them entirely outside cashier mode.
-  { en: "DAILY WORK", fr: "TRAVAIL QUOTIDIEN", routes: ["/assistant", "/", "/pos", "/cashier", "/pickup", "/bar", "/online-cart", "/shifts", "/refunds", "/my-requests", "/team-approvals", "/pending-sync"] },
+  { en: "DAILY WORK", fr: "TRAVAIL QUOTIDIEN", routes: ["/assistant", "/", "/pos", "/cashier", "/pickup", "/online-cart", "/shifts", "/refunds", "/my-requests", "/team-approvals", "/pending-sync"] },
   // MP-DOZIE-SELLER-DRAWER-FIX: the migrated Dozie seller routes were added to
   // Layout's NAV (section:"inventory") but never to this mobile SECTIONS map, so
   // the drawer dropped them on phones — same omission pattern as the Pro Plus /
@@ -208,6 +209,8 @@ export default function NavDrawer({
                   </span>
                 </div>
               )}
+              {/* BAR MODE BUTTON: above Warehouse Mode; renders NOTHING unless /bar/mine lists a bar. */}
+              <BarModeButton onNavigate={onClose} wrapStyle={{ marginTop: 12 }} />
               {/* WAREHOUSE MODE: the two-way switch, under the name (hidden when not available). */}
               <WorkModeButton onSwitched={onClose} wrapStyle={{ marginTop: 12 }} />
             </div>

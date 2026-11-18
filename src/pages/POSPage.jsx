@@ -469,7 +469,11 @@ export default function POSPage({ embed = null } = {}) {
   // draft.
   const { saveDraft, getDraft, clearDraft } = useDraftCartStore();
   const userId = user?.id;
-  const locId  = selectedLocation?.id;
+  // BAR CART FIX (Peter 2026-11-18): in the bar the POS belongs to ONE branch (embed.locationId). Until
+  // the app-wide location IS that branch, the draft cart is neither restored nor saved — otherwise the
+  // other branch's saved cart is restored here. New Sale (no embed): exactly selectedLocation?.id.
+  const embedLocWrong = !!(embed && embed.locationId && selectedLocation?.id !== embed.locationId);
+  const locId  = embedLocWrong ? undefined : selectedLocation?.id;
   // EXPIRY-TRACKING (Peter, rule 2): WARN when a tracked product has estimated
   // expired stock at this location — never block. Cached for offline like the catalogue.
   const { canExpiry } = useExpiryFeature();
@@ -481,6 +485,18 @@ export default function POSPage({ embed = null } = {}) {
   const expiryWarn = (canExpiry && expiryWarnData?.data) || {};
   const draftRestoredRef = useRef(false);
   const cartScopeRef     = useRef(null); // { userId, locId } when cart non-empty
+  // BAR CART FIX: true (and says so) when the bar's cart is not this branch's — the app location is
+  // not the bar's branch yet, or the cart's items were pinned at another branch. Always false in New Sale.
+  const embedCartWrongBranch = () => {
+    if (!embed || !embed.locationId) return false;
+    const pin = cartScopeRef.current;
+    // every line carries the branch it was added at (barLoc, stamped below) — a pin alone is not enough:
+    // a mixed cart saved under the right branch's key looks "pinned here" while holding the other's lines
+    const wrong = selectedLocation?.id !== embed.locationId || (!!pin && pin.locId !== embed.locationId)
+      || cart.some((l) => l && l.barLoc && l.barLoc !== embed.locationId);
+    if (wrong) toast.error(lang === "en" ? "This cart belongs to another branch — nothing was sent." : "Ce panier appartient à une autre succursale — rien n'a été envoyé.", { duration: 5000 });
+    return wrong;
+  };
   // Restore once user + location are resolved. Skip if no draft, draft
   // is older than 24h, or items is empty. Open the mobile cart sheet
   // on successful restore so the cashier sees the cart waiting for her.
@@ -555,6 +571,14 @@ export default function POSPage({ embed = null } = {}) {
       bundledApprovalId: bundledApprovalIdRef.current });
   }, [cart, customer, payMode, paidAmt, dueDate, notes,
       userId, locId, saveDraft, clearDraft]);
+  // BAR CART FIX: in the bar, stamp each new line with the branch it was added at (locId is undefined
+  // while the app location is not this bar's, so nothing is stamped with the wrong branch). The pay and
+  // hold guards above refuse a cart holding any line of another branch. New Sale: never runs.
+  useEffect(() => {
+    if (!embed || !locId || !cart.some((l) => l && !l.barLoc)) return;
+    setCart((prev) => prev.map((l) => (l && !l.barLoc ? { ...l, barLoc: locId } : l)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart, locId]);
   // MP-STORAGE-QUOTA-CRASH-FIX: safeStorage fires this (at most once/session)
   // when a draft save had to be skipped because the device storage is full.
   // Quiet, non-fatal heads-up — the sale keeps working, only the auto-save of
@@ -1675,6 +1699,8 @@ export default function POSPage({ embed = null } = {}) {
         setShowPayment(true);
         const gerr = new Error("PAYMODE_REQUIRED"); gerr.payModeGuard = true; throw gerr;
       }
+      // BAR CART FIX: never pay at one branch with a cart built at another (bar only).
+      if (embedCartWrongBranch()) { const gerr = new Error("BAR_WRONG_BRANCH"); gerr.payModeGuard = true; throw gerr; }
       // MP-CART-INVOICE-PRODUCT-BUG: the legacy invoice-settle path
       // (POST /sales/:id/payment per invoice) is ONLY correct when
       // the cart is a pure invoice-settle action — a single __DEBT__
@@ -2312,6 +2338,7 @@ export default function POSPage({ embed = null } = {}) {
                    line_total: lineMoney(qty, unit), notes: i.notes || null };
         });
       if (!items.length) throw new Error("empty");
+      if (embedCartWrongBranch()) { const gerr = new Error("BAR_WRONG_BRANCH"); gerr.barWrongBranch = true; throw gerr; }   // BAR CART FIX
       const res = await api.post("/held-carts", {
         location_id: selectedLocation?.id,
         customer_id: customer?.id || null,
@@ -2333,6 +2360,7 @@ export default function POSPage({ embed = null } = {}) {
       holdMutation.reset();
     },
     onError: (err) => {
+      if (err?.barWrongBranch) return;   // BAR CART FIX: the guard already said why
       toast.error(err?.message === "empty"
         ? (lang === "en" ? "Cart is empty" : "Panier vide")
         : (err?.response?.data?.message || (lang === "en" ? "Could not hold sale" : "Échec de la mise en attente")));

@@ -152,6 +152,9 @@ const DRAFT_ITEM_FIELDS = [
   // via the draft cart, and without these on the whitelist the markers would be
   // silently stripped on the next save/restore and the sale would post as normal.
   "is_damaged", "damaged_source_id",
+  // BAR CART FIX: the branch a /bar Home line was added at (POSPage stamps it in the bar only). Without it
+  // here a restored line came back unstamped, got the CURRENT branch, and the pay guard could not see it.
+  "barLoc",
 ];
 function slimDraftItems(items) {
   if (!Array.isArray(items)) return [];

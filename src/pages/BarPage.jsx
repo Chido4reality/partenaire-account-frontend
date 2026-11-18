@@ -184,15 +184,20 @@ export default function BarPage() {
 
       {v.view === HOME ? (
         // Home = the POS, embedded. key = branch: a branch switch mounts a fresh POS on the new branch's own cart.
+        // BAR CART FIX (Peter 2026-11-18): mount it only once the APP's location IS this bar. The POS reads
+        // its saved cart by the app location, and the setLocation effect above runs AFTER the child's
+        // restore effect — so a POS mounted in the same render as the switch restored the OLD branch's cart.
         <div className="bar-home-body">
+          {selectedLocation?.id !== barId ? <div className="bar-msg" role="status">{L(lang, "Loading…", "Chargement…")}</div> :
           <POSPage key={barId} embed={{
+            locationId: barId,
             showAll,
             renderLeft: ({ addToCart, products, cart, fmt: pfmt, priceOf }) => (
               <QuickGrid key={`${barId}:home`} lang={lang} barId={barId} products={products} busy={cart.length > 0}
                 onTap={(p) => addToCart(p, 1, true)} priceText={(p) => pfmt(priceOf(p))}
                 allOpen={showAll} onAll={() => setShowAll((x) => !x)} />
             ),
-          }} />
+          }} />}
         </div>
       ) : (
         <div className="bar-body">

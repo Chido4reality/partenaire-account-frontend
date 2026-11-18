@@ -3,7 +3,8 @@
 //      bar-mode-menu-edits.mjs (all present, nothing else changed);
 //   2. the one new request (GET /bar/mine) is asked ONLY on Pro Plus, only by owner / manager /
 //      cashier, and never when the org is known to have Bar Mode off — evaluated over every case;
-//   3. the Bar menu entry is dropped first thing in the nav filter unless /bar/mine listed a bar;
+//   3. the Bar Mode button (replaced the plain "Bar" entry 2026-11-18): above Warehouse Mode in the
+//      sidebar and drawer; shown only when /bar/mine listed a bar (not in Warehouse Mode); never fetches;
 //   4. the bar page, rendered: no bar → one sentence; a floor → free / open / closed tables, the
 //      duplicate-name hint (waiter + time), offline refusal, setup only for owner / manager.
 import { build } from "esbuild";
@@ -58,13 +59,56 @@ if (m) {
   check(`GET /bar/mine asked only on Pro Plus, owner/manager/cashier, org not known OFF (${cases} cases, ${asked} ask)`, bad.length === 0, bad.join(",") || "ok");
 }
 
-// ── 3. the nav entry ───────────────────────────────────────────────────────────
-const filt = layout.indexOf("const visibleNav = NAV.filter(item => {");
-const first = layout.slice(filt, filt + 200).split("\n")[1] || "";
-check("nav filter: the barOnly drop is the FIRST rule (before roles / plan / modes)", /if \(item\.barOnly && !barNavVisible\) return false;/.test(first), first.trim());
-check("barNavVisible is true only for a non-empty bars list (undefined / error → hidden)", /const barNavVisible = \(barMine\?\.bars \|\| \[\]\)\.length > 0;/.test(layout));
-const navItems = [...layout.matchAll(/barOnly: true/g)].length;
-check("exactly one barOnly entry, the /bar item", navItems === 1 && /\{ to: "\/bar",[^\n]*barOnly: true \}/.test(layout), navItems);
+// ── 3. the Bar Mode button (Peter 2026-11-18: replaces the plain "Bar" menu entry) ─────────────
+// No "Bar" NAV entry is left; the button sits ABOVE Warehouse Mode in the sidebar AND the phone drawer;
+// it never fetches (reads Layout's /bar/mine answer); rendered over every state, it shows ONLY for a
+// non-empty bars list outside Warehouse Mode — every other case renders NOTHING (no wrapper either).
+{
+  check("no plain “Bar” menu entry left (no barOnly item, no NAV /bar)", !/barOnly/.test(layout) && !/\{ to: "\/bar"/.test(layout));
+  const drawer = readFileSync(resolve(SRC, "components/layout/NavDrawer.jsx"), "utf8");
+  const above = (txt) => { const b = txt.indexOf("<BarModeButton "), w = txt.indexOf("<WorkModeButton "); return b > 0 && w > 0 && b < w && txt.split("<BarModeButton ").length === 2; };
+  check("sidebar: exactly one Bar Mode button, ABOVE the Warehouse Mode button", above(layout));
+  check("phone drawer: exactly one Bar Mode button, ABOVE the Warehouse Mode button", above(drawer));
+  const BOUT = resolve(HERE, "__bar_mode_button.mjs");
+  const BSTUBS = {
+    "@tanstack/react-query": `export const useQuery = (o) => { globalThis.__bm.queries.push({ key: o.queryKey, enabled: o.enabled });
+      return { data: globalThis.__bm.cache[o.queryKey[0]] }; };`,
+    "react-router-dom": `export const useNavigate = () => () => {}; export const useLocation = () => ({ pathname: globalThis.__bm.path });`,
+    "utils/api": `export default { get: async () => { globalThis.__bm.fetched++; return { data: {} }; } };`,
+    "store": `export const useLangStore = () => ({ lang: globalThis.__bm.lang });`,
+    "utils/workMode": `export const useWorkMode = () => globalThis.__bm.mode;`,
+    "store/barChrome": `export const useBarChrome = { getState: () => ({ setMenuOpen() {} }) };`,
+  };
+  await build({
+    stdin: { contents: `export { default } from "./components/common/BarModeButton";`, resolveDir: SRC, loader: "jsx", sourcefile: "bm-entry.jsx" },
+    bundle: true, format: "esm", outfile: BOUT, jsx: "automatic", external: ["react", "react/jsx-runtime"], logLevel: "silent", platform: "node",
+    plugins: [{ name: "stubs", setup(b) {
+      b.onResolve({ filter: /.*/ }, (a) => { for (const k of Object.keys(BSTUBS).sort((x, y) => y.length - x.length)) if (a.path === k || a.path.endsWith("/" + k)) return { path: k, namespace: "stub" }; return null; });
+      b.onLoad({ filter: /.*/, namespace: "stub" }, (a) => ({ contents: BSTUBS[a.path], loader: "js" }));
+    } }],
+  });
+  const BM = (await import("file:///" + BOUT.replace(/\\/g, "/"))).default;
+  rmSync(BOUT, { force: true });
+  const rb = (cfg) => { globalThis.__bm = { lang: "en", mode: "pos", path: "/", cache: {}, queries: [], fetched: 0, ...cfg };
+    const html = renderToString(React.createElement(BM, { compact: false })); return { html, q: globalThis.__bm.queries, fetched: globalThis.__bm.fetched }; };
+  const ONE = { bars: [{ id: "b1", name: "Bepanda" }] };
+  const bad = []; let cases = 0;
+  for (const data of [undefined, null, {}, { bars: [] }, ONE, { bars: [{ id: "b1" }, { id: "b2" }] }])
+    for (const mode of ["pos", "warehouse", undefined])
+      for (const lang of ["en", "fr"])
+        for (const path of ["/", "/bar"]) {
+          cases++;
+          const r = rb({ cache: data === undefined ? {} : { "bar-mine": data }, mode, lang, path });
+          const want = mode !== "warehouse" && (data?.bars || []).length > 0;
+          const shown = r.html !== "";
+          if (shown !== want) bad.push(`${JSON.stringify(data)}/${mode}/${lang}${path}: ${shown ? "shown" : "hidden"}`);
+          if (shown && !r.html.includes(lang === "en" ? "Bar Mode" : "Mode Bar")) bad.push(`${lang}: label missing`);
+          if (r.q.some((x) => x.enabled !== false) || r.fetched) bad.push("the button fetched");
+          if (r.q.some((x) => JSON.stringify(x.key) !== '["bar-mine"]')) bad.push(`other key ${JSON.stringify(r.q)}`);
+        }
+  check(`Bar Mode button shown ONLY with a bar and outside Warehouse Mode; otherwise renders nothing; never fetches (${cases} cases)`, !bad.length, bad.slice(0, 4).join(" | ") || "ok");
+  check("Bar Mode button on /bar is marked as the current page", rb({ cache: { "bar-mine": ONE }, path: "/bar" }).html.includes('aria-current="page"'));
+}
 
 // ── 4. the page, rendered ──────────────────────────────────────────────────────
 const STUBS = {
