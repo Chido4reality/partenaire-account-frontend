@@ -38,6 +38,7 @@ import { BAR_CSS } from "../components/bar/barTheme";
 import { useBarChrome } from "../store/barChrome";
 import { useBarDraftStore } from "../store/barDrafts";
 import { HOME, barViewReducer, currentTabId, tabBelongsToBar, draftKey } from "../utils/barLayout";
+import TabMoney, { tabMoneyLine } from "../components/bar/TabMoney";   // step 1.0: Ordered / Paid / Balance due
 
 const L = (lang, en, fr) => (lang === "en" ? en : fr);
 const errText = (lang, e) => {
@@ -259,7 +260,7 @@ export function CounterTabsPanel({ lang, barId, named, busy, act, tender, setTen
             <span style={{ fontSize: 12, opacity: dup ? 1 : 0.7, color: dup ? "var(--brand, #FBC503)" : undefined }}>
               {dup && "⚠ "}{t.waiter_name || t.opened_by_name || "?"} · {hhmm(t.opened_at)}
             </span>
-            <span style={{ fontSize: 12, opacity: 0.7 }}>{statusWord(lang, t.status)}{total > 0 ? ` · ${fmtMoney(total)}` : ""}</span>
+            <span style={{ fontSize: 12, opacity: 0.7 }}>{statusWord(lang, t.status)}{t.figures ? ` · ${tabMoneyLine(lang, t.figures, fmtMoney)}` : total > 0 ? ` · ${fmtMoney(total)}` : ""}</span>
             <span style={{ marginLeft: "auto", display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
               {t.status === "open" && <button style={btn} disabled={busy} onClick={() => onRounds(t)}>{L(lang, "Rounds", "Tournées")}</button>}
               <TabActions lang={lang} tab={t} busy={busy} act={act} tender={tender} setTender={setTender} />
@@ -419,7 +420,7 @@ export function TableSide({ lang, barId, userId, tabId, table, title, products, 
           )}
           {T && !foreign && (
             <div className="bar-foot-row">
-              <div className="bar-total"><span>{L(lang, "Total", "Total")}</span><b>{fmt(Number(T.pa_sales?.total_amount) || 0)}</b></div>
+              <TabMoney lang={lang} figures={T.figures} fallbackTotal={T.pa_sales?.total_amount} />
               <TabActions lang={lang} tab={floorTab} busy={busy} act={act} tender={tender} setTender={setTender} />
             </div>
           )}
