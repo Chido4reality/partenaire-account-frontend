@@ -259,7 +259,8 @@ export function TabActions({ lang, tab, busy, act, tender, setTender, shift }) {
   const tnd = tender[tab.id] || "cash";
   return tab.status === "open"
     ? <button className="bar-cbtn" style={btn} disabled={busy} onClick={() => act.mutate({ kind: "close", path: `/bar/tabs/${tab.id}/close` })}>{L(lang, "Close tab", "Fermer la note")}</button>
-    : <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+    // no shift: the hint + Open shift + Take payment take their OWN full-width line (else they crush the money block)
+    : <span className={noShift ? "bar-pay-actions is-noshift" : "bar-pay-actions"} style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", alignItems: "center", ...(noShift ? { flex: "1 1 100%", justifyContent: "flex-end" } : {}) }}>
         {total > 0 && <select value={tnd} onChange={(e) => setTender((m) => ({ ...m, [tab.id]: e.target.value }))} style={{ padding: 6, borderRadius: 8 }}>
           <option value="cash">{L(lang, "Cash", "Espèces")}</option>
           <option value="mobile_money">{L(lang, "Mobile money", "Mobile money")}</option>

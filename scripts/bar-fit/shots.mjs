@@ -52,6 +52,10 @@ const TAB1 = { id: "tab1", location_id: BON, status: "open", pa_sales: { version
 // nothing paid. BAR_FIT_NO_FIGURES=1 → an older backend (no figures): the screen falls back to its single Total line.
 const FIG1 = { ordered: 4500, served: 3000, waiting: 1500, paid: 0, balance_due: 4500, service_status: "waiting", payment_status: "unpaid", rounds_waiting: 1, rounds_served: 1 };
 if (!process.env.BAR_FIT_NO_FIGURES) { TAB1.figures = FIG1; TABLES[0].tab.figures = FIG1; TABLES[4].tab.figures = { ...FIG1, ordered: 7000, served: 7000, waiting: 0, balance_due: 7000, service_status: "served", rounds_waiting: 0 }; }
+// BAR CART FIX 2: T5 — a tab closed and waiting for payment, NO shift open (/shifts/current answers null):
+// beside Take payment the screen shows "Open a shift first" + Open shift — measured like every other button
+const TAB5 = { id: "tab5", location_id: BON, status: "closed", pa_sales: { version: 2, total_amount: 7000 }, figures: TABLES[4].tab.figures, rounds: [
+  { id: "r5", round_no: 1, status: "served", total: 7000, version: 2, served_by_name: "Kusi", pa_bar_round_items: [{ quantity: 4, pa_products: { name: "Castel Beer 65cl" } }, { quantity: 2, pa_products: { name: "Coca-Cola 50cl" } }] }] };
 const USER = { id: "u1", org_id: "o1", role: "owner", full_name: "Boss Dozie", phone: "699000101", has_seen_onboarding: true, location_id: null };
 const ORG = { id: "o1", name: "Dozie Tube & Tyre", plan: "pro_plus", subscription_status: "active", currency: "XAF", bar_mode_enabled: true, max_offline_hours: 24 };
 const LOCS = [{ id: BON, name: "Bonaberri", type: "shop", is_active: true }, { id: BEP, name: "Bepanda", type: "shop", is_active: true }];
@@ -63,6 +67,7 @@ function answer(path, search) {
   if (/^\/bar\/[^/]+\/floor$/.test(path)) return ok({ zones: ZONES, tables: TABLES, named_tabs: [] });
   if (/^\/bar\/[^/]+\/quick-items$/.test(path)) return ok({ ids: ["p02", "p01", "p03", "p08", "p04", "p10", "p05", "p06", "p09", "p07", "p11", "p12", "p13", "p14"] });
   if (path === "/bar/tabs/tab1") return ok(TAB1);
+  if (path === "/bar/tabs/tab5") return ok(TAB5);
   if (path === "/products/multipart-availability") return ok({});
   if (path === "/products") return ok(PRODUCTS);
   if (path === "/held-carts") return ok([]);
@@ -194,6 +199,22 @@ try {
     assertAll(name, "Table T1", m, { H });
     const badT = m.names.filter((n) => n.lines > 2 || !n.priceInside);
     check(name, `Table: names ≤ 2 lines, price pill inside every box (${m.names.length} boxes, ${m.cols} columns)`, m.names.length > 0 && !badT.length, JSON.stringify(badT.slice(0, 3)));
+    // T5: closed, waiting for payment, no shift → "Open a shift first" + Open shift + Take payment, all on screen
+    await page.locator(".bar-pill", { hasText: "T5 ·" }).first().click();
+    await page.waitForSelector(".bar-noshift", { timeout: 20000 });
+    await page.waitForTimeout(400);
+    m = await page.evaluate(MEASURE, { panelSel: ".bar-card", buttons: ["^(Open shift|Ouvrir un shift)$", "^(Take payment|Encaisser)$"] }); m.W = W;
+    await page.screenshot({ path: resolve(OUT, `${name}${UA_TAG}-table-noshift.png`) });
+    assertAll(name, "Table T5 (no shift)", m, { H });
+    const hint = await page.evaluate(() => { const e = document.querySelector(".bar-noshift"); if (!e) return null; const r = e.getBoundingClientRect(); return { text: e.textContent.trim(), inView: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth }; });
+    check(name, `T5: the shift hint is on screen (${hint && hint.text})`, !!hint && hint.inView && /^(Open a shift first|Ouvrez d.abord un shift)$/.test(hint.text), JSON.stringify(hint));
+    // OVERLAP (the hole found 2026-11-19: every check passed while the actions sat ON the money block): nothing in the
+    // actions may intersect the money block, and the money block keeps a usable width
+    const ov = await page.evaluate(() => { const mb = document.querySelector(".bar-card .bar-money, .bar-card .bar-total"); const acts = [...document.querySelectorAll(".bar-card .bar-foot-row > :not(.bar-money):not(.bar-total) > *")];
+      if (!mb || !acts.length) return { missing: true }; const a = mb.getBoundingClientRect();
+      const hits = acts.map((e) => { const b = e.getBoundingClientRect(); return (b.left < a.right - 0.5 && b.right > a.left + 0.5 && b.top < a.bottom - 0.5 && b.bottom > a.top + 0.5) ? (e.textContent || e.tagName).trim().slice(0, 24) : null; }).filter(Boolean);
+      return { hits, moneyW: Math.round(a.width), n: acts.length }; });
+    check(name, `T5: the actions do not overlap the money block (money ${ov.moneyW}px wide, ${ov.n} action items)`, !ov.missing && !ov.hits.length && ov.moneyW >= 160, JSON.stringify(ov));
     check(name, "no page errors", !errs.length, errs.slice(0, 2).join(" | "));
     await ctx.close();
   }

@@ -132,8 +132,10 @@ try {
       localStorage.setItem("mp-settings", JSON.stringify({ state: { selectedLocation: { id: BON, name: "Bonaberri", type: "shop" } }, version: 0 }));
       // a 5-line cart (the tall case), restored by the POS from its own saved-cart store
       const items = PRODUCTS.map((p, i) => ({ lineId: `L${i}`, product_id: p.id, name: p.name, unit: "piece", quantity: i + 1, unit_price: p.sell_price, original_price: p.sell_price,
-        sell_price: p.sell_price, min_price: 0, cost_price: 0, stock: 40, barLoc: BON }));
-      localStorage.setItem("mp-pos-draft-cart", JSON.stringify({ state: { drafts: { [`${USER.id}::${BON}`]: { items, updatedAt: Date.now() } } }, version: 0 }));
+        sell_price: p.sell_price, min_price: 0, cost_price: 0, stock: 40 }));
+      // BAR CART FIX 2: New Sale's cart (no barLoc) + the bar's own `::bar` cart (stamped) — the new bar reads only `::bar`
+      localStorage.setItem("mp-pos-draft-cart", JSON.stringify({ state: { drafts: { [`${USER.id}::${BON}`]: { items, updatedAt: Date.now() },
+        [`${USER.id}::${BON}::bar`]: { items: items.map((it) => ({ ...it, barLoc: BON })), updatedAt: Date.now() } } }, version: 0 }));
     }, { USER, ORG, BON, PRODUCTS });
     await ctx.route((u) => u.hostname !== "localhost", (route) => route.abort());
     await ctx.route((u) => u.hostname === "localhost" && u.pathname.startsWith("/api/"), (route) => {

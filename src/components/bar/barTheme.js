@@ -87,7 +87,7 @@ export const BAR_CSS = `
 .bar-card-body{flex:1;min-height:0;padding:0 18px 10px;overflow-y:auto;display:grid;gap:8px;align-content:start}
 .bar-card-foot{flex:none;display:grid;gap:8px;padding:10px 18px 14px;border-top:1px solid #e8dcc4}
 .bar-card-foot:empty{display:none}
-.bar-foot-row{display:flex;align-items:center;gap:10px;min-width:0}
+.bar-foot-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;min-width:0}
 .bar-foot-row .bar-total,.bar-foot-row .bar-money{flex:1;min-width:0}
 .bar-card button.bar-cbtn{background:transparent;color:#13203a;border:1.5px solid #c9bfa9;border-radius:10px;padding:8px 14px;font-weight:700;cursor:pointer}
 .bar-card button.bar-cmain{background:var(--bar-amber);color:var(--on-brand,#152B52);border:none;border-radius:12px;padding:11px 16px;font-weight:800;font-size:16px;cursor:pointer}
@@ -102,7 +102,7 @@ export const BAR_CSS = `
 .bar-total{display:flex;justify-content:space-between;align-items:baseline;gap:8px;background:#F4E7CF;border-radius:14px;padding:10px 14px;font-weight:800}
 .bar-total b{font-size:clamp(18px,1.8vw,26px);white-space:nowrap}
 .bar-money{background:#F4E7CF;border-radius:14px;padding:8px 14px;color:#13203a}
-.bar-noshift{display:inline-block;padding:6px 10px;border-radius:10px;background:rgba(251,191,36,.14);border:1px solid rgba(251,191,36,.5);color:#fbbf24;font-size:12.5px;font-weight:700;white-space:nowrap}
+.bar-noshift{display:inline-block;padding:6px 10px;border-radius:10px;background:#fef3c7;border:1px solid #f59e0b;color:#92400e;font-size:12.5px;font-weight:700;white-space:nowrap}
 /* the POS cart, re-pointed to the cream card (logic and markup unchanged) */
 .bar-screen .bar-cart{--bg-surface:#FBF3E4;--bg-elevated:#F4E7CF;--bg-card:#fff8ec;--bg-base:#FBF3E4;--text-primary:#13203a;--text-secondary:#3b4660;
   --text-muted:#6b7280;--border:#e3d5ba;--border-hover:#cdbb98;--brand-light:#9a6b00;color:#13203a;

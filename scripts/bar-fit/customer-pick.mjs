@@ -86,8 +86,12 @@ async function session({ port = 5197, path = "/pos", w = 1280, h = 800, phone = 
     localStorage.setItem("mp-settings", JSON.stringify({ state: { selectedLocation: { id: BON, name: "Bonaberri", type: "shop" } }, version: 0 }));
     if (seedCart) {   // a 2-line cart the POS restores on load (its own saved-cart store), so no product search is driven
       const items = [[PRODUCTS[0], 2], [PRODUCTS[1], 1]].map(([p, q], i) => ({ lineId: `L${i}`, product_id: p.id, name: p.name, unit: "piece", quantity: q,
-        unit_price: p.sell_price, original_price: p.sell_price, sell_price: p.sell_price, min_price: 0, cost_price: 0, stock: 40, barLoc: BON }));
-      localStorage.setItem("mp-pos-draft-cart", JSON.stringify({ state: { drafts: { [`${USER.id}::${BON}`]: { items, updatedAt: Date.now() } } }, version: 0 }));
+        unit_price: p.sell_price, original_price: p.sell_price, sell_price: p.sell_price, min_price: 0, cost_price: 0, stock: 40 }));
+      // BAR CART FIX 2: New Sale's cart (no barLoc — New Sale never sets it) + the bar's own `::bar` cart (stamped).
+      // The old code reads the plain key in both places; the new bar reads only `::bar`.
+      localStorage.setItem("mp-pos-draft-cart", JSON.stringify({ state: { drafts: {
+        [`${USER.id}::${BON}`]: { items, updatedAt: Date.now() },
+        [`${USER.id}::${BON}::bar`]: { items: items.map((it) => ({ ...it, barLoc: BON })), updatedAt: Date.now() } } }, version: 0 }));
     }
   }, { USER, ORG, BON, lang, seedCart, PRODUCTS });
   const st = { sales: [], created: [] };
@@ -198,16 +202,19 @@ try {
     // PAY-FIT (2026-11-19, scripts/bar-fit/pay-fit.mjs) later added these EXACT style fragments to the payment
     // footer + its Back/Confirm row (scroll inside the pane, pinned row). They are taken out of the candidate
     // here — each must be found (else the test is stale) — so C5 still proves the customer pick added ONLY its button.
-    const PAYFIT = [" flex: 0 1 auto; min-height: 0px; overflow-y: auto; scroll-padding-bottom: 64px;", " position: sticky; bottom: 0px;"];
+    // BAR_PICK_SAME_BASE=1 (bar cart fix 2, base bf7484e = pick + pay-fit already in): New Sale must be byte-identical, nothing stripped
+    const SAME = process.env.BAR_PICK_SAME_BASE === "1";
+    const PAYFIT = SAME ? [] : [" flex: 0 1 auto; min-height: 0px; overflow-y: auto; scroll-padding-bottom: 64px;", " position: sticky; bottom: 0px;"];
     const unPayfit = (h) => PAYFIT.reduce((s, f) => s.split(f).join(""), h);
     const base = await grab(5196), cand0 = await grab(5197);
-    for (const [k, h] of [["open", cand0.open], ["credit", cand0.credit.html]])
+    if (!SAME) for (const [k, h] of [["open", cand0.open], ["credit", cand0.credit.html]])
       check(`C5 (${k}): the PAY-FIT style fragments are present exactly as listed (${PAYFIT.length})`, PAYFIT.every((f) => h.split(f).length === 2), PAYFIT.map((f) => h.split(f).length - 1).join("/"));
     const cand = { open: unPayfit(cand0.open), credit: { ...cand0.credit, html: unPayfit(cand0.credit.html) } };
     const firstDiff = (a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; return i >= a.length && a.length === b.length ? -1 : i; };
     const d1 = firstDiff(base.open, cand.open);
     check(`C5 payment panel open (Full Payment): page byte-identical to base (${cand.open.length} chars)`, d1 === -1, d1 >= 0 ? `base …${base.open.slice(d1 - 60, d1 + 80)}… | new …${cand.open.slice(d1 - 60, d1 + 80)}…` : "");
-    check("C5 Full Credit: exactly ONE new element (the Choose customer button), none in the base", cand.credit.removed === 1 && base.credit.removed === 0, `${cand.credit.removed}/${base.credit.removed}`);
+    if (SAME) check("C5 Full Credit: the same Choose customer button in base and candidate (1/1)", cand.credit.removed === 1 && base.credit.removed === 1, `${cand.credit.removed}/${base.credit.removed}`);
+    else check("C5 Full Credit: exactly ONE new element (the Choose customer button), none in the base", cand.credit.removed === 1 && base.credit.removed === 0, `${cand.credit.removed}/${base.credit.removed}`);
     const d2 = firstDiff(base.credit.html, cand.credit.html);
     check("C5 Full Credit: identical to base once that button is taken out", d2 === -1, d2 >= 0 ? `base …${base.credit.html.slice(d2 - 60, d2 + 80)}… | new …${cand.credit.html.slice(d2 - 60, d2 + 80)}…` : "");
   }

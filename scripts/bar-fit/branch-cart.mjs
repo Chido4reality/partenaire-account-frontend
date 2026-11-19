@@ -30,7 +30,7 @@ import os from "node:os";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "../..");
 const TEETH = process.env.BAR_CART_TEETH || "";
-const APP = resolve(os.tmpdir(), TEETH ? `bar-fit-app-teeth${TEETH}` : "bar-fit-app");
+const APP = process.env.BAR_CART_APP ? resolve(os.tmpdir(), process.env.BAR_CART_APP) : resolve(os.tmpdir(), TEETH ? `bar-fit-app-teeth${TEETH}` : "bar-fit-app");   // BAR_CART_APP=bar-fit-app-base → the old code (reproduction)
 if (!existsSync(resolve(APP, "bundle.js"))) { console.error(`no bundle in ${APP} — run node scripts/bar-fit/bundle.mjs first (same BAR_CART_TEETH)`); process.exit(2); }
 const PW = process.env.PW_MODULE || "C:/Users/Admin/AppData/Local/npm-cache/_npx/e41f203b7505f1fb/node_modules/playwright/index.mjs";
 const CHROME = process.env.PW_CHROME || resolve(os.homedir(), "AppData/Local/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-win64/chrome-headless-shell.exe");
@@ -254,8 +254,10 @@ try {
     check("P7f back at Bonaberri = its 3 lines", same(got, CART[BON]), JSON.stringify(got));
     // P8 — to New Sale and back
     await go(page, "/pos"); await page.waitForTimeout(1800);
-    await backToBar(page); await settle(page, BON); got = await cartNames(page);
-    check("P8 to New Sale and back: /bar on Bonaberri with exactly its 3 lines", (await barValue(page)) === BON && same(got, CART[BON]), `${NAME[await barValue(page)]} ${JSON.stringify(got)}`);
+    await backToBar(page); const p8at = await barValue(page);
+    if (p8at !== BON) await select(page, BON);
+    await settle(page, BON); got = await cartNames(page);
+    check("P8 to New Sale and back: /bar on Bonaberri with exactly its 3 lines", p8at === BON && same(got, CART[BON]), `${NAME[p8at]} ${JSON.stringify(got)}`);
     // P9 — reload while at Bepanda: the last branch used is Bepanda
     await select(page, BEP); await settle(page, BEP);
     await page.reload({ waitUntil: "domcontentloaded" }); await page.waitForSelector(".bar-box", { timeout: 60000 }); await page.waitForTimeout(800);
@@ -283,8 +285,8 @@ try {
     for (let i = 0; i < 30 && st.sales.length === before; i++) await page.waitForTimeout(150);
     const sale = st.sales[before];
     const bepIds = PRODUCTS[BEP].map((p) => p.id);
-    check("P10b paying at Bonaberri sends NO Bepanda product", !sale || !(sale.items || []).some((i) => bepIds.includes(i.product_id)), JSON.stringify((sale?.items || []).map((i) => i.product_id)));
-    check("P10c …and the sale is for Bonaberri", !sale || sale.location_id === BON, String(sale?.location_id));
+    check("P10b paying at Bonaberri sends a sale with NO Bepanda product", !!sale && !(sale.items || []).some((i) => bepIds.includes(i.product_id)), JSON.stringify((sale?.items || []).map((i) => i.product_id)));
+    check("P10c …and the sale is for Bonaberri", !!sale && sale.location_id === BON, String(sale?.location_id));
     check("P10 no page errors", !errs.length, errs.slice(0, 2).join(" | "));
     await ctx.close();
   }

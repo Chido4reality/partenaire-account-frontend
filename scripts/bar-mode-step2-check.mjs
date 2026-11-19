@@ -124,6 +124,8 @@ const STUBS = {
   "utils/useNetworkStatus": `export const useNetworkStatus = () => ({ isOnline: globalThis.__bar.online });`,
   // BAR LAYOUT: Home embeds the POS — its own proof is scripts/bar-layout-check.mjs
   "POSPage": `export default function POSPage() { return "POS-EMBED"; }`,
+  // BAR CART FIX 2: the shift modal (open a shift in place) — its own flow is proven by branch-cart.mjs P11
+  "components/common/ShiftWidgets": `export function OpenShiftModal() { return null; }`,
   "utils/useCurrency": `const f = (n) => String(Number(n) || 0) + " F"; export const useCurrency = () => f;`,
   "utils/safeStorage": `const m = new Map(); export const safeStorage = { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v), removeItem: (k) => m.delete(k) };`,
 };
