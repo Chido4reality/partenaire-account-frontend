@@ -242,7 +242,7 @@ export default function BarPage() {
             onWrongBranch={goHome} />
         </div>
       )}
-      {role === "cashier" && v.view !== HOME && <div style={{ fontSize: 12, opacity: 0.6, padding: "0 16px 10px" }}>{L(lang, "Taking payment needs your till open at this bar.", "Encaisser demande votre caisse ouverte dans ce bar.")}</div>}
+      {role === "cashier" && v.view !== HOME && <div style={{ fontSize: 12, opacity: 0.6, padding: "0 16px 10px" }}>{L(lang, "Taking payment needs a shift open at this bar.", "Encaisser demande un shift ouvert dans ce bar.")}</div>}
       {/* the POS shift-bar modal, at the page root (its stacking needs to be outside the scroll panes) */}
       <OpenShiftModal open={showOpenShift} onClose={() => setShowOpenShift(false)}
         onOpened={() => { setShowOpenShift(false); setRefusedNoShift(null); qc.invalidateQueries({ queryKey: ["current-shift", barId] }); refresh(); }} />
@@ -378,7 +378,7 @@ export function TableSide({ lang, barId, userId, tabId, table, title, products, 
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {(found.data || []).slice(0, 12).map((p) => (
                   <button key={p.id} style={{ ...btn, fontSize: 13, padding: "6px 10px" }} disabled={p.is_multipart === true || !isOpen}
-                    title={p.is_multipart ? L(lang, "Kits and shots: at the till for now", "Ensembles et shots : à la caisse pour l'instant") : undefined}
+                    title={p.is_multipart ? L(lang, "Kits and shots: sell them in New Sale for now", "Ensembles et shots : vendez-les dans Nouvelle vente pour l'instant") : undefined}
                     onClick={() => add(p)}>+ {(lang === "en" && p.name_en) || p.name} · {fmt(Number(p.sell_price) || 0)}</button>
                 ))}
                 {found.data && !found.data.length && <span style={{ fontSize: 13, opacity: 0.6 }}>{L(lang, "No product found.", "Aucun produit trouvé.")}</span>}
