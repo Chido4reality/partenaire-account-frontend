@@ -175,6 +175,9 @@ export default function MobileCartSheet({
                 minHeight: 0,
                 display: "flex",
                 flexDirection: "column",
+                // PAY-FIT: scrolls only when its fixed parts do not fit (a short landscape phone / keyboard)
+                overflowY: "auto",
+                scrollPaddingBottom: 64,   // a focused field stops above the pinned Back/Confirm row
                 paddingBottom: "var(--safe-area-bottom)",
               }}
             >

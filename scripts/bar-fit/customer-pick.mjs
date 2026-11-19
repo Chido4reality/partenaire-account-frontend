@@ -195,7 +195,15 @@ try {
       await ctx.close();
       return { open, credit };
     };
-    const base = await grab(5196), cand = await grab(5197);
+    // PAY-FIT (2026-11-19, scripts/bar-fit/pay-fit.mjs) later added these EXACT style fragments to the payment
+    // footer + its Back/Confirm row (scroll inside the pane, pinned row). They are taken out of the candidate
+    // here — each must be found (else the test is stale) — so C5 still proves the customer pick added ONLY its button.
+    const PAYFIT = [" flex: 0 1 auto; min-height: 0px; overflow-y: auto; scroll-padding-bottom: 64px;", " position: sticky; bottom: 0px;"];
+    const unPayfit = (h) => PAYFIT.reduce((s, f) => s.split(f).join(""), h);
+    const base = await grab(5196), cand0 = await grab(5197);
+    for (const [k, h] of [["open", cand0.open], ["credit", cand0.credit.html]])
+      check(`C5 (${k}): the PAY-FIT style fragments are present exactly as listed (${PAYFIT.length})`, PAYFIT.every((f) => h.split(f).length === 2), PAYFIT.map((f) => h.split(f).length - 1).join("/"));
+    const cand = { open: unPayfit(cand0.open), credit: { ...cand0.credit, html: unPayfit(cand0.credit.html) } };
     const firstDiff = (a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; return i >= a.length && a.length === b.length ? -1 : i; };
     const d1 = firstDiff(base.open, cand.open);
     check(`C5 payment panel open (Full Payment): page byte-identical to base (${cand.open.length} chars)`, d1 === -1, d1 >= 0 ? `base …${base.open.slice(d1 - 60, d1 + 80)}… | new …${cand.open.slice(d1 - 60, d1 + 80)}…` : "");

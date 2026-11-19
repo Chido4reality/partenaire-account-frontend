@@ -1,0 +1,1157 @@
+{
+  "when": "2026-11-19T11:45:54.299Z",
+  "results": [
+    {
+      "tag": "bar 1024x768",
+      "label": "bar 1024x768: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "bar 1024x768",
+      "label": "bar 1024x768: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":700.328125,\"t\":702.828125,\"r\":808.890625,\"b\":741.828125},\"after\":{\"l\":700.328125,\"t\":702.828125,\"r\":808.890625,\"b\":741.828125},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1024x768",
+      "label": "bar 1024x768: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":816.890625,\"t\":702.828125,\"r\":996,\"b\":741.828125},\"after\":{\"l\":816.890625,\"t\":702.828125,\"r\":996,\"b\":741.828125},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1024x768",
+      "label": "bar 1024x768: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":700.328125,\"t\":641.453125,\"r\":994,\"b\":740.828125},\"after\":{\"l\":700.328125,\"t\":641.453125,\"r\":994,\"b\":740.828125},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1024x768",
+      "label": "bar 1024x768: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":713.328125,\"t\":696.828125,\"r\":981,\"b\":731.828125},\"after\":{\"l\":713.328125,\"t\":642.828125,\"r\":981,\"b\":677.828125},\"how\":\"scrolled to the end\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1024x768",
+      "label": "bar 1024x768 keyboard (viewport 461px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":347,\"b\":385,\"H\":461},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":347,\"b\":385,\"H\":461}}"
+    },
+    {
+      "tag": "bar 1024x768",
+      "label": "bar 1024x768 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":816.890625,\"t\":396,\"r\":996,\"b\":435},\"after\":{\"l\":816.890625,\"t\":396,\"r\":996,\"b\":435},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1024x768",
+      "label": "bar 1024x768: no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "bar 768x1024",
+      "label": "bar 768x1024: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "bar 768x1024",
+      "label": "bar 768x1024: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":971,\"r\":271.328125,\"b\":1010},\"after\":{\"l\":16,\"t\":971,\"r\":271.328125,\"b\":1010},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 768x1024",
+      "label": "bar 768x1024: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":279.328125,\"t\":971,\"r\":752,\"b\":1010},\"after\":{\"l\":279.328125,\"t\":971,\"r\":752,\"b\":1010},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 768x1024",
+      "label": "bar 768x1024: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":594.46875,\"r\":750,\"b\":674.65625},\"after\":{\"l\":16,\"t\":594.46875,\"r\":750,\"b\":674.65625},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 768x1024",
+      "label": "bar 768x1024: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":29,\"t\":630.65625,\"r\":737,\"b\":665.65625},\"after\":{\"l\":29,\"t\":630.65625,\"r\":737,\"b\":665.65625},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 768x1024",
+      "label": "bar 768x1024 keyboard (viewport 614px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":514,\"b\":552,\"H\":614},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":514,\"b\":552,\"H\":614}}"
+    },
+    {
+      "tag": "bar 768x1024",
+      "label": "bar 768x1024 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":279.328125,\"t\":561,\"r\":752,\"b\":600},\"after\":{\"l\":279.328125,\"t\":561,\"r\":752,\"b\":600},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 768x1024",
+      "label": "bar 768x1024: no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "bar 1180x820",
+      "label": "bar 1180x820: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "bar 1180x820",
+      "label": "bar 1180x820: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":806.40625,\"t\":755,\"r\":931.609375,\"b\":794},\"after\":{\"l\":806.40625,\"t\":755,\"r\":931.609375,\"b\":794},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1180x820",
+      "label": "bar 1180x820: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":939.609375,\"t\":755,\"r\":1152,\"b\":794},\"after\":{\"l\":939.609375,\"t\":755,\"r\":1152,\"b\":794},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1180x820",
+      "label": "bar 1180x820: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":806.40625,\"t\":639.625,\"r\":1150,\"b\":739},\"after\":{\"l\":806.40625,\"t\":639.625,\"r\":1150,\"b\":739},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1180x820",
+      "label": "bar 1180x820: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":819.40625,\"t\":695,\"r\":1137,\"b\":730},\"after\":{\"l\":819.40625,\"t\":695,\"r\":1137,\"b\":730},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1180x820",
+      "label": "bar 1180x820 keyboard (viewport 492px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":378,\"b\":416,\"H\":492},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":378,\"b\":416,\"H\":492}}"
+    },
+    {
+      "tag": "bar 1180x820",
+      "label": "bar 1180x820 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":939.609375,\"t\":427,\"r\":1152,\"b\":466},\"after\":{\"l\":939.609375,\"t\":427,\"r\":1152,\"b\":466},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1180x820",
+      "label": "bar 1180x820: no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "bar 820x1180",
+      "label": "bar 820x1180: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "bar 820x1180",
+      "label": "bar 820x1180: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":1127,\"r\":288.671875,\"b\":1166},\"after\":{\"l\":16,\"t\":1127,\"r\":288.671875,\"b\":1166},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 820x1180",
+      "label": "bar 820x1180: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":296.671875,\"t\":1127,\"r\":804,\"b\":1166},\"after\":{\"l\":296.671875,\"t\":1127,\"r\":804,\"b\":1166},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 820x1180",
+      "label": "bar 820x1180: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":606.953125,\"r\":802,\"b\":687.140625},\"after\":{\"l\":16,\"t\":606.953125,\"r\":802,\"b\":687.140625},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 820x1180",
+      "label": "bar 820x1180: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":29,\"t\":643.140625,\"r\":789,\"b\":678.140625},\"after\":{\"l\":29,\"t\":643.140625,\"r\":789,\"b\":678.140625},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 820x1180",
+      "label": "bar 820x1180 keyboard (viewport 708px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":605,\"b\":643,\"H\":708},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":605,\"b\":643,\"H\":708}}"
+    },
+    {
+      "tag": "bar 820x1180",
+      "label": "bar 820x1180 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":296.671875,\"t\":655,\"r\":804,\"b\":694},\"after\":{\"l\":296.671875,\"t\":655,\"r\":804,\"b\":694},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 820x1180",
+      "label": "bar 820x1180: no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "bar 1280x800",
+      "label": "bar 1280x800: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "bar 1280x800",
+      "label": "bar 1280x800: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":874.40625,\"t\":735,\"r\":1010.265625,\"b\":774},\"after\":{\"l\":874.40625,\"t\":735,\"r\":1010.265625,\"b\":774},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1280x800",
+      "label": "bar 1280x800: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":1018.265625,\"t\":735,\"r\":1252,\"b\":774},\"after\":{\"l\":1018.265625,\"t\":735,\"r\":1252,\"b\":774},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1280x800",
+      "label": "bar 1280x800: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":874.40625,\"t\":638.8125,\"r\":1250,\"b\":719},\"after\":{\"l\":874.40625,\"t\":638.8125,\"r\":1250,\"b\":719},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1280x800",
+      "label": "bar 1280x800: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":887.40625,\"t\":675,\"r\":1237,\"b\":710},\"after\":{\"l\":887.40625,\"t\":675,\"r\":1237,\"b\":710},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1280x800",
+      "label": "bar 1280x800 keyboard (viewport 480px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":366,\"b\":404,\"H\":480},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":366,\"b\":404,\"H\":480}}"
+    },
+    {
+      "tag": "bar 1280x800",
+      "label": "bar 1280x800 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":1018.265625,\"t\":415,\"r\":1252,\"b\":454},\"after\":{\"l\":1018.265625,\"t\":415,\"r\":1252,\"b\":454},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1280x800",
+      "label": "bar 1280x800: no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "bar 800x1280",
+      "label": "bar 800x1280: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "bar 800x1280",
+      "label": "bar 800x1280: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":1227,\"r\":282,\"b\":1266},\"after\":{\"l\":16,\"t\":1227,\"r\":282,\"b\":1266},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 800x1280",
+      "label": "bar 800x1280: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":290,\"t\":1227,\"r\":784,\"b\":1266},\"after\":{\"l\":290,\"t\":1227,\"r\":784,\"b\":1266},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 800x1280",
+      "label": "bar 800x1280: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":614.953125,\"r\":782,\"b\":695.140625},\"after\":{\"l\":16,\"t\":614.953125,\"r\":782,\"b\":695.140625},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 800x1280",
+      "label": "bar 800x1280: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":29,\"t\":651.140625,\"r\":769,\"b\":686.140625},\"after\":{\"l\":29,\"t\":651.140625,\"r\":769,\"b\":686.140625},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 800x1280",
+      "label": "bar 800x1280 keyboard (viewport 768px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":610,\"b\":648,\"H\":768},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":610,\"b\":648,\"H\":768}}"
+    },
+    {
+      "tag": "bar 800x1280",
+      "label": "bar 800x1280 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":290,\"t\":715,\"r\":784,\"b\":754},\"after\":{\"l\":290,\"t\":715,\"r\":784,\"b\":754},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 800x1280",
+      "label": "bar 800x1280: no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "bar 1366x1024",
+      "label": "bar 1366x1024: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "bar 1366x1024",
+      "label": "bar 1366x1024: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":932.890625,\"t\":959,\"r\":1077.921875,\"b\":998},\"after\":{\"l\":932.890625,\"t\":959,\"r\":1077.921875,\"b\":998},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1366x1024",
+      "label": "bar 1366x1024: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":1085.921875,\"t\":959,\"r\":1338,\"b\":998},\"after\":{\"l\":1085.921875,\"t\":959,\"r\":1338,\"b\":998},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1366x1024",
+      "label": "bar 1366x1024: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":932.890625,\"t\":862.8125,\"r\":1336,\"b\":943},\"after\":{\"l\":932.890625,\"t\":862.8125,\"r\":1336,\"b\":943},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1366x1024",
+      "label": "bar 1366x1024: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":945.890625,\"t\":899,\"r\":1323,\"b\":934},\"after\":{\"l\":945.890625,\"t\":899,\"r\":1323,\"b\":934},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1366x1024",
+      "label": "bar 1366x1024 keyboard (viewport 614px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":500,\"b\":538,\"H\":614},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":500,\"b\":538,\"H\":614}}"
+    },
+    {
+      "tag": "bar 1366x1024",
+      "label": "bar 1366x1024 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":1085.921875,\"t\":549,\"r\":1338,\"b\":588},\"after\":{\"l\":1085.921875,\"t\":549,\"r\":1338,\"b\":588},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1366x1024",
+      "label": "bar 1366x1024: no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "bar 1024x1366",
+      "label": "bar 1024x1366: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "bar 1024x1366",
+      "label": "bar 1024x1366: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":700.328125,\"t\":1301,\"r\":808.890625,\"b\":1340},\"after\":{\"l\":700.328125,\"t\":1301,\"r\":808.890625,\"b\":1340},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1024x1366",
+      "label": "bar 1024x1366: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":816.890625,\"t\":1301,\"r\":996,\"b\":1340},\"after\":{\"l\":816.890625,\"t\":1301,\"r\":996,\"b\":1340},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1024x1366",
+      "label": "bar 1024x1366: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":700.328125,\"t\":1185.625,\"r\":994,\"b\":1285},\"after\":{\"l\":700.328125,\"t\":1185.625,\"r\":994,\"b\":1285},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1024x1366",
+      "label": "bar 1024x1366: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":713.328125,\"t\":1241,\"r\":981,\"b\":1276},\"after\":{\"l\":713.328125,\"t\":1241,\"r\":981,\"b\":1276},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1024x1366",
+      "label": "bar 1024x1366 keyboard (viewport 820px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":701,\"b\":739,\"H\":820},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":701,\"b\":739,\"H\":820}}"
+    },
+    {
+      "tag": "bar 1024x1366",
+      "label": "bar 1024x1366 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":816.890625,\"t\":755,\"r\":996,\"b\":794},\"after\":{\"l\":816.890625,\"t\":755,\"r\":996,\"b\":794},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1024x1366",
+      "label": "bar 1024x1366: no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "bar 1920x1080",
+      "label": "bar 1920x1080: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "bar 1920x1080",
+      "label": "bar 1920x1080: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":1484,\"t\":1015,\"r\":1630,\"b\":1054},\"after\":{\"l\":1484,\"t\":1015,\"r\":1630,\"b\":1054},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1920x1080",
+      "label": "bar 1920x1080: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":1638,\"t\":1015,\"r\":1892,\"b\":1054},\"after\":{\"l\":1638,\"t\":1015,\"r\":1892,\"b\":1054},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1920x1080",
+      "label": "bar 1920x1080: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":1484,\"t\":918.8125,\"r\":1890,\"b\":999},\"after\":{\"l\":1484,\"t\":918.8125,\"r\":1890,\"b\":999},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1920x1080",
+      "label": "bar 1920x1080: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":1497,\"t\":955,\"r\":1877,\"b\":990},\"after\":{\"l\":1497,\"t\":955,\"r\":1877,\"b\":990},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1920x1080",
+      "label": "bar 1920x1080 keyboard (viewport 648px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":534,\"b\":572,\"H\":648},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":534,\"b\":572,\"H\":648}}"
+    },
+    {
+      "tag": "bar 1920x1080",
+      "label": "bar 1920x1080 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":1638,\"t\":583,\"r\":1892,\"b\":622},\"after\":{\"l\":1638,\"t\":583,\"r\":1892,\"b\":622},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1920x1080",
+      "label": "bar 1920x1080: no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "bar 1080x1920",
+      "label": "bar 1080x1920: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "bar 1080x1920",
+      "label": "bar 1080x1920: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":738.40625,\"t\":1855,\"r\":852.9375,\"b\":1894},\"after\":{\"l\":738.40625,\"t\":1855,\"r\":852.9375,\"b\":1894},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1080x1920",
+      "label": "bar 1080x1920: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":860.9375,\"t\":1855,\"r\":1052,\"b\":1894},\"after\":{\"l\":860.9375,\"t\":1855,\"r\":1052,\"b\":1894},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1080x1920",
+      "label": "bar 1080x1920: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":738.40625,\"t\":1739.625,\"r\":1050,\"b\":1839},\"after\":{\"l\":738.40625,\"t\":1739.625,\"r\":1050,\"b\":1839},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1080x1920",
+      "label": "bar 1080x1920: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":751.40625,\"t\":1795,\"r\":1037,\"b\":1830},\"after\":{\"l\":751.40625,\"t\":1795,\"r\":1037,\"b\":1830},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1080x1920",
+      "label": "bar 1080x1920 keyboard (viewport 1152px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":982,\"b\":1020,\"H\":1152},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":982,\"b\":1020,\"H\":1152}}"
+    },
+    {
+      "tag": "bar 1080x1920",
+      "label": "bar 1080x1920 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":860.9375,\"t\":1087,\"r\":1052,\"b\":1126},\"after\":{\"l\":860.9375,\"t\":1087,\"r\":1052,\"b\":1126},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 1080x1920",
+      "label": "bar 1080x1920: no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "bar 390x844",
+      "label": "bar 390x844: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "bar 390x844",
+      "label": "bar 390x844: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":791,\"r\":145.328125,\"b\":830},\"after\":{\"l\":16,\"t\":791,\"r\":145.328125,\"b\":830},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 390x844",
+      "label": "bar 390x844: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":153.328125,\"t\":791,\"r\":374,\"b\":830},\"after\":{\"l\":153.328125,\"t\":791,\"r\":374,\"b\":830},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 390x844",
+      "label": "bar 390x844: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":580.078125,\"r\":372,\"b\":660.265625},\"after\":{\"l\":16,\"t\":580.078125,\"r\":372,\"b\":660.265625},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 390x844",
+      "label": "bar 390x844: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":29,\"t\":616.265625,\"r\":359,\"b\":651.265625},\"after\":{\"l\":29,\"t\":616.265625,\"r\":359,\"b\":651.265625},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 390x844",
+      "label": "bar 390x844 keyboard (viewport 506px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":406,\"b\":444,\"H\":506},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":406,\"b\":444,\"H\":506}}"
+    },
+    {
+      "tag": "bar 390x844",
+      "label": "bar 390x844 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":153.328125,\"t\":453,\"r\":374,\"b\":492},\"after\":{\"l\":153.328125,\"t\":453,\"r\":374,\"b\":492},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 390x844",
+      "label": "bar 390x844: no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "bar 844x390",
+      "label": "bar 844x390: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "bar 844x390",
+      "label": "bar 844x390: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":336.9375,\"r\":296.671875,\"b\":375.9375},\"after\":{\"l\":16,\"t\":336.9375,\"r\":296.671875,\"b\":375.9375},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 844x390",
+      "label": "bar 844x390: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":304.671875,\"t\":336.9375,\"r\":828,\"b\":375.9375},\"after\":{\"l\":304.671875,\"t\":336.9375,\"r\":828,\"b\":375.9375},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 844x390",
+      "label": "bar 844x390: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":529.75,\"r\":826,\"b\":609.9375},\"after\":{\"l\":16,\"t\":239.75,\"r\":826,\"b\":319.9375},\"how\":\"scrolled to the end\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 844x390",
+      "label": "bar 844x390: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":29,\"t\":275.9375,\"r\":813,\"b\":310.9375},\"after\":{\"l\":29,\"t\":275.9375,\"r\":813,\"b\":310.9375},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 844x390",
+      "label": "bar 844x390 keyboard (viewport 234px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":132,\"b\":170,\"H\":234},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":132,\"b\":170,\"H\":234}}"
+    },
+    {
+      "tag": "bar 844x390",
+      "label": "bar 844x390 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":304.671875,\"t\":195,\"r\":828,\"b\":234},\"after\":{\"l\":304.671875,\"t\":195,\"r\":828,\"b\":234},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "bar 844x390",
+      "label": "bar 844x390: no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 1024x768",
+      "label": "pos 1024x768: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 1024x768",
+      "label": "pos 1024x768: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":715,\"r\":356.671875,\"b\":754},\"after\":{\"l\":16,\"t\":715,\"r\":356.671875,\"b\":754},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1024x768",
+      "label": "pos 1024x768: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":364.671875,\"t\":715,\"r\":1008,\"b\":754},\"after\":{\"l\":364.671875,\"t\":715,\"r\":1008,\"b\":754},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1024x768",
+      "label": "pos 1024x768: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":489.40625,\"r\":1006,\"b\":569.59375},\"after\":{\"l\":16,\"t\":489.40625,\"r\":1006,\"b\":569.59375},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1024x768",
+      "label": "pos 1024x768: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":29,\"t\":525.59375,\"r\":993,\"b\":560.59375},\"after\":{\"l\":29,\"t\":525.59375,\"r\":993,\"b\":560.59375},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1024x768",
+      "label": "pos 1024x768 keyboard (viewport 461px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":359,\"b\":397,\"H\":461},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":359,\"b\":397,\"H\":461}}"
+    },
+    {
+      "tag": "pos 1024x768",
+      "label": "pos 1024x768 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":364.671875,\"t\":422,\"r\":1008,\"b\":461},\"after\":{\"l\":364.671875,\"t\":422,\"r\":1008,\"b\":461},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1024x768",
+      "label": "pos 1024x768: no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 768x1024",
+      "label": "pos 768x1024: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 768x1024",
+      "label": "pos 768x1024: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":971,\"r\":271.328125,\"b\":1010},\"after\":{\"l\":16,\"t\":971,\"r\":271.328125,\"b\":1010},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 768x1024",
+      "label": "pos 768x1024: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":279.328125,\"t\":971,\"r\":752,\"b\":1010},\"after\":{\"l\":279.328125,\"t\":971,\"r\":752,\"b\":1010},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 768x1024",
+      "label": "pos 768x1024: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":509.875,\"r\":750,\"b\":590.0625},\"after\":{\"l\":16,\"t\":509.875,\"r\":750,\"b\":590.0625},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 768x1024",
+      "label": "pos 768x1024: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":29,\"t\":546.0625,\"r\":737,\"b\":581.0625},\"after\":{\"l\":29,\"t\":546.0625,\"r\":737,\"b\":581.0625},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 768x1024",
+      "label": "pos 768x1024 keyboard (viewport 614px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":513,\"b\":551,\"H\":614},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":513,\"b\":551,\"H\":614}}"
+    },
+    {
+      "tag": "pos 768x1024",
+      "label": "pos 768x1024 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":279.328125,\"t\":561,\"r\":752,\"b\":600},\"after\":{\"l\":279.328125,\"t\":561,\"r\":752,\"b\":600},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 768x1024",
+      "label": "pos 768x1024: no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 1180x820",
+      "label": "pos 1180x820: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 1180x820",
+      "label": "pos 1180x820: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":767,\"r\":408.671875,\"b\":806},\"after\":{\"l\":16,\"t\":767,\"r\":408.671875,\"b\":806},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1180x820",
+      "label": "pos 1180x820: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":416.671875,\"t\":767,\"r\":1164,\"b\":806},\"after\":{\"l\":416.671875,\"t\":767,\"r\":1164,\"b\":806},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1180x820",
+      "label": "pos 1180x820: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":493.5625,\"r\":1162,\"b\":573.75},\"after\":{\"l\":16,\"t\":493.5625,\"r\":1162,\"b\":573.75},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1180x820",
+      "label": "pos 1180x820: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":29,\"t\":529.75,\"r\":1149,\"b\":564.75},\"after\":{\"l\":29,\"t\":529.75,\"r\":1149,\"b\":564.75},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1180x820",
+      "label": "pos 1180x820 keyboard (viewport 492px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":392,\"b\":430,\"H\":492},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":392,\"b\":430,\"H\":492}}"
+    },
+    {
+      "tag": "pos 1180x820",
+      "label": "pos 1180x820 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":416.671875,\"t\":439,\"r\":1164,\"b\":478},\"after\":{\"l\":416.671875,\"t\":439,\"r\":1164,\"b\":478},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1180x820",
+      "label": "pos 1180x820: no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 820x1180",
+      "label": "pos 820x1180: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 820x1180",
+      "label": "pos 820x1180: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":1127,\"r\":288.671875,\"b\":1166},\"after\":{\"l\":16,\"t\":1127,\"r\":288.671875,\"b\":1166},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 820x1180",
+      "label": "pos 820x1180: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":296.671875,\"t\":1127,\"r\":804,\"b\":1166},\"after\":{\"l\":296.671875,\"t\":1127,\"r\":804,\"b\":1166},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 820x1180",
+      "label": "pos 820x1180: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":522.359375,\"r\":802,\"b\":602.546875},\"after\":{\"l\":16,\"t\":522.359375,\"r\":802,\"b\":602.546875},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 820x1180",
+      "label": "pos 820x1180: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":29,\"t\":558.546875,\"r\":789,\"b\":593.546875},\"after\":{\"l\":29,\"t\":558.546875,\"r\":789,\"b\":593.546875},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 820x1180",
+      "label": "pos 820x1180 keyboard (viewport 708px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":521,\"b\":559,\"H\":708},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":521,\"b\":559,\"H\":708}}"
+    },
+    {
+      "tag": "pos 820x1180",
+      "label": "pos 820x1180 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":296.671875,\"t\":655,\"r\":804,\"b\":694},\"after\":{\"l\":296.671875,\"t\":655,\"r\":804,\"b\":694},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 820x1180",
+      "label": "pos 820x1180: no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 1280x800",
+      "label": "pos 1280x800: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 1280x800",
+      "label": "pos 1280x800: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":747,\"r\":442,\"b\":786},\"after\":{\"l\":16,\"t\":747,\"r\":442,\"b\":786},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1280x800",
+      "label": "pos 1280x800: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":450,\"t\":747,\"r\":1264,\"b\":786},\"after\":{\"l\":450,\"t\":747,\"r\":1264,\"b\":786},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1280x800",
+      "label": "pos 1280x800: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":491.953125,\"r\":1262,\"b\":572.140625},\"after\":{\"l\":16,\"t\":491.953125,\"r\":1262,\"b\":572.140625},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1280x800",
+      "label": "pos 1280x800: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":29,\"t\":528.140625,\"r\":1249,\"b\":563.140625},\"after\":{\"l\":29,\"t\":528.140625,\"r\":1249,\"b\":563.140625},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1280x800",
+      "label": "pos 1280x800 keyboard (viewport 480px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":380,\"b\":418,\"H\":480},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":380,\"b\":418,\"H\":480}}"
+    },
+    {
+      "tag": "pos 1280x800",
+      "label": "pos 1280x800 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":450,\"t\":427,\"r\":1264,\"b\":466},\"after\":{\"l\":450,\"t\":427,\"r\":1264,\"b\":466},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1280x800",
+      "label": "pos 1280x800: no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 800x1280",
+      "label": "pos 800x1280: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 800x1280",
+      "label": "pos 800x1280: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":1227,\"r\":282,\"b\":1266},\"after\":{\"l\":16,\"t\":1227,\"r\":282,\"b\":1266},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 800x1280",
+      "label": "pos 800x1280: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":290,\"t\":1227,\"r\":784,\"b\":1266},\"after\":{\"l\":290,\"t\":1227,\"r\":784,\"b\":1266},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 800x1280",
+      "label": "pos 800x1280: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":530.359375,\"r\":782,\"b\":610.546875},\"after\":{\"l\":16,\"t\":530.359375,\"r\":782,\"b\":610.546875},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 800x1280",
+      "label": "pos 800x1280: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":29,\"t\":566.546875,\"r\":769,\"b\":601.546875},\"after\":{\"l\":29,\"t\":566.546875,\"r\":769,\"b\":601.546875},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 800x1280",
+      "label": "pos 800x1280 keyboard (viewport 768px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":526,\"b\":564,\"H\":768},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":526,\"b\":564,\"H\":768}}"
+    },
+    {
+      "tag": "pos 800x1280",
+      "label": "pos 800x1280 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":290,\"t\":715,\"r\":784,\"b\":754},\"after\":{\"l\":290,\"t\":715,\"r\":784,\"b\":754},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 800x1280",
+      "label": "pos 800x1280: no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 1366x1024",
+      "label": "pos 1366x1024: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 1366x1024",
+      "label": "pos 1366x1024: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":971,\"r\":470.671875,\"b\":1010},\"after\":{\"l\":16,\"t\":971,\"r\":470.671875,\"b\":1010},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1366x1024",
+      "label": "pos 1366x1024: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":478.671875,\"t\":971,\"r\":1350,\"b\":1010},\"after\":{\"l\":478.671875,\"t\":971,\"r\":1350,\"b\":1010},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1366x1024",
+      "label": "pos 1366x1024: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":509.875,\"r\":1348,\"b\":590.0625},\"after\":{\"l\":16,\"t\":509.875,\"r\":1348,\"b\":590.0625},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1366x1024",
+      "label": "pos 1366x1024: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":29,\"t\":546.0625,\"r\":1335,\"b\":581.0625},\"after\":{\"l\":29,\"t\":546.0625,\"r\":1335,\"b\":581.0625},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1366x1024",
+      "label": "pos 1366x1024 keyboard (viewport 614px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":513,\"b\":551,\"H\":614},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":513,\"b\":551,\"H\":614}}"
+    },
+    {
+      "tag": "pos 1366x1024",
+      "label": "pos 1366x1024 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":478.671875,\"t\":561,\"r\":1350,\"b\":600},\"after\":{\"l\":478.671875,\"t\":561,\"r\":1350,\"b\":600},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1366x1024",
+      "label": "pos 1366x1024: no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 1024x1366",
+      "label": "pos 1024x1366: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 1024x1366",
+      "label": "pos 1024x1366: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":1313,\"r\":356.671875,\"b\":1352},\"after\":{\"l\":16,\"t\":1313,\"r\":356.671875,\"b\":1352},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1024x1366",
+      "label": "pos 1024x1366: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":364.671875,\"t\":1313,\"r\":1008,\"b\":1352},\"after\":{\"l\":364.671875,\"t\":1313,\"r\":1008,\"b\":1352},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1024x1366",
+      "label": "pos 1024x1366: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":537.234375,\"r\":1006,\"b\":617.421875},\"after\":{\"l\":16,\"t\":537.234375,\"r\":1006,\"b\":617.421875},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1024x1366",
+      "label": "pos 1024x1366: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":29,\"t\":573.421875,\"r\":993,\"b\":608.421875},\"after\":{\"l\":29,\"t\":573.421875,\"r\":993,\"b\":608.421875},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1024x1366",
+      "label": "pos 1024x1366 keyboard (viewport 820px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":530,\"b\":568,\"H\":820},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":530,\"b\":568,\"H\":820}}"
+    },
+    {
+      "tag": "pos 1024x1366",
+      "label": "pos 1024x1366 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":364.671875,\"t\":767,\"r\":1008,\"b\":806},\"after\":{\"l\":364.671875,\"t\":767,\"r\":1008,\"b\":806},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1024x1366",
+      "label": "pos 1024x1366: no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 1920x1080",
+      "label": "pos 1920x1080: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 1920x1080",
+      "label": "pos 1920x1080: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":1596,\"t\":1027,\"r\":1708.671875,\"b\":1066},\"after\":{\"l\":1596,\"t\":1027,\"r\":1708.671875,\"b\":1066},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1920x1080",
+      "label": "pos 1920x1080: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":1716.671875,\"t\":1027,\"r\":1904,\"b\":1066},\"after\":{\"l\":1716.671875,\"t\":1027,\"r\":1904,\"b\":1066},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1920x1080",
+      "label": "pos 1920x1080: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":1596,\"t\":911.625,\"r\":1902,\"b\":1011},\"after\":{\"l\":1596,\"t\":911.625,\"r\":1902,\"b\":1011},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1920x1080",
+      "label": "pos 1920x1080: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":1609,\"t\":967,\"r\":1889,\"b\":1002},\"after\":{\"l\":1609,\"t\":967,\"r\":1889,\"b\":1002},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1920x1080",
+      "label": "pos 1920x1080 keyboard (viewport 648px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":546,\"b\":584,\"H\":648},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":546,\"b\":584,\"H\":648}}"
+    },
+    {
+      "tag": "pos 1920x1080",
+      "label": "pos 1920x1080 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":1716.671875,\"t\":595,\"r\":1904,\"b\":634},\"after\":{\"l\":1716.671875,\"t\":595,\"r\":1904,\"b\":634},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1920x1080",
+      "label": "pos 1920x1080: no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 1080x1920",
+      "label": "pos 1080x1920: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 1080x1920",
+      "label": "pos 1080x1920: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":756,\"t\":1867,\"r\":868.671875,\"b\":1906},\"after\":{\"l\":756,\"t\":1867,\"r\":868.671875,\"b\":1906},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1080x1920",
+      "label": "pos 1080x1920: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":876.671875,\"t\":1867,\"r\":1064,\"b\":1906},\"after\":{\"l\":876.671875,\"t\":1867,\"r\":1064,\"b\":1906},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1080x1920",
+      "label": "pos 1080x1920: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":756,\"t\":1751.625,\"r\":1062,\"b\":1851},\"after\":{\"l\":756,\"t\":1751.625,\"r\":1062,\"b\":1851},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1080x1920",
+      "label": "pos 1080x1920: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":769,\"t\":1807,\"r\":1049,\"b\":1842},\"after\":{\"l\":769,\"t\":1807,\"r\":1049,\"b\":1842},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1080x1920",
+      "label": "pos 1080x1920 keyboard (viewport 1152px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":994,\"b\":1032,\"H\":1152},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":994,\"b\":1032,\"H\":1152}}"
+    },
+    {
+      "tag": "pos 1080x1920",
+      "label": "pos 1080x1920 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":876.671875,\"t\":1099,\"r\":1064,\"b\":1138},\"after\":{\"l\":876.671875,\"t\":1099,\"r\":1064,\"b\":1138},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 1080x1920",
+      "label": "pos 1080x1920: no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 390x844",
+      "label": "pos 390x844: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 390x844",
+      "label": "pos 390x844: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":791,\"r\":145.328125,\"b\":830},\"after\":{\"l\":16,\"t\":791,\"r\":145.328125,\"b\":830},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 390x844",
+      "label": "pos 390x844: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":153.328125,\"t\":791,\"r\":374,\"b\":830},\"after\":{\"l\":153.328125,\"t\":791,\"r\":374,\"b\":830},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 390x844",
+      "label": "pos 390x844: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":495.484375,\"r\":372,\"b\":575.671875},\"after\":{\"l\":16,\"t\":495.484375,\"r\":372,\"b\":575.671875},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 390x844",
+      "label": "pos 390x844: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":29,\"t\":531.671875,\"r\":359,\"b\":566.671875},\"after\":{\"l\":29,\"t\":531.671875,\"r\":359,\"b\":566.671875},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 390x844",
+      "label": "pos 390x844 keyboard (viewport 506px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":406,\"b\":444,\"H\":506},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":406,\"b\":444,\"H\":506}}"
+    },
+    {
+      "tag": "pos 390x844",
+      "label": "pos 390x844 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":153.328125,\"t\":453,\"r\":374,\"b\":492},\"after\":{\"l\":153.328125,\"t\":453,\"r\":374,\"b\":492},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 390x844",
+      "label": "pos 390x844: no page errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 844x390",
+      "label": "pos 844x390: the page itself does not scroll (0px)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "tag": "pos 844x390",
+      "label": "pos 844x390: “← Back” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":337.34375,\"r\":296.671875,\"b\":376.34375},\"after\":{\"l\":16,\"t\":337.34375,\"r\":296.671875,\"b\":376.34375},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 844x390",
+      "label": "pos 844x390: “✓ Confirm” on screen without scrolling, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":304.671875,\"t\":337.34375,\"r\":828,\"b\":376.34375},\"after\":{\"l\":304.671875,\"t\":337.34375,\"r\":828,\"b\":376.34375},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 844x390",
+      "label": "pos 844x390: the red warning reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":16,\"t\":445.15625,\"r\":826,\"b\":525.34375},\"after\":{\"l\":16,\"t\":240.15625,\"r\":826,\"b\":320.34375},\"how\":\"scrolled to the end\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 844x390",
+      "label": "pos 844x390: “Choose customer” reachable (panel scroll only), fully in view, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":29,\"t\":276.34375,\"r\":813,\"b\":311.34375},\"after\":{\"l\":29,\"t\":276.34375,\"r\":813,\"b\":311.34375},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 844x390",
+      "label": "pos 844x390 keyboard (viewport 234px): the customer search box is in view and not covered — together with Confirm",
+      "pass": true,
+      "detail": "{\"sIn\":{\"inView\":true,\"t\":132,\"b\":170,\"H\":234},\"sNow\":{\"inView\":true,\"onTop\":true,\"t\":132,\"b\":170,\"H\":234}}"
+    },
+    {
+      "tag": "pos 844x390",
+      "label": "pos 844x390 keyboard: “✓ Confirm” still on screen, on top",
+      "pass": true,
+      "detail": "{\"found\":true,\"before\":{\"l\":304.671875,\"t\":195,\"r\":828,\"b\":234},\"after\":{\"l\":304.671875,\"t\":195,\"r\":828,\"b\":234},\"how\":\"minimal scroll\",\"inView\":true,\"onTop\":true,\"pageScrolled\":false}"
+    },
+    {
+      "tag": "pos 844x390",
+      "label": "pos 844x390: no page errors",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

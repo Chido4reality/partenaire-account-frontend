@@ -129,6 +129,14 @@ export default function POSPage({ embed = null } = {}) {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [embed]);
+  // PAY-FIT (Peter 2026-11-19): a SHORT screen (phone in landscape, or the keyboard open) — the phone sheet's
+  // fixed header leaves the payment form no room, so there the whole sheet scrolls as one instead.
+  const [shortScreen, setShortScreen] = useState(() => window.innerHeight < 480);
+  useEffect(() => {
+    const onResize = () => setShortScreen(window.innerHeight < 480);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
   const { selectedLocation, setLocation } = useSettingsStore();
   const { user } = useAuthStore();
   const qc = useQueryClient();
@@ -2756,7 +2764,11 @@ export default function POSPage({ embed = null } = {}) {
             ))}
           </div>
 
-          <div style={{ padding: "14px 16px", borderTop: "2px solid var(--border)", background: "var(--bg-elevated)", ...(mobile && showPayment ? { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" } : {}) }}>
+          {/* PAY-FIT (Peter 2026-11-19): a landscape tablet cut the warning, "Choose customer" and Back/Confirm
+              off below the screen — on the SIDE pane (tablet/PC) this footer had no height limit. With the
+              payment panel open it may now shrink to the pane and scroll itself (normal block layout kept, so
+              nothing moves when it fits), and the Back/Confirm row is sticky at its bottom. */}
+          <div style={{ padding: "14px 16px", borderTop: "2px solid var(--border)", background: "var(--bg-elevated)", ...(mobile && showPayment && !shortScreen ? { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" } : showPayment && !mobile ? { flex: "0 1 auto", minHeight: 0, overflowY: "auto", scrollPaddingBottom: 64 } : {}) }}>
             {/* MP-DISCOUNT: sale-level discount control (only with product lines). */}
             {grossProducts > 0 && (
               saleDiscType ? (
@@ -2900,7 +2912,7 @@ export default function POSPage({ embed = null } = {}) {
               // Back/Confirm row pinned below the scroll boundary. Desktop
               // right-pane is unaffected because its parent already has
               // overflow handling.
-              <div style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: mobile ? 1 : undefined }}>
+              <div style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: mobile && !shortScreen ? 1 : undefined }}>
                 <div style={{
                   overflowY: "auto",
                   minHeight: 0,
@@ -2909,7 +2921,7 @@ export default function POSPage({ embed = null } = {}) {
                   // (Full/Partial/Credit) keeps Confirm reachable with no fixed
                   // height cap to recompute on mode change. + --kb-inset so the
                   // focused field scrolls clear of the on-screen keyboard.
-                  flex: mobile ? 1 : undefined,
+                  flex: mobile && !shortScreen ? 1 : undefined,
                   paddingRight: 2,
                   paddingBottom: "var(--kb-inset, 0px)",
                 }}>
@@ -3092,7 +3104,7 @@ export default function POSPage({ embed = null } = {}) {
                     </span>
                   </button>
                 )}
-                <div style={{ display: "flex", gap: 8, paddingTop: 8, flexShrink: 0, borderTop: mobile ? "1px solid var(--border)" : "none", background: "var(--bg-surface)" }}>
+                <div style={{ display: "flex", gap: 8, paddingTop: 8, flexShrink: 0, borderTop: mobile ? "1px solid var(--border)" : "none", background: "var(--bg-surface)", position: "sticky", bottom: 0 }}>
                   <button onClick={() => setShowPayment(false)} className="btn btn-secondary" style={{ flex: 1 }}>← {lang === "en" ? "Back" : "Retour"}</button>
                   <PayButton
                     saleMutation={saleMutation}
