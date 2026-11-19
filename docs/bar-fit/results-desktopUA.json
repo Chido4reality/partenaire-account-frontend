@@ -1,5 +1,5 @@
 {
-  "when": "2026-11-19T11:59:32.994Z",
+  "when": "2026-11-19T12:35:27.575Z",
   "lang": "en",
   "results": [
     {
@@ -90,13 +90,13 @@
       "vp": "1024x768",
       "label": "Table T1: “^(Send round|Envoyer la tournée)” visible, in the viewport and on top",
       "pass": true,
-      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[711,640,994,685]}"
+      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[711,481,994,526]}"
     },
     {
       "vp": "1024x768",
       "label": "Table T1: “^(Close tab|Fermer la note)$” visible, in the viewport and on top",
       "pass": true,
-      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[904,701,994,734]}"
+      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[904,621,994,654]}"
     },
     {
       "vp": "1024x768",
@@ -198,13 +198,13 @@
       "vp": "1180x820",
       "label": "Table T1: “^(Send round|Envoyer la tournée)” visible, in the viewport and on top",
       "pass": true,
-      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[817,687,1150,732]}"
+      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[817,605,1150,650]}"
     },
     {
       "vp": "1180x820",
       "label": "Table T1: “^(Close tab|Fermer la note)$” visible, in the viewport and on top",
       "pass": true,
-      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[1060,751,1150,784]}"
+      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[1060,710,1150,743]}"
     },
     {
       "vp": "1180x820",
@@ -306,13 +306,13 @@
       "vp": "1280x800",
       "label": "Table T1: “^(Send round|Envoyer la tournée)” visible, in the viewport and on top",
       "pass": true,
-      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[885,664,1250,709]}"
+      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[885,585,1250,630]}"
     },
     {
       "vp": "1280x800",
       "label": "Table T1: “^(Close tab|Fermer la note)$” visible, in the viewport and on top",
       "pass": true,
-      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[1160,729,1250,762]}"
+      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[1160,690,1250,723]}"
     },
     {
       "vp": "1280x800",
@@ -414,13 +414,13 @@
       "vp": "1366x1024",
       "label": "Table T1: “^(Send round|Envoyer la tournée)” visible, in the viewport and on top",
       "pass": true,
-      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[944,886,1336,931]}"
+      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[944,809,1336,854]}"
     },
     {
       "vp": "1366x1024",
       "label": "Table T1: “^(Close tab|Fermer la note)$” visible, in the viewport and on top",
       "pass": true,
-      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[1246,952,1336,985]}"
+      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[1246,914,1336,947]}"
     },
     {
       "vp": "1366x1024",
@@ -522,13 +522,13 @@
       "vp": "1920x1080",
       "label": "Table T1: “^(Send round|Envoyer la tournée)” visible, in the viewport and on top",
       "pass": true,
-      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[1486,939,1890,984]}"
+      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[1486,865,1890,910]}"
     },
     {
       "vp": "1920x1080",
       "label": "Table T1: “^(Close tab|Fermer la note)$” visible, in the viewport and on top",
       "pass": true,
-      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[1800,1007,1890,1040]}"
+      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[1800,970,1890,1003]}"
     },
     {
       "vp": "1920x1080",
@@ -648,13 +648,13 @@
       "vp": "768x1024",
       "label": "Table T1: “^(Send round|Envoyer la tournée)” visible, in the viewport and on top",
       "pass": true,
-      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[30,896,738,941]}"
+      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[30,809,738,854]}"
     },
     {
       "vp": "768x1024",
       "label": "Table T1: “^(Close tab|Fermer la note)$” visible, in the viewport and on top",
       "pass": true,
-      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[648,957,738,990]}"
+      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[648,914,738,947]}"
     },
     {
       "vp": "768x1024",
@@ -760,7 +760,7 @@
     },
     {
       "vp": "800x1280",
-      "label": "Table T1: panel fully inside the viewport (12→788 × 689→1268, 97% wide)",
+      "label": "Table T1: panel fully inside the viewport (12→788 × 622→1268, 97% wide)",
       "pass": true,
       "detail": ""
     },
@@ -774,13 +774,13 @@
       "vp": "800x1280",
       "label": "Table T1: “^(Send round|Envoyer la tournée)” visible, in the viewport and on top",
       "pass": true,
-      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[30,1152,770,1197]}"
+      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[30,1065,770,1110]}"
     },
     {
       "vp": "800x1280",
       "label": "Table T1: “^(Close tab|Fermer la note)$” visible, in the viewport and on top",
       "pass": true,
-      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[680,1213,770,1246]}"
+      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[680,1170,770,1203]}"
     },
     {
       "vp": "800x1280",
@@ -900,13 +900,13 @@
       "vp": "390x844",
       "label": "Table T1: “^(Send round|Envoyer la tournée)” visible, in the viewport and on top",
       "pass": true,
-      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[30,638,360,683]}"
+      "detail": "{\"re\":\"^(Send round|Envoyer la tournée)\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[30,550,360,595]}"
     },
     {
       "vp": "390x844",
       "label": "Table T1: “^(Close tab|Fermer la note)$” visible, in the viewport and on top",
       "pass": true,
-      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[270,699,360,732]}"
+      "detail": "{\"re\":\"^(Close tab|Fermer la note)$\",\"found\":true,\"inView\":true,\"onTop\":true,\"rect\":[270,655,360,688]}"
     },
     {
       "vp": "390x844",

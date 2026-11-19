@@ -48,6 +48,10 @@ const TABLES = Array.from({ length: 14 }, (_, i) => ({ id: `t${i + 1}`, label: `
 const TAB1 = { id: "tab1", location_id: BON, status: "open", pa_sales: { version: 3, total_amount: 4500 }, rounds: [
   { id: "r1", round_no: 1, status: "served", total: 3000, version: 2, served_by_name: "Kusi", pa_bar_round_items: [{ quantity: 2, pa_products: { name: "Castel Beer 65cl" } }, { quantity: 1, pa_products: { name: "Coca-Cola 50cl" } }] },
   { id: "r2", round_no: 2, status: "sent", total: 1500, version: 1, pa_bar_round_items: [{ quantity: 1, pa_products: { name: "Guinness Foreign Extra Stout 65cl Bottle" } }] }] };
+// step 1.0: the server's money figures on the tab (be-orange lib/barTabMoney.js) — served 3,000 + waiting 1,500,
+// nothing paid. BAR_FIT_NO_FIGURES=1 → an older backend (no figures): the screen falls back to its single Total line.
+const FIG1 = { ordered: 4500, served: 3000, waiting: 1500, paid: 0, balance_due: 4500, service_status: "waiting", payment_status: "unpaid", rounds_waiting: 1, rounds_served: 1 };
+if (!process.env.BAR_FIT_NO_FIGURES) { TAB1.figures = FIG1; TABLES[0].tab.figures = FIG1; TABLES[4].tab.figures = { ...FIG1, ordered: 7000, served: 7000, waiting: 0, balance_due: 7000, service_status: "served", rounds_waiting: 0 }; }
 const USER = { id: "u1", org_id: "o1", role: "owner", full_name: "Boss Dozie", phone: "699000101", has_seen_onboarding: true, location_id: null };
 const ORG = { id: "o1", name: "Dozie Tube & Tyre", plan: "pro_plus", subscription_status: "active", currency: "XAF", bar_mode_enabled: true, max_offline_hours: 24 };
 const LOCS = [{ id: BON, name: "Bonaberri", type: "shop", is_active: true }, { id: BEP, name: "Bepanda", type: "shop", is_active: true }];
@@ -181,7 +185,7 @@ try {
     }
     // a table: T1 (open tab, 2 rounds) + a 2-item next-round draft
     await page.locator(".bar-pill", { hasText: "T1 ·" }).first().click();
-    await page.waitForSelector(".bar-card .bar-total", { timeout: 20000 });
+    await page.waitForSelector(".bar-card .bar-total, .bar-card .bar-money", { timeout: 20000 });   // step 1.0: .bar-money when the server sends figures
     const tb = page.locator(".bar-box");
     for (const i of [3, 4]) { await tb.nth(i).click(); await page.waitForTimeout(120); }
     await page.waitForTimeout(400);

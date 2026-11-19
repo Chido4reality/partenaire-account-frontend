@@ -88,7 +88,7 @@ export const BAR_CSS = `
 .bar-card-foot{flex:none;display:grid;gap:8px;padding:10px 18px 14px;border-top:1px solid #e8dcc4}
 .bar-card-foot:empty{display:none}
 .bar-foot-row{display:flex;align-items:center;gap:10px;min-width:0}
-.bar-foot-row .bar-total{flex:1;min-width:0}
+.bar-foot-row .bar-total,.bar-foot-row .bar-money{flex:1;min-width:0}
 .bar-card button.bar-cbtn{background:transparent;color:#13203a;border:1.5px solid #c9bfa9;border-radius:10px;padding:8px 14px;font-weight:700;cursor:pointer}
 .bar-card button.bar-cmain{background:var(--bar-amber);color:var(--on-brand,#152B52);border:none;border-radius:12px;padding:11px 16px;font-weight:800;font-size:16px;cursor:pointer}
 .bar-card button:disabled{opacity:.5;cursor:not-allowed}
@@ -101,6 +101,7 @@ export const BAR_CSS = `
 .bar-shell button[aria-label="Open cart"],.bar-shell button[aria-label="Ouvrir le panier"]{bottom:0 !important}
 .bar-total{display:flex;justify-content:space-between;align-items:baseline;gap:8px;background:#F4E7CF;border-radius:14px;padding:10px 14px;font-weight:800}
 .bar-total b{font-size:clamp(18px,1.8vw,26px);white-space:nowrap}
+.bar-money{background:#F4E7CF;border-radius:14px;padding:8px 14px;color:#13203a}
 /* the POS cart, re-pointed to the cream card (logic and markup unchanged) */
 .bar-screen .bar-cart{--bg-surface:#FBF3E4;--bg-elevated:#F4E7CF;--bg-card:#fff8ec;--bg-base:#FBF3E4;--text-primary:#13203a;--text-secondary:#3b4660;
   --text-muted:#6b7280;--border:#e3d5ba;--border-hover:#cdbb98;--brand-light:#9a6b00;color:#13203a;

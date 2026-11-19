@@ -31,7 +31,7 @@ export default function TabMoney({ lang, figures, fallbackTotal }) {
   const f = figures;
   const row = (label, value, strong, color) => (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: strong ? 15 : 13, fontWeight: strong ? 800 : 600, color }}>
-      <span>{label}</span><span>{fmt(value)}</span>
+      <span style={{ minWidth: 0 }}>{label}</span><span style={{ whiteSpace: "nowrap" }}>{fmt(value)}</span>
     </div>
   );
   return (
@@ -41,7 +41,7 @@ export default function TabMoney({ lang, figures, fallbackTotal }) {
         <span style={PAY_STYLE[f.payment_status]} data-status="payment">{paymentWord(lang, f.payment_status)}</span>
       </div>
       {row(L(lang, "Ordered", "Commandé"), f.ordered)}
-      {f.waiting > 0 && row(L(lang, "· of which waiting at the bar", "· dont en attente au bar"), f.waiting, false, "#b45309")}
+      {f.waiting > 0 && row(L(lang, "· of which waiting", "· dont en attente"), f.waiting, false, "#b45309")}
       {row(L(lang, "Paid", "Payé"), f.paid)}
       {row(L(lang, "Balance due", "Reste à payer"), f.balance_due, true, f.balance_due > 0 ? "#b91c1c" : undefined)}
     </div>
