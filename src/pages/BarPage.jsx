@@ -39,6 +39,7 @@ import { useBarChrome } from "../store/barChrome";
 import { useBarDraftStore } from "../store/barDrafts";
 import { HOME, barViewReducer, currentTabId, tabBelongsToBar, draftKey } from "../utils/barLayout";
 import TabMoney, { tabMoneyLine } from "../components/bar/TabMoney";   // step 1.0: Ordered / Paid / Balance due
+import { OpenShiftModal } from "../components/common/ShiftWidgets";
 
 const L = (lang, en, fr) => (lang === "en" ? en : fr);
 const errText = (lang, e) => {
@@ -51,6 +52,16 @@ const hhmm = (iso) => { try { return new Date(iso).toLocaleTimeString([], { hour
 
 // one key per round draft: a retry of the SAME draft can never make a second round (server: one round per key per tab)
 const newKey = () => (globalThis.crypto && globalThis.crypto.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`);
+
+// the last bar branch used, per person, on this device (a convenience: storage may be blocked → null)
+const LAST_BAR_KEY = "mp-bar-last-branch";
+export function readLastBar(userId) {
+  try { const m = JSON.parse(localStorage.getItem(LAST_BAR_KEY) || "{}"); return (userId && m && m[userId]) || null; } catch { return null; }
+}
+function writeLastBar(userId, barId) {
+  if (!userId || !barId) return;
+  try { const m = JSON.parse(localStorage.getItem(LAST_BAR_KEY) || "{}") || {}; if (m[userId] !== barId) { m[userId] = barId; localStorage.setItem(LAST_BAR_KEY, JSON.stringify(m)); } } catch { /* blocked storage */ }
+}
 
 const card = { background: "rgba(15,31,63,.85)", border: "1px solid rgba(148,163,184,.28)", borderRadius: 14, padding: 14, color: "#f8fafc" };
 const btn = { padding: "8px 14px", borderRadius: 10, border: "1.5px solid rgba(148,163,184,.4)", background: "transparent", color: "inherit", cursor: "pointer", fontWeight: 700 };
@@ -73,8 +84,14 @@ export default function BarPage() {
 
   const mine = useQuery({ queryKey: ["bar-mine"], queryFn: () => api.get("/bar/mine").then((r) => r.data?.data || { bars: [] }), staleTime: 60000 });
   const bars = mine.data?.bars || [];
-  // the picked bar, else the first one — chosen on the FIRST render, so the floor never flashes empty
-  const barId = (view.barId && bars.some((b) => b.id === view.barId)) ? view.barId : (bars[0]?.id || null);
+  // BAR BRANCH (Peter 2026-11-19, tablet): the view lives in this page's state, which is lost whenever /bar is
+  // left (☰ → Cash, New Sale…) — coming back fell to bars[0], and /bar/mine has no order, so it JUMPED to
+  // Bepanda. Now: the picked bar, else the LAST bar branch used on this device (per person), else the app's
+  // location when it is a bar, else the first — chosen on the FIRST render, so the floor never flashes empty.
+  const isBar = (id) => !!id && bars.some((b) => b.id === id);
+  const last = readLastBar(userId);
+  const barId = isBar(view.barId) ? view.barId : isBar(last) ? last : isBar(selectedLocation?.id) ? selectedLocation.id : (bars[0]?.id || null);
+  useEffect(() => { if (barId) writeLastBar(userId, barId); }, [userId, barId]);
   // the reducer owns the branch: the first bar (or a bar that vanished from the list) goes through "branch" too
   useEffect(() => { if (barId && barId !== view.barId) dispatch({ type: "branch", barId }); }, [barId, view.barId]);
   const v = view.barId === barId ? view : { barId, view: HOME };
@@ -97,17 +114,34 @@ export default function BarPage() {
   useEffect(() => { if (F) dispatch({ type: "floor", barId, floor: F }); }, [F, barId]);
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["bar-floor", barId] });
+
+  // OPEN A SHIFT IN PLACE (Peter 2026-11-19): is a shift open at THIS bar? Same key + shape as the POS's
+  // useActiveShift, so the shift modal's invalidation refreshes both. No shift → beside Take payment:
+  // "Open a shift first" + an Open shift button (the POS shift modal), and payment works right after.
+  const shiftQ = useQuery({
+    queryKey: ["current-shift", barId], enabled: !!barId, refetchInterval: 30000,
+    queryFn: () => api.get(`/shifts/current?location_id=${barId}`).then((r) => r.data?.data),
+  });
+  const [refusedNoShift, setRefusedNoShift] = useState(null);   // the bar whose pay the server refused for no shift
+  const [showOpenShift, setShowOpenShift] = useState(false);
+  const shiftOpen = shiftQ.isSuccess ? !!(shiftQ.data && shiftQ.data.shift_id) : null;
+  const needShift = shiftOpen === false || refusedNoShift === barId;   // cleared when a shift is opened here or a payment goes through
+  const shift = { need: needShift, open: () => setShowOpenShift(true) };
   const act = useMutation({
     mutationFn: async ({ kind, path, body }) => {
       if (!isOnline) { const e = new Error("offline"); e.offline = true; throw e; }
       return api.post(path, body || {}).then((r) => ({ kind, data: r.data?.data }));
     },
     onSuccess: ({ kind }) => {
+      if (kind === "pay") setRefusedNoShift(null);
       setMsg({ ok: true, text: ({ open: L(lang, "Tab opened.", "Note ouverte."), close: L(lang, "Tab closed.", "Note fermée."),
         pay: L(lang, "Tab paid.", "Note encaissée."), zone: L(lang, "Zone added.", "Zone ajoutée."), table: L(lang, "Table added.", "Table ajoutée.") })[kind] || "OK" });
       refresh();
     },
     onError: (e) => {
+      if (e?.response?.data?.code === "no_open_shift") {   // shown beside Take payment, not at the top
+        setRefusedNoShift(barId); setMsg(null); qc.invalidateQueries({ queryKey: ["current-shift", barId] }); refresh(); return;
+      }
       setMsg({ ok: false, text: e.offline ? L(lang, "Tabs need a connection. Nothing was saved — try again when you are online.",
         "Les notes ont besoin d'une connexion. Rien n'a été enregistré — réessayez une fois en ligne.") : errText(lang, e) });
       refresh();
@@ -179,7 +213,7 @@ export default function BarPage() {
       {floor.isError && <div className="bar-msg" style={{ borderColor: "#ef4444", color: "#fca5a5" }}>{errText(lang, floor.error)}</div>}
       {setup && canSetup && <div className="bar-panel"><SetupPanel lang={lang} barId={barId} zones={zones} tables={tables} busy={busy} act={act} patch={patch} /></div>}
       {counterOpen && F && <div className="bar-panel">
-        <CounterTabsPanel lang={lang} barId={barId} named={named} busy={busy} act={act} tender={tender} setTender={setTender}
+        <CounterTabsPanel lang={lang} barId={barId} named={named} busy={busy} act={act} tender={tender} setTender={setTender} shift={shift}
           onRounds={(t) => { dispatch({ type: "named", tabId: t.id }); setCounterOpen(false); setShowAll(false); }} />
       </div>}
 
@@ -204,18 +238,22 @@ export default function BarPage() {
         <div className="bar-body">
           <TableSide key={`${barId}:${tabId || v.tableId || v.tabId}`} lang={lang} barId={barId} userId={userId} tabId={tabId}
             table={selTable} title={title} products={tabProducts.data || []} fmt={fmt} showAll={showAll} setShowAll={setShowAll}
-            canServe={canServe} isOnline={isOnline} busy={busy} act={act} tender={tender} setTender={setTender} onChanged={refresh}
+            canServe={canServe} isOnline={isOnline} busy={busy} act={act} tender={tender} setTender={setTender} shift={shift} onChanged={refresh}
             onWrongBranch={goHome} />
         </div>
       )}
       {role === "cashier" && v.view !== HOME && <div style={{ fontSize: 12, opacity: 0.6, padding: "0 16px 10px" }}>{L(lang, "Taking payment needs your till open at this bar.", "Encaisser demande votre caisse ouverte dans ce bar.")}</div>}
+      {/* the POS shift-bar modal, at the page root (its stacking needs to be outside the scroll panes) */}
+      <OpenShiftModal open={showOpenShift} onClose={() => setShowOpenShift(false)}
+        onOpened={() => { setShowOpenShift(false); setRefusedNoShift(null); qc.invalidateQueries({ queryKey: ["current-shift", barId] }); refresh(); }} />
     </div>
   );
 }
 
 // ── Close / take payment on one tab (unchanged actions; moved from the floor cards) ──────────
-export function TabActions({ lang, tab, busy, act, tender, setTender }) {
+export function TabActions({ lang, tab, busy, act, tender, setTender, shift }) {
   if (!tab) return null;
+  const noShift = !!(shift && shift.need);
   const ver = tab.pa_sales?.version;
   const total = Number(tab.pa_sales?.total_amount) || 0;
   const tnd = tender[tab.id] || "cash";
@@ -226,13 +264,16 @@ export function TabActions({ lang, tab, busy, act, tender, setTender }) {
           <option value="cash">{L(lang, "Cash", "Espèces")}</option>
           <option value="mobile_money">{L(lang, "Mobile money", "Mobile money")}</option>
         </select>}
-        <button className="bar-cmain" disabled={busy} onClick={() => act.mutate({ kind: "pay", path: `/bar/tabs/${tab.id}/pay`, body: { version: ver, payment_method: tnd } })}>{L(lang, "Take payment", "Encaisser")}</button>
+        {noShift && <span className="bar-noshift" role="status">{L(lang, "Open a shift first", "Ouvrez d'abord un shift")}</span>}
+        {noShift && <button type="button" className="bar-cbtn" style={btn} onClick={shift.open}>{L(lang, "Open shift", "Ouvrir un shift")}</button>}
+        <button className="bar-cmain" disabled={busy || noShift} title={noShift ? L(lang, "Open a shift first", "Ouvrez d'abord un shift") : undefined}
+          onClick={() => act.mutate({ kind: "pay", path: `/bar/tabs/${tab.id}/pay`, body: { version: ver, payment_method: tnd } })}>{L(lang, "Take payment", "Encaisser")}</button>
       </span>;
 }
 const statusWord = (lang, s) => s === "open" ? L(lang, "open", "ouverte") : L(lang, "closed — to pay", "fermée — à encaisser");
 
 // ── Counter tabs (named) — the existing list + form, behind the header's "Counter tabs" button ──
-export function CounterTabsPanel({ lang, barId, named, busy, act, tender, setTender, onRounds }) {
+export function CounterTabsPanel({ lang, barId, named, busy, act, tender, setTender, shift, onRounds }) {
   const [counterName, setCounterName] = useState("");
   const fmtMoney = useCurrency();
   // Names are free text, so two "Paul" tabs are normal: beside a repeated name we show who opened it and when.
@@ -263,7 +304,7 @@ export function CounterTabsPanel({ lang, barId, named, busy, act, tender, setTen
             <span style={{ fontSize: 12, opacity: 0.7 }}>{statusWord(lang, t.status)}{t.figures ? ` · ${tabMoneyLine(lang, t.figures, fmtMoney)}` : total > 0 ? ` · ${fmtMoney(total)}` : ""}</span>
             <span style={{ marginLeft: "auto", display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
               {t.status === "open" && <button style={btn} disabled={busy} onClick={() => onRounds(t)}>{L(lang, "Rounds", "Tournées")}</button>}
-              <TabActions lang={lang} tab={t} busy={busy} act={act} tender={tender} setTender={setTender} />
+              <TabActions lang={lang} tab={t} busy={busy} act={act} tender={tender} setTender={setTender} shift={shift} />
             </span>
           </div>
         );
@@ -277,7 +318,7 @@ export function CounterTabsPanel({ lang, barId, named, busy, act, tender, setTen
 // draft can never become a second round; any edit to the draft takes a new key). Prices are the
 // server's. Serve: the WHOLE round, only for a person the owner allowed (can_serve). Cancel: only
 // while the round is still waiting. Online only, like every tab action.
-export function TableSide({ lang, barId, userId, tabId, table, title, products, fmt, showAll, setShowAll, canServe, isOnline, busy, act, tender, setTender, onChanged, onWrongBranch }) {
+export function TableSide({ lang, barId, userId, tabId, table, title, products, fmt, showAll, setShowAll, canServe, isOnline, busy, act, tender, setTender, shift, onChanged, onWrongBranch }) {
   const qc = useQueryClient();
   const [note, setNote] = useState(null);          // { ok, text }
   const [search, setSearch] = useState("");
@@ -421,7 +462,7 @@ export function TableSide({ lang, barId, userId, tabId, table, title, products, 
           {T && !foreign && (
             <div className="bar-foot-row">
               <TabMoney lang={lang} figures={T.figures} fallbackTotal={T.pa_sales?.total_amount} />
-              <TabActions lang={lang} tab={floorTab} busy={busy} act={act} tender={tender} setTender={setTender} />
+              <TabActions lang={lang} tab={floorTab} busy={busy} act={act} tender={tender} setTender={setTender} shift={shift} />
             </div>
           )}
         </div>

@@ -10,6 +10,14 @@
 //   P5  pay at Bepanda → the POST /sales holds ONLY Bepanda's lines, location_id = Bepanda
 //       → back to Bonaberri → Bonaberri's cart intact
 //   P6  a fresh device with NO saved carts: 20 switches → both carts empty every time
+// 2026-11-19 (Peter, tablet: 5 Bepanda lines in Bonaberri's Home cart after Cash → back; the guard silent):
+//   P7  Bepanda listed first; Bonaberri cart → ☰ Cash (open a shift) → back: /bar reopens on Bonaberri, its own cart
+//   P8  → New Sale → back: same      P9  reload at Bepanda: reopens on Bepanda, each branch its own cart
+//   P10 a cart saved before the per-line branch (Bepanda lines under Bonaberri's key): not shown, never sold
+//   P10s the tablet's state — those lines already stamped "Bonaberri" + bad lines under the bar key: none shown,
+//        the old bar-written cart removed by the store migration
+//   P11 no shift: "Open a shift first" + Open shift beside Take payment → shift opened in place → pay goes through
+// Teeth 3 (fix 2 removed) → red on P7/P9/P10/P10s; teeth 4 (in-place shift removed) → red on P11.
 // Run: node scripts/bar-fit/bundle.mjs && BAR_FIT_PREBUILT=1 node scripts/bar-fit/branch-cart.mjs
 // Teeth: BAR_CART_TEETH=1|2 node scripts/bar-fit/bundle.mjs && BAR_CART_TEETH=1|2 node scripts/bar-fit/branch-cart.mjs
 //        (1 = the fix removed → must go red on the cart; 2 = also the pay guard removed → must also go red on P5)
@@ -45,11 +53,13 @@ const ORG = { id: "o1", name: "Dozie Tube & Tyre", plan: "pro_plus", subscriptio
 const LOCS = [{ id: BON, name: "Bonaberri", type: "shop", is_active: true }, { id: BEP, name: "Bepanda", type: "shop", is_active: true }];
 const TABLES = Array.from({ length: 4 }, (_, i) => ({ id: `t${i + 1}`, label: `T${i + 1}`, zone_id: "z1", tab: null }));
 
-function answer(path, q) {
+function answer(path, q, st = {}) {
   if (path === "/auth/me") return ok({ user: USER, org: ORG });
-  if (path === "/bar/mine") return ok({ bars: [{ id: BON, name: "Bonaberri" }, { id: BEP, name: "Bepanda" }], can_setup: true, can_serve: true });
+  // st.bepFirst: Bepanda listed first, as staging's /bar/mine does (no ORDER BY) — the "jumped to Bepanda" case
+  if (path === "/bar/mine") return ok({ bars: st.bepFirst ? [{ id: BEP, name: "Bepanda" }, { id: BON, name: "Bonaberri" }] : [{ id: BON, name: "Bonaberri" }, { id: BEP, name: "Bepanda" }], can_setup: true, can_serve: true });
+  if (path === "/shifts/current" && st.noShift && st.noShift.has(q.get("location_id"))) return ok(null);
   if (path === "/locations") return ok(LOCS);
-  if (/^\/bar\/[^/]+\/floor$/.test(path)) return ok({ zones: [{ id: "z1", name: "Salle" }], tables: TABLES, named_tabs: [] });
+  if (/^\/bar\/[^/]+\/floor$/.test(path)) return ok({ zones: [{ id: "z1", name: "Salle" }], tables: TABLES, named_tabs: (st.named && st.named[path.split("/")[2]]) || [] });
   const qi = path.match(/^\/bar\/([^/]+)\/quick-items$/); if (qi) return ok({ ids: (PRODUCTS[qi[1]] || []).map((p) => p.id) });
   if (path === "/products") return ok(PRODUCTS[q.get("location_id")] || []);
   if (path === "/products/multipart-availability") return ok({});
@@ -73,26 +83,37 @@ await new Promise((r) => server.listen(5198, r));
 const browser = await chromium.launch({ executablePath: existsSync(CHROME) ? CHROME : undefined,
   args: ["--disable-gpu", "--disable-extensions", "--js-flags=--max-old-space-size=384", "--renderer-process-limit=1", "--disable-dev-shm-usage"] });
 
-async function session(label) {
+// opts.bepFirst — /bar/mine lists Bepanda first (staging's order); opts.drafts — saved carts seeded into the
+// app's own draft store ({ "<loc>": [items] }), e.g. a cart saved BEFORE the per-line branch field existed;
+// opts.at — the app-wide location at start (default Bonaberri); opts.noShift — locations with no open shift.
+async function session(label, opts = {}) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1, serviceWorkers: "block" });
-  await ctx.addInitScript(({ USER, ORG, BON }) => {
+  await ctx.addInitScript(({ USER, ORG, BON, drafts, at, atName }) => {
     if (sessionStorage.getItem("__cart_init")) return; sessionStorage.setItem("__cart_init", "1");
     localStorage.clear();
     localStorage.setItem("mp-auth", JSON.stringify({ state: { user: USER, org: ORG, token: "probe-token", isAuthenticated: true, impersonating: false, impersonation: null, lastVerifiedActive: Date.now(), maxOfflineHours: 24 }, version: 0 }));
     localStorage.setItem("mp-lang", JSON.stringify({ state: { lang: "en" }, version: 0 }));
-    localStorage.setItem("mp-settings", JSON.stringify({ state: { selectedLocation: { id: BON, name: "Bonaberri", type: "shop" } }, version: 0 }));
-  }, { USER, ORG, BON });
-  const st = { delay: null, sales: [], holds: [] };
+    localStorage.setItem("mp-settings", JSON.stringify({ state: { selectedLocation: { id: at || BON, name: atName || "Bonaberri", type: "shop" } }, version: 0 }));
+    if (drafts) {   // AFTER the clear: the app's own draft store, exactly its persisted shape
+      const d = {}; for (const [loc, items] of Object.entries(drafts)) d[`${USER.id}::${loc}`] = { items, updatedAt: Date.now() };
+      localStorage.setItem("mp-pos-draft-cart", JSON.stringify({ state: { drafts: d }, version: 0 }));
+    }
+  }, { USER, ORG, BON, drafts: opts.drafts || null, at: opts.at || null, atName: opts.at ? NAME[opts.at] : null });
+  const st = { delay: null, sales: [], holds: [], bepFirst: !!opts.bepFirst, noShift: new Set(opts.noShift || []), named: opts.named || null };
   await ctx.route((u) => u.hostname !== "localhost", (route) => route.abort());
   await ctx.route((u) => u.hostname === "localhost" && u.pathname.startsWith("/api/"), async (route) => {
     const req = route.request(); const u = new URL(req.url()); const p = u.pathname.replace(/^\/api/, "");
     if (st.delay) await new Promise((r) => setTimeout(r, st.delay[0] + Math.random() * (st.delay[1] - st.delay[0])));
-    let a;
-    if (req.method() === "GET") a = answer(p, u.searchParams) ?? ok([]);
+    let a, status = 200;
+    if (req.method() === "GET") a = answer(p, u.searchParams, st) ?? ok([]);
+    else if (p === "/shifts/open") { const b = req.postDataJSON() || {}; st.noShift.delete(b.location_id); st.opened = (st.opened || 0) + 1; a = ok({ id: `s-${b.location_id}`, location_id: b.location_id, status: "open" }); }
+    else if (/^\/bar\/tabs\/[^/]+\/pay$/.test(p)) { const loc = (Object.entries(st.named || {}).find(([, ts]) => ts.some((t) => p.includes(t.id))) || [])[0];
+      if (st.noShift.has(loc)) { status = 400; a = { success: false, code: "no_open_shift", message_en: "Open your till before taking payment.", message_fr: "Ouvrez votre caisse avant d'encaisser." }; }
+      else { (st.pays = st.pays || []).push({ path: p, body: req.postDataJSON() }); a = ok({}); } }
     else if (p === "/sales" || p === "/sales/ticket") { const body = req.postDataJSON(); st.sales.push(body); a = ok({ id: `sale${st.sales.length}`, sale_number: `S-${st.sales.length}`, total_amount: 0, status: "completed" }); }
     else if (p === "/held-carts") { st.holds.push(req.postDataJSON()); a = ok({ id: "h1", hold_ref: "H-1" }); }
     else a = ok({});
-    try { await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(a) }); } catch { /* page moved on */ }
+    try { await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(a) }); } catch { /* page moved on */ }
   });
   const page = await ctx.newPage(); lastPage = page;
   const errs = []; page.on("pageerror", (e) => errs.push(e.message));
@@ -199,6 +220,115 @@ try {
     for (let i = 1; i <= 6; i++) { at = other(at); await select(page, at); await settle(page, at); const got = await cartNames(page); if (!same(got, [])) bad.push(`${NAME[at]}: ${JSON.stringify(got)}`); }
     check("P6 empty carts stay empty at both branches", !bad.length, bad.slice(0, 3).join(" | "));
     check("P6 no page errors", !errs.length, errs.slice(0, 2).join(" | "));
+    await ctx.close();
+  }
+  // ── P7–P10 (Peter 2026-11-19, tablet): Bepanda's lines in Bonaberri's Home cart after Cash → back ──
+  const go = (page, path) => page.evaluate((p) => { history.pushState({}, "", p); dispatchEvent(new PopStateEvent("popstate")); }, path);   // in-app navigation, as the ☰ menu does
+  const barValue = (page) => page.$eval(".bar-select", (s) => s.value).catch(() => null);
+  const backToBar = async (page) => { await go(page, "/bar"); await page.waitForSelector(".bar-box", { timeout: 30000 }); await page.waitForTimeout(600); };
+  const line = (p, loc) => ({ lineId: `L-${p.id}`, product_id: p.id, name: p.name, unit: "piece", quantity: 1, unit_price: p.sell_price, original_price: p.sell_price, sell_price: p.sell_price,
+    min_price: 0, cost_price: 0, stock: 40, ...(loc ? { barLoc: loc } : {}) });
+  const BEP_LINES = PRODUCTS[BEP].filter((p) => CART[BEP].includes(p.name));
+  {
+    // P7 — Peter's steps: Bepanda already holds a saved cart; /bar at Bonaberri (the app's branch, Bepanda
+    // listed FIRST like staging) → build Bonaberri's cart → ☰ Cash (no shift at Bonaberri → open one) → back
+    const { ctx, page, st, errs } = await session("P7 Bonaberri → Cash (open shift) → back to /bar", { bepFirst: true, noShift: [BON],
+      drafts: { [BEP]: BEP_LINES.map((p) => line(p, BEP)), [`${BEP}::bar`]: BEP_LINES.map((p) => line(p, BEP)) } });   // the old key AND the bar's own key
+    await page.waitForTimeout(800);
+    check("P7a /bar opens on Bonaberri (the branch the app is on), not the first bar in the list", (await barValue(page)) === BON, String(NAME[await barValue(page)]));
+    if ((await barValue(page)) !== BON) await select(page, BON);
+    await settle(page, BON);
+    check("P7b Bonaberri's Home cart starts EMPTY", same(await cartNames(page), []), JSON.stringify(await cartNames(page)));
+    await tap(page, CART[BON]); await page.waitForTimeout(400);
+    await go(page, "/shifts"); await page.waitForTimeout(1500);
+    await page.evaluate(async (loc) => { await fetch("/api/shifts/open", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ location_id: loc, opening_float: 0 }) }); }, BON);
+    await backToBar(page);
+    check("P7c back from Cash: /bar reopens on Bonaberri (the LAST bar branch used)", (await barValue(page)) === BON, String(NAME[await barValue(page)]));
+    if ((await barValue(page)) !== BON) await select(page, BON);
+    await settle(page, BON);
+    let got = await cartNames(page);
+    check("P7d Bonaberri's Home cart = its own 3 lines, not one Bepanda line", same(got, CART[BON]), JSON.stringify(got));
+    await select(page, BEP); await settle(page, BEP); got = await cartNames(page);
+    check("P7e Bepanda = its own saved lines", same(got, CART[BEP]), JSON.stringify(got));
+    await select(page, BON); await settle(page, BON); got = await cartNames(page);
+    check("P7f back at Bonaberri = its 3 lines", same(got, CART[BON]), JSON.stringify(got));
+    // P8 — to New Sale and back
+    await go(page, "/pos"); await page.waitForTimeout(1800);
+    await backToBar(page); await settle(page, BON); got = await cartNames(page);
+    check("P8 to New Sale and back: /bar on Bonaberri with exactly its 3 lines", (await barValue(page)) === BON && same(got, CART[BON]), `${NAME[await barValue(page)]} ${JSON.stringify(got)}`);
+    // P9 — reload while at Bepanda: the last branch used is Bepanda
+    await select(page, BEP); await settle(page, BEP);
+    await page.reload({ waitUntil: "domcontentloaded" }); await page.waitForSelector(".bar-box", { timeout: 60000 }); await page.waitForTimeout(800);
+    check("P9a reload: /bar reopens on Bepanda (the last branch used)", (await barValue(page)) === BEP, String(NAME[await barValue(page)]));
+    if ((await barValue(page)) !== BEP) await select(page, BEP);
+    await settle(page, BEP); got = await cartNames(page);
+    check("P9b reload: Bepanda's lines only", same(got, CART[BEP]), JSON.stringify(got));
+    await select(page, BON); await settle(page, BON); got = await cartNames(page);
+    check("P9c reload: Bonaberri's 3 lines only", same(got, CART[BON]), JSON.stringify(got));
+    check("P7–P9 no page errors", !errs.length, errs.slice(0, 2).join(" | "));
+    await ctx.close();
+  }
+  {
+    // P10 — a cart saved BEFORE the per-line branch field (or by New Sale, which never sets it) under
+    // Bonaberri's key, holding Bepanda's lines: they must NOT show at Bonaberri, and nothing of them may be sold
+    const OLD = [...BEP_LINES.map((p) => line(p, null)), line(PRODUCTS[BON][0], null)];
+    const { ctx, page, st, errs } = await session("P10 pre-fix saved cart with Bepanda lines under Bonaberri", { drafts: { [BON]: OLD } });
+    await settle(page, BON);
+    let got = await cartNames(page);
+    check("P10a Bonaberri's Home cart shows NO Bepanda line from the old saved cart", !got.some((n) => n.startsWith("Bep ")), JSON.stringify(got));
+    await tap(page, [CART[BON][1]]); await page.waitForTimeout(400);
+    const before = st.sales.length;
+    await page.getByRole("button", { name: /^Take payment$/ }).click();
+    await page.getByRole("button", { name: /✓ Confirm/ }).first().click({ timeout: 15000 }).catch(() => {});
+    for (let i = 0; i < 30 && st.sales.length === before; i++) await page.waitForTimeout(150);
+    const sale = st.sales[before];
+    const bepIds = PRODUCTS[BEP].map((p) => p.id);
+    check("P10b paying at Bonaberri sends NO Bepanda product", !sale || !(sale.items || []).some((i) => bepIds.includes(i.product_id)), JSON.stringify((sale?.items || []).map((i) => i.product_id)));
+    check("P10c …and the sale is for Bonaberri", !sale || sale.location_id === BON, String(sale?.location_id));
+    check("P10 no page errors", !errs.length, errs.slice(0, 2).join(" | "));
+    await ctx.close();
+  }
+  {
+    // P10s — the state found on the tablet: Bepanda's lines under Bonaberri's key, ALREADY STAMPED as Bonaberri
+    // (the old stamping effect did that on restore), plus the bar's own key holding lines with no / another branch
+    const STAMPED = BEP_LINES.map((p) => line(p, BON));
+    const BAD = [...BEP_LINES.map((p) => line(p, null)), ...BEP_LINES.map((p) => line(p, BEP))];
+    const { ctx, page, errs } = await session("P10s stamped-as-Bonaberri Bepanda lines + bad lines under the bar key",
+      { drafts: { [BON]: STAMPED, [`${BON}::bar`]: BAD } });
+    await settle(page, BON);
+    const got = await cartNames(page);
+    check("P10s-a Bonaberri's Home cart shows NONE of them", same(got, []), JSON.stringify(got));
+    const left = await page.evaluate((k) => { try { return JSON.parse(localStorage.getItem("mp-pos-draft-cart") || "{}").state?.drafts?.[k] || null; } catch { return "unreadable"; } }, `u1::${BON}`);
+    check("P10s-b the old bar-written cart under the New Sale key is gone (store migration)", left === null, JSON.stringify(left).slice(0, 120));
+    check("P10s no page errors", !errs.length, errs.slice(0, 2).join(" | "));
+    await ctx.close();
+  }
+  {
+    // P11 — no shift at Bonaberri, a counter tab to pay: "Open a shift first" + Open shift BESIDE Take payment,
+    // the shift opened in place (the POS shift modal), then Take payment goes through without leaving the tab
+    const TAB = { id: "nt1", name: "Jo", status: "closed", location_id: BON, opened_at: new Date().toISOString(), pa_sales: { version: 3, total_amount: 1500 },
+      figures: { ordered: 1500, served: 1500, waiting: 0, paid: 0, balance_due: 1500, service_status: "served", payment_status: "unpaid", rounds_waiting: 0, rounds_served: 1 } };
+    const { ctx, page, st, errs } = await session("P11 pay a tab with no shift open → Open shift in place → pay", { noShift: [BON], named: { [BON]: [TAB] } });
+    await settle(page, BON);
+    await page.getByRole("button", { name: /Counter tabs|Tabs/ }).first().click();
+    const row = page.locator("div", { has: page.getByText("Jo", { exact: true }) }).filter({ has: page.getByRole("button", { name: "Take payment" }) }).last();
+    await row.getByRole("button", { name: "Take payment" }).waitFor({ timeout: 15000 });
+    const hint = row.locator(".bar-noshift");
+    check("P11a beside Take payment: \"Open a shift first\"", (await hint.count()) === 1 && (await hint.innerText()).trim() === "Open a shift first", String(await hint.count()));
+    check("P11b the old wording is gone from the screen", !(await page.evaluate(() => document.body.innerText.includes("Open your till"))));
+    check("P11c Take payment is disabled until a shift is open", await row.getByRole("button", { name: "Take payment" }).isDisabled());
+    await row.getByRole("button", { name: "Open shift", exact: true }).click();
+    await page.locator("input[type=number]").last().fill("0");
+    await page.getByRole("button", { name: "✓ Open shift" }).click();
+    for (let i = 0; i < 40 && !st.opened; i++) await page.waitForTimeout(150);
+    check("P11d the shift was opened in place, at Bonaberri", st.opened === 1 && !st.noShift.has(BON), `opened ${st.opened}`);
+    await page.waitForFunction(() => !document.querySelector(".bar-noshift"), null, { timeout: 15000 }).catch(() => {});
+    check("P11e the hint is gone and Take payment is enabled", (await page.locator(".bar-noshift").count()) === 0 && !(await row.getByRole("button", { name: "Take payment" }).isDisabled()));
+    check("P11f still on /bar, the same tab", new URL(page.url()).pathname === "/bar" && (await row.count()) > 0);
+    await row.getByRole("button", { name: "Take payment" }).click();
+    for (let i = 0; i < 40 && !(st.pays || []).length; i++) await page.waitForTimeout(150);
+    check("P11g Take payment went through (POST /bar/tabs/nt1/pay)", (st.pays || []).length === 1 && st.pays[0].path === "/bar/tabs/nt1/pay", JSON.stringify(st.pays));
+    check("P11 no page errors", !errs.length, errs.slice(0, 2).join(" | "));
     await ctx.close();
   }
 } catch (e) {

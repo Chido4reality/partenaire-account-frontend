@@ -487,6 +487,10 @@ export default function POSPage({ embed = null } = {}) {
   // other branch's saved cart is restored here. New Sale (no embed): exactly selectedLocation?.id.
   const embedLocWrong = !!(embed && embed.locationId && selectedLocation?.id !== embed.locationId);
   const locId  = embedLocWrong ? undefined : selectedLocation?.id;
+  // BAR CART FIX 2 (Peter 2026-11-19, tablet: 5 Bepanda lines in Bonaberri's Home cart, the guard silent):
+  // the bar's Home carts are saved apart from New Sale's — `<loc>::bar` — so a New Sale cart, or a bar cart
+  // saved before every line carried its branch, is never restored into a bar branch. New Sale: unchanged key.
+  const draftLoc = (l) => (embed && l ? `${l}::bar` : l);
   // EXPIRY-TRACKING (Peter, rule 2): WARN when a tracked product has estimated
   // expired stock at this location — never block. Cached for offline like the catalogue.
   const { canExpiry } = useExpiryFeature();
@@ -506,7 +510,7 @@ export default function POSPage({ embed = null } = {}) {
     // every line carries the branch it was added at (barLoc, stamped below) — a pin alone is not enough:
     // a mixed cart saved under the right branch's key looks "pinned here" while holding the other's lines
     const wrong = selectedLocation?.id !== embed.locationId || (!!pin && pin.locId !== embed.locationId)
-      || cart.some((l) => l && l.barLoc && l.barLoc !== embed.locationId);
+      || cart.some((l) => !l || l.barLoc !== embed.locationId);   // a line with NO branch is refused too
     if (wrong) toast.error(lang === "en" ? "This cart belongs to another branch — nothing was sent." : "Ce panier appartient à une autre succursale — rien n'a été envoyé.", { duration: 5000 });
     return wrong;
   };
@@ -516,14 +520,19 @@ export default function POSPage({ embed = null } = {}) {
   useEffect(() => {
     if (draftRestoredRef.current) return;
     if (!userId || !locId) return;
-    const draft = getDraft({ userId, locationId: locId });
-    if (!draft) { draftRestoredRef.current = true; return; }
+    const draft0 = getDraft({ userId, locationId: draftLoc(locId) });
+    if (!draft0) { draftRestoredRef.current = true; return; }
     const TTL_MS = 24 * 60 * 60 * 1000;
-    if (Date.now() - (draft.updatedAt || 0) > TTL_MS) {
-      clearDraft({ userId, locationId: locId });
+    if (Date.now() - (draft0.updatedAt || 0) > TTL_MS) {
+      clearDraft({ userId, locationId: draftLoc(locId) });
       draftRestoredRef.current = true;
       return;
     }
+    // BAR CART FIX 2: in the bar, ONLY lines stamped with this branch come back. A line with no branch or
+    // another branch is dropped — the old stamping effect below used to stamp it with THIS branch, which
+    // made the other branch's lines look local and silenced the pay guard. New Sale: every line, as before.
+    const draft = embed ? { ...draft0, items: (draft0.items || []).filter((it) => it && it.barLoc === embed.locationId) } : draft0;
+    if (embed && !draft.items.length) { clearDraft({ userId, locationId: draftLoc(locId) }); draftRestoredRef.current = true; return; }
     if (Array.isArray(draft.items) && draft.items.length > 0) {
       // Backfill a stable lineId on drafts saved before lineIds existed.
       // MP-DAMAGED-GOODS: PREPEND the restored items (functional updater) so a
@@ -561,7 +570,7 @@ export default function POSPage({ embed = null } = {}) {
       // Cart emptied (sale finalized / held / cleared). Drop pin so the
       // next non-empty cart claims the current scope as its own.
       if (cartScopeRef.current) {
-        clearDraft({ userId: cartScopeRef.current.userId, locationId: cartScopeRef.current.locId });
+        clearDraft({ userId: cartScopeRef.current.userId, locationId: draftLoc(cartScopeRef.current.locId) });
         cartScopeRef.current = null;
       }
       return;
@@ -576,7 +585,7 @@ export default function POSPage({ embed = null } = {}) {
     if (cartScopeRef.current.userId !== userId || cartScopeRef.current.locId !== locId) {
       return;
     }
-    saveDraft({ userId, locationId: locId,
+    saveDraft({ userId, locationId: draftLoc(locId),
       items: cart, customer, payMode, paidAmt, dueDate, notes,
       // MP-BELOW-COST-PERSIST / MP-APPROVAL-BUNDLE: keep the boss-approval link
       // with the draft so a remount still sends it at checkout (refs are wiped

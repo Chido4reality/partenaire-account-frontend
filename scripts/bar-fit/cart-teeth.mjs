@@ -14,3 +14,20 @@ const GUARD = [
   { file: POS, from: `    return wrong;\n  };`, to: `    return false;\n  };` },
 ];
 export const CART_TEETH = { 1: FIX, 2: [...FIX, ...GUARD] };
+// 3 = BAR CART FIX 2 removed (2026-11-19): the bar reads/writes New Sale's draft key, restored lines with no or
+//     another branch come back (and get stamped local), the guard lets a line with no branch through, the store
+//     keeps old bar-written carts, /bar reopens on bars[0] — P7/P9/P10/P10s must go red.
+const FIX2 = [
+  { file: POS, from: "const draftLoc = (l) => (embed && l ? `${l}::bar` : l);", to: "const draftLoc = (l) => l;" },
+  { file: POS, from: "const draft = embed ? { ...draft0, items: (draft0.items || []).filter((it) => it && it.barLoc === embed.locationId) } : draft0;", to: "const draft = draft0;" },
+  { file: POS, from: "if (embed && !draft.items.length) {", to: "if (false) {" },
+  { file: POS, from: "|| cart.some((l) => !l || l.barLoc !== embed.locationId);", to: "|| cart.some((l) => l && l.barLoc && l.barLoc !== embed.locationId);" },
+  { file: /src\/store\/index\.js$/, from: "if (!barWritten) kept[k] = d;", to: "kept[k] = d;" },
+  { file: BAR, from: "isBar(last) ? last : isBar(selectedLocation?.id) ? selectedLocation.id : (bars[0]?.id || null);", to: "(bars[0]?.id || null);" },
+];
+// 4 = the in-place shift removed: no hint, no Open shift button, Take payment never disabled — P11 must go red
+const SHIFT = [
+  { file: BAR, from: "const noShift = !!(shift && shift.need);", to: "const noShift = false;" },
+];
+CART_TEETH[3] = FIX2;
+CART_TEETH[4] = SHIFT;

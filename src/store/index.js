@@ -211,5 +211,18 @@ export const useDraftCartStore = create(persist(
       });
     },
   }),
-  { name: "mp-pos-draft-cart", storage: safeJSONStorage }
+  // BAR CART FIX 2 (2026-11-19): v1 drops every saved cart under a PLAIN key (`user::loc`, New Sale's) that
+  // holds a line stamped by the bar (barLoc — New Sale never sets it): those are bar carts saved before the
+  // bar got its own `user::loc::bar` key, and one held the other branch's lines stamped as local. New Sale's
+  // own carts (no barLoc on any line) are kept exactly.
+  { name: "mp-pos-draft-cart", storage: safeJSONStorage, version: 1,
+    migrate: (state) => {
+      const drafts = (state && state.drafts) || {};
+      const kept = {};
+      for (const [k, d] of Object.entries(drafts)) {
+        const barWritten = k.split("::").length === 2 && Array.isArray(d && d.items) && d.items.some((it) => it && it.barLoc);
+        if (!barWritten) kept[k] = d;
+      }
+      return { ...(state || {}), drafts: kept };
+    } }
 ));
