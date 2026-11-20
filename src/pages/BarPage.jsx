@@ -130,7 +130,23 @@ export default function BarPage() {
   const act = useMutation({
     mutationFn: async ({ kind, path, body }) => {
       if (!isOnline) { const e = new Error("offline"); e.offline = true; throw e; }
-      return api.post(path, body || {}).then((r) => ({ kind, data: r.data?.data }));
+      try {
+        return await api.post(path, body || {}).then((r) => ({ kind, data: r.data?.data }));
+      } catch (e) {
+        // LOST RESPONSE (Peter's tablet 2026-11-19: "No connection" while the server had PAID the tab).
+        // A pay with no answer, or refused as "already paid", is checked against the server before
+        // anything is said: the tab's TRUE state decides. Never re-sent — the server's tab status and
+        // version already refuse a second payment, and this only reads.
+        const m = kind === "pay" && /^\/bar\/tabs\/([^/]+)\/pay$/.exec(path);
+        // "already paid" comes in two shapes (BE probe 2026-11-20): the tab's (tab_status) or the ticket's (current_status)
+        const d409 = e.response && e.response.status === 409 && e.response.data;
+        const lost = !e.response || (d409 && (d409.tab_status === "paid" || d409.current_status === "paid"));
+        if (m && lost) {
+          const t = await api.get(`/bar/tabs/${m[1]}`).then((r) => r.data?.data).catch(() => null);
+          if (t && t.status === "paid") return { kind, data: t, recovered: true };
+        }
+        throw e;
+      }
     },
     onSuccess: ({ kind }) => {
       if (kind === "pay") setRefusedNoShift(null);

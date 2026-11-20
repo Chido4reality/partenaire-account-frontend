@@ -17,7 +17,11 @@
 //   P10s the tablet's state — those lines already stamped "Bonaberri" + bad lines under the bar key: none shown,
 //        the old bar-written cart removed by the store migration
 //   P11 no shift: "Open a shift first" + Open shift beside Take payment → shift opened in place → pay goes through
-// Teeth 3 (fix 2 removed) → red on P7/P9/P10/P10s; teeth 4 (in-place shift removed) → red on P11.
+// 2026-11-20 (Peter's tablet: "No connection" while the server had paid T1):
+//   P12 Take payment whose answer is LOST (paid / not paid) or refused 409 "already paid" (tab or ticket shape):
+//       the page reads the tab back and says what the server did; the pay is never re-sent.
+// Teeth 3 (fix 2 removed) → red on P7/P9/P10/P10s; teeth 4 (in-place shift removed) → red on P11;
+// teeth 5 (lost-pay read-back removed) → red on P12a/b/c.
 // Run: node scripts/bar-fit/bundle.mjs && BAR_FIT_PREBUILT=1 node scripts/bar-fit/branch-cart.mjs
 // Teeth: BAR_CART_TEETH=1|2 node scripts/bar-fit/bundle.mjs && BAR_CART_TEETH=1|2 node scripts/bar-fit/branch-cart.mjs
 //        (1 = the fix removed → must go red on the cart; 2 = also the pay guard removed → must also go red on P5)
@@ -58,6 +62,7 @@ function answer(path, q, st = {}) {
   // st.bepFirst: Bepanda listed first, as staging's /bar/mine does (no ORDER BY) — the "jumped to Bepanda" case
   if (path === "/bar/mine") return ok({ bars: st.bepFirst ? [{ id: BEP, name: "Bepanda" }, { id: BON, name: "Bonaberri" }] : [{ id: BON, name: "Bonaberri" }, { id: BEP, name: "Bepanda" }], can_setup: true, can_serve: true });
   if (path === "/shifts/current" && st.noShift && st.noShift.has(q.get("location_id"))) return ok(null);
+  const tb = path.match(/^\/bar\/tabs\/([^/]+)$/); if (tb) { (st.tabReads = st.tabReads || []).push(tb[1]); return ok({ id: tb[1], status: (st.tabTrue || {})[tb[1]] || "closed" }); }
   if (path === "/locations") return ok(LOCS);
   if (/^\/bar\/[^/]+\/floor$/.test(path)) return ok({ zones: [{ id: "z1", name: "Salle" }], tables: TABLES, named_tabs: (st.named && st.named[path.split("/")[2]]) || [] });
   const qi = path.match(/^\/bar\/([^/]+)\/quick-items$/); if (qi) return ok({ ids: (PRODUCTS[qi[1]] || []).map((p) => p.id) });
@@ -99,7 +104,7 @@ async function session(label, opts = {}) {
       localStorage.setItem("mp-pos-draft-cart", JSON.stringify({ state: { drafts: d }, version: 0 }));
     }
   }, { USER, ORG, BON, drafts: opts.drafts || null, at: opts.at || null, atName: opts.at ? NAME[opts.at] : null });
-  const st = { delay: null, sales: [], holds: [], bepFirst: !!opts.bepFirst, noShift: new Set(opts.noShift || []), named: opts.named || null };
+  const st = { delay: null, sales: [], holds: [], bepFirst: !!opts.bepFirst, noShift: new Set(opts.noShift || []), named: opts.named || null, payMode: opts.payMode || null };
   await ctx.route((u) => u.hostname !== "localhost", (route) => route.abort());
   await ctx.route((u) => u.hostname === "localhost" && u.pathname.startsWith("/api/"), async (route) => {
     const req = route.request(); const u = new URL(req.url()); const p = u.pathname.replace(/^\/api/, "");
@@ -108,7 +113,15 @@ async function session(label, opts = {}) {
     if (req.method() === "GET") a = answer(p, u.searchParams, st) ?? ok([]);
     else if (p === "/shifts/open") { const b = req.postDataJSON() || {}; st.noShift.delete(b.location_id); st.opened = (st.opened || 0) + 1; a = ok({ id: `s-${b.location_id}`, location_id: b.location_id, status: "open" }); }
     else if (/^\/bar\/tabs\/[^/]+\/pay$/.test(p)) { const loc = (Object.entries(st.named || {}).find(([, ts]) => ts.some((t) => p.includes(t.id))) || [])[0];
-      if (st.noShift.has(loc)) { status = 400; a = { success: false, code: "no_open_shift", message_en: "Open your till before taking payment.", message_fr: "Ouvrez votre caisse avant d'encaisser." }; }
+      const tid = p.split("/")[3], mode = (st.payMode || {})[tid];
+      if (mode) {   // P12: the server's side is decided here; the page must find out by reading the tab
+        (st.pays = st.pays || []).push({ path: p, body: req.postDataJSON() });
+        if (mode === "lost-paid") { (st.tabTrue = st.tabTrue || {})[tid] = "paid"; return route.abort("connectionreset"); }   // paid, answer lost
+        if (mode === "lost-unpaid") return route.abort("connectionreset");                                                // nothing done, answer lost
+        if (mode === "409-tab") { status = 409; (st.tabTrue = st.tabTrue || {})[tid] = "paid"; a = { success: false, code: "tab_not_payable", tab_status: "paid", message_en: "This tab is already paid.", message_fr: "Cette note est déjà payée." }; }
+        if (mode === "409-ticket") { status = 409; (st.tabTrue = st.tabTrue || {})[tid] = "paid"; a = { success: false, code: "wrong_status", current_status: "paid", expected_status: "pending_payment", message_en: "This ticket is paid — it cannot be paid now.", message_fr: "Ce ticket est payé." }; }
+      }
+      else if (st.noShift.has(loc)) { status = 400; a = { success: false, code: "no_open_shift", message_en: "Open your till before taking payment.", message_fr: "Ouvrez votre caisse avant d'encaisser." }; }
       else { (st.pays = st.pays || []).push({ path: p, body: req.postDataJSON() }); a = ok({}); } }
     else if (p === "/sales" || p === "/sales/ticket") { const body = req.postDataJSON(); st.sales.push(body); a = ok({ id: `sale${st.sales.length}`, sale_number: `S-${st.sales.length}`, total_amount: 0, status: "completed" }); }
     else if (p === "/held-carts") { st.holds.push(req.postDataJSON()); a = ok({ id: "h1", hold_ref: "H-1" }); }
@@ -331,6 +344,43 @@ try {
     for (let i = 0; i < 40 && !(st.pays || []).length; i++) await page.waitForTimeout(150);
     check("P11g Take payment went through (POST /bar/tabs/nt1/pay)", (st.pays || []).length === 1 && st.pays[0].path === "/bar/tabs/nt1/pay", JSON.stringify(st.pays));
     check("P11 no page errors", !errs.length, errs.slice(0, 2).join(" | "));
+    await ctx.close();
+  }
+  {
+    // P12 — LOST RESPONSE on Take payment (Peter's tablet 2026-11-19: "No connection" while the server had paid).
+    // Four counter tabs, each a different server outcome; the page must say what the SERVER did, and never re-send.
+    const fig = { ordered: 1500, served: 1500, waiting: 0, paid: 0, balance_due: 1500, service_status: "served", payment_status: "unpaid", rounds_waiting: 0, rounds_served: 1 };
+    const T = (id, name) => ({ id, name, status: "closed", location_id: BON, opened_at: new Date().toISOString(), pa_sales: { version: 3, total_amount: 1500 }, figures: fig });
+    const TABS = [T("nt2", "Ann"), T("nt3", "Ben"), T("nt4", "Cyd"), T("nt5", "Dee")];
+    const { ctx, page, st, errs } = await session("P12 Take payment: the answer is lost / refused as already paid → the tab's true state decides",
+      { named: { [BON]: TABS }, payMode: { nt2: "lost-paid", nt3: "409-tab", nt4: "409-ticket", nt5: "lost-unpaid" } });
+    await settle(page, BON);
+    await page.getByRole("button", { name: /Counter tabs|Tabs/ }).first().click();
+    const payOne = async (id, name) => {
+      const row = page.locator("div", { has: page.getByText(name, { exact: true }) }).filter({ has: page.getByRole("button", { name: "Take payment" }) }).last();
+      await row.getByRole("button", { name: "Take payment" }).waitFor({ timeout: 15000 });
+      const before = (st.pays || []).filter((x) => x.path.includes(`/${id}/`)).length;
+      await row.getByRole("button", { name: "Take payment" }).click();
+      // done = the pay was sent AND the tab read back (or 9 s); then the message settles (onSuccess/onError)
+      for (let i = 0; i < 60 && !((st.tabReads || []).includes(id)); i++) await page.waitForTimeout(150);
+      await page.waitForTimeout(700);
+      const sent = (st.pays || []).filter((x) => x.path.includes(`/${id}/`)).length - before;
+      const text = (await page.locator(".bar-msg[role=status]").allInnerTexts().catch(() => [])).join(" | ");
+      return { sent, text, read: (st.tabReads || []).includes(id) };
+    };
+    let r = await payOne("nt2", "Ann");
+    check("P12a paid but the answer LOST → \"Tab paid.\", never \"No connection\"", /Tab paid\./.test(r.text) && !/No connection/.test(r.text), r.text);
+    check("P12a the pay was sent ONCE (no re-send) and the tab was READ back", r.sent === 1 && r.read, `sent ${r.sent} read ${r.read}`);
+    r = await payOne("nt3", "Ben");
+    check("P12b refused 409 tab_status=paid → \"Tab paid.\"", /Tab paid\./.test(r.text) && !/already paid/.test(r.text), r.text);
+    check("P12b sent once, read back", r.sent === 1 && r.read, `sent ${r.sent} read ${r.read}`);
+    r = await payOne("nt4", "Cyd");
+    check("P12c refused 409 current_status=paid (the ticket) → \"Tab paid.\"", /Tab paid\./.test(r.text), r.text);
+    check("P12c sent once, read back", r.sent === 1 && r.read, `sent ${r.sent} read ${r.read}`);
+    r = await payOne("nt5", "Dee");
+    check("P12d answer lost and the tab is NOT paid → \"No connection — try again.\", never \"Tab paid.\"", /No connection/.test(r.text) && !/Tab paid/.test(r.text), r.text);
+    check("P12d sent once (the page never re-sends by itself)", r.sent === 1, `sent ${r.sent}`);
+    check("P12 no page errors", !errs.length, errs.slice(0, 2).join(" | "));
     await ctx.close();
   }
 } catch (e) {

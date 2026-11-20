@@ -297,6 +297,11 @@ api.interceptors.request.use(config => {
     // virtual store: ~5 s on staging). At 6 s the app gave up while the server finished, so the
     // dialog stayed open and the next tap read "no longer pending" (Peter's hand test 2026-10-29).
     else if (/^\/staff\/approvals\/[^/]+\/(approve|reject|finalize)\/?$/.test(_p)) config.timeout = 30000;
+    // BAR (Peter's tablet 2026-11-19): paying a tab claims, writes the lines (stock), the payment and
+    // the release — ~3 s on staging after the claim alone. At 6 s the app said "No connection" while the
+    // server finished. Every bar write is online-only and server-guarded (version + tab status), so a
+    // longer wait can never double anything.
+    else if (/^\/bar\//.test(_p)) config.timeout = 30000;
   }
   return config;
 });

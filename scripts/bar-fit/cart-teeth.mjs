@@ -31,3 +31,5 @@ const SHIFT = [
 ];
 CART_TEETH[3] = FIX2;
 CART_TEETH[4] = SHIFT;
+// 5 = the lost-pay read-back removed (2026-11-20): every lost/409 answer goes straight to the error — P12a/b/c must go red
+CART_TEETH[5] = [{ file: BAR, from: "if (m && lost) {", to: "if (false) {" }];
