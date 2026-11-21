@@ -215,7 +215,7 @@ export default function BarPage() {
             </select>
           : <span className="bar-select" style={{ cursor: "default" }}>{bars[0].name}</span>}
         <div className="bar-top-right">
-          <button type="button" className="bar-outline-btn is-accent" aria-pressed={counterOpen} onClick={() => { setCounterOpen((x) => !x); setSetup(false); }}>
+          <button type="button" className="bar-outline-btn is-accent" aria-pressed={counterOpen} aria-label={L(lang, "Counter tabs", "Notes au comptoir")} onClick={() => { setCounterOpen((x) => !x); setSetup(false); }}>
             <span className="bar-lbl-long">{L(lang, "Counter tabs", "Notes au comptoir")}</span>
             <span className="bar-lbl-short" aria-hidden="true">{L(lang, "Tabs", "Notes")}</span>{/* BAR FIT: phone = short labels, one header line */}
           </button>

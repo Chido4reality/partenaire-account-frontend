@@ -154,8 +154,8 @@ try {
     try {
       if (app === "bill") {   // the floor → Counter tabs → Take payment: the bill opens ON the payment panel
         await page.goto("http://localhost:5195/bar", { waitUntil: "domcontentloaded" });
-        // the header's Counter tabs button (on a phone its visible "Tabs" is aria-hidden → no accessible name: by class)
-        const tabsBtn = page.locator(".bar-top-right .bar-outline-btn.is-accent").first();
+        // the header's Counter tabs button — found by ROLE + NAME, so a phone with no accessible name fails here
+        const tabsBtn = page.getByRole("button", { name: /^(Counter tabs|Notes au comptoir)$/ });   // by its screen-reader name (2026-11-21: aria-label, phone included)
         await tabsBtn.waitFor({ timeout: 60000 });
         if (process.env.BAR_PAY_DEBUG) console.log("tabs button:", await tabsBtn.evaluate((b) => b.outerHTML.slice(0, 200)), await page.getByRole("button", { name: /Counter tabs|Tabs/ }).count());
         await tabsBtn.click({ timeout: 15000 });
