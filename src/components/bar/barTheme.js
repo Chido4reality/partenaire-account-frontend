@@ -103,6 +103,8 @@ export const BAR_CSS = `
 .bar-total b{font-size:clamp(18px,1.8vw,26px);white-space:nowrap}
 .bar-money{background:#F4E7CF;border-radius:14px;padding:8px 14px;color:#13203a}
 .bar-noshift{display:inline-block;padding:6px 10px;border-radius:10px;background:#fef3c7;border:1px solid #f59e0b;color:#92400e;font-size:12.5px;font-weight:700;white-space:nowrap}
+.bar-approved{display:inline-block;padding:6px 10px;border-radius:10px;background:#dcfce7;border:1px solid #22c55e;color:#14532d;font-size:12.5px;font-weight:700}
+.bar-bill-box{margin:12px 16px;max-width:560px}
 /* the POS cart, re-pointed to the cream card (logic and markup unchanged) */
 .bar-screen .bar-cart{--bg-surface:#FBF3E4;--bg-elevated:#F4E7CF;--bg-card:#fff8ec;--bg-base:#FBF3E4;--text-primary:#13203a;--text-secondary:#3b4660;
   --text-muted:#6b7280;--border:#e3d5ba;--border-hover:#cdbb98;--brand-light:#9a6b00;color:#13203a;

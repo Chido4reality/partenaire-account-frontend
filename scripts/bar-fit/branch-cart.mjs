@@ -21,7 +21,8 @@
 //   P12 Take payment whose answer is LOST (paid / not paid) or refused 409 "already paid" (tab or ticket shape):
 //       the page reads the tab back and says what the server did; the pay is never re-sent.
 // Teeth 3 (fix 2 removed) → red on P7/P9/P10/P10s; teeth 4 (in-place shift removed) → red on P11;
-// teeth 5 (lost-pay read-back removed) → red on P12a/b/c.
+// teeth 5 (the bill's lost-pay read-back removed, POSPage) → red on P12a/b/c; teeth 6 (bill cart not locked) → red on P13b;
+// teeth 7 (Send request to boss parks a held cart in bill mode) → red on P13e.
 // Run: node scripts/bar-fit/bundle.mjs && BAR_FIT_PREBUILT=1 node scripts/bar-fit/branch-cart.mjs
 // Teeth: BAR_CART_TEETH=1|2 node scripts/bar-fit/bundle.mjs && BAR_CART_TEETH=1|2 node scripts/bar-fit/branch-cart.mjs
 //        (1 = the fix removed → must go red on the cart; 2 = also the pay guard removed → must also go red on P5)
@@ -62,7 +63,14 @@ function answer(path, q, st = {}) {
   // st.bepFirst: Bepanda listed first, as staging's /bar/mine does (no ORDER BY) — the "jumped to Bepanda" case
   if (path === "/bar/mine") return ok({ bars: st.bepFirst ? [{ id: BEP, name: "Bepanda" }, { id: BON, name: "Bonaberri" }] : [{ id: BON, name: "Bonaberri" }, { id: BEP, name: "Bepanda" }], can_setup: true, can_serve: true });
   if (path === "/shifts/current" && st.noShift && st.noShift.has(q.get("location_id"))) return ok(null);
-  const tb = path.match(/^\/bar\/tabs\/([^/]+)$/); if (tb) { (st.tabReads = st.tabReads || []).push(tb[1]); return ok({ id: tb[1], status: (st.tabTrue || {})[tb[1]] || "closed" }); }
+  // GET /bar/tabs/:id = the BILL (2026-11-20): served lines, version, the boss's answer (st.approval)
+  const tb = path.match(/^\/bar\/tabs\/([^/]+)$/); if (tb) { (st.tabReads = st.tabReads || []).push(tb[1]);
+    const named = Object.values(st.named || {}).flat().find((t) => t.id === tb[1]) || {};
+    return ok({ id: tb[1], name: named.name || null, status: (st.tabTrue || {})[tb[1]] || "closed", location_id: BON, sale_id: `sale-${tb[1]}`,
+      pa_sales: { version: 3, total_amount: 1500, sale_number: `T-${tb[1]}` },
+      bill_lines: [{ product_id: "bon2", quantity: 1, unit_price: 1500, name: "Bon Guinness", price_tier: "walk_in" }],
+      approval: (st.approval || {})[tb[1]] || null }); }
+  const sl = path.match(/^\/sales\/(sale-[^/]+)$/); if (sl) { (st.saleReads = st.saleReads || []).push(sl[1]); return ok({ id: sl[1], sale_number: `T-${sl[1]}`, total_amount: 1500, status: "paid" }); }
   if (path === "/locations") return ok(LOCS);
   if (/^\/bar\/[^/]+\/floor$/.test(path)) return ok({ zones: [{ id: "z1", name: "Salle" }], tables: TABLES, named_tabs: (st.named && st.named[path.split("/")[2]]) || [] });
   const qi = path.match(/^\/bar\/([^/]+)\/quick-items$/); if (qi) return ok({ ids: (PRODUCTS[qi[1]] || []).map((p) => p.id) });
@@ -104,7 +112,8 @@ async function session(label, opts = {}) {
       localStorage.setItem("mp-pos-draft-cart", JSON.stringify({ state: { drafts: d }, version: 0 }));
     }
   }, { USER, ORG, BON, drafts: opts.drafts || null, at: opts.at || null, atName: opts.at ? NAME[opts.at] : null });
-  const st = { delay: null, sales: [], holds: [], bepFirst: !!opts.bepFirst, noShift: new Set(opts.noShift || []), named: opts.named || null, payMode: opts.payMode || null };
+  const st = { delay: null, sales: [], holds: [], bepFirst: !!opts.bepFirst, noShift: new Set(opts.noShift || []), named: opts.named || null, payMode: opts.payMode || null,
+    approval: opts.approval || null, payAnswer: opts.payAnswer || null };
   await ctx.route((u) => u.hostname !== "localhost", (route) => route.abort());
   await ctx.route((u) => u.hostname === "localhost" && u.pathname.startsWith("/api/"), async (route) => {
     const req = route.request(); const u = new URL(req.url()); const p = u.pathname.replace(/^\/api/, "");
@@ -122,7 +131,10 @@ async function session(label, opts = {}) {
         if (mode === "409-ticket") { status = 409; (st.tabTrue = st.tabTrue || {})[tid] = "paid"; a = { success: false, code: "wrong_status", current_status: "paid", expected_status: "pending_payment", message_en: "This ticket is paid — it cannot be paid now.", message_fr: "Ce ticket est payé." }; }
       }
       else if (st.noShift.has(loc)) { status = 400; a = { success: false, code: "no_open_shift", message_en: "Open your till before taking payment.", message_fr: "Ouvrez votre caisse avant d'encaisser." }; }
-      else { (st.pays = st.pays || []).push({ path: p, body: req.postDataJSON() }); a = ok({}); } }
+      else if ((st.payAnswer || {})[tid]) { (st.pays = st.pays || []).push({ path: p, body: req.postDataJSON() }); [status, a] = st.payAnswer[tid]; }
+      else { (st.pays = st.pays || []).push({ path: p, body: req.postDataJSON() }); a = ok({ id: `sale-${tid}`, sale_number: `T-${tid}`, total_amount: 1500, status: "paid" }); } }
+    else if (/^\/bar\/tabs\/[^/]+\/close$/.test(p)) { (st.closes = st.closes || []).push(p); a = ok({}); }
+    else if (p === "/sales/bundled-approval-request") { (st.asks = st.asks || []).push(req.postDataJSON()); status = 202; a = { success: true, pending_approval: true, approval_id: "ap1", status: "pending" }; }
     else if (p === "/sales" || p === "/sales/ticket") { const body = req.postDataJSON(); st.sales.push(body); a = ok({ id: `sale${st.sales.length}`, sale_number: `S-${st.sales.length}`, total_amount: 0, status: "completed" }); }
     else if (p === "/held-carts") { st.holds.push(req.postDataJSON()); a = ok({ id: "h1", hold_ref: "H-1" }); }
     else a = ok({});
@@ -341,8 +353,13 @@ try {
     check("P11e the hint is gone and Take payment is enabled", (await page.locator(".bar-noshift").count()) === 0 && !(await row.getByRole("button", { name: "Take payment" }).isDisabled()));
     check("P11f still on /bar, the same tab", new URL(page.url()).pathname === "/bar" && (await row.count()) > 0);
     await row.getByRole("button", { name: "Take payment" }).click();
+    // BAR BILL (2026-11-20): Take payment opens the POS payment panel on the tab's bill; Confirm pays the tab
+    await page.getByRole("button", { name: /✓ Confirm/ }).first().click({ timeout: 15000 });
     for (let i = 0; i < 40 && !(st.pays || []).length; i++) await page.waitForTimeout(150);
-    check("P11g Take payment went through (POST /bar/tabs/nt1/pay)", (st.pays || []).length === 1 && st.pays[0].path === "/bar/tabs/nt1/pay", JSON.stringify(st.pays));
+    const pb = (st.pays || [])[0]?.body || {};
+    check("P11g Take payment went through the POS panel (POST /bar/tabs/nt1/pay with the POS terms + the served lines)",
+      (st.pays || []).length === 1 && st.pays[0].path === "/bar/tabs/nt1/pay" && pb.pay_mode === "paid" && pb.version === 3
+      && (pb.items || []).length === 1 && pb.items[0].product_id === "bon2" && Number(pb.paid_amount) === 1500, JSON.stringify(st.pays));
     check("P11 no page errors", !errs.length, errs.slice(0, 2).join(" | "));
     await ctx.close();
   }
@@ -354,33 +371,99 @@ try {
     const TABS = [T("nt2", "Ann"), T("nt3", "Ben"), T("nt4", "Cyd"), T("nt5", "Dee")];
     const { ctx, page, st, errs } = await session("P12 Take payment: the answer is lost / refused as already paid → the tab's true state decides",
       { named: { [BON]: TABS }, payMode: { nt2: "lost-paid", nt3: "409-tab", nt4: "409-ticket", nt5: "lost-unpaid" } });
-    await settle(page, BON);
-    await page.getByRole("button", { name: /Counter tabs|Tabs/ }).first().click();
+    // BAR BILL (2026-11-20): the pay now leaves from the POS panel (Take payment → bill → Confirm); the read-back
+    // is the bill's own: GET /bar/tabs/:id AFTER the pay, then the sale for the receipt. Each tab from a fresh /bar.
     const payOne = async (id, name) => {
+      await page.goto("http://localhost:5198/bar", { waitUntil: "domcontentloaded" }); await settle(page, BON);
+      await page.getByRole("button", { name: /Counter tabs|Tabs/ }).first().click();
       const row = page.locator("div", { has: page.getByText(name, { exact: true }) }).filter({ has: page.getByRole("button", { name: "Take payment" }) }).last();
       await row.getByRole("button", { name: "Take payment" }).waitFor({ timeout: 15000 });
       const before = (st.pays || []).filter((x) => x.path.includes(`/${id}/`)).length;
       await row.getByRole("button", { name: "Take payment" }).click();
-      // done = the pay was sent AND the tab read back (or 9 s); then the message settles (onSuccess/onError)
-      for (let i = 0; i < 60 && !((st.tabReads || []).includes(id)); i++) await page.waitForTimeout(150);
-      await page.waitForTimeout(700);
+      await page.getByRole("button", { name: /✓ Confirm/ }).first().waitFor({ timeout: 15000 });
+      const readsBefore = (st.tabReads || []).filter((x) => x === id).length;   // the bill's own load
+      await page.getByRole("button", { name: /✓ Confirm/ }).first().click();
+      for (let i = 0; i < 60 && (st.pays || []).filter((x) => x.path.includes(`/${id}/`)).length === before; i++) await page.waitForTimeout(150);
+      for (let i = 0; i < 40 && (st.tabReads || []).filter((x) => x === id).length === readsBefore; i++) await page.waitForTimeout(150);
+      await page.waitForTimeout(1200);
       const sent = (st.pays || []).filter((x) => x.path.includes(`/${id}/`)).length - before;
-      const text = (await page.locator(".bar-msg[role=status]").allInnerTexts().catch(() => [])).join(" | ");
-      return { sent, text, read: (st.tabReads || []).includes(id) };
+      const text = await page.evaluate(() => document.body.innerText);
+      return { sent, text: text.replace(/\s+/g, " ").slice(0, 4000), read: (st.tabReads || []).filter((x) => x === id).length > readsBefore,
+        receipt: (st.saleReads || []).includes(`sale-${id}`) };
     };
     let r = await payOne("nt2", "Ann");
     check("P12a paid but the answer LOST → \"Tab paid.\", never \"No connection\"", /Tab paid\./.test(r.text) && !/No connection/.test(r.text), r.text);
-    check("P12a the pay was sent ONCE (no re-send) and the tab was READ back", r.sent === 1 && r.read, `sent ${r.sent} read ${r.read}`);
+    check("P12a the pay was sent ONCE (no re-send), the tab READ back, the sale read for the receipt", r.sent === 1 && r.read && r.receipt, `sent ${r.sent} read ${r.read} receipt ${r.receipt}`);
     r = await payOne("nt3", "Ben");
     check("P12b refused 409 tab_status=paid → \"Tab paid.\"", /Tab paid\./.test(r.text) && !/already paid/.test(r.text), r.text);
-    check("P12b sent once, read back", r.sent === 1 && r.read, `sent ${r.sent} read ${r.read}`);
+    check("P12b sent once, read back", r.sent === 1 && r.read && r.receipt, `sent ${r.sent} read ${r.read}`);
     r = await payOne("nt4", "Cyd");
     check("P12c refused 409 current_status=paid (the ticket) → \"Tab paid.\"", /Tab paid\./.test(r.text), r.text);
-    check("P12c sent once, read back", r.sent === 1 && r.read, `sent ${r.sent} read ${r.read}`);
+    check("P12c sent once, read back", r.sent === 1 && r.read && r.receipt, `sent ${r.sent} read ${r.read}`);
     r = await payOne("nt5", "Dee");
-    check("P12d answer lost and the tab is NOT paid → \"No connection — try again.\", never \"Tab paid.\"", /No connection/.test(r.text) && !/Tab paid/.test(r.text), r.text);
+    check("P12d answer lost and the tab is NOT paid → the POS network error (\"try again\"), never \"Tab paid.\"", /Network error|No connection/.test(r.text) && !/Tab paid/.test(r.text) && !r.receipt, r.text.slice(0, 300));
     check("P12d sent once (the page never re-sends by itself)", r.sent === 1, `sent ${r.sent}`);
     check("P12 no page errors", !errs.length, errs.slice(0, 2).join(" | "));
+    await ctx.close();
+  }
+  {
+    // P13 — THE BILL (Peter 2026-11-20): "Bill / Addition" (not "Close tab") opens the POS payment panel on the
+    // tab's served lines, read-only; credit needs a customer (POS rule); a bill waiting for the boss shows only the
+    // wait; "Send request to boss" on a bill is tied to the TAB (bar_tab_id) — no held cart, no new sale.
+    const fig = { ordered: 1500, served: 1500, waiting: 0, paid: 0, balance_due: 1500, service_status: "served", payment_status: "unpaid", rounds_waiting: 0, rounds_served: 1 };
+    const T = (id, name, status, extra = {}) => ({ id, name, status, location_id: BON, opened_at: new Date().toISOString(), pa_sales: { version: 3, total_amount: 1500 }, figures: fig, ...extra });
+    const WAIT = { id: "ap9", status: "pending", requested_by: "u2", terms: { pay_mode: "credit" }, actions: [{ type: "credit" }] };
+    const TABS = [T("nt6", "Kim", "open"), T("nt7", "Lou", "closed", { approval: WAIT }), T("nt8", "Max", "closed")];
+    const { ctx, page, st, errs } = await session("P13 the bill: Bill button, read-only lines, POS rules, waiting for the boss, send to boss",
+      { named: { [BON]: TABS }, approval: { nt7: WAIT },
+        payAnswer: { nt8: [403, { success: false, code: "approval_required", actions: [{ type: "discount", effective_pct: 20, total_discount: 300 }], message_en: "This sale needs the boss's approval." }] } });
+    await settle(page, BON);
+    await page.getByRole("button", { name: /Counter tabs|Tabs/ }).first().click();
+    const rowOf = (name, btn) => page.locator("div", { has: page.getByText(name, { exact: true }) }).filter({ has: page.getByRole("button", { name: btn, exact: true }) }).last();
+    const kim = rowOf("Kim", "Bill");
+    await kim.getByRole("button", { name: "Bill", exact: true }).waitFor({ timeout: 15000 });
+    check("P13a an open tab shows \"Bill\" — the old \"Close tab\" is gone", !(await page.evaluate(() => /Close tab/.test(document.body.innerText))));
+    await kim.getByRole("button", { name: "Bill", exact: true }).click();
+    await page.getByRole("button", { name: /✓ Confirm/ }).first().waitFor({ timeout: 15000 });
+    check("P13a Bill stops the rounds (POST …/nt6/close) and opens the bill in the POS payment panel", (st.closes || []).includes("/bar/tabs/nt6/close")
+      && (await page.evaluate(() => /Bill — Kim/.test(document.body.innerText))), JSON.stringify(st.closes));
+    const ro = await page.evaluate(() => { const c = document.querySelector(".bar-cart") || document.body; const t = c.innerText;
+      const btns = [...c.querySelectorAll("button")].map((b) => b.textContent.trim());
+      return { line: !!c.querySelector(".bill-line") && /1 × /.test(t), qtyInputs: c.querySelectorAll(".bill-line input").length + [...c.querySelectorAll("input[type=number]")].filter((i) => i.closest(".bill-line")).length,
+        clear: /Clear all/.test(t), hold: btns.some((b) => /^⏸/.test(b)), x: btns.filter((b) => b === "✕" || b === "−" || b === "+").length, addDisc: /Add discount/.test(t) }; });
+    check("P13b the bill's lines are read-only: no ✕ / − / + / qty / line discount, no Clear all, no Hold", ro.line && !ro.qtyInputs && !ro.clear && !ro.hold && !ro.x && !ro.addDisc, JSON.stringify(ro));
+    // full credit with no customer: the POS refuses before anything is sent
+    const paysBefore = (st.pays || []).length;
+    await page.getByRole("button", { name: /Full Credit|Crédit total/ }).first().click().catch(() => {});
+    await page.getByRole("button", { name: /✓ Confirm/ }).first().click().catch(() => {});
+    await page.waitForTimeout(900);
+    check("P13c Full Credit with no customer → refused by the panel, nothing sent", (st.pays || []).length === paysBefore, JSON.stringify((st.pays || []).slice(paysBefore)));
+    await page.getByRole("button", { name: /← Back/ }).first().click();
+    await page.waitForTimeout(600);
+    check("P13c Back returns to the floor", !(await page.evaluate(() => /Bill — Kim/.test(document.body.innerText))));
+    // a bill waiting for the boss: no Take payment on the row; the bill shows only the wait
+    await page.getByRole("button", { name: /Counter tabs|Tabs/ }).first().click().catch(() => {});
+    const lou = rowOf("Lou", "View");
+    await lou.getByRole("button", { name: "View", exact: true }).waitFor({ timeout: 15000 });
+    check("P13d the row says \"Waiting for approval\", no Take payment", /Waiting for approval/.test(await lou.innerText()) && !(await lou.getByRole("button", { name: "Take payment" }).count()));
+    await lou.getByRole("button", { name: "View", exact: true }).click();
+    await page.getByRole("button", { name: "Cancel request" }).waitFor({ timeout: 15000 });
+    check("P13d the bill shows the wait + Cancel request, and NO Confirm", (await page.getByRole("button", { name: /✓ Confirm/ }).count()) === 0);
+    await page.getByRole("button", { name: /Back to the floor/ }).first().click();
+    // Send request to boss on a bill
+    await page.getByRole("button", { name: /Counter tabs|Tabs/ }).first().click().catch(() => {});
+    const max = rowOf("Max", "Take payment");
+    await max.getByRole("button", { name: "Take payment" }).click({ timeout: 15000 });
+    await page.getByRole("button", { name: /✓ Confirm/ }).first().click({ timeout: 15000 });
+    await page.getByRole("button", { name: /Send request to boss/ }).click({ timeout: 15000 });
+    for (let i = 0; i < 40 && !(st.asks || []).length; i++) await page.waitForTimeout(150);
+    await page.waitForTimeout(800);
+    const ask = (st.asks || [])[0] || {};
+    check("P13e Send request to boss → ONE request tied to the tab (bar_tab_id nt8, the served lines)", (st.asks || []).length === 1 && ask.bar_tab_id === "nt8"
+      && (ask.items || []).length === 1 && ask.items[0].product_id === "bon2" && ask.location_id === BON, JSON.stringify(st.asks));
+    check("P13e nothing parked as a held cart, no sale created", !st.holds.length && !st.sales.length, JSON.stringify({ holds: st.holds.length, sales: st.sales.length }));
+    check("P13e back on the floor, told the tab waits for the boss", /waits for his answer/.test(await page.evaluate(() => document.body.innerText)) && !(await page.evaluate(() => /Bill — Max/.test(document.body.innerText))));
+    check("P13 no page errors", !errs.length, errs.slice(0, 2).join(" | "));
     await ctx.close();
   }
 } catch (e) {

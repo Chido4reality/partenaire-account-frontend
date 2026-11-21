@@ -117,7 +117,14 @@ const CUSTOMER_RESULT_CAP = 25;
 // location picker (the bar's branch picker drives selectedLocation), shows the customer search inside
 // the cart card, and relabels two buttons. With no `embed` prop (New Sale) the render is identical —
 // scripts/bar-layout-check.mjs renders both and compares.
+// BAR BILL (Peter 2026-11-20): a table / counter tab is paid HERE — this page, its payment panel (Full /
+// Partial / Full Credit, customer, tenders, sale discount, sold-earlier note, receipt). embed.bill =
+// { tabId, version, lines, title, onDone, onCancel }: the cart IS the tab's served lines, read-only
+// (rounds stay the way to add), never saved as a draft, and Confirm pays the tab (POST /bar/tabs/:id/pay)
+// instead of creating a sale. Home and New Sale (no embed.bill): unchanged.
+const BILL_CART_LOCKED = () => {};
 export default function POSPage({ embed = null } = {}) {
+  const bill = (embed && embed.bill) || null;
   const { lang } = useLangStore();
   const [embedSlot, setEmbedSlot] = useState(null);   // BAR LAYOUT: where the customer search shows in the embed
   // BAR FIT: in the bar the side cart vs bottom sheet is chosen by WIDTH (≥ 900px = side cart), not by
@@ -162,8 +169,8 @@ export default function POSPage({ embed = null } = {}) {
   //                           and nothing is written
   // So for the terminal action EITHER source claiming cashier is enough. A gate
   // fails closed; a money button fails toward the outcome you can undo.
-  const isCashierMode =
-    tillSummary?.mode === "cashier" || selectedLocation?.sales_mode === "cashier";
+  const isCashierMode = !bill &&   // BAR BILL: a tab is PAID here — never sent to a cashier
+    (tillSummary?.mode === "cashier" || selectedLocation?.sales_mode === "cashier");
   // ── AND WHEN NEITHER SOURCE HAS ANSWERED, DO NOT GUESS ────────────────────
   // Both sources can be silent at once: a location row persisted before the
   // sales_mode column existed (zustand keeps it across reloads and logins)
@@ -175,7 +182,7 @@ export default function POSPage({ embed = null } = {}) {
   // disabled and says it is checking. It costs a moment on the rare device that
   // has been logged in since before the column; it removes the last window in
   // which a wrong render can take money.
-  const tillModeKnown =
+  const tillModeKnown = !!bill ||
     tillSummary?.mode !== undefined || selectedLocation?.sales_mode !== undefined;
 
   // Per-shop: does the customer carry a printed slip, or get called by number?
@@ -231,7 +238,12 @@ export default function POSPage({ embed = null } = {}) {
   const { hasShift: shiftIsOpen } = useActiveShift();
   const fmt = useCurrency();
 
-  const [cart, setCart]                   = useState([]);
+  // BAR BILL: the cart is the tab's served lines and nothing can change it (every setter is a no-op).
+  const [cart, setCartRaw]                = useState(() => (bill ? (bill.lines || []).map((l, i) => ({
+    lineId: `bill-${i}`, product_id: l.product_id, name: (lang === "en" && l.name_en) || l.name || "?", unit: l.unit || null,
+    quantity: Number(l.quantity) || 0, unit_price: Number(l.unit_price) || 0, cost_price: l.cost_price,
+    price_tier: l.price_tier || "walk_in", barLoc: embed.locationId, billLine: true })) : []));
+  const setCart = bill ? BILL_CART_LOCKED : setCartRaw;
   const [search, setSearch]               = useState("");
   // MP-SERVER-SIDE-PRODUCT-SEARCH (Part A.4): online DB-side search results
   // (null = not searched / offline → use the cached client filter instead).
@@ -267,7 +279,7 @@ export default function POSPage({ embed = null } = {}) {
   const [dueDate, setDueDate]             = useState("");
   const [payMethod, setPayMethod]         = useState("cash");
   const [notes, setNotes]                 = useState("");
-  const [showPayment, setShowPayment]     = useState(false);
+  const [showPayment, setShowPayment]     = useState(() => !!bill);   // BAR BILL: opens straight on the payment panel
 
   // RE-ASK AT THE MOMENT OF DECISION. The summary is cached (30s stale, 60s
   // poll), so after an owner flips a till to cashier every OTHER device can hold
@@ -303,6 +315,24 @@ export default function POSPage({ embed = null } = {}) {
   // boss / cancel) is open — the cashier sees every needed approval at once,
   // never a cascading series of separate prompts.
   const bundledApprovalIdRef = useRef(null);
+  // BAR BILL: the boss APPROVED this bill → the panel opens on exactly the terms he approved, carrying his
+  // approval's id (the server checks the signed terms and uses it once; other terms → he must approve again).
+  const billApproved = bill && bill.approval && bill.approval.status === "approved" ? bill.approval : null;
+  const billPrefilled = useRef(false);
+  useEffect(() => {
+    if (!billApproved || billPrefilled.current) return;
+    billPrefilled.current = true;
+    const t = billApproved.terms || {};
+    bundledApprovalIdRef.current = billApproved.id;
+    if (t.customer_id) setCustomer({ id: t.customer_id, name: t.customer_name || "" });
+    if (t.pay_mode) { setPayMode(t.pay_mode); setPayModeChosen(true); }
+    if (t.pay_mode === "partial") setPaidAmt(String(Number(t.paid_amount) || 0));
+    if (t.discount_type && Number(t.discount_value) > 0) {
+      setSaleDiscType(t.discount_type); setSaleDiscValue(String(t.discount_value)); setSaleDiscReason(t.discount_reason || "");
+    }
+    if (t.sold_date) { setSoldDate(t.sold_date); setShowSoldDate(true); }
+    if (t.notes) setNotes(t.notes);
+  }, [billApproved]);   // eslint-disable-line react-hooks/exhaustive-deps
   // PHASE-1 item 5: one key per debt-settle checkout ATTEMPT, reused if the cashier taps
   // again after a failure (the server then records each invoice payment once), cleared on
   // success. Without a key the server's same-amount backstop could swallow a second
@@ -364,7 +394,7 @@ export default function POSPage({ embed = null } = {}) {
   // The auto-collapse effect below closes it whenever any overlay
   // modal opens, so the Vaul portal (z:1701) doesn't sit on top of
   // root modals that live at z:3000+.
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(() => !!bill);   // BAR BILL: the phone sheet opens on the bill
   // MP-MOBILE-UI-PHASE-2A: brief row flash on add-to-cart. Holds the
   // product_id of the last-tapped row for ~250ms so the row can
   // pulse-highlight, then clears.
@@ -464,6 +494,7 @@ export default function POSPage({ embed = null } = {}) {
   ].some(Boolean);
   useEffect(() => {
     if (anyRootOverlay) setSheetOpen(false);
+    else if (bill && !showReceipt) setSheetOpen(true);   // BAR BILL: back on the bill once a popup closes
   }, [anyRootOverlay]);
 
   // MP-POS-CART-PERSIST: restore + auto-save draft cart so navigating
@@ -519,6 +550,7 @@ export default function POSPage({ embed = null } = {}) {
   // on successful restore so the cashier sees the cart waiting for her.
   useEffect(() => {
     if (draftRestoredRef.current) return;
+    if (bill) return;   // BAR BILL: a bill is never a draft — nothing restored, nothing saved (below)
     if (!userId || !locId) return;
     const draft0 = getDraft({ userId, locationId: draftLoc(locId) });
     if (!draft0) { draftRestoredRef.current = true; return; }
@@ -564,7 +596,7 @@ export default function POSPage({ embed = null } = {}) {
   // restore completes — otherwise the empty-initial-state would wipe a
   // valid persisted draft before we ever read it.
   useEffect(() => {
-    if (!draftRestoredRef.current) return;
+    if (!draftRestoredRef.current) return;   // (a bill never sets it: never saved over the Home cart)
     if (!userId || !locId) return;
     if (cart.length === 0) {
       // Cart emptied (sale finalized / held / cleared). Drop pin so the
@@ -1411,6 +1443,25 @@ export default function POSPage({ embed = null } = {}) {
   const sendApprovalBundleToBoss = async () => {
     setSendingToBoss(true);
     try {
+      // BAR BILL: the request is tied to the tab's own pending sale — nothing is parked as a held cart and no
+      // new sale is ever made from it. The tab shows "Waiting for approval" until the boss answers.
+      if (bill) {
+        await api.post("/sales/bundled-approval-request", {
+          bar_tab_id: bill.tabId, location_id: embed.locationId,
+          customer_id: customer?.id || null, customer_name: customer?.name || null,
+          items: (bill.lines || []).map((l) => ({ product_id: l.product_id, quantity: Number(l.quantity), unit_price: Number(l.unit_price) })),
+          pay_mode: payMode, paid_amount: paid,
+          discount_type:   (saleDiscType && Number(saleDiscValue) > 0) ? saleDiscType : null,
+          discount_value:  (saleDiscType && Number(saleDiscValue) > 0) ? Number(saleDiscValue) : null,
+          discount_reason: (saleDiscType && Number(saleDiscValue) > 0) ? (saleDiscReason.trim() || null) : null,
+          notes: notes || null, sold_date: soldDate || null,
+        });
+        setApprovalBundle(null);
+        toast.success(lang === "en" ? "Sent to the boss. The tab waits for his answer — take the payment once he approves."
+          : "Envoyé au patron. La note attend sa réponse — encaissez après son accord.", { duration: 6000 });
+        if (bill.onWaiting) bill.onWaiting();
+        return;
+      }
       const lineItems = bundleLineItems();
       const ar = await api.post("/sales/bundled-approval-request", {
         location_id: selectedLocation?.id,
@@ -1727,6 +1778,42 @@ export default function POSPage({ embed = null } = {}) {
       }
       // BAR CART FIX: never pay at one branch with a cart built at another (bar only).
       if (embedCartWrongBranch()) { const gerr = new Error("BAR_WRONG_BRANCH"); gerr.payModeGuard = true; throw gerr; }
+      // BAR BILL: the SAME terms this panel sends to /sales, to the tab's pay. The server settles the tab's
+      // own pending sale with the POS rules (one sale, stock once). Online only, like every tab action;
+      // never queued. A lost answer (or "already paid") is checked against the tab before anything is said.
+      if (bill) {
+        if (typeof navigator !== "undefined" && navigator.onLine === false) {
+          toast.error(lang === "en" ? "Tabs need a connection. Nothing was saved — try again when you are online."
+            : "Les notes ont besoin d'une connexion. Rien n'a été enregistré — réessayez une fois en ligne.", { duration: 5000 });
+          const gerr = new Error("BILL_OFFLINE"); gerr.payModeGuard = true; throw gerr;
+        }
+        const body = {
+          version: bill.version,
+          items: (bill.lines || []).map((l) => ({ product_id: l.product_id, quantity: Number(l.quantity), unit_price: Number(l.unit_price) })),
+          customer_id: customer?.id || null, payment_method: payMethod, paid_amount: paid, pay_mode: payMode,
+          due_date: dueDate || null, notes: notes || null,
+          discount_type:   (saleDiscType && Number(saleDiscValue) > 0) ? saleDiscType : null,
+          discount_value:  (saleDiscType && Number(saleDiscValue) > 0) ? Number(saleDiscValue) : null,
+          discount_reason: (saleDiscType && Number(saleDiscValue) > 0) ? (saleDiscReason.trim() || null) : null,
+          bundled_approval_token: bundledApprovalTokenRef.current || undefined,
+          bundled_approval_id: bundledApprovalIdRef.current || undefined,   // the boss approved this bill (prefilled terms)
+          sold_date: soldDate || undefined,
+        };
+        try {
+          return await api.post(`/bar/tabs/${bill.tabId}/pay`, body).then((r) => r.data);
+        } catch (e) {
+          const d409 = e.response && e.response.status === 409 && e.response.data;
+          const lost = !e.response || (d409 && (d409.tab_status === "paid" || d409.current_status === "paid"));
+          if (lost) {
+            const t = await api.get(`/bar/tabs/${bill.tabId}`).then((r) => r.data?.data).catch(() => null);
+            if (t && t.status === "paid") {
+              const s = t.sale_id ? await api.get(`/sales/${t.sale_id}`).then((r) => r.data?.data).catch(() => null) : null;
+              return { success: true, data: s || { id: t.sale_id, sale_number: t.pa_sales?.sale_number, total_amount: t.pa_sales?.total_amount }, recovered: true };
+            }
+          }
+          throw e;
+        }
+      }
       // MP-CART-INVOICE-PRODUCT-BUG: the legacy invoice-settle path
       // (POST /sales/:id/payment per invoice) is ONLY correct when
       // the cart is a pure invoice-settle action — a single __DEBT__
@@ -2079,6 +2166,8 @@ export default function POSPage({ embed = null } = {}) {
           payment_status: paymentStatus,
         });
         setShowReceipt(true);
+        // BAR BILL: the tab is paid and the table free — the floor refreshes now; the receipt closes back to it
+        if (bill) { toast.success(lang === "en" ? "Tab paid." : "Note encaissée.", { duration: 2500 }); bill.onPaid && bill.onPaid(); }
 
         // MP-PHASE-4 WAVE 2: seed every cache slot the sale moves so the
         // UI reflects the new state immediately offline. Gated on
@@ -2191,6 +2280,14 @@ export default function POSPage({ embed = null } = {}) {
         toast.error(d.message_en && lang === "en" ? d.message_en : (d.message_fr || d.message || "Error"), { duration: 6000 });
         return;
       }
+      // BAR BILL: the tab's own answers, said in the server's words. A changed bill / a tab no longer payable /
+      // an approval that expired → the bill reloads (the floor's view of the tab is the truth).
+      if (bill && d && ["bill_changed", "tab_not_payable", "approval_pending", "approval_ready", "customer_required",
+                        "no_open_shift", "version_required", "not_found"].includes(d.code)) {
+        toast.error(lang === "en" ? (d.message_en || d.message) : (d.message_fr || d.message), { duration: 6000 });
+        if (["bill_changed", "tab_not_payable", "not_found"].includes(d.code) && bill.onReload) bill.onReload();
+        return;
+      }
       // Everything that CAN be approved — below-cost, discount, credit, oversell,
       // any combination — now comes back as ONE response listing every action
       // needed. ONE popup, right here, at Confirm Payment. This replaces four
@@ -2282,6 +2379,8 @@ export default function POSPage({ embed = null } = {}) {
     setOversellModal(null); saleMutation.mutate();
   };
   const attemptCheckout = async () => {
+    // BAR BILL: the drinks were served already — the server checks stock on the settle (once), not this snapshot
+    if (bill) { runCheckout(); return; }
     const real = cart.filter(i =>
       i.product_id && i.product_id !== "__DEBT__" &&
       i.product_id !== "__DEBT_PAYMENT__" && i.type !== "debt_payment");
@@ -2636,18 +2735,18 @@ export default function POSPage({ embed = null } = {}) {
     <>
           <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--bg-elevated)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontWeight: 700, fontSize: 14 }}>🛒 {lang === "en" ? "Cart" : "Panier"}</span>
+              <span style={{ fontWeight: 700, fontSize: 14 }}>{bill ? `🧾 ${bill.title || (lang === "en" ? "Bill" : "Addition")}` : <>🛒 {lang === "en" ? "Cart" : "Panier"}</>}</span>
               {cart.length > 0 && <span style={{ background: "var(--brand)", color: "#152B52", borderRadius: 20, padding: "1px 8px", fontSize: 11, fontWeight: 700 }}>{cart.length}</span>}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              {activeHolds.length > 0 && (
+              {!bill && activeHolds.length > 0 && (
                 <button onClick={() => setShowResume(true)}
                   title={lang === "en" ? "Resume a held sale" : "Reprendre une vente en attente"}
                   style={{ background: "rgba(245,158,11,0.14)", border: "1px solid rgba(245,158,11,0.4)", color: "#fbbf24", cursor: "pointer", fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 6 }}>
                   ⏸ {lang === "en" ? "Resume" : "Reprendre"} ({activeHolds.length})
                 </button>
               )}
-              {cart.length > 0 && (
+              {!bill && cart.length > 0 && (
                 <button onClick={() => setCart([])} style={{ background: "rgba(239,68,68,0.1)", border: "none", color: "#f87171", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 6 }}>
                   {lang === "en" ? "Clear all" : "Vider"}
                 </button>
@@ -2684,7 +2783,14 @@ export default function POSPage({ embed = null } = {}) {
                 <div style={{ fontSize: 32, marginBottom: 8, opacity: 0.3 }}>🛒</div>
                 <div style={{ fontSize: 12 }}>{lang === "en" ? "Cart is empty" : "Panier vide"}</div>
               </div>
-            ) : cart.map((item, idx) => (
+            ) : cart.map((item, idx) => item.billLine ? (
+              // BAR BILL: a served line, read-only — rounds are the way to add; prices as served
+              <div key={item.lineId} className="bill-line" style={{ padding: "9px 14px", borderBottom: "1px solid var(--border)", display: "flex", gap: 8, alignItems: "baseline" }}>
+                <div style={{ fontSize: 13, fontWeight: 600, flex: 1, minWidth: 0, lineHeight: 1.3 }}>{item.name}</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap" }}>{item.quantity} × {fmt(item.unit_price)}</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--brand-light)", minWidth: 64, textAlign: "right", whiteSpace: "nowrap" }}>{fmt(lineGross(item))}</div>
+              </div>
+            ) : (
               <div key={item.lineId} style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", background: (item.isDebt || item.isDebtPayment) ? "rgba(239,68,68,0.04)" : "transparent" }}>
                 {(item.isDebt || item.isDebtPayment) && (
                   <div style={{ fontSize: 10, fontWeight: 700, color: "#f87171", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>
@@ -2903,7 +3009,7 @@ export default function POSPage({ embed = null } = {}) {
                     a mixed cart's product lines are holdable and the hold mutation already
                     strips the debt sentinels. Was `!hasDebt`, which hid Hold on any mixed
                     debt cart (Paul's reported symptom). */}
-                {!isDebtOnlyCart && (
+                {!isDebtOnlyCart && !bill && (
                   <button disabled={cart.length === 0 || !selectedLocation} onClick={() => { setHoldLabel(""); setHoldNotes(""); setShowHold(true); }}
                     style={{ height: 40, fontSize: 13, fontWeight: 700, borderRadius: 12, cursor: cart.length === 0 ? "not-allowed" : "pointer", background: "transparent", border: "1.5px solid rgba(245,158,11,0.5)", color: cart.length === 0 ? "var(--text-muted)" : "#fbbf24", opacity: cart.length === 0 || !selectedLocation ? 0.5 : 1 }}>
                     ⏸ {lang === "en" ? (embed ? "Hold" : "Hold Sale") : "Mettre en attente"}
@@ -3114,7 +3220,7 @@ export default function POSPage({ embed = null } = {}) {
                   </button>
                 )}
                 <div style={{ display: "flex", gap: 8, paddingTop: 8, flexShrink: 0, borderTop: mobile ? "1px solid var(--border)" : "none", background: "var(--bg-surface)", position: "sticky", bottom: 0 }}>
-                  <button onClick={() => setShowPayment(false)} className="btn btn-secondary" style={{ flex: 1 }}>← {lang === "en" ? "Back" : "Retour"}</button>
+                  <button onClick={() => { if (bill && bill.onCancel) { bill.onCancel(); return; } setShowPayment(false); }} className="btn btn-secondary" style={{ flex: 1 }}>← {lang === "en" ? "Back" : "Retour"}</button>
                   <PayButton
                     saleMutation={saleMutation}
                     onClick={attemptCheckout}
@@ -3209,7 +3315,9 @@ export default function POSPage({ embed = null } = {}) {
               style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)", cursor: sendingToBoss ? "wait" : "pointer", textAlign: "left", fontWeight: 700, marginBottom: 10 }}>
               📲 {sendingToBoss ? (lang === "en" ? "Sending…" : "Envoi…") : (lang === "en" ? "Send request to boss" : "Envoyer la demande au patron")}
               <div style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)", marginTop: 3 }}>
-                {lang === "en" ? "Boss is away — holds this sale; resume it once approved on their phone." : "Le patron est absent — met la vente en attente ; reprenez-la après approbation sur son téléphone."}
+                {bill
+                  ? (lang === "en" ? "Boss is away — the tab waits for his answer; take the payment once he approves on his phone." : "Le patron est absent — la note attend sa réponse ; encaissez après son accord sur son téléphone.")
+                  : (lang === "en" ? "Boss is away — holds this sale; resume it once approved on their phone." : "Le patron est absent — met la vente en attente ; reprenez-la après approbation sur son téléphone.")}
               </div>
             </button>
             <button onClick={cancelApprovalBundle} disabled={sendingToBoss}
@@ -3963,7 +4071,7 @@ export default function POSPage({ embed = null } = {}) {
           data={lastSale}
           org={orgSettings}
           lang={lang}
-          onClose={() => setShowReceipt(false)}
+          onClose={() => { setShowReceipt(false); if (bill && bill.onDone) bill.onDone(); }}
         />
       )}
 

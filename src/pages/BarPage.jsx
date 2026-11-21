@@ -2,7 +2,7 @@
 // Zones + tables (owner / manager set them up), table tabs and named counter tabs.
 // 3a: ROUNDS on an open tab: send a round of products, the bartender SERVES it whole
 // (that reserves the stock) or it is cancelled while still waiting. The tab's total is what was
-// served. Close → pay with ONE tender (cash or mobile money); the stock leaves the shelf at pay.
+// served. Bill → the POS payment panel (BillView, 2026-11-20); the stock leaves the shelf at pay.
 // A tab with nothing served still ends cancelled.
 //
 // BAR LAYOUT (Peter 2026-11-18, docs/bar-mockup.png.png): one screen, three parts.
@@ -79,7 +79,7 @@ export default function BarPage() {
   const [setup, setSetup] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
-  const [tender, setTender] = useState({});       // tab id → "cash" | "mobile_money"
+  const [billTab, setBillTab] = useState(null);   // BAR BILL: { tabId, title, barId } — the bill open in the POS panel
   const menuOpen = useBarChrome((s) => s.menuOpen);
 
   const mine = useQuery({ queryKey: ["bar-mine"], queryFn: () => api.get("/bar/mine").then((r) => r.data?.data || { bars: [] }), staleTime: 60000 });
@@ -150,7 +150,7 @@ export default function BarPage() {
     },
     onSuccess: ({ kind }) => {
       if (kind === "pay") setRefusedNoShift(null);
-      setMsg({ ok: true, text: ({ open: L(lang, "Tab opened.", "Note ouverte."), close: L(lang, "Tab closed.", "Note fermée."),
+      setMsg({ ok: true, text: ({ open: L(lang, "Tab opened.", "Note ouverte."), close: L(lang, "Tab closed.", "Note fermée."), bill: L(lang, "Bill ready.", "Addition prête."),
         pay: L(lang, "Tab paid.", "Note encaissée."), zone: L(lang, "Zone added.", "Zone ajoutée."), table: L(lang, "Table added.", "Table ajoutée.") })[kind] || "OK" });
       refresh();
     },
@@ -186,13 +186,20 @@ export default function BarPage() {
   if (mine.isError) return <div style={{ padding: 20 }}>{L(lang, "Could not load the bar. Check the connection.", "Impossible de charger le bar. Vérifiez la connexion.")}</div>;
   if (!bars.length) return <div style={{ padding: 20 }}>{L(lang, "No bar is set up for you.", "Aucun bar n'est configuré pour vous.")}</div>;
 
-  const switchBranch = (id) => { dispatch({ type: "branch", barId: id }); setMsg(null); setShowAll(false); setCounterOpen(false); setSetup(false); };
-  const goHome = () => { dispatch({ type: "home" }); setShowAll(false); };
+  const switchBranch = (id) => { dispatch({ type: "branch", barId: id }); setMsg(null); setShowAll(false); setCounterOpen(false); setSetup(false); setBillTab(null); };
+  const goHome = () => { dispatch({ type: "home" }); setShowAll(false); setBillTab(null); };
   const tabId = currentTabId(v, F);
   const selTable = v.view === "table" ? tables.find((t) => t.id === v.tableId) : null;
   const selNamed = v.view === "named" ? named.find((t) => t.id === v.tabId) : null;
   const zoneName = (t) => zones.find((z) => z.id === t?.zone_id)?.name || null;
   const title = selTable ? [selTable.label, zoneName(selTable)].filter(Boolean).join(" · ") : selNamed ? selNamed.name : "";
+  // BAR BILL: the tab's bill, in the POS payment panel — from a table, a counter tab, or "Bill" on an open tab
+  const openBill = (tab) => {
+    const tbl = tab.table_id ? tables.find((x) => x.id === tab.table_id) : null;
+    setBillTab({ barId, tabId: tab.id, title: tbl ? [tbl.label, zoneName(tbl)].filter(Boolean).join(" · ") : (tab.name || "") });
+    setCounterOpen(false); setSetup(false); setMsg(null);
+  };
+  const bill = billTab && billTab.barId === barId ? billTab : null;
 
   return (
     <div className="bar-screen">
@@ -229,11 +236,17 @@ export default function BarPage() {
       {floor.isError && <div className="bar-msg" style={{ borderColor: "#ef4444", color: "#fca5a5" }}>{errText(lang, floor.error)}</div>}
       {setup && canSetup && <div className="bar-panel"><SetupPanel lang={lang} barId={barId} zones={zones} tables={tables} busy={busy} act={act} patch={patch} /></div>}
       {counterOpen && F && <div className="bar-panel">
-        <CounterTabsPanel lang={lang} barId={barId} named={named} busy={busy} act={act} tender={tender} setTender={setTender} shift={shift}
+        <CounterTabsPanel lang={lang} barId={barId} named={named} busy={busy} act={act} onBill={openBill} shift={shift}
           onRounds={(t) => { dispatch({ type: "named", tabId: t.id }); setCounterOpen(false); setShowAll(false); }} />
       </div>}
 
-      {v.view === HOME ? (
+      {bill ? (
+        <div className="bar-home-body bar-bill-body">
+          {selectedLocation?.id !== barId ? <div className="bar-msg" role="status">{L(lang, "Loading…", "Chargement…")}</div> :
+          <BillView key={bill.tabId} lang={lang} barId={barId} tabId={bill.tabId} fallbackTitle={bill.title} shift={shift}
+            onClose={() => { setBillTab(null); refresh(); }} onPaid={() => { setRefusedNoShift(null); refresh(); }} />}
+        </div>
+      ) : v.view === HOME ? (
         // Home = the POS, embedded. key = branch: a branch switch mounts a fresh POS on the new branch's own cart.
         // BAR CART FIX (Peter 2026-11-18): mount it only once the APP's location IS this bar. The POS reads
         // its saved cart by the app location, and the setLocation effect above runs AFTER the child's
@@ -254,7 +267,7 @@ export default function BarPage() {
         <div className="bar-body">
           <TableSide key={`${barId}:${tabId || v.tableId || v.tabId}`} lang={lang} barId={barId} userId={userId} tabId={tabId}
             table={selTable} title={title} products={tabProducts.data || []} fmt={fmt} showAll={showAll} setShowAll={setShowAll}
-            canServe={canServe} isOnline={isOnline} busy={busy} act={act} tender={tender} setTender={setTender} shift={shift} onChanged={refresh}
+            canServe={canServe} isOnline={isOnline} busy={busy} act={act} onBill={openBill} shift={shift} onChanged={refresh}
             onWrongBranch={goHome} />
         </div>
       )}
@@ -266,31 +279,110 @@ export default function BarPage() {
   );
 }
 
-// ── Close / take payment on one tab (unchanged actions; moved from the floor cards) ──────────
-export function TabActions({ lang, tab, busy, act, tender, setTender, shift }) {
+// ── Bill / take payment on one tab ───────────────────────────────────────────────────────────
+// BAR BILL (Peter 2026-11-20): "Close tab" read like freeing the table — it is now "Bill / Addition": it
+// stops new rounds (the tab goes to "To pay") and opens the bill. "Take payment" opens the SAME POS payment
+// panel (BillView below), never a separate tender dropdown. A bill waiting for the boss says so here.
+export function TabActions({ lang, tab, busy, act, onBill, shift }) {
   if (!tab) return null;
   const noShift = !!(shift && shift.need);
-  const ver = tab.pa_sales?.version;
-  const total = Number(tab.pa_sales?.total_amount) || 0;
-  const tnd = tender[tab.id] || "cash";
-  return tab.status === "open"
-    ? <button className="bar-cbtn" style={btn} disabled={busy} onClick={() => act.mutate({ kind: "close", path: `/bar/tabs/${tab.id}/close` })}>{L(lang, "Close tab", "Fermer la note")}</button>
-    // no shift: the hint + Open shift + Take payment take their OWN full-width line (else they crush the money block)
-    : <span className={noShift ? "bar-pay-actions is-noshift" : "bar-pay-actions"} style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", alignItems: "center", ...(noShift ? { flex: "1 1 100%", justifyContent: "flex-end" } : {}) }}>
-        {total > 0 && <select value={tnd} onChange={(e) => setTender((m) => ({ ...m, [tab.id]: e.target.value }))} style={{ padding: 6, borderRadius: 8 }}>
-          <option value="cash">{L(lang, "Cash", "Espèces")}</option>
-          <option value="mobile_money">{L(lang, "Mobile money", "Mobile money")}</option>
-        </select>}
-        {noShift && <span className="bar-noshift" role="status">{L(lang, "Open a shift first", "Ouvrez d'abord un shift")}</span>}
-        {noShift && <button type="button" className="bar-cbtn" style={btn} onClick={shift.open}>{L(lang, "Open shift", "Ouvrir un shift")}</button>}
-        <button className="bar-cmain" disabled={busy || noShift} title={noShift ? L(lang, "Open a shift first", "Ouvrez d'abord un shift") : undefined}
-          onClick={() => act.mutate({ kind: "pay", path: `/bar/tabs/${tab.id}/pay`, body: { version: ver, payment_method: tnd } })}>{L(lang, "Take payment", "Encaisser")}</button>
-      </span>;
+  const ap = tab.approval && (tab.approval.status === "pending" || tab.approval.status === "approved") ? tab.approval : null;
+  if (tab.status === "open")
+    return <button className="bar-cbtn" style={btn} disabled={busy}
+      onClick={() => act.mutate({ kind: "bill", path: `/bar/tabs/${tab.id}/close` }, { onSuccess: () => onBill && onBill(tab) })}>{L(lang, "Bill", "Addition")}</button>;
+  if (ap && ap.status === "pending")
+    return <span className="bar-pay-actions" style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+      <span className="bar-noshift bar-waiting" role="status">⏳ {L(lang, "Waiting for approval", "En attente d'approbation")}</span>
+      <button type="button" className="bar-cbtn" style={btn} onClick={() => onBill && onBill(tab)}>{L(lang, "View", "Voir")}</button>
+    </span>;
+  // no shift: the hint + Open shift + Take payment take their OWN full-width line (else they crush the money block)
+  return <span className={noShift ? "bar-pay-actions is-noshift" : "bar-pay-actions"} style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", alignItems: "center", ...(noShift ? { flex: "1 1 100%", justifyContent: "flex-end" } : {}) }}>
+      {ap && <span className="bar-approved" role="status">✓ {L(lang, "Boss approved", "Accord du patron")}</span>}
+      {noShift && <span className="bar-noshift" role="status">{L(lang, "Open a shift first", "Ouvrez d'abord un shift")}</span>}
+      {noShift && <button type="button" className="bar-cbtn" style={btn} onClick={shift.open}>{L(lang, "Open shift", "Ouvrir un shift")}</button>}
+      <button className="bar-cmain" disabled={busy || noShift} title={noShift ? L(lang, "Open a shift first", "Ouvrez d'abord un shift") : undefined}
+        onClick={() => onBill && onBill(tab)}>{L(lang, "Take payment", "Encaisser")}</button>
+    </span>;
+}
+
+// ── THE BILL: the tab's served lines in the POS's own cart + payment panel ───────────────────
+// Read fresh from GET /bar/tabs/:id (lines, version, the boss's answer). Waiting for the boss → only the
+// wait (and "Cancel request"); otherwise the POS mounts in bill mode (POSPage embed.bill). Paid → receipt,
+// then back to the floor. Every change of the bill (version) or of the boss's answer mounts a fresh panel.
+export function BillView({ lang, barId, tabId, fallbackTitle, shift, onClose, onPaid }) {
+  const fmt = useCurrency();
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["bar-bill", tabId], queryFn: () => api.get(`/bar/tabs/${tabId}`).then((r) => r.data?.data), staleTime: 0, refetchOnWindowFocus: true,
+    refetchInterval: (query) => (query.state.data?.approval?.status === "pending" ? 15000 : false) });
+  const [err, setErr] = useState(null);
+  const cancelReq = useMutation({
+    mutationFn: (id) => api.post(`/staff/approvals/${id}/cancel`, { reason: "cancelled_from_bar_tab" }).then((r) => r.data),
+    onSuccess: () => { setErr(null); q.refetch(); onPaid && onPaid(); },
+    onError: (e) => setErr(errText(lang, e)),
+  });
+  const t = q.data;
+  const title = (t && (t.name || t.pa_bar_tables?.label)) || fallbackTitle || L(lang, "Bill", "Addition");
+  const back = <button type="button" className="bar-cbtn" style={btn} onClick={onClose}>← {L(lang, "Back to the floor", "Retour à la salle")}</button>;
+  if (q.isLoading) return <div className="bar-msg" role="status">{L(lang, "Loading the bill…", "Chargement de l'addition…")}</div>;
+  if (q.isError || !t) return <section style={card} className="bar-bill-box"><div role="alert">{errText(lang, q.error)}</div>{back}</section>;
+  if (t.status !== "closed") return <section style={card} className="bar-bill-box">
+    <div role="status">{t.status === "paid" ? L(lang, "This tab is paid.", "Cette note est payée.") : L(lang, "This tab is not waiting for payment.", "Cette note n'attend pas d'encaissement.")}</div>{back}</section>;
+  const ap = t.approval || null;
+  const noShift = shift ? !!shift.need : false;   // (the bill's own hint — same rule as TabActions)
+  const lines = t.bill_lines || [];
+  const lineName = (l) => (lang === "en" && l.name_en) || l.name || "?";
+  const summary = (
+    <section style={{ ...card, display: "grid", gap: 10, alignContent: "start" }} className="bar-bill-box">
+      <h3 style={{ margin: 0 }}>🧾 {L(lang, "Bill", "Addition")} — {title}</h3>
+      <div style={{ display: "grid", gap: 4, fontSize: 13 }}>
+        {lines.map((l, i) => <div key={i} style={{ display: "flex", gap: 8 }}><span style={{ flex: 1 }}>{lineName(l)}</span>
+          <span style={{ opacity: 0.7 }}>{Number(l.quantity)} × {fmt(Number(l.unit_price))}</span></div>)}
+        <div style={{ display: "flex", fontWeight: 800, borderTop: "1px solid rgba(148,163,184,.25)", paddingTop: 6 }}>
+          <span style={{ flex: 1 }}>{L(lang, "Total", "Total")}</span><span>{fmt(Number(t.pa_sales?.total_amount) || 0)}</span></div>
+      </div>
+      <div style={{ fontSize: 12, opacity: 0.7 }}>{L(lang, "Served lines — to add a drink, open the tab's rounds. The bill cannot be changed here.",
+        "Lignes servies — pour ajouter une boisson, passez par les tournées. L'addition ne se modifie pas ici.")}</div>
+      {ap && ap.status === "approved" && <div className="bar-approved" role="status">✓ {L(lang, "The boss approved these terms — take the payment as approved.",
+        "Le patron a approuvé ces conditions — encaissez comme approuvé.")}
+        <div><button type="button" className="bar-cbtn" style={{ ...btn, marginTop: 6 }} disabled={cancelReq.isPending} onClick={() => cancelReq.mutate(ap.id)}>
+          {L(lang, "Other terms? Cancel the approval", "D'autres conditions ? Annuler l'accord")}</button></div></div>}
+      {ap && ap.status === "rejected" && <div className="bar-refused" role="status" style={{ color: "#fca5a5" }}>✗ {L(lang, "The boss refused", "Le patron a refusé")}
+        {ap.decision_note ? ` : « ${ap.decision_note} »` : ""} — {L(lang, "the tab is back to normal.", "la note est revenue à la normale.")}</div>}
+      {noShift && <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+        <span className="bar-noshift" role="status">{L(lang, "Open a shift first", "Ouvrez d'abord un shift")}</span>
+        <button type="button" className="bar-cbtn" style={btn} onClick={shift.open}>{L(lang, "Open shift", "Ouvrir un shift")}</button></div>}
+      {err && <div role="alert" style={{ color: "#fca5a5" }}>{err}</div>}
+      {back}
+    </section>
+  );
+  if (ap && ap.status === "pending") return (
+    <section style={{ ...card, display: "grid", gap: 10 }} className="bar-bill-box">
+      <h3 style={{ margin: 0 }}>🧾 {L(lang, "Bill", "Addition")} — {title}</h3>
+      <div className="bar-waiting" role="status" style={{ fontWeight: 700 }}>⏳ {L(lang, "Waiting for approval", "En attente d'approbation")}</div>
+      <div style={{ fontSize: 13, opacity: 0.8 }}>{L(lang, "Sent to the boss. No payment and no new round on this tab until he answers on his phone.",
+        "Envoyé au patron. Aucun encaissement ni nouvelle tournée sur cette note avant sa réponse sur son téléphone.")}</div>
+      <div style={{ fontSize: 13 }}>{L(lang, "Total", "Total")} : <strong>{fmt(Number(t.pa_sales?.total_amount) || 0)}</strong></div>
+      {err && <div role="alert" style={{ color: "#fca5a5" }}>{err}</div>}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button type="button" className="bar-cbtn" style={btn} disabled={cancelReq.isPending} onClick={() => cancelReq.mutate(ap.id)}>{L(lang, "Cancel request", "Annuler la demande")}</button>
+        {back}
+      </div>
+    </section>
+  );
+  const reload = () => qc.invalidateQueries({ queryKey: ["bar-bill", tabId] });
+  return (
+    <POSPage key={`bill:${tabId}:${t.pa_sales?.version}:${ap ? ap.id + ap.status : ""}`} embed={{
+      locationId: barId, showAll: false,
+      bill: { tabId, version: t.pa_sales?.version, lines, title: `${L(lang, "Bill", "Addition")} — ${title}`, approval: ap,
+        onPaid, onDone: onClose, onCancel: onClose, onWaiting: () => { onPaid && onPaid(); onClose(); }, onReload: reload },
+      renderLeft: () => summary,
+    }} />
+  );
 }
 const statusWord = (lang, s) => s === "open" ? L(lang, "open", "ouverte") : L(lang, "closed — to pay", "fermée — à encaisser");
 
 // ── Counter tabs (named) — the existing list + form, behind the header's "Counter tabs" button ──
-export function CounterTabsPanel({ lang, barId, named, busy, act, tender, setTender, shift, onRounds }) {
+export function CounterTabsPanel({ lang, barId, named, busy, act, onBill, shift, onRounds }) {
   const [counterName, setCounterName] = useState("");
   const fmtMoney = useCurrency();
   // Names are free text, so two "Paul" tabs are normal: beside a repeated name we show who opened it and when.
@@ -321,7 +413,7 @@ export function CounterTabsPanel({ lang, barId, named, busy, act, tender, setTen
             <span style={{ fontSize: 12, opacity: 0.7 }}>{statusWord(lang, t.status)}{t.figures ? ` · ${tabMoneyLine(lang, t.figures, fmtMoney)}` : total > 0 ? ` · ${fmtMoney(total)}` : ""}</span>
             <span style={{ marginLeft: "auto", display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
               {t.status === "open" && <button style={btn} disabled={busy} onClick={() => onRounds(t)}>{L(lang, "Rounds", "Tournées")}</button>}
-              <TabActions lang={lang} tab={t} busy={busy} act={act} tender={tender} setTender={setTender} shift={shift} />
+              <TabActions lang={lang} tab={t} busy={busy} act={act} onBill={onBill} shift={shift} />
             </span>
           </div>
         );
@@ -335,7 +427,7 @@ export function CounterTabsPanel({ lang, barId, named, busy, act, tender, setTen
 // draft can never become a second round; any edit to the draft takes a new key). Prices are the
 // server's. Serve: the WHOLE round, only for a person the owner allowed (can_serve). Cancel: only
 // while the round is still waiting. Online only, like every tab action.
-export function TableSide({ lang, barId, userId, tabId, table, title, products, fmt, showAll, setShowAll, canServe, isOnline, busy, act, tender, setTender, shift, onChanged, onWrongBranch }) {
+export function TableSide({ lang, barId, userId, tabId, table, title, products, fmt, showAll, setShowAll, canServe, isOnline, busy, act, onBill, shift, onChanged, onWrongBranch }) {
   const qc = useQueryClient();
   const [note, setNote] = useState(null);          // { ok, text }
   const [search, setSearch] = useState("");
@@ -479,7 +571,7 @@ export function TableSide({ lang, barId, userId, tabId, table, title, products, 
           {T && !foreign && (
             <div className="bar-foot-row">
               <TabMoney lang={lang} figures={T.figures} fallbackTotal={T.pa_sales?.total_amount} />
-              <TabActions lang={lang} tab={floorTab} busy={busy} act={act} tender={tender} setTender={setTender} shift={shift} />
+              <TabActions lang={lang} tab={floorTab} busy={busy} act={act} onBill={onBill} shift={shift} />
             </div>
           )}
         </div>

@@ -31,5 +31,13 @@ const SHIFT = [
 ];
 CART_TEETH[3] = FIX2;
 CART_TEETH[4] = SHIFT;
-// 5 = the lost-pay read-back removed (2026-11-20): every lost/409 answer goes straight to the error — P12a/b/c must go red
-CART_TEETH[5] = [{ file: BAR, from: "if (m && lost) {", to: "if (false) {" }];
+// 5 = the lost-pay read-back removed (2026-11-20). Since the bill (same day) the pay leaves from the POS panel, so
+//     the read-back that matters is POSPage's bill one: every lost/409 answer goes straight to the error — P12a/b/c red
+CART_TEETH[5] = [{ file: POS, from: "          if (lost) {", to: "          if (false) {" }];
+// 6 = the bill's cart NOT locked: setters live again and the lines render with ✕ / − / + / qty / discount — P13b red
+CART_TEETH[6] = [
+  { file: POS, from: "  const setCart = bill ? BILL_CART_LOCKED : setCartRaw;", to: "  const setCart = setCartRaw;" },
+  { file: POS, from: ") : cart.map((item, idx) => item.billLine ? (", to: ") : cart.map((item, idx) => false ? (" },
+];
+// 7 = "Send request to boss" on a bill takes the New Sale path (parks a held cart, no bar_tab_id) — P13e red
+CART_TEETH[7] = [{ file: POS, from: "      if (bill) {\n        await api.post(\"/sales/bundled-approval-request\", {", to: "      if (false) {\n        await api.post(\"/sales/bundled-approval-request\", {" }];
