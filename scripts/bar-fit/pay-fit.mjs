@@ -31,7 +31,8 @@ const ANDROID_PHONE = "Mozilla/5.0 (Linux; Android 13; SM-A145F) AppleWebKit/537
 const SIZES = [["1024x768", 1024, 768, "tablet"], ["1180x820", 1180, 820, "tablet"], ["1280x800", 1280, 800, "tablet"], ["1366x1024", 1366, 1024, "tablet"],
   ["1920x1080", 1920, 1080, "desktop"], ["768x1024", 768, 1024, "tablet"], ["800x1280", 800, 1280, "tablet"], ["390x844", 390, 844, "phone"]];
 const ONLY = (process.env.BAR_PAY_ONLY || "").split(",").filter(Boolean);
-const APPS = (process.env.BAR_PAY_APP || "bar,pos").split(",");
+const PAY_LANG = process.env.BAR_PAY_LANG || "en";   // fr: every label below is matched EN or FR
+const APPS = (process.env.BAR_PAY_APP || "bar,pos,bill").split(",");   // bill (2026-11-20) = a tab's bill in the same panel
 // each size as listed AND rotated
 const CASES = [];
 for (const [n, w, h, kind] of SIZES) for (const rot of [false, true]) {
@@ -50,11 +51,16 @@ const CUSTOMERS = [{ id: "c2", name: "Ngono Marie", phone: "677000002", customer
 const USER = { id: "u1", org_id: "o1", role: "owner", full_name: "Boss Dozie", phone: "699000101", has_seen_onboarding: true, location_id: null };
 const ORG = { id: "o1", name: "Dozie Tube & Tyre", plan: "pro_plus", subscription_status: "active", currency: "XAF", bar_mode_enabled: true, max_offline_hours: 24 };
 const LOCS = [{ id: BON, name: "Bonaberri", type: "shop", is_active: true }];
+const BILL_TAB = { id: "nt1", kind: "named", name: "Jo", status: "closed", location_id: BON, opened_at: "2026-11-19T20:00:00.000Z",
+  pa_sales: { version: 3, total_amount: 118300 } };   // = the 5 bill lines below
 function answer(path, q) {
   if (path === "/auth/me") return ok({ user: USER, org: ORG });
   if (path === "/bar/mine") return ok({ bars: [{ id: BON, name: "Bonaberri" }], can_setup: true, can_serve: true });
   if (path === "/locations") return ok(LOCS);
-  if (/^\/bar\/[^/]+\/floor$/.test(path)) return ok({ zones: [{ id: "z1", name: "Salle" }], tables: [{ id: "t1", label: "T1", zone_id: "z1", tab: null }], named_tabs: [] });
+  if (/^\/bar\/[^/]+\/floor$/.test(path)) return ok({ zones: [{ id: "z1", name: "Salle" }], tables: [{ id: "t1", label: "T1", zone_id: "z1", tab: null }], named_tabs: [BILL_TAB] });
+  // the BILL (2026-11-20): 5 served lines (the tall case), read by the bill view
+  if (path === "/bar/tabs/nt1") return ok({ ...BILL_TAB, sale_id: "sale-nt1", approval: null,
+    bill_lines: PRODUCTS.map((p, i) => ({ product_id: p.id, quantity: i + 1, unit_price: p.sell_price, name: p.name, price_tier: "walk_in" })) });
   if (/^\/bar\/[^/]+\/quick-items$/.test(path)) return ok({ ids: PRODUCTS.map((p) => p.id) });
   if (path === "/products") return ok(PRODUCTS);
   if (path === "/products/multipart-availability") return ok({});
@@ -124,19 +130,20 @@ try {
     const phone = c.kind === "phone";
     const ctx = await browser.newContext({ viewport: { width: c.W, height: c.H }, deviceScaleFactor: 1, serviceWorkers: "block",
       userAgent: phone ? ANDROID_PHONE : c.kind === "tablet" ? ANDROID_TAB : undefined, hasTouch: c.kind !== "desktop", isMobile: phone });
-    await ctx.addInitScript(({ USER, ORG, BON, PRODUCTS }) => {
+    await ctx.addInitScript(({ USER, ORG, BON, PRODUCTS, app, PAY_LANG }) => {
       if (sessionStorage.getItem("__pay_init")) return; sessionStorage.setItem("__pay_init", "1");
       localStorage.clear();
       localStorage.setItem("mp-auth", JSON.stringify({ state: { user: USER, org: ORG, token: "probe-token", isAuthenticated: true, impersonating: false, impersonation: null, lastVerifiedActive: Date.now(), maxOfflineHours: 24 }, version: 0 }));
-      localStorage.setItem("mp-lang", JSON.stringify({ state: { lang: "en" }, version: 0 }));
+      localStorage.setItem("mp-lang", JSON.stringify({ state: { lang: PAY_LANG }, version: 0 }));
       localStorage.setItem("mp-settings", JSON.stringify({ state: { selectedLocation: { id: BON, name: "Bonaberri", type: "shop" } }, version: 0 }));
       // a 5-line cart (the tall case), restored by the POS from its own saved-cart store
       const items = PRODUCTS.map((p, i) => ({ lineId: `L${i}`, product_id: p.id, name: p.name, unit: "piece", quantity: i + 1, unit_price: p.sell_price, original_price: p.sell_price,
         sell_price: p.sell_price, min_price: 0, cost_price: 0, stock: 40 }));
       // BAR CART FIX 2: New Sale's cart (no barLoc) + the bar's own `::bar` cart (stamped) — the new bar reads only `::bar`
-      localStorage.setItem("mp-pos-draft-cart", JSON.stringify({ state: { drafts: { [`${USER.id}::${BON}`]: { items, updatedAt: Date.now() },
+      // bill: no saved Home cart (on a phone the restored cart opens its sheet over the floor) — the bill IS the cart
+      if (app !== "bill") localStorage.setItem("mp-pos-draft-cart", JSON.stringify({ state: { drafts: { [`${USER.id}::${BON}`]: { items, updatedAt: Date.now() },
         [`${USER.id}::${BON}::bar`]: { items: items.map((it) => ({ ...it, barLoc: BON })), updatedAt: Date.now() } } }, version: 0 }));
-    }, { USER, ORG, BON, PRODUCTS });
+    }, { USER, ORG, BON, PRODUCTS, app, PAY_LANG });
     await ctx.route((u) => u.hostname !== "localhost", (route) => route.abort());
     await ctx.route((u) => u.hostname === "localhost" && u.pathname.startsWith("/api/"), (route) => {
       const u = new URL(route.request().url()); const p = u.pathname.replace(/^\/api/, "");
@@ -145,17 +152,30 @@ try {
     const page = await ctx.newPage();
     const errs = []; page.on("pageerror", (e) => errs.push(e.message));
     try {
+      if (app === "bill") {   // the floor → Counter tabs → Take payment: the bill opens ON the payment panel
+        await page.goto("http://localhost:5195/bar", { waitUntil: "domcontentloaded" });
+        // the header's Counter tabs button (on a phone its visible "Tabs" is aria-hidden → no accessible name: by class)
+        const tabsBtn = page.locator(".bar-top-right .bar-outline-btn.is-accent").first();
+        await tabsBtn.waitFor({ timeout: 60000 });
+        if (process.env.BAR_PAY_DEBUG) console.log("tabs button:", await tabsBtn.evaluate((b) => b.outerHTML.slice(0, 200)), await page.getByRole("button", { name: /Counter tabs|Tabs/ }).count());
+        await tabsBtn.click({ timeout: 15000 });
+        if (process.env.BAR_PAY_DEBUG) console.log("after tabs:", await page.evaluate(() => [...document.querySelectorAll("button")].map((b) => b.textContent.trim()).filter((t) => /payment|Rounds|Bill/.test(t)).join(" | ")));
+        await page.getByRole("button", { name: /^(Take payment|Encaisser)$/ }).first().click({ timeout: 15000 });
+        await page.getByRole("button", { name: /Full Credit|Crédit total/ }).first().waitFor({ timeout: 15000 });
+        await page.waitForTimeout(500);
+      } else {
       await page.goto(`http://localhost:5195/${app}`, { waitUntil: "domcontentloaded" });
       const proceed = page.getByRole("button", { name: /^(Proceed to Payment →|Take payment)$/ }).first();
       await proceed.waitFor({ state: "attached", timeout: 60000 });
       await page.waitForTimeout(500);
       if (!(await proceed.isVisible())) { await page.getByRole("button", { name: /Open cart/ }).click({ timeout: 15000 }); await page.waitForTimeout(800); }
       await proceed.click();
-      await page.getByRole("button", { name: /Full Credit/ }).first().click({ timeout: 15000 });
+      }
+      await page.getByRole("button", { name: /Full Credit|Crédit total/ }).first().click({ timeout: 15000 });
       await page.waitForTimeout(500);
       // BAR_PAY_STILL=1 → still frames for a before/after pixel comparison (no animation, no caret, no toast)
       if (process.env.BAR_PAY_STILL) { await page.addStyleTag({ content: "*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important} [role=status],[aria-live]{visibility:hidden!important}" }); await page.waitForTimeout(300); }
-      const m = await page.evaluate(REACH, { texts: { warning: "^⚠️ A registered customer is required", choose: "^👤 Choose customer$", back: "^← Back$", confirm: "^✓ Confirm" }, pinned: ["back", "confirm"] });
+      const m = await page.evaluate(REACH, { texts: { warning: "^⚠️ (A registered customer is required|Un client enregistré est requis)", choose: "^👤 (Choose customer|Choisir un client)$", back: "^← (Back|Retour)$", confirm: "^✓ (Confirm|Valider)" }, pinned: ["back", "confirm"] });
       // BAR_PAY_LAYOUT=1 → every visible element's box (rounded to 0.1 px) + text, for a before/after LAYOUT comparison
       if (process.env.BAR_PAY_LAYOUT) writeFileSync(resolve(OUT, `layout-${app}-${c.name}.json`), JSON.stringify(await page.evaluate(() =>
         [...document.querySelectorAll("body *")].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight; })
@@ -167,13 +187,13 @@ try {
       for (const [k, label] of [["warning", "the red warning"], ["choose", "“Choose customer”"]])
         check(tag, `${tag}: ${label} reachable (panel scroll only), fully in view, on top`, m[k].found && m[k].inView && m[k].onTop && !m[k].pageScrolled, JSON.stringify(m[k]));
       // keyboard: open the search, shrink the viewport like a resizing WebView
-      await page.getByRole("button", { name: /^👤 Choose customer$/ }).click();
-      const input = page.getByRole("textbox", { name: /Search customer/ });
+      await page.getByRole("button", { name: /^👤 (Choose customer|Choisir un client)$/ }).click();
+      const input = page.getByRole("textbox", { name: /Search customer|Rechercher un client/ });
       await input.focus();
       await page.setViewportSize({ width: c.W, height: Math.round(c.H * 0.6) });
       await page.waitForTimeout(500);
       if (process.env.BAR_PAY_DEBUG) console.log(await page.evaluate(() => {   // the Confirm button's ancestor boxes
-        const b = [...document.querySelectorAll("button")].find((e) => /^✓ Confirm/.test(e.textContent.trim())); const out = [];
+        const b = [...document.querySelectorAll("button")].find((e) => /^✓ (Confirm|Valider)/.test(e.textContent.trim())); const out = [];
         for (let p = b; p && p !== document.body; p = p.parentElement) { const r = p.getBoundingClientRect(), cs = getComputedStyle(p);
           out.push(`${p.tagName}.${(p.className || "").toString().slice(0, 20)} t=${Math.round(r.top)} h=${Math.round(r.height)} sh=${p.scrollHeight} ov=${cs.overflowY} flex=${cs.flex} minH=${cs.minHeight} pos=${cs.position}`); }
         return out.join("\n"); }));
@@ -181,7 +201,7 @@ try {
         const se = document.scrollingElement, y0 = se.scrollTop; el.scrollIntoView({ block: "nearest" }); se.scrollTop = y0;
         const r = el.getBoundingClientRect(); return { inView: r.top >= -0.5 && r.bottom <= innerHeight + 0.5 && r.left >= -0.5 && r.right <= innerWidth + 0.5, t: Math.round(r.top), b: Math.round(r.bottom), H: innerHeight }; });
       // the focused field is scrolled into view (as Android does when the keyboard opens) — THEN Confirm must be on screen
-      const k = await page.evaluate(REACH, { texts: { confirm: "^✓ Confirm" }, pinned: ["confirm"] }).catch(() => null);
+      const k = await page.evaluate(REACH, { texts: { confirm: "^✓ (Confirm|Valider)" }, pinned: ["confirm"] }).catch(() => null);
       // at THE SAME moment (no scroll in between): the search box is in view AND not covered (e.g. by the pinned row)
       const sNow = await input.evaluate((el) => { const r = el.getBoundingClientRect(); const t = document.elementFromPoint(Math.min(innerWidth - 1, r.left + r.width / 2), Math.min(innerHeight - 1, Math.max(0, r.top + r.height / 2)));
         return { inView: r.top >= -0.5 && r.bottom <= innerHeight + 0.5 && r.left >= -0.5 && r.right <= innerWidth + 0.5, onTop: !!t && (t === el || el.contains(t)), t: Math.round(r.top), b: Math.round(r.bottom), H: innerHeight }; });

@@ -194,7 +194,7 @@ try {
     const tb = page.locator(".bar-box");
     for (const i of [3, 4]) { await tb.nth(i).click(); await page.waitForTimeout(120); }
     await page.waitForTimeout(400);
-    m = await page.evaluate(MEASURE, { panelSel: ".bar-card", buttons: ["^(Send round|Envoyer la tournée)", "^(Close tab|Fermer la note)$"] }); m.W = W;
+    m = await page.evaluate(MEASURE, { panelSel: ".bar-card", buttons: ["^(Send round|Envoyer la tournée)", "^(Bill|Addition)$"] }); m.W = W;
     await page.screenshot({ path: resolve(OUT, `${name}${UA_TAG}-table.png`) });
     assertAll(name, "Table T1", m, { H });
     const badT = m.names.filter((n) => n.lines > 2 || !n.priceInside);

@@ -172,17 +172,17 @@ const FLOOR = {
     title: "T9", products: [], fmt: (n) => `${n} F`, showAll: false, setShowAll() {}, canServe: true, isOnline: true, busy: false, act: noop, tender: {}, setTender() {},
     onChanged() {}, onWrongBranch() {} }, { "bar-tab": tab ? { ...tab, location_id: "b1", rounds: [] } : undefined, ...extra });
   const tFree = tbl(null), tOpen = tbl({ id: "x1", status: "open", pa_sales: { version: 1, total_amount: 0 } }), tClosed = tbl({ id: "x2", status: "closed", pa_sales: { version: 1, total_amount: 3000 } });
-  check("free table → Open tab; open → Close tab; closed → Take payment (in the selected table's panel)",
-    (tFree.match(/Open tab</g) || []).length === 1 && tOpen.includes("Close tab") && !tOpen.includes("Take payment") && tClosed.includes("Take payment") && !tClosed.includes("Close tab"));
+  check("free table → Open tab; open → Bill (2026-11-20, was Close tab); closed → Take payment (in the selected table's panel)",
+    (tFree.match(/Open tab</g) || []).length === 1 && tOpen.includes(">Bill</button>") && !tOpen.includes("Take payment") && tClosed.includes("Take payment") && !tClosed.includes(">Bill</button>"));
   const tForeign = renderEl(MOD.TableSide, { lang: "en", barId: "b1", userId: "u1", tabId: "xx", table: { id: "t9", label: "T9", tab: { id: "xx", status: "open", pa_sales: { version: 1 } } },
     title: "T9", products: [], fmt: (n) => `${n} F`, showAll: false, setShowAll() {}, canServe: true, isOnline: true, busy: false, act: noop, tender: {}, setTender() {}, onChanged() {}, onWrongBranch() {} },
     { "bar-tab": { id: "xx", status: "open", location_id: "OTHER-BAR", pa_sales: { version: 1 }, rounds: [{ id: "r", round_no: 1, status: "sent", total: 1 }] } });
-  check("a tab of ANOTHER branch is never shown: no rounds, no actions", !tForeign.includes("Round") && !tForeign.includes("Close tab") && !tForeign.includes("Take payment"));
+  check("a tab of ANOTHER branch is never shown: no rounds, no actions", !tForeign.includes("Round") && !tForeign.includes(">Bill</button>") && !tForeign.includes("Take payment"));
   const ct = renderEl(MOD.CounterTabsPanel, { lang: "en", barId: "b1", named: FLOOR.named_tabs, busy: false, act: noop, tender: {}, setTender() {}, onRounds() {} });
   const dupWarn = (ct.match(/⚠ /g) || []).length;
   check("two 'Paul' tabs (any case) each show ⚠ + waiter + time; 'Marie' (unique) no ⚠", dupWarn === 2 && ct.includes("Awa") && ct.includes("Ben"), dupWarn);
   check("counter tab form needs a name (required input)", /<input[^>]*required[^>]*placeholder="Name \(who is it for\?\)"/.test(ct) || /placeholder="Name \(who is it for\?\)"[^>]*required/.test(ct));
-  check("counter tabs: open → Rounds + Close tab; closed → Take payment", ct.includes("Rounds") && ct.includes("Close tab") && ct.includes("Take payment"));
+  check("counter tabs: open → Rounds + Bill; closed → Take payment", ct.includes("Rounds") && ct.includes(">Bill</button>") && ct.includes("Take payment"));
   check("owner/manager: “Set up tables” offered", h.includes("Set up tables") && h.includes("Counter tabs"));
   const c = render({ role: "cashier", "bar-mine": { bars: [{ id: "b1", name: "Night Bar" }], can_setup: false }, "bar-floor": FLOOR });
   check("cashier: no set-up button (Counter tabs still there)", !c.includes("Set up tables") && c.includes("Counter tabs"));
@@ -192,8 +192,8 @@ const FLOOR = {
   const frT = renderEl(MOD.TableSide, { lang: "fr", barId: "b1", userId: "u1", tabId: null, table: { id: "t9", label: "T9", tab: null }, title: "T9", products: [], fmt: (n) => `${n} F`,
     showAll: false, setShowAll() {}, canServe: true, isOnline: true, busy: false, act: noop, tender: {}, setTender() {}, onChanged() {}, onWrongBranch() {} }, { lang: "fr" });
   const frC = renderEl(MOD.CounterTabsPanel, { lang: "fr", barId: "b1", named: FLOOR.named_tabs, busy: false, act: noop, tender: {}, setTender() {}, onRounds() {} }, { lang: "fr" });
-  check("French: Ouvrir une note / Fermer la note / Encaisser / Notes au comptoir / Accueil",
-    frT.includes("Ouvrir une note") && frC.includes("Fermer la note") && frC.includes("Encaisser") && fr.includes("Notes au comptoir") && fr.includes("Accueil"));
+  check("French: Ouvrir une note / Addition / Encaisser / Notes au comptoir / Accueil",
+    frT.includes("Ouvrir une note") && frC.includes(">Addition</button>") && frC.includes("Encaisser") && fr.includes("Notes au comptoir") && fr.includes("Accueil"));
 }
 
 console.log(`\n${fails ? `FAIL — ${fails} check(s) failed` : "all bar-mode step-2 frontend checks pass"}\n`);
