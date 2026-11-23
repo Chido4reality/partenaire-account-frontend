@@ -18,11 +18,11 @@
 //        the old bar-written cart removed by the store migration
 //   P11 no shift: "Open a shift first" + Open shift beside Take payment → shift opened in place → pay goes through
 // 2026-11-20 (Peter's tablet: "No connection" while the server had paid T1):
-//   P12 Take payment whose answer is LOST (paid / not paid) or refused 409 "already paid" (tab or ticket shape):
-//       the page reads the tab back and says what the server did; the pay is never re-sent.
+//   P12 the bill's answer LOST → New Sale's queue, one local_id; refused 409 "already paid" → said + reload; offline → nothing sent
+//   P13 the bill (read-only lines, POS rules, waiting for the boss, send to boss)   P14 empty tab: no sale   P15 shift > 24 h warning
 // Teeth 3 (fix 2 removed) → red on P7/P9/P10/P10s; teeth 4 (in-place shift removed) → red on P11;
-// teeth 5 (the bill's lost-pay read-back removed, POSPage) → red on P12a/b/c; teeth 6 (bill cart not locked) → red on P13b;
-// teeth 7 (Send request to boss parks a held cart in bill mode) → red on P13e.
+// teeth 5 (bill posted without bar_tab_id) → P11g; teeth 6 (bill cart not locked) → P13b; teeth 8 (offline guard) → P12c;
+// teeth 7 (send to boss parks a held cart) → P13e; teeth 9 (empty bill) → P14; teeth 10 (no warning) → P15; teeth 11 → P12a.
 // Run: node scripts/bar-fit/bundle.mjs && BAR_FIT_PREBUILT=1 node scripts/bar-fit/branch-cart.mjs
 // Teeth: BAR_CART_TEETH=1|2 node scripts/bar-fit/bundle.mjs && BAR_CART_TEETH=1|2 node scripts/bar-fit/branch-cart.mjs
 //        (1 = the fix removed → must go red on the cart; 2 = also the pay guard removed → must also go red on P5)
@@ -60,15 +60,17 @@ const TABLES = Array.from({ length: 4 }, (_, i) => ({ id: `t${i + 1}`, label: `T
 
 function answer(path, q, st = {}) {
   if (path === "/auth/me") return ok({ user: USER, org: ORG });
+  // st.proPlus: the plan answer (Layout asks /bar/mine only on pro_plus) — P15 reloads straight onto the Cash screen
+  if (path === "/subscriptions/my-plan" && st.proPlus) return ok({ effective_plan: "pro_plus" });
   // st.bepFirst: Bepanda listed first, as staging's /bar/mine does (no ORDER BY) — the "jumped to Bepanda" case
   if (path === "/bar/mine") return ok({ bars: st.bepFirst ? [{ id: BEP, name: "Bepanda" }, { id: BON, name: "Bonaberri" }] : [{ id: BON, name: "Bonaberri" }, { id: BEP, name: "Bepanda" }], can_setup: true, can_serve: true });
   if (path === "/shifts/current" && st.noShift && st.noShift.has(q.get("location_id"))) return ok(null);
-  // GET /bar/tabs/:id = the BILL (2026-11-20): served lines, version, the boss's answer (st.approval)
+  // GET /bar/tabs/:id = the BILL: served lines + the boss's answer (st.approval). Since 2026-11-23 a tab holds
+  // NO sale until its bill is paid through POST /sales (Bar Mode = layout only).
   const tb = path.match(/^\/bar\/tabs\/([^/]+)$/); if (tb) { (st.tabReads = st.tabReads || []).push(tb[1]);
     const named = Object.values(st.named || {}).flat().find((t) => t.id === tb[1]) || {};
-    return ok({ id: tb[1], name: named.name || null, status: (st.tabTrue || {})[tb[1]] || "closed", location_id: BON, sale_id: `sale-${tb[1]}`,
-      pa_sales: { version: 3, total_amount: 1500, sale_number: `T-${tb[1]}` },
-      bill_lines: [{ product_id: "bon2", quantity: 1, unit_price: 1500, name: "Bon Guinness", price_tier: "walk_in" }],
+    return ok({ id: tb[1], name: named.name || null, status: (st.tabTrue || {})[tb[1]] || "closed", location_id: BON, sale_id: null, pa_sales: null,
+      bill_lines: (st.emptyTabs || []).includes(tb[1]) ? [] : [{ product_id: "bon2", quantity: 1, unit_price: 1500, name: "Bon Guinness", price_tier: "walk_in" }],
       approval: (st.approval || {})[tb[1]] || null }); }
   const sl = path.match(/^\/sales\/(sale-[^/]+)$/); if (sl) { (st.saleReads = st.saleReads || []).push(sl[1]); return ok({ id: sl[1], sale_number: `T-${sl[1]}`, total_amount: 1500, status: "paid" }); }
   if (path === "/locations") return ok(LOCS);
@@ -78,7 +80,7 @@ function answer(path, q, st = {}) {
   if (path === "/products/multipart-availability") return ok({});
   if (path === "/held-carts") return ok([]);
   if (path === "/sales/tickets/summary") return ok({ mode: "direct", open_count: 0 });   // a direct till: Confirm completes the sale
-  if (path === "/shifts/current") return ok({ shift_id: `s-${q.get("location_id")}`, location_id: q.get("location_id"), opened_at: new Date().toISOString(), status: "open" });
+  if (path === "/shifts/current") return ok({ shift_id: `s-${q.get("location_id")}`, location_id: q.get("location_id"), opened_at: (st.oldShift && st.oldShift.has(q.get("location_id"))) ? "2026-11-19T18:00:00.000Z" : new Date().toISOString(), status: "open" });
   return null;
 }
 
@@ -113,33 +115,38 @@ async function session(label, opts = {}) {
     }
   }, { USER, ORG, BON, drafts: opts.drafts || null, at: opts.at || null, atName: opts.at ? NAME[opts.at] : null });
   const st = { delay: null, sales: [], holds: [], bepFirst: !!opts.bepFirst, noShift: new Set(opts.noShift || []), named: opts.named || null, payMode: opts.payMode || null,
-    approval: opts.approval || null, payAnswer: opts.payAnswer || null };
+    approval: opts.approval || null, payAnswer: opts.payAnswer || null, oldShift: new Set(opts.oldShift || []), emptyTabs: opts.emptyTabs || [], proPlus: !!opts.proPlus };
   await ctx.route((u) => u.hostname !== "localhost", (route) => route.abort());
-  await ctx.route((u) => u.hostname === "localhost" && u.pathname.startsWith("/api/"), async (route) => {
-    const req = route.request(); const u = new URL(req.url()); const p = u.pathname.replace(/^\/api/, "");
+  await ctx.route((u) => u.hostname === "localhost" && u.pathname.startsWith("/api/"), async (route) => { try {
+    const req = route.request(); const u = new URL(req.url()); const p = u.pathname.replace(/^\/api/, ""); if (process.env.BAR_CART_DEBUG && req.method() !== "GET") console.log("  REQ", req.method(), p, JSON.stringify(req.postDataJSON() || {}).slice(0, 160));
     if (st.delay) await new Promise((r) => setTimeout(r, st.delay[0] + Math.random() * (st.delay[1] - st.delay[0])));
     let a, status = 200;
     if (req.method() === "GET") a = answer(p, u.searchParams, st) ?? ok([]);
     else if (p === "/shifts/open") { const b = req.postDataJSON() || {}; st.noShift.delete(b.location_id); st.opened = (st.opened || 0) + 1; a = ok({ id: `s-${b.location_id}`, location_id: b.location_id, status: "open" }); }
-    else if (/^\/bar\/tabs\/[^/]+\/pay$/.test(p)) { const loc = (Object.entries(st.named || {}).find(([, ts]) => ts.some((t) => p.includes(t.id))) || [])[0];
-      const tid = p.split("/")[3], mode = (st.payMode || {})[tid];
-      if (mode) {   // P12: the server's side is decided here; the page must find out by reading the tab
-        (st.pays = st.pays || []).push({ path: p, body: req.postDataJSON() });
-        if (mode === "lost-paid") { (st.tabTrue = st.tabTrue || {})[tid] = "paid"; return route.abort("connectionreset"); }   // paid, answer lost
-        if (mode === "lost-unpaid") return route.abort("connectionreset");                                                // nothing done, answer lost
-        if (mode === "409-tab") { status = 409; (st.tabTrue = st.tabTrue || {})[tid] = "paid"; a = { success: false, code: "tab_not_payable", tab_status: "paid", message_en: "This tab is already paid.", message_fr: "Cette note est déjà payée." }; }
-        if (mode === "409-ticket") { status = 409; (st.tabTrue = st.tabTrue || {})[tid] = "paid"; a = { success: false, code: "wrong_status", current_status: "paid", expected_status: "pending_payment", message_en: "This ticket is paid — it cannot be paid now.", message_fr: "Ce ticket est payé." }; }
+    // THE BILL (2026-11-23): paid by New Sale's own POST /sales with bar_tab_id. st.pays = those posts.
+    else if (p === "/sales" && (req.postDataJSON() || {}).bar_tab_id) { const body = req.postDataJSON(); const tid = body.bar_tab_id;
+      const loc = (Object.entries(st.named || {}).find(([, ts]) => ts.some((t) => t.id === tid)) || [])[0];
+      const mode = (st.payMode || {})[tid];
+      (st.pays = st.pays || []).push({ path: p, body });
+      const first = st.pays.find((x) => x.body.bar_tab_id === tid);
+      if (mode === "lost-paid" && first === st.pays[st.pays.length - 1]) { (st.tabTrue = st.tabTrue || {})[tid] = "paid"; return route.abort("connectionreset"); }   // paid, answer lost
+      if (mode === "lost-paid") {   // the queue's replay: the SAME local_id → the server's dedupe replays the sale; another → refused
+        if (body.local_id && body.local_id === first.body.local_id) a = ok({ id: `sale-${tid}`, sale_number: `S-${tid}`, total_amount: 1500, status: "completed" });
+        else { status = 409; a = { success: false, code: "tab_not_payable", tab_status: "paid", message_en: "This tab is already paid.", message_fr: "Cette note est déjà payée." }; }
       }
+      else if (mode === "409-tab") { status = 409; (st.tabTrue = st.tabTrue || {})[tid] = "paid"; a = { success: false, code: "tab_not_payable", tab_status: "paid", message_en: "This tab is already paid.", message_fr: "Cette note est déjà payée." }; }
       else if (st.noShift.has(loc)) { status = 400; a = { success: false, code: "no_open_shift", message_en: "Open your till before taking payment.", message_fr: "Ouvrez votre caisse avant d'encaisser." }; }
-      else if ((st.payAnswer || {})[tid]) { (st.pays = st.pays || []).push({ path: p, body: req.postDataJSON() }); [status, a] = st.payAnswer[tid]; }
-      else { (st.pays = st.pays || []).push({ path: p, body: req.postDataJSON() }); a = ok({ id: `sale-${tid}`, sale_number: `T-${tid}`, total_amount: 1500, status: "paid" }); } }
+      else if ((st.payAnswer || {})[tid]) [status, a] = st.payAnswer[tid];
+      else a = ok({ id: `sale-${tid}`, sale_number: `S-${tid}`, total_amount: 1500, status: "completed" }); }
+    // the old tab pay: only an EMPTY tab (nothing served → no sale) still goes here
+    else if (/^\/bar\/tabs\/[^/]+\/pay$/.test(p)) { (st.oldPays = st.oldPays || []).push({ path: p, body: req.postDataJSON() }); a = ok({ id: p.split("/")[3], status: "paid", sale_id: null }); }
     else if (/^\/bar\/tabs\/[^/]+\/close$/.test(p)) { (st.closes = st.closes || []).push(p); a = ok({}); }
     else if (p === "/sales/bundled-approval-request") { (st.asks = st.asks || []).push(req.postDataJSON()); status = 202; a = { success: true, pending_approval: true, approval_id: "ap1", status: "pending" }; }
     else if (p === "/sales" || p === "/sales/ticket") { const body = req.postDataJSON(); st.sales.push(body); a = ok({ id: `sale${st.sales.length}`, sale_number: `S-${st.sales.length}`, total_amount: 0, status: "completed" }); }
     else if (p === "/held-carts") { st.holds.push(req.postDataJSON()); a = ok({ id: "h1", hold_ref: "H-1" }); }
     else a = ok({});
     try { await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(a) }); } catch { /* page moved on */ }
-  });
+  } catch (e) { console.log("  MOCK ERROR", route.request().method(), route.request().url(), e.message); throw e; } });
   const page = await ctx.newPage(); lastPage = page;
   const errs = []; page.on("pageerror", (e) => errs.push(e.message));
   await page.goto("http://localhost:5198/bar", { waitUntil: "domcontentloaded" });
@@ -163,9 +170,12 @@ const same = (a, b) => JSON.stringify([...(a || [])].sort()) === JSON.stringify(
 const CART = { [BON]: ["Bon Castel", "Bon Guinness", "Bon Coca"], [BEP]: ["Bep Booster", "Bep Red Bull"] };
 const other = (l) => (l === BON ? BEP : BON);
 
+// BAR_CART_ONLY=P1,P6,… → run only those case groups (one browser per run, to stay above the memory floor)
+const ONLY = (process.env.BAR_CART_ONLY || "").split(",").map((x) => x.trim()).filter(Boolean);
+const want = (id) => !ONLY.length || ONLY.includes(id);
 try {
   // ── P1–P5: one device, carts at both branches ──
-  {
+  if (want("P1")) {
     const { ctx, page, st, errs } = await session("P1 build at Bonaberri → switch to Bepanda");
     await settle(page, BON);
     check("P1a starts at Bonaberri with an empty cart", same(await cartNames(page), []), JSON.stringify(await cartNames(page)));
@@ -236,7 +246,7 @@ try {
     await ctx.close();
   }
   // ── P6: a device with no saved carts ──
-  {
+  if (want("P6")) {
     const { ctx, page, errs } = await session("P6 no saved carts: 20 switches");
     await settle(page, BON);
     let at = BON; const bad = [];
@@ -254,7 +264,7 @@ try {
   const line = (p, loc) => ({ lineId: `L-${p.id}`, product_id: p.id, name: p.name, unit: "piece", quantity: 1, unit_price: p.sell_price, original_price: p.sell_price, sell_price: p.sell_price,
     min_price: 0, cost_price: 0, stock: 40, ...(loc ? { barLoc: loc } : {}) });
   const BEP_LINES = PRODUCTS[BEP].filter((p) => CART[BEP].includes(p.name));
-  {
+  if (want("P7")) {
     // P7 — Peter's steps: Bepanda already holds a saved cart; /bar at Bonaberri (the app's branch, Bepanda
     // listed FIRST like staging) → build Bonaberri's cart → ☰ Cash (no shift at Bonaberri → open one) → back
     const { ctx, page, st, errs } = await session("P7 Bonaberri → Cash (open shift) → back to /bar", { bepFirst: true, noShift: [BON],
@@ -295,7 +305,7 @@ try {
     check("P7–P9 no page errors", !errs.length, errs.slice(0, 2).join(" | "));
     await ctx.close();
   }
-  {
+  if (want("P10")) {
     // P10 — a cart saved BEFORE the per-line branch field (or by New Sale, which never sets it) under
     // Bonaberri's key, holding Bepanda's lines: they must NOT show at Bonaberri, and nothing of them may be sold
     const OLD = [...BEP_LINES.map((p) => line(p, null)), line(PRODUCTS[BON][0], null)];
@@ -315,7 +325,7 @@ try {
     check("P10 no page errors", !errs.length, errs.slice(0, 2).join(" | "));
     await ctx.close();
   }
-  {
+  if (want("P10s")) {
     // P10s — the state found on the tablet: Bepanda's lines under Bonaberri's key, ALREADY STAMPED as Bonaberri
     // (the old stamping effect did that on restore), plus the bar's own key holding lines with no / another branch
     const STAMPED = BEP_LINES.map((p) => line(p, BON));
@@ -330,10 +340,10 @@ try {
     check("P10s no page errors", !errs.length, errs.slice(0, 2).join(" | "));
     await ctx.close();
   }
-  {
+  if (want("P11")) {
     // P11 — no shift at Bonaberri, a counter tab to pay: "Open a shift first" + Open shift BESIDE Take payment,
     // the shift opened in place (the POS shift modal), then Take payment goes through without leaving the tab
-    const TAB = { id: "nt1", name: "Jo", status: "closed", location_id: BON, opened_at: new Date().toISOString(), pa_sales: { version: 3, total_amount: 1500 },
+    const TAB = { id: "nt1", name: "Jo", status: "closed", location_id: BON, opened_at: new Date().toISOString(),
       figures: { ordered: 1500, served: 1500, waiting: 0, paid: 0, balance_due: 1500, service_status: "served", payment_status: "unpaid", rounds_waiting: 0, rounds_served: 1 } };
     const { ctx, page, st, errs } = await session("P11 pay a tab with no shift open → Open shift in place → pay", { noShift: [BON], named: { [BON]: [TAB] } });
     await settle(page, BON);
@@ -353,65 +363,69 @@ try {
     check("P11e the hint is gone and Take payment is enabled", (await page.locator(".bar-noshift").count()) === 0 && !(await row.getByRole("button", { name: "Take payment" }).isDisabled()));
     check("P11f still on /bar, the same tab", new URL(page.url()).pathname === "/bar" && (await row.count()) > 0);
     await row.getByRole("button", { name: "Take payment" }).click();
-    // BAR BILL (2026-11-20): Take payment opens the POS payment panel on the tab's bill; Confirm pays the tab
+    // Take payment opens the POS payment panel on the tab's bill; Confirm = New Sale's own POST /sales + bar_tab_id
     await page.getByRole("button", { name: /✓ Confirm/ }).first().click({ timeout: 15000 });
     for (let i = 0; i < 40 && !(st.pays || []).length; i++) await page.waitForTimeout(150);
     const pb = (st.pays || [])[0]?.body || {};
-    check("P11g Take payment went through the POS panel (POST /bar/tabs/nt1/pay with the POS terms + the served lines)",
-      (st.pays || []).length === 1 && st.pays[0].path === "/bar/tabs/nt1/pay" && pb.pay_mode === "paid" && pb.version === 3
+    check("P11g Take payment = New Sale's POST /sales (bar_tab_id nt1, the served lines, location Bonaberri, a local_id)",
+      (st.pays || []).length === 1 && st.pays[0].path === "/sales" && pb.bar_tab_id === "nt1" && pb.location_id === BON && !!pb.local_id
       && (pb.items || []).length === 1 && pb.items[0].product_id === "bon2" && Number(pb.paid_amount) === 1500, JSON.stringify(st.pays));
+    check("P11h the old bar pay route was NOT used for a bill with lines", !(st.oldPays || []).length, JSON.stringify(st.oldPays));
     check("P11 no page errors", !errs.length, errs.slice(0, 2).join(" | "));
     await ctx.close();
   }
-  {
-    // P12 — LOST RESPONSE on Take payment (Peter's tablet 2026-11-19: "No connection" while the server had paid).
-    // Four counter tabs, each a different server outcome; the page must say what the SERVER did, and never re-send.
+  if (want("P12")) {
+    // P12 — LOST RESPONSE on the bill's Confirm (Peter's tablet 2026-11-19: "No connection" while the server had paid).
+    // Since 2026-11-23 the bill IS a New Sale, so a lost answer is New Sale's: the request is queued with its
+    // local_id and every re-send carries the SAME local_id (the server's dedupe replays the one sale — never two).
     const fig = { ordered: 1500, served: 1500, waiting: 0, paid: 0, balance_due: 1500, service_status: "served", payment_status: "unpaid", rounds_waiting: 0, rounds_served: 1 };
-    const T = (id, name) => ({ id, name, status: "closed", location_id: BON, opened_at: new Date().toISOString(), pa_sales: { version: 3, total_amount: 1500 }, figures: fig });
-    const TABS = [T("nt2", "Ann"), T("nt3", "Ben"), T("nt4", "Cyd"), T("nt5", "Dee")];
-    const { ctx, page, st, errs } = await session("P12 Take payment: the answer is lost / refused as already paid → the tab's true state decides",
-      { named: { [BON]: TABS }, payMode: { nt2: "lost-paid", nt3: "409-tab", nt4: "409-ticket", nt5: "lost-unpaid" } });
-    // BAR BILL (2026-11-20): the pay now leaves from the POS panel (Take payment → bill → Confirm); the read-back
-    // is the bill's own: GET /bar/tabs/:id AFTER the pay, then the sale for the receipt. Each tab from a fresh /bar.
-    const payOne = async (id, name) => {
+    const T = (id, name) => ({ id, name, status: "closed", location_id: BON, opened_at: new Date().toISOString(), figures: fig });
+    const TABS = [T("nt2", "Ann"), T("nt3", "Ben"), T("nt4", "Cyd")];
+    const { ctx, page, st, errs } = await session("P12 the bill's answer is lost / refused as already paid / offline",
+      { named: { [BON]: TABS }, payMode: { nt2: "lost-paid", nt3: "409-tab" } });
+    const openBill = async (name) => {
       await page.goto("http://localhost:5198/bar", { waitUntil: "domcontentloaded" }); await settle(page, BON);
       await page.getByRole("button", { name: /Counter tabs|Tabs/ }).first().click();
       const row = page.locator("div", { has: page.getByText(name, { exact: true }) }).filter({ has: page.getByRole("button", { name: "Take payment" }) }).last();
-      await row.getByRole("button", { name: "Take payment" }).waitFor({ timeout: 15000 });
-      const before = (st.pays || []).filter((x) => x.path.includes(`/${id}/`)).length;
-      await row.getByRole("button", { name: "Take payment" }).click();
+      await row.getByRole("button", { name: "Take payment" }).click({ timeout: 15000 });
       await page.getByRole("button", { name: /✓ Confirm/ }).first().waitFor({ timeout: 15000 });
-      const readsBefore = (st.tabReads || []).filter((x) => x === id).length;   // the bill's own load
-      await page.getByRole("button", { name: /✓ Confirm/ }).first().click();
-      for (let i = 0; i < 60 && (st.pays || []).filter((x) => x.path.includes(`/${id}/`)).length === before; i++) await page.waitForTimeout(150);
-      for (let i = 0; i < 40 && (st.tabReads || []).filter((x) => x === id).length === readsBefore; i++) await page.waitForTimeout(150);
-      await page.waitForTimeout(1200);
-      const sent = (st.pays || []).filter((x) => x.path.includes(`/${id}/`)).length - before;
-      const text = await page.evaluate(() => document.body.innerText);
-      return { sent, text: text.replace(/\s+/g, " ").slice(0, 4000), read: (st.tabReads || []).filter((x) => x === id).length > readsBefore,
-        receipt: (st.saleReads || []).includes(`sale-${id}`) };
     };
-    let r = await payOne("nt2", "Ann");
-    check("P12a paid but the answer LOST → \"Tab paid.\", never \"No connection\"", /Tab paid\./.test(r.text) && !/No connection/.test(r.text), r.text);
-    check("P12a the pay was sent ONCE (no re-send), the tab READ back, the sale read for the receipt", r.sent === 1 && r.read && r.receipt, `sent ${r.sent} read ${r.read} receipt ${r.receipt}`);
-    r = await payOne("nt3", "Ben");
-    check("P12b refused 409 tab_status=paid → \"Tab paid.\"", /Tab paid\./.test(r.text) && !/already paid/.test(r.text), r.text);
-    check("P12b sent once, read back", r.sent === 1 && r.read && r.receipt, `sent ${r.sent} read ${r.read}`);
-    r = await payOne("nt4", "Cyd");
-    check("P12c refused 409 current_status=paid (the ticket) → \"Tab paid.\"", /Tab paid\./.test(r.text), r.text);
-    check("P12c sent once, read back", r.sent === 1 && r.read && r.receipt, `sent ${r.sent} read ${r.read}`);
-    r = await payOne("nt5", "Dee");
-    check("P12d answer lost and the tab is NOT paid → the POS network error (\"try again\"), never \"Tab paid.\"", /Network error|No connection/.test(r.text) && !/Tab paid/.test(r.text) && !r.receipt, r.text.slice(0, 300));
-    check("P12d sent once (the page never re-sends by itself)", r.sent === 1, `sent ${r.sent}`);
+    const sends = (id) => (st.pays || []).filter((x) => x.body.bar_tab_id === id);
+    // a — paid on the server, the answer lost
+    await openBill("Ann");
+    await page.getByRole("button", { name: /✓ Confirm/ }).first().click();
+    for (let i = 0; i < 60 && !sends("nt2").length; i++) await page.waitForTimeout(150);
+    await page.waitForTimeout(2500);
+    let text = (await page.evaluate(() => document.body.innerText)).replace(/\s+/g, " ");
+    check("P12a answer lost → New Sale's queue: said as saved (never \"Tab paid.\" and never a second sale)", /Saved — the connection dropped/.test(text) && !/Tab paid\./.test(text), text.slice(0, 300));
+    const ids = [...new Set(sends("nt2").map((x) => x.body.local_id))];
+    check("P12a every send of this bill carries ONE local_id (the server's dedupe collapses a re-send)", ids.length === 1 && !!ids[0], JSON.stringify(sends("nt2").map((x) => x.body.local_id)));
+    // b — someone else paid it: the server refuses → said in its words, the bill reloads, nothing re-sent
+    await openBill("Ben");
+    const readsB = (st.tabReads || []).filter((x) => x === "nt3").length;
+    await page.getByRole("button", { name: /✓ Confirm/ }).first().click();
+    for (let i = 0; i < 60 && !sends("nt3").length; i++) await page.waitForTimeout(150);
+    await page.waitForTimeout(1500);
+    text = (await page.evaluate(() => document.body.innerText)).replace(/\s+/g, " ");
+    check("P12b refused 409 tab_not_payable → \"This tab is already paid.\", the bill reloads", /This tab is already paid\./.test(text) && (st.tabReads || []).filter((x) => x === "nt3").length > readsB, text.slice(0, 300));
+    check("P12b sent once (never re-sent by the page)", sends("nt3").length === 1, String(sends("nt3").length));
+    // c — offline at Confirm: a tab is a shared object, its bill is never started offline (spec decision 12)
+    await openBill("Cyd");
+    await ctx.setOffline(true);
+    await page.getByRole("button", { name: /✓ Confirm/ }).first().click();
+    await page.waitForTimeout(1200);
+    text = (await page.evaluate(() => document.body.innerText)).replace(/\s+/g, " ");
+    await ctx.setOffline(false);
+    check("P12c offline → \"Tabs need a connection. Nothing was saved\", nothing sent", /Tabs need a connection/.test(text) && !sends("nt4").length, text.slice(0, 300));
     check("P12 no page errors", !errs.length, errs.slice(0, 2).join(" | "));
     await ctx.close();
   }
-  {
+  if (want("P13")) {
     // P13 — THE BILL (Peter 2026-11-20): "Bill / Addition" (not "Close tab") opens the POS payment panel on the
     // tab's served lines, read-only; credit needs a customer (POS rule); a bill waiting for the boss shows only the
     // wait; "Send request to boss" on a bill is tied to the TAB (bar_tab_id) — no held cart, no new sale.
     const fig = { ordered: 1500, served: 1500, waiting: 0, paid: 0, balance_due: 1500, service_status: "served", payment_status: "unpaid", rounds_waiting: 0, rounds_served: 1 };
-    const T = (id, name, status, extra = {}) => ({ id, name, status, location_id: BON, opened_at: new Date().toISOString(), pa_sales: { version: 3, total_amount: 1500 }, figures: fig, ...extra });
+    const T = (id, name, status, extra = {}) => ({ id, name, status, location_id: BON, opened_at: new Date().toISOString(), figures: fig, ...extra });
     const WAIT = { id: "ap9", status: "pending", requested_by: "u2", terms: { pay_mode: "credit" }, actions: [{ type: "credit" }] };
     const TABS = [T("nt6", "Kim", "open"), T("nt7", "Lou", "closed", { approval: WAIT }), T("nt8", "Max", "closed")];
     const { ctx, page, st, errs } = await session("P13 the bill: Bill button, read-only lines, POS rules, waiting for the boss, send to boss",
@@ -464,6 +478,47 @@ try {
     check("P13e nothing parked as a held cart, no sale created", !st.holds.length && !st.sales.length, JSON.stringify({ holds: st.holds.length, sales: st.sales.length }));
     check("P13e back on the floor, told the tab waits for the boss", /waits for his answer/.test(await page.evaluate(() => document.body.innerText)) && !(await page.evaluate(() => /Bill — Max/.test(document.body.innerText))));
     check("P13 no page errors", !errs.length, errs.slice(0, 2).join(" | "));
+    await ctx.close();
+  }
+  if (want("P14")) {
+    // P14 — a closed tab with NOTHING served: no sale is made. The bill says so and closes the tab off empty
+    // (the only use left of POST /bar/tabs/:id/pay); the POS panel never mounts, nothing goes to POST /sales.
+    const fig = { ordered: 0, served: 0, waiting: 0, paid: 0, balance_due: 0, service_status: "none", payment_status: "unpaid", rounds_waiting: 0, rounds_served: 0 };
+    const { ctx, page, st, errs } = await session("P14 an empty tab: no sale, closed off empty",
+      { named: { [BON]: [{ id: "nt9", name: "Zoe", status: "closed", location_id: BON, opened_at: new Date().toISOString(), figures: fig }] }, emptyTabs: ["nt9"] });
+    await settle(page, BON);
+    await page.getByRole("button", { name: /Counter tabs|Tabs/ }).first().click();
+    const row = page.locator("div", { has: page.getByText("Zoe", { exact: true }) }).filter({ has: page.getByRole("button", { name: "Take payment" }) }).last();
+    await row.getByRole("button", { name: "Take payment" }).click({ timeout: 15000 });
+    await page.getByRole("button", { name: "Close the empty tab" }).waitFor({ timeout: 15000 });
+    check("P14a the empty bill says there is nothing to pay, and shows NO Confirm", /Nothing was served on this tab/.test(await page.evaluate(() => document.body.innerText))
+      && (await page.getByRole("button", { name: /✓ Confirm/ }).count()) === 0);
+    await page.getByRole("button", { name: "Close the empty tab" }).click();
+    for (let i = 0; i < 40 && !(st.oldPays || []).length; i++) await page.waitForTimeout(150);
+    check("P14b closed off through /bar/tabs/nt9/pay with no terms; nothing sent to POST /sales", (st.oldPays || []).length === 1 && st.oldPays[0].path === "/bar/tabs/nt9/pay"
+      && !Object.keys(st.oldPays[0].body || {}).length && !(st.pays || []).length && !st.sales.length, JSON.stringify({ old: st.oldPays, pays: (st.pays || []).length }));
+    check("P14 no page errors", !errs.length, errs.slice(0, 2).join(" | "));
+    await ctx.close();
+  }
+  if (want("P15")) {
+    // P15 — SHIFT OPEN > 24 h (Peter 2026-11-21): a warning on the bar floor and the Cash screen, nothing blocked.
+    // Bonaberri's shift opened 19 Nov; Bepanda's just now (no warning).
+    const { ctx, page, st, errs } = await session("P15 shift open more than 24 h → warning on the floor + Cash", { oldShift: [BON], proPlus: true });
+    await settle(page, BON);
+    const warn = page.locator(".shift-age-warning");
+    await warn.first().waitFor({ timeout: 15000 }).catch(() => {});
+    check("P15a bar floor: \"Shift open since 19 Nov — close it\"", (await warn.count()) === 1 && /Shift open since 19 Nov — close it/.test(await warn.first().innerText()), (await warn.count()) ? await warn.first().innerText() : "none");
+    check("P15b warning only: the POS cart + its Confirm path are still there", (await page.locator(".bar-cart").count()) > 0);
+    await page.goto("http://localhost:5198/shifts", { waitUntil: "domcontentloaded" });
+    await page.getByText(/Cash register/).first().waitFor({ timeout: 30000 });
+    await warn.first().waitFor({ timeout: 15000 }).catch(() => {});
+    if (process.env.BAR_CART_SHOT && !(await warn.count())) await page.screenshot({ path: process.env.BAR_CART_SHOT.replace(/.png$/, "-p15c.png") });
+    check("P15c Cash screen at Bonaberri: the same warning", (await warn.count()) === 1 && /Shift open since 19 Nov — close it/.test(await warn.first().innerText()), String(await warn.count()));
+    await page.goto("http://localhost:5198/bar", { waitUntil: "domcontentloaded" }); await settle(page, BON);
+    await page.locator("select.bar-select").selectOption(BEP); await settle(page, BEP);
+    await page.waitForTimeout(800);
+    check("P15d Bepanda (shift opened today): no warning", (await warn.count()) === 0, String(await warn.count()));
+    check("P15 no page errors", !errs.length, errs.slice(0, 2).join(" | "));
     await ctx.close();
   }
 } catch (e) {

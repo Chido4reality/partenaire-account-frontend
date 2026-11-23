@@ -22,12 +22,11 @@ export const LEDGER_TYPES = {
   offline_flag:      { icon: "⚠️", en: "Offline sale to review", fr: "Vente hors ligne à vérifier" },
   transfer_edit:     { icon: "✏️", en: "Transfer changed",     fr: "Transfert modifié" },
   late_money:        { icon: "⏱️", en: "Late money filed",     fr: "Argent arrivé en retard" },
-  boss_approval:     { icon: "✅", en: "Boss approval used (bar bill)", fr: "Accord du patron utilisé (addition)" },   // BAR BILL 2026-11-20
 };
 export const LEDGER_TYPE_ORDER = ["sale", "void", "return", "transfer_sent", "transfer_received",
   "goods_received", "goods_released", "debt_collection", "credit_given", "discount",
   "stock_adjustment", "price_change", "cost_change", "expense", "shift_open", "shift_close",
-  "offline_flag", "transfer_edit", "late_money", "boss_approval"];
+  "offline_flag", "transfer_edit", "late_money"];
 
 export function ltLabel(type, en) { const t = LEDGER_TYPES[type]; return t ? (en ? t.en : t.fr) : type; }
 

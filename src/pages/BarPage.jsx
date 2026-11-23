@@ -40,6 +40,7 @@ import { useBarDraftStore } from "../store/barDrafts";
 import { HOME, barViewReducer, currentTabId, tabBelongsToBar, draftKey } from "../utils/barLayout";
 import TabMoney, { tabMoneyLine } from "../components/bar/TabMoney";   // step 1.0: Ordered / Paid / Balance due
 import { OpenShiftModal } from "../components/common/ShiftWidgets";
+import ShiftAgeWarning from "../components/bar/ShiftAgeWarning";   // shift open > 24 h (warning only)
 
 const L = (lang, en, fr) => (lang === "en" ? en : fr);
 const errText = (lang, e) => {
@@ -128,28 +129,12 @@ export default function BarPage() {
   const needShift = shiftOpen === false || refusedNoShift === barId;   // cleared when a shift is opened here or a payment goes through
   const shift = { need: needShift, open: () => setShowOpenShift(true) };
   const act = useMutation({
+    // (a tab's PAYMENT is not here: it is New Sale's POST /sales from the bill — BillView / POSPage embed.bill)
     mutationFn: async ({ kind, path, body }) => {
       if (!isOnline) { const e = new Error("offline"); e.offline = true; throw e; }
-      try {
-        return await api.post(path, body || {}).then((r) => ({ kind, data: r.data?.data }));
-      } catch (e) {
-        // LOST RESPONSE (Peter's tablet 2026-11-19: "No connection" while the server had PAID the tab).
-        // A pay with no answer, or refused as "already paid", is checked against the server before
-        // anything is said: the tab's TRUE state decides. Never re-sent — the server's tab status and
-        // version already refuse a second payment, and this only reads.
-        const m = kind === "pay" && /^\/bar\/tabs\/([^/]+)\/pay$/.exec(path);
-        // "already paid" comes in two shapes (BE probe 2026-11-20): the tab's (tab_status) or the ticket's (current_status)
-        const d409 = e.response && e.response.status === 409 && e.response.data;
-        const lost = !e.response || (d409 && (d409.tab_status === "paid" || d409.current_status === "paid"));
-        if (m && lost) {
-          const t = await api.get(`/bar/tabs/${m[1]}`).then((r) => r.data?.data).catch(() => null);
-          if (t && t.status === "paid") return { kind, data: t, recovered: true };
-        }
-        throw e;
-      }
+      return api.post(path, body || {}).then((r) => ({ kind, data: r.data?.data }));
     },
     onSuccess: ({ kind }) => {
-      if (kind === "pay") setRefusedNoShift(null);
       setMsg({ ok: true, text: ({ open: L(lang, "Tab opened.", "Note ouverte."), close: L(lang, "Tab closed.", "Note fermée."), bill: L(lang, "Bill ready.", "Addition prête."),
         pay: L(lang, "Tab paid.", "Note encaissée."), zone: L(lang, "Zone added.", "Zone ajoutée."), table: L(lang, "Table added.", "Table ajoutée.") })[kind] || "OK" });
       refresh();
@@ -232,6 +217,7 @@ export default function BarPage() {
       {!isOnline && <div className="bar-msg" style={{ borderColor: "#ef4444", color: "#fca5a5" }}>
         {L(lang, "Offline — tabs cannot be opened, closed or paid until the connection is back.", "Hors ligne — impossible d'ouvrir, fermer ou encaisser une note avant le retour de la connexion.")}
       </div>}
+      <ShiftAgeWarning lang={lang} shift={shiftQ.data} />
       {msg && <div role="status" className="bar-msg" style={{ borderColor: msg.ok ? "#22c55e" : "#ef4444", color: msg.ok ? "#86efac" : "#fca5a5" }}>{msg.text}</div>}
       {floor.isError && <div className="bar-msg" style={{ borderColor: "#ef4444", color: "#fca5a5" }}>{errText(lang, floor.error)}</div>}
       {setup && canSetup && <div className="bar-panel"><SetupPanel lang={lang} barId={barId} zones={zones} tables={tables} busy={busy} act={act} patch={patch} /></div>}
@@ -306,9 +292,11 @@ export function TabActions({ lang, tab, busy, act, onBill, shift }) {
 }
 
 // ── THE BILL: the tab's served lines in the POS's own cart + payment panel ───────────────────
-// Read fresh from GET /bar/tabs/:id (lines, version, the boss's answer). Waiting for the boss → only the
-// wait (and "Cancel request"); otherwise the POS mounts in bill mode (POSPage embed.bill). Paid → receipt,
-// then back to the floor. Every change of the bill (version) or of the boss's answer mounts a fresh panel.
+// Read fresh from GET /bar/tabs/:id (served lines, the boss's answer). Waiting for the boss → only the wait
+// (and "Cancel request"); otherwise the POS mounts in bill mode (POSPage embed.bill) and Confirm is New
+// Sale's POST /sales (Peter 2026-11-21: Bar Mode = layout only). Paid → receipt, then back to the floor.
+// Every change of the served lines or of the boss's answer mounts a fresh panel. Nothing served → no sale:
+// the tab is closed off empty.
 export function BillView({ lang, barId, tabId, fallbackTitle, shift, onClose, onPaid }) {
   const fmt = useCurrency();
   const qc = useQueryClient();
@@ -318,6 +306,12 @@ export function BillView({ lang, barId, tabId, fallbackTitle, shift, onClose, on
   const cancelReq = useMutation({
     mutationFn: (id) => api.post(`/staff/approvals/${id}/cancel`, { reason: "cancelled_from_bar_tab" }).then((r) => r.data),
     onSuccess: () => { setErr(null); q.refetch(); onPaid && onPaid(); },
+    onError: (e) => setErr(errText(lang, e)),
+  });
+  // nothing served: the tab is closed off with NO sale (nothing sold, nothing moves)
+  const closeEmpty = useMutation({
+    mutationFn: () => api.post(`/bar/tabs/${tabId}/pay`, {}).then((r) => r.data),
+    onSuccess: () => { setErr(null); onPaid && onPaid(); onClose(); },
     onError: (e) => setErr(errText(lang, e)),
   });
   const t = q.data;
@@ -330,7 +324,20 @@ export function BillView({ lang, barId, tabId, fallbackTitle, shift, onClose, on
   const ap = t.approval || null;
   const noShift = shift ? !!shift.need : false;   // (the bill's own hint — same rule as TabActions)
   const lines = t.bill_lines || [];
+  const billTotal = lines.reduce((s, l) => s + Math.round((Number(l.quantity) || 0) * (Number(l.unit_price) || 0)), 0);
+  const billKey = lines.map((l) => `${l.product_id}|${Number(l.quantity)}|${Number(l.unit_price)}`).join(",");
   const lineName = (l) => (lang === "en" && l.name_en) || l.name || "?";
+  if (!lines.length) return (
+    <section style={{ ...card, display: "grid", gap: 10 }} className="bar-bill-box">
+      <h3 style={{ margin: 0 }}>🧾 {L(lang, "Bill", "Addition")} — {title}</h3>
+      <div role="status">{L(lang, "Nothing was served on this tab — there is nothing to pay.", "Rien n'a été servi sur cette note — il n'y a rien à encaisser.")}</div>
+      {err && <div role="alert" style={{ color: "#fca5a5" }}>{err}</div>}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button type="button" className="bar-cmain" disabled={closeEmpty.isPending} onClick={() => closeEmpty.mutate()}>{L(lang, "Close the empty tab", "Fermer la note vide")}</button>
+        {back}
+      </div>
+    </section>
+  );
   const summary = (
     <section style={{ ...card, display: "grid", gap: 10, alignContent: "start" }} className="bar-bill-box">
       <h3 style={{ margin: 0 }}>🧾 {L(lang, "Bill", "Addition")} — {title}</h3>
@@ -338,7 +345,7 @@ export function BillView({ lang, barId, tabId, fallbackTitle, shift, onClose, on
         {lines.map((l, i) => <div key={i} style={{ display: "flex", gap: 8 }}><span style={{ flex: 1 }}>{lineName(l)}</span>
           <span style={{ opacity: 0.7 }}>{Number(l.quantity)} × {fmt(Number(l.unit_price))}</span></div>)}
         <div style={{ display: "flex", fontWeight: 800, borderTop: "1px solid rgba(148,163,184,.25)", paddingTop: 6 }}>
-          <span style={{ flex: 1 }}>{L(lang, "Total", "Total")}</span><span>{fmt(Number(t.pa_sales?.total_amount) || 0)}</span></div>
+          <span style={{ flex: 1 }}>{L(lang, "Total", "Total")}</span><span>{fmt(billTotal)}</span></div>
       </div>
       <div style={{ fontSize: 12, opacity: 0.7 }}>{L(lang, "Served lines — to add a drink, open the tab's rounds. The bill cannot be changed here.",
         "Lignes servies — pour ajouter une boisson, passez par les tournées. L'addition ne se modifie pas ici.")}</div>
@@ -361,7 +368,7 @@ export function BillView({ lang, barId, tabId, fallbackTitle, shift, onClose, on
       <div className="bar-waiting" role="status" style={{ fontWeight: 700 }}>⏳ {L(lang, "Waiting for approval", "En attente d'approbation")}</div>
       <div style={{ fontSize: 13, opacity: 0.8 }}>{L(lang, "Sent to the boss. No payment and no new round on this tab until he answers on his phone.",
         "Envoyé au patron. Aucun encaissement ni nouvelle tournée sur cette note avant sa réponse sur son téléphone.")}</div>
-      <div style={{ fontSize: 13 }}>{L(lang, "Total", "Total")} : <strong>{fmt(Number(t.pa_sales?.total_amount) || 0)}</strong></div>
+      <div style={{ fontSize: 13 }}>{L(lang, "Total", "Total")} : <strong>{fmt(billTotal)}</strong></div>
       {err && <div role="alert" style={{ color: "#fca5a5" }}>{err}</div>}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button type="button" className="bar-cbtn" style={btn} disabled={cancelReq.isPending} onClick={() => cancelReq.mutate(ap.id)}>{L(lang, "Cancel request", "Annuler la demande")}</button>
@@ -371,9 +378,9 @@ export function BillView({ lang, barId, tabId, fallbackTitle, shift, onClose, on
   );
   const reload = () => qc.invalidateQueries({ queryKey: ["bar-bill", tabId] });
   return (
-    <POSPage key={`bill:${tabId}:${t.pa_sales?.version}:${ap ? ap.id + ap.status : ""}`} embed={{
+    <POSPage key={`bill:${tabId}:${billKey}:${ap ? ap.id + ap.status : ""}`} embed={{
       locationId: barId, showAll: false,
-      bill: { tabId, version: t.pa_sales?.version, lines, title: `${L(lang, "Bill", "Addition")} — ${title}`, approval: ap,
+      bill: { tabId, lines, title: `${L(lang, "Bill", "Addition")} — ${title}`, approval: ap,
         onPaid, onDone: onClose, onCancel: onClose, onWaiting: () => { onPaid && onPaid(); onClose(); }, onReload: reload },
       renderLeft: () => summary,
     }} />

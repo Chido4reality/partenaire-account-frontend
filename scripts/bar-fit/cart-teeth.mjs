@@ -31,13 +31,21 @@ const SHIFT = [
 ];
 CART_TEETH[3] = FIX2;
 CART_TEETH[4] = SHIFT;
-// 5 = the lost-pay read-back removed (2026-11-20). Since the bill (same day) the pay leaves from the POS panel, so
-//     the read-back that matters is POSPage's bill one: every lost/409 answer goes straight to the error — P12a/b/c red
-CART_TEETH[5] = [{ file: POS, from: "          if (lost) {", to: "          if (false) {" }];
+// 5 = the bill's POST /sales WITHOUT bar_tab_id (2026-11-23: the bill = New Sale + bar_tab_id; the old lost-pay
+//     read-back is deleted — New Sale's local_id replay replaces it) — P11g red
+CART_TEETH[5] = [{ file: POS, from: "        ...(bill ? { bar_tab_id: bill.tabId } : {}),\n        location_id:    selectedLocation?.id,", to: "        location_id:    selectedLocation?.id," }];
 // 6 = the bill's cart NOT locked: setters live again and the lines render with ✕ / − / + / qty / discount — P13b red
 CART_TEETH[6] = [
   { file: POS, from: "  const setCart = bill ? BILL_CART_LOCKED : setCartRaw;", to: "  const setCart = setCartRaw;" },
   { file: POS, from: ") : cart.map((item, idx) => item.billLine ? (", to: ") : cart.map((item, idx) => false ? (" },
 ];
-// 7 = "Send request to boss" on a bill takes the New Sale path (parks a held cart, no bar_tab_id) — P13e red
-CART_TEETH[7] = [{ file: POS, from: "      if (bill) {\n        await api.post(\"/sales/bundled-approval-request\", {", to: "      if (false) {\n        await api.post(\"/sales/bundled-approval-request\", {" }];
+// 7 = "Send request to boss" on a bill parks a held cart and clears the screen (the New Sale tail) — P13e red
+CART_TEETH[7] = [{ file: POS, from: "      if (bill) {\n        setApprovalBundle(null);", to: "      if (false) {\n        setApprovalBundle(null);" }];
+// 8 = the bill's offline guard removed (it would go to New Sale's offline queue) — P12c red
+CART_TEETH[8] = [{ file: POS, from: "if (bill && typeof navigator !== \"undefined\" && navigator.onLine === false) {", to: "if (false) {" }];
+// 9 = an empty bill mounts the POS panel (no "nothing to pay" / close-off-empty) — P14 red
+CART_TEETH[9] = [{ file: BAR, from: "  if (!lines.length) return (", to: "  if (false) return (" }];
+// 10 = the shift-age warning never shows — P15a/c red
+CART_TEETH[10] = [{ file: /src\/components\/bar\/ShiftAgeWarning\.jsx$/, from: "if (!Number.isFinite(t) || now - t <= SHIFT_TOO_OLD_MS) return null;", to: "return null;" }];
+// 11 = a lost answer on a bill said as "Tab paid." (the offline_queued branch removed) — P12a red
+CART_TEETH[11] = [{ file: POS, from: "          if (data?.offline_queued) toast(", to: "          if (false) toast(" }];

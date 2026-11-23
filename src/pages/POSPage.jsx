@@ -119,9 +119,10 @@ const CUSTOMER_RESULT_CAP = 25;
 // scripts/bar-layout-check.mjs renders both and compares.
 // BAR BILL (Peter 2026-11-20): a table / counter tab is paid HERE — this page, its payment panel (Full /
 // Partial / Full Credit, customer, tenders, sale discount, sold-earlier note, receipt). embed.bill =
-// { tabId, version, lines, title, onDone, onCancel }: the cart IS the tab's served lines, read-only
-// (rounds stay the way to add), never saved as a draft, and Confirm pays the tab (POST /bar/tabs/:id/pay)
-// instead of creating a sale. Home and New Sale (no embed.bill): unchanged.
+// { tabId, lines, title, approval, onPaid, onDone, onCancel, onWaiting, onReload }: the cart IS the tab's served
+// lines, read-only (rounds stay the way to add), never saved as a draft. Confirm is New Sale's own POST /sales
+// with bar_tab_id (Peter 2026-11-21, locked: Bar Mode = layout only) — the server sells the served lines as
+// a New Sale and links the sale to the tab. Home and New Sale (no embed.bill): unchanged.
 const BILL_CART_LOCKED = () => {};
 export default function POSPage({ embed = null } = {}) {
   const bill = (embed && embed.bill) || null;
@@ -1443,27 +1444,10 @@ export default function POSPage({ embed = null } = {}) {
   const sendApprovalBundleToBoss = async () => {
     setSendingToBoss(true);
     try {
-      // BAR BILL: the request is tied to the tab's own pending sale — nothing is parked as a held cart and no
-      // new sale is ever made from it. The tab shows "Waiting for approval" until the boss answers.
-      if (bill) {
-        await api.post("/sales/bundled-approval-request", {
-          bar_tab_id: bill.tabId, location_id: embed.locationId,
-          customer_id: customer?.id || null, customer_name: customer?.name || null,
-          items: (bill.lines || []).map((l) => ({ product_id: l.product_id, quantity: Number(l.quantity), unit_price: Number(l.unit_price) })),
-          pay_mode: payMode, paid_amount: paid,
-          discount_type:   (saleDiscType && Number(saleDiscValue) > 0) ? saleDiscType : null,
-          discount_value:  (saleDiscType && Number(saleDiscValue) > 0) ? Number(saleDiscValue) : null,
-          discount_reason: (saleDiscType && Number(saleDiscValue) > 0) ? (saleDiscReason.trim() || null) : null,
-          notes: notes || null, sold_date: soldDate || null,
-        });
-        setApprovalBundle(null);
-        toast.success(lang === "en" ? "Sent to the boss. The tab waits for his answer — take the payment once he approves."
-          : "Envoyé au patron. La note attend sa réponse — encaissez après son accord.", { duration: 6000 });
-        if (bill.onWaiting) bill.onWaiting();
-        return;
-      }
       const lineItems = bundleLineItems();
       const ar = await api.post("/sales/bundled-approval-request", {
+        // BAR BILL: the SAME request; bar_tab_id is only the label that ties it to the tab's bill
+        ...(bill ? { bar_tab_id: bill.tabId } : {}),
         location_id: selectedLocation?.id,
         customer_id: customer?.id || null,
         customer_name: customer?.name || null,
@@ -1476,6 +1460,15 @@ export default function POSPage({ embed = null } = {}) {
         notes: notes || null,
         sold_date: soldDate || null,
       }).then(r => r.data);
+      // BAR BILL: nothing is parked — the closed tab IS the parked cart. It shows "Waiting for approval" until the
+      // boss answers; approved → the bill is paid through POST /sales with that approval, like a resumed held sale.
+      if (bill) {
+        setApprovalBundle(null);
+        toast.success(lang === "en" ? "Sent to the boss. The tab waits for his answer — take the payment once he approves."
+          : "Envoyé au patron. La note attend sa réponse — encaissez après son accord.", { duration: 6000 });
+        if (bill.onWaiting) bill.onWaiting();
+        return;
+      }
       const approvalId = ar?.approval_id;
       const hr = await api.post("/held-carts", {
         location_id: selectedLocation?.id,
@@ -1778,41 +1771,13 @@ export default function POSPage({ embed = null } = {}) {
       }
       // BAR CART FIX: never pay at one branch with a cart built at another (bar only).
       if (embedCartWrongBranch()) { const gerr = new Error("BAR_WRONG_BRANCH"); gerr.payModeGuard = true; throw gerr; }
-      // BAR BILL: the SAME terms this panel sends to /sales, to the tab's pay. The server settles the tab's
-      // own pending sale with the POS rules (one sale, stock once). Online only, like every tab action;
-      // never queued. A lost answer (or "already paid") is checked against the tab before anything is said.
-      if (bill) {
-        if (typeof navigator !== "undefined" && navigator.onLine === false) {
-          toast.error(lang === "en" ? "Tabs need a connection. Nothing was saved — try again when you are online."
-            : "Les notes ont besoin d'une connexion. Rien n'a été enregistré — réessayez une fois en ligne.", { duration: 5000 });
-          const gerr = new Error("BILL_OFFLINE"); gerr.payModeGuard = true; throw gerr;
-        }
-        const body = {
-          version: bill.version,
-          items: (bill.lines || []).map((l) => ({ product_id: l.product_id, quantity: Number(l.quantity), unit_price: Number(l.unit_price) })),
-          customer_id: customer?.id || null, payment_method: payMethod, paid_amount: paid, pay_mode: payMode,
-          due_date: dueDate || null, notes: notes || null,
-          discount_type:   (saleDiscType && Number(saleDiscValue) > 0) ? saleDiscType : null,
-          discount_value:  (saleDiscType && Number(saleDiscValue) > 0) ? Number(saleDiscValue) : null,
-          discount_reason: (saleDiscType && Number(saleDiscValue) > 0) ? (saleDiscReason.trim() || null) : null,
-          bundled_approval_token: bundledApprovalTokenRef.current || undefined,
-          bundled_approval_id: bundledApprovalIdRef.current || undefined,   // the boss approved this bill (prefilled terms)
-          sold_date: soldDate || undefined,
-        };
-        try {
-          return await api.post(`/bar/tabs/${bill.tabId}/pay`, body).then((r) => r.data);
-        } catch (e) {
-          const d409 = e.response && e.response.status === 409 && e.response.data;
-          const lost = !e.response || (d409 && (d409.tab_status === "paid" || d409.current_status === "paid"));
-          if (lost) {
-            const t = await api.get(`/bar/tabs/${bill.tabId}`).then((r) => r.data?.data).catch(() => null);
-            if (t && t.status === "paid") {
-              const s = t.sale_id ? await api.get(`/sales/${t.sale_id}`).then((r) => r.data?.data).catch(() => null) : null;
-              return { success: true, data: s || { id: t.sale_id, sale_number: t.pa_sales?.sale_number, total_amount: t.pa_sales?.total_amount }, recovered: true };
-            }
-          }
-          throw e;
-        }
+      // BAR BILL: paid by the SAME POST /sales below (salePayload + bar_tab_id) — New Sale's request, its lost-
+      // answer handling (local_id + the offline queue + the server's replay) and its receipt. The one bar rule
+      // kept here: a tab is a shared object, so its bill is never started offline (spec decision 12).
+      if (bill && typeof navigator !== "undefined" && navigator.onLine === false) {
+        toast.error(lang === "en" ? "Tabs need a connection. Nothing was saved — try again when you are online."
+          : "Les notes ont besoin d'une connexion. Rien n'a été enregistré — réessayez une fois en ligne.", { duration: 5000 });
+        const gerr = new Error("BILL_OFFLINE"); gerr.payModeGuard = true; throw gerr;
       }
       // MP-CART-INVOICE-PRODUCT-BUG: the legacy invoice-settle path
       // (POST /sales/:id/payment per invoice) is ONLY correct when
@@ -1865,6 +1830,8 @@ export default function POSPage({ embed = null } = {}) {
       }
 
       const salePayload = {
+        // BAR BILL: the tab this cart (its served lines, locked) pays — the server swaps in the served lines
+        ...(bill ? { bar_tab_id: bill.tabId } : {}),
         location_id:    selectedLocation?.id,
         customer_id:    customer?.id || null,
         // MP-PENDING-SYNC-DETAIL: carry the customer name so an offline-queued
@@ -2167,7 +2134,13 @@ export default function POSPage({ embed = null } = {}) {
         });
         setShowReceipt(true);
         // BAR BILL: the tab is paid and the table free — the floor refreshes now; the receipt closes back to it
-        if (bill) { toast.success(lang === "en" ? "Tab paid." : "Note encaissée.", { duration: 2500 }); bill.onPaid && bill.onPaid(); }
+        // A lost answer = New Sale's queue (same local_id, the server dedupes) — said as saved, not as paid.
+        if (bill) {
+          if (data?.offline_queued) toast(lang === "en" ? "Saved — the connection dropped. It will be sent again with the same number; check the tab once online."
+            : "Enregistré — la connexion a coupé. Il sera renvoyé avec le même numéro ; vérifiez la note une fois en ligne.", { duration: 6000 });
+          else toast.success(lang === "en" ? "Tab paid." : "Note encaissée.", { duration: 2500 });
+          bill.onPaid && bill.onPaid();
+        }
 
         // MP-PHASE-4 WAVE 2: seed every cache slot the sale moves so the
         // UI reflects the new state immediately offline. Gated on
@@ -2280,12 +2253,12 @@ export default function POSPage({ embed = null } = {}) {
         toast.error(d.message_en && lang === "en" ? d.message_en : (d.message_fr || d.message || "Error"), { duration: 6000 });
         return;
       }
-      // BAR BILL: the tab's own answers, said in the server's words. A changed bill / a tab no longer payable /
-      // an approval that expired → the bill reloads (the floor's view of the tab is the truth).
-      if (bill && d && ["bill_changed", "tab_not_payable", "approval_pending", "approval_ready", "customer_required",
-                        "no_open_shift", "version_required", "not_found"].includes(d.code)) {
+      // BAR BILL: the TAB's own answers (everything else is New Sale's, handled as for any sale), said in the
+      // server's words. A changed bill / a tab no longer payable / an approval that expired → the bill reloads.
+      if (bill && d && ["bill_changed", "bill_empty", "tab_not_payable", "tab_not_closed", "approval_pending", "approval_ready",
+                        "not_found"].includes(d.code)) {
         toast.error(lang === "en" ? (d.message_en || d.message) : (d.message_fr || d.message), { duration: 6000 });
-        if (["bill_changed", "tab_not_payable", "not_found"].includes(d.code) && bill.onReload) bill.onReload();
+        if (["bill_changed", "bill_empty", "tab_not_payable", "tab_not_closed", "not_found"].includes(d.code) && bill.onReload) bill.onReload();
         return;
       }
       // Everything that CAN be approved — below-cost, discount, credit, oversell,
@@ -2379,7 +2352,7 @@ export default function POSPage({ embed = null } = {}) {
     setOversellModal(null); saleMutation.mutate();
   };
   const attemptCheckout = async () => {
-    // BAR BILL: the drinks were served already — the server checks stock on the settle (once), not this snapshot
+    // BAR BILL: the drinks were served (reserved) already — no stock snapshot check; the sale takes them once
     if (bill) { runCheckout(); return; }
     const real = cart.filter(i =>
       i.product_id && i.product_id !== "__DEBT__" &&

@@ -16,7 +16,9 @@
 // page hits them.
 
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useOfflineCachedQuery } from "../utils/offlineQuery";
+import ShiftAgeWarning from "../components/bar/ShiftAgeWarning";
 import { useLangStore, useSettingsStore, useAuthStore } from "../store";
 import api from "../utils/api";
 import { useCurrency } from "../utils/useCurrency";
@@ -40,6 +42,18 @@ export default function ShiftsPage() {
   const fmtD = maskMoney(fmt);
   const locId = selectedLocation?.id || null;
   const [offset, setOffset] = useState(0);
+  // SHIFT OPEN > 24 h (Peter 2026-11-21) — bar branches only (a bar sale takes its shift's opening day). Which
+  // branches are bars: Layout's /bar/mine answer, SUBSCRIBED from the cache (enabled:false — this page never
+  // asks; a shop makes no call; re-renders when Layout's answer lands). The shift: the shared
+  // ["current-shift", locId] query (same key + shape as ActiveShiftIndicator below — one request).
+  const { data: barMine } = useQuery({ queryKey: ["bar-mine"], queryFn: () => api.get("/bar/mine").then(r => r.data?.data || { bars: [] }), enabled: false });
+  const isBarHere = !!locId && ((barMine || {}).bars || []).some((b) => b.id === locId);
+  const { data: curShift } = useQuery({
+    queryKey: ["current-shift", locId],
+    queryFn: () => api.get(`/shifts/current?location_id=${locId}`).then(r => r.data?.data),
+    enabled: isBarHere,
+    refetchInterval: 30000,
+  });
 
   const { data: historyResp, isLoading: histLoading } = useOfflineCachedQuery({
     queryKey: ["shifts-history", locId, PAGE_LIMIT, offset],
@@ -84,6 +98,7 @@ export default function ShiftsPage() {
       {/* The indicator owns the open/close modals AND the live math.
           Same component lives at the top of POSPage and Dashboard, so
           the cashier sees identical state everywhere. */}
+      {isBarHere && <div style={{ marginBottom: 12 }}><ShiftAgeWarning lang={lang} shift={curShift} /></div>}
       <div style={{ marginBottom: 24 }}>
         <ActiveShiftIndicator />
       </div>
