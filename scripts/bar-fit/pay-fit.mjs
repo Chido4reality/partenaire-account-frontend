@@ -51,15 +51,16 @@ const CUSTOMERS = [{ id: "c2", name: "Ngono Marie", phone: "677000002", customer
 const USER = { id: "u1", org_id: "o1", role: "owner", full_name: "Boss Dozie", phone: "699000101", has_seen_onboarding: true, location_id: null };
 const ORG = { id: "o1", name: "Dozie Tube & Tyre", plan: "pro_plus", subscription_status: "active", currency: "XAF", bar_mode_enabled: true, max_offline_hours: 24 };
 const LOCS = [{ id: BON, name: "Bonaberri", type: "shop", is_active: true }];
-const BILL_TAB = { id: "nt1", kind: "named", name: "Jo", status: "closed", location_id: BON, opened_at: "2026-11-19T20:00:00.000Z",
-  pa_sales: { version: 3, total_amount: 118300 } };   // = the 5 bill lines below
+// 2026-11-23: a tab holds NO sale until its bill is paid through POST /sales — the bill total (118 300) is its served lines
+const BILL_TAB = { id: "nt1", kind: "named", name: "Jo", status: "closed", location_id: BON, opened_at: "2026-11-19T20:00:00.000Z", sale_id: null, pa_sales: null,
+  figures: { ordered: 118300, served: 118300, waiting: 0, paid: 0, balance_due: 118300, service_status: "served", payment_status: "unpaid", rounds_waiting: 0, rounds_served: 1 } };
 function answer(path, q) {
   if (path === "/auth/me") return ok({ user: USER, org: ORG });
   if (path === "/bar/mine") return ok({ bars: [{ id: BON, name: "Bonaberri" }], can_setup: true, can_serve: true });
   if (path === "/locations") return ok(LOCS);
   if (/^\/bar\/[^/]+\/floor$/.test(path)) return ok({ zones: [{ id: "z1", name: "Salle" }], tables: [{ id: "t1", label: "T1", zone_id: "z1", tab: null }], named_tabs: [BILL_TAB] });
   // the BILL (2026-11-20): 5 served lines (the tall case), read by the bill view
-  if (path === "/bar/tabs/nt1") return ok({ ...BILL_TAB, sale_id: "sale-nt1", approval: null,
+  if (path === "/bar/tabs/nt1") return ok({ ...BILL_TAB, approval: null,
     bill_lines: PRODUCTS.map((p, i) => ({ product_id: p.id, quantity: i + 1, unit_price: p.sell_price, name: p.name, price_tier: "walk_in" })) });
   if (/^\/bar\/[^/]+\/quick-items$/.test(path)) return ok({ ids: PRODUCTS.map((p) => p.id) });
   if (path === "/products") return ok(PRODUCTS);
@@ -165,10 +166,10 @@ try {
         await page.waitForTimeout(500);
       } else {
       await page.goto(`http://localhost:5195/${app}`, { waitUntil: "domcontentloaded" });
-      const proceed = page.getByRole("button", { name: /^(Proceed to Payment →|Take payment)$/ }).first();
+      const proceed = page.getByRole("button", { name: /^(Proceed to Payment →|Take payment|Paiement →|Encaisser)$/ }).first();
       await proceed.waitFor({ state: "attached", timeout: 60000 });
       await page.waitForTimeout(500);
-      if (!(await proceed.isVisible())) { await page.getByRole("button", { name: /Open cart/ }).click({ timeout: 15000 }); await page.waitForTimeout(800); }
+      if (!(await proceed.isVisible())) { await page.getByRole("button", { name: /Open cart|Ouvrir le panier/ }).click({ timeout: 15000 }); await page.waitForTimeout(800); }
       await proceed.click();
       }
       await page.getByRole("button", { name: /Full Credit|Crédit total/ }).first().click({ timeout: 15000 });
