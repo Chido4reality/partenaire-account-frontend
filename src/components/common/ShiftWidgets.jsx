@@ -50,6 +50,7 @@ import { SHOP_TZ } from "../../utils/shopTime"; // MP-REPORT-TZ
 import { buildLedgerTextV2 as buildLedgerText, buildWeeklyText } from "../../utils/reportText";
 import { momoLabel } from "../../utils/paymentLabels";
 import CreditGivenModal from "./CreditGivenModal"; // MP-CREDIT-DRILLDOWN
+import CloseApprovalsPanel, { allCarried } from "./CloseApprovalsPanel"; // open money requests at close (2026-11-24)
 // MP-DRAWER-REVEAL
 import { useDrawerReveal, MASK } from "../../utils/useDrawerReveal";
 import RevealPinModal from "./RevealPinModal";
@@ -502,6 +503,11 @@ export function CloseShiftModal({ open, onClose, shift, onClosed, onOpenBarTab }
     } finally { setTabBusy(null); }
   };
   const [override, setOverride]   = useState(false);
+  // OPEN MONEY REQUESTS (2026-11-24): the server lists them (409 approvals_pending); each is resolved in the
+  // panel or carried over — the close is re-sent naming every carried one.
+  const [pendingAppr, setPendingAppr] = useState(null);   // [] | null
+  const [carry, setCarry]             = useState([]);
+  const apprBlocked = !!pendingAppr && pendingAppr.length > 0 && !allCarried(pendingAppr, carry);
 
   const m = useMutation({
     mutationFn: () => api.post(`/shifts/${shift.shift_id}/close`, {
@@ -510,6 +516,7 @@ export function CloseShiftModal({ open, onClose, shift, onClosed, onOpenBarTab }
       // Only ever sent after the owner explicitly ticks the override — never a
       // silent role-based bypass.
       ...(override ? { force_close: true } : {}),
+      ...(pendingAppr && carry.length ? { carry_over_approval_ids: carry } : {}),
     }),
     onSuccess: (res) => {
       const d = res?.data?.data || {};
@@ -531,7 +538,7 @@ export function CloseShiftModal({ open, onClose, shift, onClosed, onOpenBarTab }
       qc.invalidateQueries({ queryKey: ["my-shift"] });
       qc.invalidateQueries({ queryKey: ["all-shifts"] });
       setActual(""); setNotes(""); setConfirming(false); setError(null);
-      setBlockedBy(null); setOverride(false);
+      setBlockedBy(null); setOverride(false); setPendingAppr(null); setCarry([]);
       onClose(); onClosed?.(d);
     },
     onError: (err) => {
@@ -539,6 +546,13 @@ export function CloseShiftModal({ open, onClose, shift, onClosed, onOpenBarTab }
       // MP-CORRECTIONS-GUARDRAIL: this refusal is not a generic error — it names an
       // outstanding correction and (for the owner) offers a deliberate override, so it
       // gets its own panel instead of the one-line error string.
+      if (d.code === "approvals_pending") {
+        const list = Array.isArray(d.approvals) ? d.approvals : [];
+        setPendingAppr(list);
+        setCarry((c) => c.filter((id) => list.some((a) => a.id === id)));
+        setConfirming(false);
+        return;
+      }
       if (d.code === "correction_not_applied") {
         setBlockedBy(d);
         setConfirming(false);
@@ -890,6 +904,14 @@ export function CloseShiftModal({ open, onClose, shift, onClosed, onOpenBarTab }
         </div>
       )}
 
+      {pendingAppr && pendingAppr.length > 0 && (
+        <CloseApprovalsPanel lang={lang} user={user} list={pendingAppr} carry={carry} setCarry={setCarry} fmtD={fmt}
+          onResolved={(id, replacement) => {
+            setPendingAppr((l) => (l || []).flatMap((a) => (a.id !== id ? [a] : replacement ? [replacement] : [])));
+            if (!replacement) setCarry((c) => c.filter((x) => x !== id));
+          }} />
+      )}
+
       {error && (
         <div style={{ background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: "#f87171" }}>
           {error}
@@ -912,7 +934,7 @@ export function CloseShiftModal({ open, onClose, shift, onClosed, onOpenBarTab }
 
       <div style={{ display: "flex", gap: 8 }}>
         <button className="btn btn-secondary" style={{ flex: 1 }} disabled={m.isPending}
-          onClick={() => { setError(null); setBarTabs(null); setConfirming(false); setBlockedBy(null); setOverride(false); onClose(); }}>
+          onClick={() => { setError(null); setBarTabs(null); setConfirming(false); setBlockedBy(null); setOverride(false); setPendingAppr(null); setCarry([]); onClose(); }}>
           {lang === "fr" ? "Annuler" : "Cancel"}
         </button>
         {/* MP-CORRECTIONS-GUARDRAIL: once blocked, the button stays disabled until the
@@ -921,10 +943,14 @@ export function CloseShiftModal({ open, onClose, shift, onClosed, onOpenBarTab }
             they cannot waive a correction the boss already approved. */}
         <button className="btn btn-primary" style={{ flex: 2, ...(confirming && variance !== 0 ? { background: "#fbbf24", borderColor: "#fbbf24" } : {}),
             ...(blockedBy && override ? { background: "#dc2626", borderColor: "#dc2626", color: "#fff" } : {}) }}
-          disabled={!validAmt || m.isPending || (!!blockedBy && !override)}
+          disabled={!validAmt || m.isPending || (!!blockedBy && !override) || apprBlocked}
           onClick={handleSubmit}>
           {m.isPending
             ? "..."
+            : apprBlocked
+              ? (lang === "fr" ? "Demandes non terminées" : "Requests not finished")
+            : pendingAppr && pendingAppr.length > 0
+              ? (lang === "fr" ? `✓ Fermer · ${carry.length} reportée(s)` : `✓ Close · carry over ${carry.length}`)
             : blockedBy && !override
               ? (lang === "fr" ? "Bloqué — correction en attente" : "Blocked — correction pending")
             : blockedBy && override
