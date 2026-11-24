@@ -7,6 +7,7 @@
 // exactly the carried ids, and the approve / finalize / cancel calls hit the existing routes.
 // Teeth: CLOSE_FIT_TEETH=1|2|3 bundles a mutated copy (tree untouched) and must go RED.
 //   1 = the close no longer sends carry_over_approval_ids · 2 = the button is not blocked · 3 = a cashier may approve
+//   4 = the close no longer declares approvals_dialog (the server would auto-carry everything: the dialog never shows)
 // Run: node scripts/close-approvals-fit.mjs   (CLOSE_FIT_ONLY=phone|tablet|pc narrows it)
 import { build } from "esbuild";
 import postcss from "postcss";
@@ -29,6 +30,7 @@ const MUTATIONS = {
   1: [{ file: /components\/common\/ShiftWidgets\.jsx$/, from: "...(pendingAppr && carry.length ? { carry_over_approval_ids: carry } : {}),", to: "" }],
   2: [{ file: /components\/common\/ShiftWidgets\.jsx$/, from: "(!!blockedBy && !override) || apprBlocked}", to: "(!!blockedBy && !override)}" }],
   3: [{ file: /components\/common\/CloseApprovalsPanel\.jsx$/, from: `if (a.status === "pending") return { approve: boss,`, to: `if (a.status === "pending") return { approve: true,` }],
+  4: [{ file: /components\/common\/ShiftWidgets\.jsx$/, from: "      approvals_dialog: true,\n", to: "" }],
 };
 if (TEETH && !MUTATIONS[TEETH]) { console.error(`unknown CLOSE_FIT_TEETH=${TEETH}`); process.exit(2); }
 
@@ -49,6 +51,8 @@ const api = {
   post: (url, body) => {
     S.calls.push({ url, body: body || null });
     if (/^\\/shifts\\/[^/]+\\/close$/.test(url)) {
+      // like the server (be 3843746): an app that does not declare the dialog gets everything auto-carried and closes
+      if (!(body && body.approvals_dialog === true)) { S.autoCarried = S.list.map((a) => a.id); return ok({ success: true, data: { ok: true, variance: 0 } }); }
       const ids = (body && body.carry_over_approval_ids) || [];
       if (S.list.length && !S.list.every((a) => ids.includes(a.id)))
         return no(409, { success: false, code: "approvals_pending", approvals: S.list, choices: ["approve", "refuse", "carry_over"],
@@ -204,6 +208,9 @@ for (const [size, W, H] of SIZES) for (const lang of ["en", "fr"]) for (const ro
     const last = await page.evaluate(() => window.__api.calls.filter((c) => /\/close$/.test(c.url)).pop());
     check(`${tag}: the re-sent close names exactly the carried request → the shift closes`,
       JSON.stringify(last?.body?.carry_over_approval_ids) === JSON.stringify(["B"]) && (await page.evaluate(() => window.__closed !== null)), JSON.stringify(last && last.body));
+    const closes = await page.evaluate(() => window.__api.calls.filter((c) => /\/close$/.test(c.url)).map((c) => c.body));
+    check(`${tag}: every close declares approvals_dialog: true (never auto-carried like an old app)`,
+      closes.length >= 2 && closes.every((b) => b && b.approvals_dialog === true) && !(await page.evaluate(() => window.__api.autoCarried)), JSON.stringify(closes));
     check(`${tag}: no page error`, errs.length === 0, errs.join(" | "));
   } catch (e) {
     check(`${tag}: ran to the end`, false, e.message.split("\n")[0]);
