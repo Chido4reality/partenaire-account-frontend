@@ -516,6 +516,9 @@ export function CloseShiftModal({ open, onClose, shift, onClosed, onOpenBarTab }
       // Only ever sent after the owner explicitly ticks the override — never a
       // silent role-based bypass.
       ...(override ? { force_close: true } : {}),
+      // This screen shows the close-refusal dialog: tell the server, so it lists open money requests (409) instead
+      // of carrying them over automatically as it does for older apps without the dialog.
+      approvals_dialog: true,
       ...(pendingAppr && carry.length ? { carry_over_approval_ids: carry } : {}),
     }),
     onSuccess: (res) => {
