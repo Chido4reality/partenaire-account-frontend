@@ -122,6 +122,19 @@ const FAST_FIRST_ATTEMPT = [
 const FIRST_ATTEMPT_MS = { direct: 8000, fallback: 20000 };
 export function firstAttemptMs() { return isOnFallback() ? FIRST_ATTEMPT_MS.fallback : FIRST_ATTEMPT_MS.direct; }
 
+// BAR BILL TIMEOUT (Peter's tablet 2026-11-23, Test A): a bar bill is POST /sales + bar_tab_id. The server
+// took ~16 s (saved at +11 s, tab finished at +16 s) and the 8 s first attempt gave up while it worked: the
+// tablet, online, showed "OFFLINE-1795452618594" for VNT-20261123-0001, and the timeout flagged the link as
+// degraded, so the NEXT write skipped the network. A bill is paid with the customer at the table and the
+// tablet online: it waits the full 45 s and, while the device is connected, never takes the degraded
+// short-cut. Still dedupe-safe (pa_sales UNIQUE local_id + UNIQUE bar_tab_id); a real drop still queues.
+export function isBarBillRequest(config) {
+  if (!config || (config.method || "get").toUpperCase() !== "POST") return false;
+  if (!/^\/sales\/?$/.test(stripApiBase(config.url || "").split("?")[0])) return false;
+  const d = typeof config.data === "string" ? safeJson(config.data) : config.data;
+  return !!(d && typeof d === "object" && d.bar_tab_id);
+}
+
 function isFirstAttemptFast(url) {
   if (!url) return false;
   const path = stripApiBase(url).split("?")[0];
@@ -282,7 +295,7 @@ api.interceptors.request.use(config => {
     // collapse to one row — enforced by a DB constraint, not a client check and
     // not a bare lookup (which would race). See FAST_FIRST_ATTEMPT above for the
     // constraint backing each one, and for what is excluded and why.
-    config.timeout = isFirstAttemptFast(config.url) ? firstAttemptMs() : 45000;
+    config.timeout = isFirstAttemptFast(config.url) && !isBarBillRequest(config) ? firstAttemptMs() : 45000;
   }
   // MP-PEAK-MTN-RESILIENCE: the old blanket 6s timeout aborted requests that were
   // slow-but-alive on a congested peak-hour MTN route (Camtel, faster, completed) —
@@ -367,7 +380,7 @@ api.defaults.adapter = async function offlineAwareAdapter(config) {
     // 45s on a spinner before the response interceptor catches and
     // enqueues anyway." See network.js's MP-DEGRADED-ROUTING
     // comment for the threshold rationale.
-    if (!net.connected || net.degraded) {
+    if (!net.connected || (net.degraded && !isBarBillRequest(config))) {   // BAR BILL TIMEOUT: connected → try the network
       const payload = typeof config.data === "string" ? safeJson(config.data) : (config.data || {});
       const localId = payload.local_id || genLocalId();
       payload.local_id = localId;

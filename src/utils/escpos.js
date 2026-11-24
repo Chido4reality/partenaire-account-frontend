@@ -143,6 +143,7 @@ export function buildSaleEscposBytes({
   paidAmount = null, balanceDue = null, paymentMethod = "",
   codeStyle = "qr", // MP-RECEIPT-CODE-STYLE: 'barcode' | 'qr' | 'both'
   soldDateNote = "", soldDateNoteByName = "", // MP-SOLD-DATE-NOTE
+  notPaidBanner = null, // PRINT BILL: printed bold, centred, under the letterhead
 } = {}) {
   const en = lang === "en";
   const W = Number(widthMm) === 80 ? 48 : 32; // chars per line
@@ -164,6 +165,12 @@ export function buildSaleEscposBytes({
   if (addr) d.wrapped(addr);
   const tel = [org.phone, org.whatsapp_number].filter(Boolean).join(" / ");
   if (tel) d.line((en ? "Tel: " : "Tel: ") + tel);
+  if (Array.isArray(notPaidBanner) && notPaidBanner.length) {
+    d.align("L").rule();
+    d.align("C").bold(true);
+    for (const l of notPaidBanner) d.wrapped(String(l));
+    d.bold(false);
+  }
   d.align("L").rule();
   // Meta
   d.cols("N", saleNumber || "-");

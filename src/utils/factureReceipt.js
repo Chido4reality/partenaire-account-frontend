@@ -264,6 +264,7 @@ export function buildThermalReceipt({
   qrDataUrl = "", barcodeDataUrl = "", codeStyle = "qr", // MP-RECEIPT-CODE-STYLE
   downloadQrDataUrl = "", // MP-RECEIPT-DOWNLOAD-QR: app-download QR in the advert
   soldDateNote = "", soldDateNoteByName = "", // MP-SOLD-DATE-NOTE
+  notPaidBanner = null, // PRINT BILL: ["ADDITION - NON PAYE", "T2 · Bonaberri"] under the letterhead
 } = {}) {
   const en = lang === "en";
   const W = (Number(widthMm) === 80) ? 80 : 58;
@@ -374,6 +375,7 @@ export function buildThermalReceipt({
   </style>
   <div class="mp-th">
     ${head.join("")}
+    ${Array.isArray(notPaidBanner) && notPaidBanner.length ? `<hr><div class="ctr b big" style="border:2px solid #000;padding:2px">${notPaidBanner.map(esc).join("<br>")}</div>` : ""}
     <hr>
     ${meta.join("")}
     <hr>

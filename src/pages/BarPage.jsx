@@ -26,6 +26,7 @@
 // (Home's counter sale is a normal POS sale and keeps the POS offline queue.)
 import { useEffect, useMemo, useReducer, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation, useNavigate } from "react-router-dom";
 import api from "../utils/api";
 import { useAuthStore, useLangStore, useSettingsStore } from "../store";
 import { useNetworkStatus } from "../utils/useNetworkStatus";
@@ -39,8 +40,9 @@ import { useBarChrome } from "../store/barChrome";
 import { useBarDraftStore } from "../store/barDrafts";
 import { HOME, barViewReducer, currentTabId, tabBelongsToBar, draftKey } from "../utils/barLayout";
 import TabMoney, { tabMoneyLine } from "../components/bar/TabMoney";   // step 1.0: Ordered / Paid / Balance due
-import { OpenShiftModal } from "../components/common/ShiftWidgets";
+import { OpenShiftModal, CloseShiftModal } from "../components/common/ShiftWidgets";
 import ShiftAgeWarning from "../components/bar/ShiftAgeWarning";   // shift open > 24 h (warning only)
+import PaymentEventReceipt from "../components/common/PaymentEventReceipt";   // PRINT BILL: the existing receipt, NOT PAID
 
 const L = (lang, en, fr) => (lang === "en" ? en : fr);
 const errText = (lang, e) => {
@@ -96,6 +98,18 @@ export default function BarPage() {
   // the reducer owns the branch: the first bar (or a bar that vanished from the list) goes through "branch" too
   useEffect(() => { if (barId && barId !== view.barId) dispatch({ type: "branch", barId }); }, [barId, view.barId]);
   const v = view.barId === barId ? view : { barId, view: HOME };
+  // SHIFT CLOSE REFUSAL from the Cash screen: /bar with router state { openTab } opens that tab once
+  const routerLoc = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    const t = routerLoc.state && routerLoc.state.openTab;
+    if (!t || !t.id || !bars.length) return;
+    const target = t.location_id && isBar(t.location_id) ? t.location_id : barId;
+    if (!target) return;
+    dispatch({ type: "branch", barId: target });
+    if (t.table_id) dispatch({ type: "table", tableId: t.table_id }); else dispatch({ type: "named", tabId: t.id });
+    navigate(routerLoc.pathname, { replace: true, state: null });
+  }, [routerLoc.state, bars.length]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // the bar's branch IS the app's selling location here, so the Home counter sale sells at this bar
   const locs = useQuery({ queryKey: ["locations"], queryFn: () => api.get("/locations").then((r) => r.data), retry: 1 });
@@ -125,6 +139,7 @@ export default function BarPage() {
   });
   const [refusedNoShift, setRefusedNoShift] = useState(null);   // the bar whose pay the server refused for no shift
   const [showOpenShift, setShowOpenShift] = useState(false);
+  const [showCloseShift, setShowCloseShift] = useState(false);   // the shift-age warning → Close shift for this bar
   const shiftOpen = shiftQ.isSuccess ? !!(shiftQ.data && shiftQ.data.shift_id) : null;
   const needShift = shiftOpen === false || refusedNoShift === barId;   // cleared when a shift is opened here or a payment goes through
   const shift = { need: needShift, open: () => setShowOpenShift(true) };
@@ -185,6 +200,14 @@ export default function BarPage() {
     setCounterOpen(false); setSetup(false); setMsg(null);
   };
   const bill = billTab && billTab.barId === barId ? billTab : null;
+  // SHIFT CLOSE REFUSAL (Peter 2026-11-23): a tab named in "take payment first" opens HERE — its branch, then its
+  // table (or counter tab), where Bill / Take payment are. Also reached from the Cash screen (router state openTab).
+  function openFromShiftRefusal(t) {
+    if (!t || !t.id) return;
+    if (t.location_id && t.location_id !== barId && isBar(t.location_id)) dispatch({ type: "branch", barId: t.location_id });
+    if (t.table_id) dispatch({ type: "table", tableId: t.table_id }); else dispatch({ type: "named", tabId: t.id });
+    setBillTab(null); setCounterOpen(false); setSetup(false); setShowAll(false); setMsg(null);
+  }
 
   return (
     <div className="bar-screen">
@@ -217,7 +240,7 @@ export default function BarPage() {
       {!isOnline && <div className="bar-msg" style={{ borderColor: "#ef4444", color: "#fca5a5" }}>
         {L(lang, "Offline — tabs cannot be opened, closed or paid until the connection is back.", "Hors ligne — impossible d'ouvrir, fermer ou encaisser une note avant le retour de la connexion.")}
       </div>}
-      <ShiftAgeWarning lang={lang} shift={shiftQ.data} />
+      <ShiftAgeWarning lang={lang} shift={shiftQ.data} onOpen={() => setShowCloseShift(true)} />
       {msg && <div role="status" className="bar-msg" style={{ borderColor: msg.ok ? "#22c55e" : "#ef4444", color: msg.ok ? "#86efac" : "#fca5a5" }}>{msg.text}</div>}
       {floor.isError && <div className="bar-msg" style={{ borderColor: "#ef4444", color: "#fca5a5" }}>{errText(lang, floor.error)}</div>}
       {setup && canSetup && <div className="bar-panel"><SetupPanel lang={lang} barId={barId} zones={zones} tables={tables} busy={busy} act={act} patch={patch} /></div>}
@@ -261,6 +284,9 @@ export default function BarPage() {
       {/* the POS shift-bar modal, at the page root (its stacking needs to be outside the scroll panes) */}
       <OpenShiftModal open={showOpenShift} onClose={() => setShowOpenShift(false)}
         onOpened={() => { setShowOpenShift(false); setRefusedNoShift(null); qc.invalidateQueries({ queryKey: ["current-shift", barId] }); refresh(); }} />
+      <CloseShiftModal open={showCloseShift && !!(shiftQ.data && shiftQ.data.shift_id)} shift={shiftQ.data} onClose={() => setShowCloseShift(false)}
+        onClosed={() => { setShowCloseShift(false); qc.invalidateQueries({ queryKey: ["current-shift", barId] }); refresh(); }}
+        onOpenBarTab={(t) => { setShowCloseShift(false); openFromShiftRefusal(t); }} />
     </div>
   );
 }
@@ -303,6 +329,7 @@ export function BillView({ lang, barId, tabId, fallbackTitle, shift, onClose, on
   const q = useQuery({ queryKey: ["bar-bill", tabId], queryFn: () => api.get(`/bar/tabs/${tabId}`).then((r) => r.data?.data), staleTime: 0, refetchOnWindowFocus: true,
     refetchInterval: (query) => (query.state.data?.approval?.status === "pending" ? 15000 : false) });
   const [err, setErr] = useState(null);
+  const [printing, setPrinting] = useState(false);   // PRINT BILL
   const cancelReq = useMutation({
     mutationFn: (id) => api.post(`/staff/approvals/${id}/cancel`, { reason: "cancelled_from_bar_tab" }).then((r) => r.data),
     onSuccess: () => { setErr(null); q.refetch(); onPaid && onPaid(); },
@@ -378,14 +405,38 @@ export function BillView({ lang, barId, tabId, fallbackTitle, shift, onClose, on
   );
   const reload = () => qc.invalidateQueries({ queryKey: ["bar-bill", tabId] });
   return (
-    <POSPage key={`bill:${tabId}:${billKey}:${ap ? ap.id + ap.status : ""}`} embed={{
-      locationId: barId, showAll: false,
-      bill: { tabId, lines, title: `${L(lang, "Bill", "Addition")} — ${title}`, approval: ap,
-        onPaid, onDone: onClose, onCancel: onClose, onWaiting: () => { onPaid && onPaid(); onClose(); }, onReload: reload },
-      renderLeft: () => summary,
-    }} />
+    <>
+      <POSPage key={`bill:${tabId}:${billKey}:${ap ? ap.id + ap.status : ""}`} embed={{
+        locationId: barId, showAll: false,
+        bill: { tabId, lines, title: `${L(lang, "Bill", "Addition")} — ${title}`, approval: ap,
+          onPaid, onDone: onClose, onCancel: onClose, onWaiting: () => { onPaid && onPaid(); onClose(); }, onReload: reload,
+          onPrint: () => setPrinting(true), printLabel: billPrintLabel(lang) },   // PRINT BILL: beside Confirm
+        renderLeft: () => summary,
+      }} />
+      {printing && <BillPrint lang={lang} tabId={tabId} lines={lines} title={title} onClose={() => setPrinting(false)} />}
+    </>
   );
 }
+// ── PRINT BILL (Peter 2026-11-23): the bill, NOT PAID, in the existing receipt (A4 / thermal 58-80 / Bluetooth /
+// WhatsApp). Records nothing as paid — the tab keeps its status; each print / share is logged on the server
+// (POST /bar/tabs/:id/bill-printed → pa_audit_log 'bar_bill_printed', who + channel + total). Above every POS layer.
+export const billPrintLabel = (lang) => L(lang, "Print bill", "Imprimer l'addition");
+export function billPrintData(lang, lines, title) {
+  const items = (lines || []).map((l) => ({ name: (lang === "en" && l.name_en) || l.name || "?", quantity: Number(l.quantity) || 0,
+    unit_price: Number(l.unit_price) || 0, product_id: l.product_id }));
+  return { items, total_amount: items.reduce((s, i) => s + Math.round(i.quantity * i.unit_price), 0), bill_title: title || "" };
+}
+export function BillPrint({ lang, tabId, lines, title, onClose }) {
+  const org = useQuery({ queryKey: ["org-settings"], queryFn: () => api.get("/settings").then((r) => r.data), staleTime: 300000 });
+  const logged = (channel) => { api.post(`/bar/tabs/${tabId}/bill-printed`, { channel }).catch((e) => console.warn("[bill-printed]", e?.message)); };
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 3500 }}>
+      <PaymentEventReceipt eventType="bar_bill" data={billPrintData(lang, lines, title)} org={org.data?.data || {}} lang={lang}
+        onOutput={logged} onClose={onClose} />
+    </div>
+  );
+}
+
 const statusWord = (lang, s) => s === "open" ? L(lang, "open", "ouverte") : L(lang, "closed — to pay", "fermée — à encaisser");
 
 // ── Counter tabs (named) — the existing list + form, behind the header's "Counter tabs" button ──
@@ -438,6 +489,7 @@ export function TableSide({ lang, barId, userId, tabId, table, title, products, 
   const qc = useQueryClient();
   const [note, setNote] = useState(null);          // { ok, text }
   const [search, setSearch] = useState("");
+  const [printing, setPrinting] = useState(false);   // PRINT BILL from the table, before Bill
   const dKey = draftKey(userId, barId, tabId);
   const stored = useBarDraftStore((s) => (dKey ? s.drafts[dKey] : null));
   const draft = stored?.items || [];
@@ -578,11 +630,15 @@ export function TableSide({ lang, barId, userId, tabId, table, title, products, 
           {T && !foreign && (
             <div className="bar-foot-row">
               <TabMoney lang={lang} figures={T.figures} fallbackTotal={T.pa_sales?.total_amount} />
+              {(T.status === "open" || T.status === "closed") && (T.bill_lines || []).length > 0 && (
+                <button type="button" className="bar-cbtn bar-print-bill" style={btn} onClick={() => setPrinting(true)}>🖨 {billPrintLabel(lang)}</button>
+              )}
               <TabActions lang={lang} tab={floorTab} busy={busy} act={act} onBill={onBill} shift={shift} />
             </div>
           )}
         </div>
       </section>
+      {printing && T && <BillPrint lang={lang} tabId={tabId} lines={T.bill_lines || []} title={title} onClose={() => setPrinting(false)} />}
     </>
   );
 }

@@ -41,6 +41,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
+import { useNavigate } from "react-router-dom";   // SHIFT CLOSE REFUSAL: a named bar tab opens on /bar
 import { useAuthStore, useLangStore, useSettingsStore } from "../../store";
 import { waPhone } from "../../utils/waPhone";
 import api from "../../utils/api";
@@ -421,7 +422,7 @@ function CategoryRow({ label, total, count, sign, children, color }) {
   );
 }
 
-export function CloseShiftModal({ open, onClose, shift, onClosed }) {
+export function CloseShiftModal({ open, onClose, shift, onClosed, onOpenBarTab }) {
   const { lang } = useLangStore();
   const { user } = useAuthStore();
   const qc = useQueryClient();
@@ -477,6 +478,29 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
   // renders as a real explanation rather than a bare toast, and so the owner's
   // deliberate override survives the re-submit.
   const [blockedBy, setBlockedBy] = useState(null);   // { outstanding[], can_override, message }
+  // SHIFT CLOSE REFUSAL: [{ id, title, status, empty, table_id, location_id }] from the 409 bar_tabs_open
+  const [barTabs, setBarTabs] = useState(null);
+  const [tabBusy, setTabBusy] = useState(null);
+  const navigate = useNavigate();
+  const openBarTab = (t) => {
+    setError(null); setBarTabs(null); onClose();
+    if (typeof onOpenBarTab === "function") onOpenBarTab(t); else navigate("/bar", { state: { openTab: t } });
+  };
+  // an EMPTY tab (nothing ordered or served) is closed off with no sale — the bar's own two steps
+  const closeEmptyTab = async (t) => {
+    setTabBusy(t.id);
+    try {
+      if (t.status === "open") await api.post(`/bar/tabs/${t.id}/close`, {});
+      await api.post(`/bar/tabs/${t.id}/pay`, {});
+      const left = (barTabs || []).filter((x) => x.id !== t.id);
+      setBarTabs(left);
+      if (!left.length) setError(lang === "fr" ? "Note vide fermée. Vous pouvez fermer le shift." : "Empty tab closed. You can close the shift now.");
+      qc.invalidateQueries({ queryKey: ["bar-floor"] });
+    } catch (e) {
+      const dd = e?.response?.data || {};
+      toast.error((lang === "fr" ? (dd.message_fr || dd.message) : (dd.message_en || dd.message)) || (lang === "fr" ? "Erreur réseau. Réessayez." : "Network error. Retry."));
+    } finally { setTabBusy(null); }
+  };
   const [override, setOverride]   = useState(false);
 
   const m = useMutation({
@@ -520,6 +544,8 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
         setConfirming(false);
         return;
       }
+      // SHIFT CLOSE REFUSAL (Peter 2026-11-23): the open bar tabs are NAMED below, each with its way out
+      if (d.code === "bar_tabs_open") setBarTabs(Array.isArray(d.tabs) ? d.tabs : []);
       setError((lang === "fr" ? (d.message_fr || d.message) : (d.message_en || d.message))
         || (lang === "fr" ? "Erreur réseau. Réessayez." : "Network error. Retry."));
       setConfirming(false);
@@ -869,10 +895,24 @@ export function CloseShiftModal({ open, onClose, shift, onClosed }) {
           {error}
         </div>
       )}
+      {barTabs && barTabs.length > 0 && (
+        <div className="shift-bar-tabs" style={{ display: "grid", gap: 6, marginBottom: 12 }}>
+          {barTabs.map((t) => (
+            <div key={t.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-card)" }}>
+              <strong style={{ flex: "1 1 120px", fontSize: 13 }}>{t.title || t.label || "?"}</strong>
+              {t.empty
+                ? <button type="button" className="btn btn-secondary" style={{ padding: "6px 10px", fontSize: 12 }} disabled={tabBusy === t.id} onClick={() => closeEmptyTab(t)}>
+                    {lang === "fr" ? "Fermer la note vide" : "Close empty tab"}</button>
+                : <button type="button" className="btn btn-primary" style={{ padding: "6px 10px", fontSize: 12 }} onClick={() => openBarTab(t)}>
+                    {lang === "fr" ? "Encaisser" : "Take payment"} →</button>}
+            </div>
+          ))}
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 8 }}>
         <button className="btn btn-secondary" style={{ flex: 1 }} disabled={m.isPending}
-          onClick={() => { setError(null); setConfirming(false); setBlockedBy(null); setOverride(false); onClose(); }}>
+          onClick={() => { setError(null); setBarTabs(null); setConfirming(false); setBlockedBy(null); setOverride(false); onClose(); }}>
           {lang === "fr" ? "Annuler" : "Cancel"}
         </button>
         {/* MP-CORRECTIONS-GUARDRAIL: once blocked, the button stays disabled until the
@@ -1039,7 +1079,8 @@ function SendReportPromptModal({ locationId, shiftId, onClose }) {
 // ─────────────────────────────────────────────────────────────────
 // INDICATOR (self-contained: queries /current, hosts both modals)
 // ─────────────────────────────────────────────────────────────────
-export function ActiveShiftIndicator() {
+// closeRequest (Peter 2026-11-23): a counter — each increase opens Close shift (the Cash screen's shift-age warning)
+export function ActiveShiftIndicator({ closeRequest = 0 } = {}) {
   const { lang } = useLangStore();
   const { selectedLocation } = useSettingsStore();
   const locId = selectedLocation?.id || null;
@@ -1047,6 +1088,7 @@ export function ActiveShiftIndicator() {
 
   const [showOpen, setShowOpen]   = useState(false);
   const [showClose, setShowClose] = useState(false);
+  useEffect(() => { if (closeRequest > 0) setShowClose(true); }, [closeRequest]);
   // MP-REPORT-SIMPLIFY-AND-AUTOSEND: when a close succeeds, capture
   // the location_id so SendReportPromptModal knows what to fetch.
   // null = no prompt pending.

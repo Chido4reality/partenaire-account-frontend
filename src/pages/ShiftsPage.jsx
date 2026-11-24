@@ -42,6 +42,7 @@ export default function ShiftsPage() {
   const fmtD = maskMoney(fmt);
   const locId = selectedLocation?.id || null;
   const [offset, setOffset] = useState(0);
+  const [closeReq, setCloseReq] = useState(0);   // the shift-age warning → the indicator's Close shift
   // SHIFT OPEN > 24 h (Peter 2026-11-21) — bar branches only (a bar sale takes its shift's opening day). Which
   // branches are bars: Layout's /bar/mine answer, SUBSCRIBED from the cache (enabled:false — this page never
   // asks; a shop makes no call; re-renders when Layout's answer lands). The shift: the shared
@@ -98,9 +99,9 @@ export default function ShiftsPage() {
       {/* The indicator owns the open/close modals AND the live math.
           Same component lives at the top of POSPage and Dashboard, so
           the cashier sees identical state everywhere. */}
-      {isBarHere && <div style={{ marginBottom: 12 }}><ShiftAgeWarning lang={lang} shift={curShift} /></div>}
+      {isBarHere && <div style={{ marginBottom: 12 }}><ShiftAgeWarning lang={lang} shift={curShift} onOpen={() => setCloseReq((n) => n + 1)} /></div>}
       <div style={{ marginBottom: 24 }}>
-        <ActiveShiftIndicator />
+        <ActiveShiftIndicator closeRequest={closeReq} />
       </div>
 
       {/* ── RECENT SHIFTS (manager/owner only) ──────────────────── */}

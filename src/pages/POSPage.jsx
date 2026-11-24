@@ -3194,6 +3194,12 @@ export default function POSPage({ embed = null } = {}) {
                 )}
                 <div style={{ display: "flex", gap: 8, paddingTop: 8, flexShrink: 0, borderTop: mobile ? "1px solid var(--border)" : "none", background: "var(--bg-surface)", position: "sticky", bottom: 0 }}>
                   <button onClick={() => { if (bill && bill.onCancel) { bill.onCancel(); return; } setShowPayment(false); }} className="btn btn-secondary" style={{ flex: 1 }}>← {lang === "en" ? "Back" : "Retour"}</button>
+                  {/* PRINT BILL (Peter 2026-11-23): the NOT PAID bill, beside Confirm — prints only, pays nothing */}
+                  {bill && bill.onPrint && (
+                    <button type="button" onClick={bill.onPrint} className="btn btn-secondary bar-print-bill" style={{ flex: 1, whiteSpace: "normal", lineHeight: 1.15 }}>
+                      🖨 {bill.printLabel || (lang === "en" ? "Print bill" : "Imprimer l'addition")}
+                    </button>
+                  )}
                   <PayButton
                     saleMutation={saleMutation}
                     onClick={attemptCheckout}

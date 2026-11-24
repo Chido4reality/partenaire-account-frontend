@@ -124,10 +124,24 @@ const HEADER_BY_TYPE = {
     titleEn: "Invoice Payment",
     titleFr: "Paiement de facture",
   },
+  // PRINT BILL (Peter 2026-11-23): a bar tab's bill handed to the customer BEFORE payment. Not a sale,
+  // not a receipt: no number, no QR/barcode, no "paid" line — it says NOT PAID on every surface.
+  bar_bill: {
+    emoji: "🧾", color: "#f59e0b",
+    titleEn: "Bill — NOT PAID",
+    titleFr: "Addition — NON PAYÉ",
+  },
 };
+
+// the NOT PAID banner the thermal + Bluetooth layouts print under the letterhead
+export function barBillBanner(data, en) {
+  // plain ASCII: the ESC/POS printer's code page has no "·"
+  return [en ? "BILL - NOT PAID" : "ADDITION - NON PAYE", data && data.bill_title ? String(data.bill_title).replace(/\s*·\s*/g, " - ") : ""].filter(Boolean);
+}
 
 // Pick the "reference" string for QR/barcode + sub-header per type.
 function referenceFor(eventType, data) {
+  if (eventType === "bar_bill") return null;   // no sale number exists yet — nothing to scan
   if (eventType === "refund") return data.return_ref || null;
   return data.sale_number || null;
 }
@@ -295,6 +309,16 @@ function buildBodyLines(eventType, data, lang, org) {
         lines.push(`  ${en ? "Not applied (already settled)" : "Non imputé (déjà réglé)"} — ${money(unapplied)}`);
       }
     }
+  }
+
+  if (eventType === "bar_bill") {
+    if (data.bill_title) lines.push(`${en ? "Table" : "Table"}: ${data.bill_title}`);
+    lines.push("─────────────────────");
+    saleItems.forEach((i) => lines.push(`${i.name} × ${i.quantity} ........ ${money(i.quantity * i.unit_price)}`));
+    const total = saleItems.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0);
+    lines.push("─────────────────────");
+    lines.push(`${en ? "Total" : "Total"}: ${money(total)}`);
+    lines.push(`⚠ ${en ? "NOT PAID — this is not a receipt" : "NON PAYÉ — ceci n'est pas un reçu"}`);
   }
 
   if (eventType === "debt_collection") {
@@ -498,7 +522,10 @@ function buildBodyLines(eventType, data, lang, org) {
 
 // ── COMPONENT ───────────────────────────────────────────────────
 
-function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
+function PaymentEventReceiptInner({ eventType, data, org, lang, onClose, onOutput }) {
+  // PRINT BILL: the caller logs each print / share (bar bill audit); best-effort, never blocks the output
+  const logOut = (channel) => { try { onOutput && onOutput(channel); } catch { /* audit is best-effort */ } };
+  const isBill = eventType === "bar_bill";
   const en = lang === "en";
   // Defensive: callers should always pass a data object, but a
   // missing/null one shouldn't take down the modal stack. The
@@ -545,7 +572,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
   // receipt that proves nothing, or throwing into a toast that reads like a
   // crash ("saleItems is not defined" is what the cashier actually saw).
   const saleLinesOrWarn = () => {
-    if (eventType !== "sale") return [];          // non-sale receipts have no item list
+    if (eventType !== "sale" && eventType !== "bar_bill") return [];          // non-sale receipts have no item list
     if (saleItems.length) return saleItems;
     toast.error(en
       ? "This receipt has no items to print. Reopen the sale and try again."
@@ -687,6 +714,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
   };
 
   const sendWhatsApp = () => {
+    logOut("whatsapp");
     const msg = buildWhatsApp();
     const url = normalisedPhone
       ? `https://wa.me/${normalisedPhone}?text=${encodeURIComponent(msg)}`
@@ -728,10 +756,12 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
       cashierName: data.cashier_name || null,
       items,
       discountTotal: Math.max(0, grossItems - netTotal),
-      paidAmount: data.paid_amount != null ? Number(data.paid_amount) : null,
-      balanceDue: data.balance_due != null ? Number(data.balance_due) : null,
-      paymentMethod: data.payment_method || "",
-      paymentStatus: data.payment_status || "",
+      // PRINT BILL: an unpaid bill prints no Paid / Balance / Method line, and carries the NOT PAID banner
+      paidAmount: isBill ? null : data.paid_amount != null ? Number(data.paid_amount) : null,
+      balanceDue: isBill ? null : data.balance_due != null ? Number(data.balance_due) : null,
+      paymentMethod: isBill ? "" : data.payment_method || "",
+      paymentStatus: isBill ? "" : data.payment_status || "",
+      notPaidBanner: isBill ? barBillBanner(data, en) : null,
       // MP-RECEIPT-CODE-STYLE: per-org barcode/qr/both. HTML path uses the PNG
       // data URLs; the ESC/POS path draws native from saleNumber + codeStyle.
       qrDataUrl: codes.qr || "",
@@ -746,6 +776,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
   };
   const printThermal = (widthMm) => {
     if (!saleLinesOrWarn()) return;
+    logOut(`thermal_${widthMm || thermalWidth}`);
     openPrint(buildThermalReceipt(saleReceiptOpts(widthMm)));
   };
 
@@ -770,6 +801,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
     if (!saleLinesOrWarn()) return;          // empty items -> clear message, no crash
     setBtBusy(true);
     try {
+      logOut("bluetooth");
       await printSaleViaBluetooth(saleReceiptOpts(thermalWidth), deviceId);
       setBtOpen(false);
       toast.success(en ? "Sent to printer" : "Envoyé à l'imprimante");
@@ -794,6 +826,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
   const pickBtDevice = (dev) => { saveSavedPrinter(dev); doBtPrint(dev.id); };
 
   const printReceipt = () => {
+    if (isBill) logOut("a4");   // PRINT BILL: A4 = the line-based body below (title "Addition — NON PAYÉ"), never a FACTURE
     // SALE → shared Cameroon FACTURE builder (identical to the Reports → Sales
     // details print). No barcode/QR; amounts space-separated, no decimals.
     if (eventType === "sale") {
@@ -1072,10 +1105,10 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
           </button>
           <button onClick={printReceipt}
             style={{ width: "100%", padding: "11px", background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-primary)", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-            🖨️ {en ? "Print Receipt (A4)" : "Imprimer reçu (A4)"}
+            🖨️ {isBill ? (en ? "Print bill (A4)" : "Imprimer l'addition (A4)") : (en ? "Print Receipt (A4)" : "Imprimer reçu (A4)")}
           </button>
           {/* MP-THERMAL-RECEIPT: paper receipt for 58/80mm thermal printers. */}
-          {eventType === "sale" && (
+          {(eventType === "sale" || isBill) && (
             <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
               <button onClick={() => printThermal()}
                 style={{ flex: 1, padding: "11px", background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-primary)", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
@@ -1094,7 +1127,7 @@ function PaymentEventReceiptInner({ eventType, data, org, lang, onClose }) {
             </div>
           )}
           {/* MP-BT-THERMAL: direct Bluetooth printing (Android app only). */}
-          {eventType === "sale" && btSupported && (
+          {(eventType === "sale" || isBill) && btSupported && (
             <button onClick={printViaBluetooth} disabled={btBusy}
               style={{ width: "100%", padding: "11px", background: "var(--bg-card)", border: "1px solid var(--brand)", color: "var(--brand-light)", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: btBusy ? "wait" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
               🖨️ {btBusy ? (en ? "Printing…" : "Impression…") : (en ? "Print (Bluetooth)" : "Imprimer (Bluetooth)")}

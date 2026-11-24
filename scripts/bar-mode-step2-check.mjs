@@ -125,7 +125,10 @@ const STUBS = {
   // BAR LAYOUT: Home embeds the POS — its own proof is scripts/bar-layout-check.mjs
   "POSPage": `export default function POSPage() { return "POS-EMBED"; }`,
   // BAR CART FIX 2: the shift modal (open a shift in place) — its own flow is proven by branch-cart.mjs P11
-  "components/common/ShiftWidgets": `export function OpenShiftModal() { return null; }`,
+  "components/common/ShiftWidgets": `export function OpenShiftModal() { return null; } export function CloseShiftModal() { return null; }`,
+  // 2026-11-23: Bar opens a tab named by the shift-close refusal (router state) + prints the NOT PAID bill
+  "react-router-dom": `export const useNavigate = () => () => {}; export const useLocation = () => ({ pathname: "/bar", state: null });`,
+  "components/common/PaymentEventReceipt": `export default function PaymentEventReceipt() { return null; }`,
   "utils/useCurrency": `const f = (n) => String(Number(n) || 0) + " F"; export const useCurrency = () => f;`,
   "utils/safeStorage": `const m = new Map(); export const safeStorage = { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v), removeItem: (k) => m.delete(k) };`,
 };
