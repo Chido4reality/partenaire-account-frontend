@@ -91,6 +91,7 @@ writeFileSync(resolve(TMP, "entry.jsx"), `
 import "../../src/index.css";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";   // the bar close window navigates to a tab (useNavigate) — the app always has a router
 import { useAuthStore, useLangStore } from "../../src/store";
 import { CloseShiftModal } from "../../src/components/common/ShiftWidgets";
 const P = new URLSearchParams(location.search);
@@ -100,10 +101,10 @@ useLangStore.setState({ lang: P.get("lang") || "en" });
 window.__closed = null;
 const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 createRoot(document.getElementById("root")).render(
-  <QueryClientProvider client={qc}>
+  <MemoryRouter><QueryClientProvider client={qc}>
     <CloseShiftModal open shift={{ shift_id: "S1", opening_float: 0, expected_drawer: 0, location_id: "L1" }}
       onClose={() => {}} onClosed={(d) => { window.__closed = d || {}; }} />
-  </QueryClientProvider>);
+  </QueryClientProvider></MemoryRouter>);
 `);
 
 const mutate = MUTATIONS[TEETH] || [];
@@ -184,7 +185,7 @@ for (const [size, W, H] of SIZES) for (const lang of ["en", "fr"].filter((l) => 
   const tag = `${size} ${lang} ${role}`;
   const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1, hasTouch: size !== "pc" });
   const page = await ctx.newPage();
-  const errs = []; page.on("pageerror", (e) => errs.push(e.message));
+  const errs = []; page.on("pageerror", (e) => errs.push((e.message && e.message !== "Error" ? e.message : "") + " " + String(e.stack || "").split("\n").slice(0, 4).join(" ← ")));
   try {
     await page.goto(`${BASE}/?role=${role}&lang=${lang}`);
     await page.locator("input").first().fill("0");
@@ -231,7 +232,7 @@ for (const [size, W, H] of SIZES) for (const lang of ["en", "fr"].filter((l) => 
       closes.length >= 2 && closes.every((b) => b && b.approvals_dialog === true) && !(await page.evaluate(() => window.__api.autoCarried)), JSON.stringify(closes));
     check(`${tag}: no page error`, errs.length === 0, errs.join(" | "));
   } catch (e) {
-    check(`${tag}: ran to the end`, false, e.message.split("\n")[0]);
+    check(`${tag}: ran to the end`, false, e.message.split("\n")[0] + (errs.length ? ` · page error: ${errs.join(" | ")}` : ""));
   } finally { await ctx.close(); }
 }
 await browser.close(); server.close();
