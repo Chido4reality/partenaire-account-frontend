@@ -176,7 +176,7 @@ try {
       await page.waitForTimeout(500);
       // BAR_PAY_STILL=1 → still frames for a before/after pixel comparison (no animation, no caret, no toast)
       if (process.env.BAR_PAY_STILL) { await page.addStyleTag({ content: "*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important} [role=status],[aria-live]{visibility:hidden!important}" }); await page.waitForTimeout(300); }
-      const m = await page.evaluate(REACH, { texts: { warning: "^⚠️ (A registered customer is required|Un client enregistré est requis)", choose: "^👤 (Choose customer|Choisir un client)$", back: "^← (Back|Retour)$", confirm: "^✓ (Confirm|Valider)" }, pinned: ["back", "confirm"] });
+      const m = await page.evaluate(REACH, { texts: { warning: "^⚠️ (A registered customer is required|Un client enregistré est requis)", choose: "^👤 (Choose customer|Choisir un client)$", print: "^🖨 (Print|Imprimer)$", back: "^← (Back|Retour)$", confirm: "^✓ (Confirm|Valider)" }, pinned: ["back", "confirm"] });
       // BAR_PAY_LAYOUT=1 → every visible element's box (rounded to 0.1 px) + text, for a before/after LAYOUT comparison
       if (process.env.BAR_PAY_LAYOUT) writeFileSync(resolve(OUT, `layout-${app}-${c.name}.json`), JSON.stringify(await page.evaluate(() =>
         [...document.querySelectorAll("body *")].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight; })
@@ -185,6 +185,10 @@ try {
       check(tag, `${tag}: the page itself does not scroll (${m.pageScrollY}px)`, m.pageScrollY <= 0);
       for (const [k, label] of [["back", "← Back"], ["confirm", "✓ Confirm"]])
         check(tag, `${tag}: “${label}” on screen without scrolling, on top`, m[k].found && m[k].inView && m[k].onTop && !m[k].pageScrolled, JSON.stringify(m[k]));
+      // 2026-11-24 Test A fix 2: the bar bill's "🖨 Print bill" (NOT PAID) sits in the same row — it must fit too;
+      // New Sale and the bar's counter sale have no such button (absent = correct there)
+      if (app === "bill") check(tag, `${tag}: “🖨 Print” (bill, NOT PAID) on screen without scrolling, on top`, m.print.found && m.print.inView && m.print.onTop && !m.print.pageScrolled, JSON.stringify(m.print));
+      else check(tag, `${tag}: no Print bill button outside a tab's bill`, !m.print.found, JSON.stringify(m.print));
       for (const [k, label] of [["warning", "the red warning"], ["choose", "“Choose customer”"]])
         check(tag, `${tag}: ${label} reachable (panel scroll only), fully in view, on top`, m[k].found && m[k].inView && m[k].onTop && !m[k].pageScrolled, JSON.stringify(m[k]));
       // keyboard: open the search, shrink the viewport like a resizing WebView
@@ -205,7 +209,8 @@ try {
       const k = await page.evaluate(REACH, { texts: { confirm: "^✓ (Confirm|Valider)" }, pinned: ["confirm"] }).catch(() => null);
       // at THE SAME moment (no scroll in between): the search box is in view AND not covered (e.g. by the pinned row)
       const sNow = await input.evaluate((el) => { const r = el.getBoundingClientRect(); const t = document.elementFromPoint(Math.min(innerWidth - 1, r.left + r.width / 2), Math.min(innerHeight - 1, Math.max(0, r.top + r.height / 2)));
-        return { inView: r.top >= -0.5 && r.bottom <= innerHeight + 0.5 && r.left >= -0.5 && r.right <= innerWidth + 0.5, onTop: !!t && (t === el || el.contains(t)), t: Math.round(r.top), b: Math.round(r.bottom), H: innerHeight }; });
+        return { inView: r.top >= -0.5 && r.bottom <= innerHeight + 0.5 && r.left >= -0.5 && r.right <= innerWidth + 0.5, onTop: !!t && (t === el || el.contains(t)), t: Math.round(r.top), b: Math.round(r.bottom), H: innerHeight,
+          by: t && !(t === el || el.contains(t)) ? `${t.tagName}.${String(t.className || "").slice(0, 40)} “${(t.textContent || "").trim().slice(0, 40)}”` : null }; });
       if (SHOTS) await page.screenshot({ path: resolve(OUT, `pay-${app}-${c.name}-keyboard.png`) });
       check(tag, `${tag} keyboard (viewport ${Math.round(c.H * 0.6)}px): the customer search box is in view and not covered — together with Confirm`, sIn.inView && sNow.inView && sNow.onTop, JSON.stringify({ sIn, sNow }));
       check(tag, `${tag} keyboard: “✓ Confirm” still on screen, on top`, !!k && k.confirm.found && k.confirm.inView && k.confirm.onTop, JSON.stringify(k && k.confirm));

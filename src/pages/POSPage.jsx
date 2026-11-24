@@ -3196,8 +3196,14 @@ export default function POSPage({ embed = null } = {}) {
                   <button onClick={() => { if (bill && bill.onCancel) { bill.onCancel(); return; } setShowPayment(false); }} className="btn btn-secondary" style={{ flex: 1 }}>← {lang === "en" ? "Back" : "Retour"}</button>
                   {/* PRINT BILL (Peter 2026-11-23): the NOT PAID bill, beside Confirm — prints only, pays nothing */}
                   {bill && bill.onPrint && (
-                    <button type="button" onClick={bill.onPrint} className="btn btn-secondary bar-print-bill" style={{ flex: 1, whiteSpace: "normal", lineHeight: 1.15 }}>
-                      🖨 {bill.printLabel || (lang === "en" ? "Print bill" : "Imprimer l'addition")}
+                    // ONE line, never wraps (pay-fit 2026-11-24: "Print bill" wrapped to 3 lines in the 1024 side panel,
+                    // the pinned row grew and covered the customer search with the keyboard open). Short visible word;
+                    // the full name stays the accessible name + tooltip.
+                    <button type="button" onClick={bill.onPrint} className="btn btn-secondary bar-print-bill"
+                      aria-label={bill.printLabel || (lang === "en" ? "Print bill" : "Imprimer l'addition")}
+                      title={bill.printLabel || (lang === "en" ? "Print bill" : "Imprimer l'addition")}
+                      style={{ flex: "0 0 auto", whiteSpace: "nowrap", paddingLeft: 10, paddingRight: 10 }}>
+                      🖨 {lang === "en" ? "Print" : "Imprimer"}
                     </button>
                   )}
                   <PayButton
