@@ -103,6 +103,9 @@ const CHECKS = [
   // put the app in queue-only mode until restart, because no write could reach
   // axios to produce the 2xx that was its only exit.
   ["degraded-ttl",  "scripts/degraded-ttl-check.mjs", "the degraded signal expires after 120s instead of latching for the whole session"],
+  // TEST A (2026-11-23): an online bar bill got an OFFLINE-… receipt (8 s first attempt vs ~16 s server)
+  ["bar-bill-online", "scripts/bar-bill-online-check.mjs", "an online bar bill waits for the server (no 8 s cut, no degraded short-cut); offline still queues; New Sale unchanged"],
+  ["shift-warn-tap", "scripts/shift-warning-tap-check.mjs", "the shift-open-too-long warning is tappable (click / Enter / Space) and opens Close shift on the bar floor and Cash"],
   // FAMILY HERITAGE: every failure this feature has had was SILENT — a page that
   // deployed and was unreachable, a portal copy two months stale, a label saying
   // "Active" for an account that could do nothing.
