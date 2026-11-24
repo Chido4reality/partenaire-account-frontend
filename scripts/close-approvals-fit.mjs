@@ -8,7 +8,8 @@
 // Teeth: CLOSE_FIT_TEETH=1|2|3 bundles a mutated copy (tree untouched) and must go RED.
 //   1 = the close no longer sends carry_over_approval_ids · 2 = the button is not blocked · 3 = a cashier may approve
 //   4 = the close no longer declares approvals_dialog (the server would auto-carry everything: the dialog never shows)
-// Run: node scripts/close-approvals-fit.mjs   (CLOSE_FIT_ONLY=phone|tablet|pc narrows it)
+// Run: node scripts/close-approvals-fit.mjs  — SPLIT by default: 1 build + 12 short browser runs (scripts/lib/splitRun.mjs)
+//   CLOSE_FIT_ONLY=phone|tablet|pc narrows it · CLOSE_FIT_NOSPLIT=1 = one process (needs ~0.5 GB headroom)
 import { build } from "esbuild";
 import postcss from "postcss";
 import tailwind from "tailwindcss";
@@ -34,10 +35,24 @@ const MUTATIONS = {
 };
 if (TEETH && !MUTATIONS[TEETH]) { console.error(`unknown CLOSE_FIT_TEETH=${TEETH}`); process.exit(2); }
 
+// SPLIT BY DEFAULT (Peter 2026-11-24): the parent builds once in a child, then runs each size × language × role
+// as its own short child (≥ 1.2 GB to start, killed below 0.9). CLOSE_FIT_NOSPLIT=1 = the old one-process run.
+const PHASE = process.env.SPLIT_PHASE || "all";
+const SIZE_LIST = [["phone", 360, 740], ["tablet", 768, 1024], ["pc", 1366, 768]];
+if (!process.env.SPLIT_CHILD && !process.env.CLOSE_FIT_NOSPLIT) {
+  const { splitRun } = await import("./lib/splitRun.mjs");
+  const cases = [];
+  for (const [size] of SIZE_LIST.filter(([n]) => !process.env.CLOSE_FIT_ONLY || process.env.CLOSE_FIT_ONLY === n))
+    for (const lang of ["en", "fr"]) for (const role of ["cashier", "owner"])
+      cases.push({ label: `${size} ${lang} ${role}`, env: { CLOSE_FIT_ONLY: size, CLOSE_FIT_LANG: lang, CLOSE_FIT_ROLE: role } });
+  await splitRun({ name: "the close-refusal dialog works on phone, tablet and PC, EN + FR", script: fileURLToPath(import.meta.url), cases, teeth: !!TEETH });
+}
+
 let fails = 0, passes = 0;
 const check = (label, ok, detail = "") => { ok ? passes++ : fails++; console.log(`  ${ok ? "pass" : "FAIL"}  ${label}${!ok && detail !== "" ? `  [${String(detail).slice(0, 300)}]` : ""}`); };
 
 // ── the page: real modal, mocked api ──────────────────────────────────────────────────────────────
+if (PHASE !== "run") {
 mkdirSync(TMP, { recursive: true });
 writeFileSync(resolve(TMP, "api-mock.js"), `
 const P = new URLSearchParams(location.search);
@@ -120,6 +135,9 @@ await build({
 rmSync(TMP, { recursive: true, force: true });
 if (hits.some((h) => h !== 1)) { console.error("teeth mutation did not land exactly once"); process.exit(3); }
 writeFileSync(resolve(OUT, "index.html"), `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/bundle.css"></head><body><div id="root"></div><script type="module" src="/bundle.js"></script></body></html>`);
+}   // end of the build phase
+if (PHASE === "build") { console.log(`built ${OUT}`); process.exit(0); }
+if (PHASE === "run" && !existsSync(resolve(OUT, "bundle.js"))) { console.error(`no build at ${OUT} — run the build phase first`); process.exit(3); }
 
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2" };
 const server = createServer((q, s) => { const p = resolve(OUT, "." + (q.url.split("?")[0] === "/" ? "/index.html" : q.url.split("?")[0]));
@@ -131,7 +149,7 @@ const BASE = `http://127.0.0.1:${server.address().port}`;
 const { chromium } = await import(pathToFileURL(PW).href);
 const browser = await chromium.launch({ executablePath: existsSync(CHROME) ? CHROME : undefined,
   args: ["--disable-gpu", "--disable-extensions", "--js-flags=--max-old-space-size=384", "--renderer-process-limit=1", "--disable-dev-shm-usage"] });
-const SIZES = [["phone", 360, 740], ["tablet", 768, 1024], ["pc", 1366, 768]].filter(([n]) => !process.env.CLOSE_FIT_ONLY || process.env.CLOSE_FIT_ONLY === n);
+const SIZES = SIZE_LIST.filter(([n]) => !process.env.CLOSE_FIT_ONLY || process.env.CLOSE_FIT_ONLY === n);
 const L = (en, fr) => new RegExp(`^(${en}|${fr})$`);
 const T = {
   close: L("✓ Close shift", "✓ Fermer le poste"), blocked: L("Requests not finished", "Demandes non terminées"),
@@ -162,7 +180,7 @@ const clickIn = async (page, id, re) => {
   await row.getByRole("button", { name: re }).click({ timeout: 5000 });
 };
 
-for (const [size, W, H] of SIZES) for (const lang of ["en", "fr"]) for (const role of ["cashier", "owner"]) {
+for (const [size, W, H] of SIZES) for (const lang of ["en", "fr"].filter((l) => !process.env.CLOSE_FIT_LANG || process.env.CLOSE_FIT_LANG === l)) for (const role of ["cashier", "owner"].filter((r) => !process.env.CLOSE_FIT_ROLE || process.env.CLOSE_FIT_ROLE === r)) {
   const tag = `${size} ${lang} ${role}`;
   const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1, hasTouch: size !== "pc" });
   const page = await ctx.newPage();
