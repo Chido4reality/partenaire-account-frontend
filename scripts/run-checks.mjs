@@ -96,6 +96,8 @@ const CHECKS = [
   // put the app in queue-only mode until restart, because no write could reach
   // axios to produce the 2xx that was its only exit.
   ["degraded-ttl",  "scripts/degraded-ttl-check.mjs", "the degraded signal expires after 120s instead of latching for the whole session"],
+  // CLOSE-REFUSAL DIALOG (2026-11-24): ShiftWidgets changed; New Sale renders it (shift indicator) — must stay byte-identical
+  ["close-dlg-newsale", "scripts/close-dialog-newsale-identical.mjs", "New Sale renders identically with the real ShiftWidgets (EN/FR, 3 roles, shift open or not) after the close-refusal dialog"],
   // FAMILY HERITAGE: every failure this feature has had was SILENT — a page that
   // deployed and was unreachable, a portal copy two months stale, a label saying
   // "Active" for an account that could do nothing.
