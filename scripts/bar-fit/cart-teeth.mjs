@@ -6,7 +6,9 @@
 //   2 = 1 + the pay/hold guard removed — the probe must ALSO catch a sale paid with the other branch's lines.
 const BAR = /src\/pages\/BarPage\.jsx$/, POS = /src\/pages\/POSPage\.jsx$/;
 const FIX = [
-  { file: BAR, from: `{selectedLocation?.id !== barId ? <div className="bar-msg" role="status">{L(lang, "Loading…", "Chargement…")}</div> :`, to: `{false ? null :` },
+  // the HOME POS mount guard — the bill screen has the same guard line since be52396, so the anchor carries the
+  // <POSPage line that follows it (exactly once again)
+  { file: BAR, from: `{selectedLocation?.id !== barId ? <div className="bar-msg" role="status">{L(lang, "Loading…", "Chargement…")}</div> :\n          <POSPage key={barId} embed={{`, to: `{false ? null :\n          <POSPage key={barId} embed={{` },
   { file: POS, from: `const locId  = embedLocWrong ? undefined : selectedLocation?.id;`, to: `const locId  = selectedLocation?.id;` },
 ];
 const GUARD = [
