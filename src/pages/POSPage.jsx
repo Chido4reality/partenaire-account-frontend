@@ -353,6 +353,9 @@ export default function POSPage({ embed = null } = {}) {
   // Staff now get a toast.error inline; no override mechanism.
   const [showReceipt, setShowReceipt]       = useState(false);
   const [lastSale, setLastSale]             = useState(null);
+  // JOB 3 PHASE 0 (Peter 2026-11-25): a paid BAR BILL shows a small "Paid — VNT-…" card — nothing prints or opens
+  // by itself; the receipt (print / Bluetooth / WhatsApp) is one optional tap, the next table is one tap.
+  const [billPaid, setBillPaid]             = useState(null);
   // MP-POS-COLLECT-DEBT-CART-NO-RECEIPT (Bug A): separate state
   // for the debt-cart receipt so the sale receipt + debt-cart
   // receipt can coexist (one closes, the other opens). Shape:
@@ -488,7 +491,7 @@ export default function POSPage({ embed = null } = {}) {
   // faults as approvalBundle. It is a MONEY path (debt collection), so it is
   // fixed and verified on its own, not as a ride-along on the approval fix.
   const anyRootOverlay = [
-    showReceipt, showHold, showResume, debtReceiptEvent,
+    showReceipt, billPaid, showHold, showResume, debtReceiptEvent,
     blockModal, oversellModal, validateModal, showOpenShift,
     creditLimitModal, cancelTarget, approvalBundle, showDebtModal,
     showNewCust,   // the payment panel's "+ New customer" (AddCustomerModal) — the THIRTEENTH
@@ -2132,8 +2135,9 @@ export default function POSPage({ embed = null } = {}) {
           // and the values backend writes to pa_sales.
           payment_status: paymentStatus,
         });
-        setShowReceipt(true);
-        // BAR BILL: the tab is paid and the table free — the floor refreshes now; the receipt closes back to it
+        if (bill) setBillPaid({ number: saleNumber, total, offline: !!data?.offline_queued });
+        else setShowReceipt(true);
+        // BAR BILL: the tab is paid and the table free — the floor refreshes now; the Paid card goes back to it
         // A lost answer = New Sale's queue (same local_id, the server dedupes) — said as saved, not as paid.
         if (bill) {
           if (data?.offline_queued) toast(lang === "en" ? "Saved — the connection dropped. It will be sent again with the same number; check the tab once online."
@@ -4058,6 +4062,27 @@ export default function POSPage({ embed = null } = {}) {
           lang={lang}
           onClose={() => { setShowReceipt(false); if (bill && bill.onDone) bill.onDone(); }}
         />
+      )}
+
+      {/* JOB 3 PHASE 0: the paid bar bill — no automatic print, share or receipt window. */}
+      {bill && billPaid && !showReceipt && (
+        <div style={{ ...ROOT_OVERLAY, zIndex: 3000, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div className="bar-paid-card" role="dialog" aria-label={lang === "en" ? "Paid" : "Payé"}
+            style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 14, padding: 18, width: "100%", maxWidth: 380, display: "grid", gap: 12 }}>
+            <div className="bar-paid-title" style={{ fontWeight: 800, fontSize: 18 }}>
+              {billPaid.offline ? (lang === "en" ? "⏳ Saved — sent when online" : "⏳ Enregistré — envoyé dès le retour du réseau")
+                : `✓ ${lang === "en" ? "Paid" : "Payé"} — ${billPaid.number}`}
+            </div>
+            <div style={{ fontSize: 15 }}>{lang === "en" ? "Total" : "Total"} : <strong>{fmt(billPaid.total)}</strong></div>
+            <button type="button" className="btn btn-primary bar-paid-next" style={{ minHeight: 48, fontWeight: 800 }}
+              onClick={() => { setBillPaid(null); if (bill.onDone) bill.onDone(); }}>
+              {lang === "en" ? "Next table →" : "Table suivante →"}
+            </button>
+            <button type="button" className="btn btn-secondary bar-paid-receipt" style={{ minHeight: 44 }} onClick={() => setShowReceipt(true)}>
+              🧾 {lang === "en" ? "Receipt — print / WhatsApp" : "Reçu — imprimer / WhatsApp"}
+            </button>
+          </div>
+        </div>
       )}
 
       {/* MP-POS-COLLECT-DEBT-CART-NO-RECEIPT (Bug A): debt-cart

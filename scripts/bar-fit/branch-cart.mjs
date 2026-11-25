@@ -20,6 +20,8 @@
 // 2026-11-20 (Peter's tablet: "No connection" while the server had paid T1):
 //   P12 the bill's answer LOST → New Sale's queue, one local_id; refused 409 "already paid" → said + reload; offline → nothing sent
 //   P13 the bill (read-only lines, POS rules, waiting for the boss, send to boss)   P14 empty tab: no sale   P15 shift > 24 h warning
+// 2026-11-25 JOB 3 PHASE 0: P16 a paid bill → "✓ Paid — <number>" + Next table + optional Receipt; nothing prints/opens by itself.
+// Teeth 12 (receipt auto-opens again) → P16b red; teeth 13 (the receipt prints on open) → P16e red.
 // Teeth 3 (fix 2 removed) → red on P7/P9/P10/P10s; teeth 4 (in-place shift removed) → red on P11;
 // teeth 5 (bill posted without bar_tab_id) → P11g; teeth 6 (bill cart not locked) → P13b; teeth 8 (offline guard) → P12c;
 // teeth 7 (send to boss parks a held cart) → P13e; teeth 9 (empty bill) → P14; teeth 10 (no warning) → P15; teeth 11 → P12a.
@@ -519,6 +521,52 @@ try {
     await page.waitForTimeout(800);
     check("P15d Bepanda (shift opened today): no warning", (await warn.count()) === 0, String(await warn.count()));
     check("P15 no page errors", !errs.length, errs.slice(0, 2).join(" | "));
+    await ctx.close();
+  }
+  if (want("P16")) {
+    // P16 — JOB 3 PHASE 0 (Peter 2026-11-25): NO PRINTING IN THE SERVICE FLOW. A paid bill shows "✓ Paid — <number>"
+    // with Next table + an optional Receipt; nothing prints, shares, opens a window or logs a print by itself.
+    const mk = (id, name) => ({ id, name, status: "closed", location_id: BON, opened_at: new Date().toISOString(),
+      figures: { ordered: 1500, served: 1500, waiting: 0, paid: 0, balance_due: 1500, service_status: "served", payment_status: "unpaid", rounds_waiting: 0, rounds_served: 1 } });
+    const { ctx, page, st, errs } = await session("P16 a paid bill → Paid card, nothing printed or opened by itself", { named: { [BON]: [mk("nt6", "Ama"), mk("nt7", "Bea")] } });
+    const printLogs = []; page.on("request", (r) => { if (/bill-printed/.test(r.url())) printLogs.push(r.url()); });
+    await settle(page, BON);
+    await page.evaluate(() => { window.__out = []; window.print = () => window.__out.push("print"); window.open = (u) => { window.__out.push("open " + u); return null; };
+      if (navigator.share) navigator.share = () => { window.__out.push("share"); return Promise.resolve(); }; });
+    const receiptOpen = () => page.evaluate(() => [...document.querySelectorAll("button")].some((b) => /(Share|Send) via WhatsApp|(Partager|Envoyer) par WhatsApp/.test(b.textContent)));
+    const payTab = async (name) => {
+      await page.getByRole("button", { name: /Counter tabs|Tabs/ }).first().click();
+      const row = page.locator("div", { has: page.getByText(name, { exact: true }) }).filter({ has: page.getByRole("button", { name: "Take payment" }) }).last();
+      await row.getByRole("button", { name: "Take payment" }).click({ timeout: 15000 });
+      const n = (st.pays || []).length;
+      await page.getByRole("button", { name: /✓ Confirm/ }).first().click({ timeout: 15000 });
+      for (let i = 0; i < 40 && (st.pays || []).length === n; i++) await page.waitForTimeout(150);
+      await page.locator(".bar-paid-card").waitFor({ timeout: 15000 }).catch(() => {});   // missing → P16a/b say so
+      await page.waitForTimeout(1200);   // anything automatic would have fired by now
+    };
+    await payTab("Ama");
+    const t1 = ((await page.locator(".bar-paid-card").count()) ? await page.locator(".bar-paid-card").innerText() : "(no Paid card)").replace(/\s+/g, " ");
+    check("P16a paid → \"✓ Paid — S-nt6\" with the total and Next table", /✓ Paid — S-nt6/.test(t1) && /Total : 1[\s  ,.]?500/.test(t1) && /Next table →/.test(t1), t1);
+    check("P16b no receipt window opened by itself", !(await receiptOpen()));
+    let out = await page.evaluate(() => window.__out);
+    check("P16c nothing printed, shared or opened, no print logged", out.length === 0 && printLogs.length === 0, JSON.stringify({ out, printLogs }));
+    await page.locator(".bar-paid-receipt").click();
+    await page.waitForTimeout(600);
+    check("P16d Receipt (optional tap) → the receipt with print / WhatsApp", await receiptOpen());
+    out = await page.evaluate(() => window.__out);
+    check("P16e …still nothing printed until a print button is tapped", out.length === 0 && printLogs.length === 0, JSON.stringify({ out, printLogs }));
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(600);
+    check("P16f closing the receipt → back on the floor (no Paid card, no payment panel)", (await page.locator(".bar-paid-card").count()) === 0 && !(await receiptOpen())
+      && (await page.getByRole("button", { name: /✓ Confirm/ }).count()) === 0 && new URL(page.url()).pathname === "/bar");
+    await payTab("Bea");
+    await page.locator(".bar-paid-next").click();
+    await page.waitForTimeout(600);
+    out = await page.evaluate(() => window.__out);
+    check("P16g Next table → straight back to the floor; nothing printed or opened", (await page.locator(".bar-paid-card").count()) === 0 && !(await receiptOpen())
+      && (await page.getByRole("button", { name: /✓ Confirm/ }).count()) === 0 && out.length === 0 && printLogs.length === 0, JSON.stringify({ out, printLogs }));
+    check("P16h two bills → two POST /sales, nothing else", (st.pays || []).filter((x) => /^nt[67]$/.test(x.body.bar_tab_id)).length === 2, JSON.stringify((st.pays || []).map((x) => x.body.bar_tab_id)));
+    check("P16 no page errors", !errs.length, errs.slice(0, 2).join(" | "));
     await ctx.close();
   }
 } catch (e) {

@@ -51,3 +51,7 @@ CART_TEETH[9] = [{ file: BAR, from: "  if (!lines.length) return (", to: "  if (
 CART_TEETH[10] = [{ file: /src\/components\/bar\/ShiftAgeWarning\.jsx$/, from: "if (!Number.isFinite(t) || now - t <= SHIFT_TOO_OLD_MS) return null;", to: "return null;" }];
 // 11 = a lost answer on a bill said as "Tab paid." (the offline_queued branch removed) — P12a red
 CART_TEETH[11] = [{ file: POS, from: "          if (data?.offline_queued) toast(", to: "          if (false) toast(" }];
+// 12 = JOB 3 PHASE 0 undone: a paid bill opens the receipt window by itself again — P16 red
+CART_TEETH[12] = [{ file: POS, from: "        if (bill) setBillPaid({ number: saleNumber, total, offline: !!data?.offline_queued });\n        else setShowReceipt(true);", to: "        setShowReceipt(true);" }];
+// 13 = the receipt fires a print by itself when it opens — P16c/e red (the spy must see it)
+CART_TEETH[13] = [{ file: /src\/components\/common\/PaymentEventReceipt\.jsx$/, from: "  const [printHtml, setPrintHtml] = useState(null);", to: "  const [printHtml, setPrintHtml] = useState(null);\n  useEffect(() => { try { window.print(); } catch (e) {} }, []);" }];
