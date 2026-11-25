@@ -562,7 +562,9 @@ export function CloseShiftModal({ open, onClose, shift, onClosed, onOpenBarTab }
         return;
       }
       // SHIFT CLOSE REFUSAL (Peter 2026-11-23): the open bar tabs are NAMED below, each with its way out
-      if (d.code === "bar_tabs_open") setBarTabs(Array.isArray(d.tabs) ? d.tabs : []);
+      // (Peter 2026-11-25): ONE LINE PER TAB — "Close or take payment for T1 · Bonaberri" — no summary sentence above them.
+      if (d.code === "bar_tabs_open" && Array.isArray(d.tabs) && d.tabs.length) { setBarTabs(d.tabs); setError(null); setConfirming(false); return; }
+      if (d.code === "bar_tabs_open") setBarTabs([]);
       setError((lang === "fr" ? (d.message_fr || d.message) : (d.message_en || d.message))
         || (lang === "fr" ? "Erreur réseau. Réessayez." : "Network error. Retry."));
       setConfirming(false);
@@ -923,13 +925,14 @@ export function CloseShiftModal({ open, onClose, shift, onClosed, onOpenBarTab }
       {barTabs && barTabs.length > 0 && (
         <div className="shift-bar-tabs" style={{ display: "grid", gap: 6, marginBottom: 12 }}>
           {barTabs.map((t) => (
-            <div key={t.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-card)" }}>
-              <strong style={{ flex: "1 1 120px", fontSize: 13 }}>{t.title || t.label || "?"}</strong>
+            <div key={t.id} className="shift-bar-tab" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-card)" }}>
+              <span className="shift-bar-tab-line" style={{ flex: "1 1 160px", fontSize: 13, color: "#f87171" }}>
+                {lang === "fr" ? "Fermez ou encaissez " : "Close or take payment for "}<strong>{t.title || t.label || "?"}</strong></span>
               {t.empty
-                ? <button type="button" className="btn btn-secondary" style={{ padding: "6px 10px", fontSize: 12 }} disabled={tabBusy === t.id} onClick={() => closeEmptyTab(t)}>
+                ? <button type="button" className="btn btn-secondary" style={{ padding: "6px 12px", fontSize: 13, minHeight: 40 }} disabled={tabBusy === t.id} onClick={() => closeEmptyTab(t)}>
                     {lang === "fr" ? "Fermer la note vide" : "Close empty tab"}</button>
-                : <button type="button" className="btn btn-primary" style={{ padding: "6px 10px", fontSize: 12 }} onClick={() => openBarTab(t)}>
-                    {lang === "fr" ? "Encaisser" : "Take payment"} →</button>}
+                : <button type="button" className="btn btn-primary" style={{ padding: "6px 12px", fontSize: 13, minHeight: 40 }} onClick={() => openBarTab(t)}>
+                    {lang === "fr" ? "Encaisser" : "Take payment"}</button>}
             </div>
           ))}
         </div>
