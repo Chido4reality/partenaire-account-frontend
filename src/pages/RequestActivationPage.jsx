@@ -33,7 +33,23 @@ const MANUAL_METHODS = [
   { value: "bank", en: "Bank transfer", fr: "Virement bancaire" },
 ];
 
-const DURATIONS = [1, 3, 6, 12];
+// SUB-PRICE-2026-12 (Peter): 3, 6 or 12 months only — 12 listed first and marked Recommended.
+// The server sends the list (allowed_months / durations); this is only the fallback order.
+const DURATIONS = [12, 6, 3];
+const RECOMMENDED_MONTHS = 12;
+
+// SUB-PRICE-2026-12: the total for a period is the SERVER's (GET /subscriptions/plans
+// `durations`, the same resolver /flw/initiate charges with). Never monthly × months here: a
+// fixed-amount promo code or loyalty grant comes off the whole period once, so multiplying a
+// discounted monthly figure showed less than the charge. The fallback (a server without
+// `durations`) is the old monthly × months.
+export function periodPrice(plan, months) {
+  if (!plan) return { amount: 0, original: 0, discount: null };
+  const d = Array.isArray(plan.durations) ? plan.durations.find((x) => x.months === months) : null;
+  if (d && d.amount != null) return { amount: d.amount, original: d.original_amount ?? d.amount, discount: d.discount || null };
+  const unit = plan.price ?? plan.price_monthly ?? 0;
+  return { amount: unit * months, original: (plan.original_price ?? unit) * months, discount: plan.discount || null };
+}
 
 export default function RequestActivationPage() {
   const { lang } = useLangStore();
@@ -44,12 +60,9 @@ export default function RequestActivationPage() {
   const [searchParams] = useSearchParams();
   const deepLinkPlan = searchParams.get("plan"); // e.g. ?plan=pro_plus
 
-  // MP-NG-DURATION: the 1/3/6/12 duration dropdown is shown for BOTH countries,
-  // exactly as before. The ONLY behavioural change is the DEFAULT: Nigeria (NGN)
-  // defaults to 6 months; Cameroun (XAF) keeps its original monthly (1) default.
-  const isNGN = fmt.currency === "NGN";
+  // SUB-PRICE-2026-12: both countries buy 3, 6 or 12 months; 12 (Recommended) is the default.
   const [selectedId, setSelectedId] = useState(null);
-  const [months, setMonths] = useState(isNGN ? 6 : 1); // NG → 6, CM → 1 (as before)
+  const [months, setMonths] = useState(RECOMMENDED_MONTHS);
   const [showManual, setShowManual] = useState(false);
   // Period label for the chosen duration (1 → "/month", N → "/ N months").
   const periodLabel = (m) => m === 1 ? (en ? "/month" : "/mois") : (en ? `/ ${m} months` : `/ ${m} mois`);
@@ -95,9 +108,12 @@ export default function RequestActivationPage() {
 
   // Only purchasable paid tiers (Lite / Pro / Pro Plus). Pro Plus appears
   // automatically once it's active in pa_plans — no hardcoded list.
+  // SUB-PRICE-2026-12: filter + sort on the LIST price (original_price). A fixed-amount promo
+  // code bigger than one month makes the discounted MONTHLY figure 0, which hid that plan.
+  const listOf = (p) => p.original_price ?? p.price ?? p.price_monthly;
   const plans = useMemo(() => (plansData?.data || [])
-    .filter(p => p.id !== "silver" && p.id !== "trial" && (p.price ?? p.price_monthly) > 0)
-    .sort((a, b) => (a.price ?? a.price_monthly) - (b.price ?? b.price_monthly)),
+    .filter(p => p.id !== "silver" && p.id !== "trial" && listOf(p) > 0)
+    .sort((a, b) => listOf(a) - listOf(b)),
     [plansData]);
 
   // Resolve the effective selection: explicit click → deep-link → first plan.
@@ -107,17 +123,16 @@ export default function RequestActivationPage() {
     return plans.find(p => p.id === wanted) || plans[0];
   }, [plans, selectedId, deepLinkPlan]);
 
-  const unitPrice = selected ? (selected.price ?? selected.price_monthly) : 0;
-  const total = unitPrice * months;
-  // MP-SUBSCRIPTION-DISCOUNT: the backend already resolves the admin pricing rule
-  // and returns original_price + discount on each plan. Surface it (struck-through
-  // original + −X% badge + savings) — without this the discounted price looked
-  // like a plain full price (e.g. a 45,000 → 40,500 −10% showed only "40,500").
-  const unitOriginal = selected ? (selected.original_price ?? unitPrice) : 0;
-  const totalOriginal = unitOriginal * months;
-  const selDiscount = selected?.discount || null;
-  const discBadge = (d) => !d ? null
-    : (d.discount_type === "percent" ? `−${d.discount_value}%` : `−${fmt(d.amount_off)}`);
+  // The periods on offer, in the server's order (12 → 6 → 3); a server without the list → fallback.
+  const durations = (selected?.durations?.length ? selected.durations.map((d) => d.months) : DURATIONS);
+  // MP-SUBSCRIPTION-DISCOUNT: struck-through original + −X% badge + savings — now from the
+  // server's period total (SUB-PRICE-2026-12), so what is shown is what Flutterwave charges.
+  const sel = periodPrice(selected, months);
+  const total = sel.amount;
+  const totalOriginal = sel.original;
+  const selDiscount = sel.discount;
+  const discBadge = (d, saved) => !d ? null
+    : (d.discount_type === "percent" ? `−${d.discount_value}%` : `−${fmt(saved)}`);
   const pendingPlan = plans.find(p => p.id === pendingPlanId);
 
   // PRIMARY — Flutterwave Standard Checkout. Backend creates the hosted payment
@@ -143,14 +158,11 @@ export default function RequestActivationPage() {
     const shop = (org && org.name) || "";
     const mpId = myPlanData?.data?.user_id_number || "";            // MP-000xxx (as shown in-app)
     const planName = (selected && selected.name) || "";
-    const price = fmt(unitPrice);                                    // "40 500 FCFA" / "40 500 ₦"
-    // MP-NG-DURATION: NG buys in a chosen duration — state months + total so the
-    // admin activates for the right period. XAF stays monthly (months=1).
-    const planLineEn = months > 1
-      ? `${planName} — ${months} months = ${fmt(total)}`
-      : `${planName} (${price}/month)`;
+    // SUB-PRICE-2026-12: every purchase is 3, 6 or 12 months — state the period + its total
+    // (the server's figure) in both languages, so the admin activates the right period.
+    const planLineEn = `${planName} — ${months} months = ${fmt(total)}`;
     return isFrenchEnglishOrg(org)
-      ? `Bonjour, je veux payer mon abonnement Stenamo Book.\nBoutique : ${shop}\nID : ${mpId}\nFormule : ${planName} (${price}/mois)\nJe ne peux pas payer en ligne — merci d'activer mon compte.`
+      ? `Bonjour, je veux payer mon abonnement Stenamo Book.\nBoutique : ${shop}\nID : ${mpId}\nFormule : ${planName} — ${months} mois = ${fmt(total)}\nJe ne peux pas payer en ligne — merci d'activer mon compte.`
       : `Hello, I want to pay for my Stenamo Book subscription.\nShop: ${shop}\nID: ${mpId}\nPlan: ${planLineEn}\nI can't pay online — please activate my account.`;
   };
 
@@ -206,7 +218,8 @@ export default function RequestActivationPage() {
       {/* Plan cards — Lite / Pro / Pro Plus, consistent UI, country-aware price */}
       <div style={{ display: "grid", gap: 10, marginBottom: 18 }}>
         {plans.map(p => {
-          const price = p.price ?? p.price_monthly;
+          const pp = periodPrice(p, months);                 // SUB-PRICE-2026-12: the server's total for this period
+          const listMonthly = p.original_price ?? p.price ?? p.price_monthly;
           const isSel = selected?.id === p.id;
           const feats = planFeatureList(p.features, org).map((f) => planFeatureLabel(f, en ? "en" : "fr"));   // LAUNCH-BATCH-2b: Stenamo Market, XAF only; in the shop's language
           return (
@@ -229,16 +242,17 @@ export default function RequestActivationPage() {
                   </div>
                 </div>
                 <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
-                  {/* MP-SUBSCRIPTION-DISCOUNT: struck-through original when an admin rule applies.
-                      MP-NG-DURATION: prices reflect the chosen duration (×months). XAF months=1. */}
-                  {p.discount && p.original_price != null && p.original_price > price && (
-                    <div style={{ fontSize: 12, color: "var(--text-muted)", textDecoration: "line-through" }}>{fmt(p.original_price * months)}</div>
+                  {/* MP-SUBSCRIPTION-DISCOUNT: struck-through original when a discount applies.
+                      SUB-PRICE-2026-12: the chosen period's total, from the server. */}
+                  {pp.discount && pp.original > pp.amount && (
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", textDecoration: "line-through" }}>{fmt(pp.original)}</div>
                   )}
-                  <div style={{ fontWeight: 800, fontSize: 18, color: p.discount ? "#34d399" : "var(--brand-light)" }}>{fmt(price * months)}</div>
+                  <div className="plan-period-total" style={{ fontWeight: 800, fontSize: 18, color: pp.discount ? "#34d399" : "var(--brand-light)" }}>{fmt(pp.amount)}</div>
                   <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{periodLabel(months)}</div>
-                  {p.discount && (
+                  <div className="plan-monthly-list" style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>{fmt(listMonthly)} {en ? "/ month" : "/ mois"}</div>
+                  {pp.discount && pp.original > pp.amount && (
                     <div style={{ fontSize: 10, fontWeight: 700, color: "#34d399", marginTop: 2 }}>
-                      {p.discount.discount_type === "percent" ? `−${p.discount.discount_value}%` : `−${fmt(p.discount.amount_off * months)}`}
+                      {discBadge(pp.discount, pp.original - pp.amount)}
                     </div>
                   )}
                 </div>
@@ -248,31 +262,45 @@ export default function RequestActivationPage() {
         })}
       </div>
 
-      {/* Duration — shown for BOTH NGN and XAF (1/3/6/12), exactly as before.
-          MP-NG-DURATION: the ONLY change is the default — NG defaults to 6 months,
-          CM keeps its monthly (1) default. */}
+      {/* Duration — SUB-PRICE-2026-12: 12, 6 or 3 months (both countries), 12 first and
+          marked Recommended. One button per period with that period's total from the server. */}
       <div className="label">{en ? "Duration" : "Durée"}</div>
-      <select className="input" value={months} onChange={e => setMonths(+e.target.value)} style={{ marginBottom: 16 }}>
-        {DURATIONS.map(m => (
-          <option key={m} value={m}>{m} {en ? (m === 1 ? "month" : "months") : "mois"} — {fmt(unitPrice * m)}</option>
-        ))}
-      </select>
+      <div role="radiogroup" aria-label={en ? "Duration" : "Durée"} className="sub-durations"
+        style={{ display: "grid", gridTemplateColumns: `repeat(${durations.length}, minmax(0, 1fr))`, gap: 8, marginBottom: 16 }}>
+        {durations.map(m => {
+          const on = months === m, rec = m === RECOMMENDED_MONTHS, dp = periodPrice(selected, m);
+          return (
+            <button key={m} type="button" role="radio" aria-checked={on} data-months={m} onClick={() => setMonths(m)}
+              style={{ position: "relative", minHeight: 64, padding: rec ? "18px 6px 8px" : "10px 6px 8px", borderRadius: 12, cursor: "pointer", textAlign: "center",
+                border: `2px solid ${on ? "var(--brand)" : "var(--border)"}`, background: on ? "rgba(251,197,3,0.10)" : "var(--bg-card)", color: "var(--text-primary)" }}>
+              {rec && (
+                <span className="sub-recommended" style={{ position: "absolute", top: -9, left: "50%", transform: "translateX(-50%)", whiteSpace: "nowrap",
+                  fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 10, background: "var(--brand)", color: "#111" }}>
+                  {en ? "Recommended" : "Recommandé"}
+                </span>
+              )}
+              <div style={{ fontWeight: 800, fontSize: 18, lineHeight: 1.1 }}>{m}</div>
+              <div style={{ fontWeight: 700, fontSize: 12 }}>{en ? "months" : "mois"}</div>
+              <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fmt(dp.amount)}</div>
+            </button>
+          );
+        })}
+      </div>
 
-      {/* Total — MP-SUBSCRIPTION-DISCOUNT: struck-through original + −X% badge + savings.
-          MP-NG-DURATION: period spelled out when a multi-month duration is chosen. */}
+      {/* Total — MP-SUBSCRIPTION-DISCOUNT: struck-through original + −X% badge + savings. */}
       <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 14, marginBottom: 14 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ color: "var(--text-secondary)", fontSize: 13 }}>
-            {en ? "Total" : "Total"}{months > 1 ? ` · ${months} ${en ? "months" : "mois"}` : ""}
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "4px 10px" }}>
+          <span style={{ color: "var(--text-secondary)", fontSize: 13, whiteSpace: "nowrap" }}>
+            {en ? "Total" : "Total"} · {months} {en ? "months" : "mois"}
           </span>
-          <span style={{ textAlign: "right" }}>
+          <span style={{ textAlign: "right", marginLeft: "auto", whiteSpace: "nowrap" }}>
             {selDiscount && totalOriginal > total && (
               <span style={{ fontSize: 13, color: "var(--text-muted)", textDecoration: "line-through", marginRight: 8 }}>{fmt(totalOriginal)}</span>
             )}
-            <span style={{ fontWeight: 800, fontSize: 18, color: selDiscount ? "#34d399" : "var(--brand-light)" }}>{fmt(total)}</span>
-            {selDiscount && (
+            <span className="sub-total" style={{ fontWeight: 800, fontSize: 18, color: selDiscount ? "#34d399" : "var(--brand-light)" }}>{fmt(total)}</span>
+            {selDiscount && totalOriginal > total && (
               <span style={{ fontSize: 10, fontWeight: 700, color: "#34d399", marginLeft: 8, padding: "2px 6px", borderRadius: 8, background: "rgba(52,211,153,0.15)" }}>
-                {discBadge(selDiscount)}
+                {discBadge(selDiscount, totalOriginal - total)}
               </span>
             )}
           </span>
@@ -290,7 +318,7 @@ export default function RequestActivationPage() {
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, marginBottom: 14, background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.3)" }}>
           <span style={{ fontSize: 16 }}>🎁</span>
           <div style={{ fontSize: 13, color: "#34d399", fontWeight: 600 }}>
-            {en ? `Loyalty reward applied — you save ${fmt((selDiscount.amount_off || 0) * months)}` : `Récompense fidélité appliquée — vous économisez ${fmt((selDiscount.amount_off || 0) * months)}`}
+            {en ? `Loyalty reward applied — you save ${fmt(totalOriginal - total)}` : `Récompense fidélité appliquée — vous économisez ${fmt(totalOriginal - total)}`}
             <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>
               {en ? "A thank-you discount on this subscription." : "Une réduction de remerciement sur cet abonnement."}
             </div>
@@ -310,7 +338,7 @@ export default function RequestActivationPage() {
           const otherDiscount = selDiscount && selDiscount.source !== "promo";
           const code = appliedCode.code;
           if (promoActive) {
-            const save = fmt((selDiscount.amount_off || 0) * months);
+            const save = fmt(totalOriginal - total);
             return (
               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.3)" }}>
                 <span style={{ fontSize: 16 }}>🎟️</span>

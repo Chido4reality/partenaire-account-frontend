@@ -164,7 +164,8 @@ export default function PaywallModal({ feature, currentPlan, mpId, onClose, mess
   // floor — Pro Plus appears automatically once is_active. Only offer tiers
   // ABOVE the org's current plan.
   const allPaid = (plansData?.data || [])
-    .filter(p => p.id !== "silver" && p.id !== "trial" && (p.price ?? p.price_monthly) > 0);
+    // SUB-PRICE-2026-12: on the LIST price — a big fixed-amount code makes the monthly figure 0.
+    .filter(p => p.id !== "silver" && p.id !== "trial" && (p.original_price ?? p.price ?? p.price_monthly) > 0);
   const tiers = allPaid
     .filter(p => (PLAN_RANK[p.id] ?? 0) > currentRank)
     .sort((a, b) => (PLAN_RANK[a.id] ?? 0) - (PLAN_RANK[b.id] ?? 0));
@@ -297,22 +298,32 @@ export default function PaywallModal({ feature, currentPlan, mpId, onClose, mess
                         + the discounted price — same shape + source as the
                         RequestActivationPage cards. Without this a 25,000→2,500
                         (−90%) read as a bare "2 500" and looked like a typo. */}
-                    {plan.discount && plan.original_price != null && plan.original_price > (plan.price ?? plan.price_monthly) && (
-                      <div style={{ fontSize: 12, color: "var(--text-muted)", textDecoration: "line-through" }}>
-                        {fmt(plan.original_price)}
-                      </div>
-                    )}
-                    <div style={{ fontWeight: 800, fontSize: 16, color: plan.discount ? "#34d399" : "var(--brand-light)" }}>
-                      {fmt(plan.price ?? plan.price_monthly)}
-                    </div>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                      {lang === "fr" ? "/ mois" : "/ month"}
-                    </div>
-                    {plan.discount && (
-                      <div style={{ fontSize: 10, fontWeight: 700, color: "#34d399", marginTop: 2 }}>
-                        {plan.discount.discount_type === "percent" ? `−${plan.discount.discount_value}%` : `−${fmt(plan.discount.amount_off)}`}
-                      </div>
-                    )}
+                    {(() => {
+                      // SUB-PRICE-2026-12: plans are bought for 3, 6 or 12 months. The card shows the
+                      // monthly figure OF THE 12-MONTH (recommended) total the server will charge, so a
+                      // fixed-amount code that is bigger than one month never reads as "0 / month".
+                      // A server without `durations` → the old monthly fields.
+                      const d12 = Array.isArray(plan.durations) ? plan.durations.find((d) => d.months === 12) : null;
+                      const now = d12 && d12.amount != null ? Math.round(d12.amount / 12) : (plan.price ?? plan.price_monthly);
+                      const was = d12 && d12.original_amount != null ? Math.round(d12.original_amount / 12) : (plan.original_price ?? now);
+                      const disc = d12 ? d12.discount : plan.discount;
+                      const off = disc && was > now;
+                      return (<>
+                        {off && (
+                          <div style={{ fontSize: 12, color: "var(--text-muted)", textDecoration: "line-through" }}>{fmt(was)}</div>
+                        )}
+                        <div style={{ fontWeight: 800, fontSize: 16, color: off ? "#34d399" : "var(--brand-light)" }}>{fmt(now)}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "fr" ? "/ mois" : "/ month"}</div>
+                        {off && (
+                          <div style={{ fontSize: 10, fontWeight: 700, color: "#34d399", marginTop: 2 }}>
+                            {disc.discount_type === "percent" ? `−${disc.discount_value}%` : `−${fmt(was - now)}`}
+                          </div>
+                        )}
+                        <div className="paywall-periods" style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+                          {lang === "fr" ? "payé pour 3, 6 ou 12 mois" : "paid for 3, 6 or 12 months"}
+                        </div>
+                      </>);
+                    })()}
                   </div>
                 </div>
               </div>

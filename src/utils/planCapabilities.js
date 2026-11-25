@@ -8,9 +8,9 @@
 //           floor that orgs stay on indefinitely after the 14-day
 //           countdown ends — caps are constant, only the banner
 //           disappears.
-//   lite  = old gold behavior at 8 000 FCFA/mo — full sections +
+//   lite  = old gold behavior at 10 000 FCFA/mo (SUB-PRICE-2026-12; was 8 000) — full sections +
 //           Dozie access.
-//   pro   = old premium behavior at 10 000 FCFA/mo — wildcard
+//   pro   = old premium behavior at 15 000 FCFA/mo (was 10 000) — wildcard
 //           sections, no caps, CSV + receipt branding unlocked.
 //
 // Legacy aliases (silver/gold/premium) still resolve to the
@@ -49,7 +49,7 @@ export const PLAN_CAPABILITIES = {
     receipt_branding: false,
     dozie_access: true,
     dozie_city_cap: 3,
-    price_fcfa_month: 8000
+    price_fcfa_month: 10000
   },
   pro: {
     label: 'Pro',
@@ -70,7 +70,7 @@ export const PLAN_CAPABILITIES = {
     compare: true,
     // EXPIRY-TRACKING (Peter, 2026-10-04): per-product expiry on receive, alerts, write-off. Pro and above.
     track_expiry: true,
-    price_fcfa_month: 10000
+    price_fcfa_month: 15000
   },
 
   // MP-BILLING-V3: Pro Plus — paid uplift over Pro. Same full access as Pro,
@@ -91,7 +91,7 @@ export const PLAN_CAPABILITIES = {
     // MP-COMPARE: the Compare screen (month vs month, location vs location). Pro and above.
     compare: true,
     track_expiry: true,       // EXPIRY-TRACKING (Pro and above) — mirrors backend
-    price_fcfa_month: 13000,
+    price_fcfa_month: 20000,
     ai_assistant: true,
     // Owner pins a cashier to a home location that follows them across devices
     // (Staff Maintenance, location slice). Mirror of backend lib/planCapabilities.js.

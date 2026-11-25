@@ -1942,8 +1942,8 @@
         <div class="card" style="padding:0;overflow:auto;margin-bottom:16px">
           <div style="padding:12px 14px;font-weight:700">What shops pay with the saved setting</div>
           <table class="data-table" id="ld-preview">
-            <thead><tr><th>Country</th><th>Plan</th><th class="ta-right">1 month</th><th class="ta-right">3 months</th><th class="ta-right">6 months</th><th class="ta-right">12 months</th></tr></thead>
-            <tbody id="ld-preview-body"><tr><td colspan="6" class="muted ta-center" style="padding:20px">Loading…</td></tr></tbody>
+            <thead><tr><th>Country</th><th>Plan</th><th class="ta-right">3 months</th><th class="ta-right">6 months</th><th class="ta-right">12 months</th></tr></thead>
+            <tbody id="ld-preview-body"><tr><td colspan="5" class="muted ta-center" style="padding:20px">Loading…</td></tr></tbody>
           </table>
         </div>
         <div class="card" style="padding:0;overflow:auto">
@@ -5812,7 +5812,8 @@
           : ' <span class="delta ' + (mom > 0 ? 'up' : mom < 0 ? 'down' : 'flat') + '">' + (mom > 0 ? '+' : '') + mom.toFixed(1) + '%</span>';
         cards[1].querySelector('.stat-value').innerHTML = escapeHtml(fmtFCFA(s.mtd_revenue)) + deltaHtml;
         cards[1].querySelector('.stat-value').classList.remove('muted');
-        setVal(2, fmtFCFA(s.mrr));
+        // SUB-PRICE-2026-12: MRR per currency (Cameroon FCFA · Nigeria ₦) — never one blended number.
+        setVal(2, fmtCur(s.mrr, 'XAF') + (s.mrr_ngn ? ' · ' + fmtCur(s.mrr_ngn, 'NGN') : ''));
         setVal(3, fmtFCFA(s.arpu));
 
         // Charts wait on Chart.js
@@ -7387,10 +7388,10 @@
       [['NGN', 'Nigeria'], ['XAF', 'Cameroon']].forEach(([cur, country]) => {
         ['lite', 'pro', 'pro_plus'].forEach(plan => {
           const by = (m) => rows.find(r => r.currency === cur && r.plan_id === plan && r.months === m);
-          html += '<tr><td>' + country + '</td><td>' + LD_PLAN[plan] + '</td>' + [1, 3, 6, 12].map(m => '<td class="ta-right">' + (by(m) ? cell(by(m)) : '—') + '</td>').join('') + '</tr>';
+          html += '<tr><td>' + country + '</td><td>' + LD_PLAN[plan] + '</td>' + [3, 6, 12].map(m => '<td class="ta-right">' + (by(m) ? cell(by(m)) : '—') + '</td>').join('') + '</tr>';
         });
       });
-      $('ld-preview-body').innerHTML = html || '<tr><td colspan="6" class="muted ta-center">—</td></tr>';
+      $('ld-preview-body').innerHTML = html || '<tr><td colspan="5" class="muted ta-center">—</td></tr>';
       const hist = d.history || [];
       $('ld-history').innerHTML = hist.length ? hist.map(h =>
         '<tr><td>' + escapeHtml(new Date(h.changed_at).toLocaleString()) + '</td><td>' + escapeHtml(h.changed_by_email || '—') + '</td><td style="font-size:12px">'
