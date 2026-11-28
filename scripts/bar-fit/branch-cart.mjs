@@ -740,7 +740,9 @@ try {
       await page.waitForTimeout(800);
       const on = (await page.locator(".bar-pill.is-on").allInnerTexts()).join("|");
       check("P18l Open tab → the panel closes, T2's table is open", (await page.locator(".bar-orders").count()) === 0 && /T2/.test(on), on);
-      check("P18m nothing else was written", (st.bodies || []).every((x) => /^\/bar\/rounds\/r[19]\/(serve|cancel)$/.test(x.p)), JSON.stringify((st.bodies || []).map((x) => x.p)));
+      // (the app's own start-up writes — /health, /auth/language — are not the Orders screen's; only /bar/ writes count)
+      const barWrites = (st.bodies || []).filter((x) => /^\/bar\//.test(x.p)).map((x) => x.p);
+      check("P18m no other bar write (exactly the serve + the cancel)", JSON.stringify(barWrites) === JSON.stringify(["/bar/rounds/r1/serve", "/bar/rounds/r9/cancel"]), JSON.stringify(barWrites));
     }
     if (P18 === "P18V") {
       await page.getByRole("button", { name: /Set up tables/ }).first().click();
@@ -748,7 +750,7 @@ try {
       await t3.waitFor({ timeout: 15000 });
       check("P18n Set up tables lists VIP buttons; T2 shows 👑 VIP (on), T3 off", (await t2.getAttribute("aria-pressed")) === "true" && /👑/.test(await t2.innerText()) && (await t3.getAttribute("aria-pressed")) === "false");
       await t3.click(); await page.waitForTimeout(1500);
-      const p = (st.bodies || []).filter((x) => x.m === "PATCH");
+      const p = (st.bodies || []).filter((x) => x.m === "PATCH" && /^\/bar\//.test(x.p));   // not the app's /auth/language
       check("P18o tap T3 → ONE PATCH /bar/tables/t3 { is_vip: true }", p.length === 1 && p[0].p === "/bar/tables/t3" && p[0].body.is_vip === true, JSON.stringify(p));
     }
     check(`${P18} no page errors`, !errs.length, errs.slice(0, 2).join(" | "));
