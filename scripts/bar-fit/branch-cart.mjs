@@ -694,8 +694,8 @@ try {
     const { ctx, page, st, errs } = await session(`${P18} Orders — ${{ P18L: "popover + rows (EN)", P18F: "rows (FR)", P18A: "ages", P18D: "details: Serve / Cancel / Open tab", P18V: "VIP toggle" }[P18]}`,
       { orders, vip: ["t2"], slowWrites: 800, lang: P18 === "P18F" ? "fr" : "en" });
     await settle(page, BON);
-    const ob = page.locator("#bar-orders-btn");
-    await page.waitForFunction(() => { const b = document.querySelector("#bar-orders-btn"); return b && b.getAttribute("data-count") === "3"; }, null, { timeout: 20000 }).catch(() => {});
+    const ob = page.locator(".bar-orders-btn");   // the class: on the old build too (the id is new), so teeth fail on behaviour
+    await page.waitForFunction(() => { const b = document.querySelector(".bar-orders-btn"); return b && b.getAttribute("data-count") === "3"; }, null, { timeout: 20000 }).catch(() => {});
     const pop = page.locator("#bar-orders-pop");
     const openList = async () => { await ob.click(); await page.locator(".bar-order-row").first().waitFor({ timeout: 15000 }); };
     const rowOf = (label) => page.locator(".bar-order-row", { hasText: label }).first();
