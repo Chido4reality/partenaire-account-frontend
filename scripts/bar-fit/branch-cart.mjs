@@ -65,6 +65,10 @@ function answer(path, q, st = {}) {
   // st.proPlus: the plan answer (Layout asks /bar/mine only on pro_plus) — P15 reloads straight onto the Cash screen
   if (path === "/subscriptions/my-plan" && st.proPlus) return ok({ effective_plan: "pro_plus" });
   // st.bepFirst: Bepanda listed first, as staging's /bar/mine does (no ORDER BY) — the "jumped to Bepanda" case
+  // P18 (JOB 3 PHASE 1): the Orders badge + list come from st.orders (already in the server's order: VIP, then oldest)
+  if (st.orders && /^\/bar\/[^/]+\/orders\/summary$/.test(path)) return ok({ count: st.orders.length, vip_count: st.orders.filter((o) => o.is_vip).length,
+    latest_at: st.orders.reduce((m, o) => (!m || o.created_at > m ? o.created_at : m), null) });
+  if (st.orders && /^\/bar\/[^/]+\/orders$/.test(path)) return ok({ orders: st.orders, count: st.orders.length, vip_count: st.orders.filter((o) => o.is_vip).length });
   if (path === "/bar/mine") return ok({ bars: st.bepFirst ? [{ id: BEP, name: "Bepanda" }, { id: BON, name: "Bonaberri" }] : [{ id: BON, name: "Bonaberri" }, { id: BEP, name: "Bepanda" }], can_setup: true, can_serve: true });
   if (path === "/shifts/current" && st.noShift && st.noShift.has(q.get("location_id"))) return ok(null);
   // GET /bar/tabs/:id = the BILL: served lines + the boss's answer (st.approval). Since 2026-11-23 a tab holds
@@ -83,7 +87,7 @@ function answer(path, q, st = {}) {
   if (path === "/locations") return ok(LOCS);
   if (/^\/bar\/[^/]+\/floor$/.test(path)) return ok({ zones: [{ id: "z1", name: "Salle" }],
     tables: st.tableTab ? TABLES.map((t) => t.id === "t1" ? { ...t, tab: { id: "tt1", status: "open", location_id: BON, opened_at: new Date().toISOString(),
-      figures: { ordered: 1500, served: 0, waiting: 1500, paid: 0, balance_due: 0, service_status: "waiting", payment_status: "unpaid", rounds_waiting: 1, rounds_served: 0 } } } : t) : TABLES,
+      figures: { ordered: 1500, served: 0, waiting: 1500, paid: 0, balance_due: 0, service_status: "waiting", payment_status: "unpaid", rounds_waiting: 1, rounds_served: 0 } } } : t) : TABLES.map((t) => (st.vip && st.vip.has(t.id) ? { ...t, is_vip: true } : t)),
     named_tabs: (st.named && st.named[path.split("/")[2]]) || [] });
   const qi = path.match(/^\/bar\/([^/]+)\/quick-items$/); if (qi) return ok({ ids: (PRODUCTS[qi[1]] || []).map((p) => p.id) });
   if (path === "/products") return ok(PRODUCTS[q.get("location_id")] || []);
@@ -132,13 +136,16 @@ async function session(label, opts = {}) {
   }, { USER, ORG, BON, drafts: opts.drafts || null, at: opts.at || null, atName: opts.at ? NAME[opts.at] : null });
   const st = { delay: null, sales: [], holds: [], bepFirst: !!opts.bepFirst, noShift: new Set(opts.noShift || []), named: opts.named || null, payMode: opts.payMode || null,
     approval: opts.approval || null, payAnswer: opts.payAnswer || null, oldShift: new Set(opts.oldShift || []), emptyTabs: opts.emptyTabs || [], proPlus: !!opts.proPlus,
-    tableTab: !!opts.tableTab, slowWrites: opts.slowWrites || 0 };
+    tableTab: !!opts.tableTab, slowWrites: opts.slowWrites || 0, orders: opts.orders || null, vip: opts.vip ? new Set(opts.vip) : null };
   await ctx.route((u) => u.hostname !== APP_HOST && !u.pathname.startsWith("/api/"), (route) => route.abort());
   await ctx.route((u) => u.pathname.startsWith("/api/"), async (route) => { try {
     const req = route.request(); const u = new URL(req.url()); const p = u.pathname.replace(/^\/api/, ""); if (process.env.BAR_CART_DEBUG && req.method() !== "GET") console.log("  REQ", req.method(), p, JSON.stringify(req.postDataJSON() || {}).slice(0, 160));
     if (st.delay) await new Promise((r) => setTimeout(r, st.delay[0] + Math.random() * (st.delay[1] - st.delay[0])));
     // P17: every write is recorded and answered slowly (st.slowWrites ms) — a slow server, as on the tablet
     if (req.method() !== "GET" && st.slowWrites) { (st.writes = st.writes || []).push(p); await new Promise((r) => setTimeout(r, st.slowWrites)); }
+    // P18: every write with its body; a served / cancelled round leaves the Orders list (as on the server)
+    if (req.method() !== "GET" && st.orders) { (st.bodies = st.bodies || []).push({ m: req.method(), p, body: req.postDataJSON() });
+      const rm = p.match(/^\/bar\/rounds\/([^/]+)\/(serve|cancel)$/); if (rm) st.orders = st.orders.filter((o) => o.round_id !== rm[1]); }
     let a, status = 200;
     if (req.method() === "GET") a = answer(p, u.searchParams, st) ?? ok([]);
     else if (p === "/shifts/open") { const b = req.postDataJSON() || {}; st.noShift.delete(b.location_id); st.opened = (st.opened || 0) + 1; a = ok({ id: `s-${b.location_id}`, location_id: b.location_id, status: "open" }); }
@@ -662,6 +669,89 @@ try {
     check("P17j …a double tap closed the tab ONCE", writesTo(/^\/bar\/tabs\/tt1\/close$/) === 1, JSON.stringify(st.writes));
     }
     check(`${P17} no page errors`, !errs.length, errs.slice(0, 2).join(" | "));
+    await ctx.close();
+  }
+
+  for (const P18 of ["P18L", "P18D", "P18V"]) if (want(P18) || want("P18")) {
+    // P18 — JOB 3 PHASE 1 ORDERS (Peter 2026-11-28): 📋 Orders (n) + live badge (👑 gold with a VIP order), one list
+    // (VIP first, then oldest — as the server sends it), age amber ≥ 10 min / red ≥ 20 min, Order details with
+    // Serve / Cancel round (reason) / Open tab on the SAME routes, VIP tables in Set up tables, 👑 on the pill.
+    // One case per run: P18L list + badge · P18D details actions · P18V the VIP toggle.
+    const ago = (min) => new Date(Date.now() - min * 60000).toISOString();
+    const line = (name, q, price) => ({ product_id: "bon1", quantity: q, unit_price: price, line_total: q * price, name, name_en: null, unit: "piece" });
+    const orders = [
+      { round_id: "r2", round_no: 1, version: 0, total: 1500, created_at: ago(3), sent_by_name: "Kusi", source: "staff", is_vip: true,
+        tab: { id: "tb2", kind: "table", name: null, status: "open", waiter_name: "Kusi", sale_version: null }, table: { id: "t2", label: "T2", zone: "Salle" }, lines: [line("Bon Guinness", 1, 1500)] },
+      { round_id: "r9", round_no: 2, version: 3, total: 600, created_at: ago(25), sent_by_name: "Ada", source: "staff", is_vip: false,
+        tab: { id: "nj", kind: "named", name: "Jo", status: "open", waiter_name: "Ada", sale_version: null }, table: null, lines: [line("Bon Coca", 1, 600)] },
+      { round_id: "r1", round_no: 1, version: 0, total: 2000, created_at: ago(12), sent_by_name: "Kusi", source: "staff", is_vip: false,
+        tab: { id: "tb1", kind: "table", name: null, status: "open", waiter_name: "Kusi", sale_version: null }, table: { id: "t1", label: "T1", zone: "Salle" }, lines: [line("Bon Castel", 2, 1000)] },
+    ];
+    const { ctx, page, st, errs } = await session(`${P18} Orders — ${{ P18L: "badge + list", P18D: "details: Serve / Cancel / Open tab", P18V: "VIP toggle" }[P18]}`,
+      { orders, vip: ["t2"], slowWrites: 800 });
+    await settle(page, BON);
+    const ob = page.locator(".bar-orders-btn");
+    await page.waitForFunction(() => { const b = document.querySelector(".bar-orders-btn"); return b && b.getAttribute("data-count") === "3"; }, null, { timeout: 20000 }).catch(() => {});
+    const openList = async () => { await ob.click(); await page.locator(".bar-order-row").first().waitFor({ timeout: 15000 }); };
+    const rowOf = (label) => page.locator(".bar-order-row", { hasText: label }).first();
+
+    if (P18 === "P18L") {
+      const txt = (await ob.innerText()).replace(/\s+/g, " ");
+      check("P18a header: \"Orders\" + badge 3, gold 👑 (a VIP order waits)", /Orders/.test(txt) && /3/.test(txt) && (await ob.getAttribute("data-vip")) === "1" && /👑/.test(txt), txt);
+      await openList();
+      const rows = await page.locator(".bar-order-row").evaluateAll((els) => els.map((e) => ({ t: e.innerText.replace(/\s+/g, " "), vip: e.getAttribute("data-vip") })));
+      check("P18b one list, VIP first then oldest: T2 (👑), Jo, T1", rows.length === 3 && /👑 T2/.test(rows[0].t) && rows[0].vip === "1" && /Jo/.test(rows[1].t) && /T1/.test(rows[2].t), JSON.stringify(rows));
+      check("P18c a row says what was ordered + the age + the source", !!rows[2] && /2 Bon Castel/.test(rows[2].t) && /12 min/.test(rows[2].t) && /staff/.test(rows[2].t), rows[2] && rows[2].t);
+      const col = (label) => rowOf(label).locator(".bar-order-age").evaluate((e) => getComputedStyle(e).color);
+      const [c3, c12, c25] = [await col("T2"), await col("T1"), await col("Jo")];
+      check("P18d age: 3 min plain, 12 min AMBER, 25 min RED", c12 === "rgb(251, 191, 36)" && c25 === "rgb(248, 113, 113)" && c3 !== c12 && c3 !== c25, JSON.stringify({ c3, c12, c25 }));
+      const pill = (await page.locator(".bar-pill", { hasText: "T2" }).first().innerText()).replace(/\s+/g, " ");
+      check("P18e the VIP table's pill carries 👑 (T1's does not)", /👑/.test(pill) && !/👑/.test(await page.locator(".bar-pill", { hasText: "T1" }).first().innerText()), pill);
+    }
+    if (P18 === "P18D") {
+      await openList();
+      await rowOf("T1").click();
+      const det = page.locator(".bar-order-details");
+      await det.waitFor({ timeout: 15000 });
+      const dt = (await det.innerText()).replace(/\s+/g, " ");
+      check("P18f details: table, round, sender, lines, total", /T1 · Salle · Round 1/.test(dt) && /Sent by Kusi/.test(dt) && /2 × Bon Castel/.test(dt) && /Total/.test(dt), dt.slice(0, 200));
+      await det.getByRole("button", { name: /^Serve$/ }).evaluate((b) => { b.click(); b.click(); });   // a same-instant double tap
+      await page.waitForTimeout(100);
+      const during = await det.evaluate((d) => [...d.querySelectorAll("button")].map((b) => ({ t: b.textContent.trim(), d: b.disabled })));
+      check("P18g Serve: \"⏳ Saving…\" + disabled at once", during.some((b) => /⏳ Saving…/.test(b.t) && b.d), JSON.stringify(during));
+      await page.waitForTimeout(1800);
+      const serves = (st.bodies || []).filter((x) => x.p === "/bar/rounds/r1/serve");
+      check("P18h …ONE POST /bar/rounds/r1/serve { version 0, sale_version null } (the table card's route)", serves.length === 1 && serves[0].body.version === 0 && serves[0].body.sale_version === null, JSON.stringify(serves));
+      await page.locator(".bar-order-row").first().waitFor({ timeout: 15000 });
+      await page.waitForTimeout(600);
+      const left = await page.locator(".bar-order-row").count();
+      check("P18i back on the list: 2 orders left; badge 2", left === 2 && (await ob.getAttribute("data-count")) === "2", `rows ${left} badge ${await ob.getAttribute("data-count")}`);
+      await rowOf("Jo").click(); await det.waitFor({ timeout: 15000 });
+      await det.getByRole("button", { name: /^Cancel round$/ }).click();
+      const go = det.getByRole("button", { name: /^Cancel the round$/ });
+      check("P18j Cancel asks for a reason first (button off while it is empty)", await go.isDisabled());
+      await det.getByRole("textbox").fill("customer changed mind");
+      await go.click(); await page.waitForTimeout(1800);
+      const canc = (st.bodies || []).filter((x) => x.p === "/bar/rounds/r9/cancel");
+      check("P18k …ONE POST /bar/rounds/r9/cancel { version 3, reason }", canc.length === 1 && canc[0].body.version === 3 && canc[0].body.reason === "customer changed mind", JSON.stringify(canc));
+      await page.locator(".bar-order-row").first().waitFor({ timeout: 15000 });
+      await rowOf("T2").click(); await det.waitFor({ timeout: 15000 });
+      await det.getByRole("button", { name: /Open tab/ }).click();
+      await page.waitForTimeout(800);
+      const on = (await page.locator(".bar-pill.is-on").allInnerTexts()).join("|");
+      check("P18l Open tab → the panel closes, T2's table is open", (await page.locator(".bar-orders").count()) === 0 && /T2/.test(on), on);
+      check("P18m nothing else was written", (st.bodies || []).every((x) => /^\/bar\/rounds\/r[19]\/(serve|cancel)$/.test(x.p)), JSON.stringify((st.bodies || []).map((x) => x.p)));
+    }
+    if (P18 === "P18V") {
+      await page.getByRole("button", { name: /Set up tables/ }).first().click();
+      const t3 = page.locator('[data-vip-table="T3"]'), t2 = page.locator('[data-vip-table="T2"]');
+      await t3.waitFor({ timeout: 15000 });
+      check("P18n Set up tables lists VIP buttons; T2 shows 👑 VIP (on), T3 off", (await t2.getAttribute("aria-pressed")) === "true" && /👑/.test(await t2.innerText()) && (await t3.getAttribute("aria-pressed")) === "false");
+      await t3.click(); await page.waitForTimeout(1500);
+      const p = (st.bodies || []).filter((x) => x.m === "PATCH");
+      check("P18o tap T3 → ONE PATCH /bar/tables/t3 { is_vip: true }", p.length === 1 && p[0].p === "/bar/tables/t3" && p[0].body.is_vip === true, JSON.stringify(p));
+    }
+    check(`${P18} no page errors`, !errs.length, errs.slice(0, 2).join(" | "));
     await ctx.close();
   }
 } catch (e) {

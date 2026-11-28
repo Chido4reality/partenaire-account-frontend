@@ -30,7 +30,7 @@ export default function TablesRow({ lang, floor, view, onHome, onTable, extraPil
               const cls = on ? " is-on" : t.tab ? " has-bill" : "";
               return (
                 <button type="button" key={t.id} className={`bar-pill${cls}`} onClick={() => onTable(t)} aria-pressed={on}>
-                  <b>{t.label}</b> · {status(t)}
+                  {t.is_vip && <span title="VIP" aria-label="VIP">👑 </span>}<b>{t.label}</b> · {status(t)}
                 </button>
               );
             })}

@@ -43,6 +43,7 @@ import { HOME, barViewReducer, currentTabId, tabBelongsToBar, draftKey } from ".
 import TabMoney, { tabMoneyLine } from "../components/bar/TabMoney";   // step 1.0: Ordered / Paid / Balance due
 import { OpenShiftModal, CloseShiftModal } from "../components/common/ShiftWidgets";
 import ShiftAgeWarning from "../components/bar/ShiftAgeWarning";   // shift open > 24 h (warning only)
+import OrdersPanel, { OrdersButton } from "../components/bar/OrdersPanel";   // JOB 3 PHASE 1: Orders + live badge + details
 import PaymentEventReceipt from "../components/common/PaymentEventReceipt";   // PRINT BILL: the existing receipt, NOT PAID
 
 const L = (lang, en, fr) => (lang === "en" ? en : fr);
@@ -82,6 +83,7 @@ export default function BarPage() {
   const [msg, setMsg] = useState(null);       // { ok, text }
   const [setup, setSetup] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
+  const [ordersOpen, setOrdersOpen] = useState(false);   // JOB 3 PHASE 1: the Orders list
   const [showAll, setShowAll] = useState(false);
   const [billTab, setBillTab] = useState(null);   // BAR BILL: { tabId, title, barId } — the bill open in the POS panel
   const menuOpen = useBarChrome((s) => s.menuOpen);
@@ -129,7 +131,8 @@ export default function BarPage() {
   const F = floor.data;
   useEffect(() => { if (F) dispatch({ type: "floor", barId, floor: F }); }, [F, barId]);
 
-  const refresh = () => qc.invalidateQueries({ queryKey: ["bar-floor", barId] });
+  // the Orders badge moves with the floor: a round sent / served / cancelled anywhere here shows at once
+  const refresh = () => { qc.invalidateQueries({ queryKey: ["bar-floor", barId] }); qc.invalidateQueries({ queryKey: ["bar-orders-summary", barId] }); qc.invalidateQueries({ queryKey: ["bar-orders", barId] }); };
 
   // OPEN A SHIFT IN PLACE (Peter 2026-11-19): is a shift open at THIS bar? Same key + shape as the POS's
   // useActiveShift, so the shift modal's invalidation refreshes both. No shift → beside Take payment:
@@ -188,7 +191,7 @@ export default function BarPage() {
   if (mine.isError) return <div style={{ padding: 20 }}>{L(lang, "Could not load the bar. Check the connection.", "Impossible de charger le bar. Vérifiez la connexion.")}</div>;
   if (!bars.length) return <div style={{ padding: 20 }}>{L(lang, "No bar is set up for you.", "Aucun bar n'est configuré pour vous.")}</div>;
 
-  const switchBranch = (id) => { dispatch({ type: "branch", barId: id }); setMsg(null); setShowAll(false); setCounterOpen(false); setSetup(false); setBillTab(null); };
+  const switchBranch = (id) => { dispatch({ type: "branch", barId: id }); setMsg(null); setShowAll(false); setCounterOpen(false); setOrdersOpen(false); setSetup(false); setBillTab(null); };
   const goHome = () => { dispatch({ type: "home" }); setShowAll(false); setBillTab(null); };
   const tabId = currentTabId(v, F);
   const selTable = v.view === "table" ? tables.find((t) => t.id === v.tableId) : null;
@@ -225,12 +228,13 @@ export default function BarPage() {
             </select>
           : <span className="bar-select" style={{ cursor: "default" }}>{bars[0].name}</span>}
         <div className="bar-top-right">
-          <button type="button" className="bar-outline-btn is-accent" aria-pressed={counterOpen} aria-label={L(lang, "Counter tabs", "Notes au comptoir")} onClick={() => { setCounterOpen((x) => !x); setSetup(false); }}>
+          <OrdersButton lang={lang} barId={barId} open={ordersOpen} onToggle={() => { setOrdersOpen((x) => !x); setCounterOpen(false); setSetup(false); }} />
+          <button type="button" className="bar-outline-btn is-accent" aria-pressed={counterOpen} aria-label={L(lang, "Counter tabs", "Notes au comptoir")} onClick={() => { setCounterOpen((x) => !x); setSetup(false); setOrdersOpen(false); }}>
             <span className="bar-lbl-long">{L(lang, "Counter tabs", "Notes au comptoir")}</span>
             <span className="bar-lbl-short" aria-hidden="true">{L(lang, "Tabs", "Notes")}</span>{/* BAR FIT: phone = short labels, one header line */}
           </button>
           {canSetup && <button type="button" className="bar-outline-btn" aria-pressed={setup} aria-label={setup ? undefined : L(lang, "Set up tables", "Configurer les tables")}
-            onClick={() => { setSetup((x) => !x); setCounterOpen(false); }}>
+            onClick={() => { setSetup((x) => !x); setCounterOpen(false); setOrdersOpen(false); }}>
             {setup ? L(lang, "Done", "Terminé") : <><span className="bar-lbl-long">{L(lang, "Set up tables", "Configurer les tables")}</span><span className="bar-lbl-short" aria-hidden="true">⚙</span></>}</button>}
         </div>
       </header>
@@ -246,6 +250,11 @@ export default function BarPage() {
       {msg && <div role="status" className="bar-msg" style={{ borderColor: msg.ok ? "#22c55e" : "#ef4444", color: msg.ok ? "#86efac" : "#fca5a5" }}>{msg.text}</div>}
       {floor.isError && <div className="bar-msg" style={{ borderColor: "#ef4444", color: "#fca5a5" }}>{errText(lang, floor.error)}</div>}
       {setup && canSetup && <div className="bar-panel"><SetupPanel lang={lang} barId={barId} zones={zones} tables={tables} busy={busy} act={actL} patch={patch} /></div>}
+      {ordersOpen && <div className="bar-panel">
+        <OrdersPanel key={barId} lang={lang} barId={barId} canServe={canServe} isOnline={isOnline} fmt={fmt} onChanged={refresh}
+          onOpenTab={(o) => { setOrdersOpen(false); setBillTab(null); setShowAll(false); setMsg(null);
+            if (o.table) dispatch({ type: "table", tableId: o.table.id }); else if (o.tab && o.tab.id) dispatch({ type: "named", tabId: o.tab.id }); }} />
+      </div>}
       {counterOpen && F && <div className="bar-panel">
         <CounterTabsPanel lang={lang} barId={barId} named={named} busy={busy} act={actL} onBill={openBill} shift={shift}
           onRounds={(t) => { dispatch({ type: "named", tabId: t.id }); setCounterOpen(false); setShowAll(false); }} />
@@ -672,6 +681,18 @@ export function SetupPanel({ lang, barId, zones, tables = [], busy, act, patch }
         </select>
         <button type="submit" style={btn} disabled={busy || !label.trim()}>{L(lang, "Add table", "Ajouter la table")}</button>
       </form>
+      {tables.length > 0 && (   // VIP TABLE (JOB 3 PHASE 1): its orders go to the top of the Orders list, 👑 everywhere
+        <div className="bar-vip-setup" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ fontSize: 13, opacity: 0.7 }}>{L(lang, "VIP tables (orders on top):", "Tables VIP (commandes en tête) :")}</span>
+          {tables.map((t) => (
+            <button key={t.id} type="button" aria-pressed={t.is_vip === true} data-vip-table={t.label} disabled={busy}
+              style={{ ...btn, fontSize: 12, padding: "4px 8px", ...(t.is_vip ? { borderColor: "#f59e0b", color: "#fbbf24", background: "rgba(245,158,11,.12)" } : {}) }}
+              onClick={() => patch.mutate({ path: `/bar/tables/${t.id}`, body: { is_vip: !t.is_vip } })}>
+              {t.is_vip ? "👑 " : ""}{t.label}{t.is_vip ? " · VIP" : ""}
+            </button>
+          ))}
+        </div>
+      )}
       {tables.some((t) => !t.tab) && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <span style={{ fontSize: 13, opacity: 0.7 }}>{L(lang, "Remove a free table:", "Retirer une table libre :")}</span>
