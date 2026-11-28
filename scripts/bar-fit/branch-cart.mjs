@@ -1,7 +1,7 @@
 // BAR CART FIX — probe (Peter 2026-11-18, tablet test): the Home cart must be kept per branch.
 // Found on staging: Bepanda's cart stayed on screen after switching to Bonaberri (intermittent).
 // LOCAL ONLY, like shots.mjs: the real app bundle in headless Chromium, EVERY /api call answered here from
-// fixtures, every non-localhost request aborted — nothing reaches staging or prod, no login, no writes.
+// fixtures, every request off the app host aborted (BAR_CART_URL = a deployed bundle) — nothing reaches staging or prod, no login, no writes.
 // Each branch has its OWN products (names "Bon …" / "Bep …"), so a line from the wrong branch is visible.
 //   P1  build a cart at Bonaberri → switch to Bepanda → Bepanda's cart is EMPTY → build Bepanda's own cart
 //   P2  20 switches A↔B, each settled → every time the cart is exactly that branch's cart
@@ -69,6 +69,11 @@ function answer(path, q, st = {}) {
   if (path === "/shifts/current" && st.noShift && st.noShift.has(q.get("location_id"))) return ok(null);
   // GET /bar/tabs/:id = the BILL: served lines + the boss's answer (st.approval). Since 2026-11-23 a tab holds
   // NO sale until its bill is paid through POST /sales (Bar Mode = layout only).
+  // st.tableTab (P17): table T1 holds an OPEN tab "tt1" with one round waiting at the bar
+  if (st.tableTab && path === "/bar/tabs/tt1") return ok({ id: "tt1", name: null, status: "open", location_id: BON, table_id: "t1", sale_id: null, pa_sales: null,
+    pa_bar_tables: { label: "T1" }, bill_lines: [], approval: null,
+    figures: { ordered: 1500, served: 0, waiting: 1500, paid: 0, balance_due: 0, service_status: "waiting", payment_status: "unpaid", rounds_waiting: 1, rounds_served: 0 },
+    rounds: [{ id: "r1", round_no: 1, status: "sent", version: 1, total: 1500, pa_bar_round_items: [{ product_id: "bon2", quantity: 1, unit_price: 1500, pa_products: { name: "Bon Guinness" } }] }] });
   const tb = path.match(/^\/bar\/tabs\/([^/]+)$/); if (tb) { (st.tabReads = st.tabReads || []).push(tb[1]);
     const named = Object.values(st.named || {}).flat().find((t) => t.id === tb[1]) || {};
     return ok({ id: tb[1], name: named.name || null, status: (st.tabTrue || {})[tb[1]] || "closed", location_id: BON, sale_id: null, pa_sales: null,
@@ -76,7 +81,10 @@ function answer(path, q, st = {}) {
       approval: (st.approval || {})[tb[1]] || null }); }
   const sl = path.match(/^\/sales\/(sale-[^/]+)$/); if (sl) { (st.saleReads = st.saleReads || []).push(sl[1]); return ok({ id: sl[1], sale_number: `T-${sl[1]}`, total_amount: 1500, status: "paid" }); }
   if (path === "/locations") return ok(LOCS);
-  if (/^\/bar\/[^/]+\/floor$/.test(path)) return ok({ zones: [{ id: "z1", name: "Salle" }], tables: TABLES, named_tabs: (st.named && st.named[path.split("/")[2]]) || [] });
+  if (/^\/bar\/[^/]+\/floor$/.test(path)) return ok({ zones: [{ id: "z1", name: "Salle" }],
+    tables: st.tableTab ? TABLES.map((t) => t.id === "t1" ? { ...t, tab: { id: "tt1", status: "open", location_id: BON, opened_at: new Date().toISOString(),
+      figures: { ordered: 1500, served: 0, waiting: 1500, paid: 0, balance_due: 0, service_status: "waiting", payment_status: "unpaid", rounds_waiting: 1, rounds_served: 0 } } } : t) : TABLES,
+    named_tabs: (st.named && st.named[path.split("/")[2]]) || [] });
   const qi = path.match(/^\/bar\/([^/]+)\/quick-items$/); if (qi) return ok({ ids: (PRODUCTS[qi[1]] || []).map((p) => p.id) });
   if (path === "/products") return ok(PRODUCTS[q.get("location_id")] || []);
   if (path === "/products/multipart-availability") return ok({});
@@ -96,7 +104,13 @@ const server = createServer((req, res) => {
   const f = serveFile(resolve(APP, "." + p)) || serveFile(resolve(ROOT, "public", "." + p)) || resolve(APP, "index.html");
   res.writeHead(200, { "content-type": TYPES[(f.match(/\.[a-z0-9]+$/i) || [""])[0]] || "application/octet-stream" }); res.end(readFileSync(f));
 });
-await new Promise((r) => server.listen(5198, r));
+// BAR_CART_URL=https://<deployed staging> → test the DEPLOYED bundle instead of a local one (no local build). The
+// app host serves the page; EVERY /api/* call (whatever host the bundle points at) is still answered by the mocks
+// below and every other host is aborted — nothing reaches the staging server, no login, no writes.
+const BASE = (process.env.BAR_CART_URL || "").replace(/\/+$/, "") || "http://localhost:5198";
+const APP_HOST = new URL(BASE).hostname;
+if (!process.env.BAR_CART_URL) await new Promise((r) => server.listen(5198, r));
+else console.log(`target: DEPLOYED bundle at ${BASE}`);
 const browser = await chromium.launch({ executablePath: existsSync(CHROME) ? CHROME : undefined,
   args: ["--disable-gpu", "--disable-extensions", "--js-flags=--max-old-space-size=384", "--renderer-process-limit=1", "--disable-dev-shm-usage"] });
 
@@ -117,11 +131,14 @@ async function session(label, opts = {}) {
     }
   }, { USER, ORG, BON, drafts: opts.drafts || null, at: opts.at || null, atName: opts.at ? NAME[opts.at] : null });
   const st = { delay: null, sales: [], holds: [], bepFirst: !!opts.bepFirst, noShift: new Set(opts.noShift || []), named: opts.named || null, payMode: opts.payMode || null,
-    approval: opts.approval || null, payAnswer: opts.payAnswer || null, oldShift: new Set(opts.oldShift || []), emptyTabs: opts.emptyTabs || [], proPlus: !!opts.proPlus };
-  await ctx.route((u) => u.hostname !== "localhost", (route) => route.abort());
-  await ctx.route((u) => u.hostname === "localhost" && u.pathname.startsWith("/api/"), async (route) => { try {
+    approval: opts.approval || null, payAnswer: opts.payAnswer || null, oldShift: new Set(opts.oldShift || []), emptyTabs: opts.emptyTabs || [], proPlus: !!opts.proPlus,
+    tableTab: !!opts.tableTab, slowWrites: opts.slowWrites || 0 };
+  await ctx.route((u) => u.hostname !== APP_HOST && !u.pathname.startsWith("/api/"), (route) => route.abort());
+  await ctx.route((u) => u.pathname.startsWith("/api/"), async (route) => { try {
     const req = route.request(); const u = new URL(req.url()); const p = u.pathname.replace(/^\/api/, ""); if (process.env.BAR_CART_DEBUG && req.method() !== "GET") console.log("  REQ", req.method(), p, JSON.stringify(req.postDataJSON() || {}).slice(0, 160));
     if (st.delay) await new Promise((r) => setTimeout(r, st.delay[0] + Math.random() * (st.delay[1] - st.delay[0])));
+    // P17: every write is recorded and answered slowly (st.slowWrites ms) — a slow server, as on the tablet
+    if (req.method() !== "GET" && st.slowWrites) { (st.writes = st.writes || []).push(p); await new Promise((r) => setTimeout(r, st.slowWrites)); }
     let a, status = 200;
     if (req.method() === "GET") a = answer(p, u.searchParams, st) ?? ok([]);
     else if (p === "/shifts/open") { const b = req.postDataJSON() || {}; st.noShift.delete(b.location_id); st.opened = (st.opened || 0) + 1; a = ok({ id: `s-${b.location_id}`, location_id: b.location_id, status: "open" }); }
@@ -151,7 +168,7 @@ async function session(label, opts = {}) {
   } catch (e) { console.log("  MOCK ERROR", route.request().method(), route.request().url(), e.message); throw e; } });
   const page = await ctx.newPage(); lastPage = page;
   const errs = []; page.on("pageerror", (e) => errs.push(e.message));
-  await page.goto("http://localhost:5198/bar", { waitUntil: "domcontentloaded" });
+  await page.goto(`${BASE}/bar`, { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".bar-box", { timeout: 60000 });
   console.log(`\n── ${label} ──`);
   return { ctx, page, st, errs };
@@ -386,7 +403,7 @@ try {
     const { ctx, page, st, errs } = await session("P12 the bill's answer is lost / refused as already paid / offline",
       { named: { [BON]: TABS }, payMode: { nt2: "lost-paid", nt3: "409-tab" } });
     const openBill = async (name) => {
-      await page.goto("http://localhost:5198/bar", { waitUntil: "domcontentloaded" }); await settle(page, BON);
+      await page.goto(`${BASE}/bar`, { waitUntil: "domcontentloaded" }); await settle(page, BON);
       await page.getByRole("button", { name: /Counter tabs|Tabs/ }).first().click();
       const row = page.locator("div", { has: page.getByText(name, { exact: true }) }).filter({ has: page.getByRole("button", { name: "Take payment" }) }).last();
       await row.getByRole("button", { name: "Take payment" }).click({ timeout: 15000 });
@@ -511,12 +528,12 @@ try {
     await warn.first().waitFor({ timeout: 15000 }).catch(() => {});
     check("P15a bar floor: \"Shift open since 19 Nov — close it\"", (await warn.count()) === 1 && /Shift open since 19 Nov — close it/.test(await warn.first().innerText()), (await warn.count()) ? await warn.first().innerText() : "none");
     check("P15b warning only: the POS cart + its Confirm path are still there", (await page.locator(".bar-cart").count()) > 0);
-    await page.goto("http://localhost:5198/shifts", { waitUntil: "domcontentloaded" });
+    await page.goto(`${BASE}/shifts`, { waitUntil: "domcontentloaded" });
     await page.getByText(/Cash register/).first().waitFor({ timeout: 30000 });
     await warn.first().waitFor({ timeout: 15000 }).catch(() => {});
     if (process.env.BAR_CART_SHOT && !(await warn.count())) await page.screenshot({ path: process.env.BAR_CART_SHOT.replace(/.png$/, "-p15c.png") });
     check("P15c Cash screen at Bonaberri: the same warning", (await warn.count()) === 1 && /Shift open since 19 Nov — close it/.test(await warn.first().innerText()), String(await warn.count()));
-    await page.goto("http://localhost:5198/bar", { waitUntil: "domcontentloaded" }); await settle(page, BON);
+    await page.goto(`${BASE}/bar`, { waitUntil: "domcontentloaded" }); await settle(page, BON);
     await page.locator("select.bar-select").selectOption(BEP); await settle(page, BEP);
     await page.waitForTimeout(800);
     check("P15d Bepanda (shift opened today): no warning", (await warn.count()) === 0, String(await warn.count()));
@@ -567,6 +584,77 @@ try {
       && (await page.getByRole("button", { name: /✓ Confirm/ }).count()) === 0 && out.length === 0 && printLogs.length === 0, JSON.stringify({ out, printLogs }));
     check("P16h two bills → two POST /sales, nothing else", (st.pays || []).filter((x) => /^nt[67]$/.test(x.body.bar_tab_id)).length === 2, JSON.stringify((st.pays || []).map((x) => x.body.bar_tab_id)));
     check("P16 no page errors", !errs.length, errs.slice(0, 2).join(" | "));
+    await ctx.close();
+  }
+
+  if (want("P17")) {
+    // P17 — INSTANT TAP (Peter 2026-11-28): every pay / send / serve button reacts ON THE TAP — disabled and
+    // "⏳ Saving…" at once — and a double tap sends ONE request. Each write is answered after 1.5 s (a slow server).
+    // The double tap = two clicks in the SAME instant (one script, no wait between), the case a frame-late lock misses.
+    const SLOW = 1500;
+    const mkNamed = (id, name) => ({ id, name, status: "closed", location_id: BON, opened_at: new Date().toISOString(),
+      figures: { ordered: 1500, served: 1500, waiting: 0, paid: 0, balance_due: 1500, service_status: "served", payment_status: "unpaid", rounds_waiting: 0, rounds_served: 1 } });
+    const { ctx, page, st, errs } = await session("P17 instant tap: pay / send round / serve / Bill — locked on the tap, one request",
+      { named: { [BON]: [mkNamed("nt9", "Cid")] }, tableTab: true, slowWrites: SLOW });
+    await settle(page, BON);
+    // double-tap the button whose text matches `re`, then read the SAME button 100 ms later
+    const doubleTap = async (re) => {
+      const found = await page.evaluate((src) => {
+        const r = new RegExp(src);
+        const b = [...document.querySelectorAll("button")].filter((x) => r.test(x.textContent) && !x.disabled && x.offsetParent !== null).pop();
+        if (!b) return false;
+        window.__tapped = b; b.click(); b.click(); return true;
+      }, re.source);
+      await page.waitForTimeout(100);
+      const after = await page.evaluate(() => { const b = window.__tapped; return b ? { text: b.textContent.trim(), disabled: b.disabled } : null; });
+      return { found, after };
+    };
+    const writesTo = (re) => (st.writes || []).filter((p) => re.test(p)).length;
+    const saving = (a) => !!a && a.disabled && /⏳ Saving…/.test(a.text);
+    const waitWrites = async () => { await page.waitForTimeout(SLOW + 900); };
+
+    // a) New Sale's pay (Home cart → Take payment → ✓ Confirm)
+    await tap(page, ["Bon Castel"]);
+    await page.getByRole("button", { name: /^Take payment$/ }).click();
+    await page.getByRole("button", { name: /✓ Confirm/ }).first().waitFor({ timeout: 15000 });
+    let r = await doubleTap(/✓ Confirm/);
+    check("P17a New Sale ✓ Confirm: \"⏳ Saving…\" and disabled 100 ms after the tap", r.found && saving(r.after), JSON.stringify(r));
+    await waitWrites();
+    check("P17b …a double tap sent ONE sale", st.sales.length === 1, `POST /sales: ${st.sales.length}`);
+    await page.keyboard.press("Escape").catch(() => {});
+    await page.waitForTimeout(600);
+
+    // b) the bar bill's pay (Counter tabs → Take payment → ✓ Confirm)
+    await page.getByRole("button", { name: /Counter tabs|Tabs/ }).first().click();
+    const row = page.locator("div", { has: page.getByText("Cid", { exact: true }) }).filter({ has: page.getByRole("button", { name: "Take payment" }) }).last();
+    await row.getByRole("button", { name: "Take payment" }).click({ timeout: 15000 });
+    await page.getByRole("button", { name: /✓ Confirm/ }).first().waitFor({ timeout: 15000 });
+    r = await doubleTap(/✓ Confirm/);
+    check("P17c bar bill ✓ Confirm: \"⏳ Saving…\" and disabled 100 ms after the tap", r.found && saving(r.after), JSON.stringify(r));
+    await waitWrites();
+    check("P17d …a double tap paid the bill ONCE", (st.pays || []).filter((x) => x.body.bar_tab_id === "nt9").length === 1, `POST /sales (bar): ${(st.pays || []).length}`);
+    const next = page.getByRole("button", { name: /Next table/ });
+    if (await next.count()) await next.first().click(); else await page.keyboard.press("Escape").catch(() => {});
+    await page.waitForTimeout(600);
+
+    // c) a table: Serve the waiting round, Send a new round, Bill
+    await page.locator(".bar-pill", { hasText: "T1" }).first().click();
+    await page.getByRole("button", { name: /^Serve$/ }).first().waitFor({ timeout: 15000 });
+    r = await doubleTap(/^Serve$/);
+    check("P17e Serve: \"⏳ Saving…\" and disabled 100 ms after the tap", r.found && saving(r.after), JSON.stringify(r));
+    await waitWrites();
+    check("P17f …a double tap served ONCE", writesTo(/^\/bar\/rounds\/r1\/serve$/) === 1, JSON.stringify(st.writes));
+    await page.locator(".bar-box", { hasText: "Bon Coca" }).first().click();
+    await page.getByRole("button", { name: /^Send round/ }).first().waitFor({ timeout: 15000 });
+    r = await doubleTap(/^Send round/);
+    check("P17g Send round: \"⏳ Saving…\" and disabled 100 ms after the tap", r.found && saving(r.after), JSON.stringify(r));
+    await waitWrites();
+    check("P17h …a double tap sent ONE round", writesTo(/^\/bar\/tabs\/tt1\/rounds$/) === 1, JSON.stringify(st.writes));
+    r = await doubleTap(/^Bill$/);
+    check("P17i Bill: \"⏳ Saving…\" and disabled 100 ms after the tap", r.found && saving(r.after), JSON.stringify(r));
+    await waitWrites();
+    check("P17j …a double tap closed the tab ONCE", writesTo(/^\/bar\/tabs\/tt1\/close$/) === 1, JSON.stringify(st.writes));
+    check("P17 no page errors", !errs.length, errs.slice(0, 2).join(" | "));
     await ctx.close();
   }
 } catch (e) {

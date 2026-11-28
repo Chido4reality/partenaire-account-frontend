@@ -28,6 +28,7 @@ import { useEffect, useMemo, useReducer, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router-dom";
 import api from "../utils/api";
+import { useTapLock, savingText } from "../utils/tapLock";   // INSTANT TAP: lock on the tap + "Saving…"
 import { useAuthStore, useLangStore, useSettingsStore } from "../store";
 import { useNetworkStatus } from "../utils/useNetworkStatus";
 import { SHOP_TZ } from "../utils/shopTime";
@@ -180,7 +181,8 @@ export default function BarPage() {
   const named = F?.named_tabs || [];
   const canSetup = mine.data?.can_setup === true;
   const canServe = mine.data?.can_serve === true;
-  const busy = act.isPending || patch.isPending;
+  const actL = useTapLock(act);   // INSTANT TAP: open tab / Bill / zone / table lock on the tap
+  const busy = actL.busy || patch.isPending;
 
   if (mine.isLoading) return <div style={{ padding: 20 }}>{L(lang, "Loading…", "Chargement…")}</div>;
   if (mine.isError) return <div style={{ padding: 20 }}>{L(lang, "Could not load the bar. Check the connection.", "Impossible de charger le bar. Vérifiez la connexion.")}</div>;
@@ -243,9 +245,9 @@ export default function BarPage() {
       <ShiftAgeWarning lang={lang} shift={shiftQ.data} onOpen={() => setShowCloseShift(true)} />
       {msg && <div role="status" className="bar-msg" style={{ borderColor: msg.ok ? "#22c55e" : "#ef4444", color: msg.ok ? "#86efac" : "#fca5a5" }}>{msg.text}</div>}
       {floor.isError && <div className="bar-msg" style={{ borderColor: "#ef4444", color: "#fca5a5" }}>{errText(lang, floor.error)}</div>}
-      {setup && canSetup && <div className="bar-panel"><SetupPanel lang={lang} barId={barId} zones={zones} tables={tables} busy={busy} act={act} patch={patch} /></div>}
+      {setup && canSetup && <div className="bar-panel"><SetupPanel lang={lang} barId={barId} zones={zones} tables={tables} busy={busy} act={actL} patch={patch} /></div>}
       {counterOpen && F && <div className="bar-panel">
-        <CounterTabsPanel lang={lang} barId={barId} named={named} busy={busy} act={act} onBill={openBill} shift={shift}
+        <CounterTabsPanel lang={lang} barId={barId} named={named} busy={busy} act={actL} onBill={openBill} shift={shift}
           onRounds={(t) => { dispatch({ type: "named", tabId: t.id }); setCounterOpen(false); setShowAll(false); }} />
       </div>}
 
@@ -276,7 +278,7 @@ export default function BarPage() {
         <div className="bar-body">
           <TableSide key={`${barId}:${tabId || v.tableId || v.tabId}`} lang={lang} barId={barId} userId={userId} tabId={tabId}
             table={selTable} title={title} products={tabProducts.data || []} fmt={fmt} showAll={showAll} setShowAll={setShowAll}
-            canServe={canServe} isOnline={isOnline} busy={busy} act={act} onBill={openBill} shift={shift} onChanged={refresh}
+            canServe={canServe} isOnline={isOnline} busy={busy} act={actL} onBill={openBill} shift={shift} onChanged={refresh}
             onWrongBranch={goHome} />
         </div>
       )}
@@ -301,7 +303,8 @@ export function TabActions({ lang, tab, busy, act, onBill, shift }) {
   const ap = tab.approval && (tab.approval.status === "pending" || tab.approval.status === "approved") ? tab.approval : null;
   if (tab.status === "open")
     return <button className="bar-cbtn" style={btn} disabled={busy}
-      onClick={() => act.mutate({ kind: "bill", path: `/bar/tabs/${tab.id}/close` }, { onSuccess: () => onBill && onBill(tab) })}>{L(lang, "Bill", "Addition")}</button>;
+      onClick={() => act.mutate({ kind: "bill", path: `/bar/tabs/${tab.id}/close` }, { onSuccess: () => onBill && onBill(tab) })}>
+      {act.savingFor && act.savingFor((v) => v.kind === "bill" && v.path === `/bar/tabs/${tab.id}/close`) ? `⏳ ${savingText(lang)}` : L(lang, "Bill", "Addition")}</button>;
   if (ap && ap.status === "pending")
     return <span className="bar-pay-actions" style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
       <span className="bar-noshift bar-waiting" role="status">⏳ {L(lang, "Waiting for approval", "En attente d'approbation")}</span>
@@ -341,6 +344,7 @@ export function BillView({ lang, barId, tabId, fallbackTitle, shift, onClose, on
     onSuccess: () => { setErr(null); onPaid && onPaid(); onClose(); },
     onError: (e) => setErr(errText(lang, e)),
   });
+  const closeEmptyL = useTapLock(closeEmpty);   // INSTANT TAP
   const t = q.data;
   const title = (t && (t.name || t.pa_bar_tables?.label)) || fallbackTitle || L(lang, "Bill", "Addition");
   const back = <button type="button" className="bar-cbtn" style={btn} onClick={onClose}>← {L(lang, "Back to the floor", "Retour à la salle")}</button>;
@@ -360,7 +364,7 @@ export function BillView({ lang, barId, tabId, fallbackTitle, shift, onClose, on
       <div role="status">{L(lang, "Nothing was served on this tab — there is nothing to pay.", "Rien n'a été servi sur cette note — il n'y a rien à encaisser.")}</div>
       {err && <div role="alert" style={{ color: "#fca5a5" }}>{err}</div>}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button type="button" className="bar-cmain" disabled={closeEmpty.isPending} onClick={() => closeEmpty.mutate()}>{L(lang, "Close the empty tab", "Fermer la note vide")}</button>
+        <button type="button" className="bar-cmain" disabled={closeEmptyL.busy} onClick={() => closeEmptyL.fire()}>{closeEmptyL.busy ? `⏳ ${savingText(lang)}` : L(lang, "Close the empty tab", "Fermer la note vide")}</button>
         {back}
       </div>
     </section>
@@ -516,7 +520,9 @@ export function TableSide({ lang, barId, userId, tabId, table, title, products, 
     onSuccess: (_d, vars) => { setNote({ ok: true, text: vars.okText }); if (vars.sent) useBarDraftStore.getState().clearDraft(dKey); reload(); },
     onError: (e) => { setNote({ ok: false, text: e.offline ? L(lang, "No connection — nothing was sent. Try again when you are online.", "Pas de connexion — rien n'a été envoyé. Réessayez une fois en ligne.") : errText(lang, e) }); reload(); },
   });
-  const isOpen = !!T && !foreign && T.status === "open";
+  const runL = useTapLock(run);   // INSTANT TAP: Send round / Serve / Cancel lock on the tap; the tapped one says "Saving…"
+  const saving = (path) => runL.savingFor((v) => v.path === path);
+  const isOpen =!!T && !foreign && T.status === "open";
   const add = (p) => {
     if (!isOpen || p.is_multipart === true) return;
     saveDraft(draft.some((x) => x.id === p.id) ? draft.map((x) => x.id === p.id ? { ...x, qty: Math.min(999, x.qty + 1) } : x)
@@ -580,10 +586,10 @@ export function TableSide({ lang, barId, userId, tabId, table, title, products, 
                     <span style={{ fontSize: 13, opacity: 0.75 }}>{fmt(rd.total)}{rd.served_by_name ? ` · ${rd.served_by_name}` : ""}</span>
                     {rd.status === "sent" && (
                       <span style={{ marginLeft: "auto", display: "inline-flex", gap: 6 }}>
-                        {canServe && <button className="bar-cmain" style={{ padding: "6px 12px", fontSize: 14 }} disabled={run.isPending} onClick={() => run.mutate({ path: `/bar/rounds/${rd.id}/serve`,
-                          body: { version: rd.version, sale_version: saleV }, okText: L(lang, "Round served.", "Tournée servie.") })}>{L(lang, "Serve", "Servir")}</button>}
-                        <button className="bar-cbtn" disabled={run.isPending} onClick={() => run.mutate({ path: `/bar/rounds/${rd.id}/cancel`,
-                          body: { version: rd.version }, okText: L(lang, "Round cancelled.", "Tournée annulée.") })}>{L(lang, "Cancel", "Annuler")}</button>
+                        {canServe && <button className="bar-cmain" style={{ padding: "6px 12px", fontSize: 14 }} disabled={runL.busy} onClick={() => runL.fire({ path: `/bar/rounds/${rd.id}/serve`,
+                          body: { version: rd.version, sale_version: saleV }, okText: L(lang, "Round served.", "Tournée servie.") })}>{saving(`/bar/rounds/${rd.id}/serve`) ? `⏳ ${savingText(lang)}` : L(lang, "Serve", "Servir")}</button>}
+                        <button className="bar-cbtn" disabled={runL.busy} onClick={() => runL.fire({ path: `/bar/rounds/${rd.id}/cancel`,
+                          body: { version: rd.version }, okText: L(lang, "Round cancelled.", "Tournée annulée.") })}>{saving(`/bar/rounds/${rd.id}/cancel`) ? `⏳ ${savingText(lang)}` : L(lang, "Cancel", "Annuler")}</button>
                       </span>
                     )}
                   </div>
@@ -618,13 +624,14 @@ export function TableSide({ lang, barId, userId, tabId, table, title, products, 
         </div>
         <div className="bar-card-foot">
           {!tabId && table && (
-            <button className="bar-cmain" disabled={busy} onClick={() => act.mutate({ kind: "open", path: `/bar/${barId}/tabs`, body: { table_id: table.id } })}>{L(lang, "Open tab", "Ouvrir une note")}</button>
+            <button className="bar-cmain" disabled={busy} onClick={() => act.mutate({ kind: "open", path: `/bar/${barId}/tabs`, body: { table_id: table.id } })}>
+              {act.savingFor && act.savingFor((v) => v.kind === "open" && v.body && v.body.table_id === table.id) ? `⏳ ${savingText(lang)}` : L(lang, "Open tab", "Ouvrir une note")}</button>
           )}
           {T && !foreign && isOpen && draft.length > 0 && (
-            <button className="bar-cmain" disabled={run.isPending || !roundKey} onClick={() => run.mutate({ path: `/bar/tabs/${tabId}/rounds`, sent: true,
+            <button className="bar-cmain" disabled={runL.busy || !roundKey} onClick={() => runL.fire({ path: `/bar/tabs/${tabId}/rounds`, sent: true,
               body: { idempotency_key: roundKey, items: draft.map((x) => ({ product_id: x.id, quantity: x.qty })) },
               okText: L(lang, "Round sent to the bar.", "Tournée envoyée au bar.") })}>
-              {L(lang, "Send round", "Envoyer la tournée")} · {fmt(draftTotal)}
+              {saving(`/bar/tabs/${tabId}/rounds`) ? `⏳ ${savingText(lang)}` : <>{L(lang, "Send round", "Envoyer la tournée")} · {fmt(draftTotal)}</>}
             </button>
           )}
           {T && !foreign && (

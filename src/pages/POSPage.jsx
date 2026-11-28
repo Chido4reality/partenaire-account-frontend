@@ -2354,10 +2354,11 @@ export default function POSPage({ embed = null } = {}) {
       return;
     }
     setOversellModal(null); saleMutation.mutate();
+    return true;   // INSTANT TAP: the sale was sent (PayButton stays locked until it settles)
   };
   const attemptCheckout = async () => {
     // BAR BILL: the drinks were served (reserved) already — no stock snapshot check; the sale takes them once
-    if (bill) { runCheckout(); return; }
+    if (bill) { return runCheckout(); }
     const real = cart.filter(i =>
       i.product_id && i.product_id !== "__DEBT__" &&
       i.product_id !== "__DEBT_PAYMENT__" && i.type !== "debt_payment");
@@ -2406,7 +2407,7 @@ export default function POSPage({ embed = null } = {}) {
       .filter(i => i.quantity > stockFrom(list, i))
       .map(i => ({ name: i.name, available: stockFrom(list, i), selling: i.quantity }));
     if (oversold.length) { setOversellModal({ items: oversold }); return; }
-    runCheckout();
+    return runCheckout();
   };
 
   // ── HOLD SALE (park & resume) ────────────────────────────────────
@@ -3213,6 +3214,7 @@ export default function POSPage({ embed = null } = {}) {
                   <PayButton
                     saleMutation={saleMutation}
                     onClick={attemptCheckout}
+                    savingLabel={lang === "en" ? "Saving…" : "Enregistrement…"}
                     disabled={!tillModeKnown || !shiftIsOpen || (!hasDebt && payMode === "partial" && !paidAmt) || ((payMode === "credit" || payMode === "partial") && !customer) || (!isDebtOnlyCart && !!customer && !payModeChosen)}
                     title={!shiftIsOpen ? noShiftHint(lang) : ""}
                     // THE ONE THING CASHIER MODE CHANGES. Same panel, same payload,
