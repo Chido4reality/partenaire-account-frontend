@@ -38,7 +38,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "../..");
 const TEETH = process.env.BAR_CART_TEETH || "";
 const APP = process.env.BAR_CART_APP ? resolve(os.tmpdir(), process.env.BAR_CART_APP) : resolve(os.tmpdir(), TEETH ? `bar-fit-app-teeth${TEETH}` : "bar-fit-app");   // BAR_CART_APP=bar-fit-app-base → the old code (reproduction)
-if (!existsSync(resolve(APP, "bundle.js"))) { console.error(`no bundle in ${APP} — run node scripts/bar-fit/bundle.mjs first (same BAR_CART_TEETH)`); process.exit(2); }
+if (!process.env.BAR_CART_URL && !existsSync(resolve(APP, "bundle.js"))) { console.error(`no bundle in ${APP} — run node scripts/bar-fit/bundle.mjs first (same BAR_CART_TEETH)`); process.exit(2); }
 const PW = process.env.PW_MODULE || "C:/Users/Admin/AppData/Local/npm-cache/_npx/e41f203b7505f1fb/node_modules/playwright/index.mjs";
 const CHROME = process.env.PW_CHROME || resolve(os.homedir(), "AppData/Local/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-win64/chrome-headless-shell.exe");
 const { chromium } = await import(pathToFileURL(PW).href);
@@ -528,11 +528,15 @@ try {
     await warn.first().waitFor({ timeout: 15000 }).catch(() => {});
     check("P15a bar floor: \"Shift open since 19 Nov — close it\"", (await warn.count()) === 1 && /Shift open since 19 Nov — close it/.test(await warn.first().innerText()), (await warn.count()) ? await warn.first().innerText() : "none");
     check("P15b warning only: the POS cart + its Confirm path are still there", (await page.locator(".bar-cart").count()) > 0);
+    // 2026-11-28: the old "Sales here count on the day this shift opened…" line is gone (bar sales take the POS date)
+    const OLD_LINE = /count on the day this shift opened|comptent sur le jour d'ouverture/;
+    check("P15e bar floor: only \"Shift open since … — close it ›\" (no 'count on the day' line)", (await warn.count()) === 1 && !OLD_LINE.test(await warn.first().innerText()), (await warn.count()) ? await warn.first().innerText() : "none");
     await page.goto(`${BASE}/shifts`, { waitUntil: "domcontentloaded" });
     await page.getByText(/Cash register/).first().waitFor({ timeout: 30000 });
     await warn.first().waitFor({ timeout: 15000 }).catch(() => {});
     if (process.env.BAR_CART_SHOT && !(await warn.count())) await page.screenshot({ path: process.env.BAR_CART_SHOT.replace(/.png$/, "-p15c.png") });
     check("P15c Cash screen at Bonaberri: the same warning", (await warn.count()) === 1 && /Shift open since 19 Nov — close it/.test(await warn.first().innerText()), String(await warn.count()));
+    check("P15f Cash screen: no 'count on the day' line either", (await warn.count()) === 1 && !OLD_LINE.test(await page.locator("body").innerText()), (await warn.count()) ? await warn.first().innerText() : "none");
     await page.goto(`${BASE}/bar`, { waitUntil: "domcontentloaded" }); await settle(page, BON);
     await page.locator("select.bar-select").selectOption(BEP); await settle(page, BEP);
     await page.waitForTimeout(800);
@@ -587,14 +591,15 @@ try {
     await ctx.close();
   }
 
-  if (want("P17")) {
+  for (const P17 of ["P17N", "P17B", "P17T"]) if (want(P17) || want("P17")) {
     // P17 — INSTANT TAP (Peter 2026-11-28): every pay / send / serve button reacts ON THE TAP — disabled and
     // "⏳ Saving…" at once — and a double tap sends ONE request. Each write is answered after 1.5 s (a slow server).
     // The double tap = two clicks in the SAME instant (one script, no wait between), the case a frame-late lock misses.
+    // One case per run (split): P17N = New Sale pay · P17B = the bar bill's pay · P17T = a table's Serve / Send round / Bill.
     const SLOW = 1500;
     const mkNamed = (id, name) => ({ id, name, status: "closed", location_id: BON, opened_at: new Date().toISOString(),
       figures: { ordered: 1500, served: 1500, waiting: 0, paid: 0, balance_due: 1500, service_status: "served", payment_status: "unpaid", rounds_waiting: 0, rounds_served: 1 } });
-    const { ctx, page, st, errs } = await session("P17 instant tap: pay / send round / serve / Bill — locked on the tap, one request",
+    const { ctx, page, st, errs } = await session(`${P17} instant tap — ${{ P17N: "New Sale pay", P17B: "bar bill pay", P17T: "table Serve / Send round / Bill" }[P17]}: locked on the tap, one request`,
       { named: { [BON]: [mkNamed("nt9", "Cid")] }, tableTab: true, slowWrites: SLOW });
     await settle(page, BON);
     // double-tap the button whose text matches `re`, then read the SAME button 100 ms later
@@ -613,18 +618,20 @@ try {
     const saving = (a) => !!a && a.disabled && /⏳ Saving…/.test(a.text);
     const waitWrites = async () => { await page.waitForTimeout(SLOW + 900); };
 
+    let r;
     // a) New Sale's pay (Home cart → Take payment → ✓ Confirm)
+    if (P17 === "P17N") {
     await tap(page, ["Bon Castel"]);
     await page.getByRole("button", { name: /^Take payment$/ }).click();
     await page.getByRole("button", { name: /✓ Confirm/ }).first().waitFor({ timeout: 15000 });
-    let r = await doubleTap(/✓ Confirm/);
+    r = await doubleTap(/✓ Confirm/);
     check("P17a New Sale ✓ Confirm: \"⏳ Saving…\" and disabled 100 ms after the tap", r.found && saving(r.after), JSON.stringify(r));
     await waitWrites();
     check("P17b …a double tap sent ONE sale", st.sales.length === 1, `POST /sales: ${st.sales.length}`);
-    await page.keyboard.press("Escape").catch(() => {});
-    await page.waitForTimeout(600);
+    }
 
     // b) the bar bill's pay (Counter tabs → Take payment → ✓ Confirm)
+    if (P17 === "P17B") {
     await page.getByRole("button", { name: /Counter tabs|Tabs/ }).first().click();
     const row = page.locator("div", { has: page.getByText("Cid", { exact: true }) }).filter({ has: page.getByRole("button", { name: "Take payment" }) }).last();
     await row.getByRole("button", { name: "Take payment" }).click({ timeout: 15000 });
@@ -633,11 +640,10 @@ try {
     check("P17c bar bill ✓ Confirm: \"⏳ Saving…\" and disabled 100 ms after the tap", r.found && saving(r.after), JSON.stringify(r));
     await waitWrites();
     check("P17d …a double tap paid the bill ONCE", (st.pays || []).filter((x) => x.body.bar_tab_id === "nt9").length === 1, `POST /sales (bar): ${(st.pays || []).length}`);
-    const next = page.getByRole("button", { name: /Next table/ });
-    if (await next.count()) await next.first().click(); else await page.keyboard.press("Escape").catch(() => {});
-    await page.waitForTimeout(600);
+    }
 
     // c) a table: Serve the waiting round, Send a new round, Bill
+    if (P17 === "P17T") {
     await page.locator(".bar-pill", { hasText: "T1" }).first().click();
     await page.getByRole("button", { name: /^Serve$/ }).first().waitFor({ timeout: 15000 });
     r = await doubleTap(/^Serve$/);
@@ -654,7 +660,8 @@ try {
     check("P17i Bill: \"⏳ Saving…\" and disabled 100 ms after the tap", r.found && saving(r.after), JSON.stringify(r));
     await waitWrites();
     check("P17j …a double tap closed the tab ONCE", writesTo(/^\/bar\/tabs\/tt1\/close$/) === 1, JSON.stringify(st.writes));
-    check("P17 no page errors", !errs.length, errs.slice(0, 2).join(" | "));
+    }
+    check(`${P17} no page errors`, !errs.length, errs.slice(0, 2).join(" | "));
     await ctx.close();
   }
 } catch (e) {
