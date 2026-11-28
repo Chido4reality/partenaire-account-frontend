@@ -33,8 +33,9 @@ export default function BarModeButton({ compact = false, onNavigate, wrapStyle }
   const label = en ? "Bar Mode" : "Mode Bar";
   const sub = here ? (en ? "You are in the bar" : "Vous êtes au bar") : (en ? "Tables, tabs and quick sell" : "Tables, notes et vente rapide");
   const onClick = () => {
-    useBarChrome.getState().setMenuOpen(false);   // on /bar: closes the menu the bar's ☰ opened
-    if (!here) navigate("/bar");
+    // on /bar: closes the menu the bar's ☰ opened AND re-opens the bar on its floor (Peter 2026-11-28: it kept
+    // whatever was on screen — a Home cart left in its payment step looked like "the bar opens in pay mode")
+    if (here) useBarChrome.getState().reopen(); else { useBarChrome.getState().setMenuOpen(false); navigate("/bar"); }
     if (onNavigate) onNavigate();
   };
   return (

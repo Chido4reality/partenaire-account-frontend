@@ -281,6 +281,10 @@ export default function POSPage({ embed = null } = {}) {
   const [payMethod, setPayMethod]         = useState("cash");
   const [notes, setNotes]                 = useState("");
   const [showPayment, setShowPayment]     = useState(() => !!bill);   // BAR BILL: opens straight on the payment panel
+  // BAR OPENS ON THE FLOOR (Peter 2026-11-28): the bar's Home cart is never left in its payment step when the bar is
+  // re-opened (embed.payResetKey moves); the payment step opens only on a tap of Take payment.
+  const payResetKey = embed && !bill ? embed.payResetKey : undefined;
+  useEffect(() => { if (payResetKey) setShowPayment(false); }, [payResetKey]);
 
   // RE-ASK AT THE MOMENT OF DECISION. The summary is cached (30s stale, 60s
   // poll), so after an owner flips a till to cashier every OTHER device can hold
@@ -578,9 +582,13 @@ export default function POSPage({ embed = null } = {}) {
       // handoff-then-restore both settle to [restored…, damaged].
       setCart(prev => [...draft.items.map(it => (it && it.lineId) ? it : { ...it, lineId: genLineId() }), ...prev]);
       if (draft.customer)      setCustomer(draft.customer);
-      if (draft.payMode)       { setPayMode(draft.payMode); setPayModeChosen(true); }
-      if (draft.paidAmt)       setPaidAmt(draft.paidAmt);
-      if (draft.dueDate)       setDueDate(draft.dueDate);
+      // BAR OPENS ON THE FLOOR (Peter 2026-11-28): the bar's Home cart comes back with its lines (and customer), never
+      // with an earlier payment step's choices — paying starts fresh on Take payment. New Sale: as before.
+      if (!embed) {
+        if (draft.payMode)     { setPayMode(draft.payMode); setPayModeChosen(true); }
+        if (draft.paidAmt)     setPaidAmt(draft.paidAmt);
+        if (draft.dueDate)     setDueDate(draft.dueDate);
+      }
       if (draft.notes)         setNotes(draft.notes);
       // MP-BELOW-COST-PERSIST / MP-APPROVAL-BUNDLE: restore the cart-level
       // boss-approval link so a resumed bundled-approval cart still finalizes

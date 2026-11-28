@@ -6,4 +6,8 @@ import { create } from "zustand";
 export const useBarChrome = create((set) => ({
   menuOpen: false,
   setMenuOpen: (v) => set({ menuOpen: !!v }),
+  // BAR OPENS ON THE FLOOR (Peter 2026-11-28): "Bar Mode" tapped while already in the bar re-opens it —
+  // the floor + Home cart in its normal step (no payment step, no bill, no panel). BarPage watches openSeq.
+  openSeq: 0,
+  reopen: () => set((s) => ({ openSeq: s.openSeq + 1, menuOpen: false })),
 }));

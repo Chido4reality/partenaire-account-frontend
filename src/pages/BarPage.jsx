@@ -24,7 +24,7 @@
 // ONLINE ONLY (spec decision 12): opening, closing and paying tabs are refused here while offline,
 // with a sentence, and are never queued — a tab replayed later could collide with a colleague's.
 // (Home's counter sale is a normal POS sale and keeps the POS offline queue.)
-import { useEffect, useMemo, useReducer, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router-dom";
 import api from "../utils/api";
@@ -84,9 +84,11 @@ export default function BarPage() {
   const [setup, setSetup] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
   const [ordersOpen, setOrdersOpen] = useState(false);   // JOB 3 PHASE 1: the Orders list
+  const closeOrders = useCallback(() => setOrdersOpen(false), []);   // stable: the popover's listeners depend on it
   const [showAll, setShowAll] = useState(false);
   const [billTab, setBillTab] = useState(null);   // BAR BILL: { tabId, title, barId } — the bill open in the POS panel
   const menuOpen = useBarChrome((s) => s.menuOpen);
+  const openSeq = useBarChrome((s) => s.openSeq);   // "Bar Mode" tapped while here → back to the floor (below)
 
   const mine = useQuery({ queryKey: ["bar-mine"], queryFn: () => api.get("/bar/mine").then((r) => r.data?.data || { bars: [] }), staleTime: 60000 });
   const bars = mine.data?.bars || [];
@@ -129,6 +131,12 @@ export default function BarPage() {
     refetchInterval: 20000, refetchOnWindowFocus: true,
   });
   const F = floor.data;
+  // BAR OPENS ON THE FLOOR (Peter 2026-11-28): Bar Mode re-opened from the menu → Home + floor, no bill, no panel;
+  // the POS gets payResetKey and leaves its payment step. (A reload / branch switch / return mounts fresh anyway.)
+  useEffect(() => {
+    if (!openSeq) return;
+    dispatch({ type: "home" }); setBillTab(null); setCounterOpen(false); setOrdersOpen(false); setSetup(false); setShowAll(false); setMsg(null);
+  }, [openSeq]);
   useEffect(() => { if (F) dispatch({ type: "floor", barId, floor: F }); }, [F, barId]);
 
   // the Orders badge moves with the floor: a round sent / served / cancelled anywhere here shows at once
@@ -250,11 +258,11 @@ export default function BarPage() {
       {msg && <div role="status" className="bar-msg" style={{ borderColor: msg.ok ? "#22c55e" : "#ef4444", color: msg.ok ? "#86efac" : "#fca5a5" }}>{msg.text}</div>}
       {floor.isError && <div className="bar-msg" style={{ borderColor: "#ef4444", color: "#fca5a5" }}>{errText(lang, floor.error)}</div>}
       {setup && canSetup && <div className="bar-panel"><SetupPanel lang={lang} barId={barId} zones={zones} tables={tables} busy={busy} act={actL} patch={patch} /></div>}
-      {ordersOpen && <div className="bar-panel">
-        <OrdersPanel key={barId} lang={lang} barId={barId} canServe={canServe} isOnline={isOnline} fmt={fmt} onChanged={refresh}
-          onOpenTab={(o) => { setOrdersOpen(false); setBillTab(null); setShowAll(false); setMsg(null);
-            if (o.table) dispatch({ type: "table", tableId: o.table.id }); else if (o.tab && o.tab.id) dispatch({ type: "named", tabId: o.tab.id }); }} />
-      </div>}
+      {/* ORDERS: a popover under its button (fixed — never pushes the page), like the notifications panel */}
+      {ordersOpen && <OrdersPanel key={barId} lang={lang} barId={barId} canServe={canServe} isOnline={isOnline} fmt={fmt} onChanged={refresh}
+        onClose={closeOrders}
+        onOpenTab={(o) => { setOrdersOpen(false); setBillTab(null); setShowAll(false); setMsg(null);
+          if (o.table) dispatch({ type: "table", tableId: o.table.id }); else if (o.tab && o.tab.id) dispatch({ type: "named", tabId: o.tab.id }); }} />}
       {counterOpen && F && <div className="bar-panel">
         <CounterTabsPanel lang={lang} barId={barId} named={named} busy={busy} act={actL} onBill={openBill} shift={shift}
           onRounds={(t) => { dispatch({ type: "named", tabId: t.id }); setCounterOpen(false); setShowAll(false); }} />
@@ -275,6 +283,7 @@ export default function BarPage() {
           {selectedLocation?.id !== barId ? <div className="bar-msg" role="status">{L(lang, "Loading…", "Chargement…")}</div> :
           <POSPage key={barId} embed={{
             locationId: barId,
+            payResetKey: openSeq,
             showAll,
             renderLeft: ({ addToCart, products, cart, fmt: pfmt, priceOf }) => (
               <QuickGrid key={`${barId}:home`} lang={lang} barId={barId} products={products} busy={cart.length > 0}

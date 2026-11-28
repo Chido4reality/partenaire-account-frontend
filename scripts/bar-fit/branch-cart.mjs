@@ -123,17 +123,17 @@ const browser = await chromium.launch({ executablePath: existsSync(CHROME) ? CHR
 // opts.at — the app-wide location at start (default Bonaberri); opts.noShift — locations with no open shift.
 async function session(label, opts = {}) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1, serviceWorkers: "block" });
-  await ctx.addInitScript(({ USER, ORG, BON, drafts, at, atName }) => {
+  await ctx.addInitScript(({ USER, ORG, BON, drafts, at, atName, lang, draftExtra }) => {
     if (sessionStorage.getItem("__cart_init")) return; sessionStorage.setItem("__cart_init", "1");
     localStorage.clear();
     localStorage.setItem("mp-auth", JSON.stringify({ state: { user: USER, org: ORG, token: "probe-token", isAuthenticated: true, impersonating: false, impersonation: null, lastVerifiedActive: Date.now(), maxOfflineHours: 24 }, version: 0 }));
-    localStorage.setItem("mp-lang", JSON.stringify({ state: { lang: "en" }, version: 0 }));
+    localStorage.setItem("mp-lang", JSON.stringify({ state: { lang: lang || "en" }, version: 0 }));
     localStorage.setItem("mp-settings", JSON.stringify({ state: { selectedLocation: { id: at || BON, name: atName || "Bonaberri", type: "shop" } }, version: 0 }));
     if (drafts) {   // AFTER the clear: the app's own draft store, exactly its persisted shape
-      const d = {}; for (const [loc, items] of Object.entries(drafts)) d[`${USER.id}::${loc}`] = { items, updatedAt: Date.now() };
+      const d = {}; for (const [loc, items] of Object.entries(drafts)) d[`${USER.id}::${loc}`] = { items, updatedAt: Date.now(), ...(draftExtra || {}) };   // draftExtra: e.g. an earlier pay step's payMode / paidAmt
       localStorage.setItem("mp-pos-draft-cart", JSON.stringify({ state: { drafts: d }, version: 0 }));
     }
-  }, { USER, ORG, BON, drafts: opts.drafts || null, at: opts.at || null, atName: opts.at ? NAME[opts.at] : null });
+  }, { USER, ORG, BON, drafts: opts.drafts || null, at: opts.at || null, atName: opts.at ? NAME[opts.at] : null, lang: opts.lang || "en", draftExtra: opts.draftExtra || null });
   const st = { delay: null, sales: [], holds: [], bepFirst: !!opts.bepFirst, noShift: new Set(opts.noShift || []), named: opts.named || null, payMode: opts.payMode || null,
     approval: opts.approval || null, payAnswer: opts.payAnswer || null, oldShift: new Set(opts.oldShift || []), emptyTabs: opts.emptyTabs || [], proPlus: !!opts.proPlus,
     tableTab: !!opts.tableTab, slowWrites: opts.slowWrites || 0, orders: opts.orders || null, vip: opts.vip ? new Set(opts.vip) : null };
@@ -672,88 +672,178 @@ try {
     await ctx.close();
   }
 
-  for (const P18 of ["P18L", "P18D", "P18V"]) if (want(P18) || want("P18")) {
-    // P18 — JOB 3 PHASE 1 ORDERS (Peter 2026-11-28): 📋 Orders (n) + live badge (👑 gold with a VIP order), one list
-    // (VIP first, then oldest — as the server sends it), age amber ≥ 10 min / red ≥ 20 min, Order details with
-    // Serve / Cancel round (reason) / Open tab on the SAME routes, VIP tables in Set up tables, 👑 on the pill.
-    // One case per run: P18L list + badge · P18D details actions · P18V the VIP toggle.
+  for (const P18 of ["P18L", "P18F", "P18A", "P18D", "P18V"]) if (want(P18) || want("P18")) {
+    // P18 — JOB 3 PHASE 1 ORDERS, round 2 (Peter's test 2026-11-28):
+    //   P18L the popover: under its button, does NOT push the page; closes on Esc / a tap outside / a second tap;
+    //        badge 👑 gold; rows in words (EN), VIP first then oldest; 👑 on the VIP table's pill
+    //   P18F the same rows in French
+    //   P18A ages for people: 12 min · 2 h 5 min · 10 days (14 690 min), amber ≥ 10 / red ≥ 20, STALE tag ≥ 6 h
+    //   P18D details = the bar's card (styled big buttons): Serve "Saving…" + ONE request, Cancel needs a reason, Open tab
+    //   P18V the VIP toggle in Set up tables
     const ago = (min) => new Date(Date.now() - min * 60000).toISOString();
     const line = (name, q, price) => ({ product_id: "bon1", quantity: q, unit_price: price, line_total: q * price, name, name_en: null, unit: "piece" });
+    const AGES = P18 === "P18A" ? [12, 125, 14690] : [3, 25, 12];
     const orders = [
-      { round_id: "r2", round_no: 1, version: 0, total: 1500, created_at: ago(3), sent_by_name: "Kusi", source: "staff", is_vip: true,
-        tab: { id: "tb2", kind: "table", name: null, status: "open", waiter_name: "Kusi", sale_version: null }, table: { id: "t2", label: "T2", zone: "Salle" }, lines: [line("Bon Guinness", 1, 1500)] },
-      { round_id: "r9", round_no: 2, version: 3, total: 600, created_at: ago(25), sent_by_name: "Ada", source: "staff", is_vip: false,
+      { round_id: "r2", round_no: 1, version: 0, total: 3000, created_at: ago(AGES[0]), sent_by_name: "Boss Dozie", source: "staff", is_vip: true,
+        tab: { id: "tb2", kind: "table", name: null, status: "open", waiter_name: "Boss Dozie", sale_version: null }, table: { id: "t2", label: "T2", zone: "Terrasse" }, lines: [line("tube 300/18", 2, 1500)] },
+      { round_id: "r9", round_no: 2, version: 3, total: 600, created_at: ago(AGES[1]), sent_by_name: "Ada", source: "staff", is_vip: false,
         tab: { id: "nj", kind: "named", name: "Jo", status: "open", waiter_name: "Ada", sale_version: null }, table: null, lines: [line("Bon Coca", 1, 600)] },
-      { round_id: "r1", round_no: 1, version: 0, total: 2000, created_at: ago(12), sent_by_name: "Kusi", source: "staff", is_vip: false,
+      { round_id: "r1", round_no: 1, version: 0, total: 2000, created_at: ago(AGES[2]), sent_by_name: "Kusi", source: "staff", is_vip: false,
         tab: { id: "tb1", kind: "table", name: null, status: "open", waiter_name: "Kusi", sale_version: null }, table: { id: "t1", label: "T1", zone: "Salle" }, lines: [line("Bon Castel", 2, 1000)] },
     ];
-    const { ctx, page, st, errs } = await session(`${P18} Orders — ${{ P18L: "badge + list", P18D: "details: Serve / Cancel / Open tab", P18V: "VIP toggle" }[P18]}`,
-      { orders, vip: ["t2"], slowWrites: 800 });
+    const { ctx, page, st, errs } = await session(`${P18} Orders — ${{ P18L: "popover + rows (EN)", P18F: "rows (FR)", P18A: "ages", P18D: "details: Serve / Cancel / Open tab", P18V: "VIP toggle" }[P18]}`,
+      { orders, vip: ["t2"], slowWrites: 800, lang: P18 === "P18F" ? "fr" : "en" });
     await settle(page, BON);
-    const ob = page.locator(".bar-orders-btn");
-    await page.waitForFunction(() => { const b = document.querySelector(".bar-orders-btn"); return b && b.getAttribute("data-count") === "3"; }, null, { timeout: 20000 }).catch(() => {});
+    const ob = page.locator("#bar-orders-btn");
+    await page.waitForFunction(() => { const b = document.querySelector("#bar-orders-btn"); return b && b.getAttribute("data-count") === "3"; }, null, { timeout: 20000 }).catch(() => {});
+    const pop = page.locator("#bar-orders-pop");
     const openList = async () => { await ob.click(); await page.locator(".bar-order-row").first().waitFor({ timeout: 15000 }); };
     const rowOf = (label) => page.locator(".bar-order-row", { hasText: label }).first();
+    const rowsText = () => page.locator(".bar-order-row").evaluateAll((els) => els.map((e) => e.innerText.replace(/\s+/g, " ").trim()));
+    const fcfa = (s) => s.replace(/[  ]/g, " ");
 
     if (P18 === "P18L") {
       const txt = (await ob.innerText()).replace(/\s+/g, " ");
       check("P18a header: \"Orders\" + badge 3, gold 👑 (a VIP order waits)", /Orders/.test(txt) && /3/.test(txt) && (await ob.getAttribute("data-vip")) === "1" && /👑/.test(txt), txt);
+      const before = await page.locator(".bar-row").boundingBox();
       await openList();
-      const rows = await page.locator(".bar-order-row").evaluateAll((els) => els.map((e) => ({ t: e.innerText.replace(/\s+/g, " "), vip: e.getAttribute("data-vip") })));
-      check("P18b one list, VIP first then oldest: T2 (👑), Jo, T1", rows.length === 3 && /👑 T2/.test(rows[0].t) && rows[0].vip === "1" && /Jo/.test(rows[1].t) && /T1/.test(rows[2].t), JSON.stringify(rows));
-      check("P18c a row says what was ordered + the age + the source", !!rows[2] && /2 Bon Castel/.test(rows[2].t) && /12 min/.test(rows[2].t) && /staff/.test(rows[2].t), rows[2] && rows[2].t);
-      const col = (label) => rowOf(label).locator(".bar-order-age").evaluate((e) => getComputedStyle(e).color);
-      const [c3, c12, c25] = [await col("T2"), await col("T1"), await col("Jo")];
-      check("P18d age: 3 min plain, 12 min AMBER, 25 min RED", c12 === "rgb(251, 191, 36)" && c25 === "rgb(248, 113, 113)" && c3 !== c12 && c3 !== c25, JSON.stringify({ c3, c12, c25 }));
+      const after = await page.locator(".bar-row").boundingBox();
+      const b = await ob.boundingBox(), p = await pop.boundingBox();
+      const pos = await pop.evaluate((e) => getComputedStyle(e).position);
+      check("P18b a POPOVER: fixed, just under the button, and the page did not move", pos === "fixed" && p.y >= b.y + b.height && p.y <= b.y + b.height + 12
+        && Math.abs(before.y - after.y) < 1 && p.x + p.width <= 1280, JSON.stringify({ pos, b, p, before: before.y, after: after.y }));
+      const rows = (await rowsText()).map(fcfa);
+      check("P18c rows in words, VIP first then oldest", rows.length === 3
+        && /^👑 VIP · T2 Terrasse — Round 1: 2 × tube 300\/18 3[ ,.]?000 FCFA · sent by Boss Dozie · waiting 3 min$/.test(rows[0])
+        && /^Jo \(counter\) — Round 2: 1 × Bon Coca 600 FCFA · sent by Ada · waiting 25 min$/.test(rows[1])
+        && /^T1 Salle — Round 1: 2 × Bon Castel 2[ ,.]?000 FCFA · sent by Kusi · waiting 12 min$/.test(rows[2]), JSON.stringify(rows));
       const pill = (await page.locator(".bar-pill", { hasText: "T2" }).first().innerText()).replace(/\s+/g, " ");
-      check("P18e the VIP table's pill carries 👑 (T1's does not)", /👑/.test(pill) && !/👑/.test(await page.locator(".bar-pill", { hasText: "T1" }).first().innerText()), pill);
+      check("P18d the VIP table's pill carries 👑 (T1's does not)", /👑/.test(pill) && !/👑/.test(await page.locator(".bar-pill", { hasText: "T1" }).first().innerText()), pill);
+      await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+      const esc = await pop.count();
+      await openList(); await page.mouse.click(400, 600); await page.waitForTimeout(300);
+      const outside = await pop.count();
+      await openList(); await ob.click(); await page.waitForTimeout(300);
+      const second = await pop.count();
+      await openList(); await page.locator(".bar-order-row").first().click(); await page.waitForTimeout(300);
+      const insideStays = await pop.count();
+      check("P18e closes on Esc, on a tap outside, on a second tap of the button — a tap inside keeps it open", esc === 0 && outside === 0 && second === 0 && insideStays === 1,
+        JSON.stringify({ esc, outside, second, insideStays }));
+    }
+    if (P18 === "P18F") {
+      await openList();
+      const rows = (await rowsText()).map(fcfa);
+      const btn = (await ob.innerText()).replace(/\s+/g, " ");
+      check("P18f FR: \"Commandes\" + rows in French words", /Commandes/.test(btn) && rows.length === 3
+        && /^👑 VIP · T2 Terrasse — Tournée 1 : 2 × tube 300\/18 3[ ,.]?000 FCFA · envoyée par Boss Dozie · attend depuis 3 min$/.test(rows[0])
+        && /^Jo \(comptoir\) — Tournée 2 : 1 × Bon Coca 600 FCFA · envoyée par Ada · attend depuis 25 min$/.test(rows[1]), JSON.stringify({ btn, rows }));
+    }
+    if (P18 === "P18A") {
+      await openList();
+      const rows = (await rowsText()).map(fcfa);
+      const age = (i) => (rows[i].match(/waiting (.+?)(STALE)?$/) || [])[1];
+      check("P18g ages for people: 12 min · 2 h 5 min · 10 days (was \"14690 min\")", age(0) === "12 min" && age(1) === "2 h 5 min" && /^10 days/.test(age(2)) && !rows.some((r) => /14690/.test(r)), JSON.stringify(rows));
+      const st3 = await page.locator(".bar-order-row").evaluateAll((els) => els.map((e) => e.getAttribute("data-stale")));
+      const col = (label) => rowOf(label).locator(".bar-order-age").evaluate((e) => getComputedStyle(e).color);
+      const [c12, c125] = [await col("T2"), await col("Jo")];
+      check("P18h colours stay (12 min amber, 2 h red); the 10-day round carries a STALE tag, the others not", c12 === "rgb(251, 191, 36)" && c125 === "rgb(248, 113, 113)"
+        && JSON.stringify(st3) === JSON.stringify(["0", "0", "1"]) && /STALE/.test(rows[2]) && !/STALE/.test(rows[0]), JSON.stringify({ c12, c125, st3 }));
+      await rowOf("T1").click();
+      const det = (await page.locator(".bar-order-details").innerText()).replace(/\s+/g, " ");
+      check("P18i the stale order's details say so (STALE + serve it or cancel it)", /waiting 10 days/.test(det) && /STALE/.test(det) && /cancel it/.test(det), det.slice(0, 260));
     }
     if (P18 === "P18D") {
       await openList();
       await rowOf("T1").click();
       const det = page.locator(".bar-order-details");
       await det.waitFor({ timeout: 15000 });
-      const dt = (await det.innerText()).replace(/\s+/g, " ");
-      check("P18f details: table, round, sender, lines, total", /T1 · Salle · Round 1/.test(dt) && /Sent by Kusi/.test(dt) && /2 × Bon Castel/.test(dt) && /Total/.test(dt), dt.slice(0, 200));
-      await det.getByRole("button", { name: /^Serve$/ }).evaluate((b) => { b.click(); b.click(); });   // a same-instant double tap
+      const dt = fcfa((await det.innerText()).replace(/\s+/g, " "));
+      check("P18j details: table, round, sender, lines, total", /T1 Salle — Round 1/.test(dt) && /Sent by Kusi/.test(dt) && /2 × Bon Castel/.test(dt) && /Total 2[ ,.]?000 FCFA/.test(dt), dt.slice(0, 220));
+      const look = await det.evaluate((d) => { const card = getComputedStyle(d); const sv = [...d.querySelectorAll("button")].find((b) => /Serve/.test(b.textContent));
+        const cs = sv ? getComputedStyle(sv) : null; const r = sv ? sv.getBoundingClientRect() : null;
+        return { cardBg: card.backgroundColor, radius: card.borderRadius, btnBg: cs && cs.backgroundColor, btnH: r && r.height, btnBorder: cs && cs.borderTopStyle, font: cs && cs.fontWeight }; });
+      check("P18k styled like the bar: cream card, a big amber Serve button (≥ 44 px, bold, no raw border)", look.cardBg === "rgb(251, 243, 228)" && look.btnBg !== "rgba(0, 0, 0, 0)"
+        && look.btnBg !== "rgb(239, 239, 239)" && look.btnH >= 44 && Number(look.font) >= 700 && look.btnBorder === "none", JSON.stringify(look));
+      await det.getByRole("button", { name: /Serve$/ }).evaluate((b) => { b.click(); b.click(); });   // a same-instant double tap
       await page.waitForTimeout(100);
       const during = await det.evaluate((d) => [...d.querySelectorAll("button")].map((b) => ({ t: b.textContent.trim(), d: b.disabled })));
-      check("P18g Serve: \"⏳ Saving…\" + disabled at once", during.some((b) => /⏳ Saving…/.test(b.t) && b.d), JSON.stringify(during));
+      check("P18l Serve: \"⏳ Saving…\" + disabled at once", during.some((b) => /⏳ Saving…/.test(b.t) && b.d), JSON.stringify(during));
       await page.waitForTimeout(1800);
       const serves = (st.bodies || []).filter((x) => x.p === "/bar/rounds/r1/serve");
-      check("P18h …ONE POST /bar/rounds/r1/serve { version 0, sale_version null } (the table card's route)", serves.length === 1 && serves[0].body.version === 0 && serves[0].body.sale_version === null, JSON.stringify(serves));
+      check("P18m …ONE POST /bar/rounds/r1/serve { version 0, sale_version null } (the table card's route)", serves.length === 1 && serves[0].body.version === 0 && serves[0].body.sale_version === null, JSON.stringify(serves));
       await page.locator(".bar-order-row").first().waitFor({ timeout: 15000 });
       await page.waitForTimeout(600);
       const left = await page.locator(".bar-order-row").count();
-      check("P18i back on the list: 2 orders left; badge 2", left === 2 && (await ob.getAttribute("data-count")) === "2", `rows ${left} badge ${await ob.getAttribute("data-count")}`);
+      check("P18n back on the list: 2 orders left; badge 2", left === 2 && (await ob.getAttribute("data-count")) === "2", `rows ${left} badge ${await ob.getAttribute("data-count")}`);
       await rowOf("Jo").click(); await det.waitFor({ timeout: 15000 });
       await det.getByRole("button", { name: /^Cancel round$/ }).click();
       const go = det.getByRole("button", { name: /^Cancel the round$/ });
-      check("P18j Cancel asks for a reason first (button off while it is empty)", await go.isDisabled());
+      check("P18o Cancel asks for a reason first (button off while it is empty)", await go.isDisabled());
       await det.getByRole("textbox").fill("customer changed mind");
       await go.click(); await page.waitForTimeout(1800);
       const canc = (st.bodies || []).filter((x) => x.p === "/bar/rounds/r9/cancel");
-      check("P18k …ONE POST /bar/rounds/r9/cancel { version 3, reason }", canc.length === 1 && canc[0].body.version === 3 && canc[0].body.reason === "customer changed mind", JSON.stringify(canc));
+      check("P18p …ONE POST /bar/rounds/r9/cancel { version 3, reason }", canc.length === 1 && canc[0].body.version === 3 && canc[0].body.reason === "customer changed mind", JSON.stringify(canc));
       await page.locator(".bar-order-row").first().waitFor({ timeout: 15000 });
       await rowOf("T2").click(); await det.waitFor({ timeout: 15000 });
       await det.getByRole("button", { name: /Open tab/ }).click();
       await page.waitForTimeout(800);
       const on = (await page.locator(".bar-pill.is-on").allInnerTexts()).join("|");
-      check("P18l Open tab → the panel closes, T2's table is open", (await page.locator(".bar-orders").count()) === 0 && /T2/.test(on), on);
-      // (the app's own start-up writes — /health, /auth/language — are not the Orders screen's; only /bar/ writes count)
+      check("P18q Open tab → the popover closes, T2's table is open", (await pop.count()) === 0 && /T2/.test(on), on);
       const barWrites = (st.bodies || []).filter((x) => /^\/bar\//.test(x.p)).map((x) => x.p);
-      check("P18m no other bar write (exactly the serve + the cancel)", JSON.stringify(barWrites) === JSON.stringify(["/bar/rounds/r1/serve", "/bar/rounds/r9/cancel"]), JSON.stringify(barWrites));
+      check("P18r no other bar write (exactly the serve + the cancel)", JSON.stringify(barWrites) === JSON.stringify(["/bar/rounds/r1/serve", "/bar/rounds/r9/cancel"]), JSON.stringify(barWrites));
     }
     if (P18 === "P18V") {
       await page.getByRole("button", { name: /Set up tables/ }).first().click();
       const t3 = page.locator('[data-vip-table="T3"]'), t2 = page.locator('[data-vip-table="T2"]');
       await t3.waitFor({ timeout: 15000 });
-      check("P18n Set up tables lists VIP buttons; T2 shows 👑 VIP (on), T3 off", (await t2.getAttribute("aria-pressed")) === "true" && /👑/.test(await t2.innerText()) && (await t3.getAttribute("aria-pressed")) === "false");
+      check("P18s Set up tables lists VIP buttons; T2 shows 👑 VIP (on), T3 off", (await t2.getAttribute("aria-pressed")) === "true" && /👑/.test(await t2.innerText()) && (await t3.getAttribute("aria-pressed")) === "false");
       await t3.click(); await page.waitForTimeout(1500);
       const p = (st.bodies || []).filter((x) => x.m === "PATCH" && /^\/bar\//.test(x.p));   // not the app's /auth/language
-      check("P18o tap T3 → ONE PATCH /bar/tables/t3 { is_vip: true }", p.length === 1 && p[0].p === "/bar/tables/t3" && p[0].body.is_vip === true, JSON.stringify(p));
+      check("P18t tap T3 → ONE PATCH /bar/tables/t3 { is_vip: true }", p.length === 1 && p[0].p === "/bar/tables/t3" && p[0].body.is_vip === true, JSON.stringify(p));
     }
     check(`${P18} no page errors`, !errs.length, errs.slice(0, 2).join(" | "));
+    await ctx.close();
+  }
+
+  if (want("P19")) {
+    // P19 — BAR OPENS ON THE FLOOR (Peter's test 2026-11-28: the bar came up in the POS payment step). The Home cart
+    // was saved with an earlier payment step's choices (payMode / paidAmt). It must come back on the floor with
+    // "Take payment" — never in the payment step — after: first open, Take payment → ☰ → Bar Mode, a reload, a branch
+    // switch, the Cash screen and back. The payment step opens only on a tap of Take payment.
+    const L1 = PRODUCTS[BON][0];
+    const saved = [{ lineId: "L-p19", product_id: L1.id, name: L1.name, unit: "piece", quantity: 1, unit_price: L1.sell_price, original_price: L1.sell_price,
+      sell_price: L1.sell_price, cost_price: 0, barLoc: BON }];
+    const { ctx, page, errs } = await session("P19 the bar opens on the floor — never in the payment step",
+      { drafts: { [`${BON}::bar`]: saved }, draftExtra: { payMode: "paid", paidAmt: String(L1.sell_price) } });
+    await settle(page, BON, 600);
+    const state = () => page.evaluate(() => {
+      const btns = [...document.querySelectorAll("button")].map((b) => b.textContent.trim());
+      return { pay: btns.some((t) => /✓ Confirm/.test(t)) || /Full Payment/.test(document.body.innerText), take: btns.some((t) => t === "Take payment"),
+        cart: !!document.querySelector(".bar-cart") && document.querySelector(".bar-cart").innerText.includes("Bon Castel"), grid: !!document.querySelector(".bar-box"),
+        bill: !!document.querySelector(".bar-bill-body") };
+    });
+    let s = await state();
+    check("P19a first open: floor + quick sell + the saved cart, Take payment — NOT the payment step", s.grid && s.cart && s.take && !s.pay && !s.bill, JSON.stringify(s));
+    await page.getByRole("button", { name: /^Take payment$/ }).click(); await page.waitForTimeout(600);
+    s = await state();
+    check("P19b the payment step opens on a tap of Take payment", s.pay, JSON.stringify(s));
+    const fresh = await page.evaluate(() => [...document.querySelectorAll("button")].filter((b) => /Full Payment|Partial|Credit/.test(b.textContent)).map((b) => ({ t: b.textContent.trim(), on: b.getAttribute("aria-pressed") })));
+    await page.locator(".bar-menu-btn").click(); await page.waitForTimeout(400);
+    await page.getByRole("button", { name: /^Bar Mode$/ }).first().click(); await page.waitForTimeout(800);
+    s = await state();
+    check("P19c ☰ → Bar Mode while the payment step is open → back on the floor, Take payment (no payment step)", s.grid && s.take && !s.pay && s.cart, JSON.stringify(s));
+    await page.reload({ waitUntil: "domcontentloaded" }); await page.waitForSelector(".bar-box", { timeout: 60000 }); await settle(page, BON, 600);
+    s = await state();
+    check("P19d after a reload: floor + Take payment", s.grid && s.take && !s.pay, JSON.stringify(s));
+    await select(page, BEP); await settle(page, BEP, 300); await select(page, BON); await settle(page, BON, 600);
+    s = await state();
+    check("P19e after a branch switch and back: floor + Take payment", s.grid && s.take && !s.pay && s.cart, JSON.stringify(s));
+    await page.goto(`${BASE}/shifts`, { waitUntil: "domcontentloaded" }); await page.waitForTimeout(1500);
+    await page.goto(`${BASE}/bar`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".bar-box", { timeout: 60000 }); await settle(page, BON, 600);
+    s = await state();
+    check("P19f back from the Cash screen: floor + Take payment", s.grid && s.take && !s.pay && s.cart, JSON.stringify(s));
+    check("P19 no page errors", !errs.length, errs.slice(0, 2).join(" | "));
+    void fresh;
     await ctx.close();
   }
 } catch (e) {
